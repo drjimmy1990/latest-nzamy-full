@@ -1,0 +1,103 @@
+import { MetadataRoute } from "next";
+
+const BASE_URL = "https://nezamy.online";
+
+type SitemapRoute = {
+  url: string;
+  priority: number;
+  changeFrequency: "weekly" | "monthly" | "yearly";
+};
+
+const publicRoutes: SitemapRoute[] = [
+  { url: "/", priority: 1.0, changeFrequency: "weekly" },
+  { url: "/about", priority: 0.7, changeFrequency: "yearly" },
+  { url: "/academy", priority: 0.65, changeFrequency: "monthly" },
+  { url: "/academy/certificates", priority: 0.45, changeFrequency: "monthly" },
+  { url: "/academy/my-courses", priority: 0.45, changeFrequency: "monthly" },
+  { url: "/academy/quiz", priority: 0.45, changeFrequency: "monthly" },
+  { url: "/blog", priority: 0.8, changeFrequency: "weekly" },
+  { url: "/blog/wrongful-termination-rights", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/community", priority: 0.75, changeFrequency: "weekly" },
+  { url: "/community/ask", priority: 0.7, changeFrequency: "weekly" },
+  { url: "/community/public", priority: 0.7, changeFrequency: "weekly" },
+  { url: "/contact", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/faq", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/join", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/lawyers", priority: 0.85, changeFrequency: "weekly" },
+  { url: "/lawyers/browse", priority: 0.8, changeFrequency: "weekly" },
+  { url: "/laws", priority: 0.85, changeFrequency: "monthly" },
+  { url: "/laws/civil-procedure", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/laws/companies-law", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/login", priority: 0.6, changeFrequency: "yearly" },
+  { url: "/marketplace", priority: 0.8, changeFrequency: "weekly" },
+  { url: "/marketplace/collaborate", priority: 0.65, changeFrequency: "monthly" },
+  { url: "/marketplace/post", priority: 0.6, changeFrequency: "monthly" },
+  { url: "/media", priority: 0.6, changeFrequency: "monthly" },
+  { url: "/partners", priority: 0.6, changeFrequency: "monthly" },
+  { url: "/precedents", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/pricing", priority: 0.9, changeFrequency: "monthly" },
+  { url: "/privacy", priority: 0.5, changeFrequency: "yearly" },
+  { url: "/pro", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/register", priority: 0.6, changeFrequency: "yearly" },
+  { url: "/security", priority: 0.5, changeFrequency: "yearly" },
+  { url: "/services", priority: 0.9, changeFrequency: "monthly" },
+  { url: "/services/arbitration", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/services/business", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/services/business/company-formation", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/services/business/trademark", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/services/cases", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/services/collection", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/services/consultations", priority: 0.85, changeFrequency: "monthly" },
+  { url: "/services/contracts", priority: 0.85, changeFrequency: "monthly" },
+  { url: "/services/corporate", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/services/corporate/governance", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/services/corporate/health-check", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/services/corporate/seconded-counsel", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/services/creators", priority: 0.75, changeFrequency: "monthly" },
+  { url: "/services/individuals", priority: 0.9, changeFrequency: "monthly" },
+  { url: "/services/labor", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/services/lawyers", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/services/lawyers/vault", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/services/legal-representation", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/services/notary", priority: 0.85, changeFrequency: "monthly" },
+  { url: "/services/tracking", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/terms", priority: 0.5, changeFrequency: "yearly" },
+  { url: "/ai", priority: 0.9, changeFrequency: "monthly" },
+  { url: "/ai/analyze", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/ai/analyze-strength", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/ai/assistant", priority: 0.85, changeFrequency: "monthly" },
+  { url: "/ai/case-brief", priority: 0.75, changeFrequency: "monthly" },
+  { url: "/ai/collector", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/ai/communicate", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/ai/compare", priority: 0.75, changeFrequency: "monthly" },
+  { url: "/ai/consult", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/ai/contract-drafter", priority: 0.85, changeFrequency: "monthly" },
+  { url: "/ai/contracts", priority: 0.85, changeFrequency: "monthly" },
+  { url: "/ai/direction-support", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/ai/draft", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/ai/fee-calculator", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/ai/legal-opinion", priority: 0.8, changeFrequency: "monthly" },
+  { url: "/ai/legal-translate", priority: 0.75, changeFrequency: "monthly" },
+  { url: "/ai/micro", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/ai/monitor", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/ai/najiz-optimizer", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/ai/procedures", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/ai/quick-answer", priority: 0.75, changeFrequency: "monthly" },
+  { url: "/ai/report-generator", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/ai/secretary", priority: 0.7, changeFrequency: "monthly" },
+  { url: "/ai/smart-inspector", priority: 0.85, changeFrequency: "monthly" },
+  { url: "/ai/templates", priority: 0.75, changeFrequency: "monthly" },
+  { url: "/ai/transcriber", priority: 0.75, changeFrequency: "monthly" },
+  { url: "/ai/wargaming", priority: 0.75, changeFrequency: "monthly" },
+];
+
+export default function sitemap(): MetadataRoute.Sitemap {
+  const today = new Date().toISOString().split("T")[0];
+
+  return publicRoutes.map(({ url, priority, changeFrequency }) => ({
+    url: `${BASE_URL}${url}`,
+    lastModified: today,
+    changeFrequency,
+    priority,
+  }));
+}

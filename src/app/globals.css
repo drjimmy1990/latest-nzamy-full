@@ -1,0 +1,285 @@
+@import "tailwindcss";
+
+/* Tailwind v4: class-based dark mode */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-royal: #0B3D2E;
+  --color-royal-light: #0f5a43;
+  --color-royal-dark: #072a1f;
+  --color-gold: #C8A762;
+  --color-gold-light: #d4b87a;
+  --color-gold-dark: #b08f4a;
+  --color-surface: #f9fafb;
+  --color-surface-elevated: #ffffff;
+  --color-ink: #1a1a1a;
+  --color-ink-muted: #6b7280;
+  --color-ink-faint: #9ca3af;
+  --color-dark-bg: #0c0f12;
+  --color-dark-card: #161b22;
+  --color-dark-border: rgba(255, 255, 255, 0.08);
+  --font-brand: "Cairo", "Outfit", "Geist", sans-serif;
+  --font-body: "IBM Plex Sans Arabic", "Readex Pro", "Geist", sans-serif;
+  --font-heading: "Cairo", "Outfit", "Geist", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --font-serif: "Outfit", "Geist", serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  .dark body {
+    background: var(--color-dark-bg);
+    color: #e5e7eb;
+  }
+
+  ::selection {
+    background: rgba(200, 167, 98, 0.3);
+    color: var(--color-royal-dark);
+  }
+  .dark ::selection {
+    background: rgba(200, 167, 98, 0.4);
+    color: #fff;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(11, 61, 46, 0.2);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(11, 61, 46, 0.4);
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: rgba(200, 167, 98, 0.2);
+  }
+}
+
+/*
+  Dark Mode Overrides — OUTSIDE @layer so they beat Tailwind utilities.
+  Redefine Tailwind's internal CSS variables when .dark is active.
+*/
+
+/* Override Tailwind v4 color variables in dark context */
+.dark {
+  /* Surface colors */
+  --color-surface: #0c0f12;
+  --color-surface-elevated: #161b22;
+
+  /* Text colors */
+  --color-ink: #e5e7eb;
+  --color-ink-muted: #9ca3af;
+  --color-ink-faint: #6b7280;
+
+  /* Slate scale → dark equivalents */
+  --color-slate-50: #161b22;
+  --color-slate-100: #1c2128;
+  --color-slate-200: rgba(255, 255, 255, 0.1);
+  --color-slate-300: rgba(255, 255, 255, 0.15);
+  --color-slate-600: #9ca3af;
+  --color-slate-700: #9ca3af;
+  --color-slate-800: #d1d5db;
+  --color-slate-900: #e5e7eb;
+
+  /* Gray scale */
+  --color-gray-50: #161b22;
+  --color-gray-100: #1c2128;
+  --color-gray-200: rgba(255, 255, 255, 0.1);
+
+  /* Emerald adjustments */
+  --color-emerald-50: rgba(16, 185, 129, 0.1);
+  --color-emerald-100: rgba(16, 185, 129, 0.15);
+  --color-emerald-600: #34d399;
+  --color-emerald-700: #34d399;
+
+  /* Sky adjustments */
+  --color-sky-50: rgba(14, 165, 233, 0.1);
+  --color-sky-100: rgba(14, 165, 233, 0.15);
+}
+
+/* Dark-mode contrast rescue:
+   Keep semantic white usable for text, icons, borders, and subtle overlays.
+   Surfaces should be darkened with explicit dark:bg-* utilities instead of
+   redefining Tailwind's --color-white, which also powers text-white.
+*/
+.dark .text-white {
+  color: #f8fafc !important;
+}
+.dark .text-white\/90 {
+  color: rgba(248, 250, 252, 0.9) !important;
+}
+.dark .text-white\/80 {
+  color: rgba(248, 250, 252, 0.8) !important;
+}
+.dark .text-white\/70 {
+  color: rgba(248, 250, 252, 0.7) !important;
+}
+.dark .text-white\/60 {
+  color: rgba(248, 250, 252, 0.6) !important;
+}
+.dark .text-white\/50 {
+  color: rgba(248, 250, 252, 0.5) !important;
+}
+.dark .text-white\/40 {
+  color: rgba(248, 250, 252, 0.4) !important;
+}
+.dark .border-white\/5,
+.dark .border-white\/\[0\.05\] {
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+.dark .border-white\/10,
+.dark .border-white\/\[0\.1\],
+.dark .border-white\/\[0\.10\] {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+.dark .bg-white\/\[0\.02\] {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+}
+.dark .bg-white\/\[0\.03\] {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+.dark .bg-white\/5 {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+.dark .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Bidi safety net for older screens that used physical text alignment. */
+html[dir="ltr"] .text-right {
+  text-align: left !important;
+}
+html[dir="rtl"] .text-left {
+  text-align: right !important;
+}
+
+/* Input fields in dark mode */
+.dark input,
+.dark textarea {
+  background-color: #1c2128 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #e5e7eb !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6b7280 !important;
+}
+
+/* ── Reliable dark-mode card/surface overrides ────────────────────────────
+   Tailwind v4 pre-computes opacity-modified color values (e.g. bg-white/80)
+   at build time using oklab(), so CSS variable overrides alone don't cover
+   all cases. These explicit selectors ensure consistent dark backgrounds.
+*/
+.dark .card-surface,
+.dark [data-dark-card] {
+  background-color: #161b22;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Fix shadows — tint to brand hue for premium feel */
+:root {
+  --tw-shadow-color: rgba(11, 61, 46, 0.06);
+}
+.dark .shadow-sm,
+.dark .shadow-md,
+.dark .shadow-lg,
+.dark .shadow-xl,
+.dark .shadow-2xl {
+  --tw-shadow-color: rgba(0, 0, 0, 0.4);
+}
+
+/* Fix input focus rings in dark mode */
+.dark input:focus,
+.dark textarea:focus {
+  outline: none !important;
+  border-color: rgba(200, 167, 98, 0.5) !important; /* Gold trim */
+  box-shadow: 0 0 0 2px rgba(200, 167, 98, 0.1) !important;
+}
+
+/* ── Accessibility: Respect reduced-motion preference ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Skip-to-content link (accessibility) ── */
+.skip-to-content {
+  position: absolute;
+  top: -100%;
+  left: 1rem;
+  z-index: 9999;
+  padding: 0.5rem 1rem;
+  background-color: var(--color-royal);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 0 0 0.5rem 0.5rem;
+  text-decoration: none;
+  transition: top 0.2s;
+}
+.skip-to-content:focus {
+  top: 0;
+}
+
+/* ── @xyflow/react (ReactFlow) dark-mode overrides ────────────────────────── */
+.react-flow {
+  background: transparent;
+}
+.react-flow__controls {
+  box-shadow: none !important;
+}
+.react-flow__controls-button {
+  border: none !important;
+  width: 26px !important;
+  height: 26px !important;
+}
+.dark .react-flow__controls-button {
+  background: #18181b !important;
+  color: #71717a !important;
+  fill: #71717a !important;
+}
+.dark .react-flow__controls-button:hover {
+  background: #27272a !important;
+  color: #d4d4d8 !important;
+  fill: #d4d4d8 !important;
+}
+.react-flow__selection {
+  background: rgba(200, 167, 98, 0.08) !important;
+  border: 1.5px solid rgba(200, 167, 98, 0.5) !important;
+  border-radius: 6px !important;
+}
+.react-flow__edge-path {
+  stroke-linecap: round;
+}
+.react-flow__minimap-mask {
+  fill: rgba(200, 167, 98, 0.1) !important;
+}
+.dark .react-flow__minimap {
+  background: #18181b !important;
+}
+/* Group node label */
+.react-flow__node.group-node {
+  pointer-events: none;
+}
