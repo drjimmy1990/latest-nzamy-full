@@ -30,6 +30,9 @@ import { ProviderType, Step } from "./types";
 import { StepIndicator, Step1, Step2, Step3, Step4, Step5 } from "./components/Steps";
 import { setDemoSession, getPermissions } from "@/hooks/useUser";
 import type { UserSession, UserType } from "@/hooks/useUser";
+import { createClient } from "@/lib/supabase/client";
+
+const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function RegisterProviderPage() {
@@ -42,6 +45,8 @@ export default function RegisterProviderPage() {
   const [selectedPlan, setSelectedPlan] = useState("ai"); // default AI plan
   const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]); // lifted state
   const [formData, setFormData] = useState<Record<string, string>>({});
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
   const handleChange = (k: string, v: string) => setFormData(d => ({ ...d, [k]: v }));
 
   const canNext = () => {
@@ -203,20 +208,82 @@ export default function RegisterProviderPage() {
                   <motion.button
                     whileHover={{ scale: canNext() ? 1.02 : 1 }}
                     whileTap={{ scale: canNext() ? 0.98 : 1 }}
-                    onClick={() => {
+                    onClick={async () => {
                       if (!canNext()) return;
                       if (step === 4) {
                         const userType: UserType = providerType === "firm" ? "firm" : providerType === "lawyer" ? "lawyer" : "provider";
+                        const subRole = providerType === "notary" ? "notary" as const : providerType === "arbitrator" ? "arbitrator" as const : providerType === "tracker" ? "bailiff" as const : null;
+                        const displayName = formData.firmName || `${formData.firstName || ""} ${formData.lastName || ""}`.trim() || "شريك نظامي";
+                        const tier = selectedPlan === "pro" ? "pro" as const : selectedPlan === "lite" ? "free" as const : "ai" as const;
+
+                        // ── Supabase Mode ──
+                        if (BACKEND_MODE === "supabase") {
+                          setAuthLoading(true);
+                          setAuthError(null);
+                          try {
+                            const supabase = createClient();
+                            const { error } = await supabase.auth.signUp({
+                              email: formData.email,
+                              password: formData.password,
+                              phone: formData.phone ? `+${formData.countryCode || "966"}${formData.phone}` : undefined,
+                              options: {
+                                data: {
+                                  user_type: userType,
+                                  display_name: displayName,
+                                  full_name: displayName,
+                                  tier,
+                                  sub_role: subRole,
+                                  country_code: formData.country || "SA",
+                                  city: formData.city || null,
+                                  credit_balance: 0,
+                                  credits_max: 0,
+                                  display_mode: "full",
+                                  onboarding_completed: false,
+                                  provider_type: providerType,
+                                  provider_specialties: selectedSpecs,
+                                  license_number: formData.licenseNumber,
+                                  experience_years: formData.experience,
+                                  selected_plan: selectedPlan,
+                                  ...(providerType === "arbitrator" && {
+                                    arbitration_center: formData.arbitrationCenter,
+                                  }),
+                                  ...(providerType === "tracker" && {
+                                    gov_entity: formData.govEntity,
+                                  }),
+                                },
+                              },
+                            });
+
+                            if (error) {
+                              setAuthError(
+                                error.message === "User already registered"
+                                  ? (isAr ? "البريد الإلكتروني مسجل بالفعل" : "This email is already registered")
+                                  : error.message
+                              );
+                              setAuthLoading(false);
+                              return;
+                            }
+
+                            setStep(5);
+                          } catch {
+                            setAuthError(isAr ? "حدث خطأ، حاول مرة أخرى" : "An error occurred, please try again");
+                          } finally {
+                            setAuthLoading(false);
+                          }
+                          return;
+                        }
+
+                        // ── Demo Mode ──
                         const session: UserSession = {
                           isLoggedIn: true,
                           userType,
-                          subRole: providerType === "notary" ? "notary" : providerType === "arbitrator" ? "arbitrator" : providerType === "tracker" ? "bailiff" : null,
-                          name: formData.firmName || `${formData.firstName || ""} ${formData.lastName || ""}`.trim() || "شريك نظامي",
-                          tier: selectedPlan === "pro" ? "pro" : selectedPlan === "lite" ? "free" : "ai",
+                          subRole,
+                          name: displayName,
+                          tier,
                           credits: 50,
                           creditsMax: 100,
                           dashboardMode: "full",
-                          permissions: getPermissions(userType, selectedPlan === "pro" ? "pro" : selectedPlan === "lite" ? "free" : "ai"),
+                          permissions: getPermissions(userType, tier),
                           country: formData.country || "SA",
                           providerSpecialties: selectedSpecs,
                         };
@@ -226,13 +293,22 @@ export default function RegisterProviderPage() {
                         setStep(s => (s + 1) as Step);
                       }
                     }}
-                    disabled={!canNext()}
+                    disabled={!canNext() || authLoading}
                     className="flex-1 rounded-xl bg-royal py-3.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] transition-all disabled:opacity-40 hover:bg-royal-light hover:shadow-[0_8px_24px_-4px_rgba(11,61,46,0.5)]"
                   >
-                    {step === 4
-                      ? (isAr ? "أرسل الطلب" : "Submit Application")
-                      : (isAr ? "التالي" : "Next")}
+                    {authLoading
+                      ? (isAr ? "جاري التسجيل..." : "Creating account...")
+                      : step === 4
+                        ? (isAr ? "أرسل الطلب" : "Submit Application")
+                        : (isAr ? "التالي" : "Next")}
                   </motion.button>
+                </div>
+              )}
+
+              {/* Auth error */}
+              {authError && step === 4 && (
+                <div className="mt-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-300">
+                  {authError}
                 </div>
               )}
 

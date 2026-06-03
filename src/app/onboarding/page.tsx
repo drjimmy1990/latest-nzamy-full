@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User,
@@ -26,6 +26,9 @@ import {
   Storefront,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { createClient } from "@/lib/supabase/client";
+
+const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
 
 type UserType = "individual" | "company" | "micro" | "government" | "ngo" | "lawyer" | "firm" | null;
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -633,7 +636,29 @@ export default function OnboardingPage() {
                   <motion.button
                     whileHover={{ scale: canNext() ? 1.015 : 1 }}
                     whileTap={{ scale: canNext() ? 0.985 : 1 }}
-                    onClick={() => { if (canNext()) setStep((s) => (s + 1) as Step); }}
+                    onClick={async () => {
+                      if (!canNext()) return;
+                      if (step === 4 && BACKEND_MODE === "supabase") {
+                        // Save onboarding preferences to Supabase user_metadata
+                        try {
+                          const supabase = createClient();
+                          await supabase.auth.updateUser({
+                            data: {
+                              onboarding_completed: true,
+                              user_type: userType,
+                              preferred_services: services,
+                              city: city || undefined,
+                              specialties: specialties.length > 0 ? specialties : undefined,
+                              notification_preferences: notifs,
+                              has_in_house_lawyer: hasLawyer,
+                            },
+                          });
+                        } catch (err) {
+                          console.warn("[Nzamy] Failed to save onboarding data:", err);
+                        }
+                      }
+                      setStep((s) => (s + 1) as Step);
+                    }}
                     disabled={!canNext()}
                     className="flex-1 rounded-xl bg-royal py-3.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] hover:bg-royal-light transition-all disabled:opacity-40"
                   >

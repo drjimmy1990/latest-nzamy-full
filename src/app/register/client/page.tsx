@@ -27,6 +27,9 @@ import { ClientType, Step } from "./types";
 import { StepIndicator, Step1, Step2, Step3, Step4 } from "./components/Steps";
 import { setDemoSession, getPermissions } from "@/hooks/useUser";
 import type { UserSession, UserType } from "@/hooks/useUser";
+import { createClient } from "@/lib/supabase/client";
+
+const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
@@ -37,6 +40,8 @@ export default function RegisterClientPage() {
 
   const [step, setStep] = useState<Step>(1);
   const [clientType, setClientType] = useState<ClientType>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
 
   // Pre-select type from URL query param (e.g. ?type=individual)
   useEffect(() => {
@@ -210,15 +215,83 @@ export default function RegisterClientPage() {
                   <motion.button
                     whileHover={{ scale: canNext() ? 1.02 : 1 }}
                     whileTap={{ scale: canNext() ? 0.98 : 1 }}
-                    onClick={() => {
+                    onClick={async () => {
                       if (!canNext()) return;
                       if (step === 3) {
                         const userType: UserType = clientType === "individual" ? "individual" : clientType === "company" ? "corporate" : clientType === "micro" ? "micro" : clientType === "government" ? "government" : clientType === "ngo" ? "ngo" : "individual";
+                        const displayName = formData.companyName || formData.entityName || formData.ngoName || `${formData.firstName || ""} ${formData.lastName || ""}`.trim() || "عميل نظامي";
+
+                        // ── Supabase Mode ──
+                        if (BACKEND_MODE === "supabase") {
+                          setAuthLoading(true);
+                          setAuthError(null);
+                          try {
+                            const supabase = createClient();
+                            const { error } = await supabase.auth.signUp({
+                              email: formData.email,
+                              password: formData.password,
+                              phone: formData.phone ? `+${formData.countryCode || "966"}${formData.phone}` : undefined,
+                              options: {
+                                data: {
+                                  user_type: userType,
+                                  display_name: displayName,
+                                  full_name: displayName,
+                                  tier: "free",
+                                  sub_role: null,
+                                  country_code: formData.country || "SA",
+                                  city: formData.city || null,
+                                  credit_balance: 0,
+                                  credits_max: 0,
+                                  display_mode: "full",
+                                  onboarding_completed: false,
+                                  // Type-specific metadata
+                                  ...(clientType === "individual" && {
+                                    id_number: formData.idNumber,
+                                  }),
+                                  ...(clientType === "company" && {
+                                    business_type: "corporate",
+                                    cr_number: formData.crNumber,
+                                  }),
+                                  ...(clientType === "micro" && {
+                                    business_type: "micro",
+                                    cr_number: formData.crNumber,
+                                  }),
+                                  ...(clientType === "government" && {
+                                    government_role: formData.governmentRole || "gov_counsel",
+                                    officer_specialty: formData.officerSpecialty || null,
+                                  }),
+                                  ...(clientType === "ngo" && {
+                                    ngo_reg_number: formData.ngoRegNumber,
+                                  }),
+                                },
+                              },
+                            });
+
+                            if (error) {
+                              setAuthError(
+                                error.message === "User already registered"
+                                  ? (isAr ? "البريد الإلكتروني مسجل بالفعل" : "This email is already registered")
+                                  : error.message
+                              );
+                              setAuthLoading(false);
+                              return;
+                            }
+
+                            setStep(4);
+                          } catch {
+                            setAuthError(isAr ? "حدث خطأ، حاول مرة أخرى" : "An error occurred, please try again");
+                          } finally {
+                            setAuthLoading(false);
+                          }
+                          return;
+                        }
+
+                        // ── Demo Mode ──
                         const session: UserSession = {
                           isLoggedIn: true,
                           userType,
                           subRole: null,
-                          name: formData.companyName || `${formData.firstName || ""} ${formData.lastName || ""}`.trim() || "عميل نظامي",
+                          name: displayName,
                           tier: "pro",
                           credits: 100,
                           creditsMax: 100,
@@ -233,13 +306,22 @@ export default function RegisterClientPage() {
                         setStep((s) => (s + 1) as Step);
                       }
                     }}
-                    disabled={!canNext()}
+                    disabled={!canNext() || authLoading}
                     className="flex-1 rounded-xl bg-royal py-3.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] transition-all disabled:opacity-40 hover:bg-royal-light hover:shadow-[0_8px_24px_-4px_rgba(11,61,46,0.5)]"
                   >
-                    {step === 3
-                      ? (isAr ? "إنشاء الحساب" : "Create Account")
-                      : (isAr ? "التالي" : "Next")}
+                    {authLoading
+                      ? (isAr ? "جاري التسجيل..." : "Creating account...")
+                      : step === 3
+                        ? (isAr ? "إنشاء الحساب" : "Create Account")
+                        : (isAr ? "التالي" : "Next")}
                   </motion.button>
+                </div>
+              )}
+
+              {/* Auth error */}
+              {authError && step === 3 && (
+                <div className="mt-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-300">
+                  {authError}
                 </div>
               )}
 
@@ -251,7 +333,18 @@ export default function RegisterClientPage() {
                     <span className="text-xs text-ink-faint dark:text-gray-600 uppercase">{isAr ? "أو" : "OR"}</span>
                     <div className="flex-1 h-px bg-slate-200 dark:bg-white/10" />
                   </div>
-                  <button className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-3.5 text-sm font-semibold text-ink transition-all hover:border-slate-300 dark:border-white/10 dark:bg-dark-card dark:text-gray-200">
+                  <button
+                    onClick={async () => {
+                      if (BACKEND_MODE === "supabase") {
+                        const supabase = createClient();
+                        await supabase.auth.signInWithOAuth({
+                          provider: "google",
+                          options: { redirectTo: `${window.location.origin}/auth/callback` },
+                        });
+                      }
+                    }}
+                    className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-3.5 text-sm font-semibold text-ink transition-all hover:border-slate-300 dark:border-white/10 dark:bg-dark-card dark:text-gray-200"
+                  >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                       <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                       <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
