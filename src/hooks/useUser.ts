@@ -12,8 +12,10 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { LAWYER_AI_PERMISSION_KEYS } from "@/constants/lawyerAiCatalog";
+import { createClient } from "@/lib/supabase/client";
+import type { User } from "@supabase/supabase-js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -388,6 +390,13 @@ export function getPermissions(userType: UserType, tier: UserTier): UserPermissi
   return PERMISSIONS[userType]?.[tier] ?? [];
 }
 
+// ─── Runtime backend mode ────────────────────────────────────────────────────
+const BACKEND_MODE =
+  typeof window !== "undefined"
+    ? (process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo")
+    : "demo";
+const isSupabaseMode = BACKEND_MODE === "supabase";
+
 // ─── ⚠️ DEMO BLOCK START — DELETE BEFORE PRODUCTION ─────────────────────────
 
 export const DEMO_STORAGE_KEY = "nzamy_demo_role";
@@ -463,6 +472,17 @@ export function setDemoSession(session: UserSession, key: string = ""): void {
 /** Log out — clears session, re-renders all components, then navigates to /login */
 export function logout(): void {
   if (typeof window === "undefined") return;
+
+  // Supabase mode: sign out through Supabase Auth
+  if (BACKEND_MODE === "supabase") {
+    const supabase = createClient();
+    supabase.auth.signOut().finally(() => {
+      window.location.href = "/login";
+    });
+    return;
+  }
+
+  // Demo mode: clear localStorage
   localStorage.setItem(DEMO_STORAGE_KEY, "guest");
   document.cookie = "nzamy_demo_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
   notifyAll();
@@ -478,23 +498,80 @@ export interface UseUserReturn extends UserSession {
   isDemoBypass: boolean;
 }
 
+// ─── Map Supabase user → UserSession ─────────────────────────────────────────
+
+function mapSupabaseUser(user: User | null): UserSession {
+  if (!user) return GUEST_SESSION;
+
+  const meta = user.user_metadata ?? {};
+  const userType = (meta.user_type ?? "individual") as UserType;
+  const tier = (meta.tier ?? "free") as UserTier;
+  const subRole = (meta.sub_role ?? null) as SubRole;
+
+  return {
+    isLoggedIn:    true,
+    userId:        user.id,
+    userType,
+    subRole,
+    name:          meta.display_name ?? meta.full_name ?? user.email ?? "",
+    avatar:        meta.avatar_url,
+    tier,
+    credits:       meta.credit_balance ?? 0,
+    creditsMax:    meta.credits_max ?? 0,
+    dashboardMode: meta.display_mode ?? "full",
+    permissions:   getPermissions(userType, tier),
+    businessType:       meta.business_type,
+    providerSpecialties: meta.provider_specialties,
+    affiliation:   meta.affiliation,
+    governmentRole:     meta.government_role,
+    officerSpecialty:    meta.officer_specialty,
+    businessRole:       meta.business_role,
+    active_roles:       meta.active_roles,
+    country:       meta.country_code ?? "SA",
+  };
+}
+
 export function useUser(): UseUserReturn {
   const [session, setSession] = useState<UserSession>(GUEST_SESSION);
   const [demoKey, setDemoKey]  = useState<string>("");
+  const [loading, setLoading]  = useState(true);
 
-  useEffect(() => {
-    // 1. Initial read on mount
+  // ── Supabase Mode ──────────────────────────────────────────────────────────
+  const initSupabase = useCallback(async () => {
+    if (!isSupabaseMode) return;
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      setSession(mapSupabaseUser(user));
+
+      // Listen for auth state changes (login, logout, token refresh)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        (_event, authSession) => {
+          setSession(mapSupabaseUser(authSession?.user ?? null));
+        },
+      );
+
+      return () => subscription.unsubscribe();
+    } catch {
+      setSession(GUEST_SESSION);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── Demo Mode ──────────────────────────────────────────────────────────────
+  const initDemo = useCallback(() => {
+    if (isSupabaseMode) return;
     setSession(readSessionFromStorage());
     setDemoKey(readDemoKeyFromStorage());
+    setLoading(false);
 
-    // 2. Listen to storage events
     const onStorage = (e: StorageEvent) => {
       if (e.key === DEMO_STORAGE_KEY) setSession(readSessionFromStorage());
       if (e.key === DEMO_KEY_STORAGE)  setDemoKey(readDemoKeyFromStorage());
     };
     window.addEventListener("storage", onStorage);
 
-    // 3. Keep internal logic in sync
     const refresh = () => {
       setSession(readSessionFromStorage());
       setDemoKey(readDemoKeyFromStorage());
@@ -507,6 +584,15 @@ export function useUser(): UseUserReturn {
     };
   }, []);
 
+  useEffect(() => {
+    if (isSupabaseMode) {
+      const cleanup = initSupabase();
+      return () => { cleanup?.then(fn => fn?.()); };
+    } else {
+      return initDemo();
+    }
+  }, [initSupabase, initDemo]);
+
   const isDemoBypass = _DEMO_BYPASS_KEYS.includes(demoKey);
 
   return { ...session, isDemoBypass };
@@ -518,3 +604,4 @@ export function useHasPermission(permission: UserPermission): boolean {
   const user = useUser();
   return user.permissions.includes(permission);
 }
+

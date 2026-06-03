@@ -26,6 +26,9 @@ import { useTheme } from "@/components/ThemeProvider";
 import { authenticateTest, TEST_ACCOUNTS, TEST_PASSWORD } from "@/lib/test-credentials";
 import { setDemoSession } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
+import { createClient } from "@/lib/supabase/client";
+
+const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
 
 const t = {
   ar: {
@@ -154,7 +157,36 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
-    // Simulate network delay
+
+    // ── Supabase Mode: Real authentication ──────────────────────────────────
+    if (BACKEND_MODE === "supabase") {
+      try {
+        const supabase = createClient();
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+          ...(inputMode === "email"
+            ? { email: identifier }
+            : { phone: identifier }),
+          password,
+        });
+
+        if (authError || !data.user) {
+          setError(isAr ? "بيانات الدخول غير صحيحة" : "Invalid credentials");
+          setLoading(false);
+          return;
+        }
+
+        // Redirect to the user's dashboard based on their type
+        const userType = data.user.user_metadata?.user_type ?? "individual";
+        const dest = getDashboardRoute(userType);
+        router.push(dest);
+      } catch {
+        setError(isAr ? "حدث خطأ في الاتصال" : "Connection error");
+        setLoading(false);
+      }
+      return;
+    }
+
+    // ── Demo Mode: Test credentials ─────────────────────────────────────────
     await new Promise((r) => setTimeout(r, 600));
     const session = authenticateTest(identifier, password);
     if (!session) {
@@ -165,6 +197,21 @@ export default function LoginPage() {
     setDemoSession(session);
     const dest = getDashboardRoute(session.userType);
     router.push(dest);
+  }
+
+  async function handleGoogleSignIn() {
+    if (BACKEND_MODE !== "supabase") return;
+    try {
+      const supabase = createClient();
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+    } catch {
+      setError(isAr ? "حدث خطأ في تسجيل الدخول" : "Sign in error");
+    }
   }
 
   const containerVariants = {
@@ -560,6 +607,7 @@ export default function LoginPage() {
                   whileHover={{ scale: 1.015, boxShadow: "0 4px 20px -4px rgba(0,0,0,0.12)" }}
                   whileTap={{ scale: 0.985 }}
                   type="button"
+                  onClick={handleGoogleSignIn}
                   className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3.5 text-sm font-semibold text-ink dark:text-gray-200 shadow-sm hover:border-slate-300 dark:hover:border-gray-600 transition-all duration-200"
                 >
                   <GoogleIcon />
