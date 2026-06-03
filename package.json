@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.7",
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.107.0",
     "@types/html2canvas": "^0.5.35",
     "@xyflow/react": "^12.10.2",
     "canvas-confetti": "^1.9.4",
