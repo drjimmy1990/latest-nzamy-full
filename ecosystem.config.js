@@ -4,7 +4,7 @@ module.exports = {
       // ─── App Identity ─────────────────────────────────
       name: 'nzamy',
       script: 'node_modules/.bin/next',
-      args: 'start',
+      args: 'start -p 3055',
       cwd: '/www/wwwroot/nzamy/latest-nzamy-full',
 
       // ─── Process Mode ─────────────────────────────────
