@@ -10,7 +10,9 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
-import { activateClientGroup } from "@/lib/clientGroupStore";
+import { createGroup, getGroupState, getGroupMembers } from "@/lib/services/groupService";
+import { SkeletonCard } from "../_components/DashboardSkeleton";
+import { useUser } from "@/hooks/useUser";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Member {
@@ -23,30 +25,14 @@ interface RotationEntry {
   status: "paid" | "current" | "upcoming" | "skipped"; amount: number; paidAt?: string;
 }
 
-// ── Mock Data ────────────────────────────────────────────────────────────────
-const GROUP = {
-  id: "grp-001", name: "الرهبان القانونيين",
+// ── Default fallback data ──────────────────────────────────────────────────────────
+const DEFAULT_GROUP = {
+  id: "", name: "الربع القانونية",
   plan: "الربع القانونية", totalCost: 499, perPerson: 99,
   lawyerConsultsLeft: 1, caseUsed: false,
   maxMembers: 5, skipGraceDays: 3,
-  totalUsed: 45, totalQuota: 100,
+  totalUsed: 0, totalQuota: 100,
 };
-const MEMBERS: Member[] = [
-  { id:"m1", name:"أحمد الصالح",    initials:"أص", role:"admin",  queriesUsed:14, queriesTotal:25, rotationIndex:0, skippedTurns:0, status:"active" },
-  { id:"m2", name:"محمد الحربي",    initials:"مح", role:"member", queriesUsed:8,  queriesTotal:25, rotationIndex:1, skippedTurns:0, status:"active" },
-  { id:"m3", name:"فهد العتيبي",    initials:"فع", role:"member", queriesUsed:25, queriesTotal:25, rotationIndex:2, skippedTurns:0, status:"active" },
-  { id:"m4", name:"سلمى الزهراني", initials:"سز", role:"member", queriesUsed:3,  queriesTotal:25, rotationIndex:3, skippedTurns:1, status:"active" },
-];
-const ROTATION: RotationEntry[] = [
-  { month:"يناير ٢٠٢٦", memberId:"m1", memberName:"أحمد الصالح",   status:"paid",     amount:499, paidAt:"٢٠٢٦-٠١-٠١" },
-  { month:"فبراير ٢٠٢٦", memberId:"m2", memberName:"محمد الحربي",   status:"current",  amount:499 },
-  { month:"مارس ٢٠٢٦",  memberId:"m3", memberName:"فهد العتيبي",    status:"upcoming", amount:499 },
-  { month:"أبريل ٢٠٢٦", memberId:"m4", memberName:"سلمى الزهراني", status:"upcoming", amount:499 },
-];
-
-const CURRENT_USER_ID = "m1"; // admin — not current payer
-const CURRENT_PAYER = MEMBERS.find(m => m.id === "m2")!;
-const NEXT_PAYER    = MEMBERS.find(m => m.id === "m3")!;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const card = "relative rounded-[1.5rem] border border-white/10 bg-white/[0.03] backdrop-blur-md overflow-hidden";
@@ -139,6 +125,7 @@ export default function MyGroupPage() {
   const { isDark } = useTheme();
   const searchParams = useSearchParams();
   const membership = useClientGroupMembership();
+  const user = useUser();
   const hasGroup = membership.hasGroup;
   const [showInvite, setShowInvite] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -148,15 +135,77 @@ export default function MyGroupPage() {
   const [showJoin, setShowJoin] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [groupName, setGroupName] = useState("");
-  const activeGroup = { ...GROUP, name: membership.groupName ?? GROUP.name };
+
+  // Dynamic data from service
+  const [groupData, setGroupData] = useState<{ group: any; members: Member[] } | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!hasGroup && searchParams.get("action") === "create") setShowCreate(true);
-  }, [hasGroup, searchParams]);
+    if (!hasGroup) {
+      setLoading(false);
+      return;
+    }
+    getGroupState()
+      .then(async (state) => {
+        if (state.status === "none") {
+          setGroupData(null);
+          return;
+        }
+        // Fetch members if we have a groupId
+        let members: Member[] = [];
+        if (state.groupId) {
+          try {
+            const apiMembers = await getGroupMembers(state.groupId);
+            members = apiMembers.map((m, i) => ({
+              id: m.user_id,
+              name: m.profile?.display_name || m.user_id,
+              initials: (m.profile?.display_name || "--").slice(0, 2),
+              role: m.role === "owner" ? "admin" as const : "member" as const,
+              queriesUsed: 0,
+              queriesTotal: 25,
+              rotationIndex: i,
+              skippedTurns: 0,
+              status: m.status === "active" ? "active" as const : "inactive" as const,
+            }));
+          } catch { /* keep empty */ }
+        }
+        setGroupData({
+          group: { ...DEFAULT_GROUP, id: state.groupId || "", name: state.groupName || DEFAULT_GROUP.name },
+          members,
+        });
+      })
+      .catch(() => setGroupData(null))
+      .finally(() => setLoading(false));
+  }, [hasGroup]);
+
+  // Derive display data from service response
+  const GROUP = groupData?.group || DEFAULT_GROUP;
+  const MEMBERS: Member[] = groupData?.members || [];
+  const ROTATION: RotationEntry[] = MEMBERS.map((m, i) => ({
+    month: `شهر ${i + 1}`,
+    memberId: m.id,
+    memberName: m.name,
+    status: i === 0 ? "paid" as const : i === 1 ? "current" as const : "upcoming" as const,
+    amount: GROUP.totalCost,
+  }));
+  const CURRENT_USER_ID = user?.userId || '';
+  const CURRENT_PAYER = MEMBERS.length > 1 ? MEMBERS[1] : MEMBERS[0] || { id: '', name: '', initials: '--' };
+  const NEXT_PAYER = MEMBERS.length > 2 ? MEMBERS[2] : MEMBERS[0] || { id: '', name: '', initials: '--' };
+  const activeGroup = { ...GROUP, name: membership.groupName ?? GROUP.name };
 
   const card = isDark
     ? "relative rounded-[1.5rem] border border-white/10 bg-white/[0.03] backdrop-blur-md overflow-hidden"
     : "relative rounded-[1.5rem] border border-zinc-200 bg-white shadow-sm overflow-hidden";
+
+  if (loading) {
+    return (
+      <div className={`p-6 md:p-10 space-y-4 max-w-5xl ${isDark ? "text-white" : "text-zinc-900"}`} dir="rtl">
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+      </div>
+    );
+  }
 
   if (!hasGroup) {
     return (
@@ -207,8 +256,8 @@ export default function MyGroupPage() {
 
                 <motion.button 
                   whileHover={{ scale:1.02 }} whileTap={{ scale:0.98 }}
-                  onClick={() => {
-                    activateClientGroup("subscribed", groupName.trim() || GROUP.name);
+                  onClick={async () => {
+                    await createGroup({ name: groupName.trim() || GROUP.name });
                     setShowCreate(false);
                   }}
                   className="w-full py-3 rounded-xl bg-emerald-500 text-white font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 transition-colors"
@@ -245,8 +294,8 @@ export default function MyGroupPage() {
                   <button onClick={() => setShowJoin(false)} className={`flex-1 py-3 rounded-xl border text-sm font-medium transition-colors ${isDark ? "border-white/10 hover:bg-white/5" : "border-zinc-200 hover:bg-zinc-50"}`}>إلغاء</button>
                   <motion.button 
                     whileHover={{ scale:1.02 }} whileTap={{ scale:0.98 }}
-                    onClick={() => {
-                      activateClientGroup("joined", joinCode.trim() ? `مجموعة ${joinCode.trim()}` : GROUP.name);
+                    onClick={async () => {
+                      await createGroup({ name: joinCode.trim() ? `مجموعة ${joinCode.trim()}` : GROUP.name });
                       setShowJoin(false);
                     }}
                     disabled={joinCode.length < 5}
@@ -264,7 +313,7 @@ export default function MyGroupPage() {
   }
 
   const isMyTurn = CURRENT_PAYER.id === CURRENT_USER_ID;
-  const inviteLink = "https://nzamy.sa/group/join/RHB-2026";
+  const inviteLink = typeof window !== 'undefined' ? `${window.location.origin}/group/join/${groupData?.group?.invite_code || ''}` : '';
 
   const copyLink = () => {
     navigator.clipboard.writeText(inviteLink).catch(() => {});

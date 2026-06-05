@@ -13,7 +13,7 @@ import {
   renameSession, removeFromInbox, markUsed, mergeItems, addToSession, updateItem,
   SOURCE_LABELS, SOURCE_COLORS,
   type InboxItem, type CollectorSession, type InboxSource,
-} from "@/lib/draftInboxStore";
+} from "@/lib/services/researchService";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -52,23 +52,37 @@ export function SessionsPanel({ onToast }: Props) {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemContent, setEditItemContent] = useState("");
   const [editItemTitle, setEditItemTitle] = useState("");
+  const [sessionItemCounts, setSessionItemCounts] = useState<Record<string, number>>({});
+  const [archivedItemsMap, setArchivedItemsMap] = useState<Record<string, InboxItem[]>>({});
 
-  function reload() {
-    const active = getActiveSessions();
-    const arch = getArchivedSessions();
+  async function reload() {
+    const active = await getActiveSessions();
+    const arch = await getArchivedSessions();
     setSessions(active);
     setArchived(arch);
-    if (activeSession) setSessionItems(getSessionItems(activeSession));
+    if (activeSession) setSessionItems(await getSessionItems(activeSession));
+    // Pre-compute item counts for all sessions
+    const counts: Record<string, number> = {};
+    for (const s of [...active, ...arch]) {
+      counts[s.id] = (await getSessionItems(s.id)).length;
+    }
+    setSessionItemCounts(counts);
+    // Pre-fetch archived items for search
+    const archMap: Record<string, InboxItem[]> = {};
+    for (const s of arch) {
+      archMap[s.id] = await getSessionItems(s.id);
+    }
+    setArchivedItemsMap(archMap);
   }
   useEffect(() => { reload(); }, []);
   useEffect(() => {
-    if (activeSession) setSessionItems(getSessionItems(activeSession));
+    if (activeSession) { getSessionItems(activeSession).then(setSessionItems); }
   }, [activeSession]);
 
-  function handleCreateSession() {
-    const s = createSession(newSessionName.trim() || undefined);
+  async function handleCreateSession() {
+    const s = await createSession(newSessionName.trim() || undefined);
     setNewSessionName(""); setShowNewSession(false);
-    reload(); setActiveSession(s.id);
+    await reload(); setActiveSession(s.id);
     onToast(`جلسة "${s.name}" جديدة ✓`);
   }
 
@@ -82,11 +96,11 @@ export function SessionsPanel({ onToast }: Props) {
     reload(); onToast("تم الدمج ✓");
   }
 
-  function handleAddItem() {
+  async function handleAddItem() {
     if (!addTitle.trim() || !addContent.trim() || !activeSession) return;
-    addToSession(activeSession, "manual", "text", addTitle.trim(), addContent.trim());
+    await addToSession(activeSession, "manual", "text", addTitle.trim(), addContent.trim());
     setAddTitle(""); setAddContent(""); setShowAddItem(false);
-    reload(); onToast("أُضيف للجلسة ✓");
+    await reload(); onToast("أُضيف للجلسة ✓");
   }
 
   function handleShare(sessionId: string) {
@@ -176,7 +190,7 @@ export function SessionsPanel({ onToast }: Props) {
           const isOpen = activeSession === s.id;
           const days = daysLeft(s.createdAt);
           const sItems = isOpen ? sessionItems : [];
-          const itemCount = getSessionItems(s.id).length;
+          const itemCount = sessionItemCounts[s.id] ?? 0;
           return (
             <div key={s.id} className={`${card} overflow-hidden transition-all`}>
               {/* Session header */}
@@ -433,7 +447,7 @@ export function SessionsPanel({ onToast }: Props) {
                       const q = archiveSearch.toLowerCase();
                       // search in session name + all item titles/content
                       if (s.name.toLowerCase().includes(q)) return true;
-                      const items = getSessionItems(s.id);
+                      const items = archivedItemsMap[s.id] ?? [];
                       return items.some(it =>
                         it.title.toLowerCase().includes(q) ||
                         it.content.toLowerCase().includes(q)
@@ -448,7 +462,7 @@ export function SessionsPanel({ onToast }: Props) {
                         <span className={`block text-[12px] font-semibold truncate ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{s.name}</span>
                         <span className={`text-[10px] ${isDark ? "text-zinc-700" : "text-slate-300"}`}>
                           {s.archivedAt ? new Date(s.archivedAt).toLocaleDateString("ar-SA") : ""}
-                          {" · "}{getSessionItems(s.id).length} عنصر
+                          {" · "}{sessionItemCounts[s.id] ?? 0} عنصر
                         </span>
                       </div>
                       <button onClick={() => { restoreSession(s.id); reload(); onToast("تم استعادة الجلسة"); }}
@@ -467,7 +481,8 @@ export function SessionsPanel({ onToast }: Props) {
                     if (!archiveSearch.trim()) return false;
                     const q = archiveSearch.toLowerCase();
                     if (s.name.toLowerCase().includes(q)) return true;
-                    return getSessionItems(s.id).some(it =>
+                    const items = archivedItemsMap[s.id] ?? [];
+                    return items.some(it =>
                       it.title.toLowerCase().includes(q) || it.content.toLowerCase().includes(q)
                     );
                   }).length === 0 && archiveSearch.trim() && (

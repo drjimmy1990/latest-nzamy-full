@@ -44,9 +44,11 @@ import FloatingButtons from "@/components/FloatingButtons";
 import Link from "next/link";
 import {
   type StoredCommunityQuestion,
-  readCommunityQuestionsLocal,
+  getCommunityPosts,
   COMMUNITY_UPDATED_EVENT,
-} from "@/lib/communityStore";
+} from "@/lib/services/communityService";
+import { isSupabaseMode } from "@/lib/services/api";
+import { readCommunityQuestionsLocal } from "@/lib/communityStore";
 
 export default function CommunityPage() {
   const { isRTL, isDark } = useTheme();
@@ -64,11 +66,24 @@ export default function CommunityPage() {
 
   useEffect(() => {
     setMounted(true);
-    const loadSavedQuestions = () => setSavedQuestions(readCommunityQuestionsLocal());
+    const loadSavedQuestions = async () => {
+      if (isSupabaseMode) {
+        try {
+          const posts = await getCommunityPosts({ tab, category: category !== "all" ? category : undefined });
+          setSavedQuestions(posts);
+        } catch {
+          setSavedQuestions(readCommunityQuestionsLocal());
+        }
+      } else {
+        setSavedQuestions(readCommunityQuestionsLocal());
+      }
+    };
     loadSavedQuestions();
-    window.addEventListener(COMMUNITY_UPDATED_EVENT, loadSavedQuestions);
-    return () => window.removeEventListener(COMMUNITY_UPDATED_EVENT, loadSavedQuestions);
-  }, []);
+    if (!isSupabaseMode) {
+      window.addEventListener(COMMUNITY_UPDATED_EVENT, () => setSavedQuestions(readCommunityQuestionsLocal()));
+      return () => window.removeEventListener(COMMUNITY_UPDATED_EVENT, () => {});
+    }
+  }, [tab, category]);
 
   const bg   = isDark ? "bg-[#0c0f12] text-white"   : "bg-[#f9fafb] text-zinc-900";
   const card = `rounded-[2rem] border ${isDark ? "bg-[#161b22]/80 border-white/[0.06] backdrop-blur-xl" : "bg-white/80 border-slate-200/50 backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)]"}`;

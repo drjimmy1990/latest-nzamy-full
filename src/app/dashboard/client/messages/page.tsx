@@ -22,6 +22,8 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useChat } from "@/hooks/useChat";
+import { SkeletonThreadList, SkeletonMessages } from "../_components/DashboardSkeleton";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,73 +59,6 @@ interface Thread {
   };
   messages: Message[];
 }
-
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-
-const THREADS: Thread[] = [
-  {
-    id: "t1",
-    lawyerName: "أحمد الغامدي",
-    lawyerInitial: "أ",
-    lawyerColor: "bg-emerald-600",
-    specialty: "عمالية وتجارية",
-    caseTitle: "نزاع عمالي — فصل تعسفي",
-    caseId: "2025-001",
-    lastMessage: "تمت إضافة الجلسة في التقويم، يرجى إحضار عقد العمل الأصلي.",
-    lastTime: "منذ ساعة",
-    unread: 2,
-    status: "active",
-    // Lawyer granted 2 follow-up calls within 48h after last session
-    followUpWindow: { callsRemaining: 2, expiresAt: "غداً الساعة ٤ م", isActive: true },
-    messages: [
-      { id: "m1", sender: "system", text: "تم فتح ملف القضية رقم 2025-001 بتاريخ 1 مارس 2026", time: "1 مارس", read: true },
-      { id: "m2", sender: "lawyer", text: "أهلاً خالد، استلمت ملفك وراجعت تفاصيل القضية. لديك قضية قوية بناءً على ما وصفته. سنحتاج بعض المستندات للمضي قدماً.", time: "2 مارس", read: true },
-      { id: "m3", sender: "client", text: "أهلاً استاذ أحمد، شكراً لك. ما هي المستندات المطلوبة؟", time: "2 مارس", read: true },
-      { id: "m4", sender: "lawyer", text: "نحتاج: عقد العمل الأصلي، أي مراسلات رسمية مع جهة العمل، وكشف الراتب آخر 3 أشهر. هل يمكنك رفعها على المنصة؟", time: "3 مارس", read: true },
-      { id: "m5", sender: "client", text: "تمام، سأرفعها اليوم.", time: "3 مارس", read: true },
-      { id: "m6", sender: "lawyer", text: "ممتاز. موعد الجلسة القادمة ١٥ أبريل ٢٠٢٦ الساعة ١٠ صباحاً. تمت إضافة الجلسة في التقويم، يرجى إحضار عقد العمل الأصلي.", time: "منذ ساعة", read: false },
-      { id: "m7", sender: "lawyer", text: "كذلك يرجى الحضور قبل الموعد بـ ١٥ دقيقة للتنسيق.", time: "منذ ساعة", read: false },
-    ],
-  },
-  {
-    id: "t2",
-    lawyerName: "نظامي",
-    lawyerInitial: "ن",
-    lawyerColor: "bg-[#0B3D2E]",
-    specialty: "إدارة المنصة",
-    caseTitle: "إشعار النظام",
-    caseId: "",
-    lastMessage: "استلمنا مستنداتك — سيتم مراجعتها خلال 24 ساعة وسنعلمك بالنتيجة.",
-    lastTime: "أمس",
-    unread: 0,
-    status: "waiting",
-    messages: [
-      { id: "n1", sender: "system", text: "رسالة من فريق نظامي", time: "أمس", read: true },
-      { id: "n2", sender: "lawyer", text: "استلمنا مستنداتك — سيتم مراجعتها خلال 24 ساعة وسنعلمك بالنتيجة.", time: "أمس", read: true },
-    ],
-  },
-  {
-    id: "t3",
-    lawyerName: "سارة الزهراني",
-    lawyerInitial: "س",
-    lawyerColor: "bg-indigo-600",
-    specialty: "تجارية وعقارية",
-    caseTitle: "دعوى تجارية — عقد توريد",
-    caseId: "2025-002",
-    lastMessage: "تهانينا! صدر الحكم لصالحك. تم أرشفة هذه المحادثة.",
-    lastTime: "منذ شهر",
-    unread: 0,
-    status: "closed",
-    closedReason: "صدر الحكم وانتهت القضية بنتيجة إيجابية.",
-    messages: [
-      { id: "s1", sender: "system", text: "تم فتح ملف القضية رقم 2025-002", time: "يناير 2026", read: true },
-      { id: "s2", sender: "lawyer", text: "راجعت ملف القضية. قضية عقد التوريد واضحة قانونياً لصالحك.", time: "يناير 2026", read: true },
-      { id: "s3", sender: "lawyer", text: "تم تقديم صحيفة الدعوى. ننتظر تحديد موعد الجلسة الأولى.", time: "فبراير 2026", read: true },
-      { id: "s4", sender: "system", text: "صدر الحكم في القضية رقم 2025-002 بتاريخ مارس 2026", time: "مارس 2026", read: true },
-      { id: "s5", sender: "lawyer", text: "تهانينا خالد! صدر الحكم لصالحك بالكامل. يمكنك تحميل نسخة الحكم من ملف القضية.", time: "مارس 2026", read: true },
-    ],
-  },
-];
 
 // ─── Call Modal ───────────────────────────────────────────────────────────────
 
@@ -247,23 +182,78 @@ function ClosedBanner({ caseId, reason }: { caseId: string; reason?: string }) {
 
 export default function MessagesPage() {
   const router = useRouter();
+  const chat = useChat();
+
+  // Map ChatRoom → Thread[]
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (chat.loading) return;
+    if (chat.rooms.length === 0) {
+      setThreads([]);
+      setLoading(false);
+      return;
+    }
+    const mapped: Thread[] = chat.rooms.map((room) => ({
+      id: room.id,
+      lawyerName: room.name || "غرفة محادثة",
+      lawyerInitial: (room.name || "غ")[0],
+      lawyerColor: room.type === "case" ? "bg-emerald-600" : "bg-indigo-600",
+      specialty: "",
+      caseTitle: room.name || "",
+      caseId: room.related_id || "",
+      lastMessage: room.last_message?.content || "",
+      lastTime: room.last_message?.created_at || "",
+      unread: room.unread_count || 0,
+      status: "active" as ThreadStatus,
+      messages: [],
+    }));
+    setThreads(mapped);
+    setLoading(false);
+  }, [chat.loading, chat.rooms]);
+
+  // Load messages for active room
+  useEffect(() => {
+    if (!chat.activeRoomId || chat.messages.length === 0) return;
+    setThreads(prev => prev.map(t => {
+      if (t.id !== chat.activeRoomId) return t;
+      return {
+        ...t,
+        messages: chat.messages.map(m => ({
+          id: m.id,
+          sender: (m.sender_name === "client" ? "client" : m.message_type === "system" ? "system" : "lawyer") as MsgSender,
+          text: m.content,
+          time: m.created_at,
+          read: true,
+        })),
+      };
+    }));
+  }, [chat.activeRoomId, chat.messages]);
 
   // ── State ──
-  const [activeThreadId, setActiveThreadId] = useState<string>(THREADS[0].id);
-  const [threads, setThreads] = useState<Thread[]>(THREADS);
+  const [activeThreadId, setActiveThreadId] = useState<string>("");
   const [input, setInput] = useState("");
   const [search, setSearch] = useState("");
   const [callModal, setCallModal] = useState<null | "voice" | "video">(null);
 
+  // Auto-select first thread when loaded
+  useEffect(() => {
+    if (threads.length > 0 && !activeThreadId) {
+      setActiveThreadId(threads[0].id);
+      chat.setActiveRoom(threads[0].id);
+    }
+  }, [threads, activeThreadId, chat]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const activeThread = threads.find((t) => t.id === activeThreadId)!;
-  const isClosed = activeThread.status === "closed";
+  const activeThread = threads.find((t) => t.id === activeThreadId) || threads[0];
+  const isClosed = activeThread?.status === "closed";
 
   // Auto-scroll to bottom on new messages or thread switch
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeThreadId, activeThread.messages.length]);
+  }, [activeThreadId, activeThread?.messages?.length]);
 
   const filtered = threads.filter(
     (t) =>
@@ -276,6 +266,7 @@ export default function MessagesPage() {
 
   function selectThread(threadId: string) {
     setActiveThreadId(threadId);
+    chat.setActiveRoom(threadId);
     // Mark unread → read
     setThreads((prev) =>
       prev.map((t) =>
@@ -287,7 +278,7 @@ export default function MessagesPage() {
   }
 
   function sendMessage() {
-    if (!input.trim() || isClosed) return;
+    if (!input.trim() || isClosed || !activeThread) return;
     const text = input.trim();
     const newMsg: Message = {
       id: `msg-${Date.now()}`,
@@ -296,22 +287,38 @@ export default function MessagesPage() {
       time: "الآن",
       read: true,
     };
-    // Update both threads list AND active state atomically
+    // Update local state optimistically
     setThreads((prev) =>
       prev.map((t) =>
         t.id === activeThreadId
-          ? { ...t, messages: [...t.messages, newMsg], lastMessage: text, lastTime: "الآن" }
+          ? { ...t, lastMessage: text, lastTime: "الآن", messages: [...t.messages, newMsg] }
           : t
       )
     );
+    // Send via service
+    chat.sendMessage(text).catch(console.error);
     setInput("");
   }
+
 
   const STATUS_BADGE: Record<ThreadStatus, { label: string; cls: string }> = {
     active:  { label: "نشط",           cls: "text-emerald-600 dark:text-emerald-400" },
     waiting: { label: "قيد المراجعة",  cls: "text-amber-600 dark:text-amber-400" },
     closed:  { label: "مؤرشف",         cls: "text-gray-400" },
   };
+
+  if (loading || !activeThread) {
+    return (
+      <div className="flex h-[calc(100vh-4rem)]" dir="rtl">
+        <div className="w-full md:w-[380px] p-4">
+          <SkeletonThreadList count={3} />
+        </div>
+        <div className="hidden md:flex flex-1 items-center justify-center">
+          <SkeletonMessages count={5} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

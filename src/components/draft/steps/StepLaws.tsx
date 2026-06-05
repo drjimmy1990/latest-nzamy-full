@@ -13,7 +13,7 @@ import {
   markUsed,
   SOURCE_LABELS, SOURCE_COLORS,
   type InboxItem, type CollectorSession,
-} from "@/lib/draftInboxStore";
+} from "@/lib/services/researchService";
 import BetaReviewGate from "@/components/BetaReviewGate";
 
 interface StepLawsProps {
@@ -52,14 +52,27 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
   const [addedInbox, setAddedInbox] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    setInboxDesktop(getDesktopItems());
-    setInboxSessions(getActiveSessions());
-    if (activeInboxSession) setInboxSessionItems(getSessionItems(activeInboxSession));
+    const load = async () => {
+      setInboxDesktop(await getDesktopItems());
+      setInboxSessions(await getActiveSessions());
+      if (activeInboxSession) setInboxSessionItems(await getSessionItems(activeInboxSession));
+    };
+    load();
   }, [panelMode, activeInboxSession]);
 
   const currentInboxItems = inboxSubTab === "desktop" ? inboxDesktop : inboxSessionItems;
-  const inboxCount = inboxDesktop.filter(i => !addedInbox.has(i.id)).length +
-    inboxSessions.reduce((acc, s) => acc + getSessionItems(s.id).filter(i => !addedInbox.has(i.id)).length, 0);
+  const [inboxCount, setInboxCount] = useState(0);
+  useEffect(() => {
+    const calcCount = async () => {
+      let count = inboxDesktop.filter(i => !addedInbox.has(i.id)).length;
+      for (const s of inboxSessions) {
+        const items = await getSessionItems(s.id);
+        count += items.filter(i => !addedInbox.has(i.id)).length;
+      }
+      setInboxCount(count);
+    };
+    calcCount();
+  }, [inboxDesktop, inboxSessions, addedInbox]);
 
   /* helpers */
   function openPanel(mode: "search" | "manual" | "inbox") {
@@ -97,7 +110,7 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
     setSelectedInbox(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
 
-  function addSelectedFromInbox() {
+  async function addSelectedFromInbox() {
     const toAdd = currentInboxItems.filter(i => selectedInbox.has(i.id));
     if (!toAdd.length) return;
     const appended = toAdd.map(i => `• ${i.title}\n${i.content}`).join("\n\n");
@@ -105,9 +118,9 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
     markUsed(Array.from(selectedInbox));
     setAddedInbox(prev => new Set([...prev, ...selectedInbox]));
     setSelectedInbox(new Set());
-    setInboxDesktop(getDesktopItems());
-    setInboxSessions(getActiveSessions());
-    if (activeInboxSession) setInboxSessionItems(getSessionItems(activeInboxSession));
+    setInboxDesktop(await getDesktopItems());
+    setInboxSessions(await getActiveSessions());
+    if (activeInboxSession) setInboxSessionItems(await getSessionItems(activeInboxSession));
   }
 
   return (
@@ -157,7 +170,7 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
 
           {/* Tab 1 — Inbox from tools */}
           <button
-            onClick={() => { openPanel("inbox"); setInboxDesktop(getDesktopItems()); setInboxSessions(getActiveSessions()); }}
+            onClick={async () => { openPanel("inbox"); setInboxDesktop(await getDesktopItems()); setInboxSessions(await getActiveSessions()); }}
             className={`flex-1 relative flex items-center gap-2 px-3 py-3.5 text-right transition-colors border-l ${isDark ? "border-white/[0.06]" : "border-zinc-100"} ${
               panelMode === "inbox"
                 ? isDark ? "bg-purple-900/10" : "bg-purple-50/60"

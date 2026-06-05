@@ -16,7 +16,7 @@ import {
   ShareNetwork, Warning,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { addToInbox, type InboxSource } from "@/lib/draftInboxStore";
+import { addToInbox, type InboxSource } from "@/lib/services/researchService";
 import { useUser } from "@/hooks/useUser";
 
 
@@ -95,9 +95,9 @@ export default function AiResultActions({
     URL.revokeObjectURL(url);
   }
 
-  function handleCollector() {
+  async function handleCollector() {
     try {
-      addToInbox(
+      await addToInbox(
         collectorSource,
         "text",
         filename.replace(/-/g, " "),

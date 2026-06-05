@@ -9,7 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { addToDesktop, addToSession, getActiveSessions, createSession, type CollectorSession } from "@/lib/draftInboxStore";
+import { addToDesktop, addToSession, getActiveSessions, createSession, type CollectorSession } from "@/lib/services/researchService";
 import { ClientMediaResultTab, CLIENT_MEDIA_FLAGS } from "./ClientMediaPanel";
 import InputPhase, { type CaseFile, type MediaItem } from "./InputPhase";
 
@@ -151,18 +151,18 @@ export default function AttachmentSqueezer({ isDark, isRTL }: Props) {
     ].join("\n");
   }
 
-  function openExportPopup() {
-    setSessions(getActiveSessions());
+  async function openExportPopup() {
+    setSessions(await getActiveSessions());
     setShowExportPopup(true);
   }
 
-  function doExport(target: "desktop" | string) {
+  async function doExport(target: "desktop" | string) {
     const md = buildReportMarkdown();
     const title = `ملف مرجعي — ${files.map(f=>f.name).join(" · ").slice(0, 50)}`;
     if (target === "desktop") {
-      addToDesktop("attachment-squeezer", "case", title, md);
+      await addToDesktop("attachment-squeezer", "case", title, md);
     } else {
-      addToSession(target, "attachment-squeezer", "case", title, md);
+      await addToSession(target, "attachment-squeezer", "case", title, md);
     }
     setExportDone(true);
     setShowExportPopup(false);
@@ -170,9 +170,9 @@ export default function AttachmentSqueezer({ isDark, isRTL }: Props) {
     setNewSessionName("");
   }
 
-  function handleCreateAndExport() {
-    const s = createSession(newSessionName.trim() || undefined);
-    doExport(s.id);
+  async function handleCreateAndExport() {
+    const s = await createSession(newSessionName.trim() || undefined);
+    await doExport(s.id);
   }
 
   const canProceed = answers.length > 0 && answers.every(a => a.trim().length > 0);

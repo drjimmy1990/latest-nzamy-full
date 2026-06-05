@@ -208,6 +208,16 @@ export default function WalletPage() {
           <span className={isDark ? "text-zinc-300" : "text-zinc-600"}>محفظتي والمكافآت</span>
         </div>
 
+        {/* ── Demo Data Banner ── */}
+        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-[12px] ${
+          isDark
+            ? "bg-amber-900/10 border-amber-700/20 text-amber-400"
+            : "bg-amber-50 border-amber-200 text-amber-700"
+        }`}>
+          <Clock size={16} weight="duotone" className="flex-shrink-0" />
+          <span>البيانات المعروضة توضيحية — سيتم تحديثها تلقائياً عند ربط حسابك.</span>
+        </div>
+
         {/* ── Hero Balance Card ── */}
         <motion.div
           custom={0} variants={fadeUp} initial="hidden" animate="visible"

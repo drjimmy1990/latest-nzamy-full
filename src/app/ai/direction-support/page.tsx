@@ -12,7 +12,7 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
-import { addToInbox } from "@/lib/draftInboxStore";
+import { addToInbox } from "@/lib/services/researchService";
 import { GlobalCaseCard, PrecedentCard } from "./direction-support.cards";
 import {
   BADGE_COLORS,
@@ -57,8 +57,8 @@ export default function DirectionSupportPage() {
   const canProcess = direction.trim().length >= 20 && !!branch && anySrc && anyMode;
 
   // Send item to Saye'gh inbox
-  const handleSendToSayegh = useCallback((title: string, content: string, type: "text" | "precedent" | "case" | "principle") => {
-    addToInbox("direction-support", type, title, content);
+  const handleSendToSayegh = useCallback(async (title: string, content: string, type: "text" | "precedent" | "case" | "principle") => {
+    await addToInbox("direction-support", type, title, content);
     setBasketCount(p => p + 1);
     setSentId(title); setTimeout(() => setSentId(null), 2000);
   }, []);

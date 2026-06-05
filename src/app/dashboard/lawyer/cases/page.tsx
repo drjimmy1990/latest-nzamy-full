@@ -11,7 +11,8 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import { readWorkflowRequestsByReceiver, type WorkflowRequest } from "@/lib/workflowStore";
+import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
+import type { WorkflowRequest } from "@/lib/workflowStore";
 import type { CaseStatus, CaseType, CourtDegree, Priority, KanbanCol, CollabFilter, ViewMode, KanbanGroupBy, Case } from "./_types";
 import AddCaseModal from "../_components/AddCaseModal";
 import EmptyState from "@/components/ui/EmptyState";
@@ -20,7 +21,6 @@ import EmptyState from "@/components/ui/EmptyState";
 
 
 import {
-  MOCK_CASES,
   workflowToCase,
   COURTS_LIST,
   DEGREE_LABELS,
@@ -44,7 +44,8 @@ export default function CasesPage() {
   const [degreeFilter,  setDegreeFilter]  = useState<CourtDegree | "all">("all");
   const [priorityFilter,setPriorityFilter]= useState<Priority | "all">("all");
   const [courtFilter,   setCourtFilter]   = useState<string>("all");
-  const [cases,         setCases]         = useState(MOCK_CASES);
+  const [cases,         setCases]         = useState<Case[]>([]);
+  const [loading,       setLoading]       = useState(true);
   const [showAddCase,   setShowAddCase]   = useState(false);
   const [collabFilter,  setCollabFilter]  = useState<CollabFilter>("all"); // S59
   const [archiveSearch, setArchiveSearch] = useState(""); // S82
@@ -62,16 +63,23 @@ export default function CasesPage() {
   }, []);
 
   useEffect(() => {
-    const syncCases = () => {
-      const workflowCases = readWorkflowRequestsByReceiver("lawyer")
-        .filter(request => request.type === "service")
-        .map(workflowToCase);
-      setCases([...workflowCases, ...MOCK_CASES]);
+    const syncCases = async () => {
+      try {
+        const requests = await getWorkflowRequestsByReceiver("lawyer");
+        const workflowCases = requests
+          .filter(request => request.type === "service")
+          .map(workflowToCase);
+        setCases(workflowCases);
+      } catch {
+        setCases([]);
+      } finally {
+        setLoading(false);
+      }
     };
 
     syncCases();
-    window.addEventListener("nzamy-workflow-updated", syncCases);
-    return () => window.removeEventListener("nzamy-workflow-updated", syncCases);
+    window.addEventListener("nzamy-workflow-updated", () => syncCases());
+    return () => window.removeEventListener("nzamy-workflow-updated", () => {});
   }, []);
 
   const card = isDark
@@ -81,9 +89,9 @@ export default function CasesPage() {
   // All team members
   const allTeam = useMemo(() => {
     const s = new Set<string>();
-    MOCK_CASES.forEach(c => c.team.forEach(m => s.add(m)));
+    cases.forEach(c => c.team.forEach(m => s.add(m)));
     return Array.from(s);
-  }, []);
+  }, [cases]);
 
   // Filtered cases
   const activeCases = cases.filter(c => c.status !== "archived");
@@ -124,7 +132,7 @@ export default function CasesPage() {
     archived: archivedCases.length,
   };
 
-  const criticalCount = MOCK_CASES.filter(c => c.hasDeadline).length;
+  const criticalCount = cases.filter(c => c.hasDeadline).length;
 
   // ─── VIEWS ────────────────────────────────────────────────────────────────
 

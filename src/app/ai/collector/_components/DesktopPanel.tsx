@@ -7,7 +7,7 @@ import {
   getDesktopItems, clearDesktop, removeFromInbox, markUsed, mergeItems,
   addToDesktop, SOURCE_LABELS, SOURCE_COLORS,
   type InboxItem, type InboxSource,
-} from "@/lib/draftInboxStore";
+} from "@/lib/services/researchService";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -24,7 +24,7 @@ export function DesktopPanel({ onToast }: Props) {
   const [mergeTitle, setMergeTitle] = useState("");
   const [showMerge, setShowMerge] = useState(false);
 
-  const reload = () => setItems(getDesktopItems());
+  const reload = async () => setItems(await getDesktopItems());
   useEffect(() => { reload(); }, []);
 
   const filtered = items.filter(i =>
@@ -37,11 +37,11 @@ export function DesktopPanel({ onToast }: Props) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
 
-  function handleAdd() {
+  async function handleAdd() {
     if (!addTitle.trim() || !addContent.trim()) return;
-    addToDesktop("manual", "text", addTitle.trim(), addContent.trim());
+    await addToDesktop("manual", "text", addTitle.trim(), addContent.trim());
     setAddTitle(""); setAddContent(""); setShowAdd(false);
-    reload(); onToast("أُضيف للديسك توب ✓");
+    await reload(); onToast("أُضيف للديسك توب ✓");
   }
 
   function handleDelete(id: string) { removeFromInbox(id); reload(); onToast("تم الحذف"); }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUser } from "@/hooks/useUser";
 import { useTheme } from "@/components/ThemeProvider";
@@ -12,7 +12,7 @@ import {
   Bell, Hourglass, Plus,
   Flag, Lock, Crown, ArrowRight, Storefront,
   Buildings, ArrowSquareOut, ShieldCheck,
-  Timer, Folder,
+  Timer, Folder, Money, Briefcase,
 } from "@phosphor-icons/react";
 import HijriDateWidget from "@/components/HijriDateWidget";
 import Link from "next/link";
@@ -36,16 +36,44 @@ const TIER_CONFIG: Record<LawyerTier, {
   premium: { labelAr: "المميز",        labelEn: "Premium",  color: "text-[#C8A762]",  bg: "bg-[#C8A762]/10",   border: "border-[#C8A762]/30", canDraft: true,  canScribe: true,  caseLimit: null, consultLimit: null },
 };
 
-// MOCK — swap with real user subscription from API
-const LAWYER_TIER: LawyerTier = "starter";
-
 // Local imports
 import AddCaseModal from "./_components/AddCaseModal";
 import AddTaskModal from "./_components/AddTaskModal";
-import {
-  STATS, TASKS, RECENT_CASES, ACTIVITY_TIMELINE,
-  AI_QUICK, UPCOMING_DEADLINES, ACTIVITY_TYPE_CONFIG,
-} from "./_data/mockData";
+import { AI_QUICK, ACTIVITY_TYPE_CONFIG } from "./_data/mockData";
+import { getLawyerDashboardSummary, type LawyerDashboardSummary } from "@/lib/services/lawyerDashboardService";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Map API case status to display shape */
+function mapStatus(status: string): "active" | "pending" {
+  return ["assigned", "in_progress"].includes(status) ? "active" : "pending";
+}
+
+/** Relative-time label for an ISO date string */
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "الآن";
+  if (mins < 60) return `منذ ${mins} دقيقة`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `منذ ${hrs} ساعة`;
+  const days = Math.floor(hrs / 24);
+  return `منذ ${days} يوم`;
+}
+
+/** Days remaining until a given ISO date */
+function daysUntil(iso: string): number {
+  return Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000));
+}
+
+/** Map event_type to an activity type for the icon config */
+function mapEventType(eventType: string): string {
+  if (eventType.includes("ai")) return "ai";
+  if (eventType.includes("urgent") || eventType.includes("overdue")) return "urgent";
+  if (eventType.includes("complet") || eventType.includes("success")) return "success";
+  if (eventType.includes("warn") || eventType.includes("reject")) return "warning";
+  return "info";
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -56,12 +84,112 @@ export default function LawyerDashboardPage() {
   const [showAddCase, setShowAddCase] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState<LawyerDashboardSummary | null>(null);
 
-  // Simulated initial load — swap setTimeout for real API call when backend is ready
+  // Fetch real dashboard data from Supabase-backed service
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 600);
-    return () => clearTimeout(t);
+    getLawyerDashboardSummary()
+      .then((data) => {
+        setDashboardData(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
+
+  // ─── Derived tier ─────────────────────────────────────────────────────────
+  const lawyerTier: LawyerTier = "free"; // TODO: derive from profile/subscription API
+
+  // ─── Computed stats ───────────────────────────────────────────────────────
+  const stats = useMemo(() => {
+    if (!dashboardData) return [];
+    return [
+      { label: "القضايا النشطة", value: String(dashboardData.activeCases), icon: Scales, color: "text-royal", bg: "bg-royal/8", trend: "", trendLabel: "نشطة", up: true },
+      { label: "الاستشارات المعلقة", value: String(dashboardData.pendingConsultations), icon: Briefcase, color: "text-amber-500", bg: "bg-amber-500/8", trend: "", trendLabel: "بانتظار رد", up: false },
+      { label: "الجلسات القادمة", value: String((dashboardData.upcomingDeadlines as unknown[]).length), icon: Gavel, color: "text-blue-500", bg: "bg-blue-500/8", trend: "", trendLabel: "قادمة", up: true },
+      { label: "الإيرادات", value: dashboardData.revenueThisMonth > 0 ? `${dashboardData.revenueThisMonth.toLocaleString("ar-SA")} ﷼` : "٠ ﷼", icon: Money, color: "text-emerald-500", bg: "bg-emerald-500/8", trend: "", trendLabel: "هذا الشهر", up: dashboardData.revenueThisMonth > 0 },
+    ];
+  }, [dashboardData]);
+
+  // ─── Computed tasks (from recent cases) ────────────────────────────────────
+  const tasks = useMemo(() => {
+    if (!dashboardData) return [];
+    const cases = dashboardData.recentCases as Array<{ id: string; title: string; updated_at?: string; type?: string }>;
+    return cases.slice(0, 4).map((c, i) => ({
+      id: i + 1,
+      title: c.title || "مهمة",
+      dueDate: c.updated_at ? relativeTime(c.updated_at) : "—",
+      priority: (i === 0 ? "high" : i === 1 ? "medium" : "low") as "high" | "medium" | "low",
+      category: c.type || "عام",
+    }));
+  }, [dashboardData]);
+
+  // ─── Computed recent cases ────────────────────────────────────────────────
+  const recentCases = useMemo(() => {
+    if (!dashboardData) return [];
+    const cases = dashboardData.recentCases as Array<{ id: string; title: string; status: string; updated_at?: string; type?: string; metadata?: { next_step?: string } }>;
+    return cases.map((c) => ({
+      id: c.id,
+      title: c.title || "—",
+      status: mapStatus(c.status),
+      date: c.updated_at ? relativeTime(c.updated_at) : "—",
+      nextStep: c.metadata?.next_step || "—",
+      type: c.type || "عام",
+    }));
+  }, [dashboardData]);
+
+  // ─── Computed activity timeline ───────────────────────────────────────────
+  const activityTimeline = useMemo(() => {
+    if (!dashboardData) return [];
+    const events = dashboardData.recentActivity as Array<{ id: string; event_type: string; payload?: { action?: string; case_ref?: string }; created_at: string; request_id?: string }>;
+    return events.map((e, i) => ({
+      id: i + 1,
+      time: relativeTime(e.created_at),
+      action: e.payload?.action || e.event_type || "نشاط",
+      type: mapEventType(e.event_type) as "warning" | "success" | "info" | "urgent" | "ai",
+      caseRef: e.payload?.case_ref || e.request_id || "—",
+      category: (e.event_type.includes("ai") ? "ai" : "manual") as "ai" | "manual" | "system",
+    }));
+  }, [dashboardData]);
+
+  // ─── Computed deadlines ───────────────────────────────────────────────────
+  const upcomingDeadlines = useMemo(() => {
+    if (!dashboardData) return [];
+    const items = dashboardData.upcomingDeadlines as Array<{ id: string; scheduled_at: string; type?: string }>;
+    return items.map((d) => {
+      const days = daysUntil(d.scheduled_at);
+      return {
+        label: d.type || "موعد قادم",
+        date: new Date(d.scheduled_at).toLocaleDateString("ar-SA", { day: "numeric", month: "long" }),
+        daysLeft: days,
+        severity: (days <= 2 ? "urgent" : days <= 7 ? "warning" : "normal") as "urgent" | "warning" | "normal",
+      };
+    });
+  }, [dashboardData]);
+
+  // ─── Computed hearings (from upcomingDeadlines) ───────────────────────────
+  const hearings = useMemo(() => {
+    if (!dashboardData) return [];
+    const items = dashboardData.upcomingDeadlines as Array<{ id: string; scheduled_at: string; type?: string }>;
+    return items.slice(0, 3).map((d, i) => {
+      const days = daysUntil(d.scheduled_at);
+      const dateObj = new Date(d.scheduled_at);
+      const dateLabel = days === 0 ? "اليوم" : days === 1 ? "غداً" : dateObj.toLocaleDateString("ar-SA", { weekday: "long" });
+      const timeLabel = dateObj.toLocaleTimeString("ar-SA", { hour: "numeric", minute: "2-digit" });
+      const palette = [
+        { color: "text-red-500",   bg: isDark ? "bg-red-500/10"   : "bg-red-50",   borderColor: isDark ? "border-red-500/20"   : "border-red-200" },
+        { color: "text-amber-500", bg: isDark ? "bg-amber-500/10" : "bg-amber-50", borderColor: isDark ? "border-amber-500/20" : "border-amber-200" },
+        { color: "text-blue-500",  bg: isDark ? "bg-blue-500/10"  : "bg-blue-50",  borderColor: isDark ? "border-blue-500/20"  : "border-blue-200" },
+      ];
+      const c = palette[i % palette.length];
+      return {
+        court: d.type || "جلسة",
+        case: d.type || "موعد قادم",
+        date: dateLabel,
+        time: timeLabel,
+        ...c,
+      };
+    });
+  }, [dashboardData, isDark]);
 
   if (loading) return <LawyerDashboardSkeleton />;
 
@@ -81,7 +209,7 @@ export default function LawyerDashboardPage() {
     ])
   ) as Record<string, { icon: React.ElementType; color: string; bg: string; border: string }>;
 
-  const filteredTimeline = ACTIVITY_TIMELINE.filter(
+  const filteredTimeline = activityTimeline.filter(
     item => activityTab === "all" || item.category === "ai"
   );
 
@@ -128,7 +256,7 @@ export default function LawyerDashboardPage() {
       </div>
 
       {/* ── Subscription Banner ── */}
-      {(LAWYER_TIER === "free" || LAWYER_TIER === "starter") && (
+      {(lawyerTier === "free" || lawyerTier === "starter") && (
         <motion.div
           initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
           className={`rounded-2xl p-4 border flex flex-wrap items-center gap-3 ${
@@ -140,10 +268,10 @@ export default function LawyerDashboardPage() {
           </div>
           <div className="flex-1 min-w-0">
             <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>
-              باقة {TIER_CONFIG[LAWYER_TIER].labelAr} — الصائغ القانوني ومفرغ الجلسات غير متاحَين
+              باقة {TIER_CONFIG[lawyerTier].labelAr} — الصائغ القانوني ومفرغ الجلسات غير متاحَين
             </p>
             <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-              {LAWYER_TIER === "free"
+              {lawyerTier === "free"
                 ? `حد الاشتراك: ${TIER_CONFIG.free.caseLimit} قضايا · ${TIER_CONFIG.free.consultLimit} استشارة`
                 : `حد الاشتراك: ${TIER_CONFIG.starter.caseLimit} قضايا · ${TIER_CONFIG.starter.consultLimit} استشارات`
               } · ترقَّ للاحترافي أو المميز للوصول الكامل
@@ -158,8 +286,20 @@ export default function LawyerDashboardPage() {
         </motion.div>
       )}
 
+      {/* ── Demo Data Banner ── */}
+      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+        className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+          <Warning size={18} weight="fill" className="text-amber-500" />
+        </div>
+        <div>
+          <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
+          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>لوحة التحكم تعرض بياناتك الفعلية — في حال عدم وجود بيانات ستظهر حالة فارغة</p>
+        </div>
+      </motion.div>
+
       {/* ── Urgent Deadlines Banner ── */}
-      {UPCOMING_DEADLINES.some(d => d.severity === "urgent") && (
+      {upcomingDeadlines.some(d => d.severity === "urgent") && (
         <motion.div
           initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
           className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-700/30 bg-red-900/10" : "border-red-200 bg-red-50"}`}
@@ -170,10 +310,10 @@ export default function LawyerDashboardPage() {
           <div className="flex-1">
             <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>
               <Warning size={14} weight="fill" className="inline mb-0.5 me-1" />
-              لديك موعد طعن خلال يومين — {UPCOMING_DEADLINES[0].label}
+              لديك موعد طعن خلال يومين — {upcomingDeadlines[0].label}
             </p>
             <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-red-600/60"}`}>
-              {UPCOMING_DEADLINES[0].date} — تأكد من تحضير المستندات المطلوبة
+              {upcomingDeadlines[0].date} — تأكد من تحضير المستندات المطلوبة
             </p>
           </div>
           <Link href="/dashboard/lawyer/hearings"
@@ -247,7 +387,11 @@ export default function LawyerDashboardPage() {
 
       {/* ── KPI Stats ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {STATS.map((stat, i) => {
+        {stats.length === 0 ? (
+          <div className={`col-span-full text-center py-8 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+            <p className="text-sm">لا توجد إحصائيات حالياً</p>
+          </div>
+        ) : stats.map((stat, i) => {
           const Icon = stat.icon;
           return (
             <motion.div
@@ -278,6 +422,8 @@ export default function LawyerDashboardPage() {
       </div>
 
       {/* ── Secondment Banner (shown when lawyer has active secondments) ── */}
+      {/* Hidden: no real secondment data yet — UI code preserved */}
+      {false && (
       <motion.div
         initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
@@ -328,6 +474,7 @@ export default function LawyerDashboardPage() {
           إدارة الانتدابات
         </Link>
       </motion.div>
+      )}
 
       {/* ── Second Grid: Tasks + Hearings + Deadlines ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -341,7 +488,11 @@ export default function LawyerDashboardPage() {
             <Link href="/dashboard/lawyer/tasks" className="text-xs text-royal hover:underline">عرض الكل</Link>
           </div>
           <div className="space-y-2 flex-1">
-            {TASKS.map((task) => (
+            {tasks.length === 0 ? (
+              <div className={`text-center py-6 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                <p className="text-xs">لا توجد مهام عاجلة حالياً</p>
+              </div>
+            ) : tasks.map((task) => (
               <div
                 key={task.id}
                 className={`flex items-start gap-2.5 p-3 rounded-xl border transition-colors cursor-pointer ${isDark ? "border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.04]" : "border-slate-100 bg-slate-50/80 hover:bg-slate-100/60"}`}
@@ -372,11 +523,11 @@ export default function LawyerDashboardPage() {
             <Link href="/dashboard/lawyer/hearings" className="text-xs text-royal hover:underline">الجدول الكامل</Link>
           </div>
           <div className="space-y-2.5">
-            {[
-              { court: "المحكمة التجارية",  case: "نزاع شركة الأفق",  date: "غداً",    time: "٩:٠٠ ص",  color: "text-red-500",   bg: isDark ? "bg-red-500/10"   : "bg-red-50",   borderColor: isDark ? "border-red-500/20"   : "border-red-200" },
-              { court: "المحكمة العمالية",  case: "قضية فصل تعسفي",  date: "الأربعاء", time: "١١:٠٠ ص", color: "text-amber-500", bg: isDark ? "bg-amber-500/10" : "bg-amber-50", borderColor: isDark ? "border-amber-500/20" : "border-amber-200" },
-              { court: "محكمة الاستئناف",   case: "استئناف العقار ٢١٣", date: "الخميس",  time: "٢:٠٠ م",  color: "text-blue-500",  bg: isDark ? "bg-blue-500/10"  : "bg-blue-50",  borderColor: isDark ? "border-blue-500/20"  : "border-blue-200" },
-            ].map((h, i) => (
+            {hearings.length === 0 ? (
+              <div className={`text-center py-6 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                <p className="text-xs">لا توجد جلسات قادمة</p>
+              </div>
+            ) : hearings.map((h, i) => (
               <div key={i} className={`p-3.5 rounded-xl border ${h.borderColor} ${h.bg}`}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className={`text-[11px] font-bold ${h.color}`}>{h.date} · {h.time}</span>
@@ -397,7 +548,11 @@ export default function LawyerDashboardPage() {
             </h2>
           </div>
           <div className="space-y-2">
-            {UPCOMING_DEADLINES.map((d, i) => {
+            {upcomingDeadlines.length === 0 ? (
+              <div className={`text-center py-6 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                <p className="text-xs">لا توجد مواعيد حرجة</p>
+              </div>
+            ) : upcomingDeadlines.map((d, i) => {
               const severityConfig = {
                 urgent:  { bar: "bg-red-500",   text: isDark ? "text-red-400"   : "text-red-600",   bg: isDark ? "bg-red-500/10"   : "bg-red-50",   border: isDark ? "border-red-500/20"   : "border-red-200" },
                 warning: { bar: "bg-amber-500", text: isDark ? "text-amber-400" : "text-amber-600", bg: isDark ? "bg-amber-500/10" : "bg-amber-50", border: isDark ? "border-amber-500/20" : "border-amber-200" },
@@ -461,9 +616,14 @@ export default function LawyerDashboardPage() {
           </div>
           <div className="space-y-0 flex-1 relative mt-2">
             <div className={`absolute top-3 bottom-3 w-px ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`} style={{ right: "13px" }} />
+            {filteredTimeline.length === 0 ? (
+              <div className={`text-center py-8 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                <p className="text-xs">لا يوجد نشاط حالياً</p>
+              </div>
+            ) : (
             <AnimatePresence mode="popLayout">
               {filteredTimeline.map((item, i) => {
-                const config = activityIconMap[item.type];
+                const config = activityIconMap[item.type] ?? activityIconMap["info"];
                 const ActivityIcon = config.icon;
                 return (
                   <motion.div
@@ -492,6 +652,7 @@ export default function LawyerDashboardPage() {
                 );
               })}
             </AnimatePresence>
+            )}
           </div>
         </div>
 
@@ -515,7 +676,13 @@ export default function LawyerDashboardPage() {
                 </tr>
               </thead>
               <tbody className={`divide-y ${isDark ? "divide-white/[0.04]" : "divide-slate-50"}`}>
-                {RECENT_CASES.map((c) => (
+                {recentCases.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className={`text-center py-8 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                      <p className="text-xs">لا توجد قضايا نشطة حالياً</p>
+                    </td>
+                  </tr>
+                ) : recentCases.map((c) => (
                   <tr key={c.id} className={`group transition-colors ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-slate-50/50"}`}>
                     <td className="py-3.5">
                       <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{c.title}</p>
@@ -563,8 +730,8 @@ export default function LawyerDashboardPage() {
             const Icon = item.icon;
             // Lock الصائغ ومحترف العقود (can act as المفرغ) for free/starter
             const isLocked =
-              (item.href === "/ai/draft" && !TIER_CONFIG[LAWYER_TIER].canDraft) ||
-              (item.href === "/ai/contracts" && !TIER_CONFIG[LAWYER_TIER].canScribe);
+              (item.href === "/ai/draft" && !TIER_CONFIG[lawyerTier].canDraft) ||
+              (item.href === "/ai/contracts" && !TIER_CONFIG[lawyerTier].canScribe);
 
             if (isLocked) {
               return (

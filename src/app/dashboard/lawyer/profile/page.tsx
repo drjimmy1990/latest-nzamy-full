@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   UserCircle, Star, Gavel, Certificate, Phone, Envelope,
-  MapPin, PencilSimple, SealCheck, Scales,
+  MapPin, PencilSimple, SealCheck, Scales, Warning,
   Globe, LinkedinLogo, TwitterLogo,
   FilePdf, ShareNetwork, Users, BookOpen, FileText,
   Trophy, Lightning, Target, Lock, CheckCircle,
@@ -190,6 +190,18 @@ export default function LawyerProfilePage() {
     <>
     <div className="max-w-5xl mx-auto space-y-5" dir="rtl">
 
+      {/* ── بانر بيانات تجريبية ── */}
+      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+        className={`rounded-2xl p-4 border flex items-center gap-3 mb-5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+          <Warning size={18} weight="fill" className="text-amber-500" />
+        </div>
+        <div>
+          <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بعض الإحصائيات تجريبية</p>
+          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>الإنجازات والتحليلات ستُحدَّث تلقائياً مع الاستخدام</p>
+        </div>
+      </motion.div>
+
       {/* Header hero card */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
         className={`${card} overflow-hidden`}>
@@ -209,7 +221,7 @@ export default function LawyerProfilePage() {
               <div className="min-w-0 flex-1 pb-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className={`text-xl font-bold leading-snug ${isDark ? "text-white" : "text-slate-800"}`}>
-                    {MOCK_PROFILE.name}
+                    {user.name || MOCK_PROFILE.name}
                   </h1>
                   {MOCK_PROFILE.verified && (
                     <SealCheck size={18} weight="fill" className="text-[#C8A762]" />

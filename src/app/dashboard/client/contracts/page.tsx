@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, useInView } from 'framer-motion';
 import Link from 'next/link';
+import { SkeletonList } from '../_components/DashboardSkeleton';
 import {
   FileText, Pen, CheckCircle, Clock, WarningCircle, PlusCircle, MagnifyingGlass,
   ArrowUpRight, FolderOpen, CalendarBlank, ArrowRight, ClockClockwise, SealCheck,
@@ -36,114 +37,6 @@ interface Contract {
   value: string | null;
 }
 
-const MOCK_CONTRACTS: Contract[] = [
-  {
-    id: '1',
-    title: 'عقد أتعاب محاماة — المحامي الزهراني',
-    party: 'محمد الزهراني',
-    type: 'أتعاب محاماة',
-    status: 'active',
-    signedAt: '١ فبراير ٢٠٢٦',
-    expiresAt: '١ فبراير ٢٠٢٧',
-    value: '١٢,٠٠٠ ر.س',
-  },
-  {
-    id: '2',
-    title: 'عقد الوساطة العقارية — شركة الإتقان',
-    party: 'شركة الإتقان العقارية',
-    type: 'وساطة',
-    status: 'pending_signature',
-    signedAt: null,
-    expiresAt: '٣٠ أبريل ٢٠٢٦',
-    value: '٨,٥٠٠ ر.س',
-  },
-  {
-    id: '3',
-    title: 'اتفاقية سرية مشروع ألفا',
-    party: 'شركة مشاريع ألفا المحدودة',
-    type: 'NDA',
-    status: 'expired',
-    signedAt: '١٥ يناير ٢٠٢٥',
-    expiresAt: '١٥ يناير ٢٠٢٦',
-    value: null,
-  },
-  {
-    id: '4',
-    title: 'مسودة عقد توريد معدات',
-    party: 'غير محدد',
-    type: 'توريد',
-    status: 'draft',
-    signedAt: null,
-    expiresAt: null,
-    value: null,
-  },
-];
-
-const ACTIVITY_LOG: ActivityEvent[] = [
-  {
-    id: 'a1',
-    type: 'signed',
-    actor: 'محمد الزهراني',
-    actorRole: 'lawyer',
-    message: 'وقّع المحامي على عقد الأتعاب',
-    date: '١ فبراير ٢٠٢٦ — ١٠:٣٢ ص',
-    contractId: '1',
-  },
-  {
-    id: 'a2',
-    type: 'ai_analyzed',
-    actor: 'نظامي AI',
-    actorRole: 'ai',
-    message: 'تم تحليل العقد والتحقق من البنود — ٣ ملاحظات طفيفة',
-    date: '٣١ يناير ٢٠٢٦ — ١٥:٠٠',
-    contractId: '1',
-  },
-  {
-    id: 'a3',
-    type: 'signed',
-    actor: 'أنت',
-    actorRole: 'client',
-    message: 'وقّعت على عقد الأتعاب إلكترونياً',
-    date: '١ فبراير ٢٠٢٦ — ٨:١٥ ص',
-    contractId: '1',
-  },
-  {
-    id: 'a4',
-    type: 'created',
-    actor: 'نظامي',
-    actorRole: 'system',
-    message: 'تم إنشاء عقد الأتعاب وإرساله للمراجعة',
-    date: '٢٨ يناير ٢٠٢٦ — ١١:٠٠ ص',
-    contractId: '1',
-  },
-  {
-    id: 'a5',
-    type: 'sent',
-    actor: 'شركة الإتقان',
-    actorRole: 'lawyer',
-    message: 'تم إرسال عقد الوساطة للتوقيع',
-    date: '٢٠ مارس ٢٠٢٦ — ٩:٠٠ ص',
-    contractId: '2',
-  },
-  {
-    id: 'a6',
-    type: 'viewed',
-    actor: 'أنت',
-    actorRole: 'client',
-    message: 'قرأت عقد الوساطة (٣ مرات)',
-    date: '٢١ مارس ٢٠٢٦ — ١٤:٢٢',
-    contractId: '2',
-  },
-  {
-    id: 'a7',
-    type: 'expired',
-    actor: 'النظام',
-    actorRole: 'system',
-    message: 'انتهت صلاحية اتفاقية السرية تلقائياً',
-    date: '١٥ يناير ٢٠٢٦ — ٠٠:٠٠',
-    contractId: '3',
-  },
-];
 
 const activityTypeConfig: Record<ActivityEvent['type'], { icon: typeof CheckCircle; color: string; bg: string; darkColor: string; darkBg: string }> = {
   created: { icon: PlusCircle, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', darkColor: 'text-blue-400', darkBg: 'bg-blue-900/30 border-blue-700/50' },
@@ -279,7 +172,9 @@ export default function ClientContractsPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ContractStatus | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | null>('1');
-  const [contracts, setContracts] = useState<Contract[]>(MOCK_CONTRACTS);
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [activityLog, setActivityLog] = useState<ActivityEvent[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const toContract = (request: WorkflowRequest): Contract => ({
@@ -292,17 +187,26 @@ export default function ClientContractsPage() {
       expiresAt: null,
       value: request.payment.amount ? `${request.payment.amount} ر.س` : null,
     });
+    const toActivity = (request: WorkflowRequest): ActivityEvent => ({
+      id: `act-${request.id}`,
+      type: 'created',
+      actor: 'نظامي AI',
+      actorRole: 'ai',
+      message: `تم إنشاء مسودة: ${request.title}`,
+      date: request.createdAt || '',
+      contractId: request.id,
+    });
     listClientWorkflowRequests({ requesterUserId: user.userId })
       .then((requests) => {
-        const saved = requests
-          .filter((request) => request.type === 'ai_draft')
-          .map(toContract);
-        if (saved.length) {
-          setContracts([...saved, ...MOCK_CONTRACTS]);
-          setSelectedId((current) => current ?? saved[0]?.id ?? '1');
-        }
+        const drafts = requests.filter((r) => r.type === 'ai_draft');
+        const mapped = drafts.map(toContract);
+        const activities = drafts.map(toActivity);
+        setContracts(mapped);
+        setActivityLog(activities);
+        if (mapped.length) setSelectedId(mapped[0]?.id ?? null);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [user.userId]);
 
   const filtered = useMemo(() => {
@@ -321,7 +225,7 @@ export default function ClientContractsPage() {
   }, [filtered, selectedId]);
 
   const selectedContract = contracts.find((c) => c.id === selectedId) ?? null;
-  const selectedActivity = ACTIVITY_LOG.filter((e) => e.contractId === selectedId);
+  const selectedActivity = activityLog.filter((e) => e.contractId === selectedId);
 
   const tabs: { key: ContractStatus | 'all'; label: string }[] = [
     { key: 'all', label: 'الكل' },
@@ -330,6 +234,8 @@ export default function ClientContractsPage() {
     { key: 'expired', label: 'منتهية' },
     { key: 'draft', label: 'مسودات' },
   ];
+
+  if (loading) return <div className="p-6 md:p-8 max-w-[1300px] mx-auto" dir="rtl"><SkeletonList count={4} /></div>;
 
   return (
     <div className={`p-6 md:p-8 max-w-[1300px] mx-auto ${isDark ? "text-white" : "text-zinc-900"}`} dir="rtl" suppressHydrationWarning>

@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tray, Monitor, FolderOpen, PaperPlaneTilt, ArrowLeft, CheckCircle } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { getDesktopUnusedCount, getActiveSessions, runAutoArchive } from "@/lib/draftInboxStore";
+import { getDesktopUnusedCount, getActiveSessions } from "@/lib/services/researchService";
+import { runAutoArchive } from "@/lib/draftInboxStore";
 import { DesktopPanel } from "./_components/DesktopPanel";
 import { SessionsPanel } from "./_components/SessionsPanel";
 import Link from "next/link";
@@ -18,10 +19,10 @@ export default function CollectorPage() {
   const [sessionCount, setSessionCount] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
 
-  function refreshCounts() {
+  async function refreshCounts() {
     runAutoArchive();
     setDesktopCount(getDesktopUnusedCount());
-    setSessionCount(getActiveSessions().length);
+    setSessionCount((await getActiveSessions()).length);
   }
 
   useEffect(() => { refreshCounts(); }, []);

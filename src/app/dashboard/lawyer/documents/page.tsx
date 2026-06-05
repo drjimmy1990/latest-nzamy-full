@@ -1,29 +1,47 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FolderOpen, MagnifyingGlass, Plus, UploadSimple,
   ArrowUpRight, DotsThree, Download, Eye, CalendarBlank,
   GridFour, List, Sparkle, CaretLeft, CaretRight,
   BookOpen, FileMagnifyingGlass, FunnelSimple, Archive, X,
+  Warning,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import {
-  type LegalBranch, type Party, type TemplateCategory,
+  type Doc, type LegalBranch, type Party, type TemplateCategory,
   type Template,
   APPEAL_TYPES, APPEAL_BRANCHES, APPEAL_SPECIALTIES,
   CATEGORY_SUBTYPES, LEGAL_BRANCHES, PARTY_CONFIG,
-  DOC_CATS, TMPL_CAT_CONFIG, MOCK_DOCS, TEMPLATES,
+  DOC_CATS, TMPL_CAT_CONFIG, TEMPLATES,
 } from "./_taxonomy";
 import { SmartTemplateModal } from "./SmartTemplateModal";
 import { TYPE_ICON, TYPE_COLOR, TMPL_CAT_CONFIG_ICONS } from "./_ui-config";
+import { getDocuments } from "@/lib/services/documentService";
+import type { Document } from "@/lib/services/documentService";
 
 // Page
+
+function apiDocToDoc(d: Document): Doc {
+  const typeMap: Record<string, Doc["type"]> = { pdf: "pdf", docx: "docx", doc: "docx", png: "image", jpg: "image", jpeg: "image" };
+  const ext = d.file_name.split(".").pop()?.toLowerCase() ?? "";
+  return {
+    id: d.id,
+    name: d.file_name,
+    type: typeMap[ext] ?? "other",
+    category: "briefs",
+    size: d.file_size,
+    date: new Date(d.created_at).toLocaleDateString("ar-SA"),
+  };
+}
 
 export default function DocumentsPage() {
   const { isDark } = useTheme();
 
+  const [docs,          setDocs]          = useState<Doc[]>([]);
+  const [docsLoading,   setDocsLoading]   = useState(true);
   const [mainTab,       setMainTab]       = useState<"docs" | "templates">("docs");
   const [search,        setSearch]        = useState("");
   const [docCat,        setDocCat]        = useState("all");
@@ -37,6 +55,20 @@ export default function DocumentsPage() {
   const [showArchive,   setShowArchive]   = useState(false);
   const [advancedOpen,  setAdvancedOpen]  = useState(false);
   const [smartTmpl,     setSmartTmpl]     = useState<Template | null>(null);
+
+  useEffect(() => {
+    const fetchDocs = async () => {
+      try {
+        const apiDocs = await getDocuments();
+        setDocs(apiDocs.map(apiDocToDoc));
+      } catch {
+        setDocs([]);
+      } finally {
+        setDocsLoading(false);
+      }
+    };
+    fetchDocs();
+  }, []);
 
   // ─ Appeals 3-level state ─
   const [appealType,    setAppealType]    = useState<string>("all");
@@ -71,7 +103,7 @@ export default function DocumentsPage() {
 
   // Filtered docs
   const filteredDocs = useMemo(() =>
-    MOCK_DOCS.filter(d => {
+    docs.filter(d => {
       if (d.archived && !showArchive) return false;
       const matchCat     = docCat === "all" || d.category === docCat;
       const matchSub     = docSubtype === "all" || d.subtype === docSubtype;
@@ -80,7 +112,7 @@ export default function DocumentsPage() {
       const matchSearch  = !search || d.name.includes(search) || d.caseTitle?.includes(search) || d.tags?.some(t => t.includes(search));
       return matchCat && matchSub && matchBranch && matchParty && matchSearch;
     })
-  , [search, docCat, docSubtype, docBranch, docParty, showArchive]);
+  , [search, docCat, docSubtype, docBranch, docParty, showArchive, docs]);
 
   const filteredTmpl = useMemo(() =>
     TEMPLATES.filter(t =>
@@ -102,7 +134,7 @@ export default function DocumentsPage() {
           <h1 className={`text-2xl font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`}
               style={{ fontFamily: "var(--font-brand)" }}>مخزن المستندات</h1>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {MOCK_DOCS.length} مستند · {TEMPLATES.length} نموذج جاهز
+            {docs.length} مستند · {TEMPLATES.length} نموذج جاهز
           </p>
         </div>
         <div className="flex gap-2">
@@ -119,7 +151,7 @@ export default function DocumentsPage() {
       {/* Main Tab Switch */}
       <div className={`flex rounded-2xl p-1 ${isDark ? "bg-zinc-800/80 border border-white/[0.06]" : "bg-slate-100/80 border border-slate-200"}`}>
         {([
-          { key: "docs",      label: "مستنداتي",       count: MOCK_DOCS.length },
+          { key: "docs",      label: "مستنداتي",       count: docs.length },
           { key: "templates", label: "النماذج الجاهزة", count: TEMPLATES.length },
         ] as const).map(tab => (
           <button key={tab.key} onClick={() => setMainTab(tab.key)}
@@ -164,7 +196,7 @@ export default function DocumentsPage() {
           <div className="flex gap-1.5 overflow-x-auto">
             {DOC_CATS.map(cat => {
               const isAppeals = cat.key === "appeals";
-              const count = cat.key === "all" ? MOCK_DOCS.length : isAppeals ? 0 : MOCK_DOCS.filter(d => d.category === cat.key).length;
+              const count = cat.key === "all" ? docs.length : isAppeals ? 0 : docs.filter(d => d.category === cat.key).length;
               const isActive = docCat === cat.key;
               return (
                 <button key={cat.key}

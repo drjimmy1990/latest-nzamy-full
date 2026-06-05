@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Archive, MagnifyingGlass, Gavel, User, FileText,
   FolderOpen, ArrowCounterClockwise, Eye, CaretLeft,
-  Clock, Buildings, Tag, CalendarBlank, ArrowUpRight,
+  Clock, Buildings, Tag, CalendarBlank, ArrowUpRight, Warning,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
@@ -182,6 +182,18 @@ export default function UnifiedArchivePage() {
 
   return (
     <div className="max-w-[1000px] mx-auto space-y-5" dir="rtl">
+
+      {/* بيانات تجريبية Banner */}
+      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+        className={`rounded-2xl p-4 border flex items-center gap-3 mb-5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+          <Warning size={18} weight="fill" className="text-amber-500" />
+        </div>
+        <div>
+          <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
+          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>الأرشيف سيعرض البيانات الحقيقية قريباً</p>
+        </div>
+      </motion.div>
 
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}

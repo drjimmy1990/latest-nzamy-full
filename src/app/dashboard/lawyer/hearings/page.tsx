@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarCheck, Clock, MapPin, Gavel, Plus, Warning,
@@ -32,6 +32,7 @@ function toHijri(gDate: Date): { day: number; month: number; year: number } {
 }
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
 import AddHearingModal from "../_components/AddHearingModal";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -61,37 +62,8 @@ const EVENT_CONFIG: Record<EventType,{icon:React.ElementType;label:string;color:
   internal:      {icon:CheckSquare, label:"مهمة داخلية",  color:"#94a3b8"},
 };
 
-// ─── Linked Tasks Mini-DB ──────────────────────────────────────────────────────
-const LINKED_TASKS: Record<string,{id:string;title:string;done:boolean;priority:string}[]> = {
-  "1":[
-    {id:"lt1",title:"صياغة لائحة اعتراضية — قضية الأفق",done:false,priority:"urgent"},
-    {id:"lt2",title:"مراجعة مذكرة الخبير المضادة",done:true,priority:"high"},
-    {id:"lt3",title:"ميعاد تقديم مذكرة رد — نزاع تجاري",done:false,priority:"high"},
-  ],
-  "3":[
-    {id:"lt4",title:"استلام شهادة التسجيل للتأمينات",done:false,priority:"high"},
-    {id:"lt5",title:"تجهيز وكالة الحضور",done:true,priority:"normal"},
-  ],
-  "4":[
-    {id:"lt6",title:"تجهيز مذكرة الطعن للاستئناف",done:false,priority:"urgent"},
-    {id:"lt7",title:"توقيع المذكرة قبل نهاية الدوام",done:false,priority:"urgent"},
-  ],
-};
-
-// ─── Mock Data ─────────────────────────────────────────────────────────────────
-const MOCK_EVENTS: CalEvent[] = [
-  {id:"e2",type:"deadline",title:"آخر موعد طعن — استئناف العقار",client:"سارة الدوسري",caseId:"4",caseName:"استئناف عقار ٢١٣",location:"محكمة الاستئناف",date:"غداً",dateSort:1,time:"١١:٥٩ م",urgency:"critical",deadlineDaysLeft:1,notes:"⚠ ميعاد طعن قانوني — لا تأجيل — تُقدَّم المذكرة قبل انتهاء الدوام",workflow:[{label:"تجهيز مذكرة الطعن",done:true},{label:"مراجعة الأسباب القانونية",done:true},{label:"توقيع المحامي",done:false},{label:"تقديم الطعن",done:false},{label:"حفظ ما يثبت التقديم",done:false}]},
-  {id:"e_d2",type:"deadline",title:"ميعاد تقديم مذكرة رد — نزاع تجاري",client:"شركة الأفق",caseId:"1",caseName:"نزاع تجاري — الأفق",location:"المحكمة التجارية",date:"٢ مايو",dateSort:12,time:"١١:٥٩ م",urgency:"high",deadlineDaysLeft:12,notes:"مذكرة الرد على المدعى عليه — مطلوبة خلال ١٢ يوماً",workflow:[{label:"مراجعة لائحة الخصم",done:true},{label:"صياغة الرد القانوني",done:false},{label:"إرفاق المستندات الداعمة",done:false},{label:"تقديم المذكرة",done:false}]},
-  {id:"e1",type:"hearing",title:"جلسة استماع — نزاع تجاري",client:"شركة الأفق",caseId:"1",caseName:"نزاع تجاري — الأفق",location:"المحكمة التجارية — قاعة ٣",date:"اليوم",dateSort:0,time:"٩:٠٠ ص",urgency:"critical",notes:"تقديم مذكرة الخبير المضادة — يجب أن تكون جاهزة قبل ٨:٤٥ ص",workflow:[{label:"مراجعة أوراق القضية",done:true},{label:"إعداد مذكرة الخبير",done:true},{label:"الحضور للمحكمة",done:false},{label:"تدوين محضر الجلسة",done:false},{label:"تحديث سجل القضية",done:false}]},
-  {id:"e3",type:"gov_review",title:"مراجعة التأمينات الاجتماعية",client:"خالد القحطاني",caseId:"3",caseName:"قضية عمالية — القحطاني",location:"المؤسسة العامة للتأمينات",date:"غداً",dateSort:1,time:"١٠:٠٠ ص",urgency:"high",notes:"استلام شهادة التسجيل المحدثة والتحقق من سجل الاشتراكات",workflow:[{label:"تجهيز وكالة الحضور",done:true},{label:"طلب كشف المستفيدين",done:false},{label:"استلام شهادة التسجيل",done:false}]},
-  {id:"e4",type:"notary",title:"توثيق عقد إيجار — المالك وزاهد",client:"أحمد الزاهد",location:"كتابة عدل — الأفلاج",date:"الأربعاء",dateSort:2,time:"١١:٠٠ ص",urgency:"normal",workflow:[{label:"مراجعة بنود العقد",done:true},{label:"إحضار الهويات",done:false},{label:"توثيق رسمي",done:false}]},
-  {id:"e5",type:"client_meet",title:"موعد موكل — ريم المطيري",client:"ريم المطيري",location:"مكتب المحامي",date:"الخميس",dateSort:3,time:"٢:٠٠ م",urgency:"normal",notes:"مناقشة آخر مستجدات قضية الحضانة",workflow:[{label:"تحضير ملخص القضية",done:false},{label:"طباعة آخر أوامر المحكمة",done:false}]},
-  {id:"e6",type:"court_collect",title:"استلام محضر جلسة — نزاع ملكية فكرية",client:"مجموعة الذهبي",location:"المحكمة التجارية — قسم البريد",date:"الخميس",dateSort:3,time:"٩:٣٠ ص",urgency:"normal",workflow:[{label:"مراجعة رقم طلب الاستلام",done:false},{label:"الذهاب لقسم التوثيق",done:false},{label:"رفع المحضر على النظام",done:false}]},
-  {id:"e7",type:"police",title:"بلاغ تزوير — مركز شرطة الأفلاج",client:"شركة الأفق",location:"مركز شرطة الأفلاج",date:"السبت",dateSort:5,time:"١٠:٠٠ ص",urgency:"high",workflow:[{label:"إعداد ملف الشكوى",done:true},{label:"استشارة قانونية أولية",done:true},{label:"تقديم البلاغ",done:false},{label:"الحصول على رقم القضية",done:false}]},
-  {id:"e8",type:"contract",title:"توقيع عقد شراكة — شركة النور",client:"شركة النور",location:"مكتب المحامي",date:"٥ مايو",dateSort:15,time:"٤:٠٠ م",urgency:"normal",workflow:[{label:"المراجعة القانونية النهائية",done:false},{label:"تحضير نسختين للتوقيع",done:false}]},
-  {id:"e9",type:"expert",title:"جلسة خبير — قضية فصل تعسفي",client:"خالد القحطاني",caseId:"3",caseName:"قضية عمالية — القحطاني",location:"المحكمة العمالية — قسم الخبراء",date:"١٠ مايو",dateSort:20,time:"٩:٠٠ ص",urgency:"high",workflow:[{label:"إعداد ملاحظات الخبير",done:false},{label:"طباعة العقود التي يطلبها",done:false}]},
-  {id:"e_arch1",type:"hearing",done:true,title:"جلسة استماع أولى — فسخ إيجار",client:"أحمد الزاهد",location:"المحكمة العامة",date:"١٥ مارس",dateSort:-30,time:"١١:٠٠ ص",urgency:"normal",workflow:[{label:"الحضور للجلسة",done:true},{label:"رفع مذكرة المرافعة",done:true}]},
-];
+// ─── Linked Tasks Mini-DB (empty — will be populated from service) ─────────────
+const LINKED_TASKS: Record<string,{id:string;title:string;done:boolean;priority:string}[]> = {};
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const AR_MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
@@ -469,6 +441,8 @@ function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
 // ─── Page ──────────────────────────────────────────────────────────────────────
 export default function LawyerHearingsPage() {
   const {isDark} = useTheme();
+  const [events, setEvents] = useState<CalEvent[]>([]);
+  const [loading, setLoading] = useState(true);
   const [viewMode,setViewMode] = useState<ViewMode>("list");
   const [timeFilter,setTimeFilter] = useState<"all"|"today"|"week"|"month"|"deadlines"|"archive">("all");
   const [typeFilter,setTypeFilter] = useState<EventType|"all">("all");
@@ -478,10 +452,20 @@ export default function LawyerHearingsPage() {
   const [showDeadlinesOnly,setShowDeadlinesOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false); // To toggle advanced filters
 
+  // ─── Fetch hearings from service ────────────────────────────────────────────
+  useEffect(() => {
+    getWorkflowRequestsByReceiver("lawyer")
+      .then((data) => {
+        setEvents(data as unknown as CalEvent[]);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
   const card = isDark?"rounded-3xl border border-white/[0.06] bg-zinc-900/50":"rounded-3xl border border-slate-100 bg-white shadow-sm";
 
   const filtered = useMemo(()=>{
-    let evs = MOCK_EVENTS;
+    let evs = events;
     if(timeFilter==="today")     evs=evs.filter(e=>e.dateSort===0);
     if(timeFilter==="week")      evs=evs.filter(e=>e.dateSort>=0&&e.dateSort<=7);
     if(timeFilter==="month")     evs=evs.filter(e=>e.dateSort>=0&&e.dateSort<=30);
@@ -493,12 +477,12 @@ export default function LawyerHearingsPage() {
     if(urgencyFilter!=="all") evs=evs.filter(e=>e.urgency===urgencyFilter);
     if(search.trim()){const q=search.toLowerCase();evs=evs.filter(e=>e.title.includes(q)||e.client?.includes(q)||e.location?.includes(q));}
     return evs;
-  },[timeFilter,typeFilter,urgencyFilter,search,showDeadlinesOnly]);
+  },[events,timeFilter,typeFilter,urgencyFilter,search,showDeadlinesOnly]);
 
-  const deadlineCount = MOCK_EVENTS.filter(e=>e.type==="deadline"&&!e.done&&e.dateSort>=0).length;
-  const todayCount    = MOCK_EVENTS.filter(e=>e.dateSort===0&&!e.done).length;
+  const deadlineCount = events.filter(e=>e.type==="deadline"&&!e.done&&e.dateSort>=0).length;
+  const todayCount    = events.filter(e=>e.dateSort===0&&!e.done).length;
   const groups = groupByDate(filtered);
-  const typeCounts = Object.entries(EVENT_CONFIG).map(([k,v])=>({key:k as EventType,label:v.label,count:MOCK_EVENTS.filter(e=>e.type===k&&!e.done&&e.dateSort>=0).length})).filter(t=>t.count>0);
+  const typeCounts = Object.entries(EVENT_CONFIG).map(([k,v])=>({key:k as EventType,label:v.label,count:events.filter(e=>e.type===k&&!e.done&&e.dateSort>=0).length})).filter(t=>t.count>0);
 
   const TIME_OPTIONS = [
     {key:"all" as const,    label:"الكل"},
@@ -508,7 +492,7 @@ export default function LawyerHearingsPage() {
     {key:"deadlines" as const, label:`طعون (${deadlineCount})`},
     {key:"archive" as const,label:"الأرشيف"},
   ];
-  const TYPE_OPTIONS  = [{key:"all" as const,label:`الكل (${MOCK_EVENTS.filter(e=>!e.done&&e.dateSort>=0).length})`},...typeCounts];
+  const TYPE_OPTIONS  = [{key:"all" as const,label:`الكل (${events.filter(e=>!e.done&&e.dateSort>=0).length})`},...typeCounts];
   const URGENCY_OPTIONS = [
     {key:"all" as const,      label:"جميع المستويات"},
     {key:"critical" as const, label:"حرجة",  dot:"bg-red-500"},
@@ -518,6 +502,20 @@ export default function LawyerHearingsPage() {
 
   return (
     <div className="max-w-[860px] mx-auto space-y-5" dir="rtl">
+
+      {/* Demo Banner */}
+      {!loading && events.length === 0 && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+            <Warning size={18} weight="fill" className="text-amber-500" />
+          </div>
+          <div>
+            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>لا توجد جلسات قادمة — أضف موعداً جديداً أو اربط حسابك بقاعدة البيانات</p>
+          </div>
+        </motion.div>
+      )}
 
       {/* Deadline banner */}
       {deadlineCount>0&&!showDeadlinesOnly&&timeFilter==="all"&&(
@@ -554,7 +552,7 @@ export default function LawyerHearingsPage() {
             <h1 className={`text-xl font-bold mb-1 ${isDark?"text-white":"text-slate-800"}`}>المواعيد والجلسات</h1>
             <p className={`text-[12px] ${isDark?"text-zinc-500":"text-slate-500"}`}>
               {todayCount>0&&<span className="text-red-500 font-bold">{todayCount} موعد اليوم · </span>}
-              {MOCK_EVENTS.filter(e=>!e.done&&e.dateSort>=0).length} مجدولة 
+              {events.filter(e=>!e.done&&e.dateSort>=0).length} مجدولة 
             </p>
           </div>
           
@@ -610,7 +608,7 @@ export default function LawyerHearingsPage() {
       <AnimatePresence mode="wait">
         {viewMode==="calendar"?(
           <motion.div key="cal" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
-            <CalendarView events={filtered.length>0?filtered:MOCK_EVENTS} isDark={isDark}/>
+            <CalendarView events={filtered.length>0?filtered:events} isDark={isDark}/>
           </motion.div>
         ):(
           <motion.div key="list" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-6">

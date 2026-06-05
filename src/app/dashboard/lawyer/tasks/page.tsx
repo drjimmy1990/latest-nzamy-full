@@ -7,18 +7,21 @@ import {
   Archive, ArrowCounterClockwise, Trash,
   Trophy, X, UsersThree, User,
   FolderOpen, CalendarBlank, CalendarDot, CalendarCheck, ChartBar, CalendarStar, Timer,
+  Warning,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import EmptyState from "@/components/ui/EmptyState";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { CasePicker } from "@/components/ui/CasePicker";
-import { getActiveCases, SHARED_CASES } from "@/lib/casesStore";
+import { getActiveCases } from "@/lib/services/casesService";
+import { getLawyerTasks } from "@/lib/services/lawyerTasksService";
+import { SHARED_CASES } from "@/lib/casesStore";
 import { useUser } from "@/hooks/useUser";
 import ReactConfetti from "react-confetti";
 
 // Internal
 import type { Task, TaskStatus, TaskCategory, ViewMode, TimeRange, KanbanGroupBy, Priority } from "./_types";
-import { INIT_TASKS, KANBAN_COLS, CATEGORY_CONFIG, PRIORITY_CONFIG, today, playSuccessBeep } from "./_data";
+import { KANBAN_COLS, CATEGORY_CONFIG, PRIORITY_CONFIG, today, playSuccessBeep } from "./_data";
 import { TaskCard, TaskGamification } from "./_components/TaskCard";
 import PomodoroPanel from "./_components/PomodoroPanel";
 import { getBenchmarks, getPerformanceContext, getPerformanceSnapshot } from "../_data/performance";
@@ -37,7 +40,9 @@ export default function LawyerTasksPage() {
   const { isDark } = useTheme();
   const user = useUser();
   const [showPomodoro, setShowPomodoro] = useState(false);
-  const [tasks, setTasks] = useState<Task[]>(INIT_TASKS);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [pomodoroBonus, setPomodoroBonus] = useState(0);
   const [filter, setFilter] = useState<TaskStatus | "all" | "archived">("all");
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
@@ -61,6 +66,16 @@ export default function LawyerTasksPage() {
     const handleResize = () => setWinSize({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // ─── Fetch tasks from service ───────────────────────────────────────────────
+  useEffect(() => {
+    getLawyerTasks()
+      .then((data) => {
+        setTasks(data as unknown as Task[]);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   const showAchievement = (title: string) => {
@@ -183,9 +198,10 @@ export default function LawyerTasksPage() {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t));
   }, []);
 
-  const addTask = () => {
+  const addTask = async () => {
     if (!newTask.trim()) return;
-    const linked = getActiveCases().find(c => c.id === taskCaseId);
+    const activeCasesList = await getActiveCases();
+    const linked = activeCasesList.find(c => c.id === taskCaseId);
     const newTaskObj: Task = {
       id: Date.now().toString(), title: newTask,
       category: taskCategory, priority: "normal", status: "todo",
@@ -216,6 +232,19 @@ export default function LawyerTasksPage() {
 
   return (
     <div className="max-w-[1240px] mx-auto space-y-5 relative" dir="rtl">
+      {/* Demo Banner */}
+      {!loading && tasks.length === 0 && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+            <Warning size={18} weight="fill" className="text-amber-500" />
+          </div>
+          <div>
+            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>لا توجد مهام بعد — أضف مهمة جديدة أو اربط حسابك بقاعدة البيانات</p>
+          </div>
+        </motion.div>
+      )}
       {/* Confetti */}
       {showConfetti && (
         <div className="fixed inset-0 z-[10000] pointer-events-none">

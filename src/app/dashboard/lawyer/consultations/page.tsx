@@ -12,7 +12,8 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import { readWorkflowRequestsByReceiver, type WorkflowRequest } from "@/lib/workflowStore";
+import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
+import type { WorkflowRequest } from "@/lib/workflowStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,16 +38,7 @@ interface Consultation {
   aiSummary?:  string;
 }
 
-// ─── Mock Data ─────────────────────────────────────────────────────────────────
-
-const MOCK_CONSULTS: Consultation[] = [
-  { id: "1", client: "عبدالله الحارثي",  clientType: "individual", topic: "استشارة عمالية — فسخ عقد",      date: "غداً",       time: "١٠:٠٠ ص", mode: "video",    status: "upcoming",  isPaid: true,  fee: 800,  duration: 60,  caseId: "C-1023" },
-  { id: "2", client: "نورة العتيبي",     clientType: "individual", topic: "مراجعة عقد إيجار",               date: "٢٣ أبريل",  time: "٢:٠٠ م",  mode: "phone",    status: "upcoming",  isPaid: true,  fee: 400,  duration: 30 },
-  { id: "3", client: "شركة الأفق",       clientType: "company",    topic: "نزاع تجاري مع شريك",             date: "اليوم",      time: "٩:٣٠ ص",  mode: "inPerson", status: "completed", isPaid: true,  fee: 1500, duration: 90, notes: "اتُّفق على خطوات التسوية", aiSummary: "أوصى المحامي بمراسلة الشريك رسمياً بإنهاء الشراكة وفق المادة ٦٣ من نظام الشركات، مع إبقاء خيار التسوية الودية مفتوحاً قبل اللجوء للقضاء." },
-  { id: "4", client: "هند الشمري",       clientType: "individual", topic: "قضية طلاق وحضانة",               date: "أمس",        time: "١١:٠٠ ص", mode: "chat",     status: "completed", isPaid: true,  fee: 600,  duration: 45, aiSummary: "ناقشنا حقوق حضانة الأطفال وفق نظام الأحوال الشخصية — يُوصى برفع دعوى حضانة مصحوبة بطلب نفقة مؤقتة." },
-  { id: "5", client: "سعد المالكي",      clientType: "individual", topic: "استشارة تأسيس شركة",             date: "٢٢ أبريل",  time: "٤:٠٠ م",  mode: "phone",    status: "cancelled", isPaid: false, fee: 400,  duration: 30 },
-  { id: "6", client: "مجموعة الرياض",   clientType: "company",    topic: "مراجعة عقود توريد سنوية",        date: "اليوم",      time: "٣:٠٠ م",  mode: "inPerson", status: "inProgress", isPaid: true, fee: 3000, duration: 120 },
-];
+// ─── UI Config ─────────────────────────────────────────────────────────────────
 
 const MODE_ICONS = { video: Video, phone: Phone, chat: ChatCircle, inPerson: HouseSimple };
 const MODE_LABELS = { video: "فيديو", phone: "هاتف", chat: "دردشة", inPerson: "حضوري" };
@@ -419,23 +411,31 @@ export default function ConsultationsPage() {
   const [filter, setFilter] = useState<ConsultStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [showBooking, setShowBooking] = useState(false);
-  const [consults, setConsults] = useState<Consultation[]>(MOCK_CONSULTS);
+  const [consults, setConsults] = useState<Consultation[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
   useEffect(() => {
-    const syncConsultations = () => {
-      const workflowConsults = readWorkflowRequestsByReceiver("lawyer")
-        .filter(request => request.type === "consultation")
-        .map(workflowToConsultation);
-      setConsults([...workflowConsults, ...MOCK_CONSULTS]);
+    const syncConsultations = async () => {
+      try {
+        const requests = await getWorkflowRequestsByReceiver("lawyer");
+        const workflowConsults = requests
+          .filter(request => request.type === "consultation")
+          .map(workflowToConsultation);
+        setConsults(workflowConsults);
+      } catch {
+        setConsults([]);
+      } finally {
+        setLoading(false);
+      }
     };
 
     syncConsultations();
-    window.addEventListener("nzamy-workflow-updated", syncConsultations);
-    return () => window.removeEventListener("nzamy-workflow-updated", syncConsultations);
+    window.addEventListener("nzamy-workflow-updated", () => syncConsultations());
+    return () => window.removeEventListener("nzamy-workflow-updated", () => {});
   }, []);
 
   const filtered = consults.filter(c => {

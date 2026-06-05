@@ -11,8 +11,7 @@ import {
   DownloadSimple, LockSimple, UserFocus,
 } from "@phosphor-icons/react";
 import Link from "next/link";
-import { addToDesktop, addToSession, getActiveSessions } from "@/lib/draftInboxStore";
-import type { CollectorSession } from "@/lib/draftInboxStore";
+import { addToDesktop, addToSession, getActiveSessions, type CollectorSession } from "@/lib/services/researchService";
 
 interface Props {
   isDark: boolean;
@@ -102,18 +101,18 @@ export function CrossExamResultView({ isDark, card, onReset }: Props) {
     ].join("\n");
   }
 
-  function openExport() {
-    setSessions(getActiveSessions());
+  async function openExport() {
+    setSessions(await getActiveSessions());
     setShowExportPopup(true);
   }
 
-  function doExport(target: "desktop" | string) {
+  async function doExport(target: "desktop" | string) {
     const md = buildReport();
     const title = "بطارية أسئلة الاستجواب";
     if (target === "desktop") {
-      addToDesktop("attachment-squeezer", "research", title, md);
+      await addToDesktop("attachment-squeezer", "research", title, md);
     } else {
-      addToSession(target, "attachment-squeezer", "research", title, md);
+      await addToSession(target, "attachment-squeezer", "research", title, md);
     }
     setExported(true);
     setShowExportPopup(false);

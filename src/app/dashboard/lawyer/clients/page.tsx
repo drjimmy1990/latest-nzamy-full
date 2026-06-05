@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User, MagnifyingGlass, Plus, Phone, Gavel, Clock, CaretLeft,
@@ -10,11 +10,10 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import { CLIENT_CASES, CLIENT_TASKS } from "@/app/dashboard/lawyer/_data/clientLinks";
+import { getLawyerClients } from "@/lib/services/lawyerClientsService";
 import EmptyState from "@/components/ui/EmptyState";
 
-
-import { type Client, type ClientFlag, type SortKey, MOCK_CLIENTS, FLAG_CONFIG } from "@/constants/lawyerClientsData";
+import { type Client, type ClientFlag, type SortKey, FLAG_CONFIG } from "@/constants/lawyerClientsData";
 import AddClientModal from "@/components/dashboard/lawyer/AddClientModal";
 import ClientDrawer from "@/components/dashboard/lawyer/ClientDrawer";
 
@@ -25,7 +24,8 @@ export default function ClientsPage() {
   const { isDark } = useTheme();
 
   const [search,     setSearch]     = useState("");
-  const [clients,    setClients]    = useState<Client[]>(MOCK_CLIENTS);
+  const [clients,    setClients]    = useState<Client[]>([]);
+  const [loading,    setLoading]    = useState(true);
   const [activeFlags, setActiveFlags] = useState<Set<ClientFlag>>(new Set());
   const [sortKey,    setSortKey]    = useState<SortKey>("lastContact");
   const [showModal,  setShowModal]  = useState(false);
@@ -70,12 +70,36 @@ export default function ClientsPage() {
 
   const onAdd = (c: Client) => setClients(prev => [c, ...prev]);
 
+  // ─── Fetch clients from service ──────────────────────────────────────────────
+  useEffect(() => {
+    getLawyerClients()
+      .then((data) => {
+        setClients(data as unknown as Client[]);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
   return (
     <>
     <AnimatePresence>
       {drawerClient && <ClientDrawer client={drawerClient} isDark={isDark} onClose={() => setDrawerClient(null)} />}
     </AnimatePresence>
     <div className="max-w-[1100px] mx-auto space-y-5" dir="rtl">
+
+      {/* Demo Banner */}
+      {!loading && clients.length === 0 && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+            <Warning size={18} weight="fill" className="text-amber-500" />
+          </div>
+          <div>
+            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>لا توجد موكلون بعد — أضف موكّلاً جديداً أو اربط حسابك بقاعدة البيانات</p>
+          </div>
+        </motion.div>
+      )}
 
       {/* Add Client Modal */}
       {showModal && <AddClientModal isDark={isDark} onClose={() => setShowModal(false)} onAdd={onAdd} />}
@@ -179,7 +203,7 @@ export default function ClientsPage() {
         </p>
         <div className="flex flex-wrap gap-2">
           {(Object.entries(FLAG_CONFIG) as [ClientFlag, typeof FLAG_CONFIG[ClientFlag]][]).map(([flag, conf]) => {
-            const count   = MOCK_CLIENTS.filter(c => c.flags.includes(flag)).length;
+            const count   = clients.filter(c => c.flags.includes(flag)).length;
             if (count === 0) return null;
             const active  = activeFlags.has(flag);
             return (

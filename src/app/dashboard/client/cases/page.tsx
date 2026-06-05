@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, useInView } from 'framer-motion';
 import Link from 'next/link';
+import { getActiveCases } from '@/lib/services';
+import { SkeletonList } from '../_components/DashboardSkeleton';
 import {
   Scales, CalendarBlank, ArrowUpRight, Clock,
   CheckCircle, Hourglass, PlusCircle, MagnifyingGlass,
@@ -27,44 +29,7 @@ interface Case {
   lastUpdate: string;
 }
 
-const MOCK_CASES: Case[] = [
-  {
-    id: '1',
-    title: 'قضية فصل تعسفي — ضد شركة المشاريع الرائدة',
-    caseNumber: '٤٥٦٧/١٤٤٦',
-    lawyer: 'محمد الزهراني',
-    court: 'المحكمة العمالية — الرياض',
-    type: 'عمالية',
-    status: 'active',
-    nextSession: '١٥ أبريل ٢٠٢٦',
-    openedAt: '١ فبراير ٢٠٢٦',
-    lastUpdate: 'منذ يومين',
-  },
-  {
-    id: '2',
-    title: 'نزاع عقاري — منح الأرض بحي النخيل',
-    caseNumber: '٢١٣٠/١٤٤٦',
-    lawyer: 'سارة العتيبي',
-    court: 'المحكمة العامة — جدة',
-    type: 'عقاري',
-    status: 'pending',
-    nextSession: null,
-    openedAt: '١٠ مارس ٢٠٢٦',
-    lastUpdate: 'منذ أسبوع',
-  },
-  {
-    id: '3',
-    title: 'قضية ديون تجارية — مستحقات متأخرة',
-    caseNumber: '٨٩١٢/١٤٤٥',
-    lawyer: 'خالد الدوسري',
-    court: 'المحكمة التجارية — الدمام',
-    type: 'تجارية',
-    status: 'closed',
-    nextSession: null,
-    openedAt: '٥ يناير ٢٠٢٥',
-    lastUpdate: 'مُغلقة بتاريخ ١ مارس ٢٠٢٦',
-  },
-];
+
 
 const statusConfig: Record<CaseStatus, { label: string; lightBadge: string; darkBadge: string; icon: typeof CheckCircle }> = {
   active: { label: 'نشطة', lightBadge: 'bg-emerald-50 text-emerald-700 border-emerald-200', darkBadge: 'bg-emerald-900/30 text-emerald-400 border-emerald-700/50', icon: Scales },
@@ -148,9 +113,31 @@ export default function ClientCasesPage() {
   const [filter, setFilter] = useState<CaseStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [showNewCase, setShowNewCase] = useState(false);
+  const [cases, setCases] = useState<Case[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getActiveCases()
+      .then(data => {
+        setCases(data.map(c => ({
+          id: c.id,
+          title: c.title || '',
+          caseNumber: c.id,
+          lawyer: c.client || '',
+          court: c.court || '',
+          type: c.type || 'general',
+          status: (c.status === 'active' ? 'active' : c.status === 'pending' ? 'pending' : 'closed') as CaseStatus,
+          nextSession: c.nextDate || null,
+          openedAt: '',
+          lastUpdate: '',
+        })));
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = useMemo(() => {
-    return MOCK_CASES.filter((c) => {
+    return cases.filter((c) => {
       const matchFilter = filter === 'all' || c.status === filter;
       const nq = normalizeDigits(search.trim().toLowerCase());
       const matchSearch = !search.trim() ||
@@ -159,14 +146,16 @@ export default function ClientCasesPage() {
         normalizeDigits(c.lawyer.toLowerCase()).includes(nq);
       return matchFilter && matchSearch;
     });
-  }, [filter, search]);
+  }, [cases, filter, search]);
 
   const counts = useMemo(() => ({
-    all: MOCK_CASES.length,
-    active: MOCK_CASES.filter((c) => c.status === 'active').length,
-    pending: MOCK_CASES.filter((c) => c.status === 'pending').length,
-    closed: MOCK_CASES.filter((c) => c.status === 'closed').length,
-  }), []);
+    all: cases.length,
+    active: cases.filter((c) => c.status === 'active').length,
+    pending: cases.filter((c) => c.status === 'pending').length,
+    closed: cases.filter((c) => c.status === 'closed').length,
+  }), [cases]);
+
+  if (loading) return <div className="max-w-4xl mx-auto p-6" dir="rtl"><SkeletonList count={3} /></div>;
 
   const tabs: { key: CaseStatus | 'all'; label: string; count: number }[] = [
     { key: 'all', label: 'الكل', count: counts.all },

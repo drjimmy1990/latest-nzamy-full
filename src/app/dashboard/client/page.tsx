@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -15,20 +15,104 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
 import { CaseCard } from "./_components/CaseCard";
-import {
-  COMMUNITY_PREVIEW,
-  fadeUp,
-  MY_CASES,
-  NEXT_APPOINTMENT,
-  QUICK_SERVICES,
-  RECENT_MESSAGES,
-  USER_PLAN,
-} from "./_data";
+import { DashboardPageSkeleton } from "./_components/DashboardSkeleton";
+import { getDashboardSummary } from "@/lib/services";
+import type { DashboardSummary } from "@/lib/services";
+import { fadeUp, STATUS_COLOR } from "./_data";
+import type { ClientCase } from "./_data";
 
 export default function ClientDashboard() {
   const { isDark } = useTheme();
   const user = useUser();
   const [aiInput, setAiInput] = useState("");
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getDashboardSummary()
+      .then(setSummary)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  // ── Derived data from summary ──────────────────────────────────────────
+  const MY_CASES = (summary?.activeCases ?? []) as ClientCase[];
+  const NEXT_APPOINTMENT = summary?.nextAppointment as { title: string; lawyer: string; lawyerPhone: string; date: string; time: string; type: string; countdown: string } | null;
+  const RECENT_MESSAGES = (summary?.recentMessages ?? []) as { from: string; msg: string; time: string; unread: boolean }[];
+  const COMMUNITY_PREVIEW = (summary?.communityPreview ?? []) as { id: number; title: string; tag: string; answers: number; votes: number; isAnswered: boolean; ago: string }[];
+
+  // ── Subscription / Plan ───────────────────────────────────────────────
+  const sub = summary?.subscription;
+  const USER_PLAN = useMemo(() => {
+    const planId = (sub?.plan ?? "free") as "free" | "shield" | "ai-individual" | "legal-protection";
+    const isLegalProtection = planId === "legal-protection";
+    const isAiIndividual = planId === "ai-individual";
+    return {
+      id: planId,
+      name: sub?.name ?? "مجانية",
+      priceLabel: planId === "free" ? "مجاناً" : planId === "ai-individual" ? "٩٩ ر.س/شهر" : planId === "shield" ? "١٩٩ ر.س/شهر" : "٤٩٩ ر.س/شهر",
+      renewDate: "—",
+      limits: sub?.limits ?? { aiQueries: 1, contractDrafts: 0, consultations: 0 },
+      used: sub?.used ?? { aiQueries: 0, contractDrafts: 0, consultations: 0 },
+      consultationIncluded: isLegalProtection,
+      contractReviewIncluded: isLegalProtection,
+      contractDraftIncluded: isAiIndividual || isLegalProtection,
+      payPerUse: {
+        consultation: 250,
+        aiConsultation: 49,
+        contractReview: 300,
+        extraAiQuery: 5,
+      },
+    };
+  }, [sub]);
+
+  // ── Quick Services (derived from plan) ─────────────────────────────────
+  const QUICK_SERVICES = useMemo(() => [
+    {
+      label: "احجز استشارة",
+      href: "/dashboard/client/services",
+      icon: ChatCircle,
+      color: "from-[#b5883a] to-[#C8A762]",
+      desc: "مع محامٍ متخصص",
+      planBadge: USER_PLAN.consultationIncluded
+        ? `مشمولة ${USER_PLAN.used.consultations}/${USER_PLAN.limits.consultations}`
+        : `${USER_PLAN.payPerUse.consultation} ر.س`,
+      planBadgeOk: USER_PLAN.consultationIncluded,
+    },
+    {
+      label: "اسأل نظامي AI",
+      href: "/ai/consult",
+      icon: Robot,
+      color: "from-[#0B3D2E] to-[#1a6b50]",
+      desc: "إجابات فورية",
+      planBadge: USER_PLAN.id === "free"
+        ? "١/يوم فقط"
+        : `${USER_PLAN.limits.aiQueries - USER_PLAN.used.aiQueries} استفسار متبق`,
+      planBadgeOk: USER_PLAN.id !== "free",
+    },
+    {
+      label: "صياغة عقد",
+      href: "/ai/contract-drafter",
+      icon: FileText,
+      color: "from-[#155c40] to-[#1e7a55]",
+      desc: "AI يصيغ لك العقد",
+      planBadge: USER_PLAN.contractDraftIncluded
+        ? `${USER_PLAN.limits.contractDrafts - USER_PLAN.used.contractDrafts} عقود متبقية`
+        : `٧٠٠ ر.س`,
+      planBadgeOk: USER_PLAN.contractDraftIncluded && USER_PLAN.used.contractDrafts < USER_PLAN.limits.contractDrafts,
+    },
+    {
+      label: "ابحث عن محامٍ",
+      href: "/dashboard/client/find-lawyer",
+      icon: MagnifyingGlass,
+      color: "from-[#8a6520] to-[#b5883a]",
+      desc: "متخصص في مجالك",
+      planBadge: "مجاني دائماً",
+      planBadgeOk: true,
+    },
+  ], [USER_PLAN]);
+
+  if (loading || !summary) return <DashboardPageSkeleton />;
 
   const card = isDark
     ? "bg-zinc-900 border border-white/[0.07] rounded-2xl"
@@ -102,6 +186,7 @@ export default function ClientDashboard() {
         </div>
 
         {/* Next appointment card */}
+        {NEXT_APPOINTMENT && (
         <motion.div variants={fadeUp} initial="hidden" animate="show" custom={1}
           className={`${card} p-5 flex flex-col gap-4`}
         >
@@ -151,9 +236,11 @@ export default function ClientDashboard() {
             </motion.a>
           </div>
         </motion.div>
+        )}
       </motion.div>
 
-      {/* ══ Section 2 — My Cases ════════════════════════════════════════════════ */}
+      {/* ══ Section 2 — My Cases ═══════════════════════════════════════════════════ */}
+      {MY_CASES.length > 0 && (
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={2}>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -173,6 +260,7 @@ export default function ClientDashboard() {
           ))}
         </div>
       </motion.div>
+      )}
 
       {/* ══ Section 2.5 — Plan Banner (Subscription-Aware) ═══════════════════════ */}
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={2}>
@@ -381,6 +469,7 @@ export default function ClientDashboard() {
         className="grid grid-cols-1 lg:grid-cols-2 gap-5"
       >
         {/* Messages */}
+        {RECENT_MESSAGES.length > 0 && (
         <div className={card}>
           <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
             <div className="flex items-center gap-2">
@@ -416,6 +505,7 @@ export default function ClientDashboard() {
             ))}
           </div>
         </div>
+        )}
 
         {/* Documents */}
         <div className={card}>
@@ -475,7 +565,7 @@ export default function ClientDashboard() {
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
               <p className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>
-                رصيد محفظتك — <span className="text-amber-500">٢٥٠ ر.س</span> جاهزة للاستخدام
+                رصيد محفظتك — <span className="text-amber-500">{summary.walletBalance > 0 ? `${summary.walletBalance} ر.س` : '٠ ر.س'}</span> جاهزة للاستخدام
               </p>
             </div>
             <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
@@ -495,6 +585,7 @@ export default function ClientDashboard() {
       </motion.div>
 
       {/* ══ Section 5.5 — المجتمع القانوني ══════════════════════════════════════ */}
+      {COMMUNITY_PREVIEW.length > 0 && (
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={5}>
         <div className={`overflow-hidden rounded-3xl border ${
           isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-zinc-100 shadow-sm"
@@ -585,6 +676,7 @@ export default function ClientDashboard() {
           </div>
         </div>
       </motion.div>
+      )}
 
       {/* ══ Section 6 — AI Quick Question ═══════════════════════════════════════ */}
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={6}>

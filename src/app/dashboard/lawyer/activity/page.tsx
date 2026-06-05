@@ -132,6 +132,19 @@ export default function ActivityLogPage() {
   return (
     <div className="max-w-[900px] mx-auto space-y-6" dir="rtl">
 
+      {/* بيانات تجريبية Banner */}
+      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+        className={`rounded-2xl p-4 border flex items-center gap-3 mb-5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+          <Warning size={18} weight="fill" className="text-amber-500" />
+        </div>
+        <div>
+          <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
+          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>سجل النشاط سيعرض البيانات الحقيقية تلقائياً</p>
+        </div>
+      </motion.div>
+
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b dark:border-white/[0.06] border-slate-100">
         <div>

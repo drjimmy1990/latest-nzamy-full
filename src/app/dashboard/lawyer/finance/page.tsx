@@ -11,7 +11,8 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import confetti from "canvas-confetti";
 
-import { type FinanceTab, type InvoiceStatus, type FeeType, type Period, type ExpenseCategory, type Invoice, type Expense, INVOICES, EXPENSES, STATUS_CFG, EXP_CFG } from "@/constants/lawyerFinanceData";
+import { type FinanceTab, type InvoiceStatus, type FeeType, type Period, type ExpenseCategory, type Invoice, type Expense, STATUS_CFG, EXP_CFG } from "@/constants/lawyerFinanceData";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { AreaBarChart, DonutChart } from "@/components/dashboard/lawyer/FinanceCharts";
 
 export default function FinancePage() {
@@ -23,8 +24,18 @@ export default function FinancePage() {
   const [expCat,    setExpCat]    = useState<ExpenseCategory | "all">("all");
 
   // الحالات التفاعلية للبيانات الحية
-  const [invoices, setInvoices] = useState<Invoice[]>(INVOICES);
-  const [expenses, setExpenses] = useState<Expense[]>(EXPENSES);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!isSupabaseMode) { setLoading(false); return; }
+    apiGet('/api/v1/lawyer/finance').then((data: any) => {
+      if (data.invoices?.length) setInvoices(data.invoices);
+      if (data.walletTransactions?.length) setExpenses(data.walletTransactions);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
 
   // حالات النوافذ المنبثقة
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
@@ -204,6 +215,18 @@ export default function FinancePage() {
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-10 space-y-8 text-right" dir="rtl">
+
+      {/* ── بانر بوابة الدفع ── */}
+      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+        className={`rounded-2xl p-4 border flex items-center gap-3 mb-5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+          <Warning size={18} weight="fill" className="text-amber-500" />
+        </div>
+        <div>
+          <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بوابة الدفع قيد التفعيل</p>
+          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>البيانات المالية تعرض من قاعدة البيانات — بوابة الدفع قيد الإعداد</p>
+        </div>
+      </motion.div>
       
       {/* ── الرأس وتوزيع عناصرها بغير تماثل ── */}
       <motion.div 
@@ -583,7 +606,7 @@ export default function FinancePage() {
                   </motion.div>
                 ) : (
                   filteredInvoices.map((inv, i) => {
-                    const sc = STATUS_CFG[inv.status];
+                    const sc = STATUS_CFG[inv.status as InvoiceStatus];
                     const StatusIcon = sc.icon;
                     const payPct = inv.totalFee ? Math.round(inv.paidAmount / inv.totalFee * 100) : 0;
                     return (
@@ -742,7 +765,7 @@ export default function FinancePage() {
             <div className="space-y-2">
               <AnimatePresence mode="popLayout">
                 {filteredExpenses.map((exp, i) => {
-                  const cfg = EXP_CFG[exp.category];
+                  const cfg = EXP_CFG[exp.category as ExpenseCategory];
                   const barColor = cfg.color.replace("text-", "bg-");
                   return (
                     <motion.div 

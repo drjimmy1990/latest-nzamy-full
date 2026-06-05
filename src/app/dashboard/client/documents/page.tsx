@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, useInView } from 'framer-motion';
 import {
   FileText, FilePdf, FileDoc, UploadSimple, MagnifyingGlass, FolderOpen,
   DownloadSimple, Trash, Eye, PlusCircle, SortAscending,
 } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
+import { getDocuments } from '@/lib/services';
+import { SkeletonList } from '../_components/DashboardSkeleton';
 
 type DocType = 'contract' | 'evidence' | 'official' | 'other';
 
@@ -19,14 +21,6 @@ interface Doc {
   uploadedAt: string;
   format: 'pdf' | 'docx' | 'other';
 }
-
-const MOCK_DOCS: Doc[] = [
-  { id: '1', name: 'عقد العمل الأصلي', caseRef: 'قضية الفصل التعسفي', type: 'contract', size: '٢.٣ ميجا', uploadedAt: 'منذ ٣ أيام', format: 'pdf' },
-  { id: '2', name: 'إشعار الفصل الرسمي', caseRef: 'قضية الفصل التعسفي', type: 'official', size: '٠.٨ ميجا', uploadedAt: 'منذ ٣ أيام', format: 'pdf' },
-  { id: '3', name: 'مذكرة دفاع أولى', caseRef: 'نزاع عقاري النخيل', type: 'evidence', size: '١.١ ميجا', uploadedAt: 'منذ أسبوع', format: 'docx' },
-  { id: '4', name: 'كشف حساب بنكي', caseRef: 'قضية الفصل التعسفي', type: 'evidence', size: '٤.٧ ميجا', uploadedAt: 'منذ أسبوعين', format: 'pdf' },
-  { id: '5', name: 'وكالة شرعية موثقة', caseRef: 'نزاع عقاري النخيل', type: 'official', size: '١.٤ ميجا', uploadedAt: 'منذ ١٠ أيام', format: 'pdf' },
-];
 
 const typeConfig: Record<DocType, { label: string; light: string; dark: string }> = {
   contract: { label: 'عقد', light: 'bg-blue-50 text-blue-700 border-blue-200', dark: 'bg-blue-900/30 text-blue-400 border-blue-700/50' },
@@ -104,14 +98,31 @@ function DocRow({ doc, index, isDark }: { doc: Doc; index: number; isDark: boole
 
 export default function ClientDocumentsPage() {
   const { isDark } = useTheme();
+  const [docs, setDocs] = useState<Doc[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
 
+  useEffect(() => {
+    getDocuments()
+      .then(data => setDocs(data.map(d => ({
+        id: d.id,
+        name: d.file_name,
+        caseRef: d.request_id || '',
+        type: (d.file_type === 'contract' || d.file_type === 'evidence' || d.file_type === 'official' ? d.file_type : 'other') as DocType,
+        size: d.file_size || '',
+        uploadedAt: d.created_at || '',
+        format: (d.file_type === 'pdf' || d.file_type === 'docx' ? d.file_type : 'other') as Doc['format'],
+      }))))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
   const filtered = useMemo(() => {
-    return MOCK_DOCS.filter(
+    return docs.filter(
       (d) => d.name.includes(search) || d.caseRef.includes(search)
     );
-  }, [search]);
+  }, [docs, search]);
 
   return (
     <div className={`p-6 md:p-8 max-w-[1000px] mx-auto ${isDark ? "text-white" : "text-zinc-900"}`} dir="rtl" suppressHydrationWarning>
@@ -177,6 +188,9 @@ export default function ClientDocumentsPage() {
       </div>
 
       {/* Doc List */}
+      {loading ? (
+        <SkeletonList count={3} />
+      ) : (
       <AnimatePresence mode="popLayout">
         {filtered.length > 0 ? (
           <motion.div key="list" className="space-y-3">
@@ -205,6 +219,7 @@ export default function ClientDocumentsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      )}
 
       {/* Storage indicator */}
       <div className={`mt-10 p-6 rounded-[2rem] border transition-colors ${

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText, MagnifyingGlass, Plus, Clock, CalendarCheck,
@@ -11,6 +11,8 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import EmptyState from "@/components/ui/EmptyState";
+import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
+import type { WorkflowRequest } from "@/lib/workflowStore";
 
 // ─── Types & Mock Data ─────────────────────────────────────────────────────────
 
@@ -28,13 +30,17 @@ interface Contract {
   manualArchive?: boolean;   // أرشفة يدوية بغض النظر عن الحالة
 }
 
-const MOCK_CONTRACTS: Contract[] = [
-  { id: "1", title: "اتفاقية توكيل — شركة الأفق",    party: "شركة الأفق للتجارة",  type: "power_of_attorney", status: "active",       signDate: "٢ يناير ٢٠٢٤",    expiry: "٢ يناير ٢٠٢٥", value: "٣٥,٠٠٠ ﷼" },
-  { id: "2", title: "عقد أتعاب — أحمد الزاهد",       party: "أحمد الزاهد",          type: "fee_agreement",     status: "active",       signDate: "١٥ مارس ٢٠٢٤",   expiry: "مفتوح",           value: "١٨,٠٠٠ ﷼" },
-  { id: "3", title: "اتفاقية سرية — موكّل جديد",     party: "سارة الدوسري",         type: "nda",               status: "pending_sign",                              expiry: "ينتهي ٢٠ أبريل" },
-  { id: "4", title: "عقد خدمات قانونية — المطيري",  party: "ريم المطيري",           type: "service_agreement", status: "draft",        signDate: "",                  value: "٢٢,٠٠٠ ﷼" },
-  { id: "5", title: "وكالة قانونية — السبيعي",        party: "علي السبيعي",           type: "power_of_attorney", status: "expired",      signDate: "١ يوليو ٢٠٢٣",   expiry: "٣١ ديسمبر ٢٠٢٣ (منتهية)" },
-];
+function workflowToContract(request: WorkflowRequest): Contract {
+  return {
+    id: request.id,
+    title: request.title,
+    party: request.requester.name || "عميل نظامي",
+    type: "service_agreement",
+    status: request.status === "completed" ? "active" : request.status === "cancelled" ? "expired" : "draft",
+    value: request.payment.amount ? `${request.payment.amount.toLocaleString("ar-SA")} ﷼` : undefined,
+    signDate: request.status === "completed" ? new Date(request.createdAt).toLocaleDateString("ar-SA") : undefined,
+  };
+}
 
 const TYPE_LABELS: Record<Contract["type"], string> = {
   service_agreement: "اتفاقية خدمات",
@@ -84,7 +90,28 @@ export default function ContractsPage() {
   const [newParty,  setNewParty]    = useState("");
   const [newValue,  setNewValue]    = useState("");
   const [newTitle,  setNewTitle]    = useState("");
-  const [contracts, setContracts]   = useState<Contract[]>(MOCK_CONTRACTS);
+  const [contracts, setContracts]   = useState<Contract[]>([]);
+  const [loading, setLoading]      = useState(true);
+
+  useEffect(() => {
+    const syncContracts = async () => {
+      try {
+        const requests = await getWorkflowRequestsByReceiver("lawyer");
+        const workflowContracts = requests
+          .filter(request => request.type === "service" || request.type === "business_case")
+          .map(workflowToContract);
+        setContracts(workflowContracts);
+      } catch {
+        setContracts([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    syncContracts();
+    window.addEventListener("nzamy-workflow-updated", () => syncContracts());
+    return () => window.removeEventListener("nzamy-workflow-updated", () => {});
+  }, []);
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(null), 2800); }
   function openModal() { setShowModal(true); setModalStep(1); setNewType(""); setNewParty(""); setNewValue(""); setNewTitle(""); }

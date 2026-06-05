@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo, memo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import {
   motion, AnimatePresence, useInView,
   useMotionValue, useTransform, useSpring,
@@ -18,6 +18,8 @@ import { useUser } from '@/hooks/useUser';
 import { createWorkflowId, createWorkflowRequest } from '@/lib/clientWorkflowRepository';
 import { createPaymentIntentStub } from '@/lib/paymentAdapter';
 import { MOCK_LAWYERS, type Lawyer } from './data';
+import { getLawyers } from '@/lib/services';
+import { SkeletonList } from '../_components/DashboardSkeleton';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 // Lawyer interface is now imported from ./data
@@ -281,6 +283,8 @@ function FilterChip({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function FindLawyerPage() {
   const user = useUser();
+  const [lawyers, setLawyers]         = useState<Lawyer[]>(MOCK_LAWYERS);
+  const [loading, setLoading]         = useState(true);
   const [search, setSearch]           = useState('');
   const [city, setCity]               = useState('all');
   const [specialty, setSpecialty]     = useState('all');
@@ -291,8 +295,15 @@ export default function FindLawyerPage() {
   const [sortOpen, setSortOpen]       = useState(false);
   const [bookingNotice, setBookingNotice] = useState<{ id: string; lawyer: string } | null>(null);
 
+  useEffect(() => {
+    getLawyers()
+      .then(data => { if (data.length > 0) setLawyers(data); })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
   const sorted = useMemo(() => {
-    const result = MOCK_LAWYERS.filter((l) => {
+    const result = lawyers.filter((l) => {
       const q = search.trim().toLowerCase();
       const matchSearch = !q || l.name.includes(q) || l.specialty.includes(q) || l.expertise.some((e) => e.includes(q));
       const matchCity   = city === 'all'      || l.city === city;
@@ -309,7 +320,7 @@ export default function FindLawyerPage() {
       case 'price_asc':  return [...result].sort((a, b) => a.priceMin - b.priceMin);
       case 'price_desc': return [...result].sort((a, b) => b.priceMin - a.priceMin);
     }
-  }, [search, city, specialty, sort, availableOnly, maxPrice]);
+  }, [lawyers, search, city, specialty, sort, availableOnly, maxPrice]);
 
   const activeFiltersCount = [
     city !== 'all', specialty !== 'all', availableOnly, maxPrice < 1200,
@@ -322,7 +333,7 @@ export default function FindLawyerPage() {
   }, []);
 
   const sortLabel = SORT_OPTIONS.find((s) => s.id === sort)?.label ?? 'الترتيب';
-  const availableCount = MOCK_LAWYERS.filter((l) => l.available).length;
+  const availableCount = lawyers.filter((l) => l.available).length;
 
   const handleBook = useCallback(async (lawyer: Lawyer) => {
     const requestId = createWorkflowId('LAW-CON');
@@ -397,7 +408,7 @@ export default function FindLawyerPage() {
               <span className="text-[#0B3D2E]">المناسب لقضيتك</span>
             </h1>
             <p className="text-slate-500 text-[13.5px] leading-relaxed max-w-[55ch]">
-              {MOCK_LAWYERS.length}+ محامٍ مرخص ومعتمد من وزارة العدل — قارن التخصصات والأسعار والتقييمات واحجز استشارتك في دقائق.
+              {lawyers.length}+ محامٍ مرخص ومعتمد من وزارة العدل — قارن التخصصات والأسعار والتقييمات واحجز استشارتك في دقائق.
             </p>
           </div>
 
@@ -593,7 +604,9 @@ export default function FindLawyerPage() {
 
         {/* ── Results Grid (2-col base, 3-col xl) — staggered ─────────── */}
         <AnimatePresence mode="wait">
-          {sorted.length > 0 ? (
+          {loading ? (
+            <SkeletonList count={6} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5" />
+          ) : sorted.length > 0 ? (
             <motion.div
               key="grid"
               initial={{ opacity: 0 }}

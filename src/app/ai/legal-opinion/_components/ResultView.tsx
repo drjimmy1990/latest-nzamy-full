@@ -14,7 +14,7 @@ import { StudyDocumentEditor } from "./StudyDocumentEditor";
 import type { OutputType } from "../_types";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import AiResultActions from "@/components/AiResultActions";
-import { addToInbox } from "@/lib/draftInboxStore";
+import { addToInbox } from "@/lib/services/researchService";
 import BetaReviewGate from "@/components/BetaReviewGate";
 
 export function ResultView({ outputType, isDark, onReset, onEdit }: {
@@ -119,13 +119,13 @@ export function ResultView({ outputType, isDark, onReset, onEdit }: {
               النصوص والسوابق ({MOCK_RESULT.laws.length + MOCK_RESULT.precedents.length})
             </p>
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-              onClick={() => {
-                MOCK_RESULT.laws.forEach(law => {
-                  addToInbox("legal-opinion", "text", law.article, law.text);
-                });
-                MOCK_RESULT.precedents.forEach(p => {
-                  addToInbox("legal-opinion", "precedent", p.title, p.summary);
-                });
+              onClick={async () => {
+                for (const law of MOCK_RESULT.laws) {
+                  await addToInbox("legal-opinion", "text", law.article, law.text);
+                }
+                for (const p of MOCK_RESULT.precedents) {
+                  await addToInbox("legal-opinion", "precedent", p.title, p.summary);
+                }
                 setAddedAll(true);
                 setTimeout(() => setAddedAll(false), 2500);
               }}

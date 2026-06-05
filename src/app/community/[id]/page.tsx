@@ -13,10 +13,10 @@ import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import {
-  addCommunityAnswerLocal,
-  findCommunityQuestionLocal,
   type StoredCommunityQuestion,
-} from "@/lib/communityStore";
+  getCommunityPost,
+  addCommunityAnswer,
+} from "@/lib/services/communityService";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -148,17 +148,27 @@ export default function QuestionDetailPage() {
   const replyRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const id = Number(params?.id);
-    const savedQuestion = Number.isFinite(id) ? findCommunityQuestionLocal(id) : null;
-    setStoredQuestion(savedQuestion);
-    if (savedQuestion) {
-      setVotes(savedQuestion.votes);
-      setReplies(savedQuestion.answers.map(mapStoredReply));
-    } else {
-      setVotes(QUESTION.votes);
-      setReplies(REPLIES);
-    }
-    setMounted(true);
+    const loadQuestion = async () => {
+      const id = Number(params?.id);
+      if (!Number.isFinite(id)) { setMounted(true); return; }
+      try {
+        const savedQuestion = await getCommunityPost(id);
+        setStoredQuestion(savedQuestion);
+        if (savedQuestion) {
+          setVotes(savedQuestion.votes);
+          setReplies(savedQuestion.answers.map(mapStoredReply));
+        } else {
+          setVotes(QUESTION.votes);
+          setReplies(REPLIES);
+        }
+      } catch {
+        // Fallback to static data
+        setVotes(QUESTION.votes);
+        setReplies(REPLIES);
+      }
+      setMounted(true);
+    };
+    loadQuestion();
   }, [params?.id]);
   if (!mounted) return null;
 
@@ -186,7 +196,7 @@ export default function QuestionDetailPage() {
     setReplyLikes(prev => ({ ...prev, [id]: (prev[id] ?? base) + (prev[id] !== undefined ? 0 : 1) }));
   };
 
-  const handleSubmitReply = () => {
+  const handleSubmitReply = async () => {
     if (replyText.trim().length < 10) return;
     const newReply: Reply = {
       id: Date.now(),
@@ -200,12 +210,16 @@ export default function QuestionDetailPage() {
       likes: 0,
     };
     if (storedQuestion) {
-      addCommunityAnswerLocal(storedQuestion.id, {
-        author: newReply.author,
-        authorType: newReply.type === "lawyer" ? "lawyer" : "user",
-        authorRating: user.userType === "lawyer" ? 1 : 0,
-        content: replyText,
-      });
+      try {
+        await addCommunityAnswer(storedQuestion.id, {
+          author: newReply.author,
+          authorType: newReply.type === "lawyer" ? "lawyer" : "user",
+          authorRating: user.userType === "lawyer" ? 1 : 0,
+          content: replyText,
+        });
+      } catch {
+        // Fallback: still add locally
+      }
     }
     setReplies(prev => [...prev, newReply]);
     setReplyText("");

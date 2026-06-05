@@ -12,6 +12,8 @@ import {
 import Link from "next/link";
 import { listClientWorkflowRequests } from "@/lib/clientWorkflowRepository";
 import type { WorkflowRequest } from "@/lib/workflowStore";
+import { getConsultations } from "@/lib/services";
+import { SkeletonList } from "../_components/DashboardSkeleton";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 
@@ -40,107 +42,7 @@ interface Consultation {
   notes?: string;
 }
 
-const CONSULTATIONS: Consultation[] = [
-  {
-    id: "c-001",
-    type: "video",
-    status: "upcoming",
-    lawyerName: "نورة الزهراني",
-    lawyerSpecialty: "قانون عقاري ومدني",
-    lawyerInitial: "ن",
-    lawyerColor: "bg-indigo-600",
-    topic: "مراجعة عقد إيجار تجاري — منع رفع الإيجار التعسفي",
-    date: "الثلاثاء ٢٢ أبريل ٢٠٢٦",
-    time: "٢:٠٠ م",
-    duration: "٦٠ دق",
-    price: 700,
-    caseId: "2025-002",
-    notes: "يرجى إحضار نسخة من عقد الإيجار قبل الجلسة",
-  },
-  {
-    id: "c-002",
-    type: "in-person",
-    status: "active",
-    lawyerName: "أحمد الغامدي",
-    lawyerSpecialty: "قانون عمالي وتجاري",
-    lawyerInitial: "أ",
-    lawyerColor: "bg-emerald-600",
-    topic: "استشارة عمالية — فصل تعسفي وحقوق نهاية الخدمة",
-    date: "اليوم — ١١:٠٠ ص",
-    time: "١١:٠٠ ص",
-    duration: "٦٠ دق",
-    price: 700,
-    caseId: "2025-001",
-  },
-  {
-    id: "c-003",
-    type: "ai",
-    status: "completed",
-    lawyerName: "نظامي AI",
-    lawyerSpecialty: "مساعد قانوني ذكي",
-    lawyerInitial: "AI",
-    lawyerColor: "bg-[#0B3D2E]",
-    topic: "تحليل بنود عقد توريد وتحديد مواطن المخاطر القانونية",
-    date: "١٥ أبريل ٢٠٢٦",
-    time: "٩:٣٠ ص",
-    duration: "٢٠ دق",
-    price: 49,
-    rating: 5,
-    hasPdf: true,
-    pdfName: "ملخص_استشارة_AI_15-04-2026.pdf",
-  },
-  {
-    id: "c-004",
-    type: "video",
-    status: "completed",
-    lawyerName: "نورة الزهراني",
-    lawyerSpecialty: "قانون عقاري ومدني",
-    lawyerInitial: "ن",
-    lawyerColor: "bg-indigo-600",
-    topic: "تقييم مخاطر عقد البيع والشراء وحماية حقوق المشتري",
-    date: "١ أبريل ٢٠٢٦",
-    time: "٣:٠٠ م",
-    duration: "٤٥ دق",
-    price: 700,
-    rating: 4,
-    hasPdf: true,
-    pdfName: "ملخص_استشارة_Q1-04-2026.pdf",
-  },
-  {
-    id: "c-005",
-    type: "in-person",
-    status: "cancelled",
-    lawyerName: "فيصل الحربي",
-    lawyerSpecialty: "قانون تجاري وشركات",
-    lawyerInitial: "ف",
-    lawyerColor: "bg-amber-600",
-    topic: "استشارة حول تأسيس شركة ذات مسؤولية محدودة",
-    date: "٢٠ مارس ٢٠٢٦",
-    time: "١٠:٠٠ ص",
-    duration: "٦٠ دق",
-    price: 700,
-    notes: "تم الإلغاء من قِبَل العميل قبل ٢٤ ساعة",
-  },
-  {
-    id: "c-006",
-    type: "video",
-    status: "completed",
-    lawyerName: "سارة العتيبي",
-    lawyerSpecialty: "قانون أسرة وميراث",
-    lawyerInitial: "س",
-    lawyerColor: "bg-rose-600",
-    // ── استشارة خاصة لمرة واحدة — غير مرتبطة بقضية ──
-    topic: "سؤال شخصي — حقوق الوريث في حال غياب وصية مكتوبة",
-    date: "٥ أبريل ٢٠٢٦",
-    time: "١٢:٠٠ م",
-    duration: "٣٠ دق",
-    price: 350,
-    rating: 5,
-    hasPdf: true,
-    pdfName: "ملخص_استشارة_ميراث_05-04-2026.pdf",
-    // جديد: بدون caseId — استشارة مستقلة
-  },
-];
+
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -495,7 +397,8 @@ export default function ConsultationListPage() {
   const [filter, setFilter]     = useState<FilterStatus>("all");
   const [search, setSearch]     = useState("");
   const [ratingTarget, setRatingTarget] = useState<Consultation | null>(null);
-  const [consultations, setConsultations] = useState<Consultation[]>(CONSULTATIONS);
+  const [consultations, setConsultations] = useState<Consultation[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const toConsultation = (request: WorkflowRequest): Consultation => ({
@@ -513,14 +416,46 @@ export default function ConsultationListPage() {
       price: request.payment.amount,
       notes: `رقم الطلب: ${request.id}`,
     });
-    listClientWorkflowRequests({ requesterUserId: user.userId })
-      .then((requests) => {
-        const saved = requests
-          .filter((request) => request.type === "consultation")
+
+    Promise.all([
+      getConsultations().catch(() => []),
+      listClientWorkflowRequests({ requesterUserId: user.userId }).catch(() => []),
+    ])
+      .then(([serviceConsultations, workflowRequests]) => {
+        // Map service consultations to page shape
+        const fromService: Consultation[] = serviceConsultations.map(sc => ({
+          id: sc.id,
+          type: (sc.type as ConsultType) || "video",
+          status: sc.status === "scheduled" ? "upcoming" : sc.status === "completed" ? "completed" : sc.status === "cancelled" ? "cancelled" : "upcoming",
+          lawyerName: sc.lawyer_id || "بانتظار التعيين",
+          lawyerSpecialty: "استشارة قانونية",
+          lawyerInitial: "ن",
+          lawyerColor: "bg-emerald-600",
+          topic: sc.topic || sc.description,
+          date: sc.scheduled_at || sc.created_at,
+          time: "",
+          duration: "60 دق",
+          price: 0,
+          notes: sc.notes,
+        }));
+
+        // Map workflow requests to page shape
+        const fromWorkflow = workflowRequests
+          .filter((r: WorkflowRequest) => r.type === "consultation")
           .map(toConsultation);
-        if (saved.length) setConsultations([...saved, ...CONSULTATIONS]);
+
+        // Merge both sources, workflow requests first
+        const merged = [...fromWorkflow, ...fromService];
+        // Deduplicate by id
+        const seen = new Set<string>();
+        const unique = merged.filter(c => {
+          if (seen.has(c.id)) return false;
+          seen.add(c.id);
+          return true;
+        });
+        setConsultations(unique);
       })
-      .catch(() => {});
+      .finally(() => setLoading(false));
   }, [user.userId]);
 
   const filtered = consultations.filter(c => {
@@ -553,6 +488,10 @@ export default function ConsultationListPage() {
 
       <div className={`p-6 md:p-8 max-w-[1000px] mx-auto ${isDark ? "text-white" : "text-zinc-900"}`} dir="rtl" suppressHydrationWarning>
 
+        {loading ? (
+          <div className="mt-8"><SkeletonList count={4} /></div>
+        ) : (
+        <>
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 mb-8">
           <div>
@@ -660,6 +599,8 @@ export default function ConsultationListPage() {
           </AnimatePresence>
         </div>
 
+        </>
+        )}
       </div>
     </>
   );

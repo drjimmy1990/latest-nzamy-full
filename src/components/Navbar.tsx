@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import type { ElementType, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useState, useRef, useEffect } from "react";
@@ -14,10 +14,8 @@ import { useTheme } from "./ThemeProvider";
 import { useUser, logout } from "@/hooks/useUser";
 import { getNavByUserType, getDashboardRoute, getRoleLabel, type NavItem } from "@/constants/navigation";
 import Link from "next/link";
-import {
-  getNotifications, getUnreadCount, markAllAsRead, markAsRead,
-  type Notification,
-} from "@/lib/notificationsStore";
+import { useNotifications } from "@/hooks/useNotifications";
+import type { Notification } from "@/lib/services/notificationService";
 
 // ─── Icon resolver (phosphor icon names → components) ─────────────────────────
 const ICON_MAP = PhosphorIcons as unknown as Record<string, ElementType>;
@@ -61,16 +59,9 @@ function MagneticButton({ children, className, href }: {
 // ─── Notifications Bell ───────────────────────────────────────────────────────
 function NotificationsBell({ isAr }: { isAr: boolean }) {
   const [open, setOpen] = useState(false);
-  const [notifs, setNotifs] = useState<Notification[]>([]);
-  const [unread, setUnread] = useState(0);
+  const { notifications: allNotifs, unreadCount: unread, markRead, markAllRead } = useNotifications(5);
+  const notifs = allNotifs.slice(0, 5);
   const ref = useRef<HTMLDivElement>(null);
-
-  function refresh() {
-    setNotifs(getNotifications().slice(0, 5));
-    setUnread(getUnreadCount());
-  }
-
-  useEffect(() => { refresh(); }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -89,7 +80,7 @@ function NotificationsBell({ isAr }: { isAr: boolean }) {
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => { refresh(); setOpen(o => !o); }}
+        onClick={() => { setOpen(o => !o); }}
         aria-label={isAr ? "الإشعارات" : "Notifications"}
         className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/50 text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:border-white/10 dark:text-zinc-400 dark:hover:text-white"
       >
@@ -124,7 +115,7 @@ function NotificationsBell({ isAr }: { isAr: boolean }) {
               </span>
               {unread > 0 && (
                 <button
-                  onClick={() => { markAllAsRead(); refresh(); }}
+                  onClick={() => { markAllRead(); }}
                   className="text-[11px] font-semibold text-royal dark:text-[#C8A762] hover:underline"
                 >
                   {isAr ? "تحديد الكل" : "Mark all read"}
@@ -146,8 +137,7 @@ function NotificationsBell({ isAr }: { isAr: boolean }) {
                   <button
                     key={n.id}
                     onClick={() => {
-                      markAsRead(n.id);
-                      refresh();
+                      markRead(n.id);
                       setOpen(false);
                       window.location.href = n.href;
                     }}
