@@ -15,7 +15,7 @@ module.exports = {
       // ─── Environment ─────────────────────────────────
       env: {
         NODE_ENV: 'production',
-        PORT: 3000,
+        PORT: 3055,
       },
 
       // ─── Restart Policy ───────────────────────────────
