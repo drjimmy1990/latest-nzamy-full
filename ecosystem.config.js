@@ -5,7 +5,7 @@ module.exports = {
       name: 'nzamy',
       script: 'node_modules/.bin/next',
       args: 'start',
-      cwd: '/www/wwwroot/nzamy',
+      cwd: '/www/wwwroot/nzamy/latest-nzamy-full',
 
       // ─── Process Mode ─────────────────────────────────
       // 'fork' for single instance, 'cluster' for multi-core
@@ -25,8 +25,8 @@ module.exports = {
       min_uptime: '10s',
 
       // ─── Logs ─────────────────────────────────────────
-      error_file: '/www/wwwroot/nzamy/logs/error.log',
-      out_file: '/www/wwwroot/nzamy/logs/out.log',
+      error_file: '/www/wwwroot/nzamy/latest-nzamy-full/logs/error.log',
+      out_file: '/www/wwwroot/nzamy/latest-nzamy-full/logs/out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
 
