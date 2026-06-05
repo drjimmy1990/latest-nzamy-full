@@ -67,9 +67,6 @@ supabase/.branches/
 # ─── Vercel ───────────────────────────────────────────
 .vercel
 
-# ─── PM2 ──────────────────────────────────────────────
-ecosystem.config.js
-
 # ─── GitNexus (code intelligence index) ───────────────
 .gitnexus/
 
