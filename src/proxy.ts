@@ -91,8 +91,11 @@ export default async function proxy(req: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    // Check onboarding status
+    // Check onboarding status — skip for lawyers/firms/providers (they have their own registration flow)
+    const userType = user.user_metadata?.user_type as string | undefined;
+    const skipOnboarding = ['lawyer', 'firm', 'provider', 'admin'].includes(userType ?? '');
     if (
+      !skipOnboarding &&
       !pathname.startsWith("/onboarding") &&
       !pathname.startsWith("/api") &&
       user.user_metadata?.onboarding_completed === false
@@ -103,7 +106,6 @@ export default async function proxy(req: NextRequest) {
     }
 
     // RBAC: validate that user is accessing their correct dashboard
-    const userType = user.user_metadata?.user_type as string | undefined;
     if (userType) {
       const rule = ROUTE_ACCESS.find((r) => pathname.startsWith(r.prefix));
       if (rule && !rule.allowedTypes.includes(userType)) {

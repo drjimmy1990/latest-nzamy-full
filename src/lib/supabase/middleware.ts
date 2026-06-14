@@ -66,6 +66,7 @@ export async function updateSession(request: NextRequest) {
 
   // If user is logged in but hasn't completed onboarding, redirect to onboarding
   // (except if already on onboarding page or API routes)
+  // Skip for lawyers/firms/providers — they have their own registration flow
   if (
     user &&
     !request.nextUrl.pathname.startsWith('/onboarding') &&
@@ -73,9 +74,10 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith('/_next') &&
     isProtectedRoute
   ) {
-    // Check onboarding status via user metadata
+    const userType = user.user_metadata?.user_type;
+    const skipOnboarding = ['lawyer', 'firm', 'provider', 'admin'].includes(userType);
     const onboardingCompleted = user.user_metadata?.onboarding_completed;
-    if (onboardingCompleted === false) {
+    if (!skipOnboarding && onboardingCompleted === false) {
       const url = request.nextUrl.clone();
       url.pathname = '/onboarding';
       return NextResponse.redirect(url);
