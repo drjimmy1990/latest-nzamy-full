@@ -19,6 +19,8 @@ as $$
 declare
   _user_type text;
   _sub_role text;
+  _exp_str text;
+  _years_exp int;
 begin
   -- Extract user_type from signup metadata; default to 'individual'
   _user_type := coalesce(
@@ -53,6 +55,33 @@ begin
 
   -- Auto-create lawyer_profiles row for lawyers
   if _user_type = 'lawyer' then
+    -- Safely extract and parse years of experience from string options
+    _exp_str := new.raw_user_meta_data ->> 'experience_years';
+    _years_exp := 0;
+    if _exp_str is not null and _exp_str <> '' then
+      begin
+        _years_exp := _exp_str::int;
+      exception when others then
+        if _exp_str like '%15%' or _exp_str like '%١٥%' then
+          _years_exp := 15;
+        elsif _exp_str like '%7-15%' or _exp_str like '%٧-١٥%' then
+          _years_exp := 10;
+        elsif _exp_str like '%3-7%' or _exp_str like '%٣-٧%' then
+          _years_exp := 5;
+        elsif _exp_str like '%1-3%' or _exp_str like '%١-٣%' then
+          _years_exp := 2;
+        elsif _exp_str like '%Less%' or _exp_str like '%أقل%' then
+          _years_exp := 1;
+        else
+          begin
+            _years_exp := coalesce((substring(_exp_str from '\d+'))::int, 0);
+          exception when others then
+            _years_exp := 0;
+          end;
+        end if;
+      end;
+    end if;
+
     insert into public.lawyer_profiles (
       user_id,
       license_number,
@@ -74,7 +103,7 @@ begin
          ) as x),
         '{}'::text[]
       ),
-      coalesce((new.raw_user_meta_data ->> 'experience_years')::int, 0),
+      _years_exp,
       'pending',
       false,
       jsonb_build_object(
