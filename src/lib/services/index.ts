@@ -119,3 +119,16 @@ export type { LawyerTask } from "./lawyerTasksService";
 // Lawyer Activity service
 export { getLawyerActivity } from "./lawyerActivityService";
 export type { LawyerActivity } from "./lawyerActivityService";
+
+// Admin service
+export {
+  getVerificationRequests,
+  approveVerification,
+  rejectVerification,
+} from "./adminService";
+export type {
+  VerificationRequest,
+  VerificationFilters,
+  ProviderType,
+  VerificationDisplayStatus,
+} from "./adminService";

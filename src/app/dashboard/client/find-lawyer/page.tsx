@@ -17,7 +17,7 @@ import {
 import { useUser } from '@/hooks/useUser';
 import { createWorkflowId, createWorkflowRequest } from '@/lib/clientWorkflowRepository';
 import { createPaymentIntentStub } from '@/lib/paymentAdapter';
-import { MOCK_LAWYERS, type Lawyer } from './data';
+import { type Lawyer } from './data';
 import { getLawyers } from '@/lib/services';
 import { SkeletonList } from '../_components/DashboardSkeleton';
 
@@ -283,8 +283,9 @@ function FilterChip({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function FindLawyerPage() {
   const user = useUser();
-  const [lawyers, setLawyers]         = useState<Lawyer[]>(MOCK_LAWYERS);
+  const [lawyers, setLawyers]         = useState<Lawyer[]>([]);
   const [loading, setLoading]         = useState(true);
+  const [fetchError, setFetchError]   = useState(false);
   const [search, setSearch]           = useState('');
   const [city, setCity]               = useState('all');
   const [specialty, setSpecialty]     = useState('all');
@@ -297,8 +298,14 @@ export default function FindLawyerPage() {
 
   useEffect(() => {
     getLawyers()
-      .then(data => { if (data.length > 0) setLawyers(data); })
-      .catch(console.error)
+      .then(data => {
+        setLawyers(data ?? []);
+        setFetchError(false);
+      })
+      .catch(() => {
+        setFetchError(true);
+        setLawyers([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -408,7 +415,10 @@ export default function FindLawyerPage() {
               <span className="text-[#0B3D2E]">المناسب لقضيتك</span>
             </h1>
             <p className="text-slate-500 text-[13.5px] leading-relaxed max-w-[55ch]">
-              {lawyers.length}+ محامٍ مرخص ومعتمد من وزارة العدل — قارن التخصصات والأسعار والتقييمات واحجز استشارتك في دقائق.
+              {lawyers.length > 0
+                ? `${lawyers.length}+ محامٍ مرخص ومعتمد من وزارة العدل — قارن التخصصات والأسعار والتقييمات واحجز استشارتك في دقائق.`
+                : 'ابحث عن المحامين المرخصين والمعتمدين من وزارة العدل — قارن التخصصات والأسعار والتقييمات واحجز استشارتك في دقائق.'
+              }
             </p>
           </div>
 
@@ -606,6 +616,44 @@ export default function FindLawyerPage() {
         <AnimatePresence mode="wait">
           {loading ? (
             <SkeletonList count={6} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5" />
+          ) : lawyers.length === 0 ? (
+            /* ── No verified lawyers exist at all ──────────────────── */
+            <motion.div
+              key="no-lawyers"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 120, damping: 18 }}
+              className="flex flex-col items-center py-28 gap-6 text-center"
+            >
+              {/* Icon container */}
+              <div className="relative">
+                <div className="w-24 h-24 rounded-[1.75rem] bg-gradient-to-br from-[#0B3D2E]/5 via-white to-[#C8A762]/5 border border-slate-200/80 shadow-[0_12px_32px_-8px_rgba(11,61,46,0.08)] flex items-center justify-center">
+                  <Scales size={40} className="text-[#0B3D2E]/30" weight="duotone" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center">
+                  <Clock size={14} className="text-[#C8A762]" weight="fill" />
+                </div>
+              </div>
+
+              {/* Arabic main message */}
+              <div className="max-w-[340px] space-y-2">
+                <p className="font-black text-zinc-800 text-xl leading-tight">
+                  لا يوجد محامون متاحون حالياً
+                </p>
+                <p className="text-slate-400 text-[13px] leading-relaxed">
+                  No verified lawyers available yet
+                </p>
+              </div>
+
+              {/* Subtle info box */}
+              <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-[#0B3D2E]/[0.03] border border-[#0B3D2E]/10 max-w-sm">
+                <SealCheck size={18} weight="duotone" className="text-[#0B3D2E]/40 flex-shrink-0" />
+                <p className="text-[11.5px] text-slate-500 leading-relaxed text-right">
+                  يتم التحقق من المحامين قبل ظهورهم في الدليل — سيتوفر محامون قريباً إن شاء الله
+                </p>
+              </div>
+            </motion.div>
           ) : sorted.length > 0 ? (
             <motion.div
               key="grid"
@@ -618,6 +666,7 @@ export default function FindLawyerPage() {
               {sorted.map((l, i) => <LawyerCard key={l.id} l={l} index={i} onBook={handleBook} />)}
             </motion.div>
           ) : (
+            /* ── No results matching current filters ───────────────── */
             <motion.div
               key="empty"
               initial={{ opacity: 0, y: 20 }}

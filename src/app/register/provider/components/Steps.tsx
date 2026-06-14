@@ -419,8 +419,8 @@ export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; pro
 
   // Smart redirect: go to the correct dashboard based on provider type
   const dashboardHref: Record<string, string> = {
-    lawyer:     "/dashboard/provider",
-    firm:       "/dashboard/provider",
+    lawyer:     "/dashboard/lawyer",
+    firm:       "/dashboard/firm",
     notary:     "/dashboard/provider",
     tracker:    "/dashboard/provider",
     arbitrator: "/dashboard/provider",

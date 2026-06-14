@@ -1,32 +1,23 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   MagnifyingGlass, Check, X, Clock, Warning,
   FileText, Robot, Eye,
   CheckCircle, IdentificationCard, Buildings,
+  SpinnerGap,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import {
+  getVerificationRequests,
+  approveVerification,
+  rejectVerification,
+} from "@/lib/services/adminService";
+import type { VerificationRequest } from "@/lib/services/adminService";
 
-/* ── Mock ──────────────────────────────────────────────────────────────────── */
-const REQUESTS = [
-  { id:"PV-042", name:"شركة السند للمحاماة والاستشارات", type:"firm" as const, date:"منذ ساعة",
-    docs:["سجل تجاري","ترخيص شركة مهنية","بيانات الشركاء","تفويض الشريك المدير"], aiScore:89, status:"pending" as const },
-  { id:"PV-041", name:"أ. سلطان المطيري", type:"lawyer" as const, date:"منذ ساعتين",
-    docs:["رخصة محاماة","بطاقة هوية","شهادة جامعية"], aiScore:92, status:"pending" as const },
-  { id:"PV-040", name:"عبدالرحمن الغامدي — موثّق", type:"notary" as const, date:"منذ ٥ ساعات",
-    docs:["تصريح وزاري","بطاقة هوية"], aiScore:78, status:"pending" as const },
-  { id:"PV-039", name:"أ. فاطمة الحربي", type:"lawyer" as const, date:"منذ يوم",
-    docs:["رخصة محاماة","بطاقة هوية","شهادة جامعية","خبرة عملية"], aiScore:97, status:"approved" as const },
-  { id:"PV-038", name:"محمد البلوي — محكّم", type:"arbitrator" as const, date:"منذ ٣ أيام",
-    docs:["شهادة تحكيم","بطاقة هوية"], aiScore:45, status:"rejected" as const },
-  { id:"PV-037", name:"خالد الشهري — معقّب", type:"bailiff" as const, date:"منذ ٤ أيام",
-    docs:["تصريح معقّب","بطاقة هوية"], aiScore:88, status:"approved" as const },
-  { id:"PV-036", name:"أ. نوف العنزي", type:"lawyer" as const, date:"منذ أسبوع",
-    docs:["رخصة محاماة","بطاقة هوية"], aiScore:61, status:"needs_docs" as const },
-];
+/* ── Config ──────────────────────────────────────────────────────────────────── */
 
 const TYPE_CFG: Record<string,{label:string;color:string}> = {
   firm:{ label:"شركة محاماة", color:"text-[#C8A762]" },
@@ -39,6 +30,7 @@ const TYPE_CFG: Record<string,{label:string;color:string}> = {
 const STATUS_CFG: Record<string,{label:string;cls:string}> = {
   pending:{ label:"قيد المراجعة", cls:"bg-amber-500/10 border-amber-500/20 text-amber-400" },
   approved:{ label:"معتمد", cls:"bg-emerald-500/10 border-emerald-500/20 text-emerald-400" },
+  verified:{ label:"معتمد", cls:"bg-emerald-500/10 border-emerald-500/20 text-emerald-400" },
   rejected:{ label:"مرفوض", cls:"bg-red-500/10 border-red-500/20 text-red-400" },
   needs_docs:{ label:"يحتاج مستندات", cls:"bg-blue-500/10 border-blue-500/20 text-blue-400" },
 };
@@ -60,22 +52,83 @@ export default function ProviderVerificationPage() {
   const { isDark } = useTheme();
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const [toast, setToast] = useState("تحقق المزودين Backend-ready: قرارات الاعتماد والرفض محلية فقط حتى ربط KYC API.");
+  const [toast, setToast] = useState("");
+  const [requests, setRequests] = useState<VerificationRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
-  const filtered = REQUESTS.filter(r =>
+  // ── Fetch data ─────────────────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getVerificationRequests();
+      setRequests(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل في تحميل البيانات");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // ── Approve handler ────────────────────────────────────────────────────────
+  const handleApprove = async (r: VerificationRequest) => {
+    setActionLoading(r.id);
+    try {
+      const result = await approveVerification(r.user_id);
+      setToast(result.message);
+      // Update local state optimistically
+      setRequests((prev) =>
+        prev.map((req) =>
+          req.id === r.id ? { ...req, status: "approved" as const } : req,
+        ),
+      );
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "فشل في اعتماد الطلب");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // ── Reject handler ─────────────────────────────────────────────────────────
+  const handleReject = async (r: VerificationRequest) => {
+    setActionLoading(r.id);
+    try {
+      const result = await rejectVerification(r.user_id, "مرفوض من قبل المسؤول");
+      setToast(result.message);
+      // Update local state optimistically
+      setRequests((prev) =>
+        prev.map((req) =>
+          req.id === r.id ? { ...req, status: "rejected" as const } : req,
+        ),
+      );
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "فشل في رفض الطلب");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // ── Derived state ──────────────────────────────────────────────────────────
+  const filtered = requests.filter(r =>
     (filter==="all" || r.status===filter) &&
     (r.name.includes(search) || r.id.includes(search))
   );
 
   const stats = {
-    pending: REQUESTS.filter(r=>r.status==="pending").length,
-    approved: REQUESTS.filter(r=>r.status==="approved").length,
-    rejected: REQUESTS.filter(r=>r.status==="rejected").length,
-    needsDocs: REQUESTS.filter(r=>r.status==="needs_docs").length,
+    pending: requests.filter(r=>r.status==="pending").length,
+    approved: requests.filter(r=>r.status==="approved" || r.status==="verified").length,
+    rejected: requests.filter(r=>r.status==="rejected").length,
+    needsDocs: requests.filter(r=>r.status==="needs_docs").length,
   };
 
   // Chart data — weekly applications
@@ -104,10 +157,31 @@ export default function ProviderVerificationPage() {
         </Link>
       </motion.div>
 
-      <div className={`flex items-start gap-2 rounded-2xl border p-4 text-sm ${isDark ? "border-blue-500/20 bg-blue-500/10 text-blue-100" : "border-blue-100 bg-blue-50 text-blue-800"}`}>
-        <Warning size={18} weight="fill" className="mt-0.5 shrink-0" />
-        <span>{toast}</span>
-      </div>
+      {/* Toast / Info banner */}
+      {toast && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`flex items-start gap-2 rounded-2xl border p-4 text-sm ${isDark ? "border-blue-500/20 bg-blue-500/10 text-blue-100" : "border-blue-100 bg-blue-50 text-blue-800"}`}
+        >
+          <Warning size={18} weight="fill" className="mt-0.5 shrink-0" />
+          <span className="flex-1">{toast}</span>
+          <button onClick={() => setToast("")} className="shrink-0 p-0.5 rounded hover:bg-white/10">
+            <X size={14} />
+          </button>
+        </motion.div>
+      )}
+
+      {/* Error banner */}
+      {error && (
+        <div className="flex items-start gap-2 rounded-2xl border p-4 text-sm border-red-500/20 bg-red-500/10 text-red-400">
+          <Warning size={18} weight="fill" className="mt-0.5 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={fetchData} className="shrink-0 text-[11px] font-bold underline">
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
 
       {/* KPI Strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -124,7 +198,7 @@ export default function ProviderVerificationPage() {
             </div>
             <div>
               <p className={`text-[10px] ${isDark?"text-zinc-500":"text-slate-400"}`}>{k.label}</p>
-              <p className={`text-[20px] font-bold ${k.c}`}>{k.val}</p>
+              <p className={`text-[20px] font-bold ${k.c}`}>{loading ? "—" : k.val}</p>
             </div>
           </motion.div>
         ))}
@@ -138,7 +212,7 @@ export default function ProviderVerificationPage() {
           <div className="flex items-center justify-center mb-4">
             <svg viewBox="0 0 120 120" className="w-24 h-24">
               {(() => {
-                const total = REQUESTS.length;
+                const total = requests.length || 1;
                 const segments = [
                   { count:stats.pending, color:"#f59e0b" },
                   { count:stats.approved, color:"#10b981" },
@@ -160,7 +234,7 @@ export default function ProviderVerificationPage() {
               })()}
               <text x="60" y="60" textAnchor="middle" dominantBaseline="central"
                 className={`text-[22px] font-bold ${isDark?"fill-white":"fill-slate-800"}`}>
-                {REQUESTS.length}
+                {loading ? "—" : requests.length}
               </text>
             </svg>
           </div>
@@ -229,71 +303,97 @@ export default function ProviderVerificationPage() {
         ))}
       </div>
 
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center py-16">
+          <SpinnerGap size={32} className="animate-spin text-[#C8A762]" />
+          <span className={`mr-3 text-sm ${isDark ? "text-zinc-400" : "text-slate-500"}`}>جاري تحميل الطلبات...</span>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && filtered.length === 0 && (
+        <div className={`${card} p-12 text-center`}>
+          <IdentificationCard size={48} weight="duotone" className={`mx-auto mb-3 ${isDark ? "text-zinc-600" : "text-slate-300"}`} />
+          <p className={`text-sm font-bold mb-1 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+            لا توجد طلبات تحقق
+          </p>
+          <p className={`text-xs ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+            {search || filter !== "all" ? "جرّب تغيير معايير البحث أو الفلتر" : "لم يتم تقديم أي طلبات حتى الآن"}
+          </p>
+        </div>
+      )}
+
       {/* Requests List */}
-      <div className="space-y-3">
-        {filtered.map((r,i)=>{
-          const tc = TYPE_CFG[r.type];
-          const sc = STATUS_CFG[r.status];
-          return (
-            <motion.div key={r.id} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
-              className={`${card} p-5 flex items-start gap-4 group hover:border-[#C8A762]/20 transition-all`}>
-              {/* Avatar */}
-              <div className={`h-11 w-11 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark?"bg-white/[0.04]":"bg-slate-50"}`}>
-                <IdentificationCard size={20} weight="duotone" className={tc.color}/>
-              </div>
+      {!loading && (
+        <div className="space-y-3">
+          {filtered.map((r,i)=>{
+            const tc = TYPE_CFG[r.type] ?? { label: r.type, color: "text-zinc-400" };
+            const sc = STATUS_CFG[r.status] ?? STATUS_CFG.pending;
+            const isActioning = actionLoading === r.id;
+            return (
+              <motion.div key={r.id} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
+                className={`${card} p-5 flex items-start gap-4 group hover:border-[#C8A762]/20 transition-all`}>
+                {/* Avatar */}
+                <div className={`h-11 w-11 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark?"bg-white/[0.04]":"bg-slate-50"}`}>
+                  <IdentificationCard size={20} weight="duotone" className={tc.color}/>
+                </div>
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <p className={`text-[13px] font-bold ${isDark?"text-zinc-100":"text-slate-800"}`}>{r.name}</p>
-                  <span className={`text-[9px] font-bold ${tc.color}`}>{tc.label}</span>
-                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${sc.cls}`}>{sc.label}</span>
-                </div>
-                <div className={`flex items-center gap-3 text-[10px] ${isDark?"text-zinc-600":"text-slate-400"}`}>
-                  <span>{r.id}</span>
-                  <span>{r.date}</span>
-                  <span>{r.docs.length} مستند مرفق</span>
-                </div>
-                {/* Docs Pills */}
-                <div className="flex gap-1.5 mt-2 flex-wrap">
-                  {r.docs.map((d,j)=>(
-                    <span key={j} className={`text-[9px] px-2 py-0.5 rounded-lg ${isDark?"bg-white/[0.04] text-zinc-400":"bg-slate-50 text-slate-500"}`}>
-                      {d}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* AI Score + Actions */}
-              <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                <ScoreBadge score={r.aiScore}/>
-                {r.status==="pending" && (
-                  <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => setToast(`تم تجهيز اعتماد ${r.name} محليا فقط. الاعتماد الإنتاجي ينتظر KYC/Profile API.`)}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
-                    >
-                      <Check size={11} weight="bold"/> اعتماد
-                    </button>
-                    <button
-                      onClick={() => setToast(`تم تجهيز رفض ${r.name} محليا فقط. يلزم لاحقا سبب رفض وسجل تدقيق.`)}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors"
-                    >
-                      <X size={11} weight="bold"/> رفض
-                    </button>
-                    <button
-                      onClick={() => setToast(`معاينة ملف ${r.name}: المستندات mock، ومصدر الحقيقة ينتظر Document/KYC backend.`)}
-                      className={`px-2 py-1.5 rounded-lg text-[10px] font-bold ${isDark?"bg-white/[0.04] text-zinc-400":"bg-slate-50 text-slate-500"} hover:text-blue-400 transition-colors`}
-                    >
-                      <Eye size={12}/>
-                    </button>
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <p className={`text-[13px] font-bold ${isDark?"text-zinc-100":"text-slate-800"}`}>{r.name}</p>
+                    <span className={`text-[9px] font-bold ${tc.color}`}>{tc.label}</span>
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${sc.cls}`}>{sc.label}</span>
                   </div>
-                )}
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
+                  <div className={`flex items-center gap-3 text-[10px] ${isDark?"text-zinc-600":"text-slate-400"}`}>
+                    <span>{r.id}</span>
+                    <span>{r.date}</span>
+                    <span>{r.docs.length} مستند مرفق</span>
+                  </div>
+                  {/* Docs Pills */}
+                  <div className="flex gap-1.5 mt-2 flex-wrap">
+                    {r.docs.map((d,j)=>(
+                      <span key={j} className={`text-[9px] px-2 py-0.5 rounded-lg ${isDark?"bg-white/[0.04] text-zinc-400":"bg-slate-50 text-slate-500"}`}>
+                        {d}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* AI Score + Actions */}
+                <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                  <ScoreBadge score={r.aiScore}/>
+                  {r.status==="pending" && (
+                    <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        disabled={isActioning}
+                        onClick={() => handleApprove(r)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+                      >
+                        {isActioning ? <SpinnerGap size={11} className="animate-spin" /> : <Check size={11} weight="bold"/>} اعتماد
+                      </button>
+                      <button
+                        disabled={isActioning}
+                        onClick={() => handleReject(r)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors disabled:opacity-50"
+                      >
+                        {isActioning ? <SpinnerGap size={11} className="animate-spin" /> : <X size={11} weight="bold"/>} رفض
+                      </button>
+                      <button
+                        onClick={() => setToast(`معاينة ملف ${r.name}: المستندات ستعرض من backend المستندات لاحقاً.`)}
+                        className={`px-2 py-1.5 rounded-lg text-[10px] font-bold ${isDark?"bg-white/[0.04] text-zinc-400":"bg-slate-50 text-slate-500"} hover:text-blue-400 transition-colors`}
+                      >
+                        <Eye size={12}/>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

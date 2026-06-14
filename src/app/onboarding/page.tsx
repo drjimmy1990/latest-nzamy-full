@@ -469,20 +469,41 @@ export default function OnboardingPage() {
 
   const [step, setStep] = useState<Step>(1);
   const [userType, setUserType] = useState<UserType>(null);
+  const [existingUserType, setExistingUserType] = useState<UserType>(null);
   const [services, setServices] = useState<string[]>([]);
   const [city, setCity] = useState("");
   const [specialties, setSpecialties] = useState<string[]>([]);
   const [notifs, setNotifs] = useState<string[]>(["case"]);
   const [hasLawyer, setHasLawyer] = useState<boolean | null>(null);
 
-  // Pre-fill from URL param and skip Step 1 if type is already set
+  // Pre-fill from existing user metadata or URL param, skip Step 1 if type already set
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    const t = p.get("type") as UserType;
-    if (t && ["individual", "company", "micro", "government", "ngo", "lawyer", "firm"].includes(t)) {
-      setUserType(t);
-      setStep(2);
+    async function prefill() {
+      // 1) Try to read existing user_type from Supabase metadata
+      if (BACKEND_MODE === "supabase") {
+        try {
+          const supabase = createClient();
+          const { data: { user } } = await supabase.auth.getUser();
+          const metaType = user?.user_metadata?.user_type as UserType;
+          if (metaType && ["individual", "company", "micro", "government", "ngo", "lawyer", "firm"].includes(metaType)) {
+            setUserType(metaType);
+            setExistingUserType(metaType);
+            setStep(2); // Skip "Who are you?" — already set during registration
+            return;
+          }
+        } catch {
+          // Fall through to URL param check
+        }
+      }
+      // 2) Fallback: check URL param
+      const p = new URLSearchParams(window.location.search);
+      const t = p.get("type") as UserType;
+      if (t && ["individual", "company", "micro", "government", "ngo", "lawyer", "firm"].includes(t)) {
+        setUserType(t);
+        setStep(2);
+      }
     }
+    prefill();
   }, []);
 
   const toggleService = (id: string) =>
@@ -640,19 +661,22 @@ export default function OnboardingPage() {
                       if (!canNext()) return;
                       if (step === 4 && BACKEND_MODE === "supabase") {
                         // Save onboarding preferences to Supabase user_metadata
+                        // IMPORTANT: Do NOT overwrite user_type if it was already set during registration
                         try {
                           const supabase = createClient();
-                          await supabase.auth.updateUser({
-                            data: {
-                              onboarding_completed: true,
-                              user_type: userType,
-                              preferred_services: services,
-                              city: city || undefined,
-                              specialties: specialties.length > 0 ? specialties : undefined,
-                              notification_preferences: notifs,
-                              has_in_house_lawyer: hasLawyer,
-                            },
-                          });
+                          const updateData: Record<string, unknown> = {
+                            onboarding_completed: true,
+                            preferred_services: services,
+                            city: city || undefined,
+                            specialties: specialties.length > 0 ? specialties : undefined,
+                            notification_preferences: notifs,
+                            has_in_house_lawyer: hasLawyer,
+                          };
+                          // Only set user_type if it wasn't already set during registration
+                          if (!existingUserType) {
+                            updateData.user_type = userType;
+                          }
+                          await supabase.auth.updateUser({ data: updateData });
                         } catch (err) {
                           console.warn("[Nzamy] Failed to save onboarding data:", err);
                         }
