@@ -43,14 +43,16 @@ begin
     display_name,
     display_name_en,
     email,
-    phone
+    phone,
+    onboarding_completed
   ) values (
     new.id,
     _user_type,
     coalesce(new.raw_user_meta_data ->> 'display_name', ''),
     coalesce(new.raw_user_meta_data ->> 'display_name_en', ''),
     new.email,
-    coalesce(new.raw_user_meta_data ->> 'phone', new.phone)
+    coalesce(new.raw_user_meta_data ->> 'phone', new.phone),
+    coalesce((new.raw_user_meta_data ->> 'onboarding_completed')::boolean, false)
   );
 
   -- Auto-create lawyer_profiles row for lawyers
