@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     .from("groups")
     .select("*, group_members(count)", { count: "exact" })
     .in("id", groupIds)
-    .eq("is_active", true)
+    .eq("status", "active")
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
 
