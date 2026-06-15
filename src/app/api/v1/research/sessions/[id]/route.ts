@@ -39,7 +39,7 @@ export async function GET(
 
 /**
  * PATCH /api/v1/research/sessions/[id] — Update session (rename, archive/restore)
- * Body: { name?, is_archived? }
+ * Body: { title?, is_archived? }
  */
 export async function PATCH(
   request: NextRequest,
@@ -61,12 +61,14 @@ export async function PATCH(
   const updates: Record<string, unknown> = {};
 
   if ("name" in body) {
-    updates.name = body.name;
+    updates.title = body.name;
+  }
+  if ("title" in body) {
+    updates.title = body.title;
   }
 
   if ("is_archived" in body) {
-    updates.is_archived = body.is_archived;
-    updates.archived_at = body.is_archived ? new Date().toISOString() : null;
+    updates.status = body.is_archived ? "archived" : "active";
   }
 
   if (Object.keys(updates).length === 0) {

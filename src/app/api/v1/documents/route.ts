@@ -19,7 +19,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("attachments")
     .select("*")
-    .eq("user_id", user.id)
+    .eq("owner_user_id", user.id)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -32,7 +32,7 @@ export async function GET() {
 /**
  * POST /api/v1/documents — Upload a document record
  * Auth required.
- * Body: { file_name, file_url, file_size, file_type, case_ref? }
+ * Body: { label, storage_path, size_bytes, mime_type, request_id? }
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -47,9 +47,9 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
 
-  if (!body.file_name || !body.file_url || !body.file_size || !body.file_type) {
+  if (!body.label || !body.storage_path) {
     return NextResponse.json(
-      { error: "file_name, file_url, file_size, and file_type are required" },
+      { error: "label and storage_path are required" },
       { status: 400 },
     );
   }
@@ -57,12 +57,12 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase
     .from("attachments")
     .insert({
-      user_id: user.id,
-      file_name: body.file_name,
-      file_url: body.file_url,
-      file_size: body.file_size,
-      file_type: body.file_type,
-      request_id: body.case_ref ?? null,
+      owner_user_id: user.id,
+      label: body.label,
+      storage_path: body.storage_path,
+      mime_type: body.mime_type ?? "application/octet-stream",
+      size_bytes: body.size_bytes ?? 0,
+      request_id: body.request_id ?? null,
     })
     .select()
     .single();

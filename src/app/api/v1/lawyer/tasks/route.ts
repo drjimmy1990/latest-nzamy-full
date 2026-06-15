@@ -21,9 +21,9 @@ export async function GET() {
   // Get active service requests assigned to this lawyer as implicit tasks
   const { data: requests } = await supabase
     .from("service_requests")
-    .select("id, title, status, type, priority, created_at, updated_at, metadata")
-    .eq("receiver_id", uid)
-    .in("status", ["assigned", "in_progress", "pending"])
+    .select("id, title, status, type, created_at, updated_at, metadata")
+    .eq("assigned_to", uid)
+    .in("status", ["assigned", "submitted", "in_review"])
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -32,7 +32,7 @@ export async function GET() {
   const { data: events } = requestIds.length > 0
     ? await supabase
         .from("request_events")
-        .select("id, request_id, event_type, payload, created_at")
+        .select("id, request_id, event, created_at")
         .in("request_id", requestIds)
         .order("created_at", { ascending: false })
         .limit(100)
@@ -46,7 +46,7 @@ export async function GET() {
       title: req.title || "مهمة بدون عنوان",
       status: req.status,
       type: req.type,
-      priority: req.priority || "medium",
+      priority: "medium",
       createdAt: req.created_at,
       updatedAt: req.updated_at,
       eventsCount: reqEvents.length,
@@ -83,7 +83,7 @@ export async function PATCH(request: NextRequest) {
     .from("service_requests")
     .update({ status, updated_at: new Date().toISOString() })
     .eq("id", taskId)
-    .eq("receiver_id", user.id);
+    .eq("assigned_to", user.id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

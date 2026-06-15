@@ -87,8 +87,7 @@ export async function PATCH(
   await supabase.from("request_events").insert({
     request_id: id,
     event: patch.status ? "status_change" : "updated",
-    details: { changes: patch, description: eventDescription },
-    created_by: user.id,
+    actor_user_id: user.id,
   });
 
   return NextResponse.json({ data });

@@ -24,19 +24,23 @@ export async function GET(
     .from("cases")
     .select("*")
     .eq("id", id)
-    .or(`user_id.eq.${user.id},lawyer_id.eq.${user.id}`)
+    .or(`client_user_id.eq.${user.id},assigned_user_id.eq.${user.id}`)
     .single();
 
   if (error || !caseData) {
     return NextResponse.json({ error: "Case not found" }, { status: 404 });
   }
 
-  // Fetch related attachments if they exist
-  const { data: attachments } = await supabase
-    .from("case_attachments")
-    .select("*")
-    .eq("case_id", id)
-    .order("created_at", { ascending: false });
+  // Fetch related attachments via the case's request_id
+  let attachments: Record<string, unknown>[] | null = null;
+  if (caseData.request_id) {
+    const { data: attachmentData } = await supabase
+      .from("attachments")
+      .select("*")
+      .eq("request_id", caseData.request_id)
+      .order("created_at", { ascending: false });
+    attachments = attachmentData;
+  }
 
   return NextResponse.json({
     data: { ...caseData, attachments: attachments ?? [] },

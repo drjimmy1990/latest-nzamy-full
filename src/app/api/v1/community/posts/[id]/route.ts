@@ -35,7 +35,7 @@ export async function GET(
   // Increment view count
   await supabase
     .from("community_posts")
-    .update({ views: (post.views ?? 0) + 1 })
+    .update({ view_count: (post.view_count ?? 0) + 1 })
     .eq("id", id);
 
   return NextResponse.json({ data: post });
@@ -64,7 +64,7 @@ export async function PATCH(
   // Verify ownership
   const { data: existing, error: fetchError } = await supabase
     .from("community_posts")
-    .select("user_id")
+    .select("author_id")
     .eq("id", id)
     .single();
 
@@ -72,12 +72,12 @@ export async function PATCH(
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
   }
 
-  if (existing.user_id !== user.id) {
+  if (existing.author_id !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await request.json();
-  const allowedFields = ["title", "body", "category", "tags"];
+  const allowedFields = ["title", "body", "visibility", "tags"];
   const updates: Record<string, unknown> = {};
   for (const key of allowedFields) {
     if (key in body) {

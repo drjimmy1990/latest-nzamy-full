@@ -22,9 +22,9 @@ export async function POST(
   const { id: postId } = await context.params;
   const body = await request.json();
 
-  if (!body.content) {
+  if (!body.content && !body.body) {
     return NextResponse.json(
-      { error: "content is required" },
+      { error: "body is required" },
       { status: 400 },
     );
   }
@@ -44,8 +44,8 @@ export async function POST(
     .from("community_answers")
     .insert({
       post_id: postId,
-      user_id: user.id,
-      content: body.content,
+      author_id: user.id,
+      body: body.body ?? body.content,
     })
     .select()
     .single();

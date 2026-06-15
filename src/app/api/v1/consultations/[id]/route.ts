@@ -24,7 +24,7 @@ export async function GET(
     .from("consultations")
     .select("*")
     .eq("id", id)
-    .or(`client_id.eq.${user.id},lawyer_id.eq.${user.id}`)
+    .or(`requester_user_id.eq.${user.id},lawyer_user_id.eq.${user.id}`)
     .single();
 
   if (error || !data) {
@@ -60,7 +60,7 @@ export async function PATCH(
   // Verify user is part of this consultation
   const { data: existing } = await supabase
     .from("consultations")
-    .select("client_id, lawyer_id")
+    .select("requester_user_id, lawyer_user_id")
     .eq("id", id)
     .single();
 
@@ -71,7 +71,7 @@ export async function PATCH(
     );
   }
 
-  if (existing.client_id !== user.id && existing.lawyer_id !== user.id) {
+  if (existing.requester_user_id !== user.id && existing.lawyer_user_id !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

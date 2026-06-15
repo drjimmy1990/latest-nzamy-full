@@ -72,14 +72,14 @@ export async function POST(
         target_type === "post" ? "community_posts" : "community_answers";
       const { data: target } = await supabase
         .from(table)
-        .select("votes")
+        .select("vote_count")
         .eq("id", target_id)
         .single();
 
       if (target) {
         await supabase
           .from(table)
-          .update({ votes: (target.votes ?? 0) + diff })
+          .update({ vote_count: (target.vote_count ?? 0) + diff })
           .eq("id", target_id);
       }
     }
@@ -108,14 +108,14 @@ export async function POST(
     target_type === "post" ? "community_posts" : "community_answers";
   const { data: target } = await supabase
     .from(table)
-    .select("votes")
+    .select("vote_count")
     .eq("id", target_id)
     .single();
 
   if (target) {
     await supabase
       .from(table)
-      .update({ votes: (target.votes ?? 0) + value })
+      .update({ vote_count: (target.vote_count ?? 0) + value })
       .eq("id", target_id);
   }
 

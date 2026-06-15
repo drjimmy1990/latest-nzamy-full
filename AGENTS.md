@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **nzamy-website** (12282 symbols, 19159 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **latest-nzamy-full** (12743 symbols, 19699 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -24,10 +24,10 @@ This project is indexed by GitNexus as **nzamy-website** (12282 symbols, 19159 r
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/nzamy-website/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/nzamy-website/clusters` | All functional areas |
-| `gitnexus://repo/nzamy-website/processes` | All execution flows |
-| `gitnexus://repo/nzamy-website/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/latest-nzamy-full/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/latest-nzamy-full/clusters` | All functional areas |
+| `gitnexus://repo/latest-nzamy-full/processes` | All execution flows |
+| `gitnexus://repo/latest-nzamy-full/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 

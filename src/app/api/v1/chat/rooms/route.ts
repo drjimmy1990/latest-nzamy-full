@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     (rooms ?? []).map(async (room) => {
       const { data: lastMessage } = await supabase
         .from("chat_messages")
-        .select("id, content, message_type, sender_id, created_at")
+        .select("id, body, sender_id, created_at")
         .eq("room_id", room.id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/v1/chat/rooms — Create a new chat room
- * Body: { participant_ids: string[], name?, type: 'direct'|'group'|'case' }
+ * Body: { participant_ids: string[], name?, room_type: 'direct'|'group'|'support' }
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -82,16 +82,16 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
 
-  if (!body.type || !Array.isArray(body.participant_ids)) {
+  if (!body.room_type || !Array.isArray(body.participant_ids)) {
     return NextResponse.json(
-      { error: "type and participant_ids are required" },
+      { error: "room_type and participant_ids are required" },
       { status: 400 },
     );
   }
 
-  if (!["direct", "group", "case"].includes(body.type)) {
+  if (!["direct", "group", "support"].includes(body.room_type)) {
     return NextResponse.json(
-      { error: "type must be 'direct', 'group', or 'case'" },
+      { error: "room_type must be 'direct', 'group', or 'support'" },
       { status: 400 },
     );
   }
@@ -101,8 +101,7 @@ export async function POST(request: NextRequest) {
     .from("chat_rooms")
     .insert({
       name: body.name ?? null,
-      type: body.type,
-      related_id: body.related_id ?? null,
+      room_type: body.room_type,
     })
     .select()
     .single();

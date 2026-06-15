@@ -61,7 +61,7 @@ export async function GET(
 
 /**
  * POST /api/v1/chat/rooms/[id]/messages — Send a message
- * Body: { content, message_type?: 'text'|'file', metadata? }
+ * Body: { body: string, metadata?: object }
  */
 export async function POST(
   request: NextRequest,
@@ -93,9 +93,9 @@ export async function POST(
 
   const body = await request.json();
 
-  if (!body.content) {
+  if (!body.body) {
     return NextResponse.json(
-      { error: "content is required" },
+      { error: "body is required" },
       { status: 400 },
     );
   }
@@ -105,9 +105,8 @@ export async function POST(
     .insert({
       room_id: roomId,
       sender_id: user.id,
-      content: body.content,
-      message_type: body.message_type ?? "text",
-      metadata: body.metadata ?? null,
+      body: body.body,
+      metadata: body.metadata ?? {},
     })
     .select()
     .single();

@@ -32,9 +32,9 @@ export async function GET(request: NextRequest) {
     .range(offset, offset + limit - 1);
 
   if (archived === "true") {
-    query = query.eq("is_archived", true);
+    query = query.eq("status", "archived");
   } else if (archived === "false") {
-    query = query.eq("is_archived", false);
+    query = query.eq("status", "active");
   }
 
   const { data, count, error } = await query;
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/v1/research/sessions — Create a new research session
- * Body: { name? }
+ * Body: { title? }
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     .from("research_sessions")
     .insert({
       user_id: user.id,
-      name: body.name ?? "Untitled Session",
+      title: body.title ?? body.name ?? "Untitled Session",
     })
     .select()
     .single();

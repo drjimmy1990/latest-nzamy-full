@@ -92,8 +92,7 @@ export async function POST(request: NextRequest) {
     await supabase.from("request_events").insert({
       request_id: serviceRequest.id,
       event: body.request_event.event ?? "created",
-      details: body.request_event.details ?? null,
-      created_by: user.id,
+      actor_user_id: user.id,
     });
   }
 
@@ -101,7 +100,7 @@ export async function POST(request: NextRequest) {
   if (body.payment) {
     await supabase.from("payments").insert({
       request_id: serviceRequest.id,
-      user_id: user.id,
+      payer_user_id: user.id,
       ...body.payment,
     });
   }

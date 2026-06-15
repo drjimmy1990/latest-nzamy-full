@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
  * Query params:
  *   - limit (default: 20)
  *   - offset (default: 0)
- *   - tab ('public' | 'lawyers')
+ *   - visibility ('public' | 'lawyers_only' | 'private')
  *   - category (text filter)
  */
 export async function GET(request: NextRequest) {
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get("limit") ?? "20", 10);
   const offset = parseInt(searchParams.get("offset") ?? "0", 10);
-  const tab = searchParams.get("tab");
+  const visibility = searchParams.get("visibility") ?? searchParams.get("tab");
   const category = searchParams.get("category");
 
   let query = supabase
@@ -32,12 +32,12 @@ export async function GET(request: NextRequest) {
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
 
-  if (tab) {
-    query = query.eq("tab", tab);
+  if (visibility) {
+    query = query.eq("visibility", visibility);
   }
 
   if (category) {
-    query = query.eq("category", category);
+    query = query.contains("tags", [category]);
   }
 
   const { data, count, error } = await query;
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/v1/community/posts — Create a new community post
- * Body: { title, body?, category, tab, tags?, is_anonymous? }
+ * Body: { title, body?, visibility?, tags? }
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -66,9 +66,9 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
 
-  if (!body.title || !body.category || !body.tab) {
+  if (!body.title) {
     return NextResponse.json(
-      { error: "title, category, and tab are required" },
+      { error: "title is required" },
       { status: 400 },
     );
   }
@@ -76,13 +76,11 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase
     .from("community_posts")
     .insert({
-      user_id: user.id,
+      author_id: user.id,
       title: body.title,
-      body: body.body ?? null,
-      category: body.category,
-      tab: body.tab,
+      body: body.body ?? "",
+      visibility: body.visibility ?? "public",
       tags: body.tags ?? [],
-      is_anonymous: body.is_anonymous ?? false,
     })
     .select()
     .single();

@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 
 /**
  * POST /api/v1/groups/[id]/invite — Send group invitation
- * Body: { email } or { user_id }
+ * Body: { email } or { phone }
  * Invitation expires in 7 days.
  */
 export async function POST(
@@ -37,9 +37,9 @@ export async function POST(
 
   const body = await request.json();
 
-  if (!body.email && !body.user_id) {
+  if (!body.email && !body.phone) {
     return NextResponse.json(
-      { error: "email or user_id is required" },
+      { error: "email or phone is required" },
       { status: 400 },
     );
   }
@@ -73,7 +73,7 @@ export async function POST(
       group_id: groupId,
       inviter_id: user.id,
       invitee_email: body.email ?? null,
-      invitee_user_id: body.user_id ?? null,
+      invitee_phone: body.phone ?? null,
       status: "pending",
       expires_at: expiresAt.toISOString(),
     })

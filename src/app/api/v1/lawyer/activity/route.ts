@@ -21,16 +21,16 @@ export async function GET() {
   // Get request events where lawyer is the actor
   const { data: events } = await supabase
     .from("request_events")
-    .select("id, event_type, payload, created_at, request_id")
-    .eq("actor_id", uid)
+    .select("id, event, created_at, request_id")
+    .eq("actor_user_id", uid)
     .order("created_at", { ascending: false })
     .limit(30);
 
   // Get audit log entries
   const { data: auditEntries } = await supabase
-    .from("audit_log")
-    .select("id, action, entity_type, entity_id, metadata, created_at")
-    .eq("user_id", uid)
+    .from("admin_audit_events")
+    .select("id, action, target_type, target_id, metadata, created_at")
+    .eq("actor_user_id", uid)
     .order("created_at", { ascending: false })
     .limit(20);
 
@@ -39,8 +39,7 @@ export async function GET() {
     ...(events ?? []).map((e) => ({
       id: e.id,
       type: "event" as const,
-      action: e.event_type,
-      payload: e.payload,
+      action: e.event,
       entityId: e.request_id,
       createdAt: e.created_at,
     })),
@@ -48,8 +47,8 @@ export async function GET() {
       id: a.id,
       type: "audit" as const,
       action: a.action,
-      payload: a.metadata,
-      entityId: a.entity_id,
+      metadata: a.metadata,
+      entityId: a.target_id,
       createdAt: a.created_at,
     })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())

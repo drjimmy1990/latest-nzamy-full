@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("consultations")
     .select("*", { count: "exact" })
-    .or(`client_id.eq.${user.id},lawyer_id.eq.${user.id}`)
+    .or(`requester_user_id.eq.${user.id},lawyer_user_id.eq.${user.id}`)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/v1/consultations — Create a new consultation
- * Body: { lawyer_id?, type, topic, description, preferred_date? }
+ * Body: { lawyer_user_id?, mode, description?, preferred_date? }
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -62,9 +62,9 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
 
-  if (!body.type || !body.topic || !body.description) {
+  if (!body.mode) {
     return NextResponse.json(
-      { error: "type, topic, and description are required" },
+      { error: "mode is required" },
       { status: 400 },
     );
   }
@@ -72,11 +72,10 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase
     .from("consultations")
     .insert({
-      client_id: user.id,
-      lawyer_id: body.lawyer_id ?? null,
-      type: body.type,
-      topic: body.topic,
-      description: body.description,
+      requester_user_id: user.id,
+      lawyer_user_id: body.lawyer_user_id ?? null,
+      mode: body.mode,
+      notes: body.description ?? "",
       status: "pending",
       scheduled_at: body.preferred_date ?? null,
     })

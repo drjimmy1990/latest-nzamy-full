@@ -24,7 +24,7 @@ export async function GET(
     .from("groups")
     .select("*, group_members(count)")
     .eq("id", id)
-    .eq("is_active", true)
+    .eq("status", "active")
     .single();
 
   if (error) {
@@ -133,7 +133,7 @@ export async function DELETE(
 
   const { error } = await supabase
     .from("groups")
-    .update({ is_active: false })
+    .update({ status: "cancelled" })
     .eq("id", id);
 
   if (error) {

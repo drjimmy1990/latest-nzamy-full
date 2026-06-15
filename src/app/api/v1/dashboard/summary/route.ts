@@ -34,8 +34,8 @@ export async function GET() {
       supabase
         .from("service_requests")
         .select("*")
-        .eq("sender_id", uid)
-        .in("status", ["pending", "in_progress", "assigned"])
+        .eq("requester_user_id", uid)
+        .in("status", ["submitted", "in_review", "approved"])
         .order("created_at", { ascending: false })
         .limit(3),
     )
@@ -47,7 +47,7 @@ export async function GET() {
       supabase
         .from("consultations")
         .select("*")
-        .eq("client_id", uid)
+        .eq("requester_user_id", uid)
         .gt("scheduled_at", new Date().toISOString())
         .order("scheduled_at", { ascending: true })
         .limit(1)
@@ -57,15 +57,21 @@ export async function GET() {
       .catch(() => null),
 
     // 3. Recent messages (rooms the user participates in)
-    Promise.resolve(
-      supabase
+    (async () => {
+      const { data: parts } = await supabase
+        .from("chat_participants")
+        .select("room_id")
+        .eq("user_id", uid);
+      const roomIds = (parts ?? []).map((p) => p.room_id);
+      if (roomIds.length === 0) return [];
+      const { data } = await supabase
         .from("chat_messages")
-        .select("*, chat_rooms!inner(id, participant_ids)")
-        .contains("chat_rooms.participant_ids", [uid])
+        .select("*")
+        .in("room_id", roomIds)
         .order("created_at", { ascending: false })
-        .limit(3),
-    )
-      .then(({ data }) => data ?? [])
+        .limit(3);
+      return data ?? [];
+    })()
       .catch(() => []),
 
     // 4. Active subscription + plan info

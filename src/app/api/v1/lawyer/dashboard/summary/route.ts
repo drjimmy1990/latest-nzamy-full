@@ -33,8 +33,8 @@ export async function GET() {
       supabase
         .from("service_requests")
         .select("id", { count: "exact", head: true })
-        .eq("receiver_id", uid)
-        .in("status", ["assigned", "in_progress"]),
+        .eq("assigned_to", uid)
+        .in("status", ["assigned", "submitted", "in_review"]),
     )
       .then(({ count }) => count ?? 0)
       .catch(() => 0),
@@ -44,8 +44,8 @@ export async function GET() {
       supabase
         .from("consultations")
         .select("id", { count: "exact", head: true })
-        .eq("lawyer_id", uid)
-        .in("status", ["scheduled", "pending"]),
+        .eq("lawyer_user_id", uid)
+        .in("status", ["pending", "confirmed"]),
     )
       .then(({ count }) => count ?? 0)
       .catch(() => 0),
@@ -54,9 +54,8 @@ export async function GET() {
     Promise.resolve(
       supabase
         .from("payments")
-        .select("amount")
-        .eq("provider_id", uid)
-        .eq("status", "completed")
+        .select("amount, request_id")
+        .eq("status", "succeeded")
         .gte("created_at", new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()),
     )
       .then(({ data }) => {
@@ -70,8 +69,8 @@ export async function GET() {
       supabase
         .from("service_requests")
         .select("id", { count: "exact", head: true })
-        .eq("receiver_id", uid)
-        .eq("status", "in_progress"),
+        .eq("assigned_to", uid)
+        .in("status", ["submitted", "in_review"]),
     )
       .then(({ count }) => count ?? 0)
       .catch(() => 0),
@@ -81,8 +80,8 @@ export async function GET() {
       supabase
         .from("service_requests")
         .select("id, title, status, updated_at, type, metadata")
-        .eq("receiver_id", uid)
-        .in("status", ["assigned", "in_progress", "completed"])
+        .eq("assigned_to", uid)
+        .in("status", ["assigned", "submitted", "in_review", "completed"])
         .order("updated_at", { ascending: false })
         .limit(4),
     )
@@ -93,8 +92,8 @@ export async function GET() {
     Promise.resolve(
       supabase
         .from("consultations")
-        .select("id, scheduled_at, type, client_id")
-        .eq("lawyer_id", uid)
+        .select("id, scheduled_at, mode, requester_user_id")
+        .eq("lawyer_user_id", uid)
         .gt("scheduled_at", new Date().toISOString())
         .order("scheduled_at", { ascending: true })
         .limit(5),
@@ -106,8 +105,8 @@ export async function GET() {
     Promise.resolve(
       supabase
         .from("request_events")
-        .select("id, event_type, payload, created_at, request_id")
-        .eq("actor_id", uid)
+        .select("id, event, created_at, request_id")
+        .eq("actor_user_id", uid)
         .order("created_at", { ascending: false })
         .limit(8),
     )

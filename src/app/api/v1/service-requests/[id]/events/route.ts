@@ -80,8 +80,7 @@ export async function POST(
     .insert({
       request_id: requestId,
       event: body.event,
-      details: body.details ?? null,
-      created_by: user.id,
+      actor_user_id: user.id,
     })
     .select()
     .single();

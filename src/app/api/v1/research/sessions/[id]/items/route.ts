@@ -51,7 +51,7 @@ export async function GET(
 
 /**
  * POST /api/v1/research/sessions/[id]/items — Add item to session
- * Body: { source, item_type, title, content }
+ * Body: { source, item_type, content }
  */
 export async function POST(
   request: NextRequest,
@@ -70,9 +70,9 @@ export async function POST(
   const { id: sessionId } = await context.params;
   const body = await request.json();
 
-  if (!body.source || !body.item_type || !body.title || !body.content) {
+  if (!body.content) {
     return NextResponse.json(
-      { error: "source, item_type, title, and content are required" },
+      { error: "content is required" },
       { status: 400 },
     );
   }
@@ -96,11 +96,8 @@ export async function POST(
     .from("research_items")
     .insert({
       session_id: sessionId,
-      user_id: user.id,
-      space: "session",
-      source: body.source,
-      item_type: body.item_type,
-      title: body.title,
+      source: body.source ?? "",
+      item_type: body.item_type ?? "note",
       content: body.content,
     })
     .select()

@@ -23,8 +23,7 @@ export async function GET() {
     Promise.resolve(
       supabase
         .from("payments")
-        .select("id, amount, status, payment_method, created_at, metadata")
-        .eq("provider_id", uid)
+        .select("id, amount, status, gateway, gateway_ref, paid_at, created_at")
         .order("created_at", { ascending: false })
         .limit(50),
     )
@@ -35,7 +34,7 @@ export async function GET() {
     Promise.resolve(
       supabase
         .from("wallet_transactions")
-        .select("id, amount, type, description, created_at")
+        .select("id, amount, kind, balance_after, note, created_at")
         .eq("user_id", uid)
         .order("created_at", { ascending: false })
         .limit(50),
@@ -59,12 +58,12 @@ export async function GET() {
 
   // Calculate totals
   const totalRevenue = payments
-    .filter((p: { status: string }) => p.status === "completed")
+    .filter((p: { status: string }) => p.status === "succeeded")
     .reduce((sum: number, p: { amount: number }) => sum + (p.amount ?? 0), 0);
 
   const thisMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
   const monthlyRevenue = payments
-    .filter((p: { status: string; created_at: string }) => p.status === "completed" && p.created_at >= thisMonthStart)
+    .filter((p: { status: string; created_at: string }) => p.status === "succeeded" && p.created_at >= thisMonthStart)
     .reduce((sum: number, p: { amount: number }) => sum + (p.amount ?? 0), 0);
 
   return NextResponse.json({
