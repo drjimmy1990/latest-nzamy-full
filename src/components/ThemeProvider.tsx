@@ -112,7 +112,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
         t: lang,
       }}
     >
-      <div suppressHydrationWarning>{children}</div>
+      {children}
     </ThemeContext.Provider>
   );
 }

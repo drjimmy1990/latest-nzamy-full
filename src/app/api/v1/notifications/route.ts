@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     .range(offset, offset + limit - 1);
 
   if (unreadOnly) {
-    query = query.eq("is_read", false);
+    query = query.is("read_at", null);
   }
 
   const { data, count, error } = await query;
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     .from("notifications")
     .select("*", { count: "exact", head: true })
     .eq("user_id", user.id)
-    .eq("is_read", false);
+    .is("read_at", null);
 
   return NextResponse.json({
     notifications: data,
@@ -78,9 +78,9 @@ export async function PATCH(request: Request) {
   if (body.mark_all) {
     const { error } = await supabase
       .from("notifications")
-      .update({ is_read: true })
+      .update({ read_at: new Date().toISOString() })
       .eq("user_id", user.id)
-      .eq("is_read", false);
+      .is("read_at", null);
 
     if (error) {
       return NextResponse.json(
@@ -94,7 +94,7 @@ export async function PATCH(request: Request) {
   if (Array.isArray(body.ids) && body.ids.length > 0) {
     const { error } = await supabase
       .from("notifications")
-      .update({ is_read: true })
+      .update({ read_at: new Date().toISOString() })
       .eq("user_id", user.id)
       .in("id", body.ids);
 
