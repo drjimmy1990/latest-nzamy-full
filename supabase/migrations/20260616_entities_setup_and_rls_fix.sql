@@ -1,12 +1,10 @@
 -- =============================================================================
--- Phase 1 — Migration 002 (Corrected Setup) + RLS Policy Alignment
+-- Migration: Entity Tables + RLS Policies (Corrected Order)
 -- Date: 2026-06-16
 -- Description:
---   1. Creates organization entity profiles (firm, business, government, NGO)
---      and their membership/RBAC tables if they do not exist.
---   2. Fixes the previous role-based policies to use `user_type = 'admin'`
---      instead of `role = 'admin'` on the profiles table.
---   3. Automatically drops any conflicting or historical policies before creation.
+--   Creates all 8 entity/membership tables FIRST, then applies all RLS
+--   policies and triggers AFTER all tables exist. This avoids cross-reference
+--   errors where a policy on table A references table B before B is created.
 -- =============================================================================
 
 -- Ensure handle_updated_at() trigger function exists
@@ -22,9 +20,12 @@ begin
 end;
 $$;
 
--- ---------------------------------------------------------------------------
--- 1. firm_profiles — Law firm entity
--- ---------------------------------------------------------------------------
+
+-- ╔═══════════════════════════════════════════════════════════════════════════╗
+-- ║  PART 1: CREATE ALL TABLES (no policies, no triggers)                    ║
+-- ╚═══════════════════════════════════════════════════════════════════════════╝
+
+-- 1. firm_profiles
 create table if not exists public.firm_profiles (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references public.profiles(id) on delete cascade,
@@ -58,59 +59,8 @@ create index if not exists idx_firm_profiles_owner on public.firm_profiles (owne
 create index if not exists idx_firm_profiles_verification on public.firm_profiles (verification_status);
 create index if not exists idx_firm_profiles_size on public.firm_profiles (size);
 
-alter table public.firm_profiles enable row level security;
 
--- Policies for firm_profiles
-drop policy if exists "firm_profiles: owner can read own firm" on public.firm_profiles;
-create policy "firm_profiles: owner can read own firm"
-  on public.firm_profiles for select
-  using (owner_user_id = auth.uid());
-
-drop policy if exists "firm_profiles: members can read their firm" on public.firm_profiles;
-create policy "firm_profiles: members can read their firm"
-  on public.firm_profiles for select
-  using (
-    exists (
-      select 1 from public.firm_members fm
-      where fm.firm_id = firm_profiles.id
-        and fm.user_id = auth.uid()
-        and fm.status = 'active'
-    )
-  );
-
-drop policy if exists "firm_profiles: owner can insert" on public.firm_profiles;
-create policy "firm_profiles: owner can insert"
-  on public.firm_profiles for insert
-  with check (owner_user_id = auth.uid());
-
-drop policy if exists "firm_profiles: owner can update" on public.firm_profiles;
-create policy "firm_profiles: owner can update"
-  on public.firm_profiles for update
-  using (owner_user_id = auth.uid())
-  with check (owner_user_id = auth.uid());
-
-drop policy if exists "firm_profiles: admin full read" on public.firm_profiles;
-drop policy if exists "admins read firm profiles" on public.firm_profiles;
-create policy "admins read firm profiles"
-  on public.firm_profiles for select
-  using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid()
-        and p.user_type = 'admin'
-    )
-  );
-
--- Trigger
-drop trigger if exists trg_firm_profiles_updated_at on public.firm_profiles;
-create trigger trg_firm_profiles_updated_at
-  before update on public.firm_profiles
-  for each row execute function public.handle_updated_at();
-
-
--- ---------------------------------------------------------------------------
--- 2. firm_members — Firm membership and RBAC
--- ---------------------------------------------------------------------------
+-- 2. firm_members
 create table if not exists public.firm_members (
   id uuid primary key default gen_random_uuid(),
   firm_id uuid not null references public.firm_profiles(id) on delete cascade,
@@ -139,81 +89,8 @@ create index if not exists idx_firm_members_user on public.firm_members (user_id
 create index if not exists idx_firm_members_role on public.firm_members (role);
 create index if not exists idx_firm_members_status on public.firm_members (status);
 
-alter table public.firm_members enable row level security;
 
--- Policies for firm_members
-drop policy if exists "firm_members: member can read own membership" on public.firm_members;
-create policy "firm_members: member can read own membership"
-  on public.firm_members for select
-  using (user_id = auth.uid());
-
-drop policy if exists "firm_members: firm owner can read all members" on public.firm_members;
-create policy "firm_members: firm owner can read all members"
-  on public.firm_members for select
-  using (
-    exists (
-      select 1 from public.firm_profiles fp
-      where fp.id = firm_members.firm_id
-        and fp.owner_user_id = auth.uid()
-    )
-  );
-
-drop policy if exists "firm_members: active members can read co-members" on public.firm_members;
-create policy "firm_members: active members can read co-members"
-  on public.firm_members for select
-  using (
-    exists (
-      select 1 from public.firm_members self
-      where self.firm_id = firm_members.firm_id
-        and self.user_id = auth.uid()
-        and self.status = 'active'
-    )
-  );
-
-drop policy if exists "firm_members: firm owner can insert" on public.firm_members;
-create policy "firm_members: firm owner can insert"
-  on public.firm_members for insert
-  with check (
-    exists (
-      select 1 from public.firm_profiles fp
-      where fp.id = firm_members.firm_id
-        and fp.owner_user_id = auth.uid()
-    )
-  );
-
-drop policy if exists "firm_members: firm owner can update" on public.firm_members;
-create policy "firm_members: firm owner can update"
-  on public.firm_members for update
-  using (
-    exists (
-      select 1 from public.firm_profiles fp
-      where fp.id = firm_members.firm_id
-        and fp.owner_user_id = auth.uid()
-    )
-  );
-
-drop policy if exists "firm_members: admin full read" on public.firm_members;
-drop policy if exists "admins read firm members" on public.firm_members;
-create policy "admins read firm members"
-  on public.firm_members for select
-  using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid()
-        and p.user_type = 'admin'
-    )
-  );
-
--- Trigger
-drop trigger if exists trg_firm_members_updated_at on public.firm_members;
-create trigger trg_firm_members_updated_at
-  before update on public.firm_members
-  for each row execute function public.handle_updated_at();
-
-
--- ---------------------------------------------------------------------------
--- 3. business_profiles — Corporate entity
--- ---------------------------------------------------------------------------
+-- 3. business_profiles
 create table if not exists public.business_profiles (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references public.profiles(id) on delete cascade,
@@ -243,59 +120,8 @@ create index if not exists idx_business_profiles_verification on public.business
 create index if not exists idx_business_profiles_size on public.business_profiles (size);
 create index if not exists idx_business_profiles_cr on public.business_profiles (cr_number);
 
-alter table public.business_profiles enable row level security;
 
--- Policies for business_profiles
-drop policy if exists "business_profiles: owner can read own" on public.business_profiles;
-create policy "business_profiles: owner can read own"
-  on public.business_profiles for select
-  using (owner_user_id = auth.uid());
-
-drop policy if exists "business_profiles: members can read their org" on public.business_profiles;
-create policy "business_profiles: members can read their org"
-  on public.business_profiles for select
-  using (
-    exists (
-      select 1 from public.business_members bm
-      where bm.business_id = business_profiles.id
-        and bm.user_id = auth.uid()
-        and bm.status = 'active'
-    )
-  );
-
-drop policy if exists "business_profiles: owner can insert" on public.business_profiles;
-create policy "business_profiles: owner can insert"
-  on public.business_profiles for insert
-  with check (owner_user_id = auth.uid());
-
-drop policy if exists "business_profiles: owner can update" on public.business_profiles;
-create policy "business_profiles: owner can update"
-  on public.business_profiles for update
-  using (owner_user_id = auth.uid())
-  with check (owner_user_id = auth.uid());
-
-drop policy if exists "business_profiles: admin full read" on public.business_profiles;
-drop policy if exists "admins read business profiles" on public.business_profiles;
-create policy "admins read business profiles"
-  on public.business_profiles for select
-  using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid()
-        and p.user_type = 'admin'
-    )
-  );
-
--- Trigger
-drop trigger if exists trg_business_profiles_updated_at on public.business_profiles;
-create trigger trg_business_profiles_updated_at
-  before update on public.business_profiles
-  for each row execute function public.handle_updated_at();
-
-
--- ---------------------------------------------------------------------------
--- 4. business_members — Corporate membership
--- ---------------------------------------------------------------------------
+-- 4. business_members
 create table if not exists public.business_members (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references public.business_profiles(id) on delete cascade,
@@ -323,81 +149,8 @@ create index if not exists idx_business_members_user on public.business_members 
 create index if not exists idx_business_members_role on public.business_members (role);
 create index if not exists idx_business_members_status on public.business_members (status);
 
-alter table public.business_members enable row level security;
 
--- Policies for business_members
-drop policy if exists "business_members: member can read own membership" on public.business_members;
-create policy "business_members: member can read own membership"
-  on public.business_members for select
-  using (user_id = auth.uid());
-
-drop policy if exists "business_members: org owner can read all members" on public.business_members;
-create policy "business_members: org owner can read all members"
-  on public.business_members for select
-  using (
-    exists (
-      select 1 from public.business_profiles bp
-      where bp.id = business_members.business_id
-        and bp.owner_user_id = auth.uid()
-    )
-  );
-
-drop policy if exists "business_members: active members can read co-members" on public.business_members;
-create policy "business_members: active members can read co-members"
-  on public.business_members for select
-  using (
-    exists (
-      select 1 from public.business_members self
-      where self.business_id = business_members.business_id
-        and self.user_id = auth.uid()
-        and self.status = 'active'
-    )
-  );
-
-drop policy if exists "business_members: org owner can insert" on public.business_members;
-create policy "business_members: org owner can insert"
-  on public.business_members for insert
-  with check (
-    exists (
-      select 1 from public.business_profiles bp
-      where bp.id = business_members.business_id
-        and bp.owner_user_id = auth.uid()
-    )
-  );
-
-drop policy if exists "business_members: org owner can update" on public.business_members;
-create policy "business_members: org owner can update"
-  on public.business_members for update
-  using (
-    exists (
-      select 1 from public.business_profiles bp
-      where bp.id = business_members.business_id
-        and bp.owner_user_id = auth.uid()
-    )
-  );
-
-drop policy if exists "business_members: admin full read" on public.business_members;
-drop policy if exists "admins read business members" on public.business_members;
-create policy "admins read business members"
-  on public.business_members for select
-  using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid()
-        and p.user_type = 'admin'
-    )
-  );
-
--- Trigger
-drop trigger if exists trg_business_members_updated_at on public.business_members;
-create trigger trg_business_members_updated_at
-  before update on public.business_members
-  for each row execute function public.handle_updated_at();
-
-
--- ---------------------------------------------------------------------------
--- 5. government_profiles — Government entity
--- ---------------------------------------------------------------------------
+-- 5. government_profiles
 create table if not exists public.government_profiles (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references public.profiles(id) on delete cascade,
@@ -425,59 +178,8 @@ create index if not exists idx_government_profiles_verification on public.govern
 create index if not exists idx_government_profiles_entity_type on public.government_profiles (entity_type);
 create index if not exists idx_government_profiles_role on public.government_profiles (role);
 
-alter table public.government_profiles enable row level security;
 
--- Policies for government_profiles
-drop policy if exists "government_profiles: owner can read own" on public.government_profiles;
-create policy "government_profiles: owner can read own"
-  on public.government_profiles for select
-  using (owner_user_id = auth.uid());
-
-drop policy if exists "government_profiles: members can read their entity" on public.government_profiles;
-create policy "government_profiles: members can read their entity"
-  on public.government_profiles for select
-  using (
-    exists (
-      select 1 from public.government_members gm
-      where gm.gov_id = government_profiles.id
-        and gm.user_id = auth.uid()
-        and gm.status = 'active'
-    )
-  );
-
-drop policy if exists "government_profiles: owner can insert" on public.government_profiles;
-create policy "government_profiles: owner can insert"
-  on public.government_profiles for insert
-  with check (owner_user_id = auth.uid());
-
-drop policy if exists "government_profiles: owner can update" on public.government_profiles;
-create policy "government_profiles: owner can update"
-  on public.government_profiles for update
-  using (owner_user_id = auth.uid())
-  with check (owner_user_id = auth.uid());
-
-drop policy if exists "government_profiles: admin full read" on public.government_profiles;
-drop policy if exists "admins read government profiles" on public.government_profiles;
-create policy "admins read government profiles"
-  on public.government_profiles for select
-  using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid()
-        and p.user_type = 'admin'
-    )
-  );
-
--- Trigger
-drop trigger if exists trg_government_profiles_updated_at on public.government_profiles;
-create trigger trg_government_profiles_updated_at
-  before update on public.government_profiles
-  for each row execute function public.handle_updated_at();
-
-
--- ---------------------------------------------------------------------------
--- 6. government_members — Government membership
--- ---------------------------------------------------------------------------
+-- 6. government_members
 create table if not exists public.government_members (
   id uuid primary key default gen_random_uuid(),
   gov_id uuid not null references public.government_profiles(id) on delete cascade,
@@ -498,81 +200,8 @@ create index if not exists idx_government_members_user on public.government_memb
 create index if not exists idx_government_members_role on public.government_members (role);
 create index if not exists idx_government_members_status on public.government_members (status);
 
-alter table public.government_members enable row level security;
 
--- Policies for government_members
-drop policy if exists "government_members: member can read own membership" on public.government_members;
-create policy "government_members: member can read own membership"
-  on public.government_members for select
-  using (user_id = auth.uid());
-
-drop policy if exists "government_members: entity owner can read all" on public.government_members;
-create policy "government_members: entity owner can read all"
-  on public.government_members for select
-  using (
-    exists (
-      select 1 from public.government_profiles gp
-      where gp.id = government_members.gov_id
-        and gp.owner_user_id = auth.uid()
-    )
-  );
-
-drop policy if exists "government_members: active members can read co-members" on public.government_members;
-create policy "government_members: active members can read co-members"
-  on public.government_members for select
-  using (
-    exists (
-      select 1 from public.government_members self
-      where self.gov_id = government_members.gov_id
-        and self.user_id = auth.uid()
-        and self.status = 'active'
-    )
-  );
-
-drop policy if exists "government_members: entity owner can insert" on public.government_members;
-create policy "government_members: entity owner can insert"
-  on public.government_members for insert
-  with check (
-    exists (
-      select 1 from public.government_profiles gp
-      where gp.id = government_members.gov_id
-        and gp.owner_user_id = auth.uid()
-    )
-  );
-
-drop policy if exists "government_members: entity owner can update" on public.government_members;
-create policy "government_members: entity owner can update"
-  on public.government_members for update
-  using (
-    exists (
-      select 1 from public.government_profiles gp
-      where gp.id = government_members.gov_id
-        and gp.owner_user_id = auth.uid()
-    )
-  );
-
-drop policy if exists "government_members: admin full read" on public.government_members;
-drop policy if exists "admins read government members" on public.government_members;
-create policy "admins read government members"
-  on public.government_members for select
-  using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid()
-        and p.user_type = 'admin'
-    )
-  );
-
--- Trigger
-drop trigger if exists trg_government_members_updated_at on public.government_members;
-create trigger trg_government_members_updated_at
-  before update on public.government_members
-  for each row execute function public.handle_updated_at();
-
-
--- ---------------------------------------------------------------------------
--- 7. ngo_profiles — NGO / Charity / Waqf
--- ---------------------------------------------------------------------------
+-- 7. ngo_profiles
 create table if not exists public.ngo_profiles (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references public.profiles(id) on delete cascade,
@@ -600,59 +229,8 @@ create index if not exists idx_ngo_profiles_verification on public.ngo_profiles 
 create index if not exists idx_ngo_profiles_org_type on public.ngo_profiles (org_type);
 create index if not exists idx_ngo_profiles_compliance on public.ngo_profiles (compliance_status);
 
-alter table public.ngo_profiles enable row level security;
 
--- Policies for ngo_profiles
-drop policy if exists "ngo_profiles: owner can read own" on public.ngo_profiles;
-create policy "ngo_profiles: owner can read own"
-  on public.ngo_profiles for select
-  using (owner_user_id = auth.uid());
-
-drop policy if exists "ngo_profiles: members can read their org" on public.ngo_profiles;
-create policy "ngo_profiles: members can read their org"
-  on public.ngo_profiles for select
-  using (
-    exists (
-      select 1 from public.ngo_members nm
-      where nm.ngo_id = ngo_profiles.id
-        and nm.user_id = auth.uid()
-        and nm.status = 'active'
-    )
-  );
-
-drop policy if exists "ngo_profiles: owner can insert" on public.ngo_profiles;
-create policy "ngo_profiles: owner can insert"
-  on public.ngo_profiles for insert
-  with check (owner_user_id = auth.uid());
-
-drop policy if exists "ngo_profiles: owner can update" on public.ngo_profiles;
-create policy "ngo_profiles: owner can update"
-  on public.ngo_profiles for update
-  using (owner_user_id = auth.uid())
-  with check (owner_user_id = auth.uid());
-
-drop policy if exists "ngo_profiles: admin full read" on public.ngo_profiles;
-drop policy if exists "admins read ngo profiles" on public.ngo_profiles;
-create policy "admins read ngo profiles"
-  on public.ngo_profiles for select
-  using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid()
-        and p.user_type = 'admin'
-    )
-  );
-
--- Trigger
-drop trigger if exists trg_ngo_profiles_updated_at on public.ngo_profiles;
-create trigger trg_ngo_profiles_updated_at
-  before update on public.ngo_profiles
-  for each row execute function public.handle_updated_at();
-
-
--- ---------------------------------------------------------------------------
--- 8. ngo_members — NGO membership
--- ---------------------------------------------------------------------------
+-- 8. ngo_members
 create table if not exists public.ngo_members (
   id uuid primary key default gen_random_uuid(),
   ngo_id uuid not null references public.ngo_profiles(id) on delete cascade,
@@ -676,15 +254,376 @@ create index if not exists idx_ngo_members_user on public.ngo_members (user_id);
 create index if not exists idx_ngo_members_role on public.ngo_members (role);
 create index if not exists idx_ngo_members_status on public.ngo_members (status);
 
+
+-- ╔═══════════════════════════════════════════════════════════════════════════╗
+-- ║  PART 2: ENABLE RLS ON ALL TABLES                                        ║
+-- ╚═══════════════════════════════════════════════════════════════════════════╝
+
+alter table public.firm_profiles enable row level security;
+alter table public.firm_members enable row level security;
+alter table public.business_profiles enable row level security;
+alter table public.business_members enable row level security;
+alter table public.government_profiles enable row level security;
+alter table public.government_members enable row level security;
+alter table public.ngo_profiles enable row level security;
 alter table public.ngo_members enable row level security;
 
--- Policies for ngo_members
+
+-- ╔═══════════════════════════════════════════════════════════════════════════╗
+-- ║  PART 3: DROP OLD POLICIES (clean slate — safe if they don't exist)      ║
+-- ╚═══════════════════════════════════════════════════════════════════════════╝
+
+-- firm_profiles
+drop policy if exists "firm_profiles: owner can read own firm" on public.firm_profiles;
+drop policy if exists "firm_profiles: members can read their firm" on public.firm_profiles;
+drop policy if exists "firm_profiles: owner can insert" on public.firm_profiles;
+drop policy if exists "firm_profiles: owner can update" on public.firm_profiles;
+drop policy if exists "firm_profiles: admin full read" on public.firm_profiles;
+drop policy if exists "admins read firm profiles" on public.firm_profiles;
+
+-- firm_members
+drop policy if exists "firm_members: member can read own membership" on public.firm_members;
+drop policy if exists "firm_members: firm owner can read all members" on public.firm_members;
+drop policy if exists "firm_members: active members can read co-members" on public.firm_members;
+drop policy if exists "firm_members: firm owner can insert" on public.firm_members;
+drop policy if exists "firm_members: firm owner can update" on public.firm_members;
+drop policy if exists "firm_members: admin full read" on public.firm_members;
+drop policy if exists "admins read firm members" on public.firm_members;
+
+-- business_profiles
+drop policy if exists "business_profiles: owner can read own" on public.business_profiles;
+drop policy if exists "business_profiles: members can read their org" on public.business_profiles;
+drop policy if exists "business_profiles: owner can insert" on public.business_profiles;
+drop policy if exists "business_profiles: owner can update" on public.business_profiles;
+drop policy if exists "business_profiles: admin full read" on public.business_profiles;
+drop policy if exists "admins read business profiles" on public.business_profiles;
+
+-- business_members
+drop policy if exists "business_members: member can read own membership" on public.business_members;
+drop policy if exists "business_members: org owner can read all members" on public.business_members;
+drop policy if exists "business_members: active members can read co-members" on public.business_members;
+drop policy if exists "business_members: org owner can insert" on public.business_members;
+drop policy if exists "business_members: org owner can update" on public.business_members;
+drop policy if exists "business_members: admin full read" on public.business_members;
+drop policy if exists "admins read business members" on public.business_members;
+
+-- government_profiles
+drop policy if exists "government_profiles: owner can read own" on public.government_profiles;
+drop policy if exists "government_profiles: members can read their entity" on public.government_profiles;
+drop policy if exists "government_profiles: owner can insert" on public.government_profiles;
+drop policy if exists "government_profiles: owner can update" on public.government_profiles;
+drop policy if exists "government_profiles: admin full read" on public.government_profiles;
+drop policy if exists "admins read government profiles" on public.government_profiles;
+
+-- government_members
+drop policy if exists "government_members: member can read own membership" on public.government_members;
+drop policy if exists "government_members: entity owner can read all" on public.government_members;
+drop policy if exists "government_members: active members can read co-members" on public.government_members;
+drop policy if exists "government_members: entity owner can insert" on public.government_members;
+drop policy if exists "government_members: entity owner can update" on public.government_members;
+drop policy if exists "government_members: admin full read" on public.government_members;
+drop policy if exists "admins read government members" on public.government_members;
+
+-- ngo_profiles
+drop policy if exists "ngo_profiles: owner can read own" on public.ngo_profiles;
+drop policy if exists "ngo_profiles: members can read their org" on public.ngo_profiles;
+drop policy if exists "ngo_profiles: owner can insert" on public.ngo_profiles;
+drop policy if exists "ngo_profiles: owner can update" on public.ngo_profiles;
+drop policy if exists "ngo_profiles: admin full read" on public.ngo_profiles;
+drop policy if exists "admins read ngo profiles" on public.ngo_profiles;
+
+-- ngo_members
 drop policy if exists "ngo_members: member can read own membership" on public.ngo_members;
+drop policy if exists "ngo_members: org owner can read all" on public.ngo_members;
+drop policy if exists "ngo_members: active members can read co-members" on public.ngo_members;
+drop policy if exists "ngo_members: org owner can insert" on public.ngo_members;
+drop policy if exists "ngo_members: org owner can update" on public.ngo_members;
+drop policy if exists "ngo_members: admin full read" on public.ngo_members;
+drop policy if exists "admins read ngo members" on public.ngo_members;
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════════╗
+-- ║  PART 4: CREATE ALL POLICIES (all tables now exist)                      ║
+-- ╚═══════════════════════════════════════════════════════════════════════════╝
+
+-- ── firm_profiles policies ──────────────────────────────────────────────────
+create policy "firm_profiles: owner can read own firm"
+  on public.firm_profiles for select
+  using (owner_user_id = auth.uid());
+
+create policy "firm_profiles: members can read their firm"
+  on public.firm_profiles for select
+  using (
+    exists (
+      select 1 from public.firm_members fm
+      where fm.firm_id = firm_profiles.id
+        and fm.user_id = auth.uid()
+        and fm.status = 'active'
+    )
+  );
+
+create policy "firm_profiles: owner can insert"
+  on public.firm_profiles for insert
+  with check (owner_user_id = auth.uid());
+
+create policy "firm_profiles: owner can update"
+  on public.firm_profiles for update
+  using (owner_user_id = auth.uid())
+  with check (owner_user_id = auth.uid());
+
+create policy "admins read firm profiles"
+  on public.firm_profiles for select
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.user_type = 'admin'));
+
+
+-- ── firm_members policies ───────────────────────────────────────────────────
+create policy "firm_members: member can read own membership"
+  on public.firm_members for select
+  using (user_id = auth.uid());
+
+create policy "firm_members: firm owner can read all members"
+  on public.firm_members for select
+  using (
+    exists (
+      select 1 from public.firm_profiles fp
+      where fp.id = firm_members.firm_id
+        and fp.owner_user_id = auth.uid()
+    )
+  );
+
+create policy "firm_members: active members can read co-members"
+  on public.firm_members for select
+  using (
+    exists (
+      select 1 from public.firm_members self
+      where self.firm_id = firm_members.firm_id
+        and self.user_id = auth.uid()
+        and self.status = 'active'
+    )
+  );
+
+create policy "firm_members: firm owner can insert"
+  on public.firm_members for insert
+  with check (
+    exists (
+      select 1 from public.firm_profiles fp
+      where fp.id = firm_members.firm_id
+        and fp.owner_user_id = auth.uid()
+    )
+  );
+
+create policy "firm_members: firm owner can update"
+  on public.firm_members for update
+  using (
+    exists (
+      select 1 from public.firm_profiles fp
+      where fp.id = firm_members.firm_id
+        and fp.owner_user_id = auth.uid()
+    )
+  );
+
+create policy "admins read firm members"
+  on public.firm_members for select
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.user_type = 'admin'));
+
+
+-- ── business_profiles policies ──────────────────────────────────────────────
+create policy "business_profiles: owner can read own"
+  on public.business_profiles for select
+  using (owner_user_id = auth.uid());
+
+create policy "business_profiles: members can read their org"
+  on public.business_profiles for select
+  using (
+    exists (
+      select 1 from public.business_members bm
+      where bm.business_id = business_profiles.id
+        and bm.user_id = auth.uid()
+        and bm.status = 'active'
+    )
+  );
+
+create policy "business_profiles: owner can insert"
+  on public.business_profiles for insert
+  with check (owner_user_id = auth.uid());
+
+create policy "business_profiles: owner can update"
+  on public.business_profiles for update
+  using (owner_user_id = auth.uid())
+  with check (owner_user_id = auth.uid());
+
+create policy "admins read business profiles"
+  on public.business_profiles for select
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.user_type = 'admin'));
+
+
+-- ── business_members policies ───────────────────────────────────────────────
+create policy "business_members: member can read own membership"
+  on public.business_members for select
+  using (user_id = auth.uid());
+
+create policy "business_members: org owner can read all members"
+  on public.business_members for select
+  using (
+    exists (
+      select 1 from public.business_profiles bp
+      where bp.id = business_members.business_id
+        and bp.owner_user_id = auth.uid()
+    )
+  );
+
+create policy "business_members: active members can read co-members"
+  on public.business_members for select
+  using (
+    exists (
+      select 1 from public.business_members self
+      where self.business_id = business_members.business_id
+        and self.user_id = auth.uid()
+        and self.status = 'active'
+    )
+  );
+
+create policy "business_members: org owner can insert"
+  on public.business_members for insert
+  with check (
+    exists (
+      select 1 from public.business_profiles bp
+      where bp.id = business_members.business_id
+        and bp.owner_user_id = auth.uid()
+    )
+  );
+
+create policy "business_members: org owner can update"
+  on public.business_members for update
+  using (
+    exists (
+      select 1 from public.business_profiles bp
+      where bp.id = business_members.business_id
+        and bp.owner_user_id = auth.uid()
+    )
+  );
+
+create policy "admins read business members"
+  on public.business_members for select
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.user_type = 'admin'));
+
+
+-- ── government_profiles policies ────────────────────────────────────────────
+create policy "government_profiles: owner can read own"
+  on public.government_profiles for select
+  using (owner_user_id = auth.uid());
+
+create policy "government_profiles: members can read their entity"
+  on public.government_profiles for select
+  using (
+    exists (
+      select 1 from public.government_members gm
+      where gm.gov_id = government_profiles.id
+        and gm.user_id = auth.uid()
+        and gm.status = 'active'
+    )
+  );
+
+create policy "government_profiles: owner can insert"
+  on public.government_profiles for insert
+  with check (owner_user_id = auth.uid());
+
+create policy "government_profiles: owner can update"
+  on public.government_profiles for update
+  using (owner_user_id = auth.uid())
+  with check (owner_user_id = auth.uid());
+
+create policy "admins read government profiles"
+  on public.government_profiles for select
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.user_type = 'admin'));
+
+
+-- ── government_members policies ─────────────────────────────────────────────
+create policy "government_members: member can read own membership"
+  on public.government_members for select
+  using (user_id = auth.uid());
+
+create policy "government_members: entity owner can read all"
+  on public.government_members for select
+  using (
+    exists (
+      select 1 from public.government_profiles gp
+      where gp.id = government_members.gov_id
+        and gp.owner_user_id = auth.uid()
+    )
+  );
+
+create policy "government_members: active members can read co-members"
+  on public.government_members for select
+  using (
+    exists (
+      select 1 from public.government_members self
+      where self.gov_id = government_members.gov_id
+        and self.user_id = auth.uid()
+        and self.status = 'active'
+    )
+  );
+
+create policy "government_members: entity owner can insert"
+  on public.government_members for insert
+  with check (
+    exists (
+      select 1 from public.government_profiles gp
+      where gp.id = government_members.gov_id
+        and gp.owner_user_id = auth.uid()
+    )
+  );
+
+create policy "government_members: entity owner can update"
+  on public.government_members for update
+  using (
+    exists (
+      select 1 from public.government_profiles gp
+      where gp.id = government_members.gov_id
+        and gp.owner_user_id = auth.uid()
+    )
+  );
+
+create policy "admins read government members"
+  on public.government_members for select
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.user_type = 'admin'));
+
+
+-- ── ngo_profiles policies ───────────────────────────────────────────────────
+create policy "ngo_profiles: owner can read own"
+  on public.ngo_profiles for select
+  using (owner_user_id = auth.uid());
+
+create policy "ngo_profiles: members can read their org"
+  on public.ngo_profiles for select
+  using (
+    exists (
+      select 1 from public.ngo_members nm
+      where nm.ngo_id = ngo_profiles.id
+        and nm.user_id = auth.uid()
+        and nm.status = 'active'
+    )
+  );
+
+create policy "ngo_profiles: owner can insert"
+  on public.ngo_profiles for insert
+  with check (owner_user_id = auth.uid());
+
+create policy "ngo_profiles: owner can update"
+  on public.ngo_profiles for update
+  using (owner_user_id = auth.uid())
+  with check (owner_user_id = auth.uid());
+
+create policy "admins read ngo profiles"
+  on public.ngo_profiles for select
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.user_type = 'admin'));
+
+
+-- ── ngo_members policies ────────────────────────────────────────────────────
 create policy "ngo_members: member can read own membership"
   on public.ngo_members for select
   using (user_id = auth.uid());
 
-drop policy if exists "ngo_members: org owner can read all" on public.ngo_members;
 create policy "ngo_members: org owner can read all"
   on public.ngo_members for select
   using (
@@ -695,7 +634,6 @@ create policy "ngo_members: org owner can read all"
     )
   );
 
-drop policy if exists "ngo_members: active members can read co-members" on public.ngo_members;
 create policy "ngo_members: active members can read co-members"
   on public.ngo_members for select
   using (
@@ -707,7 +645,6 @@ create policy "ngo_members: active members can read co-members"
     )
   );
 
-drop policy if exists "ngo_members: org owner can insert" on public.ngo_members;
 create policy "ngo_members: org owner can insert"
   on public.ngo_members for insert
   with check (
@@ -718,7 +655,6 @@ create policy "ngo_members: org owner can insert"
     )
   );
 
-drop policy if exists "ngo_members: org owner can update" on public.ngo_members;
 create policy "ngo_members: org owner can update"
   on public.ngo_members for update
   using (
@@ -729,28 +665,59 @@ create policy "ngo_members: org owner can update"
     )
   );
 
-drop policy if exists "ngo_members: admin full read" on public.ngo_members;
-drop policy if exists "admins read ngo members" on public.ngo_members;
 create policy "admins read ngo members"
   on public.ngo_members for select
-  using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid()
-        and p.user_type = 'admin'
-    )
-  );
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.user_type = 'admin'));
 
--- Trigger
+
+-- ╔═══════════════════════════════════════════════════════════════════════════╗
+-- ║  PART 5: CREATE ALL TRIGGERS                                             ║
+-- ╚═══════════════════════════════════════════════════════════════════════════╝
+
+drop trigger if exists trg_firm_profiles_updated_at on public.firm_profiles;
+create trigger trg_firm_profiles_updated_at
+  before update on public.firm_profiles
+  for each row execute function public.handle_updated_at();
+
+drop trigger if exists trg_firm_members_updated_at on public.firm_members;
+create trigger trg_firm_members_updated_at
+  before update on public.firm_members
+  for each row execute function public.handle_updated_at();
+
+drop trigger if exists trg_business_profiles_updated_at on public.business_profiles;
+create trigger trg_business_profiles_updated_at
+  before update on public.business_profiles
+  for each row execute function public.handle_updated_at();
+
+drop trigger if exists trg_business_members_updated_at on public.business_members;
+create trigger trg_business_members_updated_at
+  before update on public.business_members
+  for each row execute function public.handle_updated_at();
+
+drop trigger if exists trg_government_profiles_updated_at on public.government_profiles;
+create trigger trg_government_profiles_updated_at
+  before update on public.government_profiles
+  for each row execute function public.handle_updated_at();
+
+drop trigger if exists trg_government_members_updated_at on public.government_members;
+create trigger trg_government_members_updated_at
+  before update on public.government_members
+  for each row execute function public.handle_updated_at();
+
+drop trigger if exists trg_ngo_profiles_updated_at on public.ngo_profiles;
+create trigger trg_ngo_profiles_updated_at
+  before update on public.ngo_profiles
+  for each row execute function public.handle_updated_at();
+
 drop trigger if exists trg_ngo_members_updated_at on public.ngo_members;
 create trigger trg_ngo_members_updated_at
   before update on public.ngo_members
   for each row execute function public.handle_updated_at();
 
 
--- ---------------------------------------------------------------------------
--- 9. Miscellaneous RLS Policy Fixes (from 20260615_fix_rls_policies.sql)
--- ---------------------------------------------------------------------------
+-- ╔═══════════════════════════════════════════════════════════════════════════╗
+-- ║  PART 6: EXTRA RLS FIXES (attachments, audit, notifications)             ║
+-- ╚═══════════════════════════════════════════════════════════════════════════╝
 
 -- Attachments: owner-based access
 drop policy if exists "users read own attachments" on public.attachments;
@@ -775,3 +742,7 @@ drop policy if exists "users update own notifications" on public.notifications;
 create policy "users update own notifications"
   on public.notifications for update
   using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- =============================================================================
+-- Done! All 8 entity tables created, RLS enabled, policies applied, triggers set.
+-- =============================================================================
