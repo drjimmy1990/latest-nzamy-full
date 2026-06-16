@@ -731,7 +731,7 @@ create policy "users insert own attachments"
 -- Admin audit events: user read own actions
 drop policy if exists "users read own audit events" on public.admin_audit_events;
 create policy "users read own audit events"
-  on public.admin_audit_events for select using (actor_user_id = auth.uid());
+  on public.admin_audit_events for select using (actor_id = auth.uid());
 
 -- Notifications: user read/update own
 drop policy if exists "users read own notifications" on public.notifications;
