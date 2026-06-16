@@ -68,7 +68,8 @@ export async function getActiveCases(): Promise<SharedCase[]> {
 export async function getCaseDetail(id: string): Promise<SharedCase | null> {
   if (!isSupabaseMode) return SHARED_CASES.find(c => c.id === id) || null;
   try {
-    return await apiGet<SharedCase>(`/api/v1/cases/${id}`);
+    const response = await apiGet<{ data: SharedCase }>(`/api/v1/cases/${id}`);
+    return response.data ?? null;
   } catch {
     return SHARED_CASES.find(c => c.id === id) || null;
   }

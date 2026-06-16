@@ -74,7 +74,24 @@ export default function ClientsPage() {
   useEffect(() => {
     getLawyerClients()
       .then((data) => {
-        setClients(data as unknown as Client[]);
+        const mapped: Client[] = (data || []).map((d: any) => ({
+          id: d.id,
+          name: d.name || d.full_name || '',
+          email: d.email || '',
+          phone: d.phone || '',
+          avatar: d.avatar || d.avatar_url || '',
+          type: d.userType || d.user_type || 'individual',
+          flags: [],
+          rating: (d.rating || 3) as 1 | 2 | 3 | 4 | 5,
+          totalFees: 0,
+          paidFees: 0,
+          activeCases: d.activeCount || 0,
+          closedCases: 0,
+          lastContact: d.lastActivity || new Date().toISOString(),
+          requestCount: d.requestCount || 0,
+          since: d.created_at || d.since || '',
+        }));
+        setClients(mapped);
         setLoading(false);
       })
       .catch(() => setLoading(false));

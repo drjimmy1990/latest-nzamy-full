@@ -38,10 +38,12 @@ export async function getLawyers(
   filters?: LawyerFilters,
 ): Promise<Lawyer[]> {
   try {
+    // API only supports 'price' and 'experience' sort — map 'rating' to 'experience'
+    const sortParam = filters?.sort === "rating" ? "experience" : filters?.sort;
     const response = await apiGet<LawyerListResponse>("/api/v1/lawyers", {
       specialty: filters?.specialty,
       city: filters?.city,
-      sort: filters?.sort,
+      sort: sortParam,
       available: filters?.available,
     });
     return response.lawyers ?? [];

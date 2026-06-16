@@ -75,6 +75,7 @@ export interface Profile {
   email: string | null;
   phone: string | null;
   avatar_url: string | null;
+  city: string | null;
   country_code: string;
   language: 'ar' | 'en';
   calendar_type: 'hijri' | 'miladi' | 'both';
@@ -103,6 +104,8 @@ export interface LawyerProfile {
   credit_expiry: string | null;
   free_briefs_remaining: number;
   marketplace_visible: boolean;
+  is_accepting_clients: boolean;
+  city: string | null;
   active_roles: string[];
   display_mode: 'full' | 'light';
   verification_status: VerificationStatus;
@@ -535,6 +538,87 @@ export interface AdminAuditEvent {
   after_state: Record<string, unknown> | null;
   ip_address: string | null;
   user_agent: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+// ============================================================
+// WORKFLOW & REQUEST TYPES (from 20260518 migration)
+// ============================================================
+
+export type ServiceRequestStatus =
+  | 'draft' | 'pending' | 'pending_payment' | 'pending_assignment'
+  | 'assigned' | 'in_review' | 'completed' | 'cancelled';
+
+export type ServiceRequestPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+/** Service request */
+export interface ServiceRequest {
+  id: string;
+  requester_user_id: string;
+  type: string;
+  title: string;
+  description: string | null;
+  requester: Record<string, unknown> | null;
+  receiver: string | null;
+  assigned_to: string | null;
+  status: ServiceRequestStatus;
+  priority: ServiceRequestPriority;
+  budget: number | null;
+  category: string | null;
+  payment: Record<string, unknown> | null;
+  source_path: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Request event (audit trail for service requests) */
+export interface RequestEvent {
+  id: number;
+  request_id: string;
+  event: string;
+  actor_user_id: string | null;
+  actor_name: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+/** File attachment */
+export interface Attachment {
+  id: number;
+  request_id: string | null;
+  owner_user_id: string;
+  file_name: string;
+  storage_path: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  created_at: string;
+}
+
+/** Notification */
+export interface Notification {
+  id: number;
+  user_id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  read_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+/** Wallet transaction */
+export interface WalletTransaction {
+  id: string;
+  user_id: string;
+  amount: number;
+  kind: 'credit' | 'debit' | 'refund' | 'withdrawal' | 'escrow_hold' | 'escrow_release';
+  description: string;
+  reference_id: string | null;
+  reference_type: string | null;
+  balance_after: number;
   metadata: Record<string, unknown>;
   created_at: string;
 }

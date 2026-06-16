@@ -32,7 +32,7 @@ export async function GET() {
 /**
  * POST /api/v1/documents — Upload a document record
  * Auth required.
- * Body: { label, storage_path, size_bytes, mime_type, request_id? }
+ * Body: { file_name?, label?, storage_path, size_bytes, mime_type, request_id? }
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -47,9 +47,10 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
 
-  if (!body.label || !body.storage_path) {
+  const fileName = body.file_name ?? body.label;
+  if (!fileName || !body.storage_path) {
     return NextResponse.json(
-      { error: "label and storage_path are required" },
+      { error: "file_name (or label) and storage_path are required" },
       { status: 400 },
     );
   }
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
     .from("attachments")
     .insert({
       owner_user_id: user.id,
-      label: body.label,
+      file_name: body.file_name ?? body.label ?? "Untitled Document",
       storage_path: body.storage_path,
       mime_type: body.mime_type ?? "application/octet-stream",
       size_bytes: body.size_bytes ?? 0,

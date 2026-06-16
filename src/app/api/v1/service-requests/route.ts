@@ -72,13 +72,27 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
 
+  // Support both wrapped { request: {...} } and flat payloads
+  const requestData = body.request ?? body;
+
   // Create the service request
   const { data: serviceRequest, error: reqError } = await supabase
     .from("service_requests")
     .insert({
-      ...body.request,
+      title: requestData.title,
+      description: requestData.description ?? null,
+      type: requestData.type ?? 'service',
+      priority: requestData.priority ?? 'medium',
+      status: requestData.status ?? 'pending_assignment',
       requester_user_id: user.id,
-      status: "pending",
+      budget: requestData.budget ?? null,
+      category: requestData.category ?? null,
+      source_path: requestData.sourcePath ?? requestData.source_path ?? null,
+      assigned_to: requestData.assignedTo ?? requestData.assigned_to ?? null,
+      receiver: requestData.receiver ?? null,
+      requester: requestData.requester ?? null,
+      payment: requestData.payment ?? null,
+      metadata: requestData.metadata ?? {},
     })
     .select()
     .single();
@@ -88,20 +102,22 @@ export async function POST(request: NextRequest) {
   }
 
   // Create the initial event
-  if (body.request_event) {
+  const requestEvent = body.request_event ?? body.auditEvent;
+  if (requestEvent) {
     await supabase.from("request_events").insert({
       request_id: serviceRequest.id,
-      event: body.request_event.event ?? "created",
+      event: requestEvent.event ?? "created",
       actor_user_id: user.id,
     });
   }
 
   // Create the payment record if provided
-  if (body.payment) {
+  const payment = body.payment;
+  if (payment) {
     await supabase.from("payments").insert({
       request_id: serviceRequest.id,
       payer_user_id: user.id,
-      ...body.payment,
+      ...payment,
     });
   }
 

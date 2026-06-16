@@ -21,7 +21,7 @@ export async function GET() {
   // Get active service requests assigned to this lawyer as implicit tasks
   const { data: requests } = await supabase
     .from("service_requests")
-    .select("id, title, status, type, created_at, updated_at, metadata")
+    .select("id, title, status, type, created_at, updated_at, due_date, metadata")
     .eq("assigned_to", uid)
     .in("status", ["assigned", "submitted", "in_review"])
     .order("created_at", { ascending: false })
@@ -41,14 +41,22 @@ export async function GET() {
   // Map requests to task-like objects
   const tasks = (requests ?? []).map((req) => {
     const reqEvents = (events ?? []).filter((e) => e.request_id === req.id);
+
+    let category: string = 'case';
+    if (req.type === 'document' || req.type === 'contract_draft') category = 'document';
+    else if (req.type === 'consultation') category = 'client';
+
     return {
       id: req.id,
       title: req.title || "مهمة بدون عنوان",
       status: req.status,
       type: req.type,
+      category,
       priority: "medium",
       createdAt: req.created_at,
+      created_at: req.created_at,
       updatedAt: req.updated_at,
+      dueDate: req.due_date ?? null,
       eventsCount: reqEvents.length,
       lastEvent: reqEvents[0] || null,
     };

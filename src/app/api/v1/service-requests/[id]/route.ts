@@ -66,7 +66,17 @@ export async function PATCH(
   const { id } = await context.params;
   const body = await request.json();
 
-  const patch = body.patch ?? body;
+  const rawPatch = body.patch ?? body;
+  const keyMap: Record<string, string> = {
+    sourcePath: 'source_path',
+    assignedTo: 'assigned_to',
+    auditEvent: '__skip__',
+  };
+  const patch: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(rawPatch)) {
+    if (keyMap[k] === '__skip__') continue;
+    patch[keyMap[k] ?? k] = v;
+  }
 
   const { data, error } = await supabase
     .from("service_requests")
@@ -80,10 +90,6 @@ export async function PATCH(
   }
 
   // Auto-create audit event
-  const eventDescription = patch.status
-    ? `Status changed to ${patch.status}`
-    : "Request updated";
-
   await supabase.from("request_events").insert({
     request_id: id,
     event: patch.status ? "status_change" : "updated",

@@ -14,7 +14,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { CasePicker } from "@/components/ui/CasePicker";
 import { getActiveCases } from "@/lib/services/casesService";
-import { getLawyerTasks } from "@/lib/services/lawyerTasksService";
+import { getLawyerTasks, updateLawyerTaskStatus } from "@/lib/services/lawyerTasksService";
 import { SHARED_CASES } from "@/lib/casesStore";
 import { useUser } from "@/hooks/useUser";
 import ReactConfetti from "react-confetti";
@@ -72,7 +72,20 @@ export default function LawyerTasksPage() {
   useEffect(() => {
     getLawyerTasks()
       .then((data) => {
-        setTasks(data as unknown as Task[]);
+        const mapped: Task[] = (data || []).map((d: any) => ({
+          id: d.id,
+          title: d.title || '',
+          category: (d.type === 'case' || d.type === 'document' || d.type === 'admin' || d.type === 'deadline' || d.type === 'client' ? d.type : 'case') as TaskCategory,
+          priority: (d.priority === 'urgent' || d.priority === 'high' || d.priority === 'normal' || d.priority === 'low' ? d.priority : 'normal') as Priority,
+          status: (d.status === 'todo' || d.status === 'in_progress' || d.status === 'done' || d.status === 'archived' ? d.status : 'todo') as TaskStatus,
+          dueDate: d.dueDate || d.due_date || undefined,
+          caseId: d.caseId || d.case_id || undefined,
+          caseRef: d.caseRef || d.case_ref || undefined,
+          ownerId: d.ownerId || d.owner_id || undefined,
+          notes: d.notes || undefined,
+          subtasks: d.subtasks || [],
+        }));
+        setTasks(mapped);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -185,6 +198,11 @@ export default function LawyerTasksPage() {
   }, []);
   const onStatusChange = useCallback((id: string, s: TaskStatus) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: s } : t));
+    // Persist status change to backend
+    updateLawyerTaskStatus(id, s).catch(() => {
+      // Revert on failure (optimistic update rollback)
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status: t.status } : t));
+    });
   }, []);
 
   const onSubtaskToggle = useCallback((taskId: string, subtaskId: string) => {

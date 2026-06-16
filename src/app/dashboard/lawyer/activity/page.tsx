@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Clock, Robot, Gavel, CheckCircle, FileText, Receipt,
@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import HijriDateWidget from "@/components/HijriDateWidget";
+import { getLawyerActivity } from "@/lib/services/lawyerActivityService";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type ActivityType = "hearing"|"task"|"document"|"ai"|"contract"|"client"|"case_update"|"deadline";
@@ -90,13 +91,38 @@ export default function ActivityLogPage() {
   const [typeFilter,setTypeFilter] = useState<ActivityType|"all">("all");
   const [dayFilter,setDayFilter] = useState<"all"|"today"|"yesterday"|"this_week"|"older">("all");
   const [showFilters,setShowFilters] = useState(false);
+  const [activities, setActivities] = useState<Activity[]>(MOCK_ACTIVITIES);
+
+  // Fetch real activities from service; fall back to mock if empty
+  useEffect(() => {
+    getLawyerActivity()
+      .then((data) => {
+        if (data && data.length > 0) {
+          const mapped: Activity[] = data.map((d) => ({
+            id: d.id,
+            type: (d.type === "event" || d.type === "audit" ? "task" : d.type) as ActivityType,
+            title: d.action || "",
+            description: typeof d.payload === "string" ? d.payload : undefined,
+            timestamp: new Date(d.createdAt).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }),
+            timeAgo: "",
+            dayGroup: "today" as const,
+            caseId: d.entityId || undefined,
+          }));
+          setActivities(mapped);
+        }
+        // else keep MOCK_ACTIVITIES as fallback
+      })
+      .catch(() => {
+        // keep MOCK_ACTIVITIES as fallback
+      });
+  }, []);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
   const filtered = useMemo(()=>{
-    let acts = MOCK_ACTIVITIES;
+    let acts = activities;
     if(dayFilter!=="all")  acts = acts.filter(a=>a.dayGroup===dayFilter);
     if(typeFilter!=="all") acts = acts.filter(a=>a.type===typeFilter);
     if(search.trim()){
@@ -104,7 +130,7 @@ export default function ActivityLogPage() {
       acts=acts.filter(a=>a.title.toLowerCase().includes(q)||a.description?.toLowerCase().includes(q)||a.caseName?.toLowerCase().includes(q));
     }
     return acts;
-  },[dayFilter,typeFilter,search]);
+  },[activities,dayFilter,typeFilter,search]);
 
   // Group by day
   const grouped = useMemo(()=>{
