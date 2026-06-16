@@ -15,40 +15,47 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const limit = parseInt(searchParams.get("limit") ?? "20", 10);
-  const offset = parseInt(searchParams.get("offset") ?? "0", 10);
+  try {
+    const { searchParams } = new URL(request.url);
+    const limit = parseInt(searchParams.get("limit") ?? "20", 10);
+    const offset = parseInt(searchParams.get("offset") ?? "0", 10);
 
-  // Get group IDs where user is an active member
-  const { data: memberships, error: memError } = await supabase
-    .from("group_members")
-    .select("group_id")
-    .eq("user_id", user.id)
-    .eq("status", "active");
+    // Get group IDs where user is an active member
+    const { data: memberships, error: memError } = await supabase
+      .from("group_members")
+      .select("group_id")
+      .eq("user_id", user.id)
+      .eq("status", "active");
 
-  if (memError) {
-    return NextResponse.json({ error: memError.message }, { status: 500 });
-  }
+    if (memError) {
+      console.error("[groups] group_members query failed:", memError.message);
+      return NextResponse.json({ data: [], total: 0 });
+    }
 
-  const groupIds = (memberships ?? []).map((m) => m.group_id);
+    const groupIds = (memberships ?? []).map((m) => m.group_id);
 
-  if (groupIds.length === 0) {
+    if (groupIds.length === 0) {
+      return NextResponse.json({ data: [], total: 0 });
+    }
+
+    const { data, count, error } = await supabase
+      .from("groups")
+      .select("*, group_members(count)", { count: "exact" })
+      .in("id", groupIds)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      console.error("[groups] groups query failed:", error.message);
+      return NextResponse.json({ data: [], total: 0 });
+    }
+
+    return NextResponse.json({ data, total: count });
+  } catch (err) {
+    console.error("[groups] Unexpected error:", err);
     return NextResponse.json({ data: [], total: 0 });
   }
-
-  const { data, count, error } = await supabase
-    .from("groups")
-    .select("*, group_members(count)", { count: "exact" })
-    .in("id", groupIds)
-    .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ data, total: count });
 }
 
 /**
