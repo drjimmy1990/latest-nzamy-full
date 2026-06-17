@@ -1,6 +1,8 @@
 # Nzamy Automation: Comprehensive n8n Workflows Specification
 
-This document provides a highly technical, production-grade specification for all 18 automation workflows in the Nzamy ecosystem. It is divided into onboarding, request, billing, communication, and admin management categories.
+> **Last Updated: 2026-06-17** | **38 total workflows** (20 operational + 18 AI)
+
+This document provides a highly technical, production-grade specification for all automation workflows in the Nzamy ecosystem. It is divided into onboarding, request, billing, communication, admin management, and **AI-powered legal tools** categories.
 
 ---
 
@@ -9,6 +11,7 @@ This document provides a highly technical, production-grade specification for al
 ### 1. Webhook Handlers
 * **Nzamy API Callback**: `POST /api/v1/n8n/trigger` (generic endpoint on the Next.js backend to receive secure callbacks from n8n using an authorization header).
 * **Evolution API Webhook**: `POST /api/v1/whatsapp/webhook` (endpoint configured to receive WhatsApp message payloads).
+* **AI Tool Webhooks**: All AI tools POST to n8n via `POST {{N8N_WEBHOOK_BASE_URL}}/ai/{tool-name}` (see Category 6 below).
 
 ### 2. Common Node Integrations
 * **Supabase Node (Postgres)**: Directly updates and reads tables using PostgreSQL or postgrest.
@@ -16,6 +19,68 @@ This document provides a highly technical, production-grade specification for al
 * **Evolution API (WhatsApp)**: Sends instant WhatsApp text and media templates.
   * *Send Text API*: `POST {{EVOLUTION_API_URL}}/message/sendText/{{INSTANCE_NAME}}`
   * *Headers*: `apikey: {{EVOLUTION_API_KEY}}`
+* **LLM Node (AI Provider)**: Routes all AI requests through n8n. The LLM provider API key is stored ONLY in n8n credentials — never in the Next.js app.
+  * Supported providers: OpenAI, Google Gemini, Anthropic Claude (configurable per workflow)
+  * All responses are streamed back to the Next.js API route via n8n's `Respond to Webhook` node
+
+### 3. Webhook URL Registry
+
+All webhook URLs that must be configured in `.env.local`:
+
+```bash
+# ── Operational Webhooks ──
+N8N_WEBHOOK_BASE_URL=http://your-n8n:5678/webhook
+N8N_WEBHOOK_NEW_USER=http://your-n8n:5678/webhook/new-user
+N8N_WEBHOOK_NEW_REQUEST=http://your-n8n:5678/webhook/new-request
+N8N_WEBHOOK_PAYMENT=http://your-n8n:5678/webhook/payment
+N8N_WEBHOOK_VERIFICATION=http://your-n8n:5678/webhook/verification
+N8N_WEBHOOK_ESCALATION=http://your-n8n:5678/webhook/escalation
+
+# ── AI Tool Webhooks ──
+N8N_WEBHOOK_AI_DRAFT=http://your-n8n:5678/webhook/ai/draft
+N8N_WEBHOOK_AI_CONTRACTS=http://your-n8n:5678/webhook/ai/contracts
+N8N_WEBHOOK_AI_CONTRACT_REVIEW=http://your-n8n:5678/webhook/ai/contract-review
+N8N_WEBHOOK_AI_DIRECTION=http://your-n8n:5678/webhook/ai/direction-support
+N8N_WEBHOOK_AI_WARGAMING=http://your-n8n:5678/webhook/ai/wargaming
+N8N_WEBHOOK_AI_STRENGTH=http://your-n8n:5678/webhook/ai/analyze-strength
+N8N_WEBHOOK_AI_SECRETARY=http://your-n8n:5678/webhook/ai/secretary
+N8N_WEBHOOK_AI_RESEARCH=http://your-n8n:5678/webhook/ai/research
+N8N_WEBHOOK_AI_QUICK_ANSWER=http://your-n8n:5678/webhook/ai/quick-answer
+N8N_WEBHOOK_AI_TRANSLATE=http://your-n8n:5678/webhook/ai/translate
+N8N_WEBHOOK_AI_CASE_BRIEF=http://your-n8n:5678/webhook/ai/case-brief
+N8N_WEBHOOK_AI_FEE_CALC=http://your-n8n:5678/webhook/ai/fee-calculator
+N8N_WEBHOOK_AI_LETTER=http://your-n8n:5678/webhook/ai/letter
+N8N_WEBHOOK_AI_CASE_INSIGHT=http://your-n8n:5678/webhook/ai/case-insight
+N8N_WEBHOOK_AI_CORP=http://your-n8n:5678/webhook/ai/corp
+N8N_WEBHOOK_AI_GOV=http://your-n8n:5678/webhook/ai/gov
+N8N_WEBHOOK_AI_MICRO=http://your-n8n:5678/webhook/ai/micro
+N8N_WEBHOOK_AI_NGO=http://your-n8n:5678/webhook/ai/ngo
+```
+
+### 4. Next.js API Routes to Create
+
+Each AI tool needs a thin API route that proxies the request to n8n:
+
+| API Route (create in Next.js) | n8n Webhook Target | Frontend Page |
+|-------------------------------|-------------------|---------------|
+| `POST /api/v1/ai/draft` | `N8N_WEBHOOK_AI_DRAFT` | `/ai/draft` |
+| `POST /api/v1/ai/contracts` | `N8N_WEBHOOK_AI_CONTRACTS` | `/ai/contracts` |
+| `POST /api/v1/ai/contract-review` | `N8N_WEBHOOK_AI_CONTRACT_REVIEW` | `/ai/contract-reviewer` |
+| `POST /api/v1/ai/direction-support` | `N8N_WEBHOOK_AI_DIRECTION` | `/ai/direction-support` |
+| `POST /api/v1/ai/wargaming` | `N8N_WEBHOOK_AI_WARGAMING` | `/ai/wargaming` |
+| `POST /api/v1/ai/analyze-strength` | `N8N_WEBHOOK_AI_STRENGTH` | `/ai/analyze-strength` |
+| `POST /api/v1/ai/secretary` | `N8N_WEBHOOK_AI_SECRETARY` | `/ai/secretary` |
+| `POST /api/v1/ai/research` | `N8N_WEBHOOK_AI_RESEARCH` | `/ai/research` |
+| `POST /api/v1/ai/quick-answer` | `N8N_WEBHOOK_AI_QUICK_ANSWER` | `/ai/quick-answer` |
+| `POST /api/v1/ai/translate` | `N8N_WEBHOOK_AI_TRANSLATE` | `/ai/legal-translate` |
+| `POST /api/v1/ai/case-brief` | `N8N_WEBHOOK_AI_CASE_BRIEF` | `/ai/case-brief` |
+| `POST /api/v1/ai/fee-calculator` | `N8N_WEBHOOK_AI_FEE_CALC` | `/ai/fee-calculator` |
+| `POST /api/v1/ai/letter` | `N8N_WEBHOOK_AI_LETTER` | Client `ClientLetterWorkflow` |
+| `POST /api/v1/ai/case-insight` | `N8N_WEBHOOK_AI_CASE_INSIGHT` | Client `cases/[id]` |
+| `POST /api/v1/ai/corp` | `N8N_WEBHOOK_AI_CORP` | `/ai/corp` |
+| `POST /api/v1/ai/gov` | `N8N_WEBHOOK_AI_GOV` | `/ai/gov` |
+| `POST /api/v1/ai/micro` | `N8N_WEBHOOK_AI_MICRO` | `/ai/micro` |
+| `POST /api/v1/ai/ngo` | `N8N_WEBHOOK_AI_NGO` | `/ai/ngo` |
 
 ---
 
@@ -548,3 +613,476 @@ This document provides a highly technical, production-grade specification for al
   * Table: `public.wallet_transactions` (credit entry for referrer).
   * Table: `public.referrals`, Fields: `reward_granted = true`, `reward_amount = 50`.
   * Table: `public.notifications` (reward notification).
+
+---
+
+## 🤖 Category 6: AI Legal Tools Workflows (18)
+
+> **Architecture**: Frontend → `POST /api/v1/ai/{tool}` → n8n webhook → LLM → Response
+>
+> All AI workflows follow the same pattern:
+> 1. Next.js API route validates auth + input
+> 2. Forwards payload to n8n webhook
+> 3. n8n enriches with context (user profile, case data, Saudi law references)
+> 4. n8n calls LLM provider (OpenAI/Gemini/Claude)
+> 5. n8n returns structured response via `Respond to Webhook`
+> 6. Next.js API route returns response to frontend
+> 7. n8n logs usage to `ai_usage_log` table (user_id, tool, tokens, cost)
+
+---
+
+### Workflow 6.1: الصائغ القانوني — Legal Document Drafter
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/draft`
+* **Next.js Route**: `POST /api/v1/ai/draft`
+* **Frontend**: `/ai/draft` (Lawyer dashboard)
+* **Currently**: `useDraftState.ts` uses `setTimeout(r, 2000)` to simulate AI; fills mock judgment data
+* **Node Sequence**:
+  ```
+  [Webhook Trigger] ➔ [Auth Check] ➔ [Supabase: Get user profile + tier] ➔ [If: Has credits?]
+    ➔ [Context Builder: merge case facts + party data + legal branch + memo type]
+    ➔ [LLM Node: Generate legal document]
+    ➔ [Post-Process: Format Arabic output + add article citations]
+    ➔ [Supabase: Log usage to ai_usage_log]
+    ➔ [Supabase: Deduct 1 credit from wallet]
+    ➔ [Respond to Webhook: Return structured document]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "memo_type": "case|reply|appeal|arbitration|notary|report|minutes",
+    "memo_sub_type": "تحرير دعوى|لائحة اعتراضية|...",
+    "legal_branch": "labor|commercial|civil|criminal|...",
+    "client_role": "plaintiff|defendant",
+    "case_text": "وقائع القضية...",
+    "support_docs": [{"description": "عقد العمل", "file_url": "..."}],
+    "lawyer_notes": "ملاحظات المحامي",
+    "party_one": {"name": "...", "id_number": "..."},
+    "party_two": {"name": "...", "id_number": "..."},
+    "judgment_data": {
+      "number": "٣٤٢/ع/١٤٤٥",
+      "court": "المحكمة العمالية بالرياض",
+      "date": "2024-04-12",
+      "text": "حكمت المحكمة...",
+      "reasons": "عولت المحكمة على..."
+    }
+  }
+  ```
+* **Output**: Structured legal document in Arabic with article references
+* **Credits Cost**: 1 credit per generation
+
+---
+
+### Workflow 6.2: محترف العقود — Contract Generator
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/contracts`
+* **Next.js Route**: `POST /api/v1/ai/contracts`
+* **Frontend**: `/ai/contracts` (Lawyer dashboard)
+* **Currently**: Client-side only, no backend
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth + Credits Check] ➔ [Context: contract type + terms + parties]
+    ➔ [LLM: Draft contract following Saudi commercial law]
+    ➔ [Post-Process: Structure clauses + number articles]
+    ➔ [Log Usage] ➔ [Deduct Credit] ➔ [Respond]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "contract_type": "employment|lease|sale|partnership|service|...",
+    "parties": [{"name": "...", "role": "first_party"}],
+    "terms": {"duration": "12 months", "value": "50000 SAR", "jurisdiction": "الرياض"},
+    "special_clauses": "شرط عدم المنافسة...",
+    "language": "ar|en|bilingual"
+  }
+  ```
+* **Credits Cost**: 1 credit
+
+---
+
+### Workflow 6.3: مراجع العقود — Contract Reviewer
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/contract-review`
+* **Next.js Route**: `POST /api/v1/ai/contract-review`
+* **Frontend**: `/ai/contract-reviewer` (Shared)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth + Credits] ➔ [Extract text from PDF/DOCX if uploaded]
+    ➔ [LLM: Analyze contract → identify risks, missing clauses, non-compliant terms]
+    ➔ [Structure: Risk matrix with severity levels]
+    ➔ [Log + Deduct] ➔ [Respond: {risks: [], suggestions: [], score: 85}]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "contract_text": "نص العقد...",
+    "contract_file_url": "https://storage.../contract.pdf",
+    "review_focus": "risks|compliance|completeness|all"
+  }
+  ```
+* **Credits Cost**: 1 credit
+
+---
+
+### Workflow 6.4: داعم الاتجاه — Direction & Legal Support
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/direction-support`
+* **Next.js Route**: `POST /api/v1/ai/direction-support`
+* **Frontend**: `/ai/direction-support` (Lawyer dashboard)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth + Credits] ➔ [Context: case summary + legal branch]
+    ➔ [Vector Search: Query Saudi law articles DB for relevant نظام/مادة]
+    ➔ [LLM: Match case facts to supporting legal texts + precedents]
+    ➔ [Structure: Cited articles with relevance scores]
+    ➔ [Log + Deduct] ➔ [Respond]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "case_summary": "ملخص القضية...",
+    "legal_branch": "labor|commercial|...",
+    "direction": "support_plaintiff|support_defendant|neutral"
+  }
+  ```
+* **Credits Cost**: 1 credit
+
+---
+
+### Workflow 6.5: محاكي الخصم — Wargaming / Opposing Counsel Simulator
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/wargaming`
+* **Next.js Route**: `POST /api/v1/ai/wargaming`
+* **Frontend**: `/ai/wargaming` (Lawyer dashboard)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth + Credits] ➔ [Context: case facts + your position]
+    ➔ [LLM (Role: Opposing Lawyer): Generate counter-arguments, objections, weaknesses]
+    ➔ [LLM (Role: Judge): Evaluate both sides, predict questions]
+    ➔ [Structure: {counter_args: [], judge_questions: [], weak_points: []}]
+    ➔ [Log + Deduct] ➔ [Respond]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "your_position": "plaintiff|defendant",
+    "case_facts": "وقائع...",
+    "your_arguments": ["الحجة الأولى...", "الحجة الثانية..."],
+    "legal_branch": "labor|commercial|..."
+  }
+  ```
+* **Credits Cost**: 2 credits (dual LLM calls)
+
+---
+
+### Workflow 6.6: محلل قوة الموقف — Case Strength Analyzer
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/analyze-strength`
+* **Next.js Route**: `POST /api/v1/ai/analyze-strength`
+* **Frontend**: `/ai/analyze-strength` (Lawyer dashboard)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth + Credits] ➔ [Context: case facts + evidence + legal branch]
+    ➔ [Vector Search: Similar precedent cases]
+    ➔ [LLM: Analyze strength → win probability, risk factors, evidence gaps]
+    ➔ [Structure: {score: 72, factors: [], recommendations: []}]
+    ➔ [Log + Deduct] ➔ [Respond]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "case_facts": "...",
+    "evidence_list": ["عقد العمل", "كشف حساب", "شهادة شاهد"],
+    "your_position": "plaintiff|defendant",
+    "legal_branch": "labor|commercial|..."
+  }
+  ```
+* **Credits Cost**: 1 credit
+
+---
+
+### Workflow 6.7: السكرتير الذكي — Smart Secretary / Daily Briefing
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/secretary`
+* **Next.js Route**: `POST /api/v1/ai/secretary`
+* **Frontend**: `/ai/secretary` (Lawyer dashboard)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth] ➔ [Supabase: Fetch today's hearings, deadlines, tasks, cases]
+    ➔ [LLM: Summarize into daily briefing with priorities + time allocation]
+    ➔ [Structure: {briefing_text, priorities: [], calendar: [], alerts: []}]
+    ➔ [Log] ➔ [Respond]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "date": "2026-06-17",
+    "include": ["hearings", "deadlines", "tasks", "follow_ups"]
+  }
+  ```
+* **Credits Cost**: 0 (included in subscription)
+
+---
+
+### Workflow 6.8: الباحث القانوني — Legal Research Engine
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/research`
+* **Next.js Route**: `POST /api/v1/ai/research`
+* **Frontend**: `/ai/research` (Shared)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth + Credits] ➔ [Vector Search: Saudi laws + regulations DB]
+    ➔ [LLM: Synthesize findings + cite specific articles (نظام/مادة)]
+    ➔ [Structure: {answer, sources: [{law, article, text, relevance}]}]
+    ➔ [Log + Deduct] ➔ [Respond]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "query": "ما حكم الفصل التعسفي في نظام العمل السعودي؟",
+    "scope": "all|labor|commercial|criminal|family|...",
+    "max_sources": 10
+  }
+  ```
+* **Credits Cost**: 1 credit
+* **Prerequisite**: Saudi laws vector database (embedded articles from أنظمة المملكة)
+
+---
+
+### Workflow 6.9: المستشار القانوني — Quick Legal Answer
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/quick-answer`
+* **Next.js Route**: `POST /api/v1/ai/quick-answer`
+* **Frontend**: `/ai/quick-answer` (Shared)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth] ➔ [Content Moderation: Check for inappropriate queries]
+    ➔ [LLM: Answer legal question with Saudi law context + disclaimer]
+    ➔ [Structure: {answer, disclaimer, related_articles: []}]
+    ➔ [Log] ➔ [Respond]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "question": "هل يحق لي استرداد العربون؟",
+    "context": "optional additional context"
+  }
+  ```
+* **Credits Cost**: 0 (free tier — limited to 5/day for clients)
+
+---
+
+### Workflow 6.10: المترجم القانوني — Legal Translation
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/translate`
+* **Next.js Route**: `POST /api/v1/ai/translate`
+* **Frontend**: `/ai/legal-translate` (Shared)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth + Credits] ➔ [Detect language]
+    ➔ [LLM: Translate preserving legal terminology and Arabic legal style]
+    ➔ [Post-Process: Align paragraphs for bilingual output]
+    ➔ [Log + Deduct] ➔ [Respond]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "text": "النص المراد ترجمته...",
+    "source_lang": "ar|en|auto",
+    "target_lang": "ar|en",
+    "domain": "legal|commercial|general"
+  }
+  ```
+* **Credits Cost**: 1 credit
+
+---
+
+### Workflow 6.11: ملخص القضية — Case Brief Generator
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/case-brief`
+* **Next.js Route**: `POST /api/v1/ai/case-brief`
+* **Frontend**: `/ai/case-brief` (Shared)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth + Credits] ➔ [Extract text if PDF]
+    ➔ [LLM: Summarize into structured brief (parties, facts, issues, holdings, reasoning)]
+    ➔ [Structure: {parties: [], facts: [], legal_issues: [], holding: "", reasoning: ""}]
+    ➔ [Log + Deduct] ➔ [Respond]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "case_text": "نص القضية الطويل...",
+    "case_file_url": "optional PDF URL",
+    "brief_style": "executive|detailed|timeline"
+  }
+  ```
+* **Credits Cost**: 1 credit
+
+---
+
+### Workflow 6.12: حاسبة الأتعاب — Fee Calculator
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/fee-calculator`
+* **Next.js Route**: `POST /api/v1/ai/fee-calculator`
+* **Frontend**: `/ai/fee-calculator` (Shared)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth] ➔ [Supabase: Get market rate data if available]
+    ➔ [LLM: Estimate fees based on case type, complexity, jurisdiction, duration]
+    ➔ [Structure: {estimate_min, estimate_max, factors: [], breakdown: []}]
+    ➔ [Log] ➔ [Respond]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "case_type": "labor_dispute|real_estate|commercial|...",
+    "complexity": "simple|moderate|complex",
+    "jurisdiction": "الرياض|جدة|...",
+    "estimated_duration_months": 6
+  }
+  ```
+* **Credits Cost**: 0 (free tool)
+
+---
+
+### Workflow 6.13: صياغة الخطابات — Client Letter Drafter
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/letter`
+* **Next.js Route**: `POST /api/v1/ai/letter`
+* **Frontend**: Client `_components/ClientLetterWorkflow.tsx`
+* **Currently**: Uses `setTimeout(r, 1400)` then appends `[ملاحظة AI: ...]` to blocks
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth] ➔ [Context: letter type + recipient + subject]
+    ➔ [LLM: Generate formal Arabic letter following Saudi correspondence standards]
+    ➔ [Structure: {blocks: [{type: "header", content: "..."}, {type: "body", content: "..."}]}]
+    ➔ [Log] ➔ [Respond]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "letter_type": "complaint|request|notice|termination|demand",
+    "recipient_entity": "شركة...|جهة حكومية...",
+    "subject": "موضوع الخطاب",
+    "details": "تفاصيل...",
+    "tone": "formal|firm|neutral"
+  }
+  ```
+* **Credits Cost**: 0 (included for clients)
+
+---
+
+### Workflow 6.14: تحليل AI للقضية — Case AI Insight
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/case-insight`
+* **Next.js Route**: `POST /api/v1/ai/case-insight`
+* **Frontend**: Client `cases/[id]/page.tsx` (`aiInsight` field)
+* **Currently**: Hardcoded Arabic insight string in mock data
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth] ➔ [Supabase: Fetch full case data + events + documents]
+    ➔ [LLM: Analyze case → provide legal insight, expected outcomes, relevant articles]
+    ➔ [Supabase: Cache insight in service_requests.metadata.ai_insight]
+    ➔ [Respond: {insight: "استناداً لنظام العمل المادة ٧٤..."}]
+  ```
+* **Input Payload**:
+  ```json
+  {
+    "user_id": "uuid",
+    "case_id": "uuid",
+    "refresh": false
+  }
+  ```
+* **Credits Cost**: 0 (auto-generated once per case, cached)
+
+---
+
+### Workflow 6.15: المستشار المؤسسي — Corporate Legal Advisor
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/corp`
+* **Next.js Route**: `POST /api/v1/ai/corp`
+* **Frontend**: `/ai/corp` (Business dashboard)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth + Credits] ➔ [Context: company type + industry + question]
+    ➔ [LLM: Corporate law analysis (نظام الشركات, نظام العمل, لوائح هيئة السوق المالية)]
+    ➔ [Structure: {analysis, recommendations: [], applicable_laws: []}]
+    ➔ [Log + Deduct] ➔ [Respond]
+  ```
+* **Credits Cost**: 1 credit
+
+---
+
+### Workflow 6.16: المستشار الحكومي — Government Legal Advisor
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/gov`
+* **Next.js Route**: `POST /api/v1/ai/gov`
+* **Frontend**: `/ai/gov` (Government dashboard)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth + Credits] ➔ [Context: government entity type + procedure]
+    ➔ [LLM: Government procedures + regulatory compliance analysis]
+    ➔ [Structure: {analysis, procedure_steps: [], regulations: []}]
+    ➔ [Log + Deduct] ➔ [Respond]
+  ```
+* **Credits Cost**: 1 credit
+
+---
+
+### Workflow 6.17: مستشار المؤسسات الصغيرة — Micro Business Advisor
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/micro`
+* **Next.js Route**: `POST /api/v1/ai/micro`
+* **Frontend**: `/ai/micro` (Micro dashboard)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth] ➔ [Context: business type + legal question]
+    ➔ [LLM: Small business legal guidance (licensing, contracts, labor, zakat)]
+    ➔ [Structure: {answer, action_items: [], applicable_regulations: []}]
+    ➔ [Log] ➔ [Respond]
+  ```
+* **Credits Cost**: 0 (free for micro businesses — limited 3/day)
+
+---
+
+### Workflow 6.18: مستشار الجمعيات — NGO Legal Advisor
+* **Webhook URL**: `{{N8N_WEBHOOK_BASE_URL}}/ai/ngo`
+* **Next.js Route**: `POST /api/v1/ai/ngo`
+* **Frontend**: `/ai/ngo` (NGO dashboard)
+* **Node Sequence**:
+  ```
+  [Webhook] ➔ [Auth] ➔ [Context: NGO type + compliance question]
+    ➔ [LLM: Non-profit compliance (نظام الجمعيات والمؤسسات الأهلية, أوقاف)]
+    ➔ [Structure: {answer, compliance_checklist: [], regulations: []}]
+    ➔ [Log] ➔ [Respond]
+  ```
+* **Credits Cost**: 0 (free for NGOs — limited 3/day)
+
+---
+
+## 📊 Complete Workflow Summary
+
+| Category | Count | Status | Dependency |
+|----------|-------|--------|------------|
+| 🟢 Onboarding | 4 | ⬜ Build first | None |
+| 🟡 Request Management | 4 | ⬜ Build first | None |
+| 🔵 Billing & Payments | 3 | ⬜ After Phase 3 | Payment gateway |
+| 🟣 Communication | 4 | ⬜ Build first | Evolution API |
+| 🔴 Admin & Moderation | 5 | ⬜ Build later | None |
+| 🤖 AI Legal Tools | 18 | ⬜ Build after core | LLM provider + vector DB |
+| **TOTAL** | **38** | | |
+
+### AI Workflows Build Order
+
+| Priority | Workflows | Reason |
+|----------|-----------|--------|
+| 🔴 P1 | 6.1 (Draft), 6.8 (Research), 6.9 (Quick Answer) | Most-used tools, core value prop |
+| 🔴 P1 | 6.13 (Letter), 6.14 (Case Insight) | Client-facing, currently faked with setTimeout |
+| 🟡 P2 | 6.2 (Contracts), 6.3 (Contract Review), 6.4 (Direction) | Lawyer premium tools |
+| 🟡 P2 | 6.5 (Wargaming), 6.6 (Strength), 6.7 (Secretary) | Lawyer advanced tools |
+| 🟢 P3 | 6.10 (Translate), 6.11 (Case Brief), 6.12 (Fee Calc) | Shared utility tools |
+| 🟢 P3 | 6.15–6.18 (Corp/Gov/Micro/NGO) | Sector-specific, after dashboards wired |
+
+### Prerequisites for AI Workflows
+
+1. **LLM Provider Account** — OpenAI / Google Gemini / Anthropic (API key stored in n8n)
+2. **Saudi Laws Vector Database** — Embedded articles from أنظمة المملكة for research + direction-support
+3. **`ai_usage_log` table** — Track per-user AI usage (already exists in migration 005)
+4. **Credit/Wallet System** — Deduct credits per AI call (depends on Phase 3 payments)
