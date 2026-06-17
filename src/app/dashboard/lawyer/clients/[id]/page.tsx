@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -11,6 +11,7 @@ import {
   PaperclipHorizontal, CaretLeft, ShieldCheck,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
 
 // ─── Shared mock data (same as clients/page.tsx) ─────────────────────────────
 
@@ -145,6 +146,25 @@ export default function ClientDetailPage() {
   const router = useRouter();
   const clientId = params.id as string;
 
+  const [liveClient, setLiveClient] = useState<Client | null>(null);
+  const [liveCases, setLiveCases] = useState<typeof MOCK_CASES[string] | null>(null);
+  const [liveContracts, setLiveContracts] = useState<typeof MOCK_CONTRACTS[string] | null>(null);
+  const [liveConsultations, setLiveConsultations] = useState<typeof MOCK_CONSULTATIONS[string] | null>(null);
+
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    apiGet<{ data: Client[] }>("/api/v1/lawyer/clients")
+      .then((res) => {
+        const found = res.data?.find((c: Client) => c.id === clientId);
+        if (found) setLiveClient(found);
+      })
+      .catch(() => {});
+    // Additional endpoints for cases/contracts/consultations can be wired here:
+    // apiGet("/api/v1/cases", { client_id: clientId }).then(...);
+    // apiGet("/api/v1/contracts", { client_id: clientId }).then(...);
+    // apiGet("/api/v1/consultations", { client_id: clientId }).then(...);
+  }, [clientId]);
+
   // Notes state
   const [notes, setNotes] = useState<{id:string;text:string;ts:string;pinned:boolean}[]>([]);
   const [noteInput, setNoteInput] = useState("");
@@ -157,7 +177,7 @@ export default function ClientDetailPage() {
   const deleteNote = (id: string) => setNotes(prev => prev.filter(n => n.id !== id));
   const sortedNotes = [...notes].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
-  const client = useMemo(() => MOCK_CLIENTS.find(c => c.id === clientId), [clientId]);
+  const client = useMemo(() => liveClient ?? MOCK_CLIENTS.find(c => c.id === clientId), [clientId, liveClient]);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -175,9 +195,9 @@ export default function ClientDetailPage() {
 
   const unpaid = client.totalFees - client.paidFees;
   const payPct = client.totalFees ? Math.round((client.paidFees / client.totalFees) * 100) : 100;
-  const cases = MOCK_CASES[clientId] ?? [];
-  const contracts = MOCK_CONTRACTS[clientId] ?? [];
-  const consultations = MOCK_CONSULTATIONS[clientId] ?? [];
+  const cases = liveCases ?? MOCK_CASES[clientId] ?? [];
+  const contracts = liveContracts ?? MOCK_CONTRACTS[clientId] ?? [];
+  const consultations = liveConsultations ?? MOCK_CONSULTATIONS[clientId] ?? [];
   const revenue = REVENUE_DATA[clientId] ?? [0,0,0,0,0,0];
   const totalRevenue = revenue.reduce((a, b) => a + b, 0);
   const hasBad = client.flags.includes("bad");

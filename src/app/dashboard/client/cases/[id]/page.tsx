@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, CalendarCheck, CheckCircle, Clock,
@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { getCaseDetail } from "@/lib/services/casesService";
 
 type CaseStage = "filed" | "pending" | "session" | "judgment" | "closed";
 
@@ -108,7 +109,55 @@ const EVENT_COLOR: Record<TimelineEvent["type"], string> = {
 
 export default function ClientCaseDetailPage({ params }: { params: { id: string } }) {
   const { isDark } = useTheme();
-  const data = MOCK_CASES[params.id] ?? MOCK_CASES["2025-001"];
+  const [liveCase, setLiveCase] = useState<CaseData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCaseDetail(params.id)
+      .then((result) => {
+        if (!cancelled && result) {
+          // Map SharedCase fields to CaseData shape where applicable
+          const r: any = result;
+          setLiveCase({
+            id: r.id,
+            title: r.title,
+            caseNo: r.case_number ?? r.id,
+            court: r.court ?? "—",
+            stage: (r.status as CaseStage) ?? "filed",
+            progress: r.progress ?? 0,
+            urgent: r.priority === "high" || r.priority === "urgent",
+            lawyer: {
+              name: r.lawyer_name ?? "—",
+              type: r.type ?? "—",
+              phone: "",
+              rating: 0,
+            },
+            nextSession: r.next_session_date
+              ? {
+                  date: r.next_session_date,
+                  time: r.next_session_time ?? "",
+                  location: r.next_session_location ?? "",
+                }
+              : undefined,
+            fee: {
+              total: r.total_fees ?? 0,
+              paid: r.paid_fees ?? 0,
+            },
+            timeline: r.timeline ?? [],
+            documents: r.documents ?? [],
+            aiInsight: r.ai_insight,
+          } as CaseData);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [params.id]);
+
+  const data = liveCase ?? MOCK_CASES[params.id] ?? MOCK_CASES["2025-001"];
   const [showDocs, setShowDocs] = useState(false);
 
   const card = isDark

@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Wallet,
@@ -24,6 +24,7 @@ import {
   HourglassHigh
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 
@@ -176,6 +177,22 @@ const fadeUp = {
 
 export default function WalletPage() {
   const { isDark } = useTheme();
+  const [walletBalance, setWalletBalance] = useState(WALLET_BALANCE);
+  const [pendingBalance, setPendingBalance] = useState(PENDING_BALANCE);
+  const [liveCoupons, setLiveCoupons] = useState<Coupon[]>(coupons);
+  const [liveTransactions, setLiveTransactions] = useState<TxRow[]>(transactions);
+
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    apiGet<{ data: { balance?: number; pendingBalance?: number; transactions?: TxRow[]; coupons?: Coupon[] } }>("/api/v1/wallet")
+      .then((res) => {
+        if (res.data?.balance !== undefined) setWalletBalance(res.data.balance);
+        if (res.data?.pendingBalance !== undefined) setPendingBalance(res.data.pendingBalance);
+        if (res.data?.transactions?.length) setLiveTransactions(res.data.transactions);
+        if (res.data?.coupons?.length) setLiveCoupons(res.data.coupons);
+      })
+      .catch(() => { /* keep mock fallback */ });
+  }, []);
   const [activeTab, setActiveTab] = useState<"overview" | "coupons" | "history">("overview");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
@@ -233,12 +250,12 @@ export default function WalletPage() {
               <p className="text-sm text-white/60 font-medium">رصيد المحفظة المتاح</p>
             </div>
             <div className="flex items-end gap-3 mb-5">
-              <span className="text-5xl font-extrabold text-white font-mono">{WALLET_BALANCE}</span>
+              <span className="text-5xl font-extrabold text-white font-mono">{walletBalance}</span>
               <span className="text-xl font-bold text-white/70 mb-1">ر.س</span>
-              {PENDING_BALANCE > 0 && (
+              {pendingBalance > 0 && (
                 <span className="mb-1.5 flex items-center gap-1 text-xs font-semibold bg-amber-400/20 border border-amber-400/30 text-amber-300 rounded-full px-2.5 py-0.5">
                   <Clock size={11} />
-                  {PENDING_BALANCE} ر.س معلقة
+                  {pendingBalance} ر.س معلقة
                 </span>
               )}
             </div>
@@ -364,7 +381,7 @@ export default function WalletPage() {
                     <span className={`text-sm font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>
                       الرصيد الصافي المتاح
                     </span>
-                    <span className="text-xl font-extrabold text-emerald-500 font-mono">{WALLET_BALANCE} ر.س</span>
+                    <span className="text-xl font-extrabold text-emerald-500 font-mono">{walletBalance} ر.س</span>
                   </div>
                 </div>
 
@@ -395,7 +412,7 @@ export default function WalletPage() {
                 <p className={`text-xs mb-4 leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                   انسخ الكود وأدخله في صفحة الدفع، أو سيُطبّق تلقائياً عند حجزك للخدمة المرتبطة به.
                 </p>
-                {coupons.map((c, i) => (
+                {liveCoupons.map((c, i) => (
                   <motion.div
                     key={c.code}
                     custom={i}
@@ -511,7 +528,7 @@ export default function WalletPage() {
                   </h3>
                 </div>
                 <div className="divide-y divide-dashed divide-zinc-100 dark:divide-white/[0.05]">
-                  {transactions.map((tx, i) => (
+                  {liveTransactions.map((tx, i) => (
                     <motion.div
                       key={tx.id}
                       custom={i}

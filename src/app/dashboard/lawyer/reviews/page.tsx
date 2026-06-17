@@ -3,6 +3,8 @@
 import { motion } from 'framer-motion';
 import { Star, ThumbsUp, ThumbsDown, ChatCircle, Clock, SealCheck, Warning } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
+import { useState, useEffect } from 'react';
+import { apiGet, isSupabaseMode } from '@/lib/services/api';
 
 const MOCK_REVIEWS = [
   {
@@ -55,6 +57,24 @@ const DIST = [
 
 export default function LawyerReviewsPage() {
   const { isDark } = useTheme();
+  const [reviews, setReviews] = useState(MOCK_REVIEWS);
+
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    // /api/v1/reviews endpoint — uncomment when API route is created
+    // apiGet<{ data: typeof MOCK_REVIEWS }>("/api/v1/reviews")
+    //   .then((res) => {
+    //     if (res.data?.length) setReviews(res.data);
+    //   })
+    //   .catch(() => { /* keep MOCK_REVIEWS as fallback */ });
+  }, []);
+
+  const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / (reviews.length || 1);
+  const total = reviews.length;
+  const dist = [5, 4, 3, 2, 1].map(stars => ({
+    stars,
+    count: reviews.filter(r => r.rating === stars).length,
+  }));
 
   const card      = isDark ? 'border-white/5 bg-zinc-900/40 backdrop-blur-md' : 'border-slate-200 bg-white shadow-sm';
   const textPri   = isDark ? 'text-zinc-100' : 'text-slate-900';
@@ -89,24 +109,24 @@ export default function LawyerReviewsPage() {
         <div className="flex items-start gap-8">
           {/* Average */}
           <div className="text-center flex-shrink-0">
-            <p className="text-5xl font-black text-[#C8A762] tabular-nums">{AVG_RATING}</p>
+            <p className="text-5xl font-black text-[#C8A762] tabular-nums">{avgRating.toFixed(1)}</p>
             <div className="flex items-center justify-center gap-0.5 my-1">
               {[1,2,3,4,5].map(n => (
-                <Star key={n} size={14} weight="fill" className={n <= Math.round(AVG_RATING) ? 'text-[#C8A762]' : isDark ? 'text-zinc-700' : 'text-slate-200'} />
+                <Star key={n} size={14} weight="fill" className={n <= Math.round(avgRating) ? 'text-[#C8A762]' : isDark ? 'text-zinc-700' : 'text-slate-200'} />
               ))}
             </div>
-            <p className={`text-xs ${textMuted}`}>{TOTAL} تقييم</p>
+            <p className={`text-xs ${textMuted}`}>{total} تقييم</p>
           </div>
           {/* Distribution bars */}
           <div className="flex-1 space-y-2">
-            {DIST.map(d => (
+            {dist.map(d => (
               <div key={d.stars} className="flex items-center gap-2">
                 <span className={`text-xs w-4 text-left font-bold ${textMuted}`}>{d.stars}</span>
                 <Star size={10} weight="fill" className="text-[#C8A762]" />
                 <div className={`flex-1 h-2 rounded-full overflow-hidden ${isDark ? 'bg-white/[0.08]' : 'bg-slate-100'}`}>
                   <div
                     className="h-full bg-[#C8A762] rounded-full"
-                    style={{ width: `${TOTAL ? (d.count / TOTAL) * 100 : 0}%` }}
+                    style={{ width: `${total ? (d.count / total) * 100 : 0}%` }}
                   />
                 </div>
                 <span className={`text-xs w-4 ${textMuted}`}>{d.count}</span>
@@ -118,7 +138,7 @@ export default function LawyerReviewsPage() {
 
       {/* Reviews list */}
       <div className="space-y-4">
-        {MOCK_REVIEWS.map((r, i) => (
+        {reviews.map((r, i) => (
           <motion.div key={r.id}
             initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.05 * i, duration: 0.3 }}

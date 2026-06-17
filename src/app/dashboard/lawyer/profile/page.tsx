@@ -16,6 +16,7 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import {
   SpotlightCard,
   RingScore,
@@ -130,6 +131,30 @@ function getNpsTier(nps: number) {
 export default function LawyerProfilePage() {
   const { isDark } = useTheme();
   const user = useUser();
+  const [profileData, setProfileData] = useState(MOCK_PROFILE);
+
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    apiGet<{ data: Record<string, unknown> }>("/api/v1/profile")
+      .then((res) => {
+        if (res.data) {
+          const d: any = res.data;
+          setProfileData((prev) => ({
+            ...prev,
+            name: d.name ? String(d.name) : prev.name,
+            title: d.title ? String(d.title) : prev.title,
+            specialty: d.specialty ? String(d.specialty) : prev.specialty,
+            city: d.city ? String(d.city) : prev.city,
+            phone: d.phone ? String(d.phone) : prev.phone,
+            email: d.email ? String(d.email) : prev.email,
+            barNumber: d.bar_number ? String(d.bar_number) : prev.barNumber,
+            yearsExp: d.years_exp ? Number(d.years_exp) : prev.yearsExp,
+            bio: d.bio ? String(d.bio) : prev.bio,
+          }));
+        }
+      })
+      .catch(() => { /* keep MOCK_PROFILE as fallback */ });
+  }, []);
   const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
   const [performanceRange, setPerformanceRange] = useState<StatRange>("today");
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("سنة");
@@ -221,18 +246,18 @@ export default function LawyerProfilePage() {
               <div className="min-w-0 flex-1 pb-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className={`text-xl font-bold leading-snug ${isDark ? "text-white" : "text-slate-800"}`}>
-                    {user.name || MOCK_PROFILE.name}
+                    {user.name || profileData.name}
                   </h1>
-                  {MOCK_PROFILE.verified && (
+                  {profileData.verified && (
                     <SealCheck size={18} weight="fill" className="text-[#C8A762]" />
                   )}
                 </div>
                 <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                  {MOCK_PROFILE.title} · {MOCK_PROFILE.specialty}
+                  {profileData.title} · {profileData.specialty}
                 </p>
                 <div className="flex items-center gap-1 mt-1">
                   <MapPin size={12} className={isDark ? "text-zinc-600" : "text-slate-400"} />
-                  <span className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{MOCK_PROFILE.city}</span>
+                  <span className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{profileData.city}</span>
                 </div>
               </div>
             </div>
@@ -273,16 +298,16 @@ export default function LawyerProfilePage() {
           {/* Contact chips */}
           <div className="flex flex-wrap gap-2">
             {[
-              { icon: Phone,    val: MOCK_PROFILE.phone },
-              { icon: Envelope, val: MOCK_PROFILE.email },
-              { icon: Globe,    val: MOCK_PROFILE.website },
+              { icon: Phone,    val: profileData.phone },
+              { icon: Envelope, val: profileData.email },
+              { icon: Globe,    val: profileData.website },
             ].map(({ icon: Icon, val }, i) => (
               <div key={i} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
                 <Icon size={11} /> {val}
               </div>
             ))}
             <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
-              <SealCheck size={11} className="text-[#C8A762]" /> رقم النقابة: {MOCK_PROFILE.barNumber}
+              <SealCheck size={11} className="text-[#C8A762]" /> رقم النقابة: {profileData.barNumber}
             </div>
           </div>
         </div>
@@ -303,7 +328,7 @@ export default function LawyerProfilePage() {
 
       {/* Tab: Overview */}
       {activeTab === "overview" && (
-        <OverviewTab isDark={isDark} profile={MOCK_PROFILE} cardClass={card} />
+        <OverviewTab isDark={isDark} profile={profileData} cardClass={card} />
       )}
 
       {/* Tab: Performance */}
@@ -875,7 +900,7 @@ export default function LawyerProfilePage() {
       shareToggles={shareToggles}
       setShareToggles={setShareToggles}
       WIN_RATE_PCT={WIN_RATE_PCT}
-      reviewCount={MOCK_PROFILE.reviewCount}
+      reviewCount={profileData.reviewCount}
     />
     </>
   );
