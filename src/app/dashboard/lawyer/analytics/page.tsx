@@ -9,6 +9,9 @@ import {
   Briefcase, Warning,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { getCases } from "@/lib/services/casesService";
+import { getLawyerDashboardSummary } from "@/lib/services/lawyerDashboardService";
+import { isSupabaseMode } from "@/lib/services/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -165,6 +168,84 @@ export default function LawyerAnalyticsPage() {
   const [period, setPeriod] = useState<Period>("سنة");
   const [activeWorkIdx, setActiveWorkIdx] = useState<number | null>(null);
 
+  // Real data state
+  const [loading, setLoading] = useState(true);
+  const [winStats, setWinStats] = useState(WIN);
+  const [workDistribution, setWorkDistribution] = useState(WORK_DIST);
+
+  useEffect(() => {
+    if (!isSupabaseMode) {
+      setLoading(false);
+      return;
+    }
+
+    Promise.all([
+      getCases().catch(() => []),
+      getLawyerDashboardSummary().catch(() => null),
+    ]).then(([cases, summary]) => {
+      // Process cases for win stats
+      if (cases && cases.length > 0) {
+        let won = 0;
+        let settled = 0;
+        let lost = 0;
+        let pending = 0;
+
+        cases.forEach((c: any) => {
+          const status = String(c.status || "").toLowerCase();
+          if (status === "completed" || status === "won" || status === "closed") {
+            won++;
+          } else if (status === "settled") {
+            settled++;
+          } else if (status === "lost") {
+            lost++;
+          } else {
+            pending++;
+          }
+        });
+
+        if (won + settled + lost + pending > 0) {
+          setWinStats({ won, settled, lost, pending });
+        }
+
+        // Process cases for work distribution
+        let casesCount = 0;
+        let contractsCount = 0;
+        let consultsCount = 0;
+        let documentsCount = 0;
+
+        cases.forEach((c: any) => {
+          const type = String(c.type || "").toLowerCase();
+          if (type.includes("contract") || type.includes("draft")) {
+            contractsCount++;
+          } else if (type.includes("consult") || type.includes("video") || type.includes("voice")) {
+            consultsCount++;
+          } else if (type.includes("doc") || type.includes("file")) {
+            documentsCount++;
+          } else {
+            casesCount++;
+          }
+        });
+
+        const total = casesCount + contractsCount + consultsCount + documentsCount;
+        if (total > 0) {
+          const newWorkDist = [
+            { label: "قضايا",     icon: Gavel,       pct: Math.round((casesCount / total) * 100), color: "#0B3D2E", sub: ["تجاري","مدني","عمالي","جنائي","إداري"] },
+            { label: "عقود",      icon: FileText,    pct: Math.round((contractsCount / total) * 100), color: "#C8A762", sub: ["توظيف","تجارة","عقارات","شراكة"] },
+            { label: "استشارات",  icon: ChatCircleDots, pct: Math.round((consultsCount / total) * 100), color: "#3b82f6", sub: ["مدفوعة","عاجلة","مجدولة"] },
+            { label: "وثائق",     icon: Briefcase,   pct: Math.round((documentsCount / total) * 100), color: "#8b5cf6", sub: ["مذكرات","صحف دعوى","عقارية"] },
+          ];
+          setWorkDistribution(newWorkDist);
+        }
+      }
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const winTotal = winStats.won + winStats.settled + winStats.lost + winStats.pending;
+  const winRate = (winStats.won + winStats.lost) > 0 ? Math.round((winStats.won / (winStats.won + winStats.lost)) * 100) : 100;
+  
+  const isDemo = !isSupabaseMode || (winStats.won === WIN.won && winStats.settled === WIN.settled && winStats.lost === WIN.lost && winStats.pending === WIN.pending);
+
   const tx = isDark ? "text-zinc-200" : "text-slate-800";
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
 
@@ -172,16 +253,18 @@ export default function LawyerAnalyticsPage() {
     <div className="max-w-[1160px] mx-auto space-y-5 pb-10" dir="rtl">
 
       {/* بيانات تجريبية Banner */}
-      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl p-4 border flex items-center gap-3 mb-5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
-          <Warning size={18} weight="fill" className="text-amber-500" />
-        </div>
-        <div>
-          <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
-          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>التحليلات ستتوفر تلقائياً بعد استخدام المنصة</p>
-        </div>
-      </motion.div>
+      {isDemo && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 mb-5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+            <Warning size={18} weight="fill" className="text-amber-500" />
+          </div>
+          <div>
+            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>التحليلات ستتوفر تلقائياً بعد استخدام المنصة</p>
+          </div>
+        </motion.div>
+      )}
 
       {/* ── Header + Period ── */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
@@ -224,7 +307,7 @@ export default function LawyerAnalyticsPage() {
           </div>
 
           <div className="space-y-3">
-            {WORK_DIST.map((w, i) => {
+            {workDistribution.map((w, i) => {
               const Icon = w.icon;
               const isOpen = activeWorkIdx === i;
               return (
@@ -286,19 +369,19 @@ export default function LawyerAnalyticsPage() {
           </div>
           <div className="flex flex-col items-center mb-4">
             <div className="relative w-24 h-24">
-              <RingScore score={WIN_RATE} color="#C8A762" size={96} />
+              <RingScore score={winRate} color="#C8A762" size={96} />
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className={`text-2xl font-black font-mono ${tx}`}>{WIN_RATE}٪</span>
+                <span className={`text-2xl font-black font-mono ${tx}`}>{winRate}٪</span>
                 <span className={`text-[9px] ${muted}`}>فوز</span>
               </div>
             </div>
           </div>
           <div className="space-y-2">
             {[
-              { label: "مكسوبة",   val: WIN.won,     color: "#10b981" },
-              { label: "تسوية",    val: WIN.settled, color: "#3b82f6" },
-              { label: "خسارة",    val: WIN.lost,    color: "#ef4444" },
-              { label: "قيد النظر",val: WIN.pending, color: "#94a3b8" },
+              { label: "مكسوبة",   val: winStats.won,     color: "#10b981" },
+              { label: "تسوية",    val: winStats.settled, color: "#3b82f6" },
+              { label: "خسارة",    val: winStats.lost,    color: "#ef4444" },
+              { label: "قيد النظر",val: winStats.pending, color: "#94a3b8" },
             ].map(s => (
               <div key={s.label} className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
@@ -307,7 +390,7 @@ export default function LawyerAnalyticsPage() {
                 <div className={`w-12 h-1 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
                   <motion.div
                     initial={{ width: 0 }}
-                    animate={{ width: `${(s.val / WIN_TOTAL) * 100}%` }}
+                    animate={{ width: `${(s.val / (winTotal || 1)) * 100}%` }}
                     transition={{ duration: 0.6, delay: 0.3 }}
                     className="h-full rounded-full"
                     style={{ backgroundColor: s.color }}
@@ -364,7 +447,7 @@ export default function LawyerAnalyticsPage() {
           </div>
 
           <p className={`text-[10px] mt-3 pt-3 border-t ${isDark ? "border-white/[0.05] text-zinc-600" : "border-slate-100 text-slate-400"}`}>
-            بناءً على تقييمات {Math.round(WIN_TOTAL * 1.4)} موكل
+            بناءً على تقييمات {Math.round((winTotal || 1) * 1.4)} موكل
           </p>
         </SpotlightCard>
       </div>
