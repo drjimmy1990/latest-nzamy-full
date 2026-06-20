@@ -51,13 +51,14 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("[service-requests GET] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ error: error.message, code: error.code, hint: error.hint }, { status: 500 });
+      // Return empty data so frontend falls back to local store gracefully
+      return NextResponse.json({ data: [], total: 0 });
     }
 
     return NextResponse.json({ data: data ?? [], total: count ?? 0 });
   } catch (err) {
     console.error("[service-requests GET] Unexpected error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ data: [], total: 0 });
   }
 }
 
