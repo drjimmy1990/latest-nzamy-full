@@ -1,5 +1,5 @@
 # 📘 NZAMY — Complete Project Guide
-> Last Updated: 2026-06-17 | Version: 3.0
+> Last Updated: 2026-06-23 | Version: 3.1
 
 ---
 

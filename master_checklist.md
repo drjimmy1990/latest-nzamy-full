@@ -1,6 +1,6 @@
 # ✅ Nzamy (نظامي) — Master Checklist
 
-> **Last Updated**: 2026-06-05 (Post Lawyer Dashboard Migration)
+> **Last Updated**: 2026-06-23 (Post Onboarding Redirect Fixes)
 > **Purpose**: Every deliverable across all 6 phases, with checkboxes and details.
 > Legend: `[x]` = Done · `[ ]` = Not started · `[/]` = In progress
 
