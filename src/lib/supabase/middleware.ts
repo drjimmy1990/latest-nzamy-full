@@ -75,7 +75,7 @@ export async function updateSession(request: NextRequest) {
     isProtectedRoute
   ) {
     const userType = user.user_metadata?.user_type;
-    const skipOnboarding = ['lawyer', 'firm', 'provider', 'admin'].includes(userType);
+    const skipOnboarding = !['lawyer', 'firm'].includes(userType);
     const onboardingCompleted = user.user_metadata?.onboarding_completed;
     if (!skipOnboarding && onboardingCompleted === false) {
       const url = request.nextUrl.clone();

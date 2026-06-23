@@ -243,7 +243,7 @@ export default function RegisterClientPage() {
                                   credit_balance: 0,
                                   credits_max: 0,
                                   display_mode: "full",
-                                  onboarding_completed: false,
+                                  onboarding_completed: true,
                                   // Type-specific metadata
                                   ...(clientType === "individual" && {
                                     id_number: formData.idNumber,

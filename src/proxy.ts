@@ -93,7 +93,7 @@ export default async function proxy(req: NextRequest) {
 
     // Check onboarding status — skip for lawyers/firms/providers (they have their own registration flow)
     const userType = user.user_metadata?.user_type as string | undefined;
-    const skipOnboarding = ['lawyer', 'firm', 'provider', 'admin'].includes(userType ?? '');
+    const skipOnboarding = !['lawyer', 'firm'].includes(userType ?? '');
     if (
       !skipOnboarding &&
       !pathname.startsWith("/onboarding") &&

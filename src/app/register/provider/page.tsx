@@ -238,7 +238,7 @@ export default function RegisterProviderPage() {
                                   credit_balance: 0,
                                   credits_max: 0,
                                   display_mode: "full",
-                                  onboarding_completed: true,
+                                  onboarding_completed: false,
                                   provider_type: providerType,
                                   provider_specialties: selectedSpecs,
                                   license_number: formData.licenseNumber,
