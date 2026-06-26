@@ -1,67 +1,146 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  BookOpen, MagnifyingGlass, Lock, Sparkle,
-  ArrowRight, Faders, CaretDown, Check, Scales,
-  Gavel, Scroll, CheckCircle, Clock, Buildings,
-  Crown, Warning,
+  MagnifyingGlass, Faders, CaretDown, Check,
 } from "@phosphor-icons/react";
 import * as PhosphorIcons from "@phosphor-icons/react";
-import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import FloatingButtons from "@/components/FloatingButtons";
+import InvitationBanner from "@/components/InvitationBanner";
 import { useTheme } from "@/components/ThemeProvider";
-import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
-import { PaywallModal, AdvancedSearchModal, RegisteredUserStats } from "./components/PaywallModal";
+import { PaywallModal, AdvancedSearchModal } from "./components/PaywallModal";
 import {
-  DEMO_PRINCIPLES, DEMO_PRECEDENTS, DEMO_ORDERS,
-  PRINCIPLE_SUBJECTS, PRINCIPLE_SOURCES,
-  type DemoPrinciple, type DemoPrecedent, type DemoOrder,
-  type PrincipleSubject, type PrincipleSourceId,
+  DEMO_PRINCIPLES,
+  DEMO_PRECEDENTS,
+  DEMO_ORDERS,
+  PRINCIPLE_SOURCES,
+  DEMO_FEQH_BOOKS,
+  DEMO_PRECEDENTS_COLLECTIONS,
+  ORDER_ISSUERS,
+  type DemoPrinciple,
+  type DemoPrecedent,
+  type DemoOrder,
+  type PrincipleSourceId,
 } from "./demo-data";
-import { PrincipleRow, PrecedentRow, OrderRow, EmptyState } from "./components/ListItems";
 import RecentSessions from "./components/RecentSessions";
 import SmartFolders from "./components/SmartFolders";
+import { MyNotesSection } from "./components/MyNotesSection";
+import { GamificationCard } from "./components/GamificationCard";
 import LegislativeUpdates from "./components/LegislativeUpdates";
 
 import {
   type Cat,
   type ContentType,
+  type FeqhType,
+  type FeqhMadhab,
   type PrecMode,
   CONTENT_TYPES,
   PLACEHOLDERS,
   PLACEHOLDERS_EN,
-  PREC_MODES,
-  PRINCIPLE_SUBJECT_LABELS_EN,
-  PRINCIPLE_SOURCE_LABELS_EN,
-  FULL_LAWS_SYSTEMS,
   catTotalCount,
   MAIN_CATEGORIES,
   OTHER_CATEGORIES,
+  matchesFeqhCategory,
 } from "@/constants/lawsLibraryData";
+
+import { LibraryHero } from "./components/LibraryHero";
+import { PrecedentsTabContent } from "./components/PrecedentsTabContent";
+import { OrdersTabContent } from "./components/OrdersTabContent";
+import { LawsTabContent } from "./components/LawsTabContent";
+import { FeqhTabContent } from "./components/FeqhTabContent";
+import { ISSUER_MAP } from "./components/ListItems";
 
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 export default function LegalLibraryPage() {
   const { isRTL, isDark } = useTheme();
   const { isLoggedIn }    = useUser();
+  const router = useRouter();
 
   // — Core filters —
   const [search,         setSearch]         = useState("");
+  const [showSuggest,    setShowSuggest]    = useState(false);
   const [activeCat,      setActiveCat]      = useState<Cat>("all");
   const [activeType,     setActiveType]     = useState<ContentType>("all");
+  const [selectedHashtag, setSelectedHashtag] = useState<string | null>(null);
   const [otherMenuOpen,  setOtherMenuOpen]  = useState(false);
   const [showPaywall,    setShowPaywall]    = useState(false);
   const [showAdvSearch,  setShowAdvSearch]  = useState(false);
   const [mounted,        setMounted]        = useState(false);
+  const [layoutMode,     setLayoutMode]     = useState<"grid" | "list">("grid");
+  const [showSidebars,   setShowSidebars]   = useState(true);
+
+  // Arabic Normalization Helper (shared utility)
+  const { normalizeArabic } = require("@/utils/normalizeArabic");
+
+  // — API-backed autocomplete state —
+  const [autocompleteCounts, setAutocompleteCounts] = useState<{ laws: number; precedents: number; orders: number; feqh: number }>({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
+  const [autocompleteMatches, setAutocompleteMatches] = useState<{ label: string; type: string; typeLabel: string; id?: string }[]>([]);
+  const autocompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced autocomplete API call
+  const fetchAutocomplete = useCallback(async (q: string) => {
+    if (q.length < 2) {
+      setAutocompleteCounts({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
+      setAutocompleteMatches([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/library/autocomplete?q=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setAutocompleteCounts(data.counts || { laws: 0, precedents: 0, orders: 0, feqh: 0 });
+        const matches = (data.topMatches || []).map((m: { title: string; section: string; slug: string; snippet?: string }) => ({
+          label: m.title,
+          type: m.section === "laws" ? "laws" : m.section === "orders" ? "orders" : m.section === "feqh" ? "feqh" : "precedents",
+          typeLabel: m.section === "laws" ? (isRTL ? "نظام" : "Law") : m.section === "orders" ? (isRTL ? "مرسوم" : "Decree") : m.section === "feqh" ? (isRTL ? "كتاب" : "Book") : (isRTL ? "مبدأ" : "Principle"),
+          id: m.slug,
+        }));
+        setAutocompleteMatches(matches);
+      }
+    } catch (e) {
+      console.error("[Autocomplete] fetch error:", e);
+    }
+  }, [isRTL]);
+
+  // Trigger autocomplete with 300ms debounce
+  useEffect(() => {
+    if (autocompleteTimerRef.current) clearTimeout(autocompleteTimerRef.current);
+    autocompleteTimerRef.current = setTimeout(() => {
+      fetchAutocomplete(search);
+    }, 300);
+    return () => {
+      if (autocompleteTimerRef.current) clearTimeout(autocompleteTimerRef.current);
+    };
+  }, [search, fetchAutocomplete]);
+
+  // — Feqh filters —
+  const [feqhType,    setFeqhType]    = useState<FeqhType>("all");
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [feqhMadhab,  setFeqhMadhab]  = useState<FeqhMadhab>("all"); // reserved — Madhab filter UI coming soon
+  const [feqhSubCat,  setFeqhSubCat]  = useState<string>("all");
 
   // — Precedents dual-filter —
   const [precMode,       setPrecMode]       = useState<PrecMode>("all");
-  const [precSubject,    setPrecSubject]    = useState<PrincipleSubject>("all");
   const [precSource,     setPrecSource]     = useState<PrincipleSourceId>("all");
+  const [precTrack,      setPrecTrack]      = useState<"all" | "ordinary" | "admin" | "semi">("all");
+  const [orderIssuer,    setOrderIssuer]    = useState<string>("all");
+
+  const [precPage,       setPrecPage]       = useState(1);
+  const [precSort,       setPrecSort]       = useState<"relevance" | "year-desc" | "year-asc" | "date-desc">("relevance");
+
+  const isLoadedRef = useRef(false);
+
+  // Reset page index on filter/search changes
+  useEffect(() => {
+    if (isLoadedRef.current) {
+      setPrecPage(1);
+    }
+  }, [search, activeType, activeCat, precSource, precTrack, precSort]);
 
   // — Rotating placeholder —
   const [phIdx, setPhIdx] = useState(0);
@@ -72,50 +151,247 @@ export default function LegalLibraryPage() {
     return () => clearInterval(t);
   }, [phList]);
 
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setSelectedHashtag(null);
+  }, [activeType, activeCat]);
+  // Load state from sessionStorage after component is mounted on the client
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedSearch = sessionStorage.getItem("nzamy_search_search");
+      if (savedSearch !== null) setSearch(savedSearch);
+      
+      const savedActiveCat = sessionStorage.getItem("nzamy_search_activeCat");
+      if (savedActiveCat !== null) setActiveCat(savedActiveCat as any);
+      
+      const savedActiveType = sessionStorage.getItem("nzamy_search_activeType");
+      if (savedActiveType !== null) setActiveType(savedActiveType as any);
+      
+      const savedLayoutMode = sessionStorage.getItem("nzamy_search_layoutMode");
+      if (savedLayoutMode !== null) setLayoutMode(savedLayoutMode as any);
+      
+      const savedFeqhType = sessionStorage.getItem("nzamy_search_feqhType");
+      if (savedFeqhType !== null) setFeqhType(savedFeqhType as any);
+      
+      const savedFeqhSubCat = sessionStorage.getItem("nzamy_search_feqhSubCat");
+      if (savedFeqhSubCat !== null) setFeqhSubCat(savedFeqhSubCat);
+      
+      const savedPrecMode = sessionStorage.getItem("nzamy_search_precMode");
+      if (savedPrecMode !== null) setPrecMode(savedPrecMode as any);
+      
+      const savedPrecSource = sessionStorage.getItem("nzamy_search_precSource");
+      if (savedPrecSource !== null) setPrecSource(savedPrecSource as any);
+      
+      const savedPrecTrack = sessionStorage.getItem("nzamy_search_precTrack");
+      if (savedPrecTrack !== null) setPrecTrack(savedPrecTrack as any);
+      
+      const savedOrderIssuer = sessionStorage.getItem("nzamy_search_orderIssuer");
+      if (savedOrderIssuer !== null) setOrderIssuer(savedOrderIssuer);
+      
+      const savedPrecPage = sessionStorage.getItem("nzamy_search_precPage");
+      if (savedPrecPage !== null) {
+        const p = parseInt(savedPrecPage);
+        if (!isNaN(p)) setPrecPage(p);
+      }
+      
+      const savedPrecSort = sessionStorage.getItem("nzamy_search_precSort");
+      if (savedPrecSort !== null) setPrecSort(savedPrecSort as any);
+
+      const savedShowSidebars = sessionStorage.getItem("nzamy_search_showSidebars");
+      if (savedShowSidebars !== null) setShowSidebars(savedShowSidebars === "true");
+
+      isLoadedRef.current = true;
+    }
+    setMounted(true);
+  }, []);
+
+  // Save state to sessionStorage when any search/filter state changes
+  useEffect(() => {
+    if (mounted && typeof window !== "undefined") {
+      sessionStorage.setItem("nzamy_search_search", search);
+      sessionStorage.setItem("nzamy_search_activeCat", activeCat);
+      sessionStorage.setItem("nzamy_search_activeType", activeType);
+      sessionStorage.setItem("nzamy_search_layoutMode", layoutMode);
+      sessionStorage.setItem("nzamy_search_feqhType", feqhType);
+      sessionStorage.setItem("nzamy_search_feqhSubCat", feqhSubCat);
+      sessionStorage.setItem("nzamy_search_precMode", precMode);
+      sessionStorage.setItem("nzamy_search_precSource", precSource);
+      sessionStorage.setItem("nzamy_search_precTrack", precTrack);
+      sessionStorage.setItem("nzamy_search_orderIssuer", orderIssuer);
+      sessionStorage.setItem("nzamy_search_precPage", precPage.toString());
+      sessionStorage.setItem("nzamy_search_precSort", precSort);
+      sessionStorage.setItem("nzamy_search_showSidebars", showSidebars.toString());
+    }
+  }, [
+    mounted,
+    search,
+    activeCat,
+    activeType,
+    layoutMode,
+    feqhType,
+    feqhSubCat,
+    precMode,
+    precSource,
+    precTrack,
+    orderIssuer,
+    precPage,
+    precSort,
+    showSidebars
+  ]);
   if (!mounted) return null;
 
   const muted       = isDark ? "text-gray-400" : "text-gray-500";
   const isOtherActive = OTHER_CATEGORIES.some(c => c.id === activeCat);
-  const q           = search.toLowerCase();
+  const q           = search.toLowerCase().trim();
+  const nq          = normalizeArabic(q);
+
+  // ─── Search autocomplete suggestions (API-backed with demo fallback) ────────
+  const searchSuggestions = nq.length >= 2 ? (() => {
+    // If API returned results, use them
+    if (autocompleteMatches.length > 0) {
+      return autocompleteMatches.slice(0, 6);
+    }
+    
+    // Fallback: scan local demo data for basic matching
+    const results: { label: string; type: string; typeLabel: string; id?: string }[] = [];
+    PhosphorIcons; // reference to prevent unused warning if any
+
+    // Scan systems
+    const FULL_LAWS_SYSTEMS_LOCAL = [
+      { id: "sys-1", slug: "civil-transactions", title: "نظام المعاملات المدنية", desc: "القانون المدني السعودي الشامل", free: true },
+      { id: "sys-2", slug: "commercial-courts", title: "نظام المحاكم التجارية", desc: "تنظيم اختصاصات المحاكم التجارية", free: true },
+      { id: "sys-3", slug: "labor-law", title: "نظام العمل السعودي", desc: "تنظيم العلاقة التعاقدية", free: false },
+      { id: "sys-4", slug: "companies-law", title: "نظام الشركات الجديد", desc: "تنظيم شركات المساهمة والمحدودة", free: false }
+    ];
+
+    FULL_LAWS_SYSTEMS_LOCAL.forEach(s => {
+      if (normalizeArabic(s.title).includes(nq) && (activeType === "all" || activeType === "laws"))
+        results.push({ label: s.title, type: "laws", typeLabel: isRTL ? "نظام" : "Law", id: s.slug });
+    });
+    DEMO_PRINCIPLES.forEach(p => {
+      if ((normalizeArabic(p.text).includes(nq) || normalizeArabic(p.source).includes(nq)) && (activeType === "all" || activeType === "precedents"))
+        results.push({ label: p.text.substring(0, 60) + "...", type: "precedents", typeLabel: isRTL ? "مبدأ" : "Principle" });
+    });
+    return results.slice(0, 6);
+  })() : [];
+
+  // Highlight utility
+  function highlightText(text: string, term: string): string {
+    if (!term || term.length < 2) return text;
+    // Highlight based on normalized representation
+    const nTerm = normalizeArabic(term);
+    const escaped = nTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return text.replace(new RegExp(`(${escaped})`, "gi"), "<mark class=\"bg-yellow-300/80 text-yellow-900 rounded px-0.5\">$1</mark>");
+  }
+
+  // Helper to map principle sourceId to judicial track
+  function matchesPrecTrack(sourceId: string, track: string): boolean {
+    if (track === "all") return true;
+    if (track === "ordinary") {
+      return [
+        "supreme", "supreme-general", "permanent-cmte", "sjc-general",
+        "higher-judicial", "tamyeez", "appeal-courts", "specialized", "sjc"
+      ].includes(sourceId);
+    }
+    if (track === "admin") {
+      return ["admin-supreme", "admin-appeal", "admin-first"].includes(sourceId);
+    }
+    if (track === "semi") {
+      return [
+        "sama-cmte", "cma-cmte", "zatca-cmte", "commercial-paper",
+        "labor-board", "prosecution"
+      ].includes(sourceId);
+    }
+    return false;
+  }
+
+  // Helper to map precedent court to judicial track
+  function matchesPrecedentTrack(court: string, track: string): boolean {
+    if (track === "all") return true;
+    const isBOG = court.includes("ديوان") || court.includes("إداري") || court.includes("إدارية");
+    const isCommittee = (court.includes("لجنة") || court.includes("لجان") || court.includes("هيئة السوق") || court.includes("ساما") || court.includes("الزكاة") || court.includes("العمالية")) && !court.includes("الهيئة القضائية العليا") && !court.includes("الهيئة العامة") && !court.includes("المحكمة العليا");
+    if (track === "ordinary") return !isBOG && !isCommittee;
+    if (track === "admin") return isBOG;
+    if (track === "semi") return isCommittee;
+    return false;
+  }
 
   // ─── Filter: Laws ─────────────────────────────────────────────────────────────
+  const FULL_LAWS_SYSTEMS = [
+    { id: "sys-1", slug: "civil-transactions", title: "نظام المعاملات المدنية", titleEn: "Civil Transactions Law", desc: "القانون المدني السعودي الشامل المنظم للعقود والالتزامات والمسؤولية التقصيرية والممتلكات.", descEn: "The comprehensive Saudi civil code regulating contracts, obligations, tort liability, and property rights.", free: true, progress: 60, articlesCount: 720, chaptersCount: 3, lastUpdated: "١٤٤٦/٥/١٢هـ" },
+    { id: "sys-2", slug: "commercial-courts", title: "نظام المحاكم التجارية", titleEn: "Commercial Courts Law", desc: "تنظيم اختصاصات وإجراءات المحاكم التجارية ونظر الدعاوى والطلبات المتعلقة بالتجار.", descEn: "Regulating the jurisdiction, rules, and procedures of commercial courts for merchants and companies.", free: true, progress: 20, articlesCount: 96, chaptersCount: 2, lastUpdated: "١٤٤٥/١٠/٨هـ" },
+    { id: "sys-3", slug: "labor-law", title: "نظام العمل السعودي", titleEn: "Saudi Labor Law", desc: "تنظيم العلاقة التعاقدية بين صاحب العمل والعامل وحقوق الطرفين والنزاعات العمالية.", descEn: "Regulating employer-employee contracts, statutory rights, working hours, and labor disputes resolution.", free: false, progress: 0, articlesCount: 245, chaptersCount: 4, lastUpdated: "١٤٤٦/٢/١هـ" },
+    { id: "sys-4", slug: "companies-law", title: "نظام الشركات الجديد", titleEn: "New Companies Law", desc: "تنظيم شركات المساهمة والمحدودة والتضامن وحوكمتها وقواعد الاندماج والاستحواذ.", descEn: "Regulating joint-stock, LLCs, partnerships, corporate governance, mergers, and acquisitions.", free: false, progress: 0, articlesCount: 282, chaptersCount: 5, lastUpdated: "١٤٤٥/١٢/٢٢هـ" }
+  ];
+
   const filteredLaws = FULL_LAWS_SYSTEMS.filter(s => {
-    const inCat = activeCat === "all" || s.cat === activeCat;
-    const inQ   = !q || s.title.toLowerCase().includes(q) || s.desc.toLowerCase().includes(q);
-    return inCat && inQ;
+    const inQ   = !nq || normalizeArabic(s.title).includes(nq) || normalizeArabic(s.desc).includes(nq);
+    return inQ;
   });
 
   // ─── Filter: Principles ───────────────────────────────────────────────────────
   const filteredPrinciples = DEMO_PRINCIPLES.filter(p => {
     const inCat    = activeCat === "all" || p.cat === activeCat;
-    const inSubj   = precSubject === "all" || p.subject === precSubject;
+    const inTrack  = matchesPrecTrack(p.sourceId, precTrack);
     const inSrc    = precSource  === "all" || p.sourceId === precSource;
-    const inQ      = !q || p.text.toLowerCase().includes(q) || p.source.toLowerCase().includes(q) || p.ref.toLowerCase().includes(q);
-    return inCat && inSubj && inSrc && inQ;
+    const inQ      = !nq || normalizeArabic(p.text).includes(nq) || normalizeArabic(p.source).includes(nq) || normalizeArabic(p.ref).includes(nq);
+    return inCat && inTrack && inSrc && inQ;
   });
 
   // ─── Filter: Precedents ───────────────────────────────────────────────────────
   const filteredPrecedents = DEMO_PRECEDENTS.filter(pr => {
     const inCat  = activeCat === "all" || pr.cat === activeCat;
-    const inSubj = precSubject === "all" || pr.subject === precSubject;
-    const inQ    = !q || pr.summary.toLowerCase().includes(q) || pr.court.toLowerCase().includes(q) || pr.relevance.toLowerCase().includes(q);
-    return inCat && inSubj && inQ;
+    const inTrack = matchesPrecedentTrack(pr.court, precTrack);
+    const inQ    = !nq || normalizeArabic(pr.summary).includes(nq) || normalizeArabic(pr.court).includes(nq) || normalizeArabic(pr.relevance).includes(nq);
+    const inHashtag = !selectedHashtag || pr.hashtags?.includes(selectedHashtag);
+    return inCat && inTrack && inQ && inHashtag;
+  });
+
+  const filteredCollections = DEMO_PRECEDENTS_COLLECTIONS.filter(col => {
+    const inTrack = precTrack === "all" || col.track === precTrack;
+    const inQ = !nq || normalizeArabic(col.title).includes(nq) || normalizeArabic(col.court).includes(nq) || normalizeArabic(col.desc).includes(nq);
+    return inTrack && inQ;
   });
 
   // ─── Filter: Orders ───────────────────────────────────────────────────────────
   const filteredOrders = DEMO_ORDERS.filter(o => {
     const inCat = activeCat === "all" || o.cat === activeCat;
-    const inQ   = !q || o.title.toLowerCase().includes(q) || o.summary.toLowerCase().includes(q) || o.ref.toLowerCase().includes(q);
-    return inCat && inQ;
+    const inQ   = !nq || normalizeArabic(o.title).includes(nq) || normalizeArabic(o.summary).includes(nq) || normalizeArabic(o.ref).includes(nq);
+    const inIssuer = orderIssuer === "all" || o.issuer === orderIssuer || o.issuer === ISSUER_MAP[orderIssuer]?.ar;
+    const inHashtag = !selectedHashtag || o.hashtags?.includes(selectedHashtag);
+    return inCat && inQ && inIssuer && inHashtag;
+  });
+
+  // ─── Filter: Feqh Books ──────────────────────────────────────────────────────
+  const filteredFeqhBooks = DEMO_FEQH_BOOKS.filter(book => {
+    const matchesCatTab = activeCat === "all" || matchesFeqhCategory(book, activeCat);
+    if (activeType === "feqh") {
+      const matchesType = feqhType === "all" || book.type === feqhType;
+      let matchesSub = true;
+      if (feqhSubCat !== "all") {
+        matchesSub = book.category === feqhSubCat;
+      }
+      const matchesQuery = !nq || 
+        normalizeArabic(book.title).includes(nq) || 
+        normalizeArabic(book.author).includes(nq) || 
+        normalizeArabic(book.desc).includes(nq);
+      return matchesType && matchesSub && matchesQuery && matchesCatTab;
+    } else {
+      const matchesQuery = !nq || 
+        normalizeArabic(book.title).includes(nq) || 
+        normalizeArabic(book.author).includes(nq) || 
+        normalizeArabic(book.desc).includes(nq);
+      return matchesQuery && matchesCatTab;
+    }
   });
 
   const hasResults = (type: ContentType) => {
     if (type === "laws")       return filteredLaws.length > 0;
     if (type === "orders")     return filteredOrders.length > 0;
     if (type === "precedents") return filteredPrinciples.length > 0 || filteredPrecedents.length > 0;
+    if (type === "feqh")       return filteredFeqhBooks.length > 0;
     return filteredLaws.length > 0 || filteredOrders.length > 0 ||
-           filteredPrinciples.length > 0 || filteredPrecedents.length > 0;
+           filteredPrinciples.length > 0 || filteredPrecedents.length > 0 ||
+           filteredFeqhBooks.length > 0;
   };
 
   const catHasContent = (catId: string) => catTotalCount(catId, activeType) > 0;
@@ -127,128 +403,197 @@ export default function LegalLibraryPage() {
     >
       <Navbar />
 
-      {/* ── Hero ────────────────────────────────────────────────────────────── */}
-      <section className="relative pt-32 pb-16 overflow-hidden mt-10">
-        <div className="absolute top-0 right-0 -mr-32 -mt-32 opacity-20 pointer-events-none">
-          <svg width="404" height="404" fill="none" viewBox="0 0 404 404">
-            <defs>
-              <pattern id="dot-pattern" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-                <circle cx="2" cy="2" r="2" fill={isDark ? "#ffffff" : "#0B3D2E"} />
-              </pattern>
-            </defs>
-            <rect width="404" height="404" fill="url(#dot-pattern)" />
-          </svg>
-        </div>
+      {/* ── Invitation Banner (subscribers only) ───────────────────────── */}
+      <div className="max-w-6xl mx-auto px-4 pt-4">
+        <InvitationBanner />
+      </div>
 
-        <div className="mx-auto max-w-[1200px] px-4 text-center relative z-10">
-          <motion.div
-            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-            className="mb-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C8A762]/10 border border-[#C8A762]/20 text-[#C8A762] text-xs font-bold"
-          >
-            <PhosphorIcons.Crown size={14} weight="fill" />
-            {isRTL ? "المكتبة القانونية الشاملة" : "Comprehensive Legal Library"}
-          </motion.div>
-
-          <motion.h1
-            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-            className={`text-4xl md:text-5xl font-black tracking-tight mb-4 ${isDark ? "text-white" : "text-[#0B3D2E]"}`}
-          >
-            {isRTL ? "الأنظمة والتشريعات" : "Laws & Regulations"}
-          </motion.h1>
-
-          <motion.p
-            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-            className={`max-w-2xl mx-auto text-sm md:text-base leading-relaxed ${muted}`}
-          >
-            {isRTL
-              ? "مرجعك الشامل والمحدث لكافة الأنظمة والمبادئ القضائية بالمملكة."
-              : "Your comprehensive and updated reference for all laws, regulations, and judicial principles."}
-          </motion.p>
-
-          {/* Content Type Pills */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22 }}
-            className="mt-5 mx-auto max-w-3xl flex flex-wrap justify-center gap-2"
-          >
-            {CONTENT_TYPES.map(ct => {
-              const CtIcon   = ct.icon;
-              const isActive = activeType === ct.id;
-              return (
-                <button key={ct.id}
-                  onClick={() => { setActiveType(ct.id); setPrecMode("all"); setPrecSubject("all"); setPrecSource("all"); }}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border text-sm font-semibold transition-all duration-200 ${
-                    isActive
-                      ? "bg-white text-[#0B3D2E] border-slate-200 shadow-[0_4px_16px_-4px_rgba(0,0,0,0.08)] scale-[1.02]"
-                      : isDark
-                        ? "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
-                        : "bg-white/60 border-slate-200/60 text-slate-500 hover:bg-white hover:text-[#0B3D2E] backdrop-blur-sm"
-                  }`}
-                >
-                  <CtIcon size={16} weight={isActive ? "fill" : "duotone"} className={isActive ? "text-[#C8A762]" : ""} />
-                  {isRTL ? ct.label : ct.labelEn}
-                </button>
-              );
-            })}
-          </motion.div>
-
-          {/* Search Bar */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-            className="mt-6 mx-auto max-w-2xl flex flex-col md:flex-row gap-3"
-          >
-            <div className="relative flex-1">
-              <div className={`absolute top-1/2 -translate-y-1/2 ${isRTL ? "right-4" : "left-4"}`}>
-                <MagnifyingGlass size={20} className={isDark ? "text-gray-500" : "text-gray-400"} />
-              </div>
-              <AnimatePresence mode="wait">
-                <motion.input
-                  key={phIdx}
-                  type="text"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3 }}
-                  placeholder={phList[phIdx]}
-                  className={`w-full py-4 px-12 rounded-2xl border text-sm font-medium transition-all focus:ring-2 focus:ring-[#0B3D2E]/20 focus:border-[#0B3D2E] outline-none ${
-                    isDark
-                      ? "bg-[#161b22] border-[#2d3748] text-white placeholder-gray-500"
-                      : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 shadow-sm"
-                  }`}
-                />
-              </AnimatePresence>
-            </div>
-            <button
-              onClick={() => setShowAdvSearch(true)}
-              className="shrink-0 flex items-center justify-center gap-2 px-6 py-4 bg-[#0B3D2E] text-white rounded-2xl font-bold text-sm hover:bg-[#0a3328] transition-colors shadow-md"
-            >
-              <Faders size={20} weight="fill" />
-              {isRTL ? "بحث متقدم" : "Advanced"}
-            </button>
-          </motion.div>
-        </div>
-      </section>
+      {/* ── Library Hero ── */}
+      <LibraryHero isDark={isDark} isRTL={isRTL} muted={muted} />
 
       {/* ── Main Layout ─────────────────────────────────────────────────────── */}
       <section className="pb-32 px-4 flex-1">
         <div className="mx-auto max-w-[1200px]">
 
-          {/* User Stats */}
-          {isLoggedIn && <RegisteredUserStats isRTL={isRTL} isDark={isDark} />}
+          {/* Search Bar */}
+          <div className="mb-6 flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1">
+              <div className={`absolute top-1/2 -translate-y-1/2 z-10 ${isRTL ? "right-4" : "left-4"}`}>
+                <MagnifyingGlass size={20} className={isDark ? "text-gray-500" : "text-gray-400"} />
+              </div>
+              <input
+                type="text"
+                value={search}
+                onChange={e => { setSearch(e.target.value); setShowSuggest(true); }}
+                onFocus={() => setShowSuggest(true)}
+                onBlur={() => setTimeout(() => setShowSuggest(false), 180)}
+                placeholder={phList[phIdx]}
+                className={`w-full py-4 px-12 rounded-2xl border text-sm font-medium transition-all focus:ring-2 focus:ring-[#0B3D2E]/20 focus:border-[#0B3D2E] outline-none ${
+                  isDark
+                    ? "bg-[#161b22] border-[#2d3748] text-white placeholder-gray-500"
+                    : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 shadow-sm"
+                }`}
+              />
+              {/* Autocomplete dropdown */}
+              <AnimatePresence>
+                {showSuggest && searchSuggestions.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                    transition={{ duration: 0.12 }}
+                    className={`absolute top-full mt-2 w-full rounded-2xl border shadow-2xl z-50 overflow-hidden ${
+                      isDark ? "bg-[#161b22]/95 border-[#2d3748] backdrop-blur-md" : "bg-white/95 border-gray-200 backdrop-blur-md"
+                    }`}
+                  >
+                    {/* Header stats block */}
+                    <div className={`p-4 border-b ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-gray-100 bg-slate-50/50"} text-right`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-xs font-black ${isDark ? "text-white" : "text-gray-900"}`}>
+                          {autocompleteCounts.laws + autocompleteCounts.precedents + autocompleteCounts.orders + autocompleteCounts.feqh > 0
+                            ? `تم العثور على ${(autocompleteCounts.laws + autocompleteCounts.precedents + autocompleteCounts.orders + autocompleteCounts.feqh).toLocaleString('ar-SA')} نتيجة لكلمة (${search})`
+                            : `نتائج البحث المقترحة بـ (${search})`}
+                        </span>
+                        <span className="text-[10px] text-[#C8A762] font-bold">معاينة فورية ذكية</span>
+                      </div>
+                      
+                      {/* Distribution badges — API-backed counts */}
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-800"}`}>
+                          مبادئ وسوابق ({autocompleteCounts.precedents > 0 ? autocompleteCounts.precedents.toLocaleString('ar-SA') : filteredPrinciples.length + filteredPrecedents.length})
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-green-900/20 text-green-400" : "bg-green-50 text-green-800"}`}>
+                          أنظمة ولوائح ({autocompleteCounts.laws > 0 ? autocompleteCounts.laws.toLocaleString('ar-SA') : filteredLaws.length})
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-blue-900/20 text-blue-400" : "bg-blue-50 text-blue-800"}`}>
+                          أوامر وتعاميم ({autocompleteCounts.orders > 0 ? autocompleteCounts.orders.toLocaleString('ar-SA') : filteredOrders.length})
+                        </span>
+                      </div>
+                    </div>
 
-          {/* ── Recent Sessions + Smart Folders (logged-in users) ─────── */}
-          {isLoggedIn && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              <RecentSessions isDark={isDark} isRTL={isRTL} />
-              <SmartFolders isDark={isDark} isRTL={isRTL} />
+                    {/* Results list */}
+                    <div className="max-h-[320px] overflow-y-auto">
+                      {searchSuggestions.map((s, i) => (
+                        <button key={i}
+                          onMouseDown={() => {
+                            setSearch(s.label.replace(/\.\.\.$/, ""));
+                            if (s.type === "laws" && s.id) setActiveType("laws");
+                            else if (s.type === "precedents") setActiveType("precedents");
+                            setShowSuggest(false);
+                          }}
+                          className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-right transition border-b last:border-0 ${
+                            isDark
+                              ? "hover:bg-white/5 text-gray-200 border-white/[0.04]"
+                              : "hover:bg-gray-50 text-gray-800 border-gray-100"
+                          }`}
+                          dir={isRTL ? "rtl" : "ltr"}
+                        >
+                          <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            s.type === "laws" ? (isDark ? "bg-green-900/30 text-green-400" : "bg-green-50 text-green-700") :
+                            isDark ? "bg-amber-900/30 text-amber-400" : "bg-amber-50 text-amber-700"
+                          }`}>{s.typeLabel}</span>
+                          <span
+                            className="flex-1 truncate text-[13px] font-medium"
+                            dangerouslySetInnerHTML={{ __html: highlightText(s.label, search) }}
+                          />
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Search tip footer */}
+                    <div className={`px-4 py-2 text-[10px] border-t flex items-center gap-1.5 justify-between ${
+                      isDark ? "bg-[#0B3D2E]/10 border-white/[0.04] text-[#C8A762]/80" : "bg-[#0B3D2E]/5 border-gray-100 text-[#0B3D2E]"
+                    }`}>
+                      <span className="font-semibold">
+                        💡 نصيحة: اكتب ({search} + عقد) للبحث عن الكلمات معاً، أو ({search} - جنائي) للاستبعاد.
+                      </span>
+                      <span className="font-bold cursor-pointer underline shrink-0 hover:text-white" onClick={() => setShowAdvSearch(true)}>
+                        تصفية متقدمة
+                      </span>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-          )}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowAdvSearch(true)}
+                className="shrink-0 flex items-center justify-center gap-2 px-6 py-4 bg-[#0B3D2E] text-white rounded-2xl font-bold text-sm hover:bg-[#0a3328] transition-colors shadow-md"
+              >
+                <Faders size={20} weight="fill" />
+                {isRTL ? "بحث متقدم" : "Advanced"}
+              </button>
 
-          {/* ── Legislative Updates (all users) ──────────────────────── */}
-          <div className="mb-8">
-            <LegislativeUpdates isDark={isDark} isRTL={isRTL} />
+              <div className={`flex items-center p-1.5 rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-sm`}>
+                <button
+                  type="button"
+                  onClick={() => setLayoutMode("grid")}
+                  className={`p-2 rounded-xl transition-all duration-200 flex items-center justify-center ${
+                    layoutMode === "grid"
+                      ? "bg-[#0B3D2E] text-white shadow-sm"
+                      : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+                  }`}
+                  title={isRTL ? "عرض شبكة" : "Grid View"}
+                >
+                  <PhosphorIcons.SquaresFour size={20} weight={layoutMode === "grid" ? "fill" : "regular"} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLayoutMode("list")}
+                  className={`p-2 rounded-xl transition-all duration-200 flex items-center justify-center ${
+                    layoutMode === "list"
+                      ? "bg-[#0B3D2E] text-white shadow-sm"
+                      : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+                  }`}
+                  title={isRTL ? "عرض قائمة" : "List View"}
+                >
+                  <PhosphorIcons.List size={20} weight={layoutMode === "list" ? "fill" : "regular"} />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowSidebars(!showSidebars)}
+                className={`p-3 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-sm shadow-sm ${
+                  !showSidebars
+                    ? "bg-[#C8A762] text-[#0B3D2E] border-[#C8A762] hover:bg-[#b08e4f] hover:border-[#b08e4f]"
+                    : isDark
+                    ? "bg-[#161b22] border-[#2d3748] text-gray-300 hover:text-white hover:bg-white/5"
+                    : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-gray-800"
+                }`}
+                title={isRTL ? (showSidebars ? "إخفاء الأدوات جانباً (وضع التركيز)" : "إظهار الأدوات جانباً") : (showSidebars ? "Hide Sidebars (Focus Mode)" : "Show Sidebars")}
+              >
+                <PhosphorIcons.SidebarSimple size={20} weight={!showSidebars ? "fill" : "regular"} />
+                <span className="hidden md:inline">
+                  {isRTL ? (showSidebars ? "إخفاء الأدوات" : "إظهار الأدوات") : (showSidebars ? "Hide Tools" : "Show Tools")}
+                </span>
+              </button>
+            </div>
           </div>
 
-          {/* ── Category Tabs ─────────────────────────────────────────────── */}
+          {/* ── Filter Unit: Content Type + Category Tabs ────── */}
+          {/* ROW 1: Content type selector */}
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            {CONTENT_TYPES.map(ct => {
+              const CtIcon   = ct.icon;
+              const isActive = activeType === ct.id;
+              return (
+                <button key={ct.id}
+                  onClick={() => { setActiveType(ct.id); setPrecMode("all"); setPrecSource("all"); setFeqhType("all"); setFeqhMadhab("all"); setOrderIssuer("all"); }}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl border text-sm font-semibold transition-all duration-200 ${
+                    isActive
+                      ? isDark ? "bg-[#0B3D2E] text-white border-[#0B3D2E]" : "bg-[#0B3D2E] text-white border-[#0B3D2E] shadow-sm"
+                      : isDark ? "bg-white/5 border-white/10 text-white/70 hover:bg-white/10" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-[#0B3D2E]"
+                  }`}
+                >
+                  <CtIcon size={15} weight={isActive ? "fill" : "duotone"} className={isActive ? "text-[#C8A762]" : ""} />
+                  {isRTL ? ct.label : ct.labelEn}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ROW 2: Category section tabs */}
           <div className="flex flex-wrap items-center gap-2 mb-8">
             <div className={`inline-flex items-center p-1.5 rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
               {MAIN_CATEGORIES.map(cat => {
@@ -329,344 +674,164 @@ export default function LegalLibraryPage() {
             </div>
           </div>
 
-          {/* ── Content Area ──────────────────────────────────────────────────── */}
-          <AnimatePresence mode="wait">
-
-            {/* ── PRECEDENTS / PRINCIPLES TAB ── */}
-            {(activeType === "precedents" || (activeType === "all" && (filteredPrinciples.length > 0 || filteredPrecedents.length > 0))) && activeType === "precedents" && (
-              <motion.div key="precedents-section"
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
+          {/* Active Hashtag Filter Banner */}
+          {selectedHashtag && (
+            <div className={`mb-6 flex items-center justify-between p-3.5 rounded-2xl border ${
+              isDark 
+                ? "bg-purple-950/25 border-purple-500/30 text-purple-300" 
+                : "bg-purple-50 border-purple-200 text-purple-800"
+            }`}>
+              <div className="flex items-center gap-2">
+                <PhosphorIcons.Tag size={16} weight="fill" />
+                <span className="text-xs font-bold">
+                  {isRTL ? "مصفى بالوسم النشط:" : "Filtered by active tag:"}
+                </span>
+                <span className="text-xs font-mono font-black px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/25">
+                  {selectedHashtag}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedHashtag(null)}
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all ${
+                  isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-purple-200 hover:bg-purple-300 text-purple-900"
+                }`}
               >
-                {/* Dual filter bar */}
-                <div className="mb-6 space-y-3">
-                  {/* Mode toggle: الكل | مبادئ | سوابق */}
-                  <div className={`inline-flex p-1 rounded-xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
-                    {PREC_MODES.map(m => {
-                      const MIcon    = m.icon;
-                      const isActive = precMode === m.id;
-                      return (
-                        <button key={m.id} onClick={() => setPrecMode(m.id)}
-                          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                            isActive
-                              ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white shadow-sm"
-                              : isDark ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-gray-900"
-                          }`}
-                        >
-                          <MIcon size={14} weight={isActive ? "fill" : "duotone"} />
-                          {isRTL ? m.label : m.labelEn}
-                        </button>
-                      );
-                    })}
-                  </div>
+                {isRTL ? "إلغاء التصفية" : "Clear Filter"}
+              </button>
+            </div>
+          )}
 
-                  {/* Subject filter */}
-                  <div>
-                    <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${muted}`}>
-                      {isRTL ? "حسب الموضوع" : "By Subject"}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {PRINCIPLE_SUBJECTS.map(s => (
-                        <button key={s.id} onClick={() => setPrecSubject(s.id)}
-                          className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 ${
-                            precSubject === s.id
-                              ? "bg-[#C8A762] text-[#0B3D2E] shadow-sm scale-105"
-                              : isDark ? "bg-white/5 text-gray-400 border border-white/10 hover:text-white hover:bg-white/10" : "bg-white text-slate-500 border border-slate-200/50 hover:bg-slate-50 hover:text-slate-800"
-                          }`}
-                        >
-                          {isRTL ? s.label : PRINCIPLE_SUBJECT_LABELS_EN[s.id]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Source filter — grouped by judicial track */}
-                  <div>
-                    <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${muted}`}>
-                      {isRTL ? "حسب جهة الإصدار" : "By Issuing Authority"}
-                    </p>
-                    {/* All button */}
-                    <button onClick={() => setPrecSource("all")}
-                      className={`mb-2 px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 ${
-                        precSource === "all"
-                          ? "bg-[#0B3D2E] text-white shadow-sm scale-105"
-                          : isDark ? "bg-white/5 text-gray-400 border border-white/10 hover:text-white hover:bg-white/10" : "bg-white text-slate-500 border border-slate-200/50 hover:bg-slate-50 hover:text-slate-800"
-                      }`}
-                    >
-                      {isRTL ? "الكل" : "All"}
-                    </button>
-                    {/* Grouped sources */}
-                    {(["القضاء العادي", "ديوان المظالم", "شبه قضائية"] as const).map(group => {
-                      const groupSources = PRINCIPLE_SOURCES.filter(s => s.group === group);
-                      if (groupSources.length === 0) return null;
-                      const groupLabel: Record<string, string> = {
-                        "القضاء العادي":  isRTL ? "القضاء العادي" : "Ordinary Judiciary",
-                        "ديوان المظالم":  isRTL ? "ديوان المظالم (إداري)" : "Board of Grievances",
-                        "شبه قضائية":     isRTL ? "هيئات شبه قضائية" : "Semi-Judicial Bodies",
-                      };
-                      const groupColors: Record<string, string> = {
-                        "القضاء العادي": isDark ? "text-amber-500" : "text-amber-700",
-                        "ديوان المظالم": isDark ? "text-blue-400"  : "text-blue-700",
-                        "شبه قضائية":    isDark ? "text-purple-400" : "text-purple-700",
-                      };
-                      return (
-                        <div key={group} className="mb-2">
-                          <span className={`text-[9px] font-black uppercase tracking-wider block mb-1 ${groupColors[group]}`}>
-                            {groupLabel[group]}
-                          </span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {groupSources.map(s => (
-                              <button key={s.id} onClick={() => setPrecSource(s.id)}
-                                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 ${
-                                  precSource === s.id
-                                    ? "bg-[#0B3D2E] text-white shadow-sm scale-105"
-                                    : isDark ? "bg-white/5 text-gray-400 border border-white/10 hover:text-white hover:bg-white/10" : "bg-white text-slate-500 border border-slate-200/50 hover:bg-slate-50 hover:text-slate-800"
-                                }`}
-                              >
-                                {isRTL ? s.label : PRINCIPLE_SOURCE_LABELS_EN[s.id]}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Principles list */}
-                {(precMode === "all" || precMode === "principles") && filteredPrinciples.length > 0 && (
-                  <div className="mb-6">
-                    <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${muted}`}>
-                      <Scales size={13} />
-                      {isRTL ? "المبادئ القضائية" : "Judicial Principles"}
-                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>{filteredPrinciples.length}</span>
-                    </p>
-                    <div className="space-y-3">
-                      <AnimatePresence mode="popLayout">
-                        {filteredPrinciples.map((p, idx) => (
-                          <PrincipleRow key={p.id} p={p} isDark={isDark} idx={idx} isRTL={isRTL} />
-                        ))}
-                      </AnimatePresence>
-                    </div>
-                  </div>
-                )}
-
-                {/* Precedents list */}
-                {(precMode === "all" || precMode === "precedents") && filteredPrecedents.length > 0 && (
-                  <div className="mb-6">
-                    <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${muted}`}>
-                      <Gavel size={13} />
-                      {isRTL ? "السوابق القضائية" : "Judicial Precedents"}
-                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-purple-900/20 text-purple-400" : "bg-purple-50 text-purple-700"}`}>{filteredPrecedents.length}</span>
-                    </p>
-                    <div className="space-y-3">
-                      <AnimatePresence mode="popLayout">
-                        {filteredPrecedents.map((pr, idx) => (
-                          <PrecedentRow key={pr.id} pr={pr} isDark={isDark} idx={idx} isRTL={isRTL} />
-                        ))}
-                      </AnimatePresence>
-                    </div>
-                  </div>
-                )}
-
-                {/* Empty state */}
-                {filteredPrinciples.length === 0 && filteredPrecedents.length === 0 && (
-                  <EmptyState
-                    type="no-results"
-                    catId={activeCat}
-                    isDark={isDark}
-                    isRTL={isRTL}
-                    hasSearch={!!q}
-                  />
-                )}
-              </motion.div>
+          {/* ── 3-Column Layout Grid ─────────────────────────────────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
+            
+            {/* Right Column: Sessions, Folders & Notes (Desktop Col 3, Mobile stacks below results) */}
+            {showSidebars && (
+              <aside className="lg:col-span-3 space-y-6 order-2 lg:order-1">
+                <RecentSessions isDark={isDark} isRTL={isRTL} />
+                <SmartFolders isDark={isDark} isRTL={isRTL} />
+                <MyNotesSection isDark={isDark} isRTL={isRTL} />
+              </aside>
             )}
 
-            {/* ── ORDERS TAB ── */}
-            {activeType === "orders" && (
-              <motion.div key="orders-section"
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
-              >
-                {filteredOrders.length > 0 ? (
-                  <div className="space-y-3">
-                    <AnimatePresence mode="popLayout">
-                      {filteredOrders.map((o, idx) => (
-                        <OrderRow key={o.id} o={o} isDark={isDark} idx={idx} isRTL={isRTL} />
-                      ))}
-                    </AnimatePresence>
-                  </div>
-                ) : (
-                  <EmptyState
-                    type={catHasContent(activeCat) ? "no-results" : "coming-soon"}
-                    catId={activeCat}
+            {/* Center Column: Results & Active Tab Panels (Desktop Col 6, Mobile stacks at top) */}
+            <main className={`order-1 lg:order-2 space-y-6 ${showSidebars ? "lg:col-span-6" : "lg:col-span-12"}`}>
+              {/* ── Tab Content Panels ── */}
+              <AnimatePresence mode="wait">
+                {activeType === "precedents" && (
+                  <PrecedentsTabContent
                     isDark={isDark}
                     isRTL={isRTL}
-                    hasSearch={!!q}
+                    muted={muted}
+                    precMode={precMode}
+                    setPrecMode={(mode) => setPrecMode(mode as any)}
+                    precTrack={precTrack}
+                    setPrecTrack={setPrecTrack}
+                    precSource={precSource}
+                    setPrecSource={(src) => setPrecSource(src as any)}
+                    filteredCollections={filteredCollections}
+                    filteredPrinciples={filteredPrinciples}
+                    filteredPrecedents={filteredPrecedents}
+                    layoutMode={layoutMode}
+                    isLoggedIn={isLoggedIn}
+                    setShowPaywall={setShowPaywall}
+                    activeCat={activeCat}
+                    q={q}
+                    setSelectedHashtag={setSelectedHashtag}
+                    precPage={precPage}
+                    setPrecPage={setPrecPage}
+                    precSort={precSort}
+                    setPrecSort={setPrecSort}
                   />
                 )}
-              </motion.div>
-            )}
 
-            {/* ── LAWS TAB or ALL ── */}
-            {(activeType === "laws" || activeType === "all") && (
-              <motion.div key="laws-section"
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
-              >
-                {/* Laws grid */}
-                {(activeType === "all" || activeType === "laws") && filteredLaws.length > 0 && (
-                  <>
-                    {activeType === "all" && (
-                      <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${muted}`}>
-                        <BookOpen size={13} />
-                        {isRTL ? "الأنظمة واللوائح" : "Laws & Regulations"}
-                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>{filteredLaws.length}</span>
-                      </p>
-                    )}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
-                      <AnimatePresence mode="popLayout">
-                        {filteredLaws.map((sys, idx) => (
-                          <motion.div key={sys.id}
-                            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: idx * 0.05 }}
-                            className={`group relative rounded-2xl border p-5 transition-all ${
-                              sys.free
-                                ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
-                                : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
-                            }`}
-                          >
-                            {!sys.free && (
-                              <div
-                                className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
-                                onClick={() => setShowPaywall(true)}
-                              >
-                                <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
-                                  <Lock size={16} color="#C8A762" weight="fill" />
-                                  <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>{isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}</span>
-                                </div>
-                              </div>
-                            )}
-                            <Link href={sys.free ? `/laws/${sys.slug}` : "#"} onClick={e => { if (!sys.free) { e.preventDefault(); setShowPaywall(true); } }}>
-                              <div className={!sys.free ? "opacity-40 filter blur-[2px]" : ""}>
-                                <div className="flex items-center justify-between mb-4">
-                                  <span className={`px-2.5 py-1 text-xs font-bold rounded-lg ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>{isRTL ? "مُحدث" : "Updated"}</span>
-                                  {sys.free && (
-                                    <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
-                                      <Sparkle size={10} weight="fill" />{isRTL ? "متاح" : "FREE"}
-                                    </span>
-                                  )}
-                                </div>
-                                <h3 className={`text-lg font-black mb-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors ${isDark ? "text-white" : "text-gray-900"}`}>
-                                  {isRTL ? sys.title : sys.titleEn}
-                                </h3>
-                                <p className={`text-xs mb-5 line-clamp-2 leading-relaxed ${muted}`}>{isRTL ? sys.desc : sys.descEn}</p>
-                                <div className={`grid grid-cols-2 gap-3 mb-5 p-3 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
-                                  <div className="flex flex-col">
-                                    <span className={`text-[10px] uppercase tracking-wider ${muted}`}>{isRTL ? "المواد" : "Articles"}</span>
-                                    <span className={`text-base font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{sys.articlesCount}</span>
-                                  </div>
-                                  <div className="flex flex-col">
-                                    <span className={`text-[10px] uppercase tracking-wider ${muted}`}>{isRTL ? "الأبواب" : "Chapters"}</span>
-                                    <span className={`text-base font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{sys.chaptersCount}</span>
-                                  </div>
-                                </div>
-                                {isLoggedIn && sys.free && (
-                                  <div className="mb-4">
-                                    <div className="flex justify-between items-center mb-1.5 text-xs">
-                                      <span className={muted}>{isRTL ? "نسبة القراءة" : "Progress"}</span>
-                                      <span className={`font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>{sys.progress}%</span>
-                                    </div>
-                                    <div className="h-1.5 w-full bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-                                      <div className="h-full bg-[#0B3D2E] dark:bg-[#C8A762]" style={{ width: `${sys.progress}%` }} />
-                                    </div>
-                                  </div>
-                                )}
-                                <div className="flex items-center justify-between mt-auto">
-                                  <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-                                    {isRTL ? "تصفح النظام" : "Browse System"}
-                                    <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
-                                  </span>
-                                  <span className={`text-[10px] ${muted}`}>{sys.lastUpdated}</span>
-                                </div>
-                              </div>
-                            </Link>
-                          </motion.div>
-                        ))}
-                      </AnimatePresence>
-                    </div>
-                  </>
-                )}
-
-                {/* "all" mode: also show principles + orders below */}
-                {activeType === "all" && filteredPrinciples.length > 0 && (
-                  <div className="mb-8">
-                    <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${muted}`}>
-                      <Scales size={13} />
-                      {isRTL ? "أبرز المبادئ القضائية" : "Featured Principles"}
-                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>{filteredPrinciples.length}</span>
-                    </p>
-                    <div className="space-y-3">
-                      {filteredPrinciples.slice(0, 3).map((p, idx) => (
-                        <PrincipleRow key={p.id} p={p} isDark={isDark} idx={idx} isRTL={isRTL} />
-                      ))}
-                      {filteredPrinciples.length > 3 && (
-                        <button
-                          onClick={() => setActiveType("precedents")}
-                          className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-[#C8A762] hover:text-[#C8A762]/80" : "text-[#0B3D2E] hover:text-[#0a3328]"} transition-colors`}
-                        >
-                          {isRTL ? `عرض كل ${filteredPrinciples.length} مبدأ` : `View all ${filteredPrinciples.length} principles`}
-                          <ArrowRight size={14} className={isRTL ? "rotate-180" : ""} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {activeType === "all" && filteredOrders.length > 0 && (
-                  <div className="mb-8">
-                    <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${muted}`}>
-                      <Scroll size={13} />
-                      {isRTL ? "أحدث الأوامر والتعاميم" : "Latest Orders & Circulars"}
-                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>{filteredOrders.length}</span>
-                    </p>
-                    <div className="space-y-3">
-                      {filteredOrders.slice(0, 3).map((o, idx) => (
-                        <OrderRow key={o.id} o={o} isDark={isDark} idx={idx} isRTL={isRTL} />
-                      ))}
-                      {filteredOrders.length > 3 && (
-                        <button
-                          onClick={() => setActiveType("orders")}
-                          className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-gray-300 hover:text-white" : "text-gray-600 hover:text-gray-900"} transition-colors`}
-                        >
-                          {isRTL ? `عرض كل ${filteredOrders.length} أوامر وتعاميم` : `View all ${filteredOrders.length} orders`}
-                          <ArrowRight size={14} className={isRTL ? "rotate-180" : ""} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Empty states */}
-                {!hasResults(activeType) && (
-                  <EmptyState
-                    type={catHasContent(activeCat) ? "no-results" : "coming-soon"}
-                    catId={activeCat}
+                {activeType === "orders" && (
+                  <OrdersTabContent
                     isDark={isDark}
                     isRTL={isRTL}
-                    hasSearch={!!q}
+                    muted={muted}
+                    orderIssuer={orderIssuer}
+                    setOrderIssuer={setOrderIssuer}
+                    filteredOrders={filteredOrders}
+                    ORDER_ISSUERS={ORDER_ISSUERS}
+                    layoutMode={layoutMode}
+                    activeCat={activeCat}
+                    catHasContent={catHasContent}
+                    q={q}
+                    setSelectedHashtag={setSelectedHashtag}
                   />
                 )}
-              </motion.div>
-            )}
-          </AnimatePresence>
 
+                {(activeType === "laws" || activeType === "all") && (
+                  <LawsTabContent
+                    isDark={isDark}
+                    isRTL={isRTL}
+                    muted={muted}
+                    activeType={activeType}
+                    setActiveType={setActiveType}
+                    layoutMode={layoutMode}
+                    isLoggedIn={isLoggedIn}
+                    q={q}
+                    filteredLaws={filteredLaws}
+                    filteredFeqhBooks={filteredFeqhBooks}
+                    filteredCollections={filteredCollections}
+                    filteredPrinciples={filteredPrinciples}
+                    filteredPrecedents={filteredPrecedents}
+                    filteredOrders={filteredOrders}
+                    setShowPaywall={setShowPaywall}
+                    setPrecMode={(mode) => setPrecMode(mode as any)}
+                    setSelectedHashtag={setSelectedHashtag}
+                    catHasContent={catHasContent}
+                    activeCat={activeCat}
+                    hasResults={hasResults}
+                  />
+                )}
+
+                {activeType === "feqh" && (
+                  <FeqhTabContent
+                    isDark={isDark}
+                    isRTL={isRTL}
+                    muted={muted}
+                    feqhType={feqhType}
+                    setFeqhType={setFeqhType}
+                    feqhSubCat={feqhSubCat}
+                    setFeqhSubCat={setFeqhSubCat}
+                    filteredFeqhBooks={filteredFeqhBooks}
+                    layoutMode={layoutMode}
+                    isLoggedIn={isLoggedIn}
+                    setShowPaywall={setShowPaywall}
+                    activeCat={activeCat}
+                    q={q}
+                  />
+                )}
+              </AnimatePresence>
+            </main>
+
+            {/* Left Column: Activity & Updates (Desktop Col 3, Mobile stacks at bottom) */}
+            {showSidebars && (
+              <aside className="lg:col-span-3 space-y-6 order-3 lg:order-3">
+                <GamificationCard isDark={isDark} isRTL={isRTL} />
+                <LegislativeUpdates isDark={isDark} isRTL={isRTL} />
+              </aside>
+            )}
+
+          </div>
         </div>
       </section>
 
       <Footer />
-      <FloatingButtons />
+      <FloatingButtons reportConfig={{ pageSlug: "laws-index", pageType: "law" }} />
       <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} isRTL={isRTL} isDark={isDark} />
-      <AdvancedSearchModal isOpen={showAdvSearch} onClose={() => setShowAdvSearch(false)} isRTL={isRTL} isDark={isDark} />
+      <AdvancedSearchModal 
+        isOpen={showAdvSearch} 
+        onClose={() => setShowAdvSearch(false)} 
+        isRTL={isRTL} 
+        isDark={isDark} 
+        onApplySearch={(query, section) => {
+          setSearch(query);
+          setActiveType(section);
+          setShowAdvSearch(false);
+        }}
+      />
     </div>
   );
 }
-
-// Components moved to ListItems.tsx

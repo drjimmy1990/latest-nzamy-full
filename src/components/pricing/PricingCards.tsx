@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import {
   Check, Crown, ArrowLeft, Buildings,
-  Lightning, Star, Flame, Coins, Gift, Gavel
+  Lightning, Star, Flame, Coins, Gift, Gavel, Users
 } from "@phosphor-icons/react";
 import type { Plan, AudienceTab, Billing } from "@/constants/pricingData";
 import { lawyerServicesTable } from "@/constants/pricing/pricing.lawyers";
@@ -14,13 +14,14 @@ interface PricingCardsProps {
   billing: Billing;
   isAr: boolean;
   audience: AudienceTab;
+  libraryMode?: boolean;
 }
 
 /* ─── Spotlight Card — border lights up under cursor ─────────────────────── */
 function SpotlightCard({
-  plan, billing, index, isLawyer, compact = false,
+  plan, billing, index, isLawyer, isAr, compact = false,
 }: {
-  plan: Plan; billing: Billing; index: number; isLawyer: boolean; compact?: boolean;
+  plan: Plan; billing: Billing; index: number; isLawyer: boolean; isAr: boolean; compact?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const mouseX = useMotionValue(0);
@@ -138,10 +139,31 @@ function SpotlightCard({
           {plan.desc}
         </p>
 
+        {plan.pricingFormulaLabel && (
+          <div className={`mt-3 inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-bold w-fit ${
+            isHighlighted
+              ? "bg-white/10 text-gold border border-white/5"
+              : "bg-royal/5 text-royal border border-royal/10 dark:bg-royal/20 dark:text-emerald-300 dark:border-royal/30"
+          }`}>
+            <Users size={14} weight="fill" />
+            <span>{plan.pricingFormulaLabel}</span>
+          </div>
+        )}
+
         {/* Price block */}
         <div className={`my-6 border-y py-5 ${
           isHighlighted ? "border-white/10" : "border-slate-100 dark:border-white/8"
         }`}>
+          {plan.priceOriginal && (
+            <div className={`mb-1 text-xs font-medium ${
+              isHighlighted ? "text-white/65" : "text-ink-muted dark:text-gray-500"
+            }`}>
+              <span className="opacity-80">{isAr ? "بدلاً من " : "Was "}</span>
+              <span className="line-through font-semibold">
+                {plan.priceOriginal} {isAr ? "ر.س" : "SAR"}
+              </span>
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <AnimatePresence mode="wait">
               <motion.span
@@ -182,16 +204,6 @@ function SpotlightCard({
               <Coins size={11} weight="fill" />
               {bonusLabel}
             </motion.div>
-          )}
-
-          {plan.pricingFormulaLabel && (
-            <div className={`mt-3 rounded-xl border px-3 py-2 text-[11px] font-bold leading-relaxed ${
-              isHighlighted
-                ? "border-white/10 bg-white/5 text-white/70"
-                : "border-slate-100 bg-slate-50 text-ink-muted dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-400"
-            }`}>
-              {plan.pricingFormulaLabel}
-            </div>
           )}
         </div>
 
@@ -242,13 +254,13 @@ function SpotlightCard({
 }
 
 /* ─── Lawyer-specific layout: single 4-col row ───────────────────────────── */
-function LawyerCreditsLayout({ planList, billing }: { planList: Plan[]; billing: Billing }) {
+function LawyerCreditsLayout({ planList, billing, isAr }: { planList: Plan[]; billing: Billing; isAr: boolean }) {
   return (
     <div className="space-y-4 lg:space-y-5">
       {/* Single row: all 4 plans */}
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 lg:gap-4">
         {planList.map((plan, i) => (
-          <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer compact />
+          <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer isAr={isAr} compact />
         ))}
       </div>
 
@@ -371,7 +383,7 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
 
 
 /* ─── Default layout: flexible grid ─────────────────────────────────────── */
-function DefaultLayout({ planList, billing }: { planList: Plan[]; billing: Billing }) {
+function DefaultLayout({ planList, billing, isAr }: { planList: Plan[]; billing: Billing; isAr: boolean }) {
   const cols =
     planList.length <= 3 ? "md:grid-cols-3" :
     planList.length === 4 ? "md:grid-cols-2 lg:grid-cols-4" :
@@ -380,14 +392,14 @@ function DefaultLayout({ planList, billing }: { planList: Plan[]; billing: Billi
   return (
     <div className={`grid gap-4 ${cols} lg:gap-5`}>
       {planList.map((plan, i) => (
-        <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer={false} />
+        <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer={false} isAr={isAr} />
       ))}
     </div>
   );
 }
 
 /* ─── Main export ────────────────────────────────────────────────────────── */
-export function PricingCards({ planList, billing, isAr, audience }: PricingCardsProps) {
+export function PricingCards({ planList, billing, isAr, audience, libraryMode }: PricingCardsProps) {
   const isLawyer         = audience === "lawyers";
   const showEnterpriseRow = audience === "companies";
   const showSMESection    = false; // Removed as there is a dedicated Micro tab now
@@ -396,13 +408,13 @@ export function PricingCards({ planList, billing, isAr, audience }: PricingCards
     <section className="pb-16 md:pb-24">
       <div className="mx-auto max-w-[1200px] px-4">
 
-        {isLawyer ? (
+        {isLawyer && !libraryMode ? (
           <>
-            <LawyerCreditsLayout planList={planList} billing={billing} />
+            <LawyerCreditsLayout planList={planList} billing={billing} isAr={isAr} />
             <LawyerServicesTable isAr={isAr} />
           </>
         ) : (
-          <DefaultLayout planList={planList} billing={billing} />
+          <DefaultLayout planList={planList} billing={billing} isAr={isAr} />
         )}
 
         {/* Enterprise row */}

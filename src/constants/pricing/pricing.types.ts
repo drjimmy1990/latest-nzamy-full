@@ -11,8 +11,8 @@ export interface Plan {
   priceMonthly: string; priceYearly: string;
   periodMonthly: string; periodYearly: string;
   desc: string; target: string; cta: string; ctaHref: string;
-  highlighted: boolean; color: string;
   bonusLabel?: string; // e.g. "+١٠٠٪ نقاط مجانية" — shown as prominent pill
+  priceOriginal?: string;
   isBetaHidden?: boolean;
   includedSeats?: number;
   extraSeatPrice?: string;
@@ -24,6 +24,8 @@ export interface Plan {
   forLegalDept?: boolean;
   /** Commission percentage for InDrive-style provider plans */
   commissionPct?: number;
+  highlighted?: boolean;
+  color?: string;
   features: PlanFeatures;
 }
 

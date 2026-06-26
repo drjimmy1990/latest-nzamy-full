@@ -283,3 +283,82 @@ html[dir="rtl"] .text-left {
 .react-flow__node.group-node {
   pointer-events: none;
 }
+
+/* ── Printing Styles ── */
+@media print {
+  html, body {
+    background: white !important;
+    color: black !important;
+    font-size: 12pt !important;
+    overflow: visible !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  /* Force all background colors to be transparent and remove shadows */
+  * {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Hide all interactive and layout items */
+  header, footer, nav, aside, button, .print\:hidden,
+  .no-print, [role="button"], #__next-route-announcer__ {
+    display: none !important;
+  }
+
+  /* Reset layout margins for full-width print */
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+
+  /* Ensure card overlays/borders are clean */
+  .card-surface, [class*="bg-zinc-900"], [class*="bg-purple-950/10"], [class*="bg-white"] {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: black !important;
+  }
+  
+  /* Print watermark logic */
+  .print-watermark {
+    display: grid !important;
+    position: fixed !important;
+    inset: 0 !important;
+    pointer-events: none !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    grid-template-rows: repeat(5, 1fr) !important;
+    gap: 40px !important;
+    align-items: center !important;
+    justify-items: center !important;
+    z-index: 99999 !important;
+    overflow: hidden !important;
+    user-select: none !important;
+  }
+  
+  .print-watermark-item {
+    font-family: sans-serif !important;
+    font-size: 11pt !important;
+    font-weight: bold !important;
+    transform: rotate(-30deg) !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+    line-height: 1.5 !important;
+  }
+
+  /* Override universal black color rule to keep watermark transparent/faint gray */
+  .print-watermark,
+  .print-watermark *,
+  .print-watermark-item,
+  .print-watermark-item * {
+    color: rgba(120, 120, 120, 0.15) !important;
+  }
+}
+

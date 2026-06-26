@@ -151,8 +151,18 @@ const PREC_MODES = [
   { id: "rulings",    icon: Gavel,       labelAr: "سوابق قضائية فقط", labelEn: "Precedents Only" },
 ];
 
-export function AdvancedSearchModal({ isOpen, onClose, isRTL, isDark }: {
-  isOpen: boolean; onClose: () => void; isRTL: boolean; isDark: boolean;
+export function AdvancedSearchModal({ 
+  isOpen, 
+  onClose, 
+  isRTL, 
+  isDark,
+  onApplySearch
+}: {
+  isOpen: boolean; 
+  onClose: () => void; 
+  isRTL: boolean; 
+  isDark: boolean;
+  onApplySearch?: (searchQuery: string, section: "laws" | "precedents") => void;
 }) {
   const [tab,      setTab]      = useState<"laws" | "precedents">("laws");
   const [tipIdx,   setTipIdx]   = useState<number | null>(null);
@@ -274,6 +284,45 @@ export function AdvancedSearchModal({ isOpen, onClose, isRTL, isDark }: {
     { v: "amended",  ar: "مُعدَّل",      en: "Amended" },
     { v: "repealed", ar: "منسوخ / ملغى", en: "Repealed" },
   ];
+
+  const handleApply = () => {
+    const query = searchRef.current?.value || "";
+    let fullQuery = query;
+
+    if (tab === "laws") {
+      const title = (document.querySelector('input[placeholder*="نظام الشركات"]') as HTMLInputElement)?.value;
+      const num = (document.querySelector('input[placeholder*="م/6"]') as HTMLInputElement)?.value;
+      const year = (document.querySelector('input[placeholder*="1444"]') as HTMLInputElement)?.value;
+      const articleText = (document.querySelector('input[placeholder*="ابحث داخل المواد"]') as HTMLInputElement)?.value;
+
+      const terms = [];
+      if (query) terms.push(query);
+      if (title) terms.push(title);
+      if (num) terms.push(num);
+      if (year) terms.push(year);
+      if (articleText) terms.push(articleText);
+
+      fullQuery = terms.join(" ");
+    } else {
+      const text = (document.querySelector('input[placeholder*="منطوق المبدأ"]') as HTMLInputElement)?.value;
+      const summary = (document.querySelector('input[placeholder*="موجز الحكم"]') as HTMLInputElement)?.value;
+      const num = (document.querySelector('input[placeholder*="م/49"]') as HTMLInputElement)?.value;
+
+      const terms = [];
+      if (query) terms.push(query);
+      if (text) terms.push(text);
+      if (summary) terms.push(summary);
+      if (num) terms.push(num);
+
+      fullQuery = terms.join(" ");
+    }
+
+    if (onApplySearch) {
+      onApplySearch(fullQuery, tab);
+    } else {
+      onClose();
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -575,7 +624,7 @@ export function AdvancedSearchModal({ isOpen, onClose, isRTL, isDark }: {
               <span className={`text-[10px] ${mut}`}>
                 {isRTL ? "الفلاتر جاهزة للباك-اند" : "Filters ready for backend"}
               </span>
-              <button onClick={onClose}
+              <button onClick={handleApply}
                 className="flex items-center gap-1.5 px-6 py-1.5 bg-[#0B3D2E] text-white text-[11.5px] font-bold rounded-xl hover:bg-[#0a3328] transition shadow-md">
                 <Scales size={13} weight="fill" />
                 {isRTL ? "تطبيق البحث" : "Apply Search"}

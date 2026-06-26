@@ -1,11 +1,15 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CaretDown, CaretUp, Microphone, PaperPlaneTilt, Sparkle, X,
 } from "@phosphor-icons/react";
 import type { LawArticle } from "../data";
+import { createCommunityQuestion } from "@/lib/communityStore";
+import { useUser } from "@/hooks/useUser";
+
 
 const QUICK_PROMPTS = [
   "استخرج بنود التأسيس والتسجيل",
@@ -340,6 +344,147 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true }: 
             </button>
           </div>
         </div>
+      </motion.div>
+    </>
+  );
+}
+
+// ─── Community Question Modal ─────────────────────────────────────────────────
+// ⚠️ BACKEND TODO: POST /api/community/questions { title, body, category, lawName }
+
+const COMMUNITY_CATEGORIES = [
+  "عمالي وتوظيف","عقود وتجاري","جنائي","مدني وشخصية",
+  "إداري","منافسة وملكية فكرية","عقاري وإنشاءات",
+  "أحوال شخصية وأسرة","مصرفي ومالي","أخرى",
+];
+
+export function CommunityQuestionModal({
+  isDark, isRTL = true, lawName, onClose,
+}: { isDark: boolean; isRTL?: boolean; lawName?: string; onClose: () => void }) {
+  const [title, setTitle] = useState("");
+  const [body, setBody]   = useState("");
+  const [cat, setCat]     = useState(COMMUNITY_CATEGORIES[0]);
+  const [isAnon, setIsAnon] = useState(false);
+  const [sent, setSent]   = useState(false);
+
+  const base  = isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200";
+  const inp   = isDark ? "bg-zinc-800/60 border-white/10 text-zinc-100 placeholder-zinc-600 focus:border-[#C8A762]/50" : "bg-slate-50 border-slate-200 text-gray-900 placeholder-slate-400 focus:border-amber-400";
+  const muted = isDark ? "text-zinc-500" : "text-slate-400";
+  const lbl   = isDark ? "text-zinc-300" : "text-gray-700";
+
+  const user = useUser();
+  const router = useRouter();
+
+  const handleSubmit = () => {
+    if (!title.trim()) return;
+    // Save to communityStore (localStorage) so it appears in /community feed
+    const newQ = createCommunityQuestion({
+      title: title.trim(),
+      body: body.trim() || undefined,
+      category: (cat as never) || "labor",
+      asker: isAnon ? "مستخدم مجهول" : (user.name || "مستخدم"),
+      askerType: isAnon ? "guest" : (user.userType === "lawyer" ? "lawyer" : "user"),
+      isAnonymous: isAnon,
+    });
+    setSent(true);
+    setTimeout(() => {
+      onClose();
+      router.push(`/community/${newQ.id}`);
+    }, 2200);
+  };
+
+  return (
+    <>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        onClick={onClose} className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+      <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden flex flex-col ${base}`}
+        dir={isRTL ? "rtl" : "ltr"}
+      >
+        {/* Header */}
+        <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
+          <div className="flex items-center gap-2.5">
+            <div className={`p-2 rounded-xl ${isDark ? "bg-indigo-900/30 text-indigo-400" : "bg-indigo-50 text-indigo-600"}`}>
+              <PaperPlaneTilt size={16} weight="duotone" />
+            </div>
+            <div>
+              <p className={`text-[13px] font-black ${isDark ? "text-white" : "text-gray-900"}`}>{isRTL ? "اسأل في المجتمع القانوني" : "Ask the Legal Community"}</p>
+              <p className={`text-[10px] ${muted}`}>{isRTL ? "سؤالك سيُنشر للمحامين في منصة نظامي" : "Your question will reach Nzamy lawyers"}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className={`p-2 rounded-xl transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}><X size={16} /></button>
+        </div>
+
+        {/* Body */}
+        {sent ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-12 px-6">
+            <div className={`w-14 h-14 rounded-full flex items-center justify-center ${isDark ? "bg-green-900/30 text-green-400" : "bg-green-50 text-green-600"}`}>
+              <Sparkle size={28} weight="fill" />
+            </div>
+            <p className={`text-[15px] font-black ${isDark ? "text-white" : "text-gray-900"}`}>{isRTL ? "تم إرسال سؤالك!" : "Question Sent!"}</p>
+            <p className={`text-[12px] text-center ${muted}`}>
+              {isAnon
+                ? (isRTL ? "نُشر سؤالك بشكل مجهول — سيتلقى المحامون إشعاراً" : "Posted anonymously — lawyers will be notified")
+                : (isRTL ? "سيتلقى المحامون إشعاراً بسؤالك" : "Lawyers will be notified")}
+            </p>
+          </div>
+        ) : (
+          <div className="p-5 flex flex-col gap-4">
+            {lawName && (
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isDark ? "bg-white/[0.03] border border-white/[0.06]" : "bg-slate-50 border border-slate-200"}`}>
+                <span className={`text-[10px] font-bold ${muted}`}>{isRTL ? "السياق:" : "Context:"}</span>
+                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${isDark ? "bg-[#0B3D2E]/40 text-green-300" : "bg-green-50 text-green-800"}`}>{lawName}</span>
+              </div>
+            )}
+            <div>
+              <label className={`text-[11px] font-bold block mb-1.5 ${lbl}`}>{isRTL ? "التصنيف" : "Category"}</label>
+              <select value={cat} onChange={e => setCat(e.target.value)}
+                className={`w-full px-3 py-2 rounded-xl border text-[12px] outline-none transition ${inp}`}>
+                {COMMUNITY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={`text-[11px] font-bold block mb-1.5 ${lbl}`}>{isRTL ? "عنوان السؤال *" : "Question Title *"}</label>
+              <input value={title} onChange={e => setTitle(e.target.value)}
+                placeholder={isRTL ? "مثال: ما مدة التقادم في عقود العمل؟" : "e.g. Statute of limitations for labor contracts?"}
+                className={`w-full px-3 py-2.5 rounded-xl border text-[12px] outline-none transition ${inp}`} />
+            </div>
+            <div>
+              <label className={`text-[11px] font-bold block mb-1.5 ${lbl}`}>{isRTL ? "تفاصيل السؤال (اختياري)" : "Question Details (optional)"}</label>
+              <textarea value={body} onChange={e => setBody(e.target.value)} rows={3}
+                placeholder={isRTL ? "اشرح وضعك القانوني أو تساؤلك..." : "Describe your legal question..."}
+                className={`w-full px-3 py-2.5 rounded-xl border text-[12px] outline-none resize-none transition leading-relaxed ${inp}`} />
+            </div>
+
+            {/* Anonymous Toggle */}
+            <div className={`flex items-center justify-between gap-3 px-4 py-3 rounded-xl border ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-slate-100 bg-slate-50/60"}`}>
+              <div>
+                <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
+                  {isRTL ? "نشر كمجهول" : "Post Anonymously"}
+                </p>
+                <p className={`text-[10px] mt-0.5 ${muted}`}>
+                  {isRTL ? "سيظهر اسمك كـ \"مستخدم مجهول\" بدون رابط لبروفايلك" : "Your name appears as \"Anonymous\" without a profile link"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAnon(v => !v)}
+                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${isAnon ? "bg-[#0B3D2E]" : isDark ? "bg-zinc-700" : "bg-slate-200"}`}
+              >
+                <motion.span
+                  animate={{ x: isAnon ? (isRTL ? -20 : 20) : 4 }}
+                  initial={false}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  className="absolute top-1 start-1 w-4 h-4 rounded-full bg-white shadow-sm"
+                />
+              </button>
+            </div>
+            <button onClick={handleSubmit} disabled={!title.trim()}
+              className={`w-full py-3 rounded-xl text-[13px] font-black transition disabled:opacity-40 bg-[#0B3D2E] text-white hover:bg-[#0a3226]`}>
+              {isRTL ? "إرسال السؤال للمجتمع" : "Post to Community"}
+            </button>
+          </div>
+        )}
       </motion.div>
     </>
   );

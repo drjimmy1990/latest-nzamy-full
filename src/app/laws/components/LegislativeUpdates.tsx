@@ -47,7 +47,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     articleRef: "المادة 74",
     decreeRef: "مرسوم ملكي م/15 وتاريخ 1446/6/1هـ",
     decreeType: "royal_decree",
-    date: "2025-03-12",
+    date: "2026-06-12",
     summary: "تعديل أحكام الإنهاء التعسفي وتغليظ التعويض المستحق للموظف",
   },
   {
@@ -58,7 +58,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     articleRef: "الباب السابع",
     decreeRef: "مرسوم ملكي م/132 وتاريخ 1446/5/14هـ",
     decreeType: "royal_decree",
-    date: "2025-02-18",
+    date: "2026-05-18",
     summary: "إضافة أحكام الشركات متعددة الأسهم وشركات المشاريع الناشئة",
   },
   {
@@ -69,7 +69,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     articleRef: "المادة 9 و35",
     decreeRef: "مرسوم ملكي م/8 وتاريخ 1446/4/2هـ",
     decreeType: "royal_decree",
-    date: "2025-01-22",
+    date: "2026-04-22",
     summary: "تعديل شروط قبول التحكيم الدولي وتسريع إجراءات التنفيذ",
   },
   {
@@ -80,7 +80,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     articleRef: "المادة 18",
     decreeRef: "قرار مجلس الوزراء 647 وتاريخ 1446/3/10هـ",
     decreeType: "cabinet_decision",
-    date: "2024-12-05",
+    date: "2026-03-05",
     summary: "تعديل حد الاختصاص النوعي للدوائر التجارية الابتدائية",
   },
   {
@@ -91,7 +91,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     articleRef: "المادة 13 مكرر",
     decreeRef: "مرسوم ملكي م/43 وتاريخ 1446/2/20هـ",
     decreeType: "royal_decree",
-    date: "2024-11-14",
+    date: "2026-02-14",
     summary: "إضافة أحكام الدليل الرقمي والمستندات الإلكترونية الموثقة",
   },
   {
@@ -102,7 +102,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     articleRef: "المواد 102-107",
     decreeRef: "مرسوم ملكي م/91 وتاريخ 1446/1/5هـ",
     decreeType: "royal_decree",
-    date: "2024-10-08",
+    date: "2026-01-08",
     summary: "تعديل آليات التحقيق مع المتهمين وضمانات حقوق الدفاع",
   },
   {
@@ -112,7 +112,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     changeType: "new_law",
     decreeRef: "مرسوم ملكي م/19 وتاريخ 1445/9/9هـ",
     decreeType: "royal_decree",
-    date: "2024-09-01",
+    date: "2025-12-01",
     summary: "سريان الأحكام التنفيذية الجديدة للحماية والإشعار بالاختراق",
   },
   {
@@ -123,7 +123,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     articleRef: "المادة 45",
     decreeRef: "قرار وزير الموارد البشرية 82345",
     decreeType: "ministerial_decision",
-    date: "2024-08-17",
+    date: "2025-11-17",
     summary: "إلغاء قيد الموافقة المسبقة لنقل الكفالة بين أصحاب العمل",
   },
   {
@@ -134,7 +134,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     articleRef: "المادة 5 و14",
     decreeRef: "مرسوم ملكي م/55 وتاريخ 1445/8/1هـ",
     decreeType: "royal_decree",
-    date: "2024-07-03",
+    date: "2025-10-03",
     summary: "تعديل آليات الحجز الإلكتروني على الأموال المنقولة",
   },
   {
@@ -145,7 +145,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     articleRef: "المادة 2",
     decreeRef: "مرسوم ملكي م/3 وتاريخ 1445/6/25هـ",
     decreeType: "royal_decree",
-    date: "2024-05-12",
+    date: "2025-08-12",
     summary: "توسيع تعريف الأصول الرقمية لتشمل العملات المشفرة والرموز الرقمية",
   },
   {
@@ -155,7 +155,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     changeType: "addition",
     decreeRef: "قرار مجلس الوزراء 482",
     decreeType: "cabinet_decision",
-    date: "2024-04-20",
+    date: "2025-07-20",
     summary: "إضافة دوائر متخصصة لقضايا الجرائم الإلكترونية والمالية",
   },
   {
@@ -166,7 +166,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     articleRef: "المادة 25 و26",
     decreeRef: "مرسوم ملكي م/36 وتاريخ 1445/4/10هـ",
     decreeType: "royal_decree",
-    date: "2024-02-28",
+    date: "2025-05-28",
     summary: "تعديل أحكام التقاضي الإلكتروني وإلزامية تقديم المذكرات رقمياً",
   },
 ];
@@ -412,11 +412,10 @@ interface LegislativeUpdatesProps { isDark: boolean; isRTL: boolean; }
 export default function LegislativeUpdates({ isDark, isRTL }: LegislativeUpdatesProps) {
   const [showModal, setShowModal] = useState(false);
 
-  // Widget shows last 6 months, max 6 items
+  // Widget shows latest 4 items
   const widgetItems = useMemo(() =>
     filterByPeriod(DEMO_UPDATES, "all")
-      .filter(u => (new Date().getTime() - new Date(u.date).getTime()) <= 180 * 24 * 60 * 60 * 1000)
-      .slice(0, 6),
+      .slice(0, 4),
     []
   );
 
@@ -431,7 +430,7 @@ export default function LegislativeUpdates({ isDark, isRTL }: LegislativeUpdates
         }`}
       >
         {/* Header */}
-        <div className={`flex items-center justify-between px-5 pt-5 pb-4 border-b ${isDark ? "border-white/8" : "border-gray-100"}`}>
+        <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? "border-white/8" : "border-gray-100"}`}>
           <div className="flex items-center gap-3">
             <div className={`p-2 rounded-xl ${isDark ? "bg-amber-400/10" : "bg-amber-50"}`}>
               <NewspaperClipping size={18} weight="fill" className="text-amber-400" />
@@ -456,14 +455,14 @@ export default function LegislativeUpdates({ isDark, isRTL }: LegislativeUpdates
         </div>
 
         {/* Scrollable list */}
-        <div className="overflow-y-auto max-h-[320px] px-3 py-3 space-y-1.5 scrollbar-thin">
+        <div className="overflow-hidden px-3 py-2 space-y-1">
           {widgetItems.map((u, i) => (
             <WidgetUpdateRow key={u.id} update={u} index={i} isDark={isDark} isRTL={isRTL} />
           ))}
         </div>
 
         {/* Footer CTA */}
-        <div className={`px-5 py-3.5 border-t ${isDark ? "border-white/8" : "border-gray-100"}`}>
+        <div className={`px-4 py-2.5 border-t ${isDark ? "border-white/8" : "border-gray-100"}`}>
           <button
             onClick={() => setShowModal(true)}
             className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
@@ -496,7 +495,7 @@ function WidgetUpdateRow({ update, index, isDark, isRTL }: { update: Legislative
       initial={{ opacity: 0, x: 8 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.04 }}
-      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group cursor-pointer ${
+      className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all group cursor-pointer ${
         isDark ? "hover:bg-white/5" : "hover:bg-gray-50"
       }`}
     >

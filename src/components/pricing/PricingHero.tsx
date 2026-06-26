@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Crown, Buildings, Briefcase, ShieldCheck } from "@phosphor-icons/react";
+import { Crown, Buildings, Briefcase, ShieldCheck, BookOpen } from "@phosphor-icons/react";
 import type { AudienceTab, Billing, CompanySize } from "@/constants/pricingData";
 import { audienceTabs, audiencesWithBillingToggle, billingNotes } from "@/constants/pricingData";
 
@@ -15,6 +15,8 @@ interface PricingHeroProps {
   setCompanySize: (s: CompanySize) => void;
   hasLegalDept: boolean;
   setHasLegalDept: (v: boolean) => void;
+  libraryMode: boolean;
+  setLibraryMode: (v: boolean) => void;
 }
 
 const companySizePills: { id: CompanySize; labelAr: string; labelEn: string; icon: React.ElementType }[] = [
@@ -26,6 +28,7 @@ const companySizePills: { id: CompanySize; labelAr: string; labelEn: string; ico
 export function PricingHero({
   isAr, billing, setBilling, audience, setAudience,
   companySize, setCompanySize, hasLegalDept, setHasLegalDept,
+  libraryMode, setLibraryMode,
 }: PricingHeroProps) {
   const note = billingNotes[audience];
   const showBillingToggle = audiencesWithBillingToggle.includes(audience);
@@ -70,7 +73,7 @@ export function PricingHero({
         </motion.div>
 
         {/* Info bar — billing note per audience — BLOCK level so it's below tabs */}
-        {note && (
+        {note && !libraryMode && (
           <motion.div
             key={audience}
             initial={{ opacity: 0, y: 10 }}
@@ -157,6 +160,63 @@ export function PricingHero({
                 {isAr
                   ? "✨ فريقك القانوني + أدوات نظامي = إنتاجية مضاعفة — الباقات تشمل اشتراك سنوي + محفظة نقاط لأدوات AI"
                   : "✨ Your legal team + Nzamy tools = doubled productivity — Plans include annual subscription + AI points wallet"}
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+        {/* Library mode sub-toggle — only for lawyers and firms */}
+        {(audience === "lawyers" || audience === "firms") && (
+          <motion.div
+            key={`lib-toggle-${audience}`}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ delay: 0.28 }}
+            className="mt-5 flex flex-col items-center gap-3"
+          >
+            {/* Label */}
+            <span className="text-xs font-medium text-ink-muted dark:text-gray-400">
+              {isAr ? "عرض باقات:" : "Show plans for:"}
+            </span>
+
+            {/* Toggle pills */}
+            <div className="inline-flex items-center rounded-2xl border border-slate-200/60 bg-white p-1.5 dark:border-white/10 dark:bg-dark-card">
+              {/* Full platform */}
+              <button
+                onClick={() => setLibraryMode(false)}
+                className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium transition-all ${
+                  !libraryMode
+                    ? "bg-royal text-white shadow-sm"
+                    : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
+                }`}
+              >
+                {isAr ? "🚀 كافة الخدمات" : "🚀 All Services"}
+              </button>
+
+              {/* Library only */}
+              <button
+                onClick={() => setLibraryMode(true)}
+                className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium transition-all ${
+                  libraryMode
+                    ? "bg-royal text-white shadow-sm"
+                    : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
+                }`}
+              >
+                <BookOpen size={15} weight={libraryMode ? "fill" : "regular"} />
+                {isAr ? "المكتبة القانونية" : "Legal Library"}
+              </button>
+            </div>
+
+            {/* Library mode info callout */}
+            {libraryMode && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="mx-auto max-w-md rounded-xl border border-emerald-200/60 bg-emerald-50/80 px-4 py-2.5 text-xs text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+              >
+                {isAr
+                  ? "📚 المكتبة القانونية — +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي | خصم ٥٠٪ لفترة الإطلاق"
+                  : "📚 Legal Library — 5,000+ laws, regulations & principles | 50% launch discount"}
               </motion.div>
             )}
           </motion.div>

@@ -10,8 +10,10 @@ import {
 } from "@/app/laws/demo-data";
 
 export type Cat = string;
-export type ContentType = "all" | "laws" | "orders" | "precedents";
+export type ContentType = "all" | "laws" | "orders" | "precedents" | "feqh";
 export type PrecMode = "all" | "principles" | "precedents";
+export type FeqhType = "all" | "sharia" | "wadi" | "comparative";
+export type FeqhMadhab = "all" | "hanafi" | "maliki" | "shafi" | "hanbali" | "muqaran";
 
 // ─── Content-type selector ──────────────────────────────────────────────────────
 export const CONTENT_TYPES: { id: ContentType; label: string; labelEn: string; icon: typeof BookOpen }[] = [
@@ -19,6 +21,24 @@ export const CONTENT_TYPES: { id: ContentType; label: string; labelEn: string; i
   { id: "laws",       label: "أنظمة ولوائح",          labelEn: "Laws & Regulations",     icon: BookOpen },
   { id: "orders",     label: "أوامر وتعاميم",         labelEn: "Orders & Circulars",     icon: PhosphorIcons.Scroll },
   { id: "precedents", label: "مبادئ وسوابق قضائية",  labelEn: "Principles & Precedents", icon: PhosphorIcons.Scales },
+  { id: "feqh",       label: "فقه ومراجع",           labelEn: "Fiqh & References",       icon: PhosphorIcons.Mosque },
+];
+
+// ─── Fiqh sub-types ──────────────────────────────────────────────────────────────────
+// النوع الأول: شرعي (مذاهب) | النوع الثاني: وضعي (نفس أقسام المكتبة)
+export const FEQH_TYPES: { id: FeqhType; label: string; labelEn: string }[] = [
+  { id: "all",         label: "الكل",             labelEn: "All" },
+  { id: "sharia",      label: "شرعي (فقه إسلامي)", labelEn: "Islamic Fiqh" },
+  { id: "wadi",        label: "قانوني وضعي",       labelEn: "Positive Law" },
+  { id: "comparative", label: "فقه مقارن",         labelEn: "Comparative Fiqh" },
+];
+export const FEQH_MADHABS: { id: FeqhMadhab; label: string; labelEn: string }[] = [
+  { id: "all",     label: "كل المذاهب",  labelEn: "All Schools" },
+  { id: "hanafi",  label: "حنفي",          labelEn: "Hanafi" },
+  { id: "maliki",  label: "مالكي",          labelEn: "Maliki" },
+  { id: "shafi",   label: "شافعي",          labelEn: "Shafi'i" },
+  { id: "hanbali", label: "حنبلي",          labelEn: "Hanbali" },
+  { id: "muqaran", label: "مقارن",          labelEn: "Comparative" },
 ];
 
 // ─── Rotating placeholders per content type ─────────────────────────────────────
@@ -48,6 +68,12 @@ export const PLACEHOLDERS: Record<ContentType, string[]> = {
     "مثال: مبدأ ديوان المظالم في العقود الإدارية",
     "مثال: حكم المحكمة التجارية في نية الاشتراك",
   ],
+  feqh: [
+    "مثال: المغني لابن قدامة — باب الإجارة",
+    "مثال: الوسيط في شرح قانون العقود",
+    "مثال: فسخ العقد عند الشافعية والحنفية",
+    "مثال: أحكام الفسخ في كشاف القناع",
+  ],
 };
 
 export const PLACEHOLDERS_EN: Record<ContentType, string[]> = {
@@ -75,6 +101,12 @@ export const PLACEHOLDERS_EN: Record<ContentType, string[]> = {
     "Example: precedent on dissolving a partnership",
     "Example: Board of Grievances principle on administrative contracts",
     "Example: Commercial Court ruling on intent to participate",
+  ],
+  feqh: [
+    "Example: Al-Mughni by Ibn Qudama — Lease chapter",
+    "Example: Al-Waseet on contract law",
+    "Example: contract rescission under Shafi'i and Hanafi schools",
+    "Example: Al-Rawd al-Murbi' on rescission provisions",
   ],
 };
 
@@ -138,6 +170,15 @@ export const FULL_LAWS_SYSTEMS = [
   },
 ];
 
+export function matchesFeqhCategory(book: { type: string; category: string; id: string }, cat: string): boolean {
+  if (cat === "all") return true;
+  if (cat === "SA-01") return book.category === "criminal";
+  if (cat === "SA-02") return book.category === "admin";
+  if (cat === "SA-03") return book.category === "civil" || book.type === "sharia" || book.type === "comparative";
+  if (cat === "SA-04") return book.category === "corporate" || book.id === "fb-5";
+  return false;
+}
+
 // ─── Category content counts (حسب الداتا الموجودة) ─────────────────────────────
 export const CAT_LAWS_COUNT: Record<string, number> = { "SA-04": 1 };
 export const CAT_PRINCIPLES_COUNT: Record<string, number> = DEMO_PRINCIPLES.reduce<Record<string, number>>(
@@ -150,16 +191,37 @@ export const CAT_ORDERS_COUNT: Record<string, number> = DEMO_ORDERS.reduce<Recor
   (acc, o) => { acc[o.cat] = (acc[o.cat] || 0) + 1; return acc; }, {}
 );
 
+// We define the counts for the 10 demo feqh books dynamically using matchesFeqhCategory
+const DEMO_FEQH_BOOKS_MOCK = [
+  { id: "fb-1", type: "sharia", category: "sharuh" },
+  { id: "fb-2", type: "sharia", category: "mutun" },
+  { id: "fb-3", type: "sharia", category: "encyclopedia" },
+  { id: "fb-4", type: "sharia", category: "sharuh" },
+  { id: "fb-5", type: "comparative", category: "encyclopedia" },
+  { id: "fb-6", type: "wadi", category: "civil" },
+  { id: "fb-7", type: "wadi", category: "criminal" },
+  { id: "fb-8", type: "wadi", category: "criminal" },
+  { id: "fb-9", type: "wadi", category: "corporate" },
+  { id: "fb-10", type: "wadi", category: "admin" }
+];
+
+export const CAT_FEQH_COUNT: Record<string, number> = ["SA-01", "SA-02", "SA-03", "SA-04"].reduce<Record<string, number>>((acc, catId) => {
+  acc[catId] = DEMO_FEQH_BOOKS_MOCK.filter(b => matchesFeqhCategory(b, catId)).length;
+  return acc;
+}, {});
+
 export function catTotalCount(catId: string, type: ContentType): number {
+  const feqhTotal = DEMO_FEQH_BOOKS_MOCK.filter(b => matchesFeqhCategory(b, catId)).length;
   if (catId === "all") {
-    const total = (FULL_LAWS_SYSTEMS.length + DEMO_PRINCIPLES.length + DEMO_PRECEDENTS.length + DEMO_ORDERS.length);
+    const total = (FULL_LAWS_SYSTEMS.length + DEMO_PRINCIPLES.length + DEMO_PRECEDENTS.length + DEMO_ORDERS.length + DEMO_FEQH_BOOKS_MOCK.length);
     return total;
   }
-  if (type === "laws") return CAT_LAWS_COUNT[catId] || 0;
+  if (type === "laws")       return CAT_LAWS_COUNT[catId] || 0;
   if (type === "precedents") return (CAT_PRINCIPLES_COUNT[catId] || 0) + (CAT_PRECEDENTS_COUNT[catId] || 0);
-  if (type === "orders") return CAT_ORDERS_COUNT[catId] || 0;
+  if (type === "orders")     return CAT_ORDERS_COUNT[catId] || 0;
+  if (type === "feqh")       return CAT_FEQH_COUNT[catId] || 0;
   return (CAT_LAWS_COUNT[catId] || 0) + (CAT_PRINCIPLES_COUNT[catId] || 0) +
-    (CAT_PRECEDENTS_COUNT[catId] || 0) + (CAT_ORDERS_COUNT[catId] || 0);
+    (CAT_PRECEDENTS_COUNT[catId] || 0) + (CAT_ORDERS_COUNT[catId] || 0) + feqhTotal;
 }
 
 // ─── Category Tab section ───────────────────────────────────────────────────────

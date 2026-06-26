@@ -23,6 +23,7 @@ export default function PricingPage() {
   const [billing,  setBilling]  = useState<Billing>("monthly");
   const [companySize,  setCompanySize]  = useState<CompanySize>("small");
   const [hasLegalDept, setHasLegalDept] = useState(false);
+  const [libraryMode,  setLibraryMode]  = useState(false);
 
   // FIX B8: smart-default audience tab based on logged-in user role
   const [audience, setAudience] = useState<AudienceTab>(() => {
@@ -41,9 +42,15 @@ export default function PricingPage() {
     return "individuals";
   });
 
-  const planList       = getPlanList(audience, isAr, { hasLegalDept, companySize });
+  const planList       = getPlanList(audience, isAr, { hasLegalDept, companySize, libraryMode });
   const comparisonList = getComparisonList(audience, isAr);
   const faqList        = isAr ? faqs.ar : faqs.en;
+
+  // Reset library mode when switching away from lawyers/firms
+  function handleSetAudience(a: typeof audience) {
+    if (a !== "lawyers" && a !== "firms") setLibraryMode(false);
+    setAudience(a);
+  }
 
   return (
     <>
@@ -53,15 +60,17 @@ export default function PricingPage() {
         {/* Hero + audience tabs + billing toggle + company filters */}
         <PricingHero
           isAr={isAr} billing={billing} setBilling={setBilling}
-          audience={audience} setAudience={setAudience}
+          audience={audience} setAudience={handleSetAudience}
           companySize={companySize} setCompanySize={setCompanySize}
           hasLegalDept={hasLegalDept} setHasLegalDept={setHasLegalDept}
+          libraryMode={libraryMode} setLibraryMode={setLibraryMode}
         />
 
         {/* Plan cards + enterprise + SME + quarterly */}
         <PricingCards
           planList={planList} billing={billing}
           isAr={isAr} audience={audience}
+          libraryMode={libraryMode}
         />
 
         {/* Explain Sub-Roles for B2G License */}
@@ -70,9 +79,11 @@ export default function PricingPage() {
         )}
 
         {/* Feature comparison table */}
-        <PricingComparison
-          planList={planList} comparisonList={comparisonList} isAr={isAr}
-        />
+        {!libraryMode && (
+          <PricingComparison
+            planList={planList} comparisonList={comparisonList} isAr={isAr}
+          />
+        )}
 
         {/* Social proof testimonials */}
         <PricingTestimonials isAr={isAr} planList={planList} />

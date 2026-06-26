@@ -50,16 +50,112 @@ export interface LawChapter {
   articles: LawArticle[];
 }
 
+export type LawDocumentType =
+  | "نظام"
+  | "لائحة"
+  | "نظام_ولائحة"
+  | "قرار"
+  | "تعميم"
+  | "قواعد"
+  | "ضوابط";
+
+export type LawStatus = "active" | "repealed" | "suspended" | "partially_amended";
+
 export interface LawSystem {
+  // ── الحقول الأساسية الحالية ──
   id: string;
   slug: string;
   title: string;
   titleEn: string;
-  issuanceDecree: string;
-  issuanceDate: string;
-  source: string;
-  preamble: string;
+  issuanceDecree: string;        // مرسوم ملكي رقم (م/51) وتاريخ 1426هـ
+  issuanceDate: string;          // 1426/8/23هـ
+  source: string;                // جمعية قضاء / هيئة الخبراء / وزارة العدل
+  preamble: string;              // نص الديباجة
   chapters: LawChapter[];
+  regulationPreamble?: string;   // نص ديباجة اللائحة
+
+  // ── حقول البطاقة التعريفية — كلها اختيارية ──
+  document_type?: LawDocumentType;          // نوع الوثيقة
+  section_code?: string;                    // "06" (رمز القسم)
+  section_name?: string;                    // "القسم العمالي"
+  issuing_authority?: string;               // "مجلس الوزراء"
+  cabinet_decision?: string;               // "قرار مجلس الوزراء رقم (219) وتاريخ ..."
+  latestAmendmentDecree?: string;           // "مرسوم ملكي (م/44) وتاريخ 1446هـ"
+  latestAmendmentDate?: string;             // "1446هـ"
+  total_articles?: number;                  // 245
+  has_executive_reg?: boolean;              // هل تحتوي لائحة تنفيذية مدمجة
+  regulation_decree?: string;               // رقم أداة اللائحة التنفيذية
+  boe_url?: string;                         // رابط هيئة الخبراء
+  law_status?: LawStatus;                   // حالة النظام (مختلف عن ArticleStatus)
+}
+
+// ─── Feqh Book & Principles Types ──────────────────────────────────────────────
+export interface FeqhBlock {
+  id: string;
+  topic: string;
+  vol: number;
+  page: number;
+  matn: string;
+  sharh: string;
+  hashiyah: string[];
+}
+
+export interface FeqhSection {
+  title: string;
+  blocks: FeqhBlock[];
+}
+
+export interface FeqhChapter {
+  title: string;
+  sections: FeqhSection[];
+}
+
+export interface FeqhBookSystem {
+  id: string;
+  title: string;
+  author: string;
+  school: string;
+  investigator: string;
+  publisher: string;
+  totalVolumes: number;
+  chapters: FeqhChapter[];
+}
+
+export interface PrincipleDetail {
+  ruling_basis?: string;
+  facts?: string;
+  reasons?: string;
+  ruling?: string;
+  [key: string]: string | undefined;
+}
+
+export interface JudicialParagraph {
+  letter: string;
+  keywords: string[];
+  text: string;
+}
+
+export interface JudicialPrincipleItem {
+  id: string;
+  number: string;
+  issuing_body: string;
+  session_date: string;
+  decision_number: string;
+  reference: string;
+  classification_keywords: string[];
+  text: string;
+  paragraphs?: JudicialParagraph[];
+  details: PrincipleDetail;
+}
+
+export interface JudicialPrinciplesSystem {
+  id: string;
+  title: string;
+  court: string;
+  yearHijri: number;
+  part: number;
+  sourceId: string;
+  principles: JudicialPrincipleItem[];
 }
 
 // ─── نظام الشركات ─────────────────────────────────────────────────────────────
@@ -84,6 +180,10 @@ export const COMPANIES_LAW: LawSystem = {
 ثانياً: لا يخل ما ورد في النظام بالأحكام والاختصاصات والصلاحيات المقررة للبنك المركزي السعودي وهيئة السوق المالية بناء على الأحكام النظامية ذات الصلة.
 ثالثاً: على الشركات القائمة عند نفاذ النظام تعديل أوضاعها وفقاً لأحكامه خلال مدة لا تزيد على (سنتين) تبدأ من تاريخ نفاذه.
 رابعاً: على سمو نائب رئيس مجلس الوزراء والوزراء ورؤساء الأجهزة المعنية المستقلة -كل فيما يُخَصُّه- تنفيذ مرسومنا هذا.`,
+  regulationPreamble: `قرار وزير التجارة رقم (284) وتاريخ 1444/6/23هـ
+بناءً على الصلاحيات الممنوحة له نظاماً، وبعد الاطلاع على المادة (السادسة والأربعين بعد المائتين) من نظام الشركات الصادر بالمرسوم الملكي رقم (م/132) وتاريخ 1/ 12 / 1443هـ، يقرر ما يلي:
+أولاً: الموافقة على اللائحة التنفيذية لنظام الشركات بالصيغة المرافقة.
+ثانياً: يعمل بهذه اللائحة من تاريخ نفاذ النظام، وتنشر في الجريدة الرسمية.`,
   chapters: [
     {
       title: "الباب الأول: أحكام عامة",

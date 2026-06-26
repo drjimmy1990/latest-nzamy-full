@@ -115,7 +115,7 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: isRTL ? "-100%" : "100%", opacity: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 250 }}
-      className={`fixed top-0 ${isRTL ? "left-0 border-r" : "right-0 border-l"} h-full w-full sm:w-[460px] z-50 flex flex-col shadow-2xl ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200"}`}
+      className={`fixed top-0 ${isRTL ? "left-0 border-r" : "right-0 border-l"} h-full w-full sm:w-[460px] z-[10001] flex flex-col shadow-2xl ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200"} print:hidden`}
       dir={isRTL ? "rtl" : "ltr"}
     >
       {/* ── Header ── */}

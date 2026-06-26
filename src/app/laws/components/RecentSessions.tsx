@@ -195,13 +195,6 @@ function SessionCard({
 }) {
   const [hovered, setHovered] = useState(false);
 
-  // Progress bar color
-  const progressColor = entry.progress >= 80
-    ? "bg-emerald-500"
-    : entry.progress >= 50
-      ? "bg-[#C8A762]"
-      : "bg-[#0B3D2E]";
-
   return (
     <motion.div
       layout
@@ -214,27 +207,27 @@ function SessionCard({
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className={`group relative flex items-center gap-3 p-3.5 rounded-2xl border transition-all duration-200 cursor-pointer ${
+      className={`group relative flex items-center gap-2.5 p-3 rounded-xl border transition-all duration-200 cursor-pointer overflow-hidden ${
         isDark
           ? "bg-[#161b22] border-[#2d3748] hover:border-[#C8A762]/30 hover:bg-[#1c2230]"
           : "bg-white border-gray-200/80 hover:border-[#0B3D2E]/30 hover:shadow-[0_4px_20px_-6px_rgba(11,61,46,0.08)]"
       }`}
     >
-      {/* Progress ring */}
-      <div className="relative flex-shrink-0 w-11 h-11">
-        <svg className="w-11 h-11 -rotate-90" viewBox="0 0 44 44">
+      {/* Progress ring - Smaller and more compact */}
+      <div className="relative flex-shrink-0 w-10 h-10">
+        <svg className="w-10 h-10 -rotate-90" viewBox="0 0 40 40">
           <circle
-            cx="22" cy="22" r="18"
+            cx="20" cy="20" r="16"
             fill="none"
-            strokeWidth="3"
+            strokeWidth="2.5"
             className={isDark ? "stroke-white/5" : "stroke-gray-100"}
           />
           <circle
-            cx="22" cy="22" r="18"
+            cx="20" cy="20" r="16"
             fill="none"
-            strokeWidth="3"
+            strokeWidth="2.5"
             strokeLinecap="round"
-            strokeDasharray={`${(entry.progress / 100) * 113} 113`}
+            strokeDasharray={`${(entry.progress / 100) * 100.5} 100.5`}
             className={
               entry.progress >= 80
                 ? "stroke-emerald-500"
@@ -248,7 +241,7 @@ function SessionCard({
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className={`text-[10px] font-black tabular-nums ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+          <span className={`text-[8.5px] font-black tabular-nums ${isDark ? "text-gray-300" : "text-gray-700"}`}>
             {entry.progress}%
           </span>
         </div>
@@ -256,30 +249,34 @@ function SessionCard({
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <h4 className={`text-sm font-bold truncate ${isDark ? "text-white" : "text-gray-900"}`}>
-            {isRTL ? entry.lawTitle : entry.lawTitleEn}
-          </h4>
-          <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
+        {/* Category Label stacked above the title to prevent truncation */}
+        <div className="mb-1 flex">
+          <span className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded-md ${
             isDark ? "bg-[#C8A762]/10 text-[#C8A762]/80" : "bg-[#0B3D2E]/5 text-[#0B3D2E]/60"
           }`}>
             {isRTL ? entry.catLabel : entry.catLabelEn}
           </span>
         </div>
+        
+        <h4 className={`text-[12.5px] font-bold tracking-tight leading-snug mb-0.5 truncate ${isDark ? "text-white" : "text-gray-900"}`}>
+          {isRTL ? entry.lawTitle : entry.lawTitleEn}
+        </h4>
+
         {entry.lastSection && (
-          <p className={`text-[11px] truncate ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+          <p className={`text-[10px] leading-tight truncate mb-1 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
             {isRTL ? entry.lastSection : entry.lastSectionEn}
           </p>
         )}
-        <div className={`flex items-center gap-2 mt-1 text-[10px] ${isDark ? "text-gray-600" : "text-gray-400"}`}>
-          <Clock size={10} weight="fill" />
-          <span>{formatTime(entry.timestamp, isRTL)}</span>
-          <span className="opacity-40">·</span>
-          <span>{formatRelativeDate(entry.timestamp, isRTL)}</span>
+        
+        <div className={`flex items-center gap-1.5 text-[9px] font-medium leading-none ${isDark ? "text-gray-600" : "text-gray-400"}`}>
+          <Clock size={9} weight="fill" className="shrink-0" />
+          <span className="truncate">{formatTime(entry.timestamp, isRTL)}</span>
+          <span className="opacity-40 shrink-0">·</span>
+          <span className="truncate">{formatRelativeDate(entry.timestamp, isRTL)}</span>
         </div>
       </div>
 
-      {/* Actions on hover */}
+      {/* Actions on hover - Absolute positioned to avoid layout shift */}
       <AnimatePresence>
         {hovered && (
           <motion.div
@@ -287,19 +284,22 @@ function SessionCard({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.85 }}
             transition={{ duration: 0.15 }}
-            className="flex items-center gap-1.5 flex-shrink-0"
+            className={`absolute ${isRTL ? "left-2" : "right-2"} top-1/2 -translate-y-1/2 flex items-center gap-1 p-1 rounded-xl shadow-lg border backdrop-blur-md ${
+              isDark ? "bg-[#1c2230]/95 border-white/10" : "bg-white/95 border-gray-200"
+            }`}
+            onClick={e => e.stopPropagation()}
           >
             <button
               onClick={(e) => { e.stopPropagation(); onRemove(entry.id); }}
               className={`p-1.5 rounded-lg transition-colors ${
-                isDark ? "hover:bg-red-900/20 text-gray-600 hover:text-red-400" : "hover:bg-red-50 text-gray-400 hover:text-red-500"
+                isDark ? "hover:bg-red-900/20 text-gray-400 hover:text-red-400" : "hover:bg-red-50 text-gray-500 hover:text-red-500"
               }`}
               title={isRTL ? "إزالة" : "Remove"}
             >
-              <Trash size={13} />
+              <Trash size={12} />
             </button>
             <div className={`p-1.5 rounded-lg ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-              <ArrowRight size={14} weight="bold" className={isRTL ? "rotate-180" : ""} />
+              <ArrowRight size={12} weight="bold" className={isRTL ? "rotate-180" : ""} />
             </div>
           </motion.div>
         )}
@@ -317,6 +317,7 @@ export default function RecentSessions({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
+  const [isExpandedView, setIsExpandedView] = useState(false);
 
   useEffect(() => {
     // In production, load from localStorage / API
@@ -408,7 +409,7 @@ export default function RecentSessions({
             className="overflow-hidden"
           >
             <div className={`px-5 pb-5 border-t ${isDark ? "border-[#2d3748]" : "border-gray-100"}`}>
-              <div className="pt-4 space-y-5 max-h-[480px] overflow-y-auto custom-scrollbar">
+              <div className={`pt-4 space-y-5 transition-all duration-300 ${isExpandedView ? "" : "max-h-[220px] overflow-y-auto pr-1 custom-scrollbar"}`}>
                 {GROUP_ORDER.map(group => {
                   const items = grouped[group];
                   if (items.length === 0) return null;
@@ -453,6 +454,26 @@ export default function RecentSessions({
                   );
                 })}
               </div>
+
+              {sessions.length > 2 && (
+                <div className="pt-3 mt-3 border-t border-slate-100 dark:border-white/[0.04] flex justify-center">
+                  <button
+                    onClick={() => setIsExpandedView(!isExpandedView)}
+                    className={`flex items-center gap-1.5 text-[10px] font-bold transition-colors ${
+                      isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    <span>
+                      {isExpandedView
+                        ? (isRTL ? "عرض أقل" : "Show Less")
+                        : (isRTL ? `عرض كافة الجلسات (${sessions.length})` : `Show all sessions (${sessions.length})`)}
+                    </span>
+                    <motion.div animate={{ rotate: isExpandedView ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                      <CaretDown size={11} weight="bold" />
+                    </motion.div>
+                  </button>
+                </div>
+              )}
             </div>
           </motion.div>
         )}

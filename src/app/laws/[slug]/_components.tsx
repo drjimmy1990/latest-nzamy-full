@@ -7,4 +7,4 @@ export {
 export { DraftDrawer } from "@/components/laws/DraftDrawer";
 export type { CartEntry } from "@/components/laws/DraftDrawer";
 
-export { ArticleExplainModal, LibraryAI } from "./_ai-components";
+export { ArticleExplainModal, CommunityQuestionModal, LibraryAI } from "./_ai-components";

@@ -1,4 +1,4 @@
-﻿import { buildMetadata } from "@/lib/seo";
+import { buildMetadata } from "@/lib/seo";
 
 export const metadata = buildMetadata({
   titleAr: "السوابق القضائية",

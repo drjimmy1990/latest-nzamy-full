@@ -11,6 +11,7 @@ import { plansMicro, comparisonMicro } from "./pricing.micro";
 import { plansNgo, comparisonNgo } from "./pricing.ngo";
 import { plansGovernment, comparisonGovernment } from "./pricing.government";
 import { plansProviders, comparisonProviders } from "./pricing.providers";
+import { plansLibrary, plansFirmsLibrary } from "./pricing.library";
 
 export const audienceTabs: { id: AudienceTab; labelAr: string; labelEn: string; icon: React.ElementType }[] = [
   { id: "individuals", labelAr: "أفراد",           labelEn: "Individuals",      icon: User       },
@@ -95,12 +96,20 @@ export const faqs: { ar: FaqItem[]; en: FaqItem[] } = {
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────
 
-/** Get plans for an audience. For companies, supports filtering by legal dept and size. */
+/** Get plans for an audience. For companies, supports filtering by legal dept and size.
+ *  Pass libraryMode: true to get library-only plans for lawyers/firms. */
 export function getPlanList(
   audience: AudienceTab,
   isAr: boolean,
-  opts?: { hasLegalDept?: boolean; companySize?: CompanySize },
+  opts?: { hasLegalDept?: boolean; companySize?: CompanySize; libraryMode?: boolean },
 ): Plan[] {
+  // Library mode: lawyers and firms see library subscription plans instead
+  if (opts?.libraryMode && (audience === "lawyers" || audience === "firms")) {
+    if (audience === "firms") {
+      return isAr ? plansFirmsLibrary.ar : plansFirmsLibrary.en;
+    }
+    return isAr ? plansLibrary.ar : plansLibrary.en;
+  }
   // Companies: switch to legal-dept plan set if hasLegalDept, otherwise standard plans
   if (audience === "companies") {
     const baseSet = opts?.hasLegalDept

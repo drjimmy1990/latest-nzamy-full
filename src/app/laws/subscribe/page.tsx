@@ -10,6 +10,8 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import FloatingButtons from "@/components/FloatingButtons";
+import { createLibrarySubscription } from "@/lib/invitationStore";
+import InvitationModal from "@/components/InvitationModal";
 
 // ─── Bilingual ──────────────────────────────────────────────────────────────
 
@@ -35,6 +37,7 @@ const txt = {
     perYear: "/سنة",
     plans: [
       {
+        id: "free",
         name: "مجاني",
         price: "0 ﷼",
         priceYearly: "0 ﷼",
@@ -51,58 +54,57 @@ const txt = {
         popular: false,
       },
       {
-        name: "أساسي",
-        price: "49 ﷼",
-        priceYearly: "490 ﷼",
-        desc: "للأفراد والمنشآت الصغيرة",
+        id: "lib-q1",
+        name: "ربع سنوي (٣ أشهر)",
+        price: "٣٠٠ ﷼ / ٣ أشهر",
+        priceYearly: "٣٠٠ ﷼ / ٣ أشهر",
+        desc: "وصول كامل للمكتبة والبحث بالذكاء الاصطناعي",
         icon: MagnifyingGlass,
         color: "from-[#0B3D2E] to-emerald-600",
         features: [
           "نصوص الأنظمة واللوائح كاملة",
-          "بحث ذكي غير محدود",
-          "تنبيهات التعديلات الجديدة",
-          "تصدير PDF — 10/شهر",
+          "بحث ذكي AI غير محدود",
+          "تحديثات يومية فور الصدور",
+          "٣ دعوات لزملائك (تجربة ١ شهر لكل دعوة)",
           "دعم البريد الإلكتروني",
         ],
         cta: "اشترك الآن",
         popular: false,
       },
       {
-        name: "احترافي",
-        price: "149 ﷼",
-        priceYearly: "1,490 ﷼",
-        desc: "للمحامين والمكاتب القانونية",
+        id: "lib-q2",
+        name: "نصف سنوي (٦ أشهر)",
+        price: "٥٥٠ ﷼ / ٦ أشهر",
+        priceYearly: "٥٥٠ ﷼ / ٦ أشهر",
+        desc: "الخطة الأكثر طلباً للمحترفين والمستشارين",
         icon: Scales,
         color: "from-[#C8A762] to-amber-600",
         features: [
-          "كل مزايا الأساسي",
+          "كل مزايا الربع سنوي",
           "السوابق والمبادئ القضائية",
           "بحث بالمواد والبنود",
-          "مقارنة التعديلات (diff)",
-          "تصدير PDF — غير محدود",
-          "API للتكامل",
-          "دعم أولوية",
+          "٣ دعوات لزملائك (تجربة ٢ شهر لكل دعوة)",
+          "دعم عبر واتساب",
         ],
         cta: "اشترك الآن",
         popular: true,
       },
       {
-        name: "مؤسسي",
-        price: "499 ﷼",
-        priceYearly: "4,990 ﷼",
-        desc: "للشركات الكبرى والجهات الحكومية",
+        id: "lib-annual",
+        name: "سنوي (١٢ شهر)",
+        price: "١٬٠٠٠ ﷼ / سنة",
+        priceYearly: "١٬٠٠٠ ﷼ / سنة",
+        desc: "الأوفر قيمة للاستخدام المستدام وحفظ التعديلات",
         icon: Buildings,
         color: "from-purple-700 to-purple-500",
         features: [
-          "كل مزايا الاحترافي",
-          "حسابات فريق — حتى 25 مستخدم",
-          "لوحة إدارة الفريق",
-          "تقارير استخدام متقدمة",
-          "تدريب مخصص",
-          "مدير حساب مخصص",
-          "SLA 99.9%",
+          "كل مزايا النصف سنوي",
+          "مقارنة التعديلات (diff)",
+          "تصدير نصوص الأنظمة بصيغة PDF",
+          "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
+          "دعم واتساب أولوية + مدير حساب مخصص",
         ],
-        cta: "تواصل معنا",
+        cta: "اشترك الآن",
         popular: false,
       },
     ],
@@ -136,6 +138,7 @@ const txt = {
     perYear: "/yr",
     plans: [
       {
+        id: "free",
         name: "Free",
         price: "0 SAR",
         priceYearly: "0 SAR",
@@ -152,58 +155,57 @@ const txt = {
         popular: false,
       },
       {
-        name: "Essential",
-        price: "SAR 49",
-        priceYearly: "SAR 490",
-        desc: "For individuals & small businesses",
+        id: "lib-q1",
+        name: "Quarterly (3 Months)",
+        price: "SAR 300 / 3 Months",
+        priceYearly: "SAR 300 / 3 Months",
+        desc: "Full library access with AI search",
         icon: MagnifyingGlass,
         color: "from-[#0B3D2E] to-emerald-600",
         features: [
           "Full law & regulation texts",
-          "Unlimited smart search",
-          "Amendment alerts",
-          "PDF export — 10/month",
+          "Unlimited AI smart search",
+          "Daily updates upon issuance",
+          "3 colleague invites (1-month trial each)",
           "Email support",
         ],
         cta: "Subscribe Now",
         popular: false,
       },
       {
-        name: "Professional",
-        price: "SAR 149",
-        priceYearly: "SAR 1,490",
-        desc: "For lawyers & law firms",
+        id: "lib-q2",
+        name: "Semi-Annual (6 Months)",
+        price: "SAR 550 / 6 Months",
+        priceYearly: "SAR 550 / 6 Months",
+        desc: "Most popular for professional advisors",
         icon: Scales,
         color: "from-[#C8A762] to-amber-600",
         features: [
-          "All Essential features",
+          "All Quarterly features",
           "Judicial precedents & principles",
-          "Article-level search",
-          "Amendment diff comparison",
-          "Unlimited PDF export",
-          "API access",
-          "Priority support",
+          "Article & clause level search",
+          "3 colleague invites (2-month trial each)",
+          "WhatsApp support",
         ],
         cta: "Subscribe Now",
         popular: true,
       },
       {
-        name: "Enterprise",
-        price: "SAR 499",
-        priceYearly: "SAR 4,990",
-        desc: "For corporations & government",
+        id: "lib-annual",
+        name: "Annual (12 Months)",
+        price: "SAR 1,000 / Year",
+        priceYearly: "SAR 1,000 / Year",
+        desc: "Best value for long-term practice",
         icon: Buildings,
         color: "from-purple-700 to-purple-500",
         features: [
-          "All Professional features",
-          "Team accounts — up to 25 users",
-          "Team management dashboard",
-          "Advanced usage reports",
-          "Custom training",
-          "Dedicated account manager",
-          "99.9% SLA",
+          "All Semi-Annual features",
+          "Amendment diff comparison",
+          "Export laws to PDF",
+          "3 colleague invites (3-month trial each)",
+          "Priority WhatsApp & account manager",
         ],
-        cta: "Contact Us",
+        cta: "Subscribe Now",
         popular: false,
       },
     ],
@@ -227,6 +229,16 @@ export default function LawsSubscribePage() {
   const Arrow = isAr ? ArrowLeft : ArrowRight;
   const [yearly, setYearly] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  function handleSubscribe(planId: string) {
+    if (planId === "free") {
+      window.location.href = "/laws";
+      return;
+    }
+    createLibrarySubscription(planId as any);
+    setModalOpen(true);
+  }
 
   const card = isDark
     ? "bg-zinc-900/80 border border-white/[0.06]"
@@ -341,13 +353,28 @@ export default function LawsSubscribePage() {
                 <h3 className={`text-lg font-bold mb-1 ${isDark ? "text-white" : "text-zinc-900"}`}>{plan.name}</h3>
                 <p className={`text-[12px] mb-4 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{plan.desc}</p>
 
-                <div className="flex items-baseline gap-1 mb-5">
-                  <span className={`text-2xl font-bold font-mono ${isDark ? "text-white" : "text-zinc-900"}`}>
-                    {yearly ? plan.priceYearly : plan.price}
-                  </span>
-                  <span className={`text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-                    {yearly ? t.perYear : t.perMonth}
-                  </span>
+                <div className="flex items-baseline gap-1.5 mb-5 flex-wrap">
+                  {plan.popular ? (
+                    <>
+                      <span className="text-sm line-through text-red-500 mr-1 ml-1 font-semibold">
+                        {yearly ? (isAr ? "٢,٤٠٠ ﷼ / سنة" : "SAR 2,400 / Year") : (isAr ? "٦٠٠ ﷼ / ٣ أشهر" : "SAR 600 / 3 Months")}
+                      </span>
+                      <span className={`text-2xl font-bold font-mono ${isDark ? "text-white" : "text-zinc-900"}`}>
+                        {yearly ? plan.priceYearly : plan.price}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className={`text-2xl font-bold font-mono ${isDark ? "text-white" : "text-zinc-900"}`}>
+                        {yearly ? plan.priceYearly : plan.price}
+                      </span>
+                      {!(yearly ? plan.priceYearly : plan.price).includes("/") && (
+                        <span className={`text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+                          {yearly ? t.perYear : t.perMonth}
+                        </span>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 <div className="space-y-2.5 mb-6">
@@ -361,6 +388,7 @@ export default function LawsSubscribePage() {
 
                 <motion.button
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  onClick={() => handleSubscribe(plan.id)}
                   className={`w-full py-2.5 rounded-xl text-[13px] font-bold transition-all ${
                     plan.popular
                       ? "bg-[#0B3D2E] text-[#C8A762] shadow-md hover:bg-[#155e41]"
@@ -416,6 +444,7 @@ export default function LawsSubscribePage() {
 
       </div>
       <FloatingButtons />
+      <InvitationModal open={modalOpen} onClose={() => setModalOpen(false)} isPostSubscription={true} />
     </div>
   );
 }
