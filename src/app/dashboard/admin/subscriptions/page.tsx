@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   Crown, Check, X, ChartLine, CurrencyCircleDollar,
@@ -9,69 +9,30 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
-// ─── Plan Data ────────────────────────────────────────────────────────────────
+// ─── Plan Visual Config (static — colors/features stay client-side) ───────────
 
-const PLANS = [
-  {
-    id: "free",
-    name: "مجاني",
-    color: "text-slate-400",
-    bg: "bg-slate-400/10",
-    border: "border-slate-300/30",
-    price: 0,
-    users: 42,
-    mrr: 0,
-    churnRate: 28,
-    features: ["٥ قضايا", "٣ عقود/شهر", "مستشار AI محدود", "×لا دعم فني"],
-    limits: { cases: 5, contracts: 3, credits: 20 },
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    color: "text-blue-500",
-    bg: "bg-blue-500/10",
-    border: "border-blue-500/30",
-    price: 299,
-    users: 31,
-    mrr: 9269,
-    churnRate: 8,
-    features: ["قضايا غير محدودة", "٢٠ عقد/شهر", "AI محترف", "دعم فني بالدردشة", "الصائغ القانوني"],
-    limits: { cases: -1, contracts: 20, credits: 300 },
-  },
-  {
-    id: "max",
-    name: "Max",
-    color: "text-violet-500",
-    bg: "bg-violet-500/10",
-    border: "border-violet-500/30",
-    price: 599,
-    users: 18,
-    mrr: 10782,
-    churnRate: 4,
-    features: ["كل ميزات Pro", "عقود غير محدودة", "AI MAX (استخدام واسع)", "محاكاة الخصم", "تقارير متقدمة", "دعم أولوية"],
-    limits: { cases: -1, contracts: -1, credits: 1200 },
-  },
-  {
-    id: "enterprise",
-    name: "Enterprise",
-    color: "text-amber-500",
-    bg: "bg-amber-500/10",
-    border: "border-amber-500/30",
-    price: 1999,
-    users: 5,
-    mrr: 9995,
-    churnRate: 1,
-    features: ["كل شيء في Max", "استخدام غير محدود", "تكامل API", "مدير حساب مخصص", "SLA 99.9%", "تدريب الفريق"],
-    limits: { cases: -1, contracts: -1, credits: -1 },
-  },
-];
+const PLAN_VISUAL: Record<string, { name: string; color: string; bg: string; border: string; features: string[] }> = {
+  free:       { name: "مجاني",      color: "text-slate-400",  bg: "bg-slate-400/10",  border: "border-slate-300/30", features: ["٥ قضايا", "٣ عقود/شهر", "مستشار AI محدود", "×لا دعم فني"] },
+  ai:         { name: "AI",         color: "text-cyan-500",   bg: "bg-cyan-500/10",   border: "border-cyan-500/30",  features: ["رصيد AI فقط", "٥ قضايا", "٣ عقود/شهر", "بحث متقدم"] },
+  pro:        { name: "Pro",        color: "text-blue-500",   bg: "bg-blue-500/10",   border: "border-blue-500/30",  features: ["قضايا غير محدودة", "٢٠ عقد/شهر", "AI محترف", "دعم فني بالدردشة", "الصائغ القانوني"] },
+  max:        { name: "Max",        color: "text-violet-500", bg: "bg-violet-500/10", border: "border-violet-500/30", features: ["كل ميزات Pro", "عقود غير محدودة", "AI MAX (استخدام واسع)", "محاكاة الخصم", "تقارير متقدمة", "دعم أولوية"] },
+  enterprise: { name: "Enterprise", color: "text-amber-500",  bg: "bg-amber-500/10",  border: "border-amber-500/30",  features: ["كل شيء في Max", "استخدام غير محدود", "تكامل API", "مدير حساب مخصص", "SLA 99.9%", "تدريب الفريق"] },
+};
 
-const REVENUE_HISTORY = [
-  { month: "يناير", mrr: 18500 },
-  { month: "فبراير", mrr: 22300 },
-  { month: "مارس",  mrr: 27800 },
-  { month: "أبريل", mrr: 30046 },
-];
+interface PlanData {
+  id: string;
+  name: string;
+  color: string;
+  bg: string;
+  border: string;
+  price: number;
+  users: number;
+  mrr: number;
+  churnRate: number;
+  features: string[];
+  limits: { cases: number; contracts: number; credits: number };
+}
+
 
 // ─── Mini Spark Bar ───────────────────────────────────────────────────────────
 
@@ -91,13 +52,48 @@ function SparkBar({ values, color }: { values: number[]; color: string }) {
 export default function AdminSubscriptionsPage() {
   const { isDark } = useTheme();
   const [activePlan, setActivePlan] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<{
+    totalUsers: number;
+    subscriptionsByTier: Record<string, number>;
+    mrr: number;
+    recentSignups: number;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/v1/admin/stats")
+      .then(r => r.json())
+      .then(data => { setStats(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
-  const totalMRR   = PLANS.reduce((s, p) => s + p.mrr, 0);
-  const totalUsers = PLANS.reduce((s, p) => s + p.users, 0);
+  // Build PLANS array from API stats + visual config
+  const tierOrder = ["free", "ai", "pro", "max", "enterprise"];
+  const PLANS: PlanData[] = tierOrder.map(tier => {
+    const visual = PLAN_VISUAL[tier] ?? PLAN_VISUAL.free;
+    const userCount = stats?.subscriptionsByTier?.[tier] ?? 0;
+    const price = tier === "free" ? 0 : tier === "ai" ? 99 : tier === "pro" ? 299 : tier === "max" ? 599 : 1999;
+    return {
+      id: tier,
+      name: visual.name,
+      color: visual.color,
+      bg: visual.bg,
+      border: visual.border,
+      price,
+      users: userCount,
+      mrr: userCount * price,
+      churnRate: 0,
+      features: visual.features,
+      limits: { cases: 0, contracts: 0, credits: 0 },
+    };
+  });
+
+  const totalMRR   = stats?.mrr ?? PLANS.reduce((s, p) => s + p.mrr, 0);
+  const totalUsers = stats?.totalUsers ?? PLANS.reduce((s, p) => s + p.users, 0);
   const totalARR   = totalMRR * 12;
 
   return (
@@ -138,23 +134,23 @@ export default function AdminSubscriptionsPage() {
 
       {/* MRR History */}
       <div className={`${card} p-5`}>
-        <p className={`text-[12px] font-bold mb-4 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تطور الإيرادات الشهرية (MRR)</p>
+        <p className={`text-[12px] font-bold mb-4 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>الإيرادات الشهرية حسب المستوى (MRR)</p>
         <div className="flex items-end gap-3 h-24">
-          {REVENUE_HISTORY.map((m, i) => {
-            const max = Math.max(...REVENUE_HISTORY.map(r => r.mrr));
-            const h = (m.mrr / max) * 100;
-            const isLast = i === REVENUE_HISTORY.length - 1;
+          {PLANS.filter(p => p.price > 0).map((p, i) => {
+            const max = Math.max(...PLANS.map(r => r.mrr), 1);
+            const h = (p.mrr / max) * 100;
+            const isLast = i === PLANS.filter(pp => pp.price > 0).length - 1;
             return (
-              <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+              <div key={p.id} className="flex-1 flex flex-col items-center gap-1">
                 <p className={`text-[9px] font-bold ${isLast ? "text-emerald-500" : isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                  {m.mrr.toLocaleString()}
+                  {p.mrr.toLocaleString()}
                 </p>
                 <div className="w-full flex justify-center" style={{ height: "60px" }}>
                   <motion.div initial={{ height: 0 }} animate={{ height: `${h}%` }} transition={{ duration: 0.7, delay: i * 0.1 }}
                     className={`w-full rounded-t-lg ${isLast ? "bg-emerald-500" : isDark ? "bg-zinc-700" : "bg-slate-200"}`}
                     style={{ minHeight: "4px", alignSelf: "flex-end" }} />
                 </div>
-                <p className={`text-[9px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{m.month}</p>
+                <p className={`text-[9px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{p.name}</p>
               </div>
             );
           })}

@@ -459,14 +459,24 @@ export default function JudicialPrinciplesPage() {
         <div className={`${card} p-6 mb-6`}>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C8A762]/10 border border-[#C8A762]/20 text-[#C8A762] text-xs font-bold mb-2">
-                <Scales size={12} weight="fill" />
-                {collection.court}
-              </div>
+              {collection.court && collection.court !== "جهة غير محددة" && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C8A762]/10 border border-[#C8A762]/20 text-[#C8A762] text-xs font-bold mb-2">
+                  <Scales size={12} weight="fill" />
+                  {collection.court}
+                </div>
+              )}
               <h1 className="text-2xl font-black">{collection.title}</h1>
-              <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
-                {isRTL ? "مجموعة مبادئ وقرارات قضائية لعام:" : "Rulings collection for year:"} {collection.yearHijri}هـ | {isRTL ? "الجزء:" : "Part:"} {collection.part}
-              </p>
+              {((collection.yearHijri && collection.yearHijri !== 0) || (collection.part && collection.part !== 0)) && (
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
+                  {collection.yearHijri && collection.yearHijri !== 0 && (
+                    <>{isRTL ? "مجموعة مبادئ وقرارات قضائية لعام:" : "Rulings collection for year:"} {collection.yearHijri}هـ</>
+                  )}
+                  {collection.yearHijri && collection.yearHijri !== 0 && collection.part && collection.part !== 0 && " | "}
+                  {collection.part && collection.part !== 0 && (
+                    <>{isRTL ? "الجزء:" : "Part:"} {collection.part}</>
+                  )}
+                </p>
+              )}
             </div>
             <div className="flex gap-2 items-center print:hidden">
               <button
@@ -540,7 +550,7 @@ export default function JudicialPrinciplesPage() {
           
           {/* RIGHT COLUMN: Identity Panel AND Index Panel */}
           {!isReadingMode && (
-            <aside className="hidden lg:block lg:col-span-3 sticky top-6 z-40 space-y-3 print:hidden">
+            <aside className="hidden lg:block lg:col-span-3 sticky top-36 z-40 space-y-3 print:hidden">
               {collection && (
                 <IdentityPanel
                   isDark={isDark}
@@ -651,7 +661,7 @@ export default function JudicialPrinciplesPage() {
           {!isReadingMode && (() => {
             const meta = getLawMeta(slug);
             return (
-              <aside className="hidden lg:block lg:col-span-3 sticky top-6 z-40 space-y-3 print:hidden">
+              <aside className="hidden lg:block lg:col-span-3 sticky top-36 z-40 space-y-3 print:hidden">
                 <button
                   onClick={() => setShowCommunity(true)}
                   className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold transition ${

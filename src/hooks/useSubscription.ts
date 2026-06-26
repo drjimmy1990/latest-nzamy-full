@@ -105,6 +105,10 @@ const FEATURE_GATES: Record<string, UserTier> = {
   "ai-corp":            "corp",
   "ai-gov":             "free",   // government users — free tier access to gov tools
   "ai-ngo":             "free",   // NGO users — free tier access to ngo tools
+
+  // Library access gates
+  "library-full-access":    "pro",   // Full access to all library content
+  "library-advanced-search":"ai",    // Advanced search & filtering
 };
 
 export interface SubscriptionState {

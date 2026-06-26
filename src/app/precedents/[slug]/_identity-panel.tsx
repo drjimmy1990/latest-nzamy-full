@@ -29,12 +29,15 @@ export default function IdentityPanel({
           <span className="text-[9px] font-black px-2 py-0.5 rounded-full border border-[#C8A762]/20 text-[#C8A762] bg-[#C8A762]/5">
             {isRTL ? "مجموعة مبادئ قضائية" : "Judicial Principles"}
           </span>
-          <span className={`text-[9px] px-2 py-0.5 rounded-full border ${isDark ? "border-white/10 text-zinc-500" : "border-slate-200 text-slate-500"}`}>
-            {collection.court}
-          </span>
+          {collection.court && collection.court !== "جهة غير محددة" && (
+            <span className={`text-[9px] px-2 py-0.5 rounded-full border ${isDark ? "border-white/10 text-zinc-500" : "border-slate-200 text-slate-500"}`}>
+              {collection.court}
+            </span>
+          )}
         </div>
         
         <div className="space-y-1.5">
+          {collection.court && collection.court !== "جهة غير محددة" && (
           <div className="flex gap-1.5 items-start">
             <Scales size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
             <div>
@@ -42,7 +45,9 @@ export default function IdentityPanel({
               <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{collection.court}</p>
             </div>
           </div>
+          )}
           
+          {collection.yearHijri && collection.yearHijri !== 0 && (
           <div className="flex gap-1.5 items-start">
             <Calendar size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
             <div>
@@ -52,7 +57,9 @@ export default function IdentityPanel({
               </p>
             </div>
           </div>
+          )}
 
+          {collection.part && collection.part !== 0 && (
           <div className="flex gap-1.5 items-start">
             <Stack size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
             <div>
@@ -62,6 +69,7 @@ export default function IdentityPanel({
               </p>
             </div>
           </div>
+          )}
 
           <div className="flex gap-1.5 items-start">
             <BookBookmark size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />

@@ -123,9 +123,11 @@ export default function PrincipleBlock({
                 id={`para-${p.id}-${para.letter}`}
                 className="p-2.5 rounded-xl border border-transparent transition-all duration-300"
               >
-                <span className="font-bold text-[#C8A762] dark:text-[#C8A762] text-[11px] block mb-1">
-                  {para.letter}ـ
-                </span>
+                {para.letter && (
+                  <span className="font-bold text-[#C8A762] dark:text-[#C8A762] text-[11px] block mb-1">
+                    {para.letter}ـ
+                  </span>
+                )}
                 <p className="whitespace-pre-line">{para.text}</p>
               </div>
             );

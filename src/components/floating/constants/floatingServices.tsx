@@ -574,6 +574,7 @@ const ADMIN_SERVICES: ServiceItem[] = [
   { key: "admin-provider-kyc", icon: <SealCheck {...iconProps} />, label: "تحقق المزودين", sub: "KYC وتراخيص مهنية", href: "/dashboard/admin/provider-verification" },
   { key: "admin-disputes", icon: <Scales {...iconProps} />, label: "نزاعات وتصعيد", sub: "ربط العميل بالمزود والضمان", href: "/dashboard/admin/disputes" },
   { key: "admin-pricing", icon: <Coins {...iconProps} />, label: "الأسعار والباقات", sub: "AI credits وخدمات السوق", href: "/dashboard/admin/pricing" },
+  { key: "admin-settings", icon: <Gear {...iconProps} />, label: "إعدادات المنصة", sub: "المكتبة والاشتراكات والحدود", href: "/dashboard/admin/settings" },
   { key: "admin-audit", icon: <Vault {...iconProps} />, label: "سجل التدقيق", sub: "أمان وعمليات حساسة", href: "/dashboard/admin/audit-log" },
   {
     key: "admin-ops-ticket",

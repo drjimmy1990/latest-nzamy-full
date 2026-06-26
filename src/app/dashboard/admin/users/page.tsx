@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, MagnifyingGlass, Check, X, Warning, Shield,
@@ -18,27 +18,60 @@ type Plan = "free" | "pro" | "max" | "enterprise";
 
 interface PlatformUser {
   id: string;
-  name: string;
+  display_name: string;
+  display_name_en: string;
   email: string;
-  role: UserRole;
-  status: UserStatus;
-  plan: Plan;
-  joined: string;
-  lastActive: string;
-  aiCredits: number;
-  cases: number;
+  phone: string | null;
+  user_type: string;
+  avatar_url: string | null;
+  verified_at: string | null;
+  created_at: string;
+  subscription: {
+    id: string;
+    tier: string;
+    plan_id: string;
+    status: string;
+    billing_cycle: string;
+    current_period_end: string | null;
+  } | null;
+  credit_balance: number;
 }
 
-const USERS: PlatformUser[] = [
-  { id: "U001", name: "أحمد القحطاني",     email: "ahmed@lawfirm.sa",      role: "lawyer",  status: "active",    plan: "pro",        joined: "١ يناير ٢٠٢٤",   lastActive: "منذ ٣ دقائق",   aiCredits: 340, cases: 18 },
-  { id: "U002", name: "شركة الأفق القانونية", email: "info@ufq-law.sa",    role: "firm",    status: "active",    plan: "enterprise", joined: "١٥ يناير ٢٠٢٤",  lastActive: "منذ ساعة",     aiCredits: 2400, cases: 87 },
-  { id: "U003", name: "نورة العتيبي",       email: "noura@legal.sa",        role: "lawyer",  status: "trial",     plan: "free",       joined: "١ أبريل ٢٠٢٤",   lastActive: "اليوم",         aiCredits: 20, cases: 2 },
-  { id: "U004", name: "خالد الشمري",        email: "khalid@courts.sa",      role: "judge",   status: "active",    plan: "pro",        joined: "١٠ فبراير ٢٠٢٤",  lastActive: "أمس",           aiCredits: 150, cases: 0 },
-  { id: "U005", name: "سعد المالكي",        email: "saad@mlaw.sa",          role: "lawyer",  status: "suspended", plan: "pro",        joined: "٢٠ مارس ٢٠٢٤",    lastActive: "منذ أسبوع",    aiCredits: 0, cases: 5 },
-  { id: "U006", name: "ريم الدوسري",         email: "reem@lawyers.sa",       role: "lawyer",  status: "pending",   plan: "free",       joined: "٣ أبريل ٢٠٢٤",   lastActive: "لم يتم",        aiCredits: 0, cases: 0 },
-  { id: "U007", name: "مجموعة رأس المال",  email: "admin@rasmal-law.sa",   role: "firm",    status: "active",    plan: "max",        joined: "١ مارس ٢٠٢٤",     lastActive: "منذ ٣٠ دقيقة", aiCredits: 800, cases: 34 },
-  { id: "U008", name: "عبدالله العمري",     email: "aomari@justice.sa",     role: "lawyer",  status: "active",    plan: "max",        joined: "٥ فبراير ٢٠٢٤",   lastActive: "منذ يومين",    aiCredits: 420, cases: 22 },
-];
+interface UsersApiResponse {
+  data: PlatformUser[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+function formatArabicDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("ar-SA", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function mapRole(userType: string): UserRole {
+  const map: Record<string, UserRole> = { lawyer: "lawyer", firm: "firm", judge: "judge", admin: "admin" };
+  return map[userType] ?? "lawyer";
+}
+
+function mapPlan(tier?: string): Plan {
+  const map: Record<string, Plan> = { free: "free", pro: "pro", max: "max", enterprise: "enterprise" };
+  return map[tier ?? "free"] ?? "free";
+}
+
+function mapStatus(subStatus?: string, verifiedAt?: string | null): UserStatus {
+  if (subStatus === "suspended") return "suspended";
+  if (subStatus === "trialing" || subStatus === "trial") return "trial";
+  if (!verifiedAt) return "pending";
+  return "active";
+}
 
 const ROLE_CFG: Record<UserRole, { label: string; color: string; bg: string; icon: React.ElementType }> = {
   lawyer:  { label: "محامي",          color: "text-blue-500",   bg: "bg-blue-500/10",   icon: Gavel },
@@ -65,9 +98,12 @@ const PLAN_CFG: Record<Plan, { label: string; color: string }> = {
 
 function UserRow({ user, isDark, card }: { user: PlatformUser; isDark: boolean; card: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const role   = ROLE_CFG[user.role];
-  const status = STATUS_CFG[user.status];
-  const plan   = PLAN_CFG[user.plan];
+  const uRole   = mapRole(user.user_type);
+  const uStatus = mapStatus(user.subscription?.status, user.verified_at);
+  const uPlan   = mapPlan(user.subscription?.tier);
+  const role    = ROLE_CFG[uRole];
+  const status  = STATUS_CFG[uStatus];
+  const plan    = PLAN_CFG[uPlan];
   const RoleIcon = role.icon;
 
   return (
@@ -82,7 +118,7 @@ function UserRow({ user, isDark, card }: { user: PlatformUser; isDark: boolean; 
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-0.5">
-          <p className={`text-[14px] font-bold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{user.name}</p>
+          <p className={`text-[14px] font-bold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{user.display_name}</p>
           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${status.bg} ${status.color}`}>
             {status.label}
           </span>
@@ -90,25 +126,24 @@ function UserRow({ user, isDark, card }: { user: PlatformUser; isDark: boolean; 
         </div>
         <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{user.email}</p>
         <div className={`flex items-center gap-3 mt-1 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-          <span><Robot size={9} className="inline me-1" />{user.aiCredits.toLocaleString()} طلب AI</span>
-          <span>⚖️ {user.cases} قضية</span>
-          <span>آخر نشاط: {user.lastActive}</span>
+          <span><Robot size={9} className="inline me-1" />{user.credit_balance.toLocaleString()} طلب AI</span>
+          <span>انضم: {formatArabicDate(user.created_at)}</span>
         </div>
       </div>
 
       {/* Actions */}
       <div className="flex items-center gap-2 flex-shrink-0">
-        {user.status === "pending" && (
+        {uStatus === "pending" && (
           <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-[11px] font-bold border border-emerald-500/20 hover:bg-emerald-500/20">
             <Check size={11} weight="bold" /> تحقق
           </button>
         )}
-        {user.status === "active" && (
+        {uStatus === "active" && (
           <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-500 text-[11px] font-bold border border-red-500/20 hover:bg-red-500/20">
             <LockSimple size={11} /> إيقاف
           </button>
         )}
-        {user.status === "suspended" && (
+        {uStatus === "suspended" && (
           <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-[11px] font-bold border border-emerald-500/20 hover:bg-emerald-500/20">
             <CheckCircle size={11} /> تفعيل
           </button>
@@ -158,26 +193,61 @@ export default function AdminUsersPage() {
   const [statusFilter, setStatusFilter] = useState<UserStatus | "all">("all");
   const [planFilter, setPlanFilter] = useState<Plan | "all">("all");
 
+  const [users, setUsers]           = useState<PlatformUser[]>([]);
+  const [total, setTotal]           = useState(0);
+  const [page, setPage]             = useState(1);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const LIMIT = 20;
+
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
-  const filtered = useMemo(() =>
-    USERS.filter(u => {
-      const ms = roleFilter === "all"   || u.role === roleFilter;
-      const mt = statusFilter === "all" || u.status === statusFilter;
-      const mp = planFilter === "all"   || u.plan === planFilter;
-      const mq = !search || u.name.includes(search) || u.email.includes(search) || u.id.includes(search);
-      return ms && mt && mp && mq;
-    })
-  , [search, roleFilter, statusFilter, planFilter]);
+  const fetchUsers = useCallback(async (pageNum: number, append = false) => {
+    if (append) setLoadingMore(true); else setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("page", String(pageNum));
+      params.set("limit", String(LIMIT));
+      if (search) params.set("search", search);
+      if (roleFilter !== "all") params.set("role", roleFilter);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (planFilter !== "all") params.set("tier", planFilter);
+
+      const res = await fetch(`/api/v1/admin/users?${params.toString()}`);
+      if (!res.ok) throw new Error(`خطأ في تحميل البيانات (${res.status})`);
+      const json: UsersApiResponse = await res.json();
+
+      setUsers(prev => append ? [...prev, ...json.data] : json.data);
+      setTotal(json.total);
+      setPage(pageNum);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "حدث خطأ غير متوقع");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [search, roleFilter, statusFilter, planFilter]);
+
+  // Fetch on filter/search change — reset to page 1
+  useEffect(() => {
+    const debounce = setTimeout(() => {
+      fetchUsers(1);
+    }, search ? 400 : 0);
+    return () => clearTimeout(debounce);
+  }, [fetchUsers]);
 
   const stats = {
-    total:     USERS.length,
-    active:    USERS.filter(u => u.status === "active").length,
-    pending:   USERS.filter(u => u.status === "pending").length,
-    suspended: USERS.filter(u => u.status === "suspended").length,
+    total:     total,
+    active:    users.filter(u => mapStatus(u.subscription?.status, u.verified_at) === "active").length,
+    pending:   users.filter(u => mapStatus(u.subscription?.status, u.verified_at) === "pending").length,
+    suspended: users.filter(u => mapStatus(u.subscription?.status, u.verified_at) === "suspended").length,
   };
+
+  const hasMore = users.length < total;
 
   return (
     <div className="max-w-5xl mx-auto space-y-5" dir="rtl">
@@ -267,17 +337,70 @@ export default function AdminUsersPage() {
 
       {/* Users list */}
       <div className="space-y-2">
-        {filtered.length === 0 ? (
+        {/* Error state */}
+        {error && (
+          <div className={`${card} p-6 text-center border-red-500/20`}>
+            <Warning size={28} weight="duotone" className="mx-auto mb-2 text-red-500" />
+            <p className={`text-[13px] text-red-500 mb-3`}>{error}</p>
+            <button onClick={() => fetchUsers(1)}
+              className="px-4 py-2 rounded-xl bg-red-500/10 text-red-500 text-[12px] font-bold border border-red-500/20 hover:bg-red-500/20">
+              إعادة المحاولة
+            </button>
+          </div>
+        )}
+
+        {/* Loading skeleton */}
+        {loading && !error && (
+          Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className={`${card} p-4 flex items-center gap-4 animate-pulse`}>
+              <div className={`w-10 h-10 rounded-xl flex-shrink-0 ${isDark ? "bg-zinc-800" : "bg-slate-100"}`} />
+              <div className="flex-1 space-y-2">
+                <div className={`h-4 rounded-lg w-1/3 ${isDark ? "bg-zinc-800" : "bg-slate-100"}`} />
+                <div className={`h-3 rounded-lg w-1/2 ${isDark ? "bg-zinc-800/60" : "bg-slate-50"}`} />
+                <div className={`h-2.5 rounded-lg w-2/5 ${isDark ? "bg-zinc-800/40" : "bg-slate-50"}`} />
+              </div>
+              <div className={`w-16 h-7 rounded-lg flex-shrink-0 ${isDark ? "bg-zinc-800" : "bg-slate-100"}`} />
+            </div>
+          ))
+        )}
+
+        {/* Empty state */}
+        {!loading && !error && users.length === 0 && (
           <div className={`${card} p-8 text-center`}>
             <Users size={28} weight="duotone" className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
             <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد نتائج مطابقة</p>
           </div>
-        ) : (
-          filtered.map((u, i) => (
-            <motion.div key={u.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-              <UserRow user={u} isDark={isDark} card={card} />
-            </motion.div>
-          ))
+        )}
+
+        {/* User rows */}
+        {!loading && !error && users.map((u, i) => (
+          <motion.div key={u.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
+            <UserRow user={u} isDark={isDark} card={card} />
+          </motion.div>
+        ))}
+
+        {/* Load more pagination */}
+        {!loading && !error && hasMore && (
+          <div className="flex justify-center pt-2">
+            <button onClick={() => fetchUsers(page + 1, true)} disabled={loadingMore}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-[12px] font-bold transition-all ${
+                isDark
+                  ? "border-white/[0.06] text-zinc-400 hover:bg-zinc-800 disabled:opacity-40"
+                  : "border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"
+              }`}>
+              {loadingMore ? (
+                <>
+                  <span className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                  جاري التحميل...
+                </>
+              ) : (
+                <>
+                  <ArrowsDownUp size={13} />
+                  تحميل المزيد ({users.length} من {total})
+                </>
+              )}
+            </button>
+          </div>
         )}
       </div>
     </div>
