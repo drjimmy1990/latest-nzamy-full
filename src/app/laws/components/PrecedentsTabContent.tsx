@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { useSubscription } from "@/hooks/useSubscription";
 import { useRouter } from "next/navigation";
 import { Gavel, Scales, Lock, Sparkle, ArrowRight, CaretLeft, CaretRight } from "@phosphor-icons/react";
 import {
@@ -71,6 +72,8 @@ export function PrecedentsTabContent({
   setPrecSort,
 }: PrecedentsTabContentProps) {
   const router = useRouter();
+  const { can } = useSubscription();
+  const hasLibraryAccess = can("library-full-access");
 
   // Digit normalizer and Hijri year parser
   function parseYear(yearStr: string): number {
@@ -337,192 +340,195 @@ export function PrecedentsTabContent({
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "flex flex-col gap-4"}>
-            {filteredCollections.map((col, idx) => (
-              <motion.div
-                key={col.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                className={`group relative rounded-2xl border p-5 transition-all ${
-                  col.free
-                    ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
-                    : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
-                } ${layoutMode === "grid" ? "min-h-[340px] h-full flex flex-col" : ""}`}
-              >
-                {!col.free && (
-                  <div
-                    className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
-                    onClick={() => setShowPaywall(true)}
-                  >
-                    <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
-                      <Lock size={16} color="#C8A762" weight="fill" />
-                      <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                        {isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                <Link
-                  href={col.free ? `/precedents/${col.slug}` : "#"}
-                  onClick={(e) => {
-                    if (!col.free) {
-                      e.preventDefault();
-                      setShowPaywall(true);
-                    }
-                  }}
-                  className={layoutMode === "grid" ? "flex flex-col flex-1 justify-between" : "flex flex-col md:flex-row md:items-center justify-between w-full gap-5"}
+            {filteredCollections.map((col, idx) => {
+              const isColFree = col.free || hasLibraryAccess;
+              return (
+                <motion.div
+                  key={col.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  className={`group relative rounded-2xl border p-5 transition-all ${
+                    isColFree
+                      ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
+                      : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
+                  } ${layoutMode === "grid" ? "min-h-[340px] h-full flex flex-col" : ""}`}
                 >
-                  {layoutMode === "grid" ? (
-                    <>
-                      <div className={!col.free ? "opacity-40 filter blur-[2px]" : ""}>
-                        <div className="flex items-center justify-between mb-4">
-                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
-                            col.track === "ordinary"
-                              ? isDark
-                                ? "bg-[#0B3D2E]/20 text-emerald-400 border border-emerald-500/10"
-                                : "bg-emerald-50 text-[#0B3D2E] border border-emerald-200"
-                              : col.track === "admin"
-                              ? isDark
-                                ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
-                                : "bg-blue-50 text-blue-700 border border-blue-200"
-                              : isDark
-                              ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
-                              : "bg-purple-50 text-purple-700 border border-purple-200"
-                          }`}>
-                            {col.court}
-                          </span>
-                          {col.free && (
-                            <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
-                              <Sparkle size={10} weight="fill" />
-                              {isRTL ? "متاح" : "FREE"}
-                            </span>
-                          )}
-                        </div>
-
-                        <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
-                          {col.title}
-                        </h3>
-                        <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">
-                          {isRTL ? `إصدار: ${col.year}` : `Year: ${col.year}`}
-                        </p>
-                        <p className={`text-xs mb-5 line-clamp-3 leading-relaxed ${muted}`}>{col.desc}</p>
+                  {!isColFree && (
+                    <div
+                      className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
+                      onClick={() => setShowPaywall(true)}
+                    >
+                      <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
+                        <Lock size={16} color="#C8A762" weight="fill" />
+                        <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+                          {isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}
+                        </span>
                       </div>
-
-                      <div className={!col.free ? "opacity-40 filter blur-[2px]" : ""}>
-                         <div className={`grid grid-cols-2 gap-4 mb-4 p-4 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
-                          <div className="flex flex-col">
-                            <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{col.rulingCount}</span>
-                          </div>
-                          <div className="flex flex-col">
-                            <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المسار" : "Track"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
-                              {col.track === "ordinary"
-                                ? isRTL
-                                  ? "قضاء عادي"
-                                  : "Ordinary"
-                                : col.track === "admin"
-                                ? isRTL
-                                  ? "قضاء إداري"
-                                  : "Administrative"
-                                : isRTL
-                                ? "شبه قضائي"
-                                : "Semi-Judicial"}
-                            </span>
-                          </div>
-                        </div>
-
-                        {isLoggedIn && col.progress > 0 && (
-                          <div className="mb-4">
-                            <div className="flex justify-between items-center mb-1 text-[10px]">
-                              <span className={muted}>{isRTL ? "نسبة التصفح" : "Progress"}</span>
-                              <span className={`font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>{col.progress}%</span>
-                            </div>
-                            <div className="h-1 w-full bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-                              <div className="h-full bg-amber-500" style={{ width: `${col.progress}%` }} />
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between">
-                          <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-                            {isRTL ? "تصفح المجموعة" : "Browse Collection"}
-                            <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
-                          </span>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className={`flex-1 ${!col.free ? "opacity-40 filter blur-[2px]" : ""}`}>
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
-                            col.track === "ordinary"
-                              ? isDark
-                                ? "bg-[#0B3D2E]/20 text-emerald-400 border border-emerald-500/10"
-                                : "bg-emerald-50 text-[#0B3D2E] border border-emerald-200"
-                              : col.track === "admin"
-                              ? isDark
-                                ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
-                                : "bg-blue-50 text-blue-700 border border-blue-200"
-                              : isDark
-                              ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
-                              : "bg-purple-50 text-purple-700 border border-purple-200"
-                          }`}>
-                            {col.court}
-                          </span>
-                          {col.free && (
-                            <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
-                              <Sparkle size={10} weight="fill" />
-                              {isRTL ? "متاح" : "FREE"}
-                            </span>
-                          )}
-                        </div>
-                        <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
-                          {col.title}
-                        </h3>
-                        <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">
-                          {isRTL ? `إصدار: ${col.year}` : `Year: ${col.year}`}
-                        </p>
-                        <p className={`text-xs line-clamp-2 leading-relaxed ${muted}`}>{col.desc}</p>
-                      </div>
-
-                      <div className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0 ${!col.free ? "opacity-40 filter blur-[2px]" : ""}`}>
-                        <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
-                          <div className="flex flex-col">
-                            <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{col.rulingCount}</span>
-                          </div>
-                          <div className="flex flex-col">
-                            <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المسار" : "Track"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
-                              {col.track === "ordinary"
-                                ? isRTL
-                                  ? "قضاء عادي"
-                                  : "Ordinary"
-                                : col.track === "admin"
-                                ? isRTL
-                                  ? "قضاء إداري"
-                                  : "Administrative"
-                                : isRTL
-                                ? "شبه قضائي"
-                                : "Semi-Judicial"}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col justify-center gap-2 sm:min-w-[130px]">
-                          <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-                            {isRTL ? "تصفح المجموعة" : "Browse Collection"}
-                            <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
-                          </span>
-                        </div>
-                      </div>
-                    </>
+                    </div>
                   )}
-                </Link>
-              </motion.div>
-            ))}
+
+                  <Link
+                    href={isColFree ? `/precedents/${col.slug}` : "#"}
+                    onClick={(e) => {
+                      if (!isColFree) {
+                        e.preventDefault();
+                        setShowPaywall(true);
+                      }
+                    }}
+                    className={layoutMode === "grid" ? "flex flex-col flex-1 justify-between" : "flex flex-col md:flex-row md:items-center justify-between w-full gap-5"}
+                  >
+                    {layoutMode === "grid" ? (
+                      <>
+                        <div className={!isColFree ? "opacity-40 filter blur-[2px]" : ""}>
+                          <div className="flex items-center justify-between mb-4">
+                            <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
+                              col.track === "ordinary"
+                                ? isDark
+                                  ? "bg-[#0B3D2E]/20 text-emerald-400 border border-emerald-500/10"
+                                  : "bg-emerald-50 text-[#0B3D2E] border border-emerald-200"
+                                : col.track === "admin"
+                                ? isDark
+                                  ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
+                                  : "bg-blue-50 text-blue-700 border border-blue-200"
+                                : isDark
+                                ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
+                                : "bg-purple-50 text-purple-700 border border-purple-200"
+                            }`}>
+                              {col.court}
+                            </span>
+                            {isColFree && (
+                              <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
+                                <Sparkle size={10} weight="fill" />
+                                {isRTL ? "متاح" : "FREE"}
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
+                            {col.title}
+                          </h3>
+                          <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">
+                            {isRTL ? `إصدار: ${col.year}` : `Year: ${col.year}`}
+                          </p>
+                          <p className={`text-xs mb-5 line-clamp-3 leading-relaxed ${muted}`}>{col.desc}</p>
+                        </div>
+
+                        <div className={!isColFree ? "opacity-40 filter blur-[2px]" : ""}>
+                           <div className={`grid grid-cols-2 gap-4 mb-4 p-4 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
+                            <div className="flex flex-col">
+                              <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{col.rulingCount}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المسار" : "Track"}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                                {col.track === "ordinary"
+                                  ? isRTL
+                                    ? "قضاء عادي"
+                                    : "Ordinary"
+                                  : col.track === "admin"
+                                  ? isRTL
+                                    ? "قضاء إداري"
+                                    : "Administrative"
+                                  : isRTL
+                                  ? "شبه قضائي"
+                                  : "Semi-Judicial"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {isLoggedIn && col.progress > 0 && (
+                            <div className="mb-4">
+                              <div className="flex justify-between items-center mb-1 text-[10px]">
+                                <span className={muted}>{isRTL ? "نسبة التصفح" : "Progress"}</span>
+                                <span className={`font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>{col.progress}%</span>
+                              </div>
+                              <div className="h-1 w-full bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+                                <div className="h-full bg-amber-500" style={{ width: `${col.progress}%` }} />
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between">
+                            <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                              {isRTL ? "تصفح المجموعة" : "Browse Collection"}
+                              <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className={`flex-1 ${!isColFree ? "opacity-40 filter blur-[2px]" : ""}`}>
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
+                              col.track === "ordinary"
+                                ? isDark
+                                  ? "bg-[#0B3D2E]/20 text-emerald-400 border border-emerald-500/10"
+                                  : "bg-emerald-50 text-[#0B3D2E] border border-emerald-200"
+                                : col.track === "admin"
+                                ? isDark
+                                  ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
+                                  : "bg-blue-50 text-blue-700 border border-blue-200"
+                                : isDark
+                                ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
+                                : "bg-purple-50 text-purple-700 border border-purple-200"
+                            }`}>
+                              {col.court}
+                            </span>
+                            {isColFree && (
+                              <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
+                                <Sparkle size={10} weight="fill" />
+                                {isRTL ? "متاح" : "FREE"}
+                              </span>
+                            )}
+                          </div>
+                          <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
+                            {col.title}
+                          </h3>
+                          <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">
+                            {isRTL ? `إصدار: ${col.year}` : `Year: ${col.year}`}
+                          </p>
+                          <p className={`text-xs line-clamp-2 leading-relaxed ${muted}`}>{col.desc}</p>
+                        </div>
+
+                        <div className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0 ${!isColFree ? "opacity-40 filter blur-[2px]" : ""}`}>
+                          <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
+                            <div className="flex flex-col">
+                              <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{col.rulingCount}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المسار" : "Track"}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                                {col.track === "ordinary"
+                                  ? isRTL
+                                    ? "قضاء عادي"
+                                    : "Ordinary"
+                                  : col.track === "admin"
+                                  ? isRTL
+                                    ? "قضاء إداري"
+                                    : "Administrative"
+                                  : isRTL
+                                  ? "شبه قضائي"
+                                  : "Semi-Judicial"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex flex-col justify-center gap-2 sm:min-w-[130px]">
+                            <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                              {isRTL ? "تصفح المجموعة" : "Browse Collection"}
+                              <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </Link>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       )}

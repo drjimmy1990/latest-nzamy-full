@@ -20,7 +20,7 @@ const DASHBOARD_MAP: Record<string, string> = {
   provider:   "/dashboard/provider",
   government: "/dashboard/government",
   ngo:        "/dashboard/ngo",
-  admin:      "/dashboard/lawyer", // fallback
+  admin:      "/dashboard/admin",
 };
 
 export default function HomeRedirectGuard() {

@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
       .single();
     
     if (profile) {
-      const audience = profile.user_type === "individual" ? "individual" : profile.user_type === "firm" ? "firm" : "lawyer";
+      const audience = profile.user_type;
       const { data: plan } = await adminClient
         .from("subscription_plans")
         .select("id")
@@ -210,10 +210,39 @@ export async function POST(request: NextRequest) {
       if (plan) {
         plan_id = plan.id;
       } else {
-        plan_id = `${audience}-${tier}`;
+        // Find any plan that matches this tier in the database
+        const { data: fallbackPlan } = await adminClient
+          .from("subscription_plans")
+          .select("id")
+          .eq("tier", tier)
+          .limit(1)
+          .maybeSingle();
+        
+        if (fallbackPlan) {
+          plan_id = fallbackPlan.id;
+        } else {
+          return NextResponse.json(
+            { error: `باقة الاشتراك من الفئة ${tier} غير متوفرة في النظام لجمهور ${audience}` },
+            { status: 400 }
+          );
+        }
       }
     } else {
       plan_id = `lawyer-${tier}`;
+    }
+  } else {
+    // Verify provided plan_id exists in the database
+    const { data: existingPlan } = await adminClient
+      .from("subscription_plans")
+      .select("id")
+      .eq("id", plan_id)
+      .maybeSingle();
+    
+    if (!existingPlan) {
+      return NextResponse.json(
+        { error: `معرف الخطة ${plan_id} غير صالح أو غير موجود في النظام` },
+        { status: 400 }
+      );
     }
   }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { checkLibraryAccess } from '@/lib/access-control';
 
 /**
  * GET /api/library/decrees/[id]
@@ -25,6 +26,14 @@ export async function GET(
       return NextResponse.json({ error: 'Decree not found' }, { status: 404 });
     }
 
+    // Check user authentication
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id || null;
+
+    // Check library access
+    const access = await checkLibraryAccess(userId, id, 0);
+    const hasAccess = access.allowed || access.isWhitelisted;
+
     // Fetch pages
     const { data: pages } = await supabase
       .schema('library')
@@ -45,9 +54,16 @@ export async function GET(
       summary_brief: decree.summary_brief,
       cat: decree.category,
       preamble: decree.preamble || '',
-      articles: (pages || []).map((p: Record<string, unknown>) => p.content as string),
+      articles: (pages || []).map((p: Record<string, unknown>) => {
+        const content = p.content as string;
+        if (!hasAccess && typeof content === 'string' && content.length > 200) {
+          return content.substring(0, 200) + '...';
+        }
+        return content;
+      }),
       hashtags: decree.hashtags || [],
       official_url: decree.official_url || '',
+      hasAccess,
     };
 
     return NextResponse.json(response);

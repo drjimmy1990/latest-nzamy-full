@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { checkLibraryAccess } from '@/lib/access-control';
 
 /**
  * GET /api/library/books/[slug]
@@ -29,6 +30,13 @@ export async function GET(
     if (bookError || !book) {
       return NextResponse.json({ error: 'Book not found' }, { status: 404 });
     }
+
+    // Check user authentication
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id || null;
+
+    // Check library access (using book id as slug, article 0 for initial check)
+    const access = await checkLibraryAccess(userId, slug, 0);
 
     // Fetch full TOC (chapters with sections, no blocks for performance)
     const { data: chapters } = await supabase
@@ -101,16 +109,21 @@ export async function GET(
               })),
           };
         }),
-      blocks: (blocks || []).map((b: Record<string, unknown>) => ({
-        id: b.id,
-        topic: b.topic,
-        vol: b.volume_number,
-        page: b.page_number,
-        matn: b.matn,
-        sharh: b.sharh,
-        hashiyah: b.hashiyah,
-        sectionId: b.section_id,
-      })),
+      blocks: (blocks || []).map((b: Record<string, unknown>, idx: number) => {
+        const blockAllowed = access.allowed || access.isWhitelisted;
+        return {
+          id: b.id,
+          topic: b.topic,
+          vol: b.volume_number,
+          page: b.page_number,
+          matn: blockAllowed ? b.matn : (typeof b.matn === 'string' ? b.matn.substring(0, 100) + '...' : b.matn),
+          sharh: blockAllowed ? b.sharh : (typeof b.sharh === 'string' ? b.sharh.substring(0, 100) + '...' : b.sharh),
+          hashiyah: blockAllowed ? b.hashiyah : null,
+          sectionId: b.section_id,
+          locked: !blockAllowed,
+        };
+      }),
+      hasAccess: access.allowed || access.isWhitelisted,
       pagination: {
         page,
         limit,

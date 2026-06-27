@@ -154,9 +154,24 @@ export async function GET(request: NextRequest) {
       });
     });
 
+    // Fetch free items setting
+    const { data: freeItemsRow } = await adminClient
+      .from("platform_settings")
+      .select("value")
+      .eq("key", "library_free_items")
+      .single();
+
+    const freeItems = (freeItemsRow?.value as Record<string, string[]>) || {
+      laws: [],
+      decrees: [],
+      principles: [],
+      feqh: [],
+    };
+
     return NextResponse.json({
       entries,
-      total: entries.length
+      total: entries.length,
+      freeItems,
     });
 
   } catch (err: any) {
@@ -236,6 +251,104 @@ export async function DELETE(request: NextRequest) {
     console.error("[admin/library] DELETE error:", err);
     return NextResponse.json(
       { error: "حدث خطأ أثناء حذف السجل" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  // 1. Auth check
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.isAdmin) {
+    return NextResponse.json(
+      { error: adminCheck.error || "غير مصرح" },
+      { status: adminCheck.status || 403 }
+    );
+  }
+
+  try {
+    const { id, type, free } = await request.json();
+
+    if (!id || !type || typeof free !== "boolean") {
+      return NextResponse.json(
+        { error: "الحقول مطلوبة: id, type, free" },
+        { status: 400 }
+      );
+    }
+
+    const validTypes = ["law", "decree", "principle", "feqh"] as const;
+    type ItemType = (typeof validTypes)[number];
+    if (!validTypes.includes(type as ItemType)) {
+      return NextResponse.json(
+        { error: "نوع السجل غير صالح" },
+        { status: 400 }
+      );
+    }
+
+    // Map API type to freeItems key
+    const typeToKey: Record<string, string> = {
+      law: "laws",
+      decree: "decrees",
+      principle: "principles",
+      feqh: "feqh",
+    };
+    const key = typeToKey[type];
+
+    const adminClient = await createServiceClient();
+
+    // Read current free items
+    const { data: row } = await adminClient
+      .from("platform_settings")
+      .select("value")
+      .eq("key", "library_free_items")
+      .single();
+
+    const freeItems: Record<string, string[]> = (row?.value as Record<string, string[]>) || {
+      laws: [],
+      decrees: [],
+      principles: [],
+      feqh: [],
+    };
+
+    // Ensure array exists for the key
+    if (!Array.isArray(freeItems[key])) {
+      freeItems[key] = [];
+    }
+
+    if (free) {
+      // Add if not already present
+      if (!freeItems[key].includes(String(id))) {
+        freeItems[key].push(String(id));
+      }
+    } else {
+      // Remove
+      freeItems[key] = freeItems[key].filter((item: string) => item !== String(id));
+    }
+
+    // Upsert back
+    const { error } = await adminClient
+      .from("platform_settings")
+      .upsert(
+        {
+          key: "library_free_items",
+          value: freeItems,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "key" }
+      );
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      freeItems,
+    });
+  } catch (err: any) {
+    console.error("[admin/library] PATCH error:", err);
+    return NextResponse.json(
+      { error: "حدث خطأ أثناء تحديث حالة الوصول" },
       { status: 500 }
     );
   }

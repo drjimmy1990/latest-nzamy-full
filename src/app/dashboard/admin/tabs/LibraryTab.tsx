@@ -1,7 +1,7 @@
 "use client";
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
-import { BookOpen, Plus, Check, X, MagnifyingGlass, Funnel, Eye, PencilSimple, Trash, ArrowUpRight } from "@phosphor-icons/react";
+import { BookOpen, Plus, Check, X, MagnifyingGlass, Funnel, Eye, PencilSimple, Trash, ArrowUpRight, Lock, LockOpen } from "@phosphor-icons/react";
 
 const CATS = ["الكل", "أنظمة عمل", "أنظمة تجارية", "أنظمة جنائية", "مبادئ قضائية", "تشريعات دولية"];
 const STATUS_CFG: Record<string, { cls: string; label: string }> = {
@@ -25,6 +25,26 @@ export default function LibraryTab() {
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [freeItems, setFreeItems] = useState<Record<string, string[]>>({
+    laws: [],
+    decrees: [],
+    principles: [],
+    feqh: [],
+  });
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const typeToKey: Record<string, string> = {
+    law: "laws",
+    decree: "decrees",
+    principle: "principles",
+    feqh: "feqh",
+  };
+
+  const isItemFree = (id: string, category: string): boolean => {
+    const type = getCategoryType(category);
+    const key = typeToKey[type];
+    return (freeItems[key] || []).includes(String(id));
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -37,6 +57,7 @@ export default function LibraryTab() {
       if (!res.ok) throw new Error("Failed to fetch library entries");
       const data = await res.json();
       setEntries(data.entries || []);
+      setFreeItems(data.freeItems || { laws: [], decrees: [], principles: [], feqh: [] });
       setError(null);
     } catch (err: any) {
       console.error(err);
@@ -67,6 +88,31 @@ export default function LibraryTab() {
     } catch (err) {
       console.error("Delete error:", err);
       alert("حدث خطأ أثناء محاولة الحذف");
+    }
+  };
+
+  const handleToggleFree = async (id: string, category: string) => {
+    const type = getCategoryType(category);
+    const currentlyFree = isItemFree(id, category);
+    setTogglingId(id);
+    try {
+      const res = await fetch("/api/v1/admin/library", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, type, free: !currentlyFree }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFreeItems(data.freeItems || freeItems);
+      } else {
+        const err = await res.json();
+        alert(`خطأ: ${err.error || "فشل في تحديث حالة الوصول"}`);
+      }
+    } catch (err) {
+      console.error("Toggle free error:", err);
+      alert("حدث خطأ أثناء تحديث حالة الوصول");
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -126,7 +172,7 @@ export default function LibraryTab() {
         <table className="w-full text-right">
           <thead>
             <tr className="border-b border-white/[0.06]">
-              {["السجل", "التصنيف", "المصدر", "الحالة", "المشاهدات", "التاريخ", "إجراءات"].map((h) => (
+              {["السجل", "التصنيف", "المصدر", "الحالة", "الوصول", "المشاهدات", "التاريخ", "إجراءات"].map((h) => (
                 <th key={h} className="px-4 py-3 text-[10px] font-bold text-zinc-600 uppercase tracking-wider">
                   {h}
                 </th>
@@ -165,6 +211,20 @@ export default function LibraryTab() {
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${sc.cls}`}>
                       {sc.label}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => handleToggleFree(e.id, e.category)}
+                      disabled={togglingId === e.id}
+                      className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors ${
+                        isItemFree(e.id, e.category)
+                          ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                          : "bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                      } ${togglingId === e.id ? "opacity-50 cursor-wait" : ""}`}
+                      title={isItemFree(e.id, e.category) ? "مجاني — انقر للتقييد" : "مقيّد — انقر لجعله مجاني"}
+                    >
+                      {isItemFree(e.id, e.category) ? <LockOpen size={14} weight="bold" /> : <Lock size={14} weight="bold" />}
+                    </button>
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-[12px] font-bold text-zinc-300">

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { checkLibraryAccess } from '@/lib/access-control';
 
 /**
  * GET /api/library/precedents/[slug]
@@ -24,6 +25,14 @@ export async function GET(
     if (collError || !collection) {
       return NextResponse.json({ error: 'Collection not found' }, { status: 404 });
     }
+
+    // Check user authentication
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id || null;
+
+    // Check library access
+    const access = await checkLibraryAccess(userId, slug, 0);
+    const hasAccess = access.allowed || access.isWhitelisted;
 
     // Fetch principles with paragraphs
     const { data: principles } = await supabase
@@ -51,6 +60,8 @@ export async function GET(
       free: collection.free,
       principles: (principles || []).map((p: Record<string, unknown>) => {
         const paragraphs = p.principle_paragraphs as Record<string, unknown>[];
+        const truncate = (val: unknown, len: number) =>
+          typeof val === 'string' && !hasAccess ? val.substring(0, len) + '...' : val;
         return {
           id: p.id,
           number: p.principle_number,
@@ -58,22 +69,24 @@ export async function GET(
           session_date: p.session_date,
           decision_number: p.decision_number,
           reference: p.reference,
-          text: p.text,
+          text: hasAccess ? p.text : truncate(p.text, 150),
+          locked: !hasAccess,
           paragraphs: (paragraphs || [])
             .sort((a, b) => (a.order_index as number) - (b.order_index as number))
             .map((pg) => ({
               letter: pg.letter,
-              text: pg.text,
+              text: hasAccess ? pg.text : truncate(pg.text, 150),
               keywords: pg.keywords || [],
             })),
-          details: {
+          details: hasAccess ? {
             ruling_basis: p.ruling_basis,
             facts: p.facts,
             reasons: p.reasons,
             ruling: p.ruling,
-          },
+          } : null,
         };
       }),
+      hasAccess,
     };
 
     return NextResponse.json(response);

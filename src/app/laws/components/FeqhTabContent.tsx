@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useSubscription } from "@/hooks/useSubscription";
 import { Lock, Sparkle, ArrowRight, CaretLeft, CaretRight } from "@phosphor-icons/react";
 import { type FeqhBookDemo } from "../demo-data";
 import { FEQH_TYPES, type FeqhType } from "@/constants/lawsLibraryData";
@@ -40,6 +41,8 @@ export function FeqhTabContent({
   q,
 }: FeqhTabContentProps) {
   const [page, setPage] = useState(1);
+  const { can } = useSubscription();
+  const hasLibraryAccess = can("library-full-access");
   const itemsPerPage = 6;
 
   // Reset page when filter states change
@@ -165,45 +168,47 @@ export function FeqhTabContent({
 
       {displayedBooks.length > 0 ? (
         <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-4"}>
-          {displayedBooks.map((book) => (
-            <motion.div
-              key={book.id}
-              layout
-              className={`group relative rounded-2xl border p-5 transition-all duration-300 hover:shadow-lg ${
-                isDark
-                  ? "bg-[#0c0f12] border-white/5 hover:border-white/10"
-                  : "bg-white border-slate-200/60 hover:border-slate-300"
-              }`}
-            >
-              {/* Paywall Overlay */}
-              {!book.free && (
-                <div className="absolute inset-0 z-10 rounded-2xl bg-black/40 backdrop-blur-[1.5px] flex flex-col items-center justify-center p-4">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center mb-2">
-                    <Lock size={20} className="text-amber-500" weight="fill" />
-                  </div>
-                  <p className="text-white text-xs font-bold mb-3">{isRTL ? "يتطلب اشتراك الباقة الكاملة" : "Full Plan Required"}</p>
-                  <button
-                    onClick={() => setShowPaywall(true)}
-                    className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-[#0B3D2E] text-[10.5px] font-black rounded-lg transition"
-                  >
-                    {isRTL ? "ترقية الاشتراك" : "Upgrade Plan"}
-                  </button>
-                </div>
-              )}
-
-              <Link
-                href={book.free ? `/book/${book.slug}` : "#"}
-                onClick={(e) => {
-                  if (!book.free) {
-                    e.preventDefault();
-                    setShowPaywall(true);
-                  }
-                }}
-                className="block"
+          {displayedBooks.map((book) => {
+            const isBookFree = book.free || hasLibraryAccess;
+            return (
+              <motion.div
+                key={book.id}
+                layout
+                className={`group relative rounded-2xl border p-5 transition-all duration-300 hover:shadow-lg ${
+                  isDark
+                    ? "bg-[#0c0f12] border-white/5 hover:border-white/10"
+                    : "bg-white border-slate-200/60 hover:border-slate-300"
+                }`}
               >
-                {layoutMode === "grid" ? (
-                  <div className={!book.free ? "opacity-40 filter blur-[2px]" : ""}>
-                    <div className="flex justify-between items-start gap-4 mb-4">
+                {/* Paywall Overlay */}
+                {!isBookFree && (
+                  <div className="absolute inset-0 z-10 rounded-2xl bg-black/40 backdrop-blur-[1.5px] flex flex-col items-center justify-center p-4">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center mb-2">
+                      <Lock size={20} className="text-amber-500" weight="fill" />
+                    </div>
+                    <p className="text-white text-xs font-bold mb-3">{isRTL ? "يتطلب اشتراك الباقة الكاملة" : "Full Plan Required"}</p>
+                    <button
+                      onClick={() => setShowPaywall(true)}
+                      className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-[#0B3D2E] text-[10.5px] font-black rounded-lg transition"
+                    >
+                      {isRTL ? "ترقية الاشتراك" : "Upgrade Plan"}
+                    </button>
+                  </div>
+                )}
+
+                <Link
+                  href={isBookFree ? `/book/${book.slug}` : "#"}
+                  onClick={(e) => {
+                    if (!isBookFree) {
+                      e.preventDefault();
+                      setShowPaywall(true);
+                    }
+                  }}
+                  className="block"
+                >
+                  {layoutMode === "grid" ? (
+                    <div className={!isBookFree ? "opacity-40 filter blur-[2px]" : ""}>
+                      <div className="flex justify-between items-start gap-4 mb-4">
                       <div className="flex-1">
                         <span className={`inline-block px-2.5 py-0.5 text-[9px] font-bold rounded-md mb-2 ${
                           book.type === "sharia"
@@ -272,7 +277,7 @@ export function FeqhTabContent({
                     </div>
                   </div>
                 ) : (
-                  <div className={`${!book.free ? "opacity-40 filter blur-[2px]" : ""} flex flex-col md:flex-row md:items-center justify-between gap-5`}>
+                  <div className={`${!isBookFree ? "opacity-40 filter blur-[2px]" : ""} flex flex-col md:flex-row md:items-center justify-between gap-5`}>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
@@ -290,7 +295,7 @@ export function FeqhTabContent({
                         }`}>
                           {book.categoryLabel}
                         </span>
-                        {book.free && (
+                        {isBookFree && (
                           <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                             <Sparkle size={10} weight="fill" />
                             {isRTL ? "متاح" : "FREE"}
@@ -329,7 +334,7 @@ export function FeqhTabContent({
                 )}
               </Link>
             </motion.div>
-          ))}
+          ); })}
         </div>
       ) : (
         <EmptyState

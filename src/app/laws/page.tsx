@@ -61,6 +61,14 @@ export default function LegalLibraryPage() {
   const { isLoggedIn }    = useUser();
   const router = useRouter();
 
+  // --- Database-backed state variables ---
+  const [dbLaws, setDbLaws] = useState<any[]>([]);
+  const [dbDecrees, setDbDecrees] = useState<any[]>([]);
+  const [dbPrinciples, setDbPrinciples] = useState<any[]>([]);
+  const [dbBooks, setDbBooks] = useState<any[]>([]);
+  const [dbCollections, setDbCollections] = useState<any[]>([]);
+  const [dbLoading, setDbLoading] = useState(true);
+
   // — Core filters —
   const [search,         setSearch]         = useState("");
   const [showSuggest,    setShowSuggest]    = useState(false);
@@ -201,6 +209,23 @@ export default function LegalLibraryPage() {
 
       isLoadedRef.current = true;
     }
+    fetch("/api/library/init")
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to load library data");
+        return r.json();
+      })
+      .then((data) => {
+        setDbLaws(data.laws || []);
+        setDbDecrees(data.decrees || []);
+        setDbPrinciples(data.principles || []);
+        setDbBooks(data.books || []);
+        setDbCollections(data.collections || []);
+        setDbLoading(false);
+      })
+      .catch((e) => {
+        console.error("Library initialization failed:", e);
+        setDbLoading(false);
+      });
     setMounted(true);
   }, []);
 
@@ -315,21 +340,201 @@ export default function LegalLibraryPage() {
     return false;
   }
 
-  // ─── Filter: Laws ─────────────────────────────────────────────────────────────
-  const FULL_LAWS_SYSTEMS = [
-    { id: "sys-1", slug: "civil-transactions", title: "نظام المعاملات المدنية", titleEn: "Civil Transactions Law", desc: "القانون المدني السعودي الشامل المنظم للعقود والالتزامات والمسؤولية التقصيرية والممتلكات.", descEn: "The comprehensive Saudi civil code regulating contracts, obligations, tort liability, and property rights.", free: true, progress: 60, articlesCount: 720, chaptersCount: 3, lastUpdated: "١٤٤٦/٥/١٢هـ" },
-    { id: "sys-2", slug: "commercial-courts", title: "نظام المحاكم التجارية", titleEn: "Commercial Courts Law", desc: "تنظيم اختصاصات وإجراءات المحاكم التجارية ونظر الدعاوى والطلبات المتعلقة بالتجار.", descEn: "Regulating the jurisdiction, rules, and procedures of commercial courts for merchants and companies.", free: true, progress: 20, articlesCount: 96, chaptersCount: 2, lastUpdated: "١٤٤٥/١٠/٨هـ" },
-    { id: "sys-3", slug: "labor-law", title: "نظام العمل السعودي", titleEn: "Saudi Labor Law", desc: "تنظيم العلاقة التعاقدية بين صاحب العمل والعامل وحقوق الطرفين والنزاعات العمالية.", descEn: "Regulating employer-employee contracts, statutory rights, working hours, and labor disputes resolution.", free: false, progress: 0, articlesCount: 245, chaptersCount: 4, lastUpdated: "١٤٤٦/٢/١هـ" },
-    { id: "sys-4", slug: "companies-law", title: "نظام الشركات الجديد", titleEn: "New Companies Law", desc: "تنظيم شركات المساهمة والمحدودة والتضامن وحوكمتها وقواعد الاندماج والاستحواذ.", descEn: "Regulating joint-stock, LLCs, partnerships, corporate governance, mergers, and acquisitions.", free: false, progress: 0, articlesCount: 282, chaptersCount: 5, lastUpdated: "١٤٤٥/١٢/٢٢هـ" }
-  ];
+  // ─── Mapping Database Data to Frontend structures ───────────────────────────
+  // ─── Helper: Classify law category from section_name or title ────────────────
+  function classifyLawCategory(law: any): string {
+    // 1. If section_code is already set and valid (e.g. "4" → "SA-04")
+    if (law.section_code && law.section_code.trim()) {
+      const code = law.section_code.trim();
+      // Handle both "SA-04" format and bare "4" format
+      if (code.startsWith("SA-")) return code;
+      const num = parseInt(code);
+      if (!isNaN(num)) return `SA-${String(num).padStart(2, "0")}`;
+    }
 
-  const filteredLaws = FULL_LAWS_SYSTEMS.filter(s => {
+    // 2. Map from section_name (Arabic category label)
+    const sn = (law.section_name || "").trim();
+    if (sn.includes("إجرائي") || sn.includes("قضائي") || sn.includes("القضاء")) return "SA-00";
+    if (sn.includes("جنائي") || sn.includes("عقوبات")) return "SA-01";
+    if (sn.includes("إداري") || sn.includes("خدمة مدنية")) return "SA-02";
+    if (sn.includes("مدني") || sn.includes("أحوال شخصية")) return "SA-03";
+    if (sn.includes("تجاري") || sn.includes("شركات")) return "SA-04";
+    if (sn.includes("ملكية فكرية")) return "SA-05";
+    if (sn.includes("عمل") || sn.includes("تأمينات")) return "SA-06";
+    if (sn.includes("عقاري") || sn.includes("بناء") || sn.includes("مقاولات")) return "SA-07";
+    if (sn.includes("مالي") || sn.includes("مصرفي")) return "SA-08";
+    if (sn.includes("ضريبي") || sn.includes("زكو") || sn.includes("جمرك")) return "SA-09";
+
+    // 3. Fallback: classify from title keywords
+    const t = (law.title || "").trim();
+    if (t.includes("القضاء") || t.includes("المرافعات") || t.includes("الإثبات") || t.includes("التنفيذ") || t.includes("المحاماة") || t.includes("التكاليف القضائية") || t.includes("التوثيق") || t.includes("المظالم") || t.includes("المصالحة") || t.includes("استئناف") || t.includes("التقاضي") || t.includes("خبرة") || t.includes("اعتراض") || t.includes("أعوان القضاء") || t.includes("تفتيش قضائي") || t.includes("تنفيذ") || t.includes("ترخيص") || t.includes("مكاتب المحاماة")) return "SA-00";
+    if (t.includes("تجاري") || t.includes("المحاكم التجارية") || t.includes("شركات")) return "SA-04";
+    if (t.includes("عمل") || t.includes("عمالي")) return "SA-06";
+    if (t.includes("جنائي") || t.includes("عقوبات")) return "SA-01";
+    if (t.includes("مدني") || t.includes("معاملات مدنية")) return "SA-03";
+
+    return "SA-00"; // Most seeded laws are procedural/judicial
+  }
+
+  const lawsList = (dbLaws.length > 0
+    ? dbLaws
+        .filter((law: any) => law.title !== "EXTRACTION_MEMORY") // Filter out extraction artifacts
+        .map((law: any) => ({
+        id: law.slug,
+        slug: law.slug,
+        title: law.title,
+        titleEn: law.title_en || "",
+        desc: law.description || "",
+        descEn: law.description_en || "",
+        free: true, // All laws are free for now
+        progress: 100,
+        articlesCount: law.total_articles || 0,
+        chaptersCount: 0,
+        lastUpdated: law.issue_date_hijri || "—",
+        cat: classifyLawCategory(law),
+        type: "laws",
+        subType: "basic"
+      }))
+    : [
+        { id: "sys-1", slug: "civil-transactions", title: "نظام المعاملات المدنية", titleEn: "Civil Transactions Law", desc: "القانون المدني السعودي الشامل المنظم للعقود والالتزامات والمسؤولية التقصيرية والممتلكات.", descEn: "The comprehensive Saudi civil code regulating contracts, obligations, tort liability, and property rights.", free: true, progress: 60, articlesCount: 720, chaptersCount: 3, lastUpdated: "١٤٤٦/٥/١٢هـ", cat: "SA-03", type: "laws", subType: "basic" },
+        { id: "sys-2", slug: "commercial-courts", title: "نظام المحاكم التجارية", titleEn: "Commercial Courts Law", desc: "تنظيم اختصاصات وإجراءات المحاكم التجارية ونظر الدعاوى والطلبات المتعلقة بالتجار.", descEn: "Regulating the jurisdiction, rules, and procedures of commercial courts for merchants and companies.", free: true, progress: 20, articlesCount: 96, chaptersCount: 2, lastUpdated: "١٤٤٥/١٠/٨هـ", cat: "SA-04", type: "laws", subType: "basic" },
+        { id: "sys-3", slug: "labor-law", title: "نظام العمل السعودي", titleEn: "Saudi Labor Law", desc: "تنظيم العلاقة التعاقدية بين صاحب العمل والعامل وحقوق الطرفين والنزاعات العمالية.", descEn: "Regulating employer-employee contracts, statutory rights, working hours, and labor disputes resolution.", free: true, progress: 0, articlesCount: 245, chaptersCount: 4, lastUpdated: "١٤٤٦/٢/١هـ", cat: "SA-04", type: "laws", subType: "basic" },
+        { id: "sys-4", slug: "companies-law", title: "نظام الشركات الجديد", titleEn: "New Companies Law", desc: "تنظيم شركات المساهمة والمحدودة والتضامن وحوكمتها وقواعد الاندماج والاستحواذ.", descEn: "Regulating joint-stock, LLCs, partnerships, corporate governance, mergers, and acquisitions.", free: true, progress: 0, articlesCount: 282, chaptersCount: 5, lastUpdated: "١٤٤٥/١٢/٢٢هـ", cat: "SA-04", type: "laws", subType: "basic" }
+      ]) as any[];
+
+  const ordersList = (dbDecrees.length > 0
+    ? dbDecrees.map((d: any) => ({
+        id: String(d.id),
+        title: d.title,
+        type: d.type || "circular",
+        issuer: d.issuer || "—",
+        ref: d.ref || "—",
+        date: d.date || "—",
+        summary: d.summary_brief || d.title || "",
+        summary_brief: d.summary_brief || "",
+        cat: d.category || "SA-04",
+        hashtags: d.hashtags || []
+      }))
+    : DEMO_ORDERS) as any[];
+
+  const principlesList = (dbPrinciples.length > 0
+    ? dbPrinciples.map((p: any) => ({
+        id: String(p.id),
+        sourceId: p.judicial_collections?.source_id || "supreme",
+        source: p.issuing_body || p.judicial_collections?.court || "المحكمة العليا",
+        srcAbbr: p.judicial_collections?.source_id === "supreme" ? "م ع" : "ت ق",
+        text: p.text || "",
+        ref: p.decision_number || "—",
+        year: String(p.year_hijri || 1445),
+        subject: "civil" as any,
+        cat: p.judicial_collections?.category || "SA-03"
+      }))
+    : DEMO_PRINCIPLES) as any[];
+
+  // NOTE: precedentsList is unified with principlesList to avoid duplication.
+  // We use the DEMO_PRECEDENTS only when DB has no data at all.
+  const precedentsList = (dbPrinciples.length > 0
+    ? [] as any[] // DB principles are already shown in principlesList — no duplication
+    : DEMO_PRECEDENTS) as any[];
+
+  const booksList = (dbBooks.length > 0
+    ? dbBooks.map((b: any) => {
+        let type = b.type || "sharia";
+        let category = b.category || "";
+        let categoryLabel = "";
+
+        const title = b.title || "";
+        
+        // Auto-detect type and category based on title if empty
+        if (title.includes("كشاف القناع") || title.includes("الشرح الكبير") || title.includes("الروض المربع") || title.includes("زاد المستقنع") || title.includes("المغني") || title.includes("المقنع")) {
+          type = "sharia";
+          if (title.includes("زاد المستقنع") || title.includes("أخصر المختصرات")) {
+            category = "mutun";
+            categoryLabel = isRTL ? "متون فقهية" : "Fiqh Texts";
+          } else if (title.includes("المغني") || title.includes("الشرح الكبير")) {
+            category = "encyclopedia";
+            categoryLabel = isRTL ? "موسوعات وخلاف" : "Encyclopedias";
+          } else {
+            category = "sharuh";
+            categoryLabel = isRTL ? "شروح وحواشي" : "Explanations";
+          }
+        } else if (title.includes("الوسيط") || title.includes("مصادر الحق") || title.includes("السنهوري")) {
+          type = "comparative";
+          category = "civil";
+          categoryLabel = isRTL ? "مدني مقارن" : "Comparative Civil";
+        } else if (title.includes("عقوبات") || title.includes("جنائي")) {
+          type = "wadi";
+          category = "criminal";
+          categoryLabel = isRTL ? "جنائي" : "Criminal";
+        } else if (title.includes("شركات") || title.includes("تجاري")) {
+          type = "wadi";
+          category = "corporate";
+          categoryLabel = isRTL ? "تجاري" : "Commercial";
+        } else {
+          // Defaults if no keyword matches
+          if (type === "sharia") {
+            category = "sharuh";
+            categoryLabel = isRTL ? "شروح وحواشي" : "Explanations";
+          } else if (type === "comparative") {
+            category = "civil";
+            categoryLabel = isRTL ? "مدني مقارن" : "Comparative Civil";
+          } else {
+            category = "civil";
+            categoryLabel = isRTL ? "مدني" : "Civil";
+          }
+        }
+
+        return {
+          id: String(b.id),
+          slug: b.id,
+          title: b.title,
+          author: b.author || (title.includes("البهوتي") ? "منصور بن يونس البهوتي" : title.includes("ابن قدامة") ? "موفق الدين ابن قدامة" : "—"),
+          type,
+          category,
+          categoryLabel,
+          desc: b.description || "",
+          free: b.free ?? true,
+          progress: 100,
+          volCount: b.total_volumes || 1,
+          lastUpdated: "—"
+        };
+      })
+    : DEMO_FEQH_BOOKS) as any[];
+
+  const getCatTotalCount = (catId: string, type: string) => {
+    let lawsCount = 0;
+    let precedentsCount = 0;
+    let ordersCount = 0;
+    let feqhCount = 0;
+
+    if (catId === "all") {
+      lawsCount = lawsList.length;
+      precedentsCount = precedentsList.length;
+      ordersCount = ordersList.length;
+      feqhCount = booksList.length;
+    } else {
+      lawsCount = lawsList.filter(s => s.cat === catId).length;
+      precedentsCount = precedentsList.filter(s => s.cat === catId).length;
+      ordersCount = ordersList.filter(s => s.cat === catId).length;
+      feqhCount = booksList.filter(b => matchesFeqhCategory(b as any, catId)).length;
+    }
+
+    if (type === "laws")       return lawsCount;
+    if (type === "precedents") return precedentsCount;
+    if (type === "orders")     return ordersCount;
+    if (type === "feqh")       return feqhCount;
+    return lawsCount + precedentsCount + ordersCount + feqhCount;
+  };
+
+  // ─── Filter: Laws ─────────────────────────────────────────────────────────────
+  const filteredLaws = lawsList.filter(s => {
+    const inCat  = activeCat === "all" || s.cat === activeCat;
     const inQ   = !nq || normalizeArabic(s.title).includes(nq) || normalizeArabic(s.desc).includes(nq);
-    return inQ;
+    return inCat && inQ;
   });
 
   // ─── Filter: Principles ───────────────────────────────────────────────────────
-  const filteredPrinciples = DEMO_PRINCIPLES.filter(p => {
+  const filteredPrinciples = principlesList.filter(p => {
     const inCat    = activeCat === "all" || p.cat === activeCat;
     const inTrack  = matchesPrecTrack(p.sourceId, precTrack);
     const inSrc    = precSource  === "all" || p.sourceId === precSource;
@@ -338,7 +543,7 @@ export default function LegalLibraryPage() {
   });
 
   // ─── Filter: Precedents ───────────────────────────────────────────────────────
-  const filteredPrecedents = DEMO_PRECEDENTS.filter(pr => {
+  const filteredPrecedents = precedentsList.filter(pr => {
     const inCat  = activeCat === "all" || pr.cat === activeCat;
     const inTrack = matchesPrecedentTrack(pr.court, precTrack);
     const inQ    = !nq || normalizeArabic(pr.summary).includes(nq) || normalizeArabic(pr.court).includes(nq) || normalizeArabic(pr.relevance).includes(nq);
@@ -346,23 +551,40 @@ export default function LegalLibraryPage() {
     return inCat && inTrack && inQ && inHashtag;
   });
 
-  const filteredCollections = DEMO_PRECEDENTS_COLLECTIONS.filter(col => {
+  // ─── Collections: prefer DB data, fallback to demo ──────────────────────────
+  const collectionsList = (dbCollections.length > 0
+    ? dbCollections.map((col: any) => ({
+        id: col.id,
+        slug: col.id,
+        title: col.title,
+        court: col.court || "—",
+        track: col.track || "ordinary",
+        year: col.year_hijri || "—",
+        desc: col.description || "",
+        free: col.free ?? true,
+        progress: col.progress || 0,
+        rulingCount: col.ruling_count || 0,
+        part: col.part ? `المجلد ${col.part}` : undefined,
+      }))
+    : DEMO_PRECEDENTS_COLLECTIONS) as any[];
+
+  const filteredCollections = collectionsList.filter((col: any) => {
     const inTrack = precTrack === "all" || col.track === precTrack;
-    const inQ = !nq || normalizeArabic(col.title).includes(nq) || normalizeArabic(col.court).includes(nq) || normalizeArabic(col.desc).includes(nq);
+    const inQ = !nq || normalizeArabic(col.title).includes(nq) || normalizeArabic(col.court).includes(nq) || normalizeArabic(col.desc || "").includes(nq);
     return inTrack && inQ;
   });
 
   // ─── Filter: Orders ───────────────────────────────────────────────────────────
-  const filteredOrders = DEMO_ORDERS.filter(o => {
+  const filteredOrders = ordersList.filter(o => {
     const inCat = activeCat === "all" || o.cat === activeCat;
-    const inQ   = !nq || normalizeArabic(o.title).includes(nq) || normalizeArabic(o.summary).includes(nq) || normalizeArabic(o.ref).includes(nq);
+    const inQ   = !nq || normalizeArabic(o.title).includes(nq) || (o.summary && normalizeArabic(o.summary).includes(nq)) || normalizeArabic(o.ref).includes(nq);
     const inIssuer = orderIssuer === "all" || o.issuer === orderIssuer || o.issuer === ISSUER_MAP[orderIssuer]?.ar;
     const inHashtag = !selectedHashtag || o.hashtags?.includes(selectedHashtag);
     return inCat && inQ && inIssuer && inHashtag;
   });
 
   // ─── Filter: Feqh Books ──────────────────────────────────────────────────────
-  const filteredFeqhBooks = DEMO_FEQH_BOOKS.filter(book => {
+  const filteredFeqhBooks = booksList.filter(book => {
     const matchesCatTab = activeCat === "all" || matchesFeqhCategory(book, activeCat);
     if (activeType === "feqh") {
       const matchesType = feqhType === "all" || book.type === feqhType;
@@ -373,13 +595,13 @@ export default function LegalLibraryPage() {
       const matchesQuery = !nq || 
         normalizeArabic(book.title).includes(nq) || 
         normalizeArabic(book.author).includes(nq) || 
-        normalizeArabic(book.desc).includes(nq);
+        (book.desc && normalizeArabic(book.desc).includes(nq));
       return matchesType && matchesSub && matchesQuery && matchesCatTab;
     } else {
       const matchesQuery = !nq || 
         normalizeArabic(book.title).includes(nq) || 
         normalizeArabic(book.author).includes(nq) || 
-        normalizeArabic(book.desc).includes(nq);
+        (book.desc && normalizeArabic(book.desc).includes(nq));
       return matchesQuery && matchesCatTab;
     }
   });
@@ -394,7 +616,7 @@ export default function LegalLibraryPage() {
            filteredFeqhBooks.length > 0;
   };
 
-  const catHasContent = (catId: string) => catTotalCount(catId, activeType) > 0;
+  const catHasContent = (catId: string) => getCatTotalCount(catId, activeType) > 0;
 
   return (
     <div
@@ -599,7 +821,7 @@ export default function LegalLibraryPage() {
               {MAIN_CATEGORIES.map(cat => {
                 const isActive = activeCat === cat.id;
                 const Icon     = cat.icon;
-                const count    = cat.id === "all" ? null : catTotalCount(cat.id, activeType);
+                const count    = cat.id === "all" ? null : getCatTotalCount(cat.id, activeType);
                 return (
                   <button key={cat.id} onClick={() => setActiveCat(cat.id)}
                     className={`relative flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
@@ -646,7 +868,7 @@ export default function LegalLibraryPage() {
                     >
                       {OTHER_CATEGORIES.map(cat => {
                         const isSelect = activeCat === cat.id;
-                        const count    = catTotalCount(cat.id, activeType);
+                        const count    = getCatTotalCount(cat.id, activeType);
                         return (
                           <button key={cat.id}
                             onClick={() => { setActiveCat(cat.id); setOtherMenuOpen(false); }}
@@ -717,91 +939,108 @@ export default function LegalLibraryPage() {
             <main className={`order-1 lg:order-2 space-y-6 ${showSidebars ? "lg:col-span-6" : "lg:col-span-12"}`}>
               {/* ── Tab Content Panels ── */}
               <AnimatePresence mode="wait">
-                {activeType === "precedents" && (
-                  <PrecedentsTabContent
-                    isDark={isDark}
-                    isRTL={isRTL}
-                    muted={muted}
-                    precMode={precMode}
-                    setPrecMode={(mode) => setPrecMode(mode as any)}
-                    precTrack={precTrack}
-                    setPrecTrack={setPrecTrack}
-                    precSource={precSource}
-                    setPrecSource={(src) => setPrecSource(src as any)}
-                    filteredCollections={filteredCollections}
-                    filteredPrinciples={filteredPrinciples}
-                    filteredPrecedents={filteredPrecedents}
-                    layoutMode={layoutMode}
-                    isLoggedIn={isLoggedIn}
-                    setShowPaywall={setShowPaywall}
-                    activeCat={activeCat}
-                    q={q}
-                    setSelectedHashtag={setSelectedHashtag}
-                    precPage={precPage}
-                    setPrecPage={setPrecPage}
-                    precSort={precSort}
-                    setPrecSort={setPrecSort}
-                  />
-                )}
+                {dbLoading ? (
+                  <motion.div
+                    key="loading"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex flex-col items-center justify-center py-20"
+                  >
+                    <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-[#0B3D2E] dark:border-[#C8A762] mb-4"></div>
+                    <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                      {isRTL ? "جاري تحميل المكتبة القانونية..." : "Loading legal library..."}
+                    </p>
+                  </motion.div>
+                ) : (
+                  <>
+                    {activeType === "precedents" && (
+                      <PrecedentsTabContent
+                        isDark={isDark}
+                        isRTL={isRTL}
+                        muted={muted}
+                        precMode={precMode}
+                        setPrecMode={(mode) => setPrecMode(mode as any)}
+                        precTrack={precTrack}
+                        setPrecTrack={setPrecTrack}
+                        precSource={precSource}
+                        setPrecSource={(src) => setPrecSource(src as any)}
+                        filteredCollections={filteredCollections}
+                        filteredPrinciples={filteredPrinciples}
+                        filteredPrecedents={filteredPrecedents}
+                        layoutMode={layoutMode}
+                        isLoggedIn={isLoggedIn}
+                        setShowPaywall={setShowPaywall}
+                        activeCat={activeCat}
+                        q={q}
+                        setSelectedHashtag={setSelectedHashtag}
+                        precPage={precPage}
+                        setPrecPage={setPrecPage}
+                        precSort={precSort}
+                        setPrecSort={setPrecSort}
+                      />
+                    )}
 
-                {activeType === "orders" && (
-                  <OrdersTabContent
-                    isDark={isDark}
-                    isRTL={isRTL}
-                    muted={muted}
-                    orderIssuer={orderIssuer}
-                    setOrderIssuer={setOrderIssuer}
-                    filteredOrders={filteredOrders}
-                    ORDER_ISSUERS={ORDER_ISSUERS}
-                    layoutMode={layoutMode}
-                    activeCat={activeCat}
-                    catHasContent={catHasContent}
-                    q={q}
-                    setSelectedHashtag={setSelectedHashtag}
-                  />
-                )}
+                    {activeType === "orders" && (
+                      <OrdersTabContent
+                        isDark={isDark}
+                        isRTL={isRTL}
+                        muted={muted}
+                        orderIssuer={orderIssuer}
+                        setOrderIssuer={setOrderIssuer}
+                        filteredOrders={filteredOrders}
+                        ORDER_ISSUERS={ORDER_ISSUERS}
+                        layoutMode={layoutMode}
+                        activeCat={activeCat}
+                        catHasContent={catHasContent}
+                        q={q}
+                        setSelectedHashtag={setSelectedHashtag}
+                      />
+                    )}
 
-                {(activeType === "laws" || activeType === "all") && (
-                  <LawsTabContent
-                    isDark={isDark}
-                    isRTL={isRTL}
-                    muted={muted}
-                    activeType={activeType}
-                    setActiveType={setActiveType}
-                    layoutMode={layoutMode}
-                    isLoggedIn={isLoggedIn}
-                    q={q}
-                    filteredLaws={filteredLaws}
-                    filteredFeqhBooks={filteredFeqhBooks}
-                    filteredCollections={filteredCollections}
-                    filteredPrinciples={filteredPrinciples}
-                    filteredPrecedents={filteredPrecedents}
-                    filteredOrders={filteredOrders}
-                    setShowPaywall={setShowPaywall}
-                    setPrecMode={(mode) => setPrecMode(mode as any)}
-                    setSelectedHashtag={setSelectedHashtag}
-                    catHasContent={catHasContent}
-                    activeCat={activeCat}
-                    hasResults={hasResults}
-                  />
-                )}
+                    {(activeType === "laws" || activeType === "all") && (
+                      <LawsTabContent
+                        isDark={isDark}
+                        isRTL={isRTL}
+                        muted={muted}
+                        activeType={activeType}
+                        setActiveType={setActiveType}
+                        layoutMode={layoutMode}
+                        isLoggedIn={isLoggedIn}
+                        q={q}
+                        filteredLaws={filteredLaws}
+                        filteredFeqhBooks={filteredFeqhBooks}
+                        filteredCollections={filteredCollections}
+                        filteredPrinciples={filteredPrinciples}
+                        filteredPrecedents={filteredPrecedents}
+                        filteredOrders={filteredOrders}
+                        setShowPaywall={setShowPaywall}
+                        setPrecMode={(mode) => setPrecMode(mode as any)}
+                        setSelectedHashtag={setSelectedHashtag}
+                        catHasContent={catHasContent}
+                        activeCat={activeCat}
+                        hasResults={hasResults}
+                      />
+                    )}
 
-                {activeType === "feqh" && (
-                  <FeqhTabContent
-                    isDark={isDark}
-                    isRTL={isRTL}
-                    muted={muted}
-                    feqhType={feqhType}
-                    setFeqhType={setFeqhType}
-                    feqhSubCat={feqhSubCat}
-                    setFeqhSubCat={setFeqhSubCat}
-                    filteredFeqhBooks={filteredFeqhBooks}
-                    layoutMode={layoutMode}
-                    isLoggedIn={isLoggedIn}
-                    setShowPaywall={setShowPaywall}
-                    activeCat={activeCat}
-                    q={q}
-                  />
+                    {activeType === "feqh" && (
+                      <FeqhTabContent
+                        isDark={isDark}
+                        isRTL={isRTL}
+                        muted={muted}
+                        feqhType={feqhType}
+                        setFeqhType={setFeqhType}
+                        feqhSubCat={feqhSubCat}
+                        setFeqhSubCat={setFeqhSubCat}
+                        filteredFeqhBooks={filteredFeqhBooks}
+                        layoutMode={layoutMode}
+                        isLoggedIn={isLoggedIn}
+                        setShowPaywall={setShowPaywall}
+                        activeCat={activeCat}
+                        q={q}
+                      />
+                    )}
+                  </>
                 )}
               </AnimatePresence>
             </main>

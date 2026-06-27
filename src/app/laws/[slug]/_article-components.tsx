@@ -9,6 +9,7 @@ import {
   Gavel, Sparkle, Highlighter, NotePencil, FloppyDisk, PushPin
 } from "@phosphor-icons/react";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
+import { useSubscription } from "@/hooks/useSubscription";
 import type { LawArticle, JudicialPrinciple, JudicialPrecedent } from "../data";
 
 export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { text: string; isDark: boolean; isRTL?: boolean; fontClass?: string }) {
@@ -244,7 +245,9 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
   const [copiedReg, setCopiedReg]           = useState(false);
   const isRepealed  = article.status === "repealed";
   const isAmended   = article.status === "amended";
-  const isLocked    = !article.free;
+  const { can }     = useSubscription();
+  const hasLibraryAccess = can("library-full-access");
+  const isLocked    = !article.free && !hasLibraryAccess;
   const inCart      = !!entry && entry.isArticleAdded;
   const regInCart   = !!entry && entry.isExecRegAdded;
 

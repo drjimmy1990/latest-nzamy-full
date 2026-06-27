@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSubscription } from "@/hooks/useSubscription";
 import {
   BookOpen,
   Lock,
@@ -68,6 +69,8 @@ export function LawsTabContent({
   hasResults,
 }: LawsTabContentProps) {
   const router = useRouter();
+  const { can } = useSubscription();
+  const hasLibraryAccess = can("library-full-access");
 
   return (
     <motion.div
@@ -90,51 +93,53 @@ export function LawsTabContent({
           )}
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-8" : "flex flex-col gap-4 mb-8"}>
             <AnimatePresence mode="popLayout">
-              {filteredLaws.map((sys, idx) => (
-                <motion.div
-                  key={sys.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.05 }}
-                  className={`group relative rounded-2xl border p-5 transition-all ${
-                    sys.free
-                      ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
-                      : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
-                  }`}
-                >
-                  {!sys.free && (
-                    <div
-                      className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
-                      onClick={() => setShowPaywall(true)}
-                    >
-                      <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
-                        <Lock size={16} color="#C8A762" weight="fill" />
-                        <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                          {isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  <Link
-                    href={sys.free ? `/laws/${sys.slug}` : "#"}
-                    onClick={(e) => {
-                      if (!sys.free) {
-                        e.preventDefault();
-                        setShowPaywall(true);
-                      }
-                    }}
+              {filteredLaws.map((sys, idx) => {
+                const isLawFree = sys.free || hasLibraryAccess;
+                return (
+                  <motion.div
+                    key={sys.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    className={`group relative rounded-2xl border p-5 transition-all ${
+                      isLawFree
+                        ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
+                        : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
+                    }`}
                   >
-                    {layoutMode === "grid" ? (
-                      <div className={!sys.free ? "opacity-40 filter blur-[2px]" : ""}>
-                        <div className="flex items-center justify-between mb-4">
-                          <span className={`px-2.5 py-1 text-xs font-bold rounded-lg ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>
-                            {isRTL ? "مُحدث" : "Updated"}
+                    {!isLawFree && (
+                      <div
+                        className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
+                        onClick={() => setShowPaywall(true)}
+                      >
+                        <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
+                          <Lock size={16} color="#C8A762" weight="fill" />
+                          <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+                            {isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}
                           </span>
-                          {sys.free && (
-                            <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
-                              <Sparkle size={10} weight="fill" />
-                              {isRTL ? "متاح" : "FREE"}
+                        </div>
+                      </div>
+                    )}
+                    <Link
+                      href={isLawFree ? `/laws/${sys.slug}` : "#"}
+                      onClick={(e) => {
+                        if (!isLawFree) {
+                          e.preventDefault();
+                          setShowPaywall(true);
+                        }
+                      }}
+                    >
+                      {layoutMode === "grid" ? (
+                        <div className={!isLawFree ? "opacity-40 filter blur-[2px]" : ""}>
+                          <div className="flex items-center justify-between mb-4">
+                            <span className={`px-2.5 py-1 text-xs font-bold rounded-lg ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>
+                              {isRTL ? "مُحدث" : "Updated"}
                             </span>
+                            {isLawFree && (
+                              <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
+                                <Sparkle size={10} weight="fill" />
+                                {isRTL ? "متاح" : "FREE"}
+                              </span>
                           )}
                         </div>
                         <h3 className={`text-lg font-black mb-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors ${isDark ? "text-white" : "text-gray-900"}`}>
@@ -151,7 +156,7 @@ export function LawsTabContent({
                             <span className={`text-base font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{sys.chaptersCount}</span>
                           </div>
                         </div>
-                        {isLoggedIn && sys.free && (
+                        {isLoggedIn && isLawFree && (
                           <div className="mb-4">
                             <div className="flex justify-between items-center mb-1.5 text-xs">
                               <span className={muted}>{isRTL ? "نسبة القراءة" : "Progress"}</span>
@@ -171,13 +176,13 @@ export function LawsTabContent({
                         </div>
                       </div>
                     ) : (
-                      <div className={`${!sys.free ? "opacity-40 filter blur-[2px]" : ""} flex flex-col md:flex-row md:items-center justify-between gap-5`}>
+                      <div className={`${!isLawFree ? "opacity-40 filter blur-[2px]" : ""} flex flex-col md:flex-row md:items-center justify-between gap-5`}>
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2 flex-wrap">
                             <span className={`px-2.5 py-1 text-xs font-bold rounded-lg ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>
                               {isRTL ? "مُحدث" : "Updated"}
                             </span>
-                            {sys.free && (
+                            {isLawFree && (
                               <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                                 <Sparkle size={10} weight="fill" />
                                 {isRTL ? "متاح" : "FREE"}
@@ -212,7 +217,7 @@ export function LawsTabContent({
                     )}
                   </Link>
                 </motion.div>
-              ))}
+              ); })}
             </AnimatePresence>
           </div>
         </>
@@ -228,180 +233,183 @@ export function LawsTabContent({
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4" : "flex flex-col gap-4 mb-4"}>
-            {filteredCollections.slice(0, 3).map((col, idx) => (
-              <motion.div
-                key={col.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                className={`group relative rounded-2xl border p-5 transition-all ${
-                  col.free
-                    ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
-                    : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
-                } ${layoutMode === "grid" ? "min-h-[340px] h-full flex flex-col" : ""}`}
-              >
-                {!col.free && (
-                  <div
-                    className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
-                    onClick={() => setShowPaywall(true)}
-                  >
-                    <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
-                      <Lock size={16} color="#C8A762" weight="fill" />
-                      <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                        {isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                <Link
-                  href={col.free ? `/precedents/${col.slug}` : "#"}
-                  onClick={(e) => {
-                    if (!col.free) {
-                      e.preventDefault();
-                      setShowPaywall(true);
-                    }
-                  }}
-                  className={layoutMode === "grid" ? "flex flex-col flex-1 justify-between" : "flex flex-col md:flex-row md:items-center justify-between w-full gap-5"}
+            {filteredCollections.slice(0, 3).map((col, idx) => {
+              const isColFree = col.free || hasLibraryAccess;
+              return (
+                <motion.div
+                  key={col.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  className={`group relative rounded-2xl border p-5 transition-all ${
+                    isColFree
+                      ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
+                      : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
+                  } ${layoutMode === "grid" ? "min-h-[340px] h-full flex flex-col" : ""}`}
                 >
-                  {layoutMode === "grid" ? (
-                    <>
-                      <div className={!col.free ? "opacity-40 filter blur-[2px]" : ""}>
-                        <div className="flex items-center justify-between mb-4">
-                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
-                            col.track === "ordinary"
-                              ? isDark
-                                ? "bg-[#0B3D2E]/20 text-emerald-400 border border-emerald-500/10"
-                                : "bg-emerald-50 text-[#0B3D2E] border border-emerald-200"
-                              : col.track === "admin"
-                              ? isDark
-                                ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
-                                : "bg-blue-50 text-blue-700 border border-blue-200"
-                              : isDark
-                              ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
-                              : "bg-purple-50 text-purple-700 border border-purple-200"
-                          }`}>
-                            {col.court}
-                          </span>
-                          {col.free && (
-                            <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
-                              <Sparkle size={10} weight="fill" />
-                              {isRTL ? "متاح" : "FREE"}
-                            </span>
-                          )}
-                        </div>
-
-                        <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
-                          {col.title}
-                        </h3>
-                        <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">
-                          {isRTL ? `إصدار: ${col.year}` : `Year: ${col.year}`}
-                        </p>
-                        <p className={`text-xs mb-5 line-clamp-2 leading-relaxed ${muted}`}>{col.desc}</p>
+                  {!isColFree && (
+                    <div
+                      className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
+                      onClick={() => setShowPaywall(true)}
+                    >
+                      <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
+                        <Lock size={16} color="#C8A762" weight="fill" />
+                        <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+                          {isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}
+                        </span>
                       </div>
-
-                      <div className={!col.free ? "opacity-40 filter blur-[2px]" : ""}>
-                        <div className={`grid grid-cols-2 gap-3 mb-4 p-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
-                          <div className="flex flex-col">
-                            <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{col.rulingCount}</span>
-                          </div>
-                          <div className="flex flex-col">
-                            <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المسار" : "Track"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
-                              {col.track === "ordinary"
-                                ? isRTL
-                                  ? "قضاء عادي"
-                                  : "Ordinary"
-                                : col.track === "admin"
-                                ? isRTL
-                                  ? "قضاء إداري"
-                                  : "Administrative"
-                                : isRTL
-                                ? "شبه قضائي"
-                                : "Semi-Judicial"}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-                            {isRTL ? "تصفح المجموعة" : "Browse Collection"}
-                            <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
-                          </span>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className={`flex-1 ${!col.free ? "opacity-40 filter blur-[2px]" : ""}`}>
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
-                            col.track === "ordinary"
-                              ? isDark
-                                ? "bg-[#0B3D2E]/20 text-emerald-400 border border-emerald-500/10"
-                                : "bg-emerald-50 text-[#0B3D2E] border border-emerald-200"
-                              : col.track === "admin"
-                              ? isDark
-                                ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
-                                : "bg-blue-50 text-blue-700 border border-blue-200"
-                              : isDark
-                              ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
-                              : "bg-purple-50 text-purple-700 border border-purple-200"
-                          }`}>
-                            {col.court}
-                          </span>
-                          {col.free && (
-                            <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
-                              <Sparkle size={10} weight="fill" />
-                              {isRTL ? "متاح" : "FREE"}
-                            </span>
-                          )}
-                        </div>
-                        <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
-                          {col.title}
-                        </h3>
-                        <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">
-                          {isRTL ? `إصدار: ${col.year}` : `Year: ${col.year}`}
-                        </p>
-                        <p className={`text-xs line-clamp-2 leading-relaxed ${muted}`}>{col.desc}</p>
-                      </div>
-
-                      <div className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0 ${!col.free ? "opacity-40 filter blur-[2px]" : ""}`}>
-                        <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
-                          <div className="flex flex-col">
-                            <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{col.rulingCount}</span>
-                          </div>
-                          <div className="flex flex-col">
-                            <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المسار" : "Track"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
-                              {col.track === "ordinary"
-                                ? isRTL
-                                  ? "قضاء عادي"
-                                  : "Ordinary"
-                                : col.track === "admin"
-                                ? isRTL
-                                  ? "قضاء إداري"
-                                  : "Administrative"
-                                : isRTL
-                                ? "شبه قضائي"
-                                : "Semi-Judicial"}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col justify-center gap-2 sm:min-w-[130px]">
-                          <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-                            {isRTL ? "تصفح المجموعة" : "Browse Collection"}
-                            <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
-                          </span>
-                        </div>
-                      </div>
-                    </>
+                    </div>
                   )}
-                </Link>
-              </motion.div>
-            ))}
+
+                  <Link
+                    href={isColFree ? `/precedents/${col.slug}` : "#"}
+                    onClick={(e) => {
+                      if (!isColFree) {
+                        e.preventDefault();
+                        setShowPaywall(true);
+                      }
+                    }}
+                    className={layoutMode === "grid" ? "flex flex-col flex-1 justify-between" : "flex flex-col md:flex-row md:items-center justify-between w-full gap-5"}
+                  >
+                    {layoutMode === "grid" ? (
+                      <>
+                        <div className={!isColFree ? "opacity-40 filter blur-[2px]" : ""}>
+                          <div className="flex items-center justify-between mb-4">
+                            <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
+                              col.track === "ordinary"
+                                ? isDark
+                                  ? "bg-[#0B3D2E]/20 text-emerald-400 border border-emerald-500/10"
+                                  : "bg-emerald-50 text-[#0B3D2E] border border-emerald-200"
+                                : col.track === "admin"
+                                ? isDark
+                                  ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
+                                  : "bg-blue-50 text-blue-700 border border-blue-200"
+                                : isDark
+                                ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
+                                : "bg-purple-50 text-purple-700 border border-purple-200"
+                            }`}>
+                              {col.court}
+                            </span>
+                            {isColFree && (
+                              <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
+                                <Sparkle size={10} weight="fill" />
+                                {isRTL ? "متاح" : "FREE"}
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
+                            {col.title}
+                          </h3>
+                          <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">
+                            {isRTL ? `إصدار: ${col.year}` : `Year: ${col.year}`}
+                          </p>
+                          <p className={`text-xs mb-5 line-clamp-2 leading-relaxed ${muted}`}>{col.desc}</p>
+                        </div>
+
+                        <div className={!isColFree ? "opacity-40 filter blur-[2px]" : ""}>
+                          <div className={`grid grid-cols-2 gap-3 mb-4 p-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
+                            <div className="flex flex-col">
+                              <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{col.rulingCount}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المسار" : "Track"}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                                {col.track === "ordinary"
+                                  ? isRTL
+                                    ? "قضاء عادي"
+                                    : "Ordinary"
+                                  : col.track === "admin"
+                                  ? isRTL
+                                    ? "قضاء إداري"
+                                    : "Administrative"
+                                  : isRTL
+                                  ? "شبه قضائي"
+                                  : "Semi-Judicial"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                              {isRTL ? "تصفح المجموعة" : "Browse Collection"}
+                              <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className={`flex-1 ${!isColFree ? "opacity-40 filter blur-[2px]" : ""}`}>
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
+                              col.track === "ordinary"
+                                ? isDark
+                                  ? "bg-[#0B3D2E]/20 text-emerald-400 border border-emerald-500/10"
+                                  : "bg-emerald-50 text-[#0B3D2E] border border-emerald-200"
+                                : col.track === "admin"
+                                ? isDark
+                                  ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
+                                  : "bg-blue-50 text-blue-700 border border-blue-200"
+                                : isDark
+                                ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
+                                : "bg-purple-50 text-purple-700 border border-purple-200"
+                            }`}>
+                              {col.court}
+                            </span>
+                            {isColFree && (
+                              <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
+                                <Sparkle size={10} weight="fill" />
+                                {isRTL ? "متاح" : "FREE"}
+                              </span>
+                            )}
+                          </div>
+                          <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
+                            {col.title}
+                          </h3>
+                          <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">
+                            {isRTL ? `إصدار: ${col.year}` : `Year: ${col.year}`}
+                          </p>
+                          <p className={`text-xs line-clamp-2 leading-relaxed ${muted}`}>{col.desc}</p>
+                        </div>
+
+                        <div className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0 ${!isColFree ? "opacity-40 filter blur-[2px]" : ""}`}>
+                          <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
+                            <div className="flex flex-col">
+                              <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{col.rulingCount}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المسار" : "Track"}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                                {col.track === "ordinary"
+                                  ? isRTL
+                                    ? "قضاء عادي"
+                                    : "Ordinary"
+                                  : col.track === "admin"
+                                  ? isRTL
+                                    ? "قضاء إداري"
+                                    : "Administrative"
+                                  : isRTL
+                                  ? "شبه قضائي"
+                                  : "Semi-Judicial"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex flex-col justify-center gap-2 sm:min-w-[130px]">
+                            <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                              {isRTL ? "تصفح المجموعة" : "Browse Collection"}
+                              <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </Link>
+                </motion.div>
+              );
+            })}
           </div>
           {filteredCollections.length > 3 && (
             <button
@@ -513,134 +521,81 @@ export function LawsTabContent({
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4" : "flex flex-col gap-4 mb-4"}>
-            {filteredFeqhBooks.slice(0, 3).map((book, idx) => (
-              <motion.div
-                key={book.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                className={`group relative rounded-2xl border p-5 transition-all flex flex-col ${
-                  layoutMode === "grid" ? "min-h-[340px] h-full" : ""
-                } ${
-                  book.free
-                    ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
-                    : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
-                }`}
-              >
-                {!book.free && (
-                  <div
-                    className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
-                    onClick={() => setShowPaywall(true)}
-                  >
-                    <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
-                      <Lock size={16} color="#C8A762" weight="fill" />
-                      <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                        {isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                <Link
-                  href={book.free ? `/book/${book.slug}` : "#"}
-                  onClick={(e) => {
-                    if (!book.free) {
-                      e.preventDefault();
-                      setShowPaywall(true);
-                    }
-                  }}
-                  className={layoutMode === "grid" ? "flex flex-col flex-1 justify-between" : "w-full"}
+            {filteredFeqhBooks.slice(0, 3).map((book, idx) => {
+              const isBookFree = book.free || hasLibraryAccess;
+              return (
+                <motion.div
+                  key={book.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  className={`group relative rounded-2xl border p-5 transition-all flex flex-col ${
+                    layoutMode === "grid" ? "min-h-[340px] h-full" : ""
+                  } ${
+                    isBookFree
+                      ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
+                      : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
+                  }`}
                 >
-                  {layoutMode === "grid" ? (
-                    <div className="flex flex-col flex-1 justify-between">
-                      <div className={!book.free ? "opacity-40 filter blur-[2px]" : ""}>
-                        <div className="flex items-center justify-between mb-4">
-                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
-                            book.type === "sharia"
-                              ? isDark
-                                ? "bg-amber-950/40 text-amber-400 border border-amber-500/10"
-                                : "bg-amber-50 text-amber-700 border border-amber-200"
-                              : book.type === "comparative"
-                              ? isDark
-                                ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
-                                : "bg-purple-50 text-purple-700 border border-purple-200"
-                              : isDark
-                              ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
-                              : "bg-blue-50 text-blue-700 border border-blue-200"
-                          }`}>
-                            {book.categoryLabel}
-                          </span>
-                          {book.free && (
-                            <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
-                              <Sparkle size={10} weight="fill" />
-                              {isRTL ? "متاح" : "FREE"}
-                            </span>
-                          )}
-                        </div>
-
-                        <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
-                          {book.title}
-                        </h3>
-                        <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
-                        <p className={`text-xs mb-5 line-clamp-2 leading-relaxed ${muted}`}>{book.desc}</p>
-                      </div>
-
-                      <div className={`grid grid-cols-2 gap-3 mb-4 p-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"} ${!book.free ? "opacity-40 filter blur-[2px]" : ""}`}>
-                        <div className="flex flex-col">
-                          <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلدات" : "Volumes"}</span>
-                          <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{book.volCount}</span>
-                        </div>
-                        <div className="flex flex-col">
-                          <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "نوع المرجع" : "Type"}</span>
-                          <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
-                            {book.type === "sharia" ? (isRTL ? "شرعي" : "Sharia") : book.type === "comparative" ? (isRTL ? "مقارن" : "Comparative") : (isRTL ? "وضعي" : "Positive")}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className={`flex items-center justify-between mt-auto ${!book.free ? "opacity-40 filter blur-[2px]" : ""}`}>
-                        <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-                          {isRTL ? "تصفح المرجع" : "Browse Reference"}
-                          <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
+                  {!isBookFree && (
+                    <div
+                      className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
+                      onClick={() => setShowPaywall(true)}
+                    >
+                      <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
+                        <Lock size={16} color="#C8A762" weight="fill" />
+                        <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+                          {isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}
                         </span>
-                        <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>
                       </div>
                     </div>
-                  ) : (
-                    <div className={`${!book.free ? "opacity-40 filter blur-[2px]" : ""} flex flex-col md:flex-row md:items-center justify-between gap-5`}>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
-                            book.type === "sharia"
-                              ? isDark
-                                ? "bg-amber-950/40 text-amber-400 border border-amber-500/10"
-                                : "bg-amber-50 text-amber-700 border border-amber-200"
-                              : book.type === "comparative"
-                              ? isDark
-                                ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
-                                : "bg-purple-50 text-purple-700 border border-purple-200"
-                              : isDark
-                              ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
-                              : "bg-blue-50 text-blue-700 border border-blue-200"
-                          }`}>
-                            {book.categoryLabel}
-                          </span>
-                          {book.free && (
-                            <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
-                              <Sparkle size={10} weight="fill" />
-                              {isRTL ? "متاح" : "FREE"}
-                            </span>
-                          )}
-                        </div>
-                        <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
-                          {book.title}
-                        </h3>
-                        <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
-                        <p className={`text-xs line-clamp-2 leading-relaxed ${muted}`}>{book.desc}</p>
-                      </div>
+                  )}
 
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0">
-                        <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
+                  <Link
+                    href={isBookFree ? `/book/${book.slug}` : "#"}
+                    onClick={(e) => {
+                      if (!isBookFree) {
+                        e.preventDefault();
+                        setShowPaywall(true);
+                      }
+                    }}
+                    className={layoutMode === "grid" ? "flex flex-col flex-1 justify-between" : "w-full"}
+                  >
+                    {layoutMode === "grid" ? (
+                      <div className="flex flex-col flex-1 justify-between">
+                        <div className={!isBookFree ? "opacity-40 filter blur-[2px]" : ""}>
+                          <div className="flex items-center justify-between mb-4">
+                            <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
+                              book.type === "sharia"
+                                ? isDark
+                                  ? "bg-amber-950/40 text-amber-400 border border-amber-500/10"
+                                  : "bg-amber-50 text-amber-700 border border-amber-200"
+                                : book.type === "comparative"
+                                ? isDark
+                                  ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
+                                  : "bg-purple-50 text-purple-700 border border-purple-200"
+                                : isDark
+                                ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
+                                : "bg-blue-50 text-blue-700 border border-blue-200"
+                            }`}>
+                              {book.categoryLabel}
+                            </span>
+                            {isBookFree && (
+                              <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
+                                <Sparkle size={10} weight="fill" />
+                                {isRTL ? "متاح" : "FREE"}
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
+                            {book.title}
+                          </h3>
+                          <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                          <p className={`text-xs mb-5 line-clamp-2 leading-relaxed ${muted}`}>{book.desc}</p>
+                        </div>
+
+                        <div className={`grid grid-cols-2 gap-3 mb-4 p-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"} ${!isBookFree ? "opacity-40 filter blur-[2px]" : ""}`}>
                           <div className="flex flex-col">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلدات" : "Volumes"}</span>
                             <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{book.volCount}</span>
@@ -652,7 +607,8 @@ export function LawsTabContent({
                             </span>
                           </div>
                         </div>
-                        <div className="flex flex-col justify-center gap-2 sm:min-w-[130px]">
+
+                        <div className={`flex items-center justify-between mt-auto ${!isBookFree ? "opacity-40 filter blur-[2px]" : ""}`}>
                           <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                             {isRTL ? "تصفح المرجع" : "Browse Reference"}
                             <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
@@ -660,11 +616,66 @@ export function LawsTabContent({
                           <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>
                         </div>
                       </div>
-                    </div>
-                  )}
-                </Link>
-              </motion.div>
-            ))}
+                    ) : (
+                      <div className={`${!isBookFree ? "opacity-40 filter blur-[2px]" : ""} flex flex-col md:flex-row md:items-center justify-between gap-5`}>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
+                              book.type === "sharia"
+                                ? isDark
+                                  ? "bg-amber-950/40 text-amber-400 border border-amber-500/10"
+                                  : "bg-amber-50 text-amber-700 border border-amber-200"
+                                : book.type === "comparative"
+                                ? isDark
+                                  ? "bg-purple-950/40 text-purple-400 border border-purple-500/10"
+                                  : "bg-purple-50 text-purple-700 border border-purple-200"
+                                : isDark
+                                ? "bg-blue-950/40 text-blue-400 border border-blue-500/10"
+                                  : "bg-blue-50 text-blue-700 border border-blue-200"
+                            }`}>
+                              {book.categoryLabel}
+                            </span>
+                            {isBookFree && (
+                              <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
+                                <Sparkle size={10} weight="fill" />
+                                {isRTL ? "متاح" : "FREE"}
+                              </span>
+                            )}
+                          </div>
+                          <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
+                            {book.title}
+                          </h3>
+                          <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                          <p className={`text-xs line-clamp-2 leading-relaxed ${muted}`}>{book.desc}</p>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0">
+                          <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
+                            <div className="flex flex-col">
+                              <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلدات" : "Volumes"}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{book.volCount}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "نوع المرجع" : "Type"}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                                {book.type === "sharia" ? (isRTL ? "شرعي" : "Sharia") : book.type === "comparative" ? (isRTL ? "مقارن" : "Comparative") : (isRTL ? "وضعي" : "Positive")}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex flex-col justify-center gap-2 sm:min-w-[130px]">
+                            <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                              {isRTL ? "تصفح المرجع" : "Browse Reference"}
+                              <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
+                            </span>
+                            <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </Link>
+                </motion.div>
+              );
+            })}
           </div>
           {filteredFeqhBooks.length > 3 && (
             <button
