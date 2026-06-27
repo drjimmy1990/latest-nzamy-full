@@ -139,6 +139,7 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
     title: "النظام والأمان", titleEn: "System & Security",
     items: [
       { label: "مركز تحكم المنصة",      labelEn: "Platform Control", href: "/dashboard/admin/platform",             icon: "Globe",                 badge: "S101" },
+      { label: "إعدادات المنصة",        labelEn: "Platform Settings", href: "/dashboard/admin/settings",            icon: "Gear",                   badge: "جديد" },
       { label: "سجل التدقيق",          labelEn: "Audit Log",       href: "/dashboard/admin/audit-log",             icon: "ClockCounterClockwise", badge: "مُطوَّر" },
       { label: "الأمان والحماية",      labelEn: "Security",        href: "/dashboard/admin/security",              icon: "ShieldCheck",            badge: "مُطوَّر" },
       { label: "سجل النظام",           labelEn: "System Log",      href: "/dashboard/admin/system",                icon: "Terminal" },
