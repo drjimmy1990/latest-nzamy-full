@@ -28,6 +28,12 @@ export default function HomeRedirectGuard() {
   const user   = useUser();
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("noredirect") === "true" || params.get("public") === "true") {
+        return;
+      }
+    }
     if (user.isLoggedIn && user.userType) {
       const dest = DASHBOARD_MAP[user.userType] ?? "/dashboard/lawyer";
       router.replace(dest);

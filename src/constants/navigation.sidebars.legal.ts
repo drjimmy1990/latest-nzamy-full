@@ -178,6 +178,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
   {
     items: [
       { label: "طلباتي",       labelEn: "My Requests", href: "/marketplace", icon: "Storefront", divider: true },
+      { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws",              icon: "BookOpen" },
       { label: "الإعدادات",    labelEn: "Settings",     href: "/settings",    icon: "GearSix" },
     ],
   },

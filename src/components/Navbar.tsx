@@ -334,7 +334,7 @@ export default function Navbar() {
           <div className="flex items-center justify-between">
 
             {/* ── Logo ── */}
-            <motion.a href="/" className="flex items-center gap-3" whileHover={{ scale: 1.02 }}>
+            <motion.a href="/?noredirect=true" className="flex items-center gap-3" whileHover={{ scale: 1.02 }}>
               <motion.div
                 animate={{ rotateY: [0, 360] }}
                 transition={{ duration: 6, repeat: Infinity, ease: "linear", repeatDelay: 2 }}

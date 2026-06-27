@@ -27,12 +27,16 @@ const PROTECTED = [
   "/onboarding",
 ];
 
+
+
 // ─── Deprecated route redirects ────────────────────────────────────────────────
 const REDIRECTS: Record<string, string> = {
   "/ai/communicate":     "/ai/legal-opinion",
   "/ai/share-history":   "/settings",
   "/ai/corp/privacy":    "/ai/corp/compliance",
   "/dashboard/lawyer/ai/secretary": "/ai/secretary",
+  "/law":                "/laws",
+  "/law/":               "/laws",
 };
 
 // ─── Backend mode check ────────────────────────────────────────────────────────

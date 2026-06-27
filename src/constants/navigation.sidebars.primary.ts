@@ -68,6 +68,7 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
       { label: "باقتي",            labelEn: "My Plan",         href: "/dashboard/client/wallet",   icon: "Crown",      divider: true },
       { label: "ربعي",             labelEn: "My Group",        href: "/dashboard/client/my-group", icon: "UsersThree", badge: "نشط", requiresClientGroup: true },
       { label: "المجتمع القانوني", labelEn: "Legal Community", href: "/community",                 icon: "Users" },
+      { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws",                     icon: "BookOpen" },
       { label: "برنامج الإحالة",   labelEn: "Referral",        href: "/dashboard/client/referral", icon: "Gift" },
       { label: "ميديا نظامي",      labelEn: "Nzamy Media",     href: "/media",                     icon: "PlayCircle",  badge: "جديد" },
       { label: "الإشعارات",        labelEn: "Notifications",   href: "/notifications",             icon: "Bell" },

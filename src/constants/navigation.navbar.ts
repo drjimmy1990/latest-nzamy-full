@@ -8,7 +8,7 @@ import type { NavItem } from "./navigation.types";
 // ── Public Nav (Visitors / Not logged in) ────────────────────────────────────
 // NOTE: يبقى كما هو — بناءً على قرار المستخدم
 export const PUBLIC_NAV: NavItem[] = [
-  { label: "الرئيسية",          labelEn: "Home",           href: "/" },
+  { label: "الرئيسية",          labelEn: "Home",           href: "/?noredirect=true" },
   { label: "خدمات الأفراد",      labelEn: "Individuals",    href: "/services/individuals" },
   { label: "الشركات",            labelEn: "Business",       href: "/services/business" },
   { label: "المحامين",           labelEn: "Lawyers",        href: "/services/lawyers" },
