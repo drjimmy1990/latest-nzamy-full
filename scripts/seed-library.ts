@@ -68,6 +68,8 @@ function createSupabaseClient(url: string, key: string) {
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
     Prefer: "return=representation,resolution=merge-duplicates",
+    "Content-Profile": "library",
+    "Accept-Profile": "library",
   };
 
   return {

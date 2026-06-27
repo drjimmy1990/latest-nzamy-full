@@ -175,8 +175,14 @@ export default function LoginPage() {
           return;
         }
 
-        // Redirect to the user's dashboard based on their type
-        const userType = data.user.user_metadata?.user_type ?? "individual";
+        // Fetch the user_type from the profiles table as the source of truth
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("user_type")
+          .eq("id", data.user.id)
+          .single();
+
+        const userType = profile?.user_type ?? data.user.user_metadata?.user_type ?? "individual";
         const dest = getDashboardRoute(userType);
         router.push(dest);
       } catch {

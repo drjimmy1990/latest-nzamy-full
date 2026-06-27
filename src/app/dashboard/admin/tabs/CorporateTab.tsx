@@ -1,38 +1,121 @@
 "use client";
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Buildings, ToggleRight, ToggleLeft, MagnifyingGlass, CheckCircle, Warning } from "@phosphor-icons/react";
-import { useAdminSettings, CompanyFeatures } from "@/hooks/useAdminSettings";
 
 const card = "bg-[#0f0f16] border border-white/[0.07] rounded-2xl";
 
+interface CompanyFeatures {
+  hasSecondment: boolean;
+  hasLitigation: boolean;
+  hasMarketplace: boolean;
+  hasGovernance: boolean;
+}
+
+interface Company {
+  id: string;
+  name: string;
+  plan: string;
+  mrr: number;
+  features: CompanyFeatures;
+}
+
 export default function CorporateTab() {
-  const { features, updateCompanyFeatures, mounted } = useAdminSettings();
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
-  if (!mounted) return null;
-
-  const COMPANIES = [
-    { id: "C-001", name: "شركة الحلول القانونية (Demo)", plan: "Enterprise", mrr: 2499 },
-    { id: "C-002", name: "شركة التقنية المتقدمة", plan: "Pro", mrr: 999 },
-  ];
-
-  const filtered = COMPANIES.filter(c => c.name.includes(search) || c.id.includes(search));
-
-  const toggleFeature = (companyId: string, feature: keyof CompanyFeatures) => {
-    const current = features[companyId];
-    if (current) {
-      updateCompanyFeatures(companyId, { [feature]: !current[feature] });
+  const fetchCompanies = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/v1/admin/corporates");
+      if (!res.ok) {
+        throw new Error("Failed to fetch companies");
+      }
+      const data = await res.json();
+      setCompanies(data.companies || []);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "حدث خطأ أثناء تحميل بيانات الشركات");
+    } finally {
+      setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchCompanies();
+  }, []);
+
+  const toggleFeature = async (companyId: string, feature: keyof CompanyFeatures) => {
+    const company = companies.find(c => c.id === companyId);
+    if (!company) return;
+
+    const currentVal = company.features[feature];
+    const newFeatures = {
+      [feature]: !currentVal
+    };
+
+    // Optimistically update local state
+    setCompanies(prev =>
+      prev.map(c =>
+        c.id === companyId
+          ? {
+              ...c,
+              features: {
+                ...c.features,
+                ...newFeatures
+              }
+            }
+          : c
+      )
+    );
+
+    try {
+      const res = await fetch("/api/v1/admin/corporates", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          id: companyId,
+          features: newFeatures
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to update features");
+      }
+    } catch (err) {
+      console.error(err);
+      // Revert on error
+      setCompanies(prev =>
+        prev.map(c =>
+          c.id === companyId
+            ? {
+                ...c,
+                features: {
+                  ...c.features,
+                  [feature]: currentVal
+                }
+              }
+            : c
+        )
+      );
+    }
+  };
+
+  const filtered = companies.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.id.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <motion.div key="corp" initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} className="space-y-4">
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: "الشركات التجارية", val: COMPANIES.length, c: "text-blue-400" },
-          { label: "إجمالي الإيراد", val: `${COMPANIES.reduce((a,b)=>a+b.mrr,0)} ر.س`, c: "text-emerald-400" },
+          { label: "الشركات التجارية", val: companies.length, c: "text-blue-400" },
+          { label: "إجمالي الإيراد", val: `${companies.reduce((a,b)=>a+b.mrr,0)} ر.س`, c: "text-emerald-400" },
         ].map((s,i)=>(
           <div key={i} className={`${card} p-4 flex items-center gap-3`}>
             <div className={`h-10 w-10 flex items-center justify-center rounded-xl bg-white/[0.04] ${s.c}`}>
@@ -56,8 +139,10 @@ export default function CorporateTab() {
 
       {/* Grid */}
       <div className="grid grid-cols-1 gap-4">
-        {filtered.map((c, i) => {
-          const compFeatures = features[c.id];
+        {loading && <div className="py-12 text-center text-zinc-500">جاري التحميل...</div>}
+        {error && <div className="py-12 text-center text-red-400">{error}</div>}
+        {!loading && !error && filtered.map((c, i) => {
+          const compFeatures = c.features;
           if (!compFeatures) return null;
           
           return (
@@ -106,6 +191,9 @@ export default function CorporateTab() {
             </motion.div>
           );
         })}
+        {!loading && !error && filtered.length === 0 && (
+          <div className="py-12 text-center text-zinc-500">لا توجد شركات مطابقة للبحث</div>
+        )}
       </div>
     </motion.div>
   );
