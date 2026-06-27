@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/navigation";
 import {
   Users, MagnifyingGlass, Check, X, Warning, Shield,
   Clock, CheckCircle, Pencil, Trash, Crown, User,
   Buildings, Gavel, Robot, ArrowsDownUp, Plus, CaretDown,
-  SealCheck, LockSimple, DotsThree, Eye,
+  SealCheck, LockSimple, DotsThree, Eye, SpinnerGap, ShieldCheck
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -96,8 +97,21 @@ const PLAN_CFG: Record<Plan, { label: string; color: string }> = {
 
 // ─── User Row ─────────────────────────────────────────────────────────────────
 
-function UserRow({ user, isDark, card }: { user: PlatformUser; isDark: boolean; card: string }) {
+function UserRow({
+  user,
+  isDark,
+  card,
+  onUpdate,
+}: {
+  user: PlatformUser;
+  isDark: boolean;
+  card: string;
+  onUpdate: () => void;
+}) {
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+
   const uRole   = mapRole(user.user_type);
   const uStatus = mapStatus(user.subscription?.status, user.verified_at);
   const uPlan   = mapPlan(user.subscription?.tier);
@@ -105,6 +119,57 @@ function UserRow({ user, isDark, card }: { user: PlatformUser; isDark: boolean; 
   const status  = STATUS_CFG[uStatus];
   const plan    = PLAN_CFG[uPlan];
   const RoleIcon = role.icon;
+
+  const handleVerify = async () => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/v1/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verified: true }),
+      });
+      if (!res.ok) throw new Error("فشل التحقق من المستخدم");
+      onUpdate();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "حدث خطأ");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSuspend = async () => {
+    if (!confirm("هل أنت متأكد من تعليق/إيقاف هذا الحساب؟ سيتم إلغاء أي اشتراك نشط.")) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/v1/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "suspended" }),
+      });
+      if (!res.ok) throw new Error("فشل إيقاف المستخدم");
+      onUpdate();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "حدث خطأ");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("⚠️ تحذير: هل أنت متأكد من حذف هذا المستخدم نهائياً؟ لا يمكن التراجع عن هذا الإجراء.")) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/v1/admin/users/${user.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("فشل حذف المستخدم");
+      onUpdate();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "حدث خطأ");
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
@@ -118,7 +183,7 @@ function UserRow({ user, isDark, card }: { user: PlatformUser; isDark: boolean; 
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-0.5">
-          <p className={`text-[14px] font-bold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{user.display_name}</p>
+          <p className={`text-[14px] font-bold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{user.display_name || user.email}</p>
           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${status.bg} ${status.color}`}>
             {status.label}
           </span>
@@ -133,20 +198,29 @@ function UserRow({ user, isDark, card }: { user: PlatformUser; isDark: boolean; 
 
       {/* Actions */}
       <div className="flex items-center gap-2 flex-shrink-0">
-        {uStatus === "pending" && (
-          <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-[11px] font-bold border border-emerald-500/20 hover:bg-emerald-500/20">
-            <Check size={11} weight="bold" /> تحقق
-          </button>
-        )}
-        {uStatus === "active" && (
-          <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-500 text-[11px] font-bold border border-red-500/20 hover:bg-red-500/20">
-            <LockSimple size={11} /> إيقاف
-          </button>
-        )}
-        {uStatus === "suspended" && (
-          <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-[11px] font-bold border border-emerald-500/20 hover:bg-emerald-500/20">
-            <CheckCircle size={11} /> تفعيل
-          </button>
+        {actionLoading ? (
+          <SpinnerGap size={14} className="animate-spin text-zinc-400" />
+        ) : (
+          <>
+            {uStatus === "pending" && (
+              <button onClick={handleVerify}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-[11px] font-bold border border-emerald-500/20 hover:bg-emerald-500/20">
+                <Check size={11} weight="bold" /> تحقق
+              </button>
+            )}
+            {uStatus === "active" && (
+              <button onClick={handleSuspend}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-500 text-[11px] font-bold border border-red-500/20 hover:bg-red-500/20">
+                <LockSimple size={11} /> إيقاف
+              </button>
+            )}
+            {uStatus === "suspended" && (
+              <button onClick={handleVerify}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-[11px] font-bold border border-emerald-500/20 hover:bg-emerald-500/20">
+                <CheckCircle size={11} /> تفعيل
+              </button>
+            )}
+          </>
         )}
         <div className="relative">
           <button onClick={() => setMenuOpen(!menuOpen)}
@@ -158,14 +232,13 @@ function UserRow({ user, isDark, card }: { user: PlatformUser; isDark: boolean; 
               <motion.div initial={{ opacity: 0, scale: 0.95, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
                 className={`absolute left-0 top-9 z-10 min-w-[140px] rounded-xl border shadow-xl overflow-hidden ${isDark ? "bg-zinc-800 border-white/[0.08]" : "bg-white border-slate-200"}`}>
                 {[
-                  { label: "عرض الملف", icon: Eye },
-                  { label: "تعديل الخطة", icon: Crown },
-                  { label: "رسالة نظام", icon: Pencil },
-                  { label: "حذف المستخدم", icon: Trash, danger: true },
+                  { label: "عرض الملف", icon: Eye, onClick: () => router.push(`/dashboard/admin/users/${user.id}`) },
+                  { label: "تعديل الخطة", icon: Crown, onClick: () => router.push(`/dashboard/admin/users/${user.id}?tab=subscription`) },
+                  { label: "حذف المستخدم", icon: Trash, danger: true, onClick: handleDelete },
                 ].map(item => {
                   const Icon = item.icon;
                   return (
-                    <button key={item.label} onClick={() => setMenuOpen(false)}
+                    <button key={item.label} onClick={() => { setMenuOpen(false); item.onClick(); }}
                       className={`flex items-center gap-2 w-full px-3 py-2.5 text-[12px] font-semibold transition-colors ${
                         item.danger
                           ? "text-red-500 hover:bg-red-500/10"
@@ -372,12 +445,12 @@ export default function AdminUsersPage() {
           </div>
         )}
 
-        {/* User rows */}
         {!loading && !error && users.map((u, i) => (
           <motion.div key={u.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-            <UserRow user={u} isDark={isDark} card={card} />
+            <UserRow user={u} isDark={isDark} card={card} onUpdate={() => fetchUsers(1, false)} />
           </motion.div>
         ))}
+
 
         {/* Load more pagination */}
         {!loading && !error && hasMore && (

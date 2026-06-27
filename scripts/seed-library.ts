@@ -177,7 +177,7 @@ async function seedLaws(
   errors: string[]
 ): Promise<SeedStats[]> {
   const allStats: SeedStats[] = [];
-  const laws = (data.laws || []) as Record<string, unknown>[];
+  const laws = (data.laws || []) as any[];
 
   console.log(`\n🏛️  Seeding ${laws.length} laws...\n`);
 
@@ -207,7 +207,7 @@ async function seedLaws(
       status: (law.law_status || "active").substring(0, 30),
     });
 
-    const chapters = (law.chapters || []) as Record<string, unknown>[];
+    const chapters = (law.chapters || []) as any[];
     for (const ch of chapters) {
       const chapterId = crypto.randomUUID();
       chapterRows.push({
@@ -218,12 +218,12 @@ async function seedLaws(
         order_index: ch.number || 0,
       });
 
-      const articles = (ch.articles || []) as Record<string, unknown>[];
+      const articles = (ch.articles || []) as any[];
       for (const art of articles) {
         const artId = `${lawId}__art-${art.number || crypto.randomUUID().substring(0, 8)}`.substring(0, 150);
 
-        const regs = (art.regulations || []) as Record<string, unknown>[];
-        const amends = (art.amendments || []) as Record<string, unknown>[];
+        const regs = (art.regulations || []) as any[];
+        const amends = (art.amendments || []) as any[];
 
         articleRows.push({
           id: artId,
@@ -294,7 +294,7 @@ async function seedDecrees(
   errors: string[]
 ): Promise<SeedStats[]> {
   const allStats: SeedStats[] = [];
-  const decrees = (data.decrees || []) as Record<string, unknown>[];
+  const decrees = (data.decrees || []) as any[];
 
   console.log(`\n📋 Seeding ${decrees.length} decrees...\n`);
 
@@ -335,7 +335,8 @@ async function seedDecrees(
       official_url: dec.official_url || "",
     });
 
-    const arts = (dec.articles || []) as Record<string, unknown>[];
+    const arts = (dec.articles || []) as any[];
+
     for (const art of arts) {
       pageRows.push({
         id: crypto.randomUUID(),
@@ -372,9 +373,8 @@ async function seedPrecedents(
   errors: string[]
 ): Promise<SeedStats[]> {
   const allStats: SeedStats[] = [];
-
-  const collections = (data.collections || []) as Record<string, unknown>[];
-  const courtPrecs = (data.court_precedents || []) as Record<string, unknown>[];
+  const collections = (data.collections || []) as any[];
+  const courtPrecs = (data.court_precedents || []) as any[];
 
   console.log(`\n⚖️  Seeding ${collections.length} collections + ${courtPrecs.length} precedents...\n`);
 
@@ -416,7 +416,7 @@ async function seedPrecedents(
       progress: 100,
     });
 
-    const principles = (coll.principles || []) as Record<string, unknown>[];
+    const principles = (coll.principles || []) as any[];
     for (const pr of principles) {
       const prId = `${collId}__pr-${pr.number || crypto.randomUUID().substring(0, 8)}`.substring(0, 150);
 
@@ -437,7 +437,8 @@ async function seedPrecedents(
         order_index: pr.number || 0,
       });
 
-      const subs = (pr.sub_principles || []) as Record<string, unknown>[];
+      const subs = (pr.sub_principles || []) as any[];
+
       for (let si = 0; si < subs.length; si++) {
         paragraphRows.push({
           id: crypto.randomUUID(),
@@ -506,7 +507,7 @@ async function seedFeqh(
   errors: string[]
 ): Promise<SeedStats[]> {
   const allStats: SeedStats[] = [];
-  const books = (data.books || []) as Record<string, unknown>[];
+  const books = (data.books || []) as any[];
 
   console.log(`\n📖 Seeding ${books.length} feqh books...\n`);
 
@@ -532,7 +533,7 @@ async function seedFeqh(
       total_pages: book.total_pages || 0,
     });
 
-    const chapters = (book.chapters || []) as Record<string, unknown>[];
+    const chapters = (book.chapters || []) as any[];
     for (let ci = 0; ci < chapters.length; ci++) {
       const ch = chapters[ci];
       const chId = crypto.randomUUID();
@@ -546,7 +547,7 @@ async function seedFeqh(
       });
 
       // Direct pages under chapter
-      const directPages = (ch.pages || []) as Record<string, unknown>[];
+      const directPages = (ch.pages || []) as any[];
       if (directPages.length > 0) {
         const dummySecId = crypto.randomUUID();
         sectionRows.push({
@@ -573,7 +574,7 @@ async function seedFeqh(
       }
 
       // Sections under chapter
-      const sections = (ch.sections || []) as Record<string, unknown>[];
+      const sections = (ch.sections || []) as any[];
       for (let si = 0; si < sections.length; si++) {
         const sec = sections[si];
         const secId = crypto.randomUUID();
@@ -585,7 +586,7 @@ async function seedFeqh(
           order_index: si,
         });
 
-        const secPages = (sec.pages || []) as Record<string, unknown>[];
+        const secPages = (sec.pages || []) as any[];
         for (let pi = 0; pi < secPages.length; pi++) {
           const pg = secPages[pi];
           blockRows.push({

@@ -53,6 +53,7 @@ interface UserData {
   user_type: string;
   status: string;
   city: string;
+  verified_at: string | null;
   created_at: string;
   last_sign_in_at: string;
   subscription: Subscription | null;
@@ -69,14 +70,27 @@ const ROLE_MAP: Record<string,string> = {
 };
 
 const TIER_MAP: Record<string,string> = {
-  free:"مجاني", starter:"Starter", pro:"Pro", enterprise:"Enterprise",
+  free: "مجاني",
+  ai: "الذكية",
+  pro: "الاحترافية",
+  corp: "المؤسسية",
+  max: "الحد الأقصى",
 };
 
 const STATUS_MAP: Record<string,{label:string;cls:string}> = {
   active: { label:"نشط", cls:"bg-emerald-500/15 border border-emerald-500/30 text-emerald-400" },
   suspended: { label:"معلّق", cls:"bg-red-500/15 border border-red-500/30 text-red-400" },
+  pending: { label:"بانتظار التحقق", cls:"bg-amber-500/15 border border-amber-500/30 text-amber-400" },
+  trial: { label:"تجربة مجانية", cls:"bg-blue-500/15 border border-blue-500/30 text-blue-400" },
   inactive: { label:"غير نشط", cls:"bg-zinc-500/15 border border-zinc-500/30 text-zinc-400" },
 };
+
+function mapStatus(subStatus?: string, verifiedAt?: string | null): string {
+  if (subStatus === "suspended") return "suspended";
+  if (subStatus === "trialing" || subStatus === "trial") return "trial";
+  if (!verifiedAt) return "pending";
+  return "active";
+}
 
 type Tab = "activity"|"subscription"|"ai"|"tickets"|"security";
 
@@ -131,6 +145,101 @@ export default function UserProfilePage() {
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
 
+  /* ── Tab query param effect ────────────────────────────────────────────── */
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab") as Tab;
+      if (tabParam && ["activity", "subscription", "ai", "tickets", "security"].includes(tabParam)) {
+        setTab(tabParam);
+      }
+    }
+  }, []);
+
+  /* ── Status actions handlers ───────────────────────────────────────────── */
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const handleVerify = async () => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/v1/admin/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verified: true }),
+      });
+      if (!res.ok) throw new Error("فشل توثيق الحساب");
+      fetchUser();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "حدث خطأ");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSuspend = async () => {
+    if (!confirm("هل أنت متأكد من تعليق الحساب؟ سيتم إلغاء أي اشتراك نشط.")) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/v1/admin/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "suspended" }),
+      });
+      if (!res.ok) throw new Error("فشل تعليق الحساب");
+      fetchUser();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "حدث خطأ");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReactivate = async () => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/v1/admin/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verified: true }),
+      });
+      if (!res.ok) throw new Error("فشل تفعيل الحساب");
+      fetchUser();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "حدث خطأ");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  /* ── Create subscription handler ─────────────────────────────────────────── */
+  const handleCreateSubscription = async () => {
+    if (!selectedTier || !userId) return;
+    setPlanActionLoading(true);
+    setPlanActionMsg(null);
+    try {
+      const res = await fetch("/api/v1/admin/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: userId,
+          tier: selectedTier,
+          billing_cycle: "monthly",
+          period_months: 12
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "فشل إنشاء الاشتراك");
+      setPlanActionMsg({ type: "ok", text: json.message || "تم تعيين الاشتراك بنجاح" });
+      setChangingPlan(false);
+      setSelectedTier("");
+      fetchUser(); // refresh
+    } catch (err: unknown) {
+      setPlanActionMsg({ type: "err", text: err instanceof Error ? err.message : "حدث خطأ" });
+    } finally {
+      setPlanActionLoading(false);
+    }
+  };
+
   /* ── Change plan handler ───────────────────────────────────────────────── */
   const handleChangePlan = async () => {
     if (!userData?.subscription?.id || !selectedTier) return;
@@ -180,13 +289,13 @@ export default function UserProfilePage() {
       setCreditLoading(false);
     }
   };
-
   /* ── Derived values ────────────────────────────────────────────────────── */
   const U = userData;
   const activeSub = U?.subscription;
   const subHistory = U?.subscription_history ?? [];
   const creditTxns = U?.credit_transactions ?? [];
-  const statusInfo = U ? (STATUS_MAP[U.status] ?? STATUS_MAP.inactive) : STATUS_MAP.inactive;
+  const statusInfo = U ? (STATUS_MAP[mapStatus(activeSub?.status, U.verified_at)] ?? STATUS_MAP.inactive) : STATUS_MAP.inactive;
+
   const planLabel = activeSub?.subscription_plans?.name_ar
     ?? TIER_MAP[activeSub?.tier ?? ""] ?? activeSub?.tier ?? "مجاني";
 
@@ -283,9 +392,12 @@ export default function UserProfilePage() {
       if (mins < 60) return `منذ ${mins} دق`;
       const hours = Math.floor(mins / 60);
       if (hours < 24) return `منذ ${hours} ساعة`;
+
       const days = Math.floor(hours / 24);
       return `منذ ${days} يوم`;
-    } catch { return "—"; }
+    } catch {
+      return "—";
+    }
   };
 
   /* ── Build activity from credit transactions ───────────────────────────── */
@@ -342,22 +454,40 @@ export default function UserProfilePage() {
 
         {/* Actions */}
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={()=>setImpersonating(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-colors">
-            <SignIn size={13}/> تصفح كمستخدم
-          </button>
-          <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-colors">
-            <Crown size={13}/> ترقية الباقة
-          </button>
-          <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-colors">
-            <Envelope size={13}/> إرسال رسالة
-          </button>
-          <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors">
-            <Prohibit size={13}/> تعليق الحساب
-          </button>
+          {actionLoading ? (
+            <SpinnerGap size={14} className="animate-spin text-zinc-400" />
+          ) : (
+            <>
+              <button onClick={()=>setImpersonating(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-colors">
+                <SignIn size={13}/> تصفح كمستخدم
+              </button>
+              <button onClick={() => { setTab("subscription"); setChangingPlan(true); }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-colors">
+                <Crown size={13}/> ترقية الباقة
+              </button>
+              {mapStatus(activeSub?.status, U.verified_at) === "pending" && (
+                <button onClick={handleVerify}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">
+                  <ShieldCheck size={13}/> تحقق من الحساب
+                </button>
+              )}
+              {mapStatus(activeSub?.status, U.verified_at) === "active" && (
+                <button onClick={handleSuspend}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors">
+                  <Prohibit size={13}/> تعليق الحساب
+                </button>
+              )}
+              {mapStatus(activeSub?.status, U.verified_at) === "suspended" && (
+                <button onClick={handleReactivate}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">
+                  <CheckCircle size={13}/> تفعيل الحساب
+                </button>
+              )}
+            </>
+          )}
         </div>
       </motion.div>
-
       {/* KPI Strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
@@ -463,7 +593,7 @@ export default function UserProfilePage() {
                             isDark ? "bg-zinc-800 border-white/[0.06] text-zinc-200" : "bg-slate-50 border-slate-200 text-slate-700"
                           }`}>
                           <option value="">اختر الباقة</option>
-                          {["free","starter","pro","enterprise"].filter(t => t !== activeSub.tier).map(t => (
+                          {["free","ai","pro","corp","max"].filter(t => t !== activeSub.tier).map(t => (
                             <option key={t} value={t}>{TIER_MAP[t] ?? t}</option>
                           ))}
                         </select>
@@ -522,13 +652,47 @@ export default function UserProfilePage() {
                 </div>
               </>
             ) : (
-              <p className={`text-[12px] text-center py-6 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                لا يوجد اشتراك نشط
-              </p>
+              <div className="text-center py-6">
+                <p className={`text-[12px] mb-4 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                  لا يوجد اشتراك نشط لهذا الحساب.
+                </p>
+                {planActionMsg && (
+                  <div className={`mb-3 text-[11px] font-bold px-3 py-2 rounded-xl ${planActionMsg.type === "ok" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+                    {planActionMsg.text}
+                  </div>
+                )}
+                {!changingPlan ? (
+                  <button onClick={() => { setChangingPlan(true); setPlanActionMsg(null); }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
+                    <Plus size={13}/> تعيين باقة جديدة للمستخدم
+                  </button>
+                ) : (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="relative">
+                      <select value={selectedTier} onChange={e => setSelectedTier(e.target.value)}
+                        className={`appearance-none pl-7 pr-3 py-2 rounded-xl text-[11px] font-bold border transition-colors ${
+                          isDark ? "bg-zinc-800 border-white/[0.06] text-zinc-200" : "bg-slate-50 border-slate-200 text-slate-700"
+                        }`}>
+                        <option value="">اختر الباقة</option>
+                        {["free","ai","pro","corp","max"].map(t => (
+                          <option key={t} value={t}>{TIER_MAP[t] ?? t}</option>
+                        ))}
+                      </select>
+                      <CaretDown size={12} className={`absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none ${isDark ? "text-zinc-500" : "text-slate-400"}`} />
+                    </div>
+                    <button onClick={handleCreateSubscription} disabled={!selectedTier || planActionLoading}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-40">
+                      {planActionLoading ? <SpinnerGap size={13} className="animate-spin"/> : <CheckCircle size={13}/>} تأكيد
+                    </button>
+                    <button onClick={() => { setChangingPlan(false); setSelectedTier(""); setPlanActionMsg(null); }}
+                      className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-colors ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>
+                      إلغاء
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
-
-          {/* Payments / Subscription History */}
           <div className={`${card} p-5`}>
             <p className={`text-[13px] font-bold mb-3 ${isDark?"text-white":"text-slate-800"}`}>سجل الاشتراكات</p>
             {PAYMENTS.length === 0 ? (

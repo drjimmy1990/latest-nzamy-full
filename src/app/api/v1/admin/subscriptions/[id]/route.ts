@@ -91,11 +91,37 @@ export async function PATCH(
 
     if (body.tier) {
       updateData.tier = body.tier;
+      if (!body.plan_id) {
+        // Resolve plan_id if not provided
+        const { data: profile } = await adminClient
+          .from("profiles")
+          .select("user_type")
+          .eq("id", existing.user_id)
+          .single();
+        
+        if (profile) {
+          const audience = profile.user_type === "individual" ? "individual" : profile.user_type === "firm" ? "firm" : "lawyer";
+          const { data: plan } = await adminClient
+            .from("subscription_plans")
+            .select("id")
+            .eq("tier", body.tier)
+            .eq("audience", audience)
+            .limit(1)
+            .maybeSingle();
+          if (plan) {
+            updateData.plan_id = plan.id;
+          } else {
+            updateData.plan_id = `${audience}-${body.tier}`;
+          }
+        }
+      }
     }
 
     if (body.plan_id) {
       updateData.plan_id = body.plan_id;
     }
+
+
 
     if (body.auto_renew !== undefined) {
       updateData.auto_renew = body.auto_renew;

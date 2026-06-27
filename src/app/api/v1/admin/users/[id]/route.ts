@@ -161,7 +161,7 @@ export async function PATCH(
   }
 
   // ── Parse body ─────────────────────────────────────────────────────────────
-  let body: { status?: string; user_type?: string; metadata?: object };
+  let body: { status?: string; user_type?: string; metadata?: object; verified?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -185,6 +185,10 @@ export async function PATCH(
 
     if (body.metadata) {
       updateData.metadata = body.metadata;
+    }
+
+    if (body.verified !== undefined) {
+      updateData.verified_at = body.verified ? new Date().toISOString() : null;
     }
 
     // ── Update profile ─────────────────────────────────────────────────────
@@ -234,3 +238,67 @@ export async function PATCH(
     );
   }
 }
+
+/**
+ * DELETE /api/v1/admin/users/[id] — Delete user account
+ *
+ * Requires: authenticated admin user
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: userId } = await params;
+
+  // Auth check
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    return NextResponse.json(
+      { error: "غير مصرح — يرجى تسجيل الدخول" },
+      { status: 401 },
+    );
+  }
+
+  const { data: adminProfile } = await supabase
+    .from("profiles")
+    .select("user_type")
+    .eq("id", user.id)
+    .single();
+
+  if (!adminProfile || adminProfile.user_type !== "admin") {
+    return NextResponse.json(
+      { error: "غير مصرح — صلاحيات المسؤول مطلوبة" },
+      { status: 403 },
+    );
+  }
+
+  const adminClient = await createServiceClient();
+
+  try {
+    // Delete user from auth (cascades to profiles, subscriptions, lawyer_profiles etc.)
+    const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
+    if (deleteError) {
+      return NextResponse.json(
+        { error: deleteError.message },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "تم حذف المستخدم بنجاح",
+    });
+  } catch (err) {
+    console.error("[admin/users/[id]] DELETE error:", err);
+    return NextResponse.json(
+      { error: "حدث خطأ أثناء حذف المستخدم" },
+      { status: 500 },
+    );
+  }
+}
+

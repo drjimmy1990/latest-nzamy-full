@@ -1,69 +1,81 @@
 {
   "dry_run": false,
-  "started_at": "2026-06-27T01:40:34.144Z",
-  "finished_at": "2026-06-27T01:40:45.150Z",
-  "duration_ms": 11006,
+  "started_at": "2026-06-27T03:08:43.425Z",
+  "finished_at": "2026-06-27T03:12:24.466Z",
+  "duration_ms": 221041,
   "stats": [
     {
       "table": "laws",
-      "inserted": 0,
+      "inserted": 31,
       "skipped": 0,
-      "errors": 56
+      "errors": 0
     },
     {
-      "table": "law_chapters",
-      "inserted": 0,
+      "table": "chapters",
+      "inserted": 161,
       "skipped": 0,
-      "errors": 185
+      "errors": 0
     },
     {
-      "table": "law_articles",
-      "inserted": 0,
+      "table": "articles",
+      "inserted": 1692,
       "skipped": 0,
-      "errors": 1747
+      "errors": 0
     },
     {
-      "table": "law_regulations",
-      "inserted": 0,
+      "table": "article_amendments",
+      "inserted": 146,
       "skipped": 0,
-      "errors": 599
+      "errors": 0
     },
     {
-      "table": "law_amendments",
-      "inserted": 0,
+      "table": "decrees_circulars",
+      "inserted": 1196,
       "skipped": 0,
-      "errors": 146
+      "errors": 0
+    },
+    {
+      "table": "decree_pages",
+      "inserted": 7846,
+      "skipped": 0,
+      "errors": 0
+    },
+    {
+      "table": "judicial_collections",
+      "inserted": 1,
+      "skipped": 0,
+      "errors": 0
+    },
+    {
+      "table": "principles",
+      "inserted": 5,
+      "skipped": 0,
+      "errors": 0
+    },
+    {
+      "table": "feqh_books",
+      "inserted": 126,
+      "skipped": 0,
+      "errors": 0
+    },
+    {
+      "table": "feqh_chapters",
+      "inserted": 24547,
+      "skipped": 0,
+      "errors": 0
+    },
+    {
+      "table": "feqh_sections",
+      "inserted": 107543,
+      "skipped": 0,
+      "errors": 0
+    },
+    {
+      "table": "feqh_blocks",
+      "inserted": 973,
+      "skipped": 0,
+      "errors": 0
     }
   ],
-  "errors": [
-    "laws batch 0-56: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_chapters batch 0-100: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_chapters batch 100-185: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 0-100: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 100-200: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 200-300: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 300-400: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 400-500: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 500-600: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 600-700: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 700-800: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 800-900: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 900-1000: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 1000-1100: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 1100-1200: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 1200-1300: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 1300-1400: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 1400-1500: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 1500-1600: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 1600-1700: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_articles batch 1700-1747: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_regulations batch 0-100: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_regulations batch 100-200: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_regulations batch 200-300: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_regulations batch 300-400: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_regulations batch 400-500: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_regulations batch 500-599: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_amendments batch 0-100: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}",
-    "law_amendments batch 100-146: 406: {\"code\":\"PGRST106\",\"details\":null,\"hint\":\"Only the following schemas are exposed: public, graphql_public\",\"message\":\"Invalid schema: library\"}"
-  ]
+  "errors": []
 }

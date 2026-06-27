@@ -169,13 +169,13 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-
-  const { user_id, plan_id, tier, billing_cycle, period_months } = body;
+  const { user_id, tier, billing_cycle, period_months } = body;
+  let { plan_id } = body;
 
   // ── Validate required fields ───────────────────────────────────────────────
-  if (!user_id || !plan_id || !tier || !billing_cycle || !period_months) {
+  if (!user_id || !tier || !billing_cycle || !period_months) {
     return NextResponse.json(
-      { error: "جميع الحقول مطلوبة: user_id, plan_id, tier, billing_cycle, period_months" },
+      { error: "الحقول التالية مطلوبة: user_id, tier, billing_cycle, period_months" },
       { status: 400 },
     );
   }
@@ -189,6 +189,33 @@ export async function POST(request: NextRequest) {
   }
 
   const adminClient = await createServiceClient();
+
+  // Resolve plan_id if not provided
+  if (!plan_id) {
+    const { data: profile } = await adminClient
+      .from("profiles")
+      .select("user_type")
+      .eq("id", user_id)
+      .single();
+    
+    if (profile) {
+      const audience = profile.user_type === "individual" ? "individual" : profile.user_type === "firm" ? "firm" : "lawyer";
+      const { data: plan } = await adminClient
+        .from("subscription_plans")
+        .select("id")
+        .eq("tier", tier)
+        .eq("audience", audience)
+        .limit(1)
+        .maybeSingle();
+      if (plan) {
+        plan_id = plan.id;
+      } else {
+        plan_id = `${audience}-${tier}`;
+      }
+    } else {
+      plan_id = `lawyer-${tier}`;
+    }
+  }
 
   try {
     // ── Verify user exists ─────────────────────────────────────────────────
