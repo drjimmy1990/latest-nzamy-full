@@ -42,7 +42,17 @@ function formatRoles(roles?: readonly string[]): string {
 
 export function EntityRouteGuard({ scope, children }: EntityRouteGuardProps) {
   const pathname = usePathname() ?? "/";
+
+
   const user = useUser();
+
+  if (user.loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <div className="w-8 h-8 rounded-full border-2 border-zinc-700 border-t-white animate-spin" />
+      </div>
+    );
+  }
 
   if (user.userType === "admin") return <>{children}</>;
 

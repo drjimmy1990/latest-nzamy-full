@@ -496,6 +496,7 @@ export function logout(): void {
 export interface UseUserReturn extends UserSession {
   /** True if this demo account bypasses ALL beta gating (BETA_REVIEW_MODE + BETA_MONOPOLY_MODE) */
   isDemoBypass: boolean;
+  loading: boolean;
 }
 
 // ─── Map Supabase user → UserSession ─────────────────────────────────────────
@@ -595,7 +596,7 @@ export function useUser(): UseUserReturn {
 
   const isDemoBypass = _DEMO_BYPASS_KEYS.includes(demoKey);
 
-  return { ...session, isDemoBypass };
+  return { ...session, isDemoBypass, loading };
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────

@@ -20,7 +20,13 @@ export function UserTypeGuard({
     setMounted(true);
   }, []);
 
-  if (!mounted) return null; // Avoid hydration mismatch
+  if (!mounted || userSession.loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <div className="w-8 h-8 rounded-full border-2 border-zinc-700 border-t-white animate-spin" />
+      </div>
+    );
+  }
 
   // Admins can bypass type guards
   const isAllowed = allowedTypes.includes(userSession.userType) || userSession.userType === "admin";
