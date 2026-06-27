@@ -8,33 +8,28 @@
  * feqh) and inserts all data into Supabase in FK-safe order.
  *
  * Insertion order:
- *   1. laws          → law_chapters → law_articles → law_regulations → law_amendments
- *   2. decrees       → decree_articles
- *   3. precedent_collections → judicial_principles → principle_sub_items
- *      court_precedents
- *   4. feqh_books    → feqh_chapters → feqh_sections → feqh_pages
+ *   1. laws          → chapters → articles → article_amendments
+ *   2. decrees_circulars → decree_pages
+ *   3. judicial_collections → principles → principle_paragraphs
+ *   4. feqh_books    → feqh_chapters → feqh_sections → feqh_blocks
  *
  * Environment:
  *   NEXT_PUBLIC_SUPABASE_URL    — Supabase project URL
  *   SUPABASE_SERVICE_ROLE_KEY   — Service role key (bypasses RLS)
  *
  * Usage:
- *   npx ts-node scripts/seed-library.ts --dir ./output
- *   npx ts-node scripts/seed-library.ts --dir ./output --dry-run
- *   npx ts-node scripts/seed-library.ts --dir ./output --type laws
- *   npx ts-node scripts/seed-library.ts --dir ./output --type laws --clean
+ *   npx tsx scripts/seed-library.ts --dir ./output
+ *   npx tsx scripts/seed-library.ts --dir ./output --dry-run
  * ─────────────────────────────────────────────────────────────────────────
  */
 
 import * as fs from "fs";
 import * as path from "path";
+import * as crypto from "crypto";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types — Imported from parser output shapes
 // ══════════════════════════════════════════════════════════════════════════════
-
-// We use generic Record<string,unknown> for Supabase row payloads
-// to avoid coupling to specific parser interfaces at runtime.
 
 type ContentType = "laws" | "decrees" | "precedents" | "feqh";
 
@@ -58,16 +53,13 @@ interface SeedResult {
 // Supabase Client
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Dynamic import to avoid top-level import issues with ts-node
 let supabaseClient: ReturnType<typeof createSupabaseClient> | null = null;
 
 function createSupabaseClient(url: string, key: string) {
-  // Use REST API directly — works with any Node version, no dependency issues
   const headers = {
     apikey: key,
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
-    Prefer: "return=representation,resolution=merge-duplicates",
     "Content-Profile": "library",
     "Accept-Profile": "library",
   };
@@ -83,14 +75,16 @@ function createSupabaseClient(url: string, key: string) {
     ): Promise<{ data: Record<string, unknown>[] | null; error: string | null }> {
       if (rows.length === 0) return { data: [], error: null };
 
-      const prefer = options?.onConflict
-        ? `return=representation,resolution=merge-duplicates`
-        : `return=representation`;
+      const conflictTarget = options?.onConflict || (table === "laws" ? "slug" : "id");
+      const urlWithConflict = `${url}/rest/v1/${table}?on_conflict=${conflictTarget}`;
 
       try {
-        const resp = await fetch(`${url}/rest/v1/${table}`, {
+        const resp = await fetch(urlWithConflict, {
           method: "POST",
-          headers: { ...headers, Prefer: prefer },
+          headers: {
+            ...headers,
+            Prefer: "return=representation,resolution=merge-duplicates"
+          },
           body: JSON.stringify(rows),
         });
 
@@ -187,117 +181,102 @@ async function seedLaws(
 
   console.log(`\n🏛️  Seeding ${laws.length} laws...\n`);
 
-  // Table: laws
   const lawRows: Record<string, unknown>[] = [];
   const chapterRows: Record<string, unknown>[] = [];
   const articleRows: Record<string, unknown>[] = [];
-  const regulationRows: Record<string, unknown>[] = [];
   const amendmentRows: Record<string, unknown>[] = [];
 
   for (const law of laws) {
     const lawId = String(law.slug || law.id);
+    if (lawId.includes("EXTRACTION_REPORT")) continue;
 
     lawRows.push({
-      id: lawId,
-      slug: law.slug,
+      slug: lawId,
       title: law.title,
       title_en: law.title_en || "",
-      type: law.type || "نظام",
+      type: (law.type || "نظام").substring(0, 50),
+      description: law.description || law.title || "",
       section_code: law.section_code || "",
       section_name: law.section_name || "",
       issuing_body: law.issuing_body || "",
-      issuance_decree: law.issuance_decree || "",
-      issuance_date: law.issuance_date || "",
+      issuing_instrument: law.issuance_decree || "",
+      issue_date_hijri: law.issuance_date || "",
       total_articles: law.total_articles || 0,
-      has_executive_reg: law.has_executive_reg || false,
-      regulation_decree: law.regulation_decree || "",
       preamble: law.preamble || "",
-      regulation_preamble: law.regulation_preamble || "",
-      law_status: law.law_status || "active",
-      source: law.source || "",
-      boe_url: law.boe_url || "",
-      variant: law.variant || "boe",
-      metadata: law.metadata || {},
+      has_merged_regulation: law.has_executive_reg || false,
+      status: (law.law_status || "active").substring(0, 30),
     });
 
     const chapters = (law.chapters || []) as Record<string, unknown>[];
     for (const ch of chapters) {
-      const chapterId = `${lawId}__ch-${ch.number || 0}`;
+      const chapterId = crypto.randomUUID();
       chapterRows.push({
         id: chapterId,
-        law_id: lawId,
+        law_slug: lawId.substring(0, 200),
         number: ch.number || 0,
         title: ch.title || "",
+        order_index: ch.number || 0,
       });
 
       const articles = (ch.articles || []) as Record<string, unknown>[];
       for (const art of articles) {
-        const artId = `${lawId}__art-${art.number || 0}`;
+        const artId = `${lawId}__art-${art.number || crypto.randomUUID().substring(0, 8)}`.substring(0, 150);
+
+        const regs = (art.regulations || []) as Record<string, unknown>[];
+        const amends = (art.amendments || []) as Record<string, unknown>[];
 
         articleRows.push({
           id: artId,
-          law_id: lawId,
+          law_slug: lawId.substring(0, 200),
           chapter_id: chapterId,
-          article_number: String(art.number || "0"),
-          article_number_text: art.number_text || "",
+          number: String(art.number || "0").substring(0, 20),
+          number_text: (art.number_text || "").substring(0, 50),
           title: art.title || "",
+          status: (art.status || "active").substring(0, 30),
           text: art.text || "",
-          status: art.status || "active",
-          chapter_title: art.chapter_title || ch.title || "",
           free: art.free !== false,
-          metadata: {},
+          executive_reg_text: regs.map(r => r.text || "").join("\n\n") || null,
+          executive_reg_ref: regs.map(r => r.ref || "").join(", ") || null,
+          instrument: regs[0]?.instrument || null,
+          order_index: parseInt(art.number) || 0,
         });
 
-        // Regulations
-        const regs = (art.regulations || []) as Record<string, unknown>[];
-        for (let ri = 0; ri < regs.length; ri++) {
-          regulationRows.push({
-            id: `${artId}__reg-${ri}`,
-            article_id: artId,
-            instrument: regs[ri].instrument || "لائحة تنفيذية",
-            reference: regs[ri].ref || "",
-            text: regs[ri].text || "",
-          });
-        }
-
-        // Amendments
-        const amends = (art.amendments || []) as Record<string, unknown>[];
         for (let ai = 0; ai < amends.length; ai++) {
           amendmentRows.push({
-            id: `${artId}__amd-${ai}`,
+            id: crypto.randomUUID(),
             article_id: artId,
-            date: amends[ai].date || "",
-            decree: amends[ai].decree || "",
+            date: (amends[ai].date || "").substring(0, 30),
+            source: amends[ai].decree || "",
+            type: (amends[ai].type || "تعديل").substring(0, 50),
             summary: amends[ai].summary || "",
-            original_text: amends[ai].original_text || null,
+            full_text: amends[ai].original_text || null,
           });
         }
       }
     }
   }
 
-  // Insert in FK order
+  // Deduplicate arrays in memory to prevent ON CONFLICT DO UPDATE commands from trying to affect the same row twice in the same batch
+  const uniqueLawRows = Array.from(new Map(lawRows.map(r => [r.slug, r])).values());
+  const uniqueChapterRows = Array.from(new Map(chapterRows.map(r => [r.id, r])).values());
+  const uniqueArticleRows = Array.from(new Map(articleRows.map(r => [r.id, r])).values());
+  const uniqueAmendmentRows = Array.from(new Map(amendmentRows.map(r => [r.id, r])).values());
+
   const lawStats: SeedStats = { table: "laws", inserted: 0, skipped: 0, errors: 0 };
-  await batchUpsert(client, "laws", lawRows, dryRun, lawStats, errors);
+  await batchUpsert(client, "laws", uniqueLawRows, dryRun, lawStats, errors);
   allStats.push(lawStats);
 
-  const chStats: SeedStats = { table: "law_chapters", inserted: 0, skipped: 0, errors: 0 };
-  await batchUpsert(client, "law_chapters", chapterRows, dryRun, chStats, errors);
+  const chStats: SeedStats = { table: "chapters", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "chapters", uniqueChapterRows, dryRun, chStats, errors);
   allStats.push(chStats);
 
-  const artStats: SeedStats = { table: "law_articles", inserted: 0, skipped: 0, errors: 0 };
-  await batchUpsert(client, "law_articles", articleRows, dryRun, artStats, errors);
+  const artStats: SeedStats = { table: "articles", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "articles", uniqueArticleRows, dryRun, artStats, errors);
   allStats.push(artStats);
 
-  if (regulationRows.length > 0) {
-    const regStats: SeedStats = { table: "law_regulations", inserted: 0, skipped: 0, errors: 0 };
-    await batchUpsert(client, "law_regulations", regulationRows, dryRun, regStats, errors);
-    allStats.push(regStats);
-  }
-
-  if (amendmentRows.length > 0) {
-    const amdStats: SeedStats = { table: "law_amendments", inserted: 0, skipped: 0, errors: 0 };
-    await batchUpsert(client, "law_amendments", amendmentRows, dryRun, amdStats, errors);
+  if (uniqueAmendmentRows.length > 0) {
+    const amdStats: SeedStats = { table: "article_amendments", inserted: 0, skipped: 0, errors: 0 };
+    await batchUpsert(client, "article_amendments", uniqueAmendmentRows, dryRun, amdStats, errors);
     allStats.push(amdStats);
   }
 
@@ -306,7 +285,7 @@ async function seedLaws(
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Seed: DECREES
-// ══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
 
 async function seedDecrees(
   client: NonNullable<typeof supabaseClient>,
@@ -320,46 +299,64 @@ async function seedDecrees(
   console.log(`\n📋 Seeding ${decrees.length} decrees...\n`);
 
   const decreeRows: Record<string, unknown>[] = [];
-  const articleRows: Record<string, unknown>[] = [];
+  const pageRows: Record<string, unknown>[] = [];
+
+  const uuidMap = new Map<string, string>();
+  const getUuid = (id: string): string => {
+    if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
+      return id.toLowerCase();
+    }
+    if (uuidMap.has(id)) {
+      return uuidMap.get(id)!;
+    }
+    const newUuid = crypto.randomUUID();
+    uuidMap.set(id, newUuid);
+    return newUuid;
+  };
 
   for (const dec of decrees) {
-    const decId = String(dec.id || dec.slug);
+    const rawId = String(dec.id || dec.slug);
+    if (rawId.includes("EXTRACTION_REPORT")) continue;
+
+    const decId = getUuid(rawId);
 
     decreeRows.push({
       id: decId,
-      slug: dec.slug || decId,
       title: dec.title || "",
-      type: dec.type || "cabinet",
+      type: (dec.type || "cabinet").substring(0, 30),
       issuer: dec.issuer || "",
       ref: dec.ref || "",
       date: dec.date || "",
       summary: dec.summary || "",
       summary_brief: dec.summary_brief || "",
+      category: (dec.cat || "").substring(0, 100),
       preamble: dec.preamble || "",
-      cat: dec.cat || "",
       hashtags: dec.hashtags || [],
       official_url: dec.official_url || "",
-      metadata: dec.metadata || {},
     });
 
     const arts = (dec.articles || []) as Record<string, unknown>[];
     for (const art of arts) {
-      articleRows.push({
-        id: `${decId}__art-${art.number || articleRows.length}`,
+      pageRows.push({
+        id: crypto.randomUUID(),
         decree_id: decId,
-        number: art.number || 0,
-        text: art.text || "",
+        page_number: art.number || 0,
+        content: art.text || "",
       });
     }
   }
 
-  const decStats: SeedStats = { table: "decrees", inserted: 0, skipped: 0, errors: 0 };
-  await batchUpsert(client, "decrees", decreeRows, dryRun, decStats, errors);
+  // Deduplicate
+  const uniqueDecreeRows = Array.from(new Map(decreeRows.map(r => [r.id, r])).values());
+  const uniquePageRows = Array.from(new Map(pageRows.map(r => [r.id, r])).values());
+
+  const decStats: SeedStats = { table: "decrees_circulars", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "decrees_circulars", uniqueDecreeRows, dryRun, decStats, errors);
   allStats.push(decStats);
 
-  const artStats: SeedStats = { table: "decree_articles", inserted: 0, skipped: 0, errors: 0 };
-  await batchUpsert(client, "decree_articles", articleRows, dryRun, artStats, errors);
-  allStats.push(artStats);
+  const pageStats: SeedStats = { table: "decree_pages", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "decree_pages", uniquePageRows, dryRun, pageStats, errors);
+  allStats.push(pageStats);
 
   return allStats;
 }
@@ -381,107 +378,118 @@ async function seedPrecedents(
 
   console.log(`\n⚖️  Seeding ${collections.length} collections + ${courtPrecs.length} precedents...\n`);
 
-  // ── Principle Collections ────────────────────────────────────────────
   const collRows: Record<string, unknown>[] = [];
   const principleRows: Record<string, unknown>[] = [];
-  const subRows: Record<string, unknown>[] = [];
+  const paragraphRows: Record<string, unknown>[] = [];
+
+  // Default collection for isolated court precedents
+  if (courtPrecs.length > 0) {
+    collRows.push({
+      id: "court-precedents-collection",
+      title: "السوابق والأحكام القضائية",
+      court: "المحكمة التجارية",
+      year_hijri: null,
+      part: 1,
+      source_id: "moj",
+      track: "commercial",
+      description: "مجموعة الأحكام والسوابق التجارية",
+      ruling_count: courtPrecs.length,
+      free: true,
+      progress: 100,
+    });
+  }
 
   for (const coll of collections) {
-    const collId = String(coll.id || coll.slug);
+    const collId = String(coll.id || coll.slug).substring(0, 100);
 
     collRows.push({
       id: collId,
-      slug: coll.slug || collId,
       title: coll.title || "",
       court: coll.court || "",
-      court_type: coll.court_type || "ordinary",
-      year_hijri: coll.year_hijri || 0,
+      year_hijri: coll.year_hijri || null,
       part: coll.part || 1,
       source_id: coll.source_id || "",
-      total_principles: coll.total_principles || 0,
-      metadata: coll.metadata || {},
+      track: (coll.track || "").substring(0, 50),
+      description: coll.description || "",
+      ruling_count: coll.total_principles || 0,
+      free: coll.free !== false,
+      progress: 100,
     });
 
     const principles = (coll.principles || []) as Record<string, unknown>[];
     for (const pr of principles) {
-      const prId = `${collId}__pr-${pr.number || principleRows.length}`;
+      const prId = `${collId}__pr-${pr.number || crypto.randomUUID().substring(0, 8)}`.substring(0, 150);
 
       principleRows.push({
         id: prId,
         collection_id: collId,
-        number: pr.number || 0,
+        principle_number: String(pr.number || "").substring(0, 50),
         issuing_body: pr.issuing_body || "",
-        issuing_body_abbr: pr.issuing_body_abbr || "",
         session_date: pr.session_date || "",
-        case_number: pr.case_number || "",
         decision_number: pr.decision_number || "",
-        source_type: pr.source_type || "",
         reference: pr.reference || "",
         text: pr.text || "",
-        classification_keywords: pr.classification_keywords || [],
-        details: pr.details || {},
-        free: pr.free !== false,
+        ruling_basis: "",
+        facts: pr.details?.facts || "",
+        reasons: pr.details?.reasons || "",
+        ruling: pr.details?.ruling || "",
+        year_hijri: pr.year_hijri || null,
+        order_index: pr.number || 0,
       });
 
       const subs = (pr.sub_principles || []) as Record<string, unknown>[];
       for (let si = 0; si < subs.length; si++) {
-        subRows.push({
-          id: `${prId}__sub-${si}`,
+        paragraphRows.push({
+          id: crypto.randomUUID(),
           principle_id: prId,
           letter: subs[si].letter || "",
-          keywords: subs[si].keywords || [],
           text: subs[si].text || "",
+          keywords: subs[si].keywords || [],
+          order_index: si,
         });
       }
     }
   }
 
-  // Insert in FK order
-  const collStats: SeedStats = { table: "precedent_collections", inserted: 0, skipped: 0, errors: 0 };
-  await batchUpsert(client, "precedent_collections", collRows, dryRun, collStats, errors);
-  allStats.push(collStats);
+  for (let pi = 0; pi < courtPrecs.length; pi++) {
+    const prec = courtPrecs[pi];
+    const precId = String(prec.slug || prec.id).substring(0, 150);
 
-  const prStats: SeedStats = { table: "judicial_principles", inserted: 0, skipped: 0, errors: 0 };
-  await batchUpsert(client, "judicial_principles", principleRows, dryRun, prStats, errors);
-  allStats.push(prStats);
-
-  if (subRows.length > 0) {
-    const subStats: SeedStats = { table: "principle_sub_items", inserted: 0, skipped: 0, errors: 0 };
-    await batchUpsert(client, "principle_sub_items", subRows, dryRun, subStats, errors);
-    allStats.push(subStats);
-  }
-
-  // ── Court Precedents ─────────────────────────────────────────────────
-  const precRows: Record<string, unknown>[] = [];
-  for (const prec of courtPrecs) {
-    precRows.push({
-      id: String(prec.id || prec.slug),
-      slug: prec.slug || prec.id || "",
-      title: prec.title || "",
-      court: prec.court || "",
-      court_type: prec.court_type || "ordinary",
-      ruling_number: prec.ruling_number || "",
-      case_number: prec.case_number || "",
-      year: prec.year || "",
-      date: prec.date || "",
-      subject: prec.subject || "",
-      cat: prec.cat || "",
-      summary: prec.summary || "",
-      summary_brief: prec.summary_brief || "",
+    principleRows.push({
+      id: precId,
+      collection_id: "court-precedents-collection",
+      principle_number: String(prec.ruling_number || "").substring(0, 50),
+      issuing_body: prec.court_type || "",
+      session_date: prec.date || "",
+      decision_number: prec.case_number || "",
+      reference: prec.subject || "",
+      text: prec.summary || prec.preamble || "",
+      ruling_basis: prec.summary_brief || "",
       facts: prec.facts || "",
       reasons: prec.reasons || "",
       ruling: prec.ruling || "",
-      preamble: prec.preamble || "",
-      hashtags: prec.hashtags || [],
-      is_redacted: prec.is_redacted || false,
-      metadata: prec.metadata || {},
+      year_hijri: parseInt(String(prec.year)) || null,
+      order_index: pi,
     });
   }
 
-  if (precRows.length > 0) {
-    const precStats: SeedStats = { table: "court_precedents", inserted: 0, skipped: 0, errors: 0 };
-    await batchUpsert(client, "court_precedents", precRows, dryRun, precStats, errors);
-    allStats.push(precStats);
+  // Deduplicate
+  const uniqueCollRows = Array.from(new Map(collRows.map(r => [r.id, r])).values());
+  const uniquePrincipleRows = Array.from(new Map(principleRows.map(r => [r.id, r])).values());
+  const uniqueParagraphRows = Array.from(new Map(paragraphRows.map(r => [r.id, r])).values());
+
+  const collStats: SeedStats = { table: "judicial_collections", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "judicial_collections", uniqueCollRows, dryRun, collStats, errors);
+  allStats.push(collStats);
+
+  const prStats: SeedStats = { table: "principles", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "principles", uniquePrincipleRows, dryRun, prStats, errors);
+  allStats.push(prStats);
+
+  if (uniqueParagraphRows.length > 0) {
+    const paraStats: SeedStats = { table: "principle_paragraphs", inserted: 0, skipped: 0, errors: 0 };
+    await batchUpsert(client, "principle_paragraphs", uniqueParagraphRows, dryRun, paraStats, errors);
+    allStats.push(paraStats);
   }
 
   return allStats;
@@ -505,106 +513,122 @@ async function seedFeqh(
   const bookRows: Record<string, unknown>[] = [];
   const chapterRows: Record<string, unknown>[] = [];
   const sectionRows: Record<string, unknown>[] = [];
-  const pageRows: Record<string, unknown>[] = [];
+  const blockRows: Record<string, unknown>[] = [];
 
   for (const book of books) {
-    const bookId = String(book.id || book.slug);
+    const bookId = String(book.id || book.slug).substring(0, 100);
+    if (bookId.includes("EXTRACTION_REPORT")) continue;
 
     bookRows.push({
       id: bookId,
-      slug: book.slug || bookId,
       title: book.title || "",
       author: book.author || "",
-      source: book.source || "المكتبة الشاملة",
       school: book.school || "",
-      type: book.type || "sharia",
-      category: book.category || "",
+      type: (book.type || "sharia").substring(0, 30),
+      category: (book.category || "").substring(0, 100),
+      description: book.description || "",
       investigator: book.investigator || "",
-      publisher: book.publisher || "",
       total_volumes: book.total_volumes || 1,
       total_pages: book.total_pages || 0,
-      total_chapters: book.total_chapters || 0,
-      toc: book.toc || [],
-      metadata: book.metadata || {},
     });
 
     const chapters = (book.chapters || []) as Record<string, unknown>[];
     for (let ci = 0; ci < chapters.length; ci++) {
       const ch = chapters[ci];
-      const chId = `${bookId}__ch-${ci}`;
+      const chId = crypto.randomUUID();
 
       chapterRows.push({
         id: chId,
         book_id: bookId,
-        number: ci + 1,
         title: ch.title || "",
+        volume_number: ch.pages?.[0]?.volume || ch.sections?.[0]?.pages?.[0]?.volume || 1,
+        order_index: ci,
       });
 
       // Direct pages under chapter
       const directPages = (ch.pages || []) as Record<string, unknown>[];
-      for (const pg of directPages) {
-        pageRows.push({
-          id: `${bookId}__p-${pg.page_number || pageRows.length}`,
-          book_id: bookId,
+      if (directPages.length > 0) {
+        const dummySecId = crypto.randomUUID();
+        sectionRows.push({
+          id: dummySecId,
           chapter_id: chId,
-          section_id: null,
-          page_number: pg.page_number || 0,
-          volume: pg.volume || 1,
-          text: pg.text || "",
-          verses: pg.verses || [],
+          title: "عام",
+          order_index: 999,
         });
+
+        for (let pi = 0; pi < directPages.length; pi++) {
+          const pg = directPages[pi];
+          blockRows.push({
+            id: `${bookId}__block-${crypto.randomUUID().substring(0, 8)}`.substring(0, 150),
+            section_id: dummySecId,
+            topic: ch.title || "",
+            volume_number: pg.volume || 1,
+            page_number: pg.page_number || 0,
+            matn: pg.text || "",
+            sharh: null,
+            hashiyah: {},
+            order_index: pi,
+          });
+        }
       }
 
       // Sections under chapter
       const sections = (ch.sections || []) as Record<string, unknown>[];
       for (let si = 0; si < sections.length; si++) {
         const sec = sections[si];
-        const secId = `${chId}__sec-${si}`;
+        const secId = crypto.randomUUID();
 
         sectionRows.push({
           id: secId,
           chapter_id: chId,
-          book_id: bookId,
-          number: si + 1,
           title: sec.title || "",
-          level: sec.level || "bab",
+          order_index: si,
         });
 
         const secPages = (sec.pages || []) as Record<string, unknown>[];
-        for (const pg of secPages) {
-          pageRows.push({
-            id: `${bookId}__p-${pg.page_number || pageRows.length}`,
-            book_id: bookId,
-            chapter_id: chId,
+        for (let pi = 0; pi < secPages.length; pi++) {
+          const pg = secPages[pi];
+          blockRows.push({
+            id: `${bookId}__block-${crypto.randomUUID().substring(0, 8)}`.substring(0, 150),
             section_id: secId,
+            topic: sec.title || "",
+            volume_number: pg.volume || 1,
             page_number: pg.page_number || 0,
-            volume: pg.volume || 1,
-            text: pg.text || "",
-            verses: pg.verses || [],
+            matn: pg.text || "",
+            sharh: null,
+            hashiyah: {},
+            order_index: pi,
           });
         }
       }
     }
   }
 
-  // Insert in FK order
+  // Deduplicate
+  const uniqueBookRows = Array.from(new Map(bookRows.map(r => [r.id, r])).values());
+  const uniqueChapterRows = Array.from(new Map(chapterRows.map(r => [r.id, r])).values());
+  const uniqueSectionRows = Array.from(new Map(sectionRows.map(r => [r.id, r])).values());
+  const uniqueBlockRows = Array.from(new Map(blockRows.map(r => [r.id, r])).values());
+
   const bookStats: SeedStats = { table: "feqh_books", inserted: 0, skipped: 0, errors: 0 };
-  await batchUpsert(client, "feqh_books", bookRows, dryRun, bookStats, errors);
+  await batchUpsert(client, "feqh_books", uniqueBookRows, dryRun, bookStats, errors);
   allStats.push(bookStats);
 
   const chStats: SeedStats = { table: "feqh_chapters", inserted: 0, skipped: 0, errors: 0 };
-  await batchUpsert(client, "feqh_chapters", chapterRows, dryRun, chStats, errors);
+  await batchUpsert(client, "feqh_chapters", uniqueChapterRows, dryRun, chStats, errors);
   allStats.push(chStats);
 
-  if (sectionRows.length > 0) {
+  if (uniqueSectionRows.length > 0) {
     const secStats: SeedStats = { table: "feqh_sections", inserted: 0, skipped: 0, errors: 0 };
-    await batchUpsert(client, "feqh_sections", sectionRows, dryRun, secStats, errors);
+    await batchUpsert(client, "feqh_sections", uniqueSectionRows, dryRun, secStats, errors);
     allStats.push(secStats);
   }
 
-  const pgStats: SeedStats = { table: "feqh_pages", inserted: 0, skipped: 0, errors: 0 };
-  await batchUpsert(client, "feqh_pages", pageRows, dryRun, pgStats, errors);
-  allStats.push(pgStats);
+  if (uniqueBlockRows.length > 0) {
+    const blockStats: SeedStats = { table: "feqh_blocks", inserted: 0, skipped: 0, errors: 0 };
+    await batchUpsert(client, "feqh_blocks", uniqueBlockRows, dryRun, blockStats, errors);
+    allStats.push(blockStats);
+  }
 
   return allStats;
 }
@@ -623,7 +647,6 @@ export async function seedLibrary(options: {
   const allStats: SeedStats[] = [];
   const errors: string[] = [];
 
-  // ── Validate environment ──────────────────────────────────────────────
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -649,7 +672,6 @@ export async function seedLibrary(options: {
   console.log(`  Types:  ${targetTypes.join(", ")}`);
   console.log(`  Clean:  ${options.clean ? "yes (delete before insert)" : "no"}\n`);
 
-  // ── Process each content type ─────────────────────────────────────────
   const fileMap: Record<ContentType, string> = {
     laws: "laws.json",
     decrees: "decrees.json",
@@ -691,7 +713,6 @@ export async function seedLibrary(options: {
     allStats.push(...stats);
   }
 
-  // ── Summary ───────────────────────────────────────────────────────────
   const finishedAt = new Date();
   const durationMs = finishedAt.getTime() - startedAt.getTime();
 
@@ -737,12 +758,7 @@ export async function seedLibrary(options: {
   };
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// CLI entry point
-// ══════════════════════════════════════════════════════════════════════════════
-
 if (require.main === module) {
-  // Load .env.local
   const envPath = path.resolve(__dirname, "..", ".env.local");
   if (fs.existsSync(envPath)) {
     const envContent = fs.readFileSync(envPath, "utf-8");
@@ -770,7 +786,6 @@ if (require.main === module) {
 
   seedLibrary({ dir: path.resolve(dir), dryRun, types, clean })
     .then((result) => {
-      // Write result log
       const logDir = path.resolve(dir);
       fs.mkdirSync(logDir, { recursive: true });
       const logFile = path.join(logDir, "seed-result.json");
