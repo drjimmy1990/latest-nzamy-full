@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const validTiers = ["free", "ai", "pro", "corp", "max"];
+  const validTiers = ["free", "shield", "ai", "pro", "corp", "max", "enterprise"];
   if (!validTiers.includes(tier)) {
     return NextResponse.json(
       { error: `الباقة غير صالحة. القيم المسموحة: ${validTiers.join(", ")}` },
