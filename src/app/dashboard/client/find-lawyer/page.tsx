@@ -347,7 +347,9 @@ export default function FindLawyerPage() {
 
   const handleBook = useCallback(async (lawyer: Lawyer) => {
     // Payment gate: block booking while the admin gateway is disabled.
-    if (payments.disabled) {
+    // Ignore the default-disabled state while the status is still loading so
+    // live gateways don't flash the "unavailable" notice on first click.
+    if (!payments.loading && payments.disabled) {
       setPaymentsNotice(true);
       return;
     }
@@ -389,7 +391,7 @@ export default function FindLawyerPage() {
       auditEvent: 'find_lawyer_consultation_requested',
     });
     setBookingNotice({ id: request.id, lawyer: lawyer.name });
-  }, [user.businessRole, user.name, user.tier, user.userType, payments.disabled]);
+  }, [user.businessRole, user.name, user.tier, user.userType, payments.disabled, payments.loading]);
 
   return (
     <div className="min-h-[100dvh] bg-[#f9fafb]" dir="rtl">

@@ -58,7 +58,15 @@ export default function CasesPage() {
   const onKanbanDrop = useCallback((col: KanbanCol) => {
     if (!dragId.current) return;
     const caseId = dragId.current;
-    setCases(prev => prev.map(c => c.id === caseId ? { ...c, kanbanCol: col } : c));
+    // Capture the original column BEFORE the optimistic update so the .catch()
+    // revert restores the real prior value. Reading c.kanbanCol inside .catch()
+    // would already return the new column (a no-op revert).
+    let originalCol: KanbanCol = col;
+    setCases(prev => {
+      const found = prev.find(c => c.id === caseId);
+      if (found) originalCol = found.kanbanCol;
+      return prev.map(c => c.id === caseId ? { ...c, kanbanCol: col } : c);
+    });
     dragId.current = null;
     setDragOverCol(null);
     // Persist the status change to the backend (optimistic; the list re-syncs
@@ -71,8 +79,8 @@ export default function CasesPage() {
       closed: "completed",
     };
     updateWorkflowRequestById(caseId, { status: statusForCol[col] }).catch(() => {
-      // Revert the column on failure.
-      setCases(prev => prev.map(c => (c.id === caseId ? { ...c, kanbanCol: c.kanbanCol } : c)));
+      // Revert to the column captured before the optimistic update.
+      setCases(prev => prev.map(c => (c.id === caseId ? { ...c, kanbanCol: originalCol } : c)));
     });
   }, []);
 

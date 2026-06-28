@@ -117,7 +117,7 @@ export default function NewConsultationPage() {
   const consultationIncluded = path === "lawyer" && consultationsUsed < consultationLimit;
   // Payment gate: when the admin has disabled the gateway, block paid submissions.
   const needsPayment = !consultationIncluded && total > 0;
-  const paymentsBlocked = payments.disabled && needsPayment;
+  const paymentsBlocked = !payments.loading && payments.disabled && needsPayment;
 
   const confirmConsultation = async () => {
     if (!path) return;

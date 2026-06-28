@@ -198,11 +198,11 @@ export default function LawyerTasksPage() {
   const onDelete  = useCallback((id: string) => setTasks(prev => prev.filter(t => t.id !== id)), []);
   const onArchive = useCallback((id: string) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: "archived" } : t));
-    updateLawyerTaskStatus(id, "archived").catch(() => {});
+    updateLawyerTaskStatus(id, "archived").catch((e) => console.error("[tasks] archive failed:", e));
   }, []);
   const onRestore = useCallback((id: string) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: "todo" } : t));
-    updateLawyerTaskStatus(id, "todo").catch(() => {});
+    updateLawyerTaskStatus(id, "todo").catch((e) => console.error("[tasks] restore failed:", e));
   }, []);
   const onStatusChange = useCallback((id: string, s: TaskStatus) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: s } : t));

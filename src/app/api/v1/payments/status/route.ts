@@ -13,13 +13,15 @@ import { getPaymentGatewayStatus } from "@/lib/access-control";
 export async function GET() {
   try {
     const state = await getPaymentGatewayStatus();
-    return NextResponse.json(state);
+    return NextResponse.json(state, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (err) {
     console.error("[payments/status] error:", err);
     // Fail closed: treat as disabled on error so we never silently allow a stub.
     return NextResponse.json(
       { status: "disabled", provider: null, disabled: true },
-      { status: 200 },
+      { status: 200, headers: { "Cache-Control": "no-store" } },
     );
   }
 }

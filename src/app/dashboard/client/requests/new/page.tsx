@@ -67,7 +67,7 @@ export default function NewRequestWizard() {
   const walletUsed = quote.walletUsed;
   const finalTotal = quote.finalTotal;
   // Payment gate: block paid submissions while the admin gateway is disabled.
-  const paymentsBlocked = payments.disabled && finalTotal > 0;
+  const paymentsBlocked = !payments.loading && payments.disabled && finalTotal > 0;
 
   const handleNext = () => {
     if (currentStep < STEPS.length - 1) setCurrentStep(c => c + 1);
