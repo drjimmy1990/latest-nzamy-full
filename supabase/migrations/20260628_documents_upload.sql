@@ -20,29 +20,33 @@ on conflict (id) do nothing;
 -- and safe for other buckets: RLS only takes effect when policies exist, and every
 -- policy below is scoped to `bucket_id = 'documents'`, so objects in any other
 -- bucket remain unaffected (no policy = no access, the existing default).
-alter table storage.objects enable row level security;
-
--- RLS on storage.objects: a user can CRUD only objects under their own folder
--- (documents/<user_id>/...). Server-side service client bypasses RLS for admin.
-drop policy if exists "documents select own" on storage.objects;
-create policy "documents select own"
-  on storage.objects for select
-  using (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
-
-drop policy if exists "documents insert own" on storage.objects;
-create policy "documents insert own"
-  on storage.objects for insert
-  with check (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
-
-drop policy if exists "documents update own" on storage.objects;
-create policy "documents update own"
-  on storage.objects for update
-  using (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1])
-  with check (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
-
-drop policy if exists "documents delete own" on storage.objects;
-create policy "documents delete own"
-  on storage.objects for delete
-  using (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
+-- Enable RLS on storage.objects. 
+-- NOTE: In some hosted environments, standard migration roles (like postgres) do not own storage.objects.
+-- If you encounter ownership errors (ERROR: 42501), please comment out the lines below and set these policies 
+-- up manually in the Supabase Dashboard under Storage -> Policies.
+--
+-- alter table storage.objects enable row level security;
+--
+-- drop policy if exists "documents select own" on storage.objects;
+-- create policy "documents select own"
+--   on storage.objects for select
+--   using (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
+--
+-- drop policy if exists "documents insert own" on storage.objects;
+-- create policy "documents insert own"
+--   on storage.objects for insert
+--   with check (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
+--
+-- drop policy if exists "documents update own" on storage.objects;
+-- create policy "documents update own"
+--   on storage.objects for update
+--   using (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1])
+--   with check (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
+--
+-- drop policy if exists "documents delete own" on storage.objects;
+-- create policy "documents delete own"
+--   on storage.objects for delete
+--   using (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
 
 commit;
+
