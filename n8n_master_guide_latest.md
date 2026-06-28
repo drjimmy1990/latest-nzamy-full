@@ -4,7 +4,27 @@
 > It replaces: `n8n_workflows.md`, `workflows_roadmap.md`, and `n8n_workflows_list.md`
 >
 > **Total: 38 workflows** (20 operational + 18 AI-powered)
-> **Last Updated: 2026-06-17**
+> **Last Updated: 2026-06-28**
+
+---
+
+## ✅ Built on the Next.js side (2026-06-28)
+
+The Next.js trigger layer + event standardization are **done**. n8n itself is not yet hosted/connected, but the app side is ready to feed it.
+
+| Piece | Path | Status |
+|-------|------|--------|
+| **Trigger endpoint** | `POST /api/v1/n8n/trigger` | ✅ Auth-required; fetches `service_requests` row + actor profile, builds payload, `console.log`s it, returns `{ data: payload, delivered: false, note: "n8n not yet wired — payload assembled only" }`. **Makes NO outbound HTTP today.** Once `N8N_WEBHOOK_BASE_URL` is set and the endpoint is flipped to send, it will POST the payload to the matching n8n webhook. |
+| **Payload assembler** | `src/lib/n8n/payload.ts` | ✅ `buildWebhookPayload({ event, timestamp, request, actor? })` → canonical shape (see **Payload Contract** below). |
+| **Event helper + namespaced vocabulary** | `src/lib/events.ts` | ✅ `recordEvent({ supabase, requestId, event, actorUserId, actorName?, metadata? })` + `RequestEvent` namespace map. All write routes now insert namespaced events with `actor_user_id` + `actor_name`. |
+| **Importable workflow JSON templates** | `n8n/workflows/wf-*.json` (7 Phase-1 workflows) + `n8n/README.md` | ✅ Created by a concurrent agent — importable into an n8n instance. Reference these by path for the exact workflow definitions. |
+
+**Namespaced event vocabulary** (emitted into `request_events`):
+`service_request.created` / `service_request.status_changed` / `service_request.updated` / `service_request.cancelled` / `service_request.completed` · `consultation.created` / `consultation.status_changed` · `task.created` / `task.status_changed` / `task.deleted` · `contract.created` / `contract.status_changed` · `hearing.created` · `payment.created`
+
+**Payment gateway**: admin-gated via `platform_settings.payments_gateway` flag; real provider NOT wired yet.
+
+> See `n8n/README.md` for the integration contract and `n8n/workflows/` for importable JSON.
 
 ---
 
@@ -28,12 +48,18 @@ Complete these **before building any workflow**:
 
 - [ ] **n8n installed** on VPS or cloud (self-hosted recommended)
 - [ ] **n8n connected to Supabase** via Postgres node or HTTP + service_role key
+- [x] ✅ **DONE (2026-06-28):** `POST /api/v1/n8n/trigger` exists on Next.js side — auth-required, builds canonical payload, currently returns `{ delivered: false }` (no outbound HTTP yet). Flips to send once `N8N_WEBHOOK_BASE_URL` is set.
 - [ ] **Set in `.env.local`:**
   - `N8N_WEBHOOK_BASE_URL` (e.g., `http://your-n8n:5678/webhook`)
   - `N8N_API_KEY`
 - [ ] **Evolution API** installed + webhook configured → n8n receives WhatsApp messages
 - [ ] **SMTP provider** configured (Resend / SendGrid / Mailgun)
 - [ ] **Create at least 2 Arabic email templates:** `welcome` + `request-received`
+
+### ⚠️ Known gaps
+
+- **`request_events` has no `metadata` column yet.** `recordEvent()` accepts a `metadata?` arg, but the schema is `id, request_id, event, actor_user_id, actor_name, created_at` only — a future migration is needed to persist metadata. Until then, metadata is accepted in-code but not durably stored.
+- **n8n instance not hosted/connected.** The Next.js trigger layer + Phase-1 workflow JSON templates are ready, but no n8n instance is live to receive payloads. The trigger endpoint assembles + logs payloads only.
 
 ### Environment Variables for n8n
 
@@ -445,6 +471,49 @@ N8N_WEBHOOK_AI_NGO=http://your-n8n:5678/webhook/ai/ngo
 
 ---
 
+## 📦 Payload Contract (`buildWebhookPayload`)
+
+Every payload dispatched from `POST /api/v1/n8n/trigger` (and available to any caller of `src/lib/n8n/payload.ts`) conforms to this shape:
+
+```json
+{
+  "event": "service_request.created",
+  "entity": {
+    "id": "uuid",
+    "type": "service_request",
+    "status": "pending_assignment"
+  },
+  "actor": {
+    "id": "uuid",
+    "name": "احمد العتيبي",
+    "role": "client"
+  },
+  "recipient": {
+    "id": "uuid?",
+    "role": "lawyer"
+  },
+  "payment": {
+    "amount": 250.00,
+    "status": "completed"
+  },
+  "timestamp": "2026-06-28T12:00:00.000Z",
+  "data": { /* full service_requests row + any extra context */ }
+}
+```
+
+**Field semantics:**
+- `event` — one of the namespaced events from `src/lib/events.ts` (see vocabulary above).
+- `entity` — the subject of the event (the `service_requests` row id/type/status).
+- `actor` — who caused the event (`actor_user_id` + `actor_name` from `request_events`; `role` optional).
+- `recipient` — optional intended audience (e.g. the assigned lawyer for a `status_changed` → `assigned` event).
+- `payment` — optional; populated for `payment.created` and billing events.
+- `timestamp` — ISO 8601 UTC.
+- `data` — the full `service_requests` row plus any additional context the trigger endpoint assembled.
+
+> Source: `src/lib/n8n/payload.ts` → `buildWebhookPayload({ event, timestamp, request, actor? })`.
+
+---
+
 ## 🛣️ API Routes to Create
 
 Each AI tool needs a thin Next.js API route that proxies to n8n:
@@ -491,11 +560,19 @@ Each AI tool needs a thin Next.js API route that proxies to n8n:
 
 | Phase | Workflows | Status | Blocking? |
 |-------|-----------|--------|-----------|
-| 🔴 Phase 1 (Core) | 7 | ⬜ Not started | **YES** — needed for launch |
+| 🔴 Phase 1 (Core) | 7 | ⬜ Not started (workflow JSON templates created — n8n instance not connected) | **YES** — needed for launch |
 | 🟡 Phase 2 (Operational) | 7 | ⬜ Not started | No |
 | 🔵 Phase 3 (Billing) | 6 | ⏸️ Waiting for payment gateway | No |
-| 🤖 Phase 4 (AI Tools) | 18 | ⬜ Not started | No (pages exist with mock data) |
+| 🤖 Phase 4 (AI Tools) | 18 | ⬜ Not started (pages exist with mock data) | No |
 | **TOTAL** | **38** | | |
+
+### Foundation Layer Status
+
+| Layer | Status | Notes |
+|-------|--------|-------|
+| **Trigger layer + event standardization** | ✅ Done (2026-06-28) | `POST /api/v1/n8n/trigger` + `src/lib/n8n/payload.ts` + `src/lib/events.ts` (namespaced events). Endpoint assembles + logs payloads only — no outbound HTTP until `N8N_WEBHOOK_BASE_URL` set. |
+| **Phase-1 workflow JSON templates** | ✅ Done (2026-06-28) | 7 importable templates at `n8n/workflows/wf-*.json` + `n8n/README.md` integration doc. Importable but n8n not yet hosted. |
+| **38-workflow build in n8n** | ⬜ Not started | Workflow JSON templates created (Phase 1 = 7), n8n instance not yet connected. All 38 workflows still need to be imported/built/tested in a live n8n. |
 
 ### Phase 1 Checklist
 

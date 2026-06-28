@@ -1,0 +1,171 @@
+{
+  "name": "WF 4.1 — WhatsApp Triage (AI)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-incoming",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "77777777-7777-4777-8777-777777777701",
+      "name": "Evolution Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "webhookId": "77777777-7777-4777-8777-777777777702"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, full_name, phone, user_type FROM public.profiles WHERE phone = $1 LIMIT 1;",
+        "options": { "queryParameters": "={{[$json.body.message.key.remoteJid]]" }
+      },
+      "id": "77777777-7777-4777-8777-777777777703",
+      "name": "Check User Exists",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.LLM_CLASSIFY_ENDPOINT}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.LLM_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"messages\": [\n    {\"role\": \"system\", \"content\": \"أنت مصنف نية قانونية. صنف الرسالة إلى: consultation أو request أو inquiry أو complaint. أعد الاسم فقط.\"},\n    {\"role\": \"user\", \"content\": \"={{$json.body.message.message.conversation}}\"}\n  ],\n  \"temperature\": 0\n}",
+        "options": {}
+      },
+      "id": "77777777-7777-4777-8777-777777777704",
+      "name": "AI Classify Intent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "dataTypeSelector": "string",
+        "values": { "string": ["={{$json.choices[0].message.content.trim()}}"] },
+        "rules": {
+          "rules": [
+            { "value2": "consultation", "outputKey": 0 },
+            { "value2": "request", "outputKey": 1 },
+            { "value2": "inquiry", "outputKey": 2 },
+            { "value2": "complaint", "outputKey": 3 }
+          ]
+        },
+        "fallbackOutput": 2,
+        "options": {}
+      },
+      "id": "77777777-7777-4777-8777-777777777705",
+      "name": "Switch Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.consultations (client_user_id, scheduled_at, status) VALUES ($1, NOW() + INTERVAL '1 day', 'pending');",
+        "options": { "queryParameters": "={{[$(Check User Exists).id]}}" }
+      },
+      "id": "77777777-7777-4777-8777-777777777706",
+      "name": "Insert Consultation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [880, -300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.service_requests (id, requester_user_id, type, status, title, description, receiver) VALUES (gen_random_uuid()::text, $1, 'legal', 'pending_assignment', 'طلب قانوني جديد عبر واتساب', $2, 'lawyer');",
+        "options": { "queryParameters": "={{[$(Check User Exists).id, $(Evolution Webhook).body.message.message.conversation]}}" }
+      },
+      "id": "77777777-7777-4777-8777-777777777707",
+      "name": "Insert Request",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [880, -100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.LLM_FAQ_ENDPOINT}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.LLM_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"messages\": [\n    {\"role\": \"system\", \"content\": \"أجب عن الأسئلة الاستفسارية القانونية بالعربية بإيجاز.\"},\n    {\"role\": \"user\", \"content\": \"={{$(Evolution Webhook).body.message.message.conversation}}\"}\n  ]\n}",
+        "options": {}
+      },
+      "id": "77777777-7777-4777-8777-777777777708",
+      "name": "AI FAQ Answer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [880, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.EVOLUTION_API_URL}}/message/sendText/{{$env.EVOLUTION_INSTANCE_NAME}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "{{$env.EVOLUTION_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"={{$(Evolution Webhook).body.message.key.remoteJid}}\",\n  \"textMessage\": { \"text\": \"={{$json.choices[0].message.content}}\" }\n}",
+        "options": {}
+      },
+      "id": "77777777-7777-4777-8777-777777777709",
+      "name": "Reply WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1100, 100]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.service_requests (id, requester_user_id, type, status, title, description, receiver) VALUES (gen_random_uuid()::text, $1, 'complaint', 'pending_assignment', 'شكوى جديدة عبر واتساب', $2, 'lawyer');",
+        "options": { "queryParameters": "={{[$(Check User Exists).id, $(Evolution Webhook).body.message.message.conversation]}}" }
+      },
+      "id": "77777777-7777-4777-8777-77777777770a",
+      "name": "Insert Complaint",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [880, 300]
+    }
+  ],
+  "connections": {
+    "Evolution Webhook": { "main": [[{ "node": "Check User Exists", "type": "main", "index": 0 }]] },
+    "Check User Exists": { "main": [[{ "node": "AI Classify Intent", "type": "main", "index": 0 }]] },
+    "AI Classify Intent": { "main": [[{ "node": "Switch Intent", "type": "main", "index": 0 }]] },
+    "Switch Intent": {
+      "main": [
+        [{ "node": "Insert Consultation", "type": "main", "index": 0 }],
+        [{ "node": "Insert Request", "type": "main", "index": 0 }],
+        [{ "node": "AI FAQ Answer", "type": "main", "index": 0 }],
+        [{ "node": "Insert Complaint", "type": "main", "index": 0 }]
+      ]
+    },
+    "AI FAQ Answer": { "main": [[{ "node": "Reply WhatsApp", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

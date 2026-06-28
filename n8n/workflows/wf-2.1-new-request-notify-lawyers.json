@@ -1,0 +1,164 @@
+{
+  "name": "WF 2.1 — New Request → Notify Lawyers",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-request",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "22222222-2222-4222-8222-222222222201",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "webhookId": "22222222-2222-4222-8222-222222222202"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM public.service_requests WHERE id = $1;",
+        "options": { "queryParameters": "={{[$json.body.entity.id]}}" }
+      },
+      "id": "22222222-2222-4222-8222-222222222203",
+      "name": "Fetch Request",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.id, p.email, p.phone, lp.specialization, lp.city FROM public.lawyer_profiles lp JOIN public.profiles p ON lp.user_id = p.id WHERE lp.is_verified = true AND lp.is_accepting_clients = true AND lp.specialization = $1 AND lp.city = $2;",
+        "options": {
+          "queryParameters": "={{[$json.specialization, $json.city]}}"
+        }
+      },
+      "id": "22222222-2222-4222-8222-222222222204",
+      "name": "Query Matching Lawyers",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "22222222-2222-4222-8222-222222222205",
+      "name": "Loop Lawyers",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.RESEND_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{$env.EMAIL_FROM_NAME}} <{{$env.EMAIL_FROM}}>\",\n  \"to\": \"{{$json.email}}\",\n  \"subject\": \"طلب قانوني جديد يطابق تخصصك\",\n  \"html\": \"<p>مرحباً،</p><p>ورد طلب قانوني جديد يطابق تخصصك ومدينتك. يمكنك قبوله من لوحة التحكم.</p>\"\n}",
+        "options": {}
+      },
+      "id": "22222222-2222-4222-8222-222222222206",
+      "name": "Email Lawyer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [880, -120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.EVOLUTION_API_URL}}/message/sendText/{{$env.EVOLUTION_INSTANCE_NAME}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "{{$env.EVOLUTION_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{$json.phone}}\",\n  \"textMessage\": {\n    \"text\": \"طلب قانوني جديد يطابق تخصصك. تحقق من لوحة التحكم لقبوله.\"\n  }\n}",
+        "options": {}
+      },
+      "id": "22222222-2222-4222-8222-222222222207",
+      "name": "WhatsApp Lawyer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1100, -120]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.notifications (user_id, type, title, body) VALUES ($1, 'new_request', 'طلب قانوني جديد', 'ورد طلب جديد يطابق تخصصك');",
+        "options": { "queryParameters": "={{[$json.id]}}" }
+      },
+      "id": "22222222-2222-4222-8222-222222222208",
+      "name": "Insert Lawyer Notification",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1320, -120]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.email, p.phone, p.full_name, sr.id AS request_id, sr.title FROM public.service_requests sr JOIN public.profiles p ON sr.requester_user_id = p.id WHERE sr.id = $1;",
+        "options": { "queryParameters": "={{[$(Fetch Request).id]}}" }
+      },
+      "id": "22222222-2222-4222-8222-222222222209",
+      "name": "Fetch Client",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.RESEND_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{$env.EMAIL_FROM_NAME}} <{{$env.EMAIL_FROM}}>\",\n  \"to\": \"{{$json.email}}\",\n  \"subject\": \"تم استلام طلبك القانوني\",\n  \"html\": \"<p>مرحباً {{$json.full_name}}،</p><p>تم استلام طلبك القانوني رقم ({{$json.request_id}}) بعنوان: {{$json.title}}. سنعمل على إيجاد محامٍ مناسب لك.</p>\"\n}",
+        "options": {}
+      },
+      "id": "22222222-2222-4222-8222-22222222220a",
+      "name": "Email Client Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [880, 160]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Fetch Request", "type": "main", "index": 0 }]] },
+    "Fetch Request": { "main": [[{ "node": "Query Matching Lawyers", "type": "main", "index": 0 }]] },
+    "Query Matching Lawyers": { "main": [[{ "node": "Loop Lawyers", "type": "main", "index": 0 }]] },
+    "Loop Lawyers": {
+      "main": [
+        [{ "node": "Email Lawyer", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Client", "type": "main", "index": 0 }]
+      ]
+    },
+    "Email Lawyer": { "main": [[{ "node": "WhatsApp Lawyer", "type": "main", "index": 0 }]] },
+    "WhatsApp Lawyer": { "main": [[{ "node": "Insert Lawyer Notification", "type": "main", "index": 0 }]] },
+    "Insert Lawyer Notification": { "main": [[{ "node": "Loop Lawyers", "type": "main", "index": 0 }]] },
+    "Fetch Client": { "main": [[{ "node": "Email Client Confirmation", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

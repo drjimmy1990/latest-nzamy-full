@@ -1,5 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { recordEvent, RequestEvent } from "@/lib/events";
+
+/**
+ * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
+ * (camelCase). `events` are attached separately by the GET [id] route and are
+ * left untouched here.
+ */
+function toWorkflowRequest(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...row,
+    createdAt: row.created_at ?? null,
+    sourcePath: row.source_path ?? "",
+    assignedTo: row.assigned_to ?? null,
+    auditTrail: [],
+  };
+}
 
 /**
  * GET /api/v1/service-requests/[id] — Get request detail with events
@@ -40,8 +56,34 @@ export async function GET(
     .eq("request_id", id)
     .order("created_at", { ascending: true });
 
+  // F7 — fetch attachments for this request.
+  // attachments schema: id, request_id, owner_user_id, file_name, storage_path,
+  // mime_type, size_bytes, created_at. Map to the camelCase contract the
+  // dashboard detail page expects.
+  const { data: attachmentsRows } = await supabase
+    .from("attachments")
+    .select("*")
+    .eq("request_id", id)
+    .order("created_at", { ascending: false });
+
+  const attachments = (attachmentsRows ?? []).map((row) => {
+    const a = row as Record<string, unknown>;
+    return {
+      id: a.id,
+      name: a.file_name ?? "",
+      file_size: a.size_bytes ?? null,
+      storage_path: a.storage_path ?? "",
+      ...(a.mime_type != null ? { mime_type: a.mime_type } : {}),
+      created_at: a.created_at ?? null,
+    };
+  });
+
   return NextResponse.json({
-    data: { ...serviceRequest, events: events ?? [] },
+    data: {
+      ...toWorkflowRequest(serviceRequest as unknown as Record<string, unknown>),
+      events: events ?? [],
+      attachments,
+    },
   });
 }
 
@@ -89,12 +131,16 @@ export async function PATCH(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Auto-create audit event
-  await supabase.from("request_events").insert({
-    request_id: id,
-    event: patch.status ? "status_change" : "updated",
-    actor_user_id: user.id,
+  // Auto-create audit event (namespaced vocabulary via recordEvent).
+  const eventName = patch.status
+    ? RequestEvent.SERVICE_REQUEST_STATUS_CHANGED
+    : RequestEvent.SERVICE_REQUEST_UPDATED;
+  await recordEvent({
+    supabase,
+    requestId: id,
+    event: eventName,
+    actorUserId: user.id,
   });
 
-  return NextResponse.json({ data });
+  return NextResponse.json({ data: toWorkflowRequest(data as unknown as Record<string, unknown>) });
 }

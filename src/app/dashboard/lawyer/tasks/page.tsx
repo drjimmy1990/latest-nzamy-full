@@ -15,6 +15,7 @@ import { VoiceInput } from "@/components/ui/VoiceInput";
 import { CasePicker } from "@/components/ui/CasePicker";
 import { getActiveCases } from "@/lib/services/casesService";
 import { getLawyerTasks, updateLawyerTaskStatus } from "@/lib/services/lawyerTasksService";
+import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { SHARED_CASES } from "@/lib/casesStore";
 import { useUser } from "@/hooks/useUser";
 import ReactConfetti from "react-confetti";
@@ -33,6 +34,15 @@ const TEAM_MEMBERS = [
 ];
 
 type OwnerFilter = "mine" | "team" | "all";
+
+// ─── Status mapping: UI TaskStatus ↔ DB service_requests.status enum ─────────
+// todo → pending_assignment, in_progress → assigned, done → completed, archived → cancelled
+const taskStatusToDb = (s: TaskStatus): string =>
+  s === "todo" ? "pending_assignment"
+  : s === "in_progress" ? "assigned"
+  : s === "done" ? "completed"
+  : s === "archived" ? "cancelled"
+  : "pending_assignment";
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
@@ -180,8 +190,8 @@ export default function LawyerTasksPage() {
       newStatus = current?.status === "done" ? "todo" : "done";
       return prev.map(t => (t.id === id ? { ...t, status: newStatus } : t));
     });
-    // Persist the toggle (optimistic; rollback on failure).
-    updateLawyerTaskStatus(id, newStatus).catch(() => {
+    // Persist the toggle (optimistic; rollback on failure). Map to DB enum.
+    updateLawyerTaskStatus(id, taskStatusToDb(newStatus)).catch(() => {
       setTasks(prev => prev.map(t => (t.id === id ? { ...t, status: t.status === "done" ? "todo" : "done" } : t)));
     });
     if (newStatus === "done") {
@@ -195,19 +205,25 @@ export default function LawyerTasksPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const onDelete  = useCallback((id: string) => setTasks(prev => prev.filter(t => t.id !== id)), []);
+  const onDelete = useCallback((id: string) => {
+    // L7: persist as cancelled (DB enum) alongside local removal.
+    setTasks(prev => prev.filter(t => t.id !== id));
+    updateLawyerTaskStatus(id, taskStatusToDb("archived")).catch((e) =>
+      console.error("[tasks] delete (cancel) failed:", e),
+    );
+  }, []);
   const onArchive = useCallback((id: string) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: "archived" } : t));
-    updateLawyerTaskStatus(id, "archived").catch((e) => console.error("[tasks] archive failed:", e));
+    updateLawyerTaskStatus(id, taskStatusToDb("archived")).catch((e) => console.error("[tasks] archive failed:", e));
   }, []);
   const onRestore = useCallback((id: string) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: "todo" } : t));
-    updateLawyerTaskStatus(id, "todo").catch((e) => console.error("[tasks] restore failed:", e));
+    updateLawyerTaskStatus(id, taskStatusToDb("todo")).catch((e) => console.error("[tasks] restore failed:", e));
   }, []);
   const onStatusChange = useCallback((id: string, s: TaskStatus) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: s } : t));
-    // Persist status change to backend
-    updateLawyerTaskStatus(id, s).catch(() => {
+    // Persist status change to backend (mapped to DB enum)
+    updateLawyerTaskStatus(id, taskStatusToDb(s)).catch(() => {
       // Revert on failure (optimistic update rollback)
       setTasks(prev => prev.map(t => t.id === id ? { ...t, status: t.status } : t));
     });
@@ -228,20 +244,68 @@ export default function LawyerTasksPage() {
     if (!newTask.trim()) return;
     const activeCasesList = await getActiveCases();
     const linked = activeCasesList.find(c => c.id === taskCaseId);
-    const newTaskObj: Task = {
-      id: Date.now().toString(), title: newTask,
-      category: taskCategory, priority: "normal", status: "todo",
+    const priority = "normal";
+    const payload = {
+      title: newTask.trim(),
+      category: taskCategory,
+      priority,
+      dueDate: undefined as string | undefined,
       caseId: taskCaseId || undefined,
       caseRef: linked?.title || undefined,
     };
-    setTasks(prev => [newTaskObj, ...prev]);
+
+    if (isSupabaseMode) {
+      try {
+        const res = await apiMutate<{ data: any }>("/api/v1/lawyer/tasks", "POST", payload);
+        const d = res?.data;
+        if (d) {
+          const newTaskObj: Task = {
+            id: d.id,
+            title: d.title || newTask,
+            category: (d.category === "case" || d.category === "document" || d.category === "admin" || d.category === "deadline" || d.category === "client" ? d.category : taskCategory) as TaskCategory,
+            priority: (d.priority === "urgent" || d.priority === "high" || d.priority === "normal" || d.priority === "low" ? d.priority : priority) as Priority,
+            status: (d.status === "todo" || d.status === "in_progress" || d.status === "done" || d.status === "archived" ? d.status : "todo") as TaskStatus,
+            caseId: d.caseId || undefined,
+            caseRef: d.caseRef || undefined,
+          };
+          setTasks(prev => [newTaskObj, ...prev]);
+          window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
+        }
+      } catch (e) {
+        console.error("[tasks] createTask failed:", e);
+      }
+    } else {
+      // Demo fallback: local only
+      const newTaskObj: Task = {
+        id: Date.now().toString(), title: newTask,
+        category: taskCategory, priority, status: "todo",
+        caseId: taskCaseId || undefined,
+        caseRef: linked?.title || undefined,
+      };
+      setTasks(prev => [newTaskObj, ...prev]);
+    }
     setNewTask(""); setTaskCaseId(""); setTaskCategory("case");
   };
 
   const onDragStart = useCallback((id: string) => { dragId.current = id; }, []);
   const onDrop = useCallback((targetStatus: TaskStatus) => {
     if (!dragId.current) return;
-    setTasks(prev => prev.map(t => t.id === dragId.current ? { ...t, status: targetStatus } : t));
+    const dragIdRef = dragId.current;
+    // Capture original for rollback before optimistic update.
+    let original: TaskStatus | undefined;
+    setTasks(prev => {
+      const current = prev.find(t => t.id === dragIdRef);
+      original = current?.status;
+      return prev.map(t => t.id === dragIdRef ? { ...t, status: targetStatus } : t);
+    });
+    // L5: persist the kanban drop to the backend (mapped to DB enum).
+    updateLawyerTaskStatus(dragIdRef, taskStatusToDb(targetStatus)).catch(() => {
+      // Revert on failure.
+      if (original) {
+        const revertStatus: TaskStatus = original;
+        setTasks(prev => prev.map(t => t.id === dragIdRef ? { ...t, status: revertStatus } : t));
+      }
+    });
     dragId.current = null;
     setDragOverCol(null);
   }, []);

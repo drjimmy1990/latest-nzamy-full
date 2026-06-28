@@ -17,6 +17,13 @@ import { useUser } from "@/hooks/useUser";
 import SessionChatPane from "@/components/dashboard/SessionChatPane";
 import { listClientWorkflowRequests } from "@/lib/clientWorkflowRepository";
 import type { WorkflowRequest } from "@/lib/workflowStore";
+import {
+  getChatRooms,
+  createChatRoom,
+  getChatMessages,
+  sendChatMessage,
+  type ChatMessage,
+} from "@/lib/services/chatService";
 
 // ─── Types & Configurations ──────────────────────────────────────────────────
 
@@ -55,134 +62,26 @@ interface Message {
   isRead?: boolean;
 }
 
-// Static mock consultations to merge with dynamic requests
-const MOCK_CONSULTATIONS: Consultation[] = [
-  {
-    id: "c-001",
-    type: "video",
-    status: "upcoming",
-    lawyerName: "نورة الزهراني",
-    lawyerSpecialty: "قانون عقاري ومدني",
-    lawyerInitial: "ن",
-    lawyerColor: "bg-indigo-600",
-    topic: "مراجعة عقد إيجار تجاري — منع رفع الإيجار التعسفي",
-    date: "الثلاثاء ٢٢ أبريل ٢٠٢٦",
-    time: "٢:٠٠ م",
-    duration: "٦٠ دق",
-    price: 700,
-    caseId: "2025-002",
-    notes: "يرجى إحضار نسخة من عقد الإيجار قبل الجلسة",
-  },
-  {
-    id: "c-002",
-    type: "in-person",
-    status: "active",
-    lawyerName: "أحمد الغامدي",
-    lawyerSpecialty: "قانون عمالي وتجاري",
-    lawyerInitial: "أ",
-    lawyerColor: "bg-emerald-600",
-    topic: "استشارة عمالية — فصل تعسفي وحقوق نهاية الخدمة",
-    date: "اليوم — ١١:٠٠ ص",
-    time: "١١:٠٠ ص",
-    duration: "٦٠ دق",
-    price: 700,
-    caseId: "2025-001",
-  },
-  {
-    id: "c-003",
-    type: "ai",
-    status: "completed",
-    lawyerName: "نظامي AI",
-    lawyerSpecialty: "مساعد قانوني ذكي",
-    lawyerInitial: "AI",
-    lawyerColor: "bg-[#0B3D2E]",
-    topic: "تحليل بنود عقد توريد وتحديد مواطن المخاطر القانونية",
-    date: "١٥ أبريل ٢٠٢٦",
-    time: "٩:٣٠ ص",
-    duration: "٢٠ دق",
-    price: 49,
-    rating: 5,
-    hasPdf: true,
-    pdfName: "ملخص_استشارة_AI_15-04-2026.pdf",
-  },
-  {
-    id: "c-004",
-    type: "video",
-    status: "completed",
-    lawyerName: "نورة الزهراني",
-    lawyerSpecialty: "قانون عقاري ومدني",
-    lawyerInitial: "ن",
-    lawyerColor: "bg-indigo-600",
-    topic: "تقييم مخاطر عقد البيع والشراء وحماية حقوق المشتري",
-    date: "١ أبريل ٢٠٢٦",
-    time: "٣:٠٠ م",
-    duration: "٤٥ دق",
-    price: 700,
-    rating: 4,
-    hasPdf: true,
-    pdfName: "ملخص_استشارة_Q1-04-2026.pdf",
-  },
-  {
-    id: "c-005",
-    type: "in-person",
-    status: "cancelled",
-    lawyerName: "فيصل الحربي",
-    lawyerSpecialty: "قانون تجاري وشركات",
-    lawyerInitial: "ف",
-    lawyerColor: "bg-amber-600",
-    topic: "استشارة حول تأسيس شركة ذات مسؤولية محدودة",
-    date: "٢٠ مارس ٢٠٢٦",
-    time: "١٠:٠٠ ص",
-    duration: "٦٠ دق",
-    price: 700,
-    notes: "تم الإلغاء من قِبَل العميل قبل ٢٤ ساعة",
-  },
-  {
-    id: "c-006",
-    type: "video",
-    status: "completed",
-    lawyerName: "سارة العتيبي",
-    lawyerSpecialty: "قانون أسرة وميراث",
-    lawyerInitial: "س",
-    lawyerColor: "bg-rose-600",
-    topic: "سؤال شخصي — حقوق الوريث في حال غياب وصية مكتوبة",
-    date: "٥ أبريل ٢٠٢٦",
-    time: "١٢:٠٠ م",
-    duration: "٣0 دق",
-    price: 350,
-    rating: 5,
-    hasPdf: true,
-    pdfName: "ملخص_استشارة_ميراث_05-04-2026.pdf",
-  },
-];
-
-const MOCK_MESSAGES: Message[] = [
-  {
-    id: "1", sender: "ai", time: "٢:٣٠ م",
-    text: "مرحباً، هذه غرفة استشارتك المعتمدة. جلسة مدتها ٦٠ دقيقة. يمكنك مشاركة المستندات وطرح أسئلتك مباشرة مع المحامي.",
-  },
-  {
-    id: "2", sender: "lawyer", time: "٢:٣٢ م",
-    text: "أهلاً بك. اطّلعت على وصف مشكلتك القانونية. هل بإمكانك مشاركة أي مستندات أو عقود مرتبطة لنبدأ بتكييف الموقف نظامياً؟",
-    isRead: true,
-  },
-  {
-    id: "3", sender: "client", time: "٢:٣٤ م",
-    text: "بالطبع، لحظة من فضلك وسأرفع الملف المعني الآن.",
-    isRead: true,
-  },
-  {
-    id: "4", sender: "client", time: "٢:٣٥ م",
-    text: "",
-    attachment: { name: "مستندات_التعاقد_والوقائع.pdf", size: "٢.٣ م.ب" },
-    isRead: true,
-  },
-  {
-    id: "5", sender: "lawyer", time: "٢:٣٨ م",
-    text: "شكراً لك. بعد الاطلاع ومراجعة البنود والمستندات المرفقة، أرى وجود إخلال واضح بالالتزامات التعاقدية. بموجب نظام المعاملات المدنية، فإن هذا يُعزز موقفك للمطالبة بالوفاء أو التعويض المباشر.",
-    isRead: true,
-  },
-];
+// Map a chatService ChatMessage (server row, column `body` → `content`) onto the
+// local Message shape used by SessionChatPane. No fabricated content — only
+// real persisted messages are rendered.
+function mapChatMessage(
+  cm: ChatMessage,
+  currentUserId: string | undefined,
+  consultType: ConsultType,
+): Message {
+  const isSelf = cm.sender_id === currentUserId;
+  const sender: Message["sender"] = isSelf ? "client" : consultType === "ai" ? "ai" : "lawyer";
+  const d = new Date(cm.created_at);
+  const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return {
+    id: cm.id,
+    sender,
+    text: cm.content,
+    time: timeStr,
+    isRead: isSelf,
+  };
+}
 
 const STATUS_CONFIG: Record<ConsultStatus, { label: string; badge: string }> = {
   upcoming:  { label: "قادمة",    badge: "text-blue-600 bg-blue-500/10 border-blue-500/20" },
@@ -204,12 +103,20 @@ export default function ConsultationRoomPage() {
   const [consultation, setConsultation] = useState<Consultation | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  // Assigned lawyer's user id (used to find/create the chat room). Null until the
+  // workflow request resolves; stays null for ai_workspace or unassigned requests.
+  const [lawyerUserId, setLawyerUserId] = useState<string | null>(null);
 
   // Chat panel states
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [showAIPanel, setShowAIPanel] = useState(false);
+  // Real chat room id for this consultation (looked up / created via chatService).
+  const [chatRoomId, setChatRoomId] = useState<string | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
+  // Honest, user-facing chat banner (no fabricated lawyer/AI messages).
+  const [chatNotice, setChatNotice] = useState<string | null>(null);
   // NOTE: a real session countdown requires a session-clock API (not built yet).
   // Showing a frozen "٤٧:١٣" fakes a live timer — use an honest static label.
   const [sessionTimeLeft] = useState("جارية");
@@ -225,20 +132,15 @@ export default function ConsultationRoomPage() {
   }, [messages]);
 
   useEffect(() => {
-    // 1. Check if ID matches static mock
-    const staticConsult = MOCK_CONSULTATIONS.find(c => c.id === id);
-    if (staticConsult) {
-      setConsultation(staticConsult);
-      setLoading(false);
-      return;
-    }
-
-    // 2. Fetch from dynamic workflow repository
+    // Fetch the consultation from the dynamic workflow repository (real data only).
+    // No mock fallback: an unknown id leaves consultation null and the not-found UI
+    // renders honestly.
     listClientWorkflowRequests({ requesterUserId: user.userId })
       .then((requests) => {
         const found = requests.find(r => r.id === id);
         if (found) {
           const type = found.receiver === "ai_workspace" ? "ai" : (found.metadata?.mode as ConsultType) || "video";
+          setLawyerUserId(found.assignedTo ?? null);
           setConsultation({
             id: found.id,
             type,
@@ -255,6 +157,8 @@ export default function ConsultationRoomPage() {
             notes: `رقم الطلب: ${found.id}`,
             questionText: found.metadata?.question as string,
           });
+        } else {
+          setConsultation(null);
         }
         setLoading(false);
       })
@@ -263,28 +167,91 @@ export default function ConsultationRoomPage() {
       });
   }, [id, user.userId]);
 
-  function sendMessage() {
-    if (!input.trim()) return;
+  // Wire the real chat room for this consultation (lawyer consultations only —
+  // the AI branch renders its own panel and never reaches SessionChatPane).
+  useEffect(() => {
+    if (!consultation || consultation.type === "ai") return;
+    if (!user.userId) return;
+    let cancelled = false;
+    (async () => {
+      setChatLoading(true);
+      setChatNotice(null);
+      try {
+        const rooms = await getChatRooms();
+        if (cancelled) return;
+        const existing = rooms.find(r => r.related_id === consultation.id);
+        let roomId = existing?.id ?? null;
+        if (!roomId && lawyerUserId) {
+          try {
+            const created = await createChatRoom({
+              participant_ids: [user.userId as string, lawyerUserId],
+              type: "direct",
+              related_id: consultation.id,
+              name: `استشارة ${consultation.id}`,
+            });
+            roomId = created?.id ?? null;
+          } catch {
+            roomId = null;
+          }
+        }
+        if (cancelled) return;
+        setChatRoomId(roomId);
+        if (roomId) {
+          const history = await getChatMessages(roomId);
+          if (cancelled) return;
+          setMessages(history.map(cm => mapChatMessage(cm, user.userId, consultation.type)));
+        } else {
+          setMessages([]);
+          setChatNotice(
+            lawyerUserId
+              ? "تعذّر إنشاء غرفة المحادثة الآن. حاول مرة أخرى لاحقاً."
+              : "سيتم تفعيل المحادثة المباشرة قريباً بمجرد تأكيد تعيين المحامي."
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setChatRoomId(null);
+          setMessages([]);
+          setChatNotice("تعذّر تحميل المحادثة الآن. حاول مرة أخرى لاحقاً.");
+        }
+      } finally {
+        if (!cancelled) setChatLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [consultation, lawyerUserId, user.userId]);
+
+  async function sendMessage() {
+    const text = input.trim();
+    if (!text) return;
     const now = new Date();
     const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const localId = `local-${Date.now()}`;
+    // Append only the client's own message (optimistic). No fabricated reply.
     setMessages(prev => [...prev, {
-      id: Date.now().toString(),
+      id: localId,
       sender: "client",
-      text: input.trim(),
+      text,
       time: timeStr,
       isRead: false,
     }]);
     setInput("");
-    // Simulate lawyer reply
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        sender: "lawyer",
-        text: "شكراً على سؤالك. دعني أوضّح لك الخيارات القانونية المتاحة...",
-        time: timeStr,
-        isRead: true,
-      }]);
-    }, 2800);
+    if (chatRoomId) {
+      try {
+        const saved = await sendChatMessage(chatRoomId, text);
+        setMessages(prev => prev.map(m =>
+          m.id === localId ? mapChatMessage(saved, user.userId, consultation?.type ?? "video") : m
+        ));
+      } catch {
+        setChatNotice("تعذّر إرسال الرسالة. حاول مرة أخرى.");
+      }
+    } else {
+      setChatNotice(
+        lawyerUserId
+          ? "تعذّر إرسال الرسالة الآن. حاول مرة أخرى لاحقاً."
+          : "سيتم تفعيل المحادثة المباشرة قريباً بمجرد تأكيد تعيين المحامي. تم تسجيل رسالتك."
+      );
+    }
   }
 
   // ─── Native Copy & Branded PDF Creators ─────────────────────────────────────
@@ -928,6 +895,15 @@ export default function ConsultationRoomPage() {
       </header>
 
       {/* Body */}
+      {(chatLoading || chatNotice) && (
+        <div className={`flex-shrink-0 px-4 py-2 text-center text-[11px] font-bold border-b ${
+          isDark
+            ? "bg-amber-900/20 border-amber-700/20 text-amber-300"
+            : "bg-amber-50 border-amber-200 text-amber-700"
+        }`}>
+          {chatLoading ? "جارٍ تحميل المحادثة..." : chatNotice}
+        </div>
+      )}
       <SessionChatPane
         consultation={consultation}
         messages={messages}

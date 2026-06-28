@@ -50,6 +50,7 @@ export type WorkflowRequest = {
   payment: WorkflowPayment;
   sourcePath: string;
   metadata?: Record<string, string | number | boolean | null>;
+  assignedTo?: string | null;
   auditTrail: Array<{ at: string; event: string; by: string }>;
 };
 

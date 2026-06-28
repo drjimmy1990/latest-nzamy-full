@@ -151,18 +151,19 @@ export async function listWorkflowRequestsByReceiver(
 }
 
 export async function createWorkflowRequest(input: WorkflowRequestInput): Promise<WorkflowRequest> {
+  // Demo mode: keep the local-only behavior.
   if (!BACKEND_ENABLED) return createWorkflowRequestLocal(input);
 
-  try {
-    const request = await apiRequest<WorkflowRequest>("/api/client-workflow/requests", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    dispatchWorkflowUpdate(request);
-    return request;
-  } catch {
-    return createWorkflowRequestLocal(input);
-  }
+  // Supabase mode: do NOT silently fall back to localStorage on API failure.
+  // Re-throw so the caller can surface the error to the user (otherwise a
+  // "successful" return would hide that the row never reached the server and
+  // would vanish cross-device on the next list GET).
+  const request = await apiRequest<WorkflowRequest>("/api/client-workflow/requests", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  dispatchWorkflowUpdate(request);
+  return request;
 }
 
 export async function updateWorkflowRequestById(
@@ -171,16 +172,14 @@ export async function updateWorkflowRequestById(
   auditEvent = "updated",
   by = "demo-user",
 ): Promise<WorkflowRequest | null> {
+  // Demo mode: keep the local-only behavior.
   if (!BACKEND_ENABLED) return updateWorkflowRequestLocal(id, patch, auditEvent, by);
 
-  try {
-    const updated = await apiRequest<WorkflowRequest>(`/api/client-workflow/requests/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ patch, auditEvent, by }),
-    });
-    dispatchWorkflowUpdate(updated);
-    return updated;
-  } catch {
-    return updateWorkflowRequestLocal(id, patch, auditEvent, by);
-  }
+  // Supabase mode: surface API failures instead of silently writing locally.
+  const updated = await apiRequest<WorkflowRequest>(`/api/client-workflow/requests/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ patch, auditEvent, by }),
+  });
+  dispatchWorkflowUpdate(updated);
+  return updated;
 }

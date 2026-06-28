@@ -1,0 +1,145 @@
+{
+  "name": "WF 2.2 — Request Assigned → Notify Client",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "request-status",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "33333333-3333-4333-8333-333333333301",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "webhookId": "33333333-3333-4333-8333-333333333302"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM public.service_requests WHERE id = $1;",
+        "options": { "queryParameters": "={{[$json.body.entity.id]}}" }
+      },
+      "id": "33333333-3333-4333-8333-333333333303",
+      "name": "Fetch Request",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "33333333-3333-4333-8333-333333333304",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "assigned",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "33333333-3333-4333-8333-333333333305",
+      "name": "If Status Assigned",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT sr.id AS request_id, sr.assigned_to, cp.email AS client_email, cp.phone AS client_phone, cp.full_name AS client_name, lp.full_name AS lawyer_name FROM public.service_requests sr JOIN public.profiles cp ON sr.requester_user_id = cp.id JOIN public.profiles lp ON sr.assigned_to = lp.id WHERE sr.id = $1;",
+        "options": { "queryParameters": "={{[$json.id]}}" }
+      },
+      "id": "33333333-3333-4333-8333-333333333306",
+      "name": "Fetch Client + Lawyer",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, -100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.RESEND_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{$env.EMAIL_FROM_NAME}} <{{$env.EMAIL_FROM}}>\",\n  \"to\": \"{{$json.client_email}}\",\n  \"subject\": \"تم تعيين محامي لطلبك\",\n  \"html\": \"<p>مرحباً {{$json.client_name}}،</p><p>تم تعيين المحامي {{$json.lawyer_name}} لمباشرة طلبك القانوني رقم ({{$json.request_id}}). يمكنك التواصل معه الآن عبر المحادثات.</p>\"\n}",
+        "options": {}
+      },
+      "id": "33333333-3333-4333-8333-333333333307",
+      "name": "Email Client",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [880, -100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.EVOLUTION_API_URL}}/message/sendText/{{$env.EVOLUTION_INSTANCE_NAME}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "{{$env.EVOLUTION_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{$json.client_phone}}\",\n  \"textMessage\": {\n    \"text\": \"تم تعيين المحامي {{$json.lawyer_name}} لمباشرة طلبك القانوني رقم ({{$json.request_id}}). يمكنك التواصل معه الآن عبر المحادثات.\"\n  }\n}",
+        "options": {}
+      },
+      "id": "33333333-3333-4333-8333-333333333308",
+      "name": "WhatsApp Client",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1100, -100]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.notifications (user_id, type, title, body) VALUES ($1, 'request_assigned', 'تم تعيين محامي', 'تم تعيين محامٍ لطلبك القانوني');",
+        "options": { "queryParameters": "={{[$(Fetch Request).requester_user_id]}}" }
+      },
+      "id": "33333333-3333-4333-8333-333333333309",
+      "name": "Insert Notification",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1320, -100]
+    },
+    {
+      "parameters": {},
+      "id": "33333333-3333-4333-8333-33333333330a",
+      "name": "Not Assigned — Skip",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [660, 100]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Fetch Request", "type": "main", "index": 0 }]] },
+    "Fetch Request": { "main": [[{ "node": "If Status Assigned", "type": "main", "index": 0 }]] },
+    "If Status Assigned": {
+      "main": [
+        [{ "node": "Fetch Client + Lawyer", "type": "main", "index": 0 }],
+        [{ "node": "Not Assigned — Skip", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Client + Lawyer": { "main": [[{ "node": "Email Client", "type": "main", "index": 0 }]] },
+    "Email Client": { "main": [[{ "node": "WhatsApp Client", "type": "main", "index": 0 }]] },
+    "WhatsApp Client": { "main": [[{ "node": "Insert Notification", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

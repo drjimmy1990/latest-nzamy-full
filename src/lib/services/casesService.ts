@@ -13,6 +13,8 @@ import {
   getCaseTypeLabel,
 } from "@/lib/casesStore";
 import type { SharedCase, CaseStatus, CaseType, CasePriority } from "@/lib/casesStore";
+import { readWorkflowRequestsLocal } from "@/lib/clientWorkflowRepository";
+import type { WorkflowRequest } from "@/lib/workflowStore";
 
 // Re-export
 export type { SharedCase, CaseStatus, CaseType, CasePriority };
@@ -75,6 +77,106 @@ export async function getCaseDetail(id: string): Promise<SharedCase | null> {
   }
 }
 
+// ─── Service Request Detail (workflow / Kanban source-of-truth) ───────────────
+// The lawyer Kanban + client case list read from `service_requests` (via
+// workflowService / clientWorkflowRepository), NOT the `cases` table. Detail
+// pages MUST use this function — `getCaseDetail` above reads the separate,
+// mostly-unused `cases` table and will 404 for real workflow cases.
+
+export interface ServiceRequestEvent {
+  id?: string;
+  event: string;
+  actor_user_id?: string | null;
+  actor_name?: string | null;
+  created_at: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface ServiceRequestAttachment {
+  id: string;
+  name: string;
+  file_size: number | null;
+  storage_path: string;
+  mime_type?: string | null;
+  created_at: string;
+}
+
+export interface ServiceRequestDetail {
+  id: string;
+  createdAt: string | null;
+  type: string;
+  title: string;
+  description: string;
+  requester: {
+    name: string;
+    role?: string;
+    tier?: string;
+    userId?: string;
+    [key: string]: unknown;
+  };
+  receiver: string;
+  status: string;
+  payment: { amount: number; status?: string; [key: string]: unknown };
+  sourcePath: string;
+  metadata: Record<string, unknown> | null;
+  assignedTo: string | null;
+  events: ServiceRequestEvent[];
+  attachments: ServiceRequestAttachment[];
+}
+
+export async function getServiceRequestDetail(
+  id: string,
+): Promise<ServiceRequestDetail | null> {
+  if (!isSupabaseMode) {
+    // Demo mode: look up the local workflow store by id. Local WorkflowRequest
+    // rows don't carry events/attachments, so synthesize an empty list.
+    const found = readWorkflowRequestsLocal().find((r) => r.id === id);
+    if (!found) return null;
+    return mapLocalWorkflowRequest(found);
+  }
+  try {
+    const r = await apiGet<{ data: ServiceRequestDetail }>(
+      `/api/v1/service-requests/${id}`,
+    );
+    return r.data ?? null;
+  } catch (e) {
+    console.error("[casesService] getServiceRequestDetail failed:", e);
+    return null;
+  }
+}
+
+/** Map a local WorkflowRequest (demo store) to the ServiceRequestDetail shape. */
+function mapLocalWorkflowRequest(r: WorkflowRequest): ServiceRequestDetail {
+  return {
+    id: r.id,
+    createdAt: r.createdAt,
+    type: r.type,
+    title: r.title,
+    description: r.description,
+    requester: {
+      name: r.requester.name,
+      role: r.requester.role ?? undefined,
+      tier: r.requester.tier ?? undefined,
+      userId: r.requester.userId,
+    },
+    receiver: r.receiver,
+    status: r.status,
+    payment: { amount: r.payment.amount, status: r.payment.status },
+    sourcePath: r.sourcePath,
+    metadata: (r.metadata as Record<string, unknown>) ?? null,
+    assignedTo: r.assignedTo ?? null,
+    events: (r.auditTrail ?? []).map((t, i) => ({
+      id: `${r.id}-evt-${i}`,
+      event: t.event,
+      actor_user_id: null,
+      actor_name: t.by,
+      created_at: t.at,
+      metadata: null,
+    })),
+    attachments: [],
+  };
+}
+
 export async function getConsultations(opts?: {
   status?: string;
   limit?: number;
@@ -111,7 +213,20 @@ export async function createConsultation(data: {
       created_at: new Date().toISOString(),
     };
   }
-  return apiMutate<Consultation>("/api/v1/consultations", "POST", data);
+  // C12 — route returns { data: Consultation }; unwrap. B3 — send the alias
+  // fields the route now accepts (lawyer_user_id / mode / specialty).
+  const r = await apiMutate<{ data: Consultation }>(
+    "/api/v1/consultations",
+    "POST",
+    {
+      lawyer_user_id: data.lawyer_id,
+      mode: data.type,
+      specialty: data.topic,
+      description: data.description,
+      preferred_date: data.preferred_date,
+    },
+  );
+  return r.data;
 }
 
 export async function updateConsultation(
@@ -120,7 +235,13 @@ export async function updateConsultation(
 ): Promise<Consultation | null> {
   if (!isSupabaseMode) return null;
   try {
-    return await apiMutate<Consultation>(`/api/v1/consultations/${id}`, "PATCH", patch);
+    // C12 — route returns { data: Consultation }; unwrap.
+    const r = await apiMutate<{ data: Consultation }>(
+      `/api/v1/consultations/${id}`,
+      "PATCH",
+      patch,
+    );
+    return r.data ?? null;
   } catch {
     return null;
   }

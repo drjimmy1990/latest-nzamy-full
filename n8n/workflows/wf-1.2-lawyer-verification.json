@@ -1,0 +1,176 @@
+{
+  "name": "WF 1.2 — Lawyer Verification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "verification",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "55555555-5555-4555-8555-555555555501",
+      "name": "Webhook: New Lawyer",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "webhookId": "55555555-5555-4555-8555-555555555502"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT lp.user_id, lp.license_number, lp.specialization, lp.city, p.full_name, p.email FROM public.lawyer_profiles lp JOIN public.profiles p ON lp.user_id = p.id WHERE lp.user_id = $1;",
+        "options": { "queryParameters": "={{[$json.body.entity.id]}}" }
+      },
+      "id": "55555555-5555-4555-8555-555555555503",
+      "name": "Fetch Lawyer Profile",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT email FROM public.profiles WHERE user_type = 'admin' LIMIT 1;",
+        "options": {}
+      },
+      "id": "55555555-5555-4555-8555-555555555504",
+      "name": "Fetch Admin Email",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.RESEND_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{$env.EMAIL_FROM_NAME}} <{{$env.EMAIL_FROM}}>\",\n  \"to\": \"{{$json.email}}\",\n  \"subject\": \"محامي جديد ينتظر التحقق\",\n  \"html\": \"<p>محامٍ جديد بانتظار التحقق:</p><p>الاسم: {{$json.full_name}}</p><p>التخصص: {{$json.specialization}}</p><p>المدينة: {{$json.city}}</p><p>رقم الترخيص: {{$json.license_number}}</p><p><a href=\\\"https://n8n.nzamy.com/webhook/lawyer-approval?id={{$json.user_id}}&decision=approve\\\">قبول</a> | <a href=\\\"https://n8n.nzamy.com/webhook/lawyer-approval?id={{$json.user_id}}&decision=reject\\\">رفض</a></p>\"\n}",
+        "options": {}
+      },
+      "id": "55555555-5555-4555-8555-555555555505",
+      "name": "Email Admin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "lawyer-approval",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "55555555-5555-4555-8555-555555555506",
+      "name": "Webhook: Approval Callback",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 220],
+      "webhookId": "55555555-5555-4555-8555-555555555507"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "55555555-5555-4555-8555-555555555508",
+              "leftValue": "={{$json.query.decision}}",
+              "rightValue": "approve",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "55555555-5555-4555-8555-555555555509",
+      "name": "If Approved",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [220, 220]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.lawyer_profiles SET is_verified = true WHERE user_id = $1;",
+        "options": { "queryParameters": "={{[$json.query.id]}}" }
+      },
+      "id": "55555555-5555-4555-8555-55555555550a",
+      "name": "Set Verified",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [440, 120]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.email, p.full_name, p.phone FROM public.lawyer_profiles lp JOIN public.profiles p ON lp.user_id = p.id WHERE lp.user_id = $1;",
+        "options": { "queryParameters": "={{[$(Webhook: Approval Callback).query.id]}}" }
+      },
+      "id": "55555555-5555-4555-8555-55555555550b",
+      "name": "Fetch Lawyer Contact",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.RESEND_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{$env.EMAIL_FROM_NAME}} <{{$env.EMAIL_FROM}}>\",\n  \"to\": \"{{$json.email}}\",\n  \"subject\": \"تم تفعيل حسابك\",\n  \"html\": \"<p>مرحباً {{$json.full_name}}،</p><p>تم تفعيل حسابك كمحامٍ على منصة نظامي. يمكنك الآن استقبال الطلبات القانونية.</p>\"\n}",
+        "options": {}
+      },
+      "id": "55555555-5555-4555-8555-55555555550c",
+      "name": "Email Lawyer Activated",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [880, 120]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.lawyer_profiles SET is_verified = false WHERE user_id = $1;",
+        "options": { "queryParameters": "={{[$json.query.id]}}" }
+      },
+      "id": "55555555-5555-4555-8555-55555555550d",
+      "name": "Set Rejected",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [440, 320]
+    }
+  ],
+  "connections": {
+    "Webhook: New Lawyer": { "main": [[{ "node": "Fetch Lawyer Profile", "type": "main", "index": 0 }]] },
+    "Fetch Lawyer Profile": { "main": [[{ "node": "Fetch Admin Email", "type": "main", "index": 0 }]] },
+    "Fetch Admin Email": { "main": [[{ "node": "Email Admin", "type": "main", "index": 0 }]] },
+    "Webhook: Approval Callback": { "main": [[{ "node": "If Approved", "type": "main", "index": 0 }]] },
+    "If Approved": {
+      "main": [
+        [{ "node": "Set Verified", "type": "main", "index": 0 }],
+        [{ "node": "Set Rejected", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set Verified": { "main": [[{ "node": "Fetch Lawyer Contact", "type": "main", "index": 0 }]] },
+    "Fetch Lawyer Contact": { "main": [[{ "node": "Email Lawyer Activated", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

@@ -33,6 +33,8 @@ function toHijri(gDate: Date): { day: number; month: number; year: number } {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
+import type { WorkflowRequest } from "@/lib/workflowStore";
+import { useUser } from "@/hooks/useUser";
 import AddHearingModal from "../_components/AddHearingModal";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -46,6 +48,49 @@ interface CalEvent {
   time?: string; urgency: "critical"|"high"|"normal";
   notes?: string; done?: boolean; deadlineDaysLeft?: number;
   workflow?: WorkflowStep[];
+}
+
+// ─── Workflow → Hearing mapper (L8) ───────────────────────────────────────────
+// Derives a CalEvent from a WorkflowRequest using metadata fields stored by
+// AddHearingModal (date/time/type/urgency/location/notes/caseName).
+const VALID_EVENT_TYPES: EventType[] = ["hearing","deadline","gov_review","notary","client_meet","court_collect","police","expert","contract","internal"];
+const VALID_URGENCIES: CalEvent["urgency"][] = ["critical","high","normal"];
+
+function daysFromToday(dateStr: string): number | null {
+  if (!dateStr) return null;
+  const parsed = new Date(dateStr + "T00:00:00");
+  if (isNaN(parsed.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((parsed.getTime() - today.getTime()) / 86400000);
+}
+
+function workflowToHearing(request: WorkflowRequest): CalEvent {
+  const meta = request.metadata ?? {};
+  const rawType = typeof meta.type === "string" ? meta.type : "";
+  const type: EventType = (VALID_EVENT_TYPES as string[]).includes(rawType) ? (rawType as EventType) : "hearing";
+  const rawUrgency = typeof meta.urgency === "string" ? meta.urgency : "";
+  const urgency: CalEvent["urgency"] = (VALID_URGENCIES as string[]).includes(rawUrgency) ? (rawUrgency as CalEvent["urgency"]) : "normal";
+  const dateStr = typeof meta.date === "string" ? meta.date : "";
+  const dateSort = daysFromToday(dateStr) ?? 0;
+  const isDone = request.status === "completed" || request.status === "cancelled";
+  const caseName = typeof meta.caseName === "string" ? meta.caseName : undefined;
+  return {
+    id: request.id,
+    type,
+    title: request.title,
+    client: request.requester.name || undefined,
+    caseId: caseName ? request.id : undefined,
+    caseName,
+    location: typeof meta.location === "string" && meta.location ? meta.location : undefined,
+    date: dateStr || new Date(request.createdAt).toLocaleDateString("ar-SA"),
+    dateSort,
+    time: typeof meta.time === "string" && meta.time ? meta.time : undefined,
+    urgency,
+    notes: typeof meta.notes === "string" && meta.notes ? meta.notes : undefined,
+    done: isDone,
+    workflow: undefined,
+  };
 }
 
 // ─── Config ────────────────────────────────────────────────────────────────────
@@ -442,6 +487,7 @@ function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
 // ─── Page ──────────────────────────────────────────────────────────────────────
 export default function LawyerHearingsPage() {
   const {isDark} = useTheme();
+  const user = useUser();
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode,setViewMode] = useState<ViewMode>("list");
@@ -457,7 +503,12 @@ export default function LawyerHearingsPage() {
   useEffect(() => {
     getWorkflowRequestsByReceiver("lawyer")
       .then((data) => {
-        setEvents(data as unknown as CalEvent[]);
+        // Only service requests represent hearings; map them through the
+        // workflowToHearing mapper so the shapes match CalEvent (L8).
+        const events = data
+          .filter(r => r.type === "service")
+          .map(workflowToHearing);
+        setEvents(events);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -643,7 +694,7 @@ export default function LawyerHearingsPage() {
         )}
       </AnimatePresence>
       <AnimatePresence>
-        {showAddHearing && <AddHearingModal onClose={() => setShowAddHearing(false)} isDark={isDark} />}
+        {showAddHearing && <AddHearingModal onClose={() => setShowAddHearing(false)} isDark={isDark} user={{ userId: user.userId, name: user.name, userType: user.userType, tier: user.tier }} />}
       </AnimatePresence>
     </div>
   );

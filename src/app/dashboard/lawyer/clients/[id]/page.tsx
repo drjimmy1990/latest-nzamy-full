@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   User, Buildings, ArrowRight, Gavel, FileText, ChatDots,
@@ -11,10 +11,10 @@ import {
   PaperclipHorizontal, CaretLeft, ShieldCheck,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { isSupabaseMode } from "@/lib/services/api";
+import { isSupabaseMode, apiGet } from "@/lib/services/api";
 import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
 
-// ─── Shared mock data (same as clients/page.tsx) ─────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ClientFlag =
   | "vip" | "late_pay" | "bad" | "new" | "loyal" | "urgent" | "corporate" | "inactive";
@@ -29,15 +29,15 @@ interface Client {
   notes?: string;
 }
 
-const MOCK_CLIENTS: Client[] = [
-  { id: "1", name: "شركة الأفق للتجارة", type: "company", phone: "+٩٦٦ ١١ ٥١٢ ٠٠١٢", email: "legal@horizon.sa", city: "الرياض", activeCases: 2, closedCases: 1, totalFees: 85000, paidFees: 60000, since: "يناير ٢٠٢٤", lastContact: "منذ يومين", flags: ["vip","corporate","urgent"], rating: 5, notes: "العميل الأكبر — يتطلب اهتماماً دورياً أسبوعياً" },
-  { id: "2", name: "أحمد الزاهد", type: "individual", phone: "+٩٦٦ ٥٠ ١٢٣ ٤٥٦٧", email: "ahmed@mail.com", city: "جدة", activeCases: 1, closedCases: 0, totalFees: 12000, paidFees: 12000, since: "مارس ٢٠٢٤", lastContact: "منذ أسبوع", flags: ["loyal","new"], rating: 4 },
-  { id: "3", name: "خالد محمد القحطاني", type: "individual", phone: "+٩٦٦ ٥٥ ٦٧٨ ٩٠١٢", city: "الرياض", activeCases: 1, closedCases: 2, totalFees: 28000, paidFees: 14000, since: "فبراير ٢٠٢٤", lastContact: "اليوم", flags: ["late_pay","urgent"], rating: 3, notes: "متأخر ١٤،٠٠٠ ريال — أُرسلت له تذكيران بدون رد" },
-  { id: "4", name: "سارة الدوسري", type: "individual", phone: "+٩٦٦ ٥٠ ٢٣٤ ٥٦٧٨", email: "sara@mail.com", city: "الدمام", activeCases: 1, closedCases: 0, totalFees: 9500, paidFees: 9500, since: "أبريل ٢٠٢٤", lastContact: "منذ ٣ أيام", flags: ["new"], rating: 4 },
-  { id: "5", name: "ريم المطيري", type: "individual", phone: "+٩٦٦ ٥٥ ٣٤٥ ٦٧٨٩", city: "مكة", activeCases: 1, closedCases: 0, totalFees: 14000, paidFees: 0, since: "نوفمبر ٢٠٢٣", lastContact: "منذ شهر", flags: ["bad","late_pay","inactive"], rating: 1, notes: "لا يرد على الهاتف — متأخر بكامل الأتعاب" },
-  { id: "6", name: "علي السبيعي", type: "individual", phone: "+٩٦٦ ٥٠ ٤٥٦ ٧٨٩٠", city: "الرياض", activeCases: 0, closedCases: 1, totalFees: 6000, paidFees: 6000, since: "يوليو ٢٠٢٣", lastContact: "منذ شهرين", flags: ["inactive","loyal"], rating: 4 },
-  { id: "7", name: "مجموعة الرياض العقارية", type: "company", phone: "+٩٦٦ ١١ ٥٦٧ ٨٩٠١", email: "info@riyadhgroup.sa", city: "الرياض", activeCases: 0, closedCases: 3, totalFees: 120000, paidFees: 120000, since: "مارس ٢٠٢٣", lastContact: "منذ شهر", flags: ["vip","corporate","loyal","inactive"], rating: 5, notes: "صفقات كبيرة — التواصل مع إدارة الشركة مباشرة" },
-];
+interface CaseRow {
+  id: string; title: string;
+  status: "active" | "pending" | "closed";
+  degree: string; date: string;
+}
+
+interface ConsultationRow {
+  id: string; title: string; date: string; status: "done" | "pending";
+}
 
 const FLAG_CONFIG: Record<ClientFlag, { label: string; color: string; bg: string; emoji: string }> = {
   vip:       { label: "VIP",         color: "text-amber-600",  bg: "bg-amber-500/10",  emoji: "👑" },
@@ -50,58 +50,31 @@ const FLAG_CONFIG: Record<ClientFlag, { label: string; color: string; bg: string
   inactive:  { label: "غير نشط",     color: "text-slate-400",  bg: "bg-slate-100",     emoji: "💤" },
 };
 
-// Mock related data per client
-const MOCK_CASES: Record<string, { id: string; title: string; status: "active" | "pending" | "closed"; degree: string; date: string }[]> = {
-  "1": [
-    { id: "c1", title: "نزاع تجاري — شركة الأفق", status: "active", degree: "ابتدائي", date: "٢٠ أبريل ٢٠٢٦" },
-    { id: "c2", title: "استئناف العقد ٢١٣", status: "active", degree: "استئناف", date: "١٠ مايو ٢٠٢٦" },
-    { id: "c3", title: "قضية فسخ عقد إيجار", status: "closed", degree: "ابتدائي", date: "يناير ٢٠٢٤" },
-  ],
-  "3": [
-    { id: "c4", title: "قضية عمالية — فصل تعسفي", status: "active", degree: "ابتدائي", date: "٥ مايو ٢٠٢٦" },
-    { id: "c5", title: "نزاع ميراث", status: "closed", degree: "ابتدائي", date: "مارس ٢٠٢٤" },
-    { id: "c6", title: "قضية تعويض", status: "closed", degree: "استئناف", date: "يونيو ٢٠٢٤" },
-  ],
-  "7": [
-    { id: "c7", title: "عقد تطوير عقاري", status: "closed", degree: "ابتدائي", date: "أبريل ٢٠٢٣" },
-    { id: "c8", title: "نزاع مستأجر", status: "closed", degree: "ابتدائي", date: "أغسطس ٢٠٢٣" },
-    { id: "c9", title: "دعوى استرداد", status: "closed", degree: "عليا", date: "نوفمبر ٢٠٢٣" },
-  ],
-};
-
-const MOCK_CONTRACTS: Record<string, { id: string; title: string; status: "active" | "expired" | "draft"; value: number; date: string }[]> = {
-  "1": [
-    { id: "k1", title: "عقد توكيل قضائي شامل", status: "active", value: 45000, date: "يناير ٢٠٢٤" },
-    { id: "k2", title: "اتفاقية خدمات مستمرة", status: "active", value: 24000, date: "مارس ٢٠٢٤" },
-  ],
-  "7": [
-    { id: "k3", title: "عقد تمثيل قانوني", status: "expired", value: 80000, date: "مارس ٢٠٢٣" },
-    { id: "k4", title: "ملحق توكيل خاص", status: "expired", value: 40000, date: "يونيو ٢٠٢٣" },
-  ],
-};
-
-const MOCK_CONSULTATIONS: Record<string, { id: string; title: string; date: string; status: "done" | "pending" }[]> = {
-  "1": [
-    { id: "q1", title: "استشارة عقد توريد", date: "مارس ٢٠٢٤", status: "done" },
-    { id: "q2", title: "مراجعة علاقات العمل", date: "أبريل ٢٠٢٤", status: "done" },
-  ],
-  "2": [
-    { id: "q3", title: "استشارة قانون الأسرة", date: "أبريل ٢٠٢٤", status: "done" },
-  ],
-};
-
-// Mini sparkline revenue data per client (6 months)
-const REVENUE_DATA: Record<string, number[]> = {
-  "1": [8000, 12000, 15000, 10000, 18000, 22000],
-  "2": [0, 4000, 4000, 4000, 0, 0],
-  "3": [5000, 0, 3000, 6000, 0, 0],
-  "4": [0, 9500, 0, 0, 0, 0],
-  "5": [0, 0, 0, 0, 0, 0],
-  "6": [6000, 0, 0, 0, 0, 0],
-  "7": [0, 40000, 35000, 28000, 17000, 0],
-};
-
 const MONTHS = ["نوف", "ديس", "يناير", "فبر", "مارس", "أبريل"];
+
+function mapRequestStatus(s: string | undefined): "active" | "pending" | "closed" {
+  switch (s) {
+    case "assigned":
+    case "in_review":
+      return "active";
+    case "completed":
+    case "cancelled":
+      return "closed";
+    default:
+      return "pending";
+  }
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleDateString("ar-SA", { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return String(iso);
+  }
+}
 
 // ─── Sparkline Component ───────────────────────────────────────────────────────
 
@@ -125,7 +98,7 @@ function Sparkline({ data, isDark }: { data: number[]; isDark: boolean }) {
       <path d={pathD} fill="none" stroke="#C8A762" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       {xs.map((x, i) => (
         <g key={i}>
-          <circle cx={x} cy={ys[i]} r="3" fill="#C8A762" />
+          <circle cx={x} cy={ys[i]} r={3} fill="#C8A762" />
           <text x={x} y={h + 2} textAnchor="middle" fontSize="7" fill={isDark ? "#52525b" : "#94a3b8"} fontFamily="inherit">{MONTHS[i]}</text>
           {data[i] > 0 && (
             <text x={x} y={ys[i] - 6} textAnchor="middle" fontSize="7" fill={isDark ? "#a1a1aa" : "#64748b"} fontFamily="inherit">
@@ -144,25 +117,38 @@ export default function ClientDetailPage() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const params = useParams();
-  const router = useRouter();
   const clientId = params.id as string;
 
   const [liveClient, setLiveClient] = useState<Client | null>(null);
-  const [liveCases, setLiveCases] = useState<typeof MOCK_CASES[string] | null>(null);
-  const [liveContracts, setLiveContracts] = useState<typeof MOCK_CONTRACTS[string] | null>(null);
-  const [liveConsultations, setLiveConsultations] = useState<typeof MOCK_CONSULTATIONS[string] | null>(null);
+  const [clientLoading, setClientLoading] = useState(true);
+  const [clientError, setClientError] = useState<string | null>(null);
+
+  const [cases, setCases] = useState<CaseRow[]>([]);
+  const [consultations, setConsultations] = useState<ConsultationRow[]>([]);
+  // Contracts: no per-client contracts backend yet → empty state.
+  const contracts: { id: string; title: string; status: "active" | "expired" | "draft"; value: number; date: string }[] = [];
+  const [relatedError, setRelatedError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isSupabaseMode) return;
-    // The /api/v1/lawyer/clients route returns a bare array (no `data` wrapper),
-    // so use the typed service instead of a hand-rolled apiGet.
+    if (!isSupabaseMode) {
+      setClientLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setClientLoading(true);
+    setClientError(null);
+
     getLawyerClients()
       .then((clients: LawyerClient[]) => {
+        if (cancelled) return;
         const found = clients.find((c) => c.id === clientId);
-        if (!found) return;
-        // Map the lean LawyerClient shape to the richer Client shape used by this page.
-        // Fee/case counts are not returned by the clients endpoint, so default to 0
-        // (honest empty state) rather than showing mock fee figures.
+        if (!found) {
+          setLiveClient(null);
+          return;
+        }
+        // Map the lean LawyerClient shape to the richer Client shape used by
+        // this page. Fee/case counts beyond activeCount are not returned by the
+        // clients endpoint, so default to 0 (honest empty state).
         const mapped: Client = {
           id: found.id,
           name: found.name,
@@ -180,14 +166,57 @@ export default function ClientDetailPage() {
         };
         setLiveClient(mapped);
       })
-      .catch(() => {});
-    // Additional endpoints for cases/contracts/consultations can be wired here:
-    // apiGet("/api/v1/cases", { client_id: clientId }).then(...);
-    // apiGet("/api/v1/contracts", { client_id: clientId }).then(...);
-    // apiGet("/api/v1/consultations", { client_id: clientId }).then(...);
+      .catch((e) => {
+        if (cancelled) return;
+        console.error("[lawyer client detail] client fetch failed:", e);
+        setClientError("تعذّر تحميل بيانات الموكّل.");
+      })
+      .finally(() => { if (!cancelled) setClientLoading(false); });
+
+    // Fetch the client's service requests (cases + consultations) filtered by
+    // requester_user_id. Contracts have no backend yet → empty state.
+    apiGet<{ data: any[]; total: number }>("/api/v1/service-requests", {
+      requester_user_id: clientId,
+      limit: 100,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        const caseRows: CaseRow[] = [];
+        const consultRows: ConsultationRow[] = [];
+        for (const r of rows) {
+          const type = String(r.type ?? "").toLowerCase();
+          const row = {
+            id: String(r.id),
+            title: String(r.title ?? "بدون عنوان"),
+            status: mapRequestStatus(r.status),
+            degree: String((r.metadata as any)?.degree ?? (r.metadata as any)?.court ?? "—"),
+            date: formatDate(r.createdAt),
+          };
+          if (type === "consultation") {
+            consultRows.push({
+              id: row.id,
+              title: row.title,
+              date: row.date,
+              status: row.status === "closed" ? "done" : "pending",
+            });
+          } else {
+            caseRows.push(row);
+          }
+        }
+        setCases(caseRows);
+        setConsultations(consultRows);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error("[lawyer client detail] related fetch failed:", e);
+        setRelatedError("تعذّر تحميل القضايا والاستشارات المرتبطة.");
+      });
+
+    return () => { cancelled = true; };
   }, [clientId]);
 
-  // Notes state
+  // Notes state (local notepad — not persisted to backend yet).
   const [notes, setNotes] = useState<{id:string;text:string;ts:string;pinned:boolean}[]>([]);
   const [noteInput, setNoteInput] = useState("");
   const addNote = () => {
@@ -199,16 +228,25 @@ export default function ClientDetailPage() {
   const deleteNote = (id: string) => setNotes(prev => prev.filter(n => n.id !== id));
   const sortedNotes = [...notes].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
-  const client = useMemo(() => liveClient ?? MOCK_CLIENTS.find(c => c.id === clientId), [clientId, liveClient]);
+  const client = liveClient;
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
-  if (!client) return (
+  if (clientLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3" dir="rtl">
+        <div className="inline-block w-8 h-8 rounded-full border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] animate-spin" />
+        <p className={isDark ? "text-zinc-500" : "text-slate-400"}>جاري تحميل بيانات الموكّل...</p>
+      </div>
+    );
+  }
+
+  if (clientError || !client) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3" dir="rtl">
       <User size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
-      <p className={isDark ? "text-zinc-500" : "text-slate-400"}>الموكّل غير موجود</p>
+      <p className={`text-lg font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{clientError ?? "الموكّل غير موجود"}</p>
       <Link href="/dashboard/lawyer/clients" className="text-sm text-royal hover:underline flex items-center gap-1">
         <CaretLeft size={12} /> العودة لدليل الموكّلين
       </Link>
@@ -217,13 +255,9 @@ export default function ClientDetailPage() {
 
   const unpaid = client.totalFees - client.paidFees;
   const payPct = client.totalFees ? Math.round((client.paidFees / client.totalFees) * 100) : 100;
-  // Per-client cases/contracts/consultations endpoints aren't wired yet, so
-  // show an honest empty state (no mock fallback that fakes real data).
-  const cases = liveCases ?? [];
-  const contracts = liveContracts ?? [];
-  const consultations = liveConsultations ?? [];
-  const revenue = REVENUE_DATA[clientId] ?? [0,0,0,0,0,0];
-  const totalRevenue = revenue.reduce((a, b) => a + b, 0);
+  // No real revenue series yet → honest flat zeros.
+  const revenue = [0,0,0,0,0,0];
+  const totalRevenue = 0;
   const hasBad = client.flags.includes("bad");
   const hasLatePay = client.flags.includes("late_pay");
 
@@ -246,16 +280,20 @@ export default function ClientDetailPage() {
         <span className={isDark ? "text-zinc-300" : "text-slate-700"}>{client.name}</span>
       </motion.div>
 
+      {/* Related-fetch error banner */}
+      {relatedError && (
+        <div className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50"}`}>
+          <Warning size={18} className="text-red-500 flex-shrink-0" />
+          <p className={`text-[12px] font-semibold ${isDark ? "text-red-400" : "text-red-600"}`}>{relatedError}</p>
+        </div>
+      )}
+
       {/* ── Hero Card ─────────────────────────────────────────────────────────── */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
         className={`${card} overflow-hidden`}>
-
-        {/* Top gradient bar */}
         <div className={`h-1.5 w-full ${client.flags.includes("vip") ? "bg-gradient-to-l from-amber-400 to-amber-600" : client.flags.includes("bad") ? "bg-gradient-to-l from-orange-400 to-red-500" : "bg-gradient-to-l from-[#0B3D2E] to-[#1a6b4e]"}`} />
 
         <div className="p-5 flex flex-col sm:flex-row gap-5">
-
-          {/* Avatar + Name */}
           <div className="flex items-start gap-4 flex-1">
             <div className={`w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0 text-xl font-black shadow-sm ${client.type === "company" ? "bg-indigo-500/10 text-indigo-500" : hasBad ? "bg-orange-500/10 text-orange-500" : "bg-[#0B3D2E]/10 text-[#0B3D2E] dark:text-emerald-400"}`}>
               {client.type === "company" ? <Buildings size={28} weight="duotone" /> : client.name.charAt(0)}
@@ -264,7 +302,6 @@ export default function ClientDetailPage() {
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <h1 className={`text-xl font-black ${isDark ? "text-white" : "text-slate-800"}`}
                   style={{ fontFamily: "var(--font-brand)" }}>{client.name}</h1>
-                {/* Stars */}
                 <div className="flex">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <Star key={i} size={11} weight={i < client.rating ? "fill" : "regular"}
@@ -272,7 +309,6 @@ export default function ClientDetailPage() {
                   ))}
                 </div>
               </div>
-              {/* Flags */}
               <div className="flex flex-wrap gap-1 mb-2">
                 {client.flags.map(f => {
                   const fc = FLAG_CONFIG[f];
@@ -283,18 +319,14 @@ export default function ClientDetailPage() {
                   );
                 })}
               </div>
-              {/* Contact info */}
               <div className={`flex flex-wrap gap-4 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                <span className="flex items-center gap-1"><Phone size={10} /> {client.phone}</span>
+                <span className="flex items-center gap-1"><Phone size={10} /> {client.phone || "—"}</span>
                 {client.email && <span className="flex items-center gap-1 dir-ltr">{client.email}</span>}
-                {client.city && <span className="flex items-center gap-1">📍 {client.city}</span>}
-                <span className="flex items-center gap-1"><Clock size={10} /> عميل منذ {client.since}</span>
-                <span className={`flex items-center gap-1 font-semibold ${isDark ? "text-zinc-400" : "text-slate-600"}`}><CalendarBlank size={10} /> آخر تواصل: {client.lastContact}</span>
+                <span className="flex items-center gap-1"><CalendarBlank size={10} /> آخر تواصل: {client.lastContact || "—"}</span>
               </div>
             </div>
           </div>
 
-          {/* Quick actions */}
           <div className="flex flex-col gap-2 flex-shrink-0 self-start">
             <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
               <Notepad size={13} /> تسجيل ملاحظة
@@ -302,20 +334,8 @@ export default function ClientDetailPage() {
             <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-semibold border border-[#0B3D2E]/20 text-[#0B3D2E] dark:text-emerald-400 dark:border-emerald-500/20 hover:bg-[#0B3D2E]/5 transition-colors">
               <ChatDots size={13} /> فتح محادثة
             </button>
-            {unpaid > 0 && (
-              <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-semibold border border-red-200 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/5 transition-colors">
-                <CurrencyCircleDollar size={13} /> تذكير بالسداد
-              </button>
-            )}
           </div>
         </div>
-
-        {/* Notes banner */}
-        {client.notes && (
-          <div className={`mx-5 mb-4 px-3 py-2.5 rounded-xl border-r-2 text-[11px] ${hasBad ? "border-orange-400 bg-orange-50 dark:bg-orange-500/5 text-orange-700 dark:text-orange-400" : "border-amber-400 bg-amber-50 dark:bg-amber-500/5 text-amber-700 dark:text-amber-400"}`}>
-            <Warning size={11} className="inline ml-1" />{client.notes}
-          </div>
-        )}
       </motion.div>
 
       {/* ── KPI Stats ─────────────────────────────────────────────────────────── */}
@@ -398,27 +418,10 @@ export default function ClientDetailPage() {
                 عرض الكل <ArrowRight size={10} />
               </Link>
             </div>
-            {contracts.length === 0 ? (
-              <div className="p-8 text-center">
-                <PaperclipHorizontal size={28} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} weight="duotone" />
-                <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد عقود</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-white/[0.03]">
-                {contracts.map(k => (
-                  <div key={k.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${k.status === "active" ? "bg-emerald-500" : k.status === "draft" ? "bg-amber-500" : "bg-slate-400"}`} />
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-[13px] font-semibold truncate ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{k.title}</p>
-                      <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{k.date} · قيمة {k.value.toLocaleString()} ﷼</p>
-                    </div>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${k.status === "active" ? "bg-emerald-500/10 text-emerald-500" : isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
-                      {k.status === "active" ? "نشط" : k.status === "draft" ? "مسودة" : "منتهي"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="p-8 text-center">
+              <PaperclipHorizontal size={28} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} weight="duotone" />
+              <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد عقود</p>
+            </div>
           </motion.div>
 
           {/* Consultations */}
@@ -470,6 +473,7 @@ export default function ClientDetailPage() {
             <div className="mt-2 overflow-hidden" style={{ height: 95 }}>
               <Sparkline data={revenue} isDark={isDark} />
             </div>
+            <p className={`text-[10px] mt-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد بيانات إيرادات متاحة بعد</p>
           </motion.div>
 
           {/* Payment status */}
@@ -507,7 +511,7 @@ export default function ClientDetailPage() {
               {[
                 { label: "مستوى الأولوية",   value: client.flags.includes("vip") ? "VIP 👑" : client.flags.includes("urgent") ? "حرج 🔴" : "عادي",  color: client.flags.includes("vip") ? "text-amber-500" : client.flags.includes("urgent") ? "text-red-500" : isDark ? "text-zinc-400" : "text-slate-600" },
                 { label: "مخاطر السداد",     value: hasLatePay ? "مرتفعة ⚠️" : "منخفضة ✓",  color: hasLatePay ? "text-red-500" : "text-emerald-500" },
-                { label: "تاريخ التعاون",    value: client.since,  color: isDark ? "text-zinc-300" : "text-slate-700" },
+                { label: "آخر تواصل",        value: client.lastContact || "—",  color: isDark ? "text-zinc-300" : "text-slate-700" },
                 { label: "التقييم",           value: `${"★".repeat(client.rating)}${"☆".repeat(5 - client.rating)}`, color: "text-amber-400" },
               ].map((row, i) => (
                 <div key={i} className={`flex items-center justify-between py-1.5 border-b ${isDark ? "border-white/[0.04]" : "border-slate-100"} last:border-0`}>
@@ -541,7 +545,6 @@ export default function ClientDetailPage() {
               </div>
             </div>
 
-            {/* Input area */}
             <div className="p-4">
               <div className={`flex flex-col gap-2 p-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02]" : "border-slate-200 bg-slate-50"}`}>
                 <textarea
@@ -561,7 +564,6 @@ export default function ClientDetailPage() {
                 </div>
               </div>
 
-              {/* Notes list */}
               <div className="mt-3 space-y-2">
                 {sortedNotes.length === 0 && (
                   <p className={`text-center text-[11px] py-4 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد ملاحظات بعد</p>
@@ -580,12 +582,10 @@ export default function ClientDetailPage() {
                           className={`text-[9px] px-1.5 py-0.5 rounded font-bold transition-all ${note.pinned ? "text-amber-500 hover:bg-amber-500/10" : isDark ? "text-zinc-600 hover:text-amber-400" : "text-slate-400 hover:text-amber-500"}`}>
                           {note.pinned ? "۝" : "★"}
                         </button>
-                        {note.id !== "note-init" && (
-                          <button onClick={() => deleteNote(note.id)}
-                            className={`text-[9px] px-1.5 py-0.5 rounded font-bold transition-all ${isDark ? "text-zinc-700 hover:text-red-400" : "text-slate-300 hover:text-red-500"}`}>
-                            ×
-                          </button>
-                        )}
+                        <button onClick={() => deleteNote(note.id)}
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-bold transition-all ${isDark ? "text-zinc-700 hover:text-red-400" : "text-slate-300 hover:text-red-500"}`}>
+                          ×
+                        </button>
                       </div>
                     </div>
                   </motion.div>

@@ -20,9 +20,11 @@ export async function GET(
 
   const { id: groupId } = await context.params;
 
+  // Join profiles so the page can render names instead of raw UUIDs.
+  // `profile:profiles!left(...)` aliases the nested relation as `profile`.
   const { data, error } = await supabase
     .from("group_members")
-    .select("*")
+    .select("*, profile:profiles!left(display_name, avatar_url)")
     .eq("group_id", groupId)
     .eq("status", "active")
     .order("joined_at", { ascending: true });

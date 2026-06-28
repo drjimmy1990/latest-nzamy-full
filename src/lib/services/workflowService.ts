@@ -49,8 +49,10 @@ export async function createWorkflowRequest(
 ): Promise<WorkflowRequest> {
   if (!isSupabaseMode) return saveLocal(input);
   try {
-    return await apiMutate<WorkflowRequest>("/api/v1/service-requests", "POST", input);
-  } catch {
+    const r = await apiMutate<{ data: WorkflowRequest }>("/api/v1/service-requests", "POST", input);
+    return r.data;
+  } catch (err) {
+    console.error("[workflowService] createWorkflowRequest failed, falling back to local:", err);
     return saveLocal(input);
   }
 }
@@ -63,11 +65,13 @@ export async function updateWorkflowRequestById(
 ): Promise<WorkflowRequest | null> {
   if (!isSupabaseMode) return updateLocal(id, patch, auditEvent, by);
   try {
-    return await apiMutate<WorkflowRequest>(`/api/v1/service-requests/${id}`, "PATCH", {
+    const r = await apiMutate<{ data: WorkflowRequest }>(`/api/v1/service-requests/${id}`, "PATCH", {
       ...patch,
       auditEvent,
     });
-  } catch {
+    return r.data ?? null;
+  } catch (err) {
+    console.error("[workflowService] updateWorkflowRequestById failed, falling back to local:", err);
     return updateLocal(id, patch, auditEvent, by);
   }
 }

@@ -27,11 +27,13 @@ export async function GET() {
       .order("created_at", { ascending: false })
       .limit(30);
 
-    // Get audit log entries
+    // B6 — Get audit log entries. admin_audit_events uses `actor_id`
+    // (NOT actor_user_id). The request_events query above correctly uses
+    // actor_user_id and is left untouched.
     const { data: auditEntries } = await supabase
       .from("admin_audit_events")
       .select("id, action, target_type, target_id, metadata, created_at")
-      .eq("actor_user_id", uid)
+      .eq("actor_id", uid)
       .order("created_at", { ascending: false })
       .limit(20);
 

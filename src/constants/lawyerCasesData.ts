@@ -69,19 +69,30 @@ export function workflowTypeToCaseType(request: WorkflowRequest): CaseType {
 export function workflowToCase(request: WorkflowRequest): Case {
   const isAssigned = request.status === "assigned" || request.status === "in_review";
   const isCancelled = request.status === "cancelled";
+  const isCompleted = request.status === "completed";
+  // Map backend WorkflowRequestStatus → frontend CaseStatus.
+  // completed → "closed", cancelled → "archived", assigned/in_review → "active",
+  // everything else (draft/pending_payment/pending_assignment) → "pending".
+  const status: CaseStatus = isCancelled
+    ? "archived"
+    : isCompleted
+      ? "closed"
+      : isAssigned
+        ? "active"
+        : "pending";
   return {
     id: request.id,
     title: request.title,
     client: request.requester.name || "عميل نظامي",
-    court: "بانتظار تحديد الجهة",
+    court: (request.metadata?.court as string) || "بانتظار تحديد الجهة",
     type: workflowTypeToCaseType(request),
-    status: isCancelled ? "archived" : isAssigned ? "active" : "pending",
+    status,
     priority: request.payment.amount >= 800 ? "high" : "normal",
     nextDate: String(request.metadata?.deadline ?? "بانتظار الإسناد"),
     filedDate: new Date(request.createdAt).toLocaleDateString("ar-SA"),
     degree: "primary",
     stage: isAssigned ? "تم قبول الطلب" : "طلب وارد من منصة نظامي",
-    kanbanCol: isAssigned ? "docs_prep" : "new",
+    kanbanCol: isCompleted ? "closed" : isAssigned ? "docs_prep" : "new",
     team: [],
     hasDeadline: Boolean(request.metadata?.deadline),
     value: request.payment.amount ? `${request.payment.amount.toLocaleString("ar-SA")} ر.س` : "",

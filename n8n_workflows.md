@@ -1,5 +1,9 @@
 # ⚡ Nzamy — n8n Automation Workflows (Phase 4)
 
+> **STATUS (2026-06-28):** Superseded by `n8n_master_guide_latest.md` (action plan) + `n8n/README.md` (integration contract). Kept as a technical reference. The Next.js trigger layer is now built: `POST /api/v1/n8n/trigger` + `src/lib/n8n/payload.ts` + `src/lib/events.ts` (namespaced events). Importable workflow JSON templates live at `n8n/workflows/`.
+
+---
+
 > **Purpose**: All 18 n8n workflows + 9 email templates + WhatsApp integration.
 > Each workflow is described as a simple flow, then broken into implementation checkboxes.
 > We will build these **one by one** in order of priority.

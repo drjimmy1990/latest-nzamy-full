@@ -4,6 +4,8 @@
 > **948 files · 15,214 symbols · 300 indexed execution flows · 83 functional areas · 66 API routes.**
 > Last regenerated 2026-06-28. To refresh, run `npx gitnexus analyze` then re-invoke `/mcp__gitnexus-stdio__generate_map`.
 
+**Last Updated: 2026-06-28** — reflects the F7 (event standardization + n8n trigger) and L11 (detail-page rewires) completion passes. Verification: `tsc --noEmit` 0 errors, `next build` exit 0, `gitnexus_detect_changes` clean (index `latest-nzamy-full`).
+
 ## 1. Overview
 
 NZAMY is an Arabic-first legal-services platform built on **Next.js 16 (App Router, Turbopack) + React + TypeScript + Supabase**. It serves four audiences through role-scoped dashboards under `src/app/dashboard/**`:
@@ -192,7 +194,102 @@ flowchart LR
     H --> I[Render role-scoped UI]
 ```
 
-## 6. Conventions & gotchas
+## 6. Backend / data layer
+
+### Dual mode (demo vs supabase)
+`NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND` selects the workflow backend: `"demo"` (default) or `"supabase"`. The flag is read into `isSupabaseMode` and gates whether writes go to Supabase or stay local-only. In demo mode many create flows are intentionally local-only (mock UX); in `supabase` mode they must hit the DB. Always confirm this flag when reproducing "didn't persist" bugs — `.env.local` is typically set to `supabase`, so demo fallbacks are not the live path.
+
+### Supabase clients
+- `createClient` (in `src/lib/supabase/client.ts`) — browser/server client bound to the user session, subject to **Row-Level Security (RLS)**. Use for all user-scoped reads/writes.
+- `createServiceClient` — service-role client that **bypasses RLS**. Used only by the `client-workflow/_supabase.ts` path (server-only, REST route handler) and admin/migration paths. Trusted `requester_user_id` must come from the verified session, not the client body, when using this client.
+
+### `service_requests` is the workflow / Kanban source of truth
+The `cases` table exists but is mostly unused. The Kanban, case lists, contract drafts, consultation bookings, hearings metadata, and tasks all flow through **`service_requests`**, discriminated by `type` and `status`. Status CHECK constraint:
+
+```
+draft | pending_payment | pending_assignment | assigned | in_review | completed | cancelled
+```
+
+Task state and hearing metadata are stored in `metadata` (JSONB) on the same row — task statuses (`todo`/`in_progress`/`done`/`archived`) live there, not as top-level `status` values.
+
+### Detail pages via `casesService.getServiceRequestDetail`
+`casesService.getServiceRequestDetail(id)` calls `GET /api/v1/service-requests/[id]`, which returns the full `service_requests` row plus related `events` and `attachments`. This is the canonical entry point for lawyer `cases/[id]`, client `cases/[id]`, lawyer `clients/[id]`, and client `consultation/[id]` (the last via `consultations` joined on `related_id`). Detail pages must not fall back to mock arrays — a clean not-found state is the only acceptable fallback.
+
+### API envelope convention
+v1 routes (`/api/v1/**`) return a `{ data: <row | rows> }` envelope. `apiGet`/`apiMutate` unwrap the envelope once. PATCH routes accept camelCase keys and remap to snake_case via a per-route `keyMap`. GET routes return snake_case rows; frontend services map snake_case → camelCase where needed (in-progress sweep — see `client_lawyer_functional_audit.md` RC-2).
+
+### Migrations not yet applied
+Three migrations are committed but **not yet applied to the DB** (verify with `npx supabase migration list --linked`, apply with `npx supabase db push`):
+1. `20260628_documents_upload.sql` — `documents` storage bucket + nullable `attachments.request_id`.
+2. `20260628_payments_gateway.sql` — `platform_settings.payments_gateway` seed row.
+3. `20260629_payments_and_storage_policies.sql` — `payments.id` default + `payments.payer_user_id` column + `storage.objects` RLS for the documents bucket.
+
+Until these are applied: document upload end-to-end, the admin payment-gate toggle persistence, and payment inserts will not work against the DB.
+
+## 7. Events & n8n trigger layer
+
+### `recordEvent` + namespaced vocabulary
+`src/lib/events.ts` exports a `recordEvent` helper and a `RequestEvent` namespaced vocabulary. All write routes now insert events with both `actor_user_id` and `actor_name` and a namespaced `event` string:
+
+```
+service_request.created | service_request.status_changed | service_request.updated | service_request.cancelled | service_request.completed
+consultation.created     | consultation.status_changed
+task.created             | task.status_changed             | task.deleted
+contract.created         | contract.status_changed
+hearing.created
+payment.created
+```
+
+Standardized across: `service-requests/route.ts` (POST), `service-requests/[id]/route.ts` (PATCH), `client-workflow/_supabase.ts` (inlined — service-role client can't use `recordEvent`), `lawyer/tasks/route.ts` (POST + PATCH), `service-requests/[id]/events/route.ts`.
+
+### `request_events` schema gap
+`request_events` has **no `metadata` column** (confirmed in `20260518_client_workflow_backend_ready.sql`). `recordEvent` accepts a `metadata` param for forward-compatibility but does not persist it. A future migration is required to store note text / event payloads on the row. Tabs that would need this (e.g. case-detail Notes save) are gated "قريباً" rather than silently dropping data.
+
+### `buildWebhookPayload` shape
+`src/lib/n8n/payload.ts` exports `buildWebhookPayload`, the canonical webhook payload assembler for the future n8n consumer:
+
+```
+{
+  event:     "service_request.created" | …,
+  entity:    { id, type, status },
+  actor:     { id, name?, role? },
+  recipient: { id?, role? },
+  payment:   { amount, status },
+  timestamp,
+  data
+}
+```
+
+### `POST /api/v1/n8n/trigger`
+The trigger route assembles the payload via `buildWebhookPayload`, `console.log`s it, and returns `{ data, delivered: false }`. It makes **no outbound call** — n8n hosting + delivery is deferred. The route exists so the payload shape is fixed before n8n is built.
+
+### n8n workflow assets
+Importable n8n workflow JSONs live at `n8n/workflows/` with `n8n/README.md` documenting the expected trigger URL, auth, and field mapping. These are reference assets — they are not wired to the running app until n8n is hosted.
+
+## 8. Payments
+
+The real payment provider is **not decided yet**. An admin-controlled runtime flag gates all payment flows instead of wiring a gateway.
+
+- `platform_settings.payments_gateway` = `{ status: "disabled" | "test" | "live", provider?: string | null }` (seed default `disabled`).
+- Server reader: `getPaymentGatewayStatus()` in `src/lib/access-control.ts`. Public mirror: `GET /api/v1/payments/status` (served with `Cache-Control: no-store` on both return paths) + `usePaymentsStatus()` hook.
+- Admin UI: `src/app/dashboard/admin/settings/page.tsx` Section "بوابة الدفع" (3 status buttons + provider field); sidebar link in `AdminSidebar.tsx`. `ALLOWED_SETTINGS_KEYS` includes `payments_gateway`.
+- Three `createPaymentIntentStub` call-sites gate on the flag: `client/consultation/new`, `client/requests/new`, `client/find-lawyer`. When `status === "disabled"` the submit is blocked with "الدفع غير متاح حالياً" and **no request is created**; the banner/button is gated on `!payments.loading` to avoid a flash of "المدفوعات غير متاحة" on first load. In `test`/`live` the stub still runs — real provider wiring stays deferred.
+- Server-side defense in `src/app/api/client-workflow/_supabase.ts` rejects stub-paid requests when disabled.
+- Wallet/finance amber "gateway being activated" banners render only when `status !== "live"`.
+
+When a real provider is chosen: replace `createPaymentIntentStub` body + flip status to `test`/`live`. See `payments-gateway-admin-gate.md`.
+
+## 9. Dashboards
+
+### Client + lawyer dashboards (real data)
+Client and lawyer dashboards read real `service_requests` / `consultations` data via `casesService`, `workflowService`, `lawyerService`, and `chatService`. Detail pages resolve through `casesService.getServiceRequestDetail` (lawyer `cases/[id]`, client `cases/[id]`, lawyer `clients/[id]`) or `consultations` joined on `related_id` (client `consultation/[id]`). Chat on the client consultation page is wired to real `chatService` via `related_id = consultation.id` — history loads on mount; lawyer replies appear on refresh (no realtime subscribe primitive in `chatService` yet).
+
+Tabs without a real backend show honest empty states or a "قريباً" card (`DashboardComingSoon.tsx`) rather than mock arrays. The mock-data sweep removed `CASES_DB`, `MOCK_CASES`, `MOCK_CLIENTS`, `MOCK_CONSULTATIONS`, `MOCK_MESSAGES`, the fake `setTimeout` lawyer reply, `MOCK_LAWYERS`-based revenue, etc. (Residual mock imports — e.g. `MOCK_LAWYERS` in `consultation/new` lawyer selection — are tracked in `nzamy-audit-fix-status.md`.)
+
+### Sector dashboards (Phase 6 — out of scope)
+Sector dashboards — `dashboard/business/**`, `dashboard/government/**`, `dashboard/firm/**`, `dashboard/provider/**`, `dashboard/admin-celebrities/**` — are **Phase 6** and remain mock / `DashboardComingSoon`-gated. They are out of scope for the current audit pass and are not wired to real `service_requests` data.
+
+## 10. Conventions & gotchas
 
 - **Workflow persistence is double-written.** Writes go through `workflowService.updateWorkflowRequestById` → `workflowStore.updateWorkflowRequest` → `clientWorkflowRepository.updateWorkflowRequestLocal` → `dispatchWorkflowUpdate`. The local repository is the source of truth for optimistic UI; Supabase is the durable backend. Failure-revert must capture the *original* value before the optimistic `setState` (see `onKanbanDrop`).
 - **Payments gateway is feature-gated.** `usePaymentsStatus` polls `/api/v1/payments/status` (served with `Cache-Control: no-store`). UI that depends on payment availability must wait for `!loading` before treating `disabled` as authoritative, to avoid a flash of "المدفوعات غير متاحة" on first load. The real provider is deferred behind the runtime `payments_gateway` flag.
@@ -200,7 +297,7 @@ flowchart LR
 - **Demo/mock fallbacks are being phased out.** Many pages previously fell back to mock data (`MOCK["1"]`, `CASES_DB`, `MOCK_LAWYERS`); the audit pass replaced these with clean not-found / real-API states. Residual mock arrays are gated behind dev flags or `DashboardComingSoon` cards.
 - **Index maintenance.** Running `gitnexus analyze --embeddings` can leave FTS indexes degraded (`query()` then returns empty); `gitnexus analyze --force` rebuilds them. On win32/x64 the vector index is unavailable, so semantic search falls back to exact-scan (capped at 10,000 chunks) — adequate for symbol-level `query`/`context`/`impact` calls.
 
-## 7. Where to look next
+## 11. Where to look next
 
 | Task | Tool |
 |------|------|

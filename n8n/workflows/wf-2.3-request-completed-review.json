@@ -1,0 +1,158 @@
+{
+  "name": "WF 2.3 — Request Completed + Ask Review",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "request-status",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "44444444-4444-4444-8444-444444444401",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "webhookId": "44444444-4444-4444-8444-444444444402"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM public.service_requests WHERE id = $1;",
+        "options": { "queryParameters": "={{[$json.body.entity.id]}}" }
+      },
+      "id": "44444444-4444-4444-8444-444444444403",
+      "name": "Fetch Request",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "44444444-4444-4444-8444-444444444404",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "completed",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "44444444-4444-4444-8444-444444444405",
+      "name": "If Status Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT sr.id AS request_id, sr.title, p.email AS client_email, p.phone AS client_phone, p.full_name AS client_name FROM public.service_requests sr JOIN public.profiles p ON sr.requester_user_id = p.id WHERE sr.id = $1;",
+        "options": { "queryParameters": "={{[$json.id]}}" }
+      },
+      "id": "44444444-4444-4444-8444-444444444406",
+      "name": "Fetch Client",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, -100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.RESEND_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{$env.EMAIL_FROM_NAME}} <{{$env.EMAIL_FROM}}>\",\n  \"to\": \"{{$json.client_email}}\",\n  \"subject\": \"تم إكمال طلبك القانوني\",\n  \"html\": \"<p>مرحباً {{$json.client_name}}،</p><p>تم إكمال طلبك القانوني رقم ({{$json.request_id}}) بعنوان: {{$json.title}}. شكراً لاستخدامك منصة نظامي.</p>\"\n}",
+        "options": {}
+      },
+      "id": "44444444-4444-4444-8444-444444444407",
+      "name": "Email Completion Receipt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [880, -100]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.notifications (user_id, type, title, body) VALUES ($1, 'request_completed', 'تم إكمال الطلب', 'تم إكمال طلبك القانوني');",
+        "options": { "queryParameters": "={{[$(Fetch Request).requester_user_id]}}" }
+      },
+      "id": "44444444-4444-4444-8444-444444444408",
+      "name": "Insert Notification",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1100, -100]
+    },
+    {
+      "parameters": {
+        "amount": 24,
+        "unit": "hours",
+        "options": {}
+      },
+      "id": "44444444-4444-4444-8444-444444444409",
+      "name": "Wait 24 Hours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1320, -100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.RESEND_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{$env.EMAIL_FROM_NAME}} <{{$env.EMAIL_FROM}}>\",\n  \"to\": \"{{$json.client_email}}\",\n  \"subject\": \"شاركنا تجربتك\",\n  \"html\": \"<p>مرحباً {{$json.client_name}}،</p><p>نود معرفة تجربتك مع منصة نظامي. شاركنا رأيك لنعمل على تحسين خدماتنا.</p>\"\n}",
+        "options": {}
+      },
+      "id": "44444444-4444-4444-8444-44444444440a",
+      "name": "Email Review Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1540, -100]
+    },
+    {
+      "parameters": {},
+      "id": "44444444-4444-4444-8444-44444444440b",
+      "name": "Not Completed — Skip",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [660, 100]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Fetch Request", "type": "main", "index": 0 }]] },
+    "Fetch Request": { "main": [[{ "node": "If Status Completed", "type": "main", "index": 0 }]] },
+    "If Status Completed": {
+      "main": [
+        [{ "node": "Fetch Client", "type": "main", "index": 0 }],
+        [{ "node": "Not Completed — Skip", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Client": { "main": [[{ "node": "Email Completion Receipt", "type": "main", "index": 0 }]] },
+    "Email Completion Receipt": { "main": [[{ "node": "Insert Notification", "type": "main", "index": 0 }]] },
+    "Insert Notification": { "main": [[{ "node": "Wait 24 Hours", "type": "main", "index": 0 }]] },
+    "Wait 24 Hours": { "main": [[{ "node": "Email Review Request", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

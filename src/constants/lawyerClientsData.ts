@@ -21,6 +21,7 @@ export interface Client {
   lastContact: string;
   flags:       ClientFlag[];
   rating:      1 | 2 | 3 | 4 | 5;
+  email?:      string;
   notes?:      string;
 }
 

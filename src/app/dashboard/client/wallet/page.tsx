@@ -179,8 +179,10 @@ export default function WalletPage() {
   const { isDark } = useTheme();
   const [walletBalance, setWalletBalance] = useState(WALLET_BALANCE);
   const [pendingBalance, setPendingBalance] = useState(PENDING_BALANCE);
-  const [liveCoupons, setLiveCoupons] = useState<Coupon[]>(coupons);
-  const [liveTransactions, setLiveTransactions] = useState<TxRow[]>(transactions);
+  // Live arrays start empty — mock data is only shown while `loading` is true.
+  const [liveCoupons, setLiveCoupons] = useState<Coupon[]>([]);
+  const [liveTransactions, setLiveTransactions] = useState<TxRow[]>([]);
+  const [walletLoading, setWalletLoading] = useState(true);
   const [walletError, setWalletError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -189,13 +191,19 @@ export default function WalletPage() {
         setWalletError(null);
         if (res.data?.balance !== undefined) setWalletBalance(res.data.balance);
         if (res.data?.pendingBalance !== undefined) setPendingBalance(res.data.pendingBalance);
-        if (res.data?.transactions?.length) setLiveTransactions(res.data.transactions);
-        if (res.data?.coupons?.length) setLiveCoupons(res.data.coupons);
+        // Always replace with the API result (which may be []) — never keep mock
+        // data after the call resolves.
+        setLiveTransactions(res.data?.transactions ?? []);
+        setLiveCoupons(res.data?.coupons ?? []);
       })
       .catch((err) => {
         console.error("[wallet] failed to load:", err);
         setWalletError("تعذر تحميل رصيد المحفظة. حاول مرة أخرى لاحقاً.");
-      });
+        // On failure show nothing rather than fake rows.
+        setLiveTransactions([]);
+        setLiveCoupons([]);
+      })
+      .finally(() => setWalletLoading(false));
   }, []);
   const [activeTab, setActiveTab] = useState<"overview" | "coupons" | "history">("overview");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -418,7 +426,12 @@ export default function WalletPage() {
                 <p className={`text-xs mb-4 leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                   انسخ الكود وأدخله في صفحة الدفع، أو سيُطبّق تلقائياً عند حجزك للخدمة المرتبطة به.
                 </p>
-                {liveCoupons.map((c, i) => (
+                {(walletLoading ? coupons : liveCoupons).length === 0 ? (
+                  <div className={`text-center text-sm py-10 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                    {walletLoading ? "جارٍ التحميل…" : "لا توجد كوبونات حالياً."}
+                  </div>
+                ) : null}
+                {(walletLoading ? coupons : liveCoupons).map((c, i) => (
                   <motion.div
                     key={c.code}
                     custom={i}
@@ -534,7 +547,12 @@ export default function WalletPage() {
                   </h3>
                 </div>
                 <div className="divide-y divide-dashed divide-zinc-100 dark:divide-white/[0.05]">
-                  {liveTransactions.map((tx, i) => (
+                  {(walletLoading ? transactions : liveTransactions).length === 0 ? (
+                    <div className={`text-center text-sm py-10 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                      {walletLoading ? "جارٍ التحميل…" : "لا توجد معاملات بعد."}
+                    </div>
+                  ) : null}
+                  {(walletLoading ? transactions : liveTransactions).map((tx, i) => (
                     <motion.div
                       key={tx.id}
                       custom={i}

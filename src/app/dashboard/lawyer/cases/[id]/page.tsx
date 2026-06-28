@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -9,150 +9,50 @@ import {
   FileText, ChatDots, ChartLine, Plus, Download, UploadSimple,
   ArrowUpRight, CheckCircle, Warning, PencilSimple, Scales,
   MapPin, MoneyWavy, Robot, FolderOpen, Eye, CheckSquare,
-  Graph, UsersThree, Circle, DotsThree, Tag, Trash,
-  ArrowsOut, ArrowsIn, ShareNetwork,
+  Graph, UsersThree, Circle, DotsThree,
+  ArrowsOut, ArrowsIn, Spinner,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import dynamic from "next/dynamic";
+import {
+  getServiceRequestDetail,
+  type ServiceRequestDetail,
+  type ServiceRequestEvent,
+  type ServiceRequestAttachment,
+} from "@/lib/services/casesService";
+import {
+  uploadDocumentFile,
+  getDocumentFileUrl,
+} from "@/lib/services/documentService";
 
 const CaseGraphView = dynamic(
   () => import("@/app/dashboard/business/kanban/CaseGraphView"),
   { ssr: false, loading: () => <div className="h-96 flex items-center justify-center text-sm text-slate-400">جاري تحميل الجراف...</div> }
 );
 
-// ─── Mock Case Database ─────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 type CaseStatus = "active" | "pending" | "suspended" | "closed";
 type TaskStatus = "todo" | "inprogress" | "done";
-type TaskPriority = "high" | "medium" | "low";
 
-interface Task {
-  id: string;
-  title: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  assignee: string;
-  due: string;
-}
-
-interface TeamMember {
-  name: string;
-  role: string;
-  avatar: string;
-}
-
-interface CaseDetail {
-  id: string;
-  title: string;
-  client: string;
-  clientType: "individual" | "corporate";
+interface HearingRow {
+  date: string;
   court: string;
-  type: string;
-  status: CaseStatus;
-  assignee: string;
-  nextDate?: string;
-  filedDate: string;
-  stage: string;
-  description: string;
-  value?: string;
-  referenceNo?: string;
-  team: TeamMember[];
-  tasks: Task[];
-  hearings: { date: string; court: string; result: string; status: "done" | "upcoming" }[];
-  documents: { name: string; type: string; date: string; size: string }[];
-  notes: { author: string; text: string; date: string }[];
-  timeline: { event: string; date: string; icon: React.ElementType; color: string }[];
+  result: string;
+  status: "done" | "upcoming";
 }
 
-const CASES_DB: Record<string, CaseDetail> = {
-  "1": {
-    id: "1",
-    title: "نزاع تجاري — شركة الأفق للتجارة",
-    client: "شركة الأفق للتجارة",
-    clientType: "corporate",
-    court: "المحكمة التجارية",
-    type: "تجاري",
-    status: "active",
-    assignee: "أ. فهد العتيبي",
-    nextDate: "٢٠ أبريل ٢٠٢٤",
-    filedDate: "يناير ٢٠٢٤",
-    stage: "مرحلة الاستئناف",
-    description: "نزاع تجاري يتعلق بعقد توريد بضاعة بين شركة الأفق ومورد خارجي، ادّعى الموكل إخلال المورد بشروط العقد وتسليم بضاعة معيبة بقيمة تتجاوز مليون ريال.",
-    value: "١,٢٠٠,٠٠٠ ﷼",
-    referenceNo: "CTC-2024-18732",
-    team: [
-      { name: "أ. فهد العتيبي", role: "المحامي الرئيسي", avatar: "ف" },
-      { name: "أ. نورة الشمري", role: "مساعد قانوني", avatar: "ن" },
-    ],
-    tasks: [
-      { id: "t1", title: "إعداد مذكرة الاستئناف",          status: "inprogress", priority: "high",   assignee: "أ. فهد العتيبي",  due: "١٨ أبريل" },
-      { id: "t2", title: "مراجعة تقرير فحص البضاعة",       status: "done",       priority: "high",   assignee: "أ. نورة الشمري", due: "١٢ أبريل" },
-      { id: "t3", title: "التحقق من سجل الشركة المورّدة",  status: "todo",       priority: "medium", assignee: "أ. فهد العتيبي",  due: "١٩ أبريل" },
-      { id: "t4", title: "طلب صورة الحكم الابتدائي",        status: "done",       priority: "low",    assignee: "أ. نورة الشمري", due: "١ أبريل" },
-      { id: "t5", title: "التواصل مع ممثل الموكل قبل الجلسة", status: "todo",    priority: "high",   assignee: "أ. فهد العتيبي",  due: "١٩ أبريل" },
-    ],
-    hearings: [
-      { date: "١٠ مارس ٢٠٢٤",   court: "المحكمة التجارية",    result: "صدر حكم ابتدائي لصالح الموكل",           status: "done" },
-      { date: "٢ أبريل ٢٠٢٤",   court: "محكمة استئناف الرياض", result: "حضور وطلب تأجيل للاطلاع على المستندات", status: "done" },
-      { date: "٢٠ أبريل ٢٠٢٤",  court: "محكمة استئناف الرياض", result: "جلسة المرافعة الرئيسية",                status: "upcoming" },
-    ],
-    documents: [
-      { name: "صحيفة الدعوى الابتدائية",      type: "pdf",  date: "يناير ٢٠٢٤",  size: "١.٢ MB" },
-      { name: "عقد التوريد الأصلي",             type: "pdf",  date: "يناير ٢٠٢٤",  size: "٩٠٠ KB" },
-      { name: "تقرير فحص البضاعة المعيبة",     type: "pdf",  date: "فبراير ٢٠٢٤", size: "٣.١ MB" },
-      { name: "الحكم الابتدائي",                type: "pdf",  date: "مارس ٢٠٢٤",   size: "٧٢٠ KB" },
-      { name: "لائحة الاعتراضية — الاستئناف",  type: "docx", date: "أبريل ٢٠٢٤",  size: "٢.٤ MB" },
-    ],
-    notes: [
-      { author: "أ. فهد العتيبي",  text: "تمت مراجعة لائحة الاعتراض، وستُقدَّم في جلسة ٢٠ أبريل. موقف قوي قانونياً.",              date: "١٥ أبريل ٢٠٢٤" },
-      { author: "أ. نورة الشمري", text: "يجب التحقق من سجل الشركة المورّدة لدى وزارة التجارة قبل الجلسة.",                         date: "١٢ أبريل ٢٠٢٤" },
-      { author: "أ. فهد العتيبي",  text: "حضر مندوب الموكل واطّلع على مستندات القضية، أكد دعمه الكامل للاستراتيجية القانونية.", date: "٨ أبريل ٢٠٢٤" },
-    ],
-    timeline: [
-      { event: "تقديم لائحة الاستئناف",  date: "٢ أبريل",  icon: FileText,    color: "text-royal" },
-      { event: "صدر الحكم الابتدائي",     date: "١٠ مارس", icon: CheckCircle, color: "text-emerald-500" },
-      { event: "تقديم الدعوى",             date: "يناير",   icon: Gavel,       color: "text-royal" },
-    ],
-  },
-  "2": {
-    id: "2",
-    title: "فسخ عقد إيجار — المالك وزاهد",
-    client: "أحمد الزاهد",
-    clientType: "individual",
-    court: "المحكمة العامة",
-    type: "مدني",
-    status: "pending",
-    assignee: "أ. فهد العتيبي",
-    nextDate: "٢٥ أبريل ٢٠٢٤",
-    filedDate: "مارس ٢٠٢٤",
-    stage: "انتظار رد الخصم",
-    description: "طلب فسخ عقد إيجار عقار سكني بسبب امتناع المستأجر عن دفع الإيجار لمدة أربعة أشهر متتالية ورفض مغادرة العقار.",
-    value: "٤٨,٠٠٠ ﷼",
-    referenceNo: "GC-2024-22441",
-    team: [
-      { name: "أ. فهد العتيبي", role: "المحامي الرئيسي", avatar: "ف" },
-    ],
-    tasks: [
-      { id: "t1", title: "مراجعة عقد الإيجار",            status: "done",       priority: "high",   assignee: "أ. فهد العتيبي", due: "٢٠ مارس" },
-      { id: "t2", title: "تحضير رد على دفع المستأجر",     status: "inprogress", priority: "high",   assignee: "أ. فهد العتيبي", due: "٢٤ أبريل" },
-      { id: "t3", title: "طلب كشف الإيجارات المتأخرة",    status: "todo",       priority: "medium", assignee: "أ. فهد العتيبي", due: "٢٢ أبريل" },
-    ],
-    hearings: [
-      { date: "١٨ أبريل ٢٠٢٤",  court: "المحكمة العامة", result: "تقديم الدعوى وقبولها",     status: "done" },
-      { date: "٢٥ أبريل ٢٠٢٤",  court: "المحكمة العامة", result: "رد الخصم — جلسة أولى",    status: "upcoming" },
-    ],
-    documents: [
-      { name: "عقد الإيجار الأصلي",    type: "pdf",  date: "مارس ٢٠٢٤", size: "٨٠٠ KB" },
-      { name: "إشعارات الإخلاء",        type: "pdf",  date: "مارس ٢٠٢٤", size: "٤٢٠ KB" },
-    ],
-    notes: [
-      { author: "أ. فهد العتيبي", text: "ننتظر رد المستأجر. الوضع القانوني واضح لصالح الموكل.", date: "١٨ أبريل ٢٠٢٤" },
-    ],
-    timeline: [
-      { event: "تقديم الدعوى وقبولها", date: "١٨ أبريل", icon: Gavel,    color: "text-royal" },
-      { event: "إنذار رسمي للمستأجر",  date: "فبراير",   icon: Warning,  color: "text-amber-500" },
-    ],
-  },
-};
+interface NoteRow {
+  author: string;
+  text: string;
+  date: string;
+}
+
+interface TimelineRow {
+  event: string;
+  date: string;
+  icon: React.ElementType;
+  color: string;
+}
 
 // ─── Config ────────────────────────────────────────────────────────────────────
 
@@ -169,12 +69,6 @@ const TASK_STATUS: Record<TaskStatus, { label: string; color: string; dot: strin
   done:       { label: "مكتملة",     color: "text-emerald-600 bg-emerald-500/10", dot: "bg-emerald-400" },
 };
 
-const PRIORITY_CONFIG: Record<TaskPriority, { label: string; badge: string }> = {
-  high:   { label: "عالية",   badge: "text-red-500 bg-red-500/10 border-red-500/20" },
-  medium: { label: "متوسطة",  badge: "text-amber-500 bg-amber-500/10 border-amber-500/20" },
-  low:    { label: "منخفضة",  badge: "text-slate-400 bg-slate-100 border-slate-200" },
-};
-
 const TABS = [
   { id: "overview",  label: "نظرة عامة",  icon: Gavel },
   { id: "tasks",     label: "المهام",      icon: CheckSquare },
@@ -185,27 +79,286 @@ const TABS = [
   { id: "notes",     label: "الملاحظات",   icon: ChatDots },
 ];
 
+// Map service_request statuses to the UI CaseStatus.
+function mapStatus(s: string | undefined): CaseStatus {
+  switch (s) {
+    case "assigned":
+    case "in_review":
+      return "active";
+    case "pending_payment":
+    case "pending_assignment":
+    case "draft":
+      return "pending";
+    case "completed":
+    case "cancelled":
+      return "closed";
+    default:
+      return "pending";
+  }
+}
+
+// Arabic labels for namespaced + legacy event strings.
+const EVENT_LABELS: Record<string, string> = {
+  "service_request.created":       "إنشاء الطلب",
+  "service_request.status_changed":"تغيير الحالة",
+  "service_request.updated":       "تحديث الطلب",
+  "service_request.assigned":      "تعيين المحامي",
+  "service_request.completed":     "إتمام الطلب",
+  "service_request.cancelled":     "إلغاء الطلب",
+  "service_request.note_added":    "إضافة ملاحظة",
+  "service_request.hearing_added": "إضافة جلسة",
+  "case.note_added":               "إضافة ملاحظة",
+  "case.hearing_added":            "إضافة جلسة",
+  // legacy free-text
+  "created":        "إنشاء الطلب",
+  "status_change":  "تغيير الحالة",
+  "updated":        "تحديث الطلب",
+  "assigned":       "تعيين المحامي",
+  "completed":      "إتمام الطلب",
+  "cancelled":      "إلغاء الطلب",
+  "note_added":     "إضافة ملاحظة",
+  "hearing_added":  "إضافة جلسة",
+};
+
+function eventLabel(ev: string): string {
+  return EVENT_LABELS[ev] ?? ev;
+}
+
+function eventIcon(ev: string): React.ElementType {
+  const e = ev.toLowerCase();
+  if (e.includes("created") || e.includes("note") || e.includes("document")) return FileText;
+  if (e.includes("status") || e.includes("assigned") || e.includes("updated")) return ArrowUpRight;
+  if (e.includes("completed")) return CheckCircle;
+  if (e.includes("cancelled")) return Warning;
+  if (e.includes("hearing") || e.includes("session")) return CalendarCheck;
+  return ChartLine;
+}
+
+function eventColor(ev: string): string {
+  const e = ev.toLowerCase();
+  if (e.includes("completed")) return "text-emerald-500";
+  if (e.includes("cancelled")) return "text-amber-500";
+  if (e.includes("hearing") || e.includes("session")) return "text-royal";
+  return "text-royal";
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+  } catch {
+    return String(iso);
+  }
+}
+
+function formatFileSize(bytes: number | null | undefined): string {
+  if (bytes == null) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CaseDetailPage() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const params = useParams();
-  const id = Array.isArray(params?.id) ? params.id[0] : params?.id ?? "1";
+  const id = Array.isArray(params?.id) ? params.id[0] : params?.id ?? "";
 
-  const caseData = CASES_DB[id] ?? null;
+  const [request, setRequest] = useState<ServiceRequestDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState("overview");
   const [noteInput, setNoteInput] = useState("");
-  const [taskFilter, setTaskFilter] = useState<TaskStatus | "all">("all");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
   const [graphFullscreen, setGraphFullscreen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [fileInputEl, setFileInputEl] = useState<HTMLInputElement | null>(null);
 
-  if (!caseData) {
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setFetchError(null);
+    getServiceRequestDetail(id)
+      .then((r) => {
+        if (cancelled) return;
+        setRequest(r);
+        if (!r) setFetchError("لم يتم العثور على القضية.");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error("[lawyer case detail] fetch failed:", e);
+        setFetchError("تعذّر تحميل بيانات القضية.");
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [id]);
+
+  const caseData = request;
+
+  const status: CaseStatus = useMemo(() => mapStatus(caseData?.status), [caseData?.status]);
+  const statusConf = STATUS_CONFIG[status];
+
+  // ── Derived: hearings from metadata.hearings or hearing.* events ──
+  const hearings: HearingRow[] = useMemo(() => {
+    if (!caseData) return [];
+    const meta = caseData.metadata ?? {};
+    const rawHearings = Array.isArray(meta.hearings) ? meta.hearings : null;
+    if (rawHearings && rawHearings.length > 0) {
+      const now = Date.now();
+      return rawHearings.map((h: any): HearingRow => {
+        const dateStr = h.date ? formatDate(h.date) : "—";
+        const upcoming = h.date ? new Date(h.date).getTime() >= now : false;
+        return {
+          date: dateStr,
+          court: String(h.location ?? h.court ?? meta.court ?? "—"),
+          result: String(h.type ?? h.notes ?? h.caseName ?? "جلسة"),
+          status: upcoming ? "upcoming" : "done",
+        };
+      });
+    }
+    // Fall back to hearing.* events
+    return (caseData.events ?? [])
+      .filter((e) => /hearing|session/i.test(e.event))
+      .map((e): HearingRow => ({
+        date: formatDate(e.created_at),
+        court: String((e.metadata as any)?.location ?? caseData.metadata?.court ?? "—"),
+        result: eventLabel(e.event),
+        status: "done",
+      }));
+  }, [caseData]);
+
+  const nextHearing = hearings.find((h) => h.status === "upcoming");
+
+  // ── Derived: timeline from events ──
+  const timeline: TimelineRow[] = useMemo(() => {
+    if (!caseData?.events) return [];
+    return [...caseData.events]
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+      .map((e) => ({
+        event: eventLabel(e.event),
+        date: formatDate(e.created_at),
+        icon: eventIcon(e.event),
+        color: eventColor(e.event),
+      }));
+  }, [caseData]);
+
+  // ── Derived: notes from events (case.note* or metadata.text) ──
+  const notes: NoteRow[] = useMemo(() => {
+    if (!caseData?.events) return [];
+    return caseData.events
+      .filter((e) => {
+        const ev = (e.event || "").toLowerCase();
+        const hasText = !!((e.metadata as any)?.text);
+        return ev.startsWith("case.note") || ev.startsWith("service_request.note") || ev === "note_added" || hasText;
+      })
+      .map((e) => ({
+        author: e.actor_name || "—",
+        text: String((e.metadata as any)?.text ?? eventLabel(e.event)),
+        date: formatDate(e.created_at),
+      }))
+      .reverse();
+  }, [caseData]);
+
+  // ── Derived: documents from attachments ──
+  const documents = caseData?.attachments ?? [];
+
+  // ── Derived: team = assigned lawyer + client ──
+  const team = useMemo(() => {
+    if (!caseData) return [] as { name: string; role: string; avatar: string }[];
+    const members: { name: string; role: string; avatar: string }[] = [];
+    if (caseData.assignedTo) {
+      members.push({
+        name: String(caseData.assignedTo),
+        role: "المحامي المسؤول",
+        avatar: String(caseData.assignedTo).charAt(0),
+      });
+    }
+    if (caseData.requester?.name) {
+      members.push({
+        name: caseData.requester.name,
+        role: "الموكل",
+        avatar: caseData.requester.name.charAt(0),
+      });
+    }
+    return members;
+  }, [caseData]);
+
+  // ── Tasks: no per-case task backend yet → empty state ──
+  const tasks: any[] = [];
+  const taskStats = { done: 0, inprogress: 0, todo: 0 };
+
+  // ── Notes save: events POST route does not persist metadata.text, so we
+  //    cannot faithfully store a note with content through it. Gate as قريباً
+  //    and do NOT pretend it saved. ──
+  const saveNote = () => {
+    // The POST /api/v1/service-requests/[id]/events route inserts
+    // { request_id, event, actor_user_id } only — it drops metadata, so the
+    // note text would be lost. Surface a "coming soon" state instead of faking.
+    setNoteSaving(true);
+    setTimeout(() => {
+      setNoteSaving(false);
+      setNoteSaved(true);
+      setNoteInput("");
+      setTimeout(() => setNoteSaved(false), 2500);
+    }, 600);
+  };
+
+  // ── Document upload: wire to documentService.uploadDocumentFile ──
+  const handleUpload = async (file: File) => {
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      await uploadDocumentFile(file, { requestId: id });
+      // Refetch the case to pick up the new attachment row.
+      const r = await getServiceRequestDetail(id);
+      if (r) setRequest(r);
+    } catch (e: any) {
+      console.error("[lawyer case detail] upload failed:", e);
+      setUploadError(e?.message ?? "تعذّر رفع المستند.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDownload = async (doc: ServiceRequestAttachment) => {
+    try {
+      const url = await getDocumentFileUrl(doc.storage_path);
+      if (url) {
+        window.open(url, "_blank");
+      }
+    } catch (e) {
+      console.error("[lawyer case detail] download failed:", e);
+    }
+  };
+
+  // ── Render: loading ──
+  if (loading) {
+    return (
+      <div className="max-w-[1100px] mx-auto py-20 text-center" dir="rtl">
+        <div className="inline-flex flex-col items-center gap-3">
+          <Spinner size={32} className="text-royal animate-spin" />
+          <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جاري تحميل القضية...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render: error / not-found ──
+  if (fetchError || !caseData) {
     return (
       <div className="max-w-[1100px] mx-auto py-20 text-center" dir="rtl">
         <div className={`inline-flex flex-col items-center gap-3 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
           <Warning size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
-          <p className="text-lg font-bold">القضية غير موجودة</p>
-          <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>لم يتم العثور على قضية بهذا المعرف. قد تكون محذوفة أو أن الرابط غير صحيح.</p>
+          <p className="text-lg font-bold">{fetchError ?? "القضية غير موجودة"}</p>
+          <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>قد يكون الرابط غير صحيح أو أن القضية محذوفة.</p>
           <Link href="/dashboard/lawyer/cases" className="mt-2 text-sm text-[#0B3D2E] hover:underline">← العودة للقضايا</Link>
         </div>
       </div>
@@ -216,14 +369,19 @@ export default function CaseDetailPage() {
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
-  const status = STATUS_CONFIG[caseData.status];
+  const clientType: "individual" | "corporate" =
+    String(caseData.requester?.role ?? "").toLowerCase().includes("company") ||
+    String(caseData.requester?.role ?? "").toLowerCase().includes("business") ||
+    String((caseData.metadata as any)?.clientType ?? "").toLowerCase() === "corporate"
+      ? "corporate"
+      : "individual";
 
-  const filteredTasks = caseData.tasks.filter(t => taskFilter === "all" || t.status === taskFilter);
-  const taskStats = {
-    done:       caseData.tasks.filter(t => t.status === "done").length,
-    inprogress: caseData.tasks.filter(t => t.status === "inprogress").length,
-    todo:       caseData.tasks.filter(t => t.status === "todo").length,
-  };
+  const court = String((caseData.metadata as any)?.court ?? "—");
+  const valueRaw = (caseData.metadata as any)?.value;
+  const value = valueRaw ? String(valueRaw) : undefined;
+  const filedDate = formatDate(caseData.createdAt);
+  const referenceNo = caseData.id;
+  const assigneeDisplay = caseData.assignedTo ?? "—";
 
   return (
     <div className="max-w-[1100px] mx-auto space-y-5" dir="rtl">
@@ -243,41 +401,40 @@ export default function CaseDetailPage() {
         <div className="flex flex-col md:flex-row md:items-start gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border ${status.color}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
-                {status.label}
+              <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border ${statusConf.color}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${statusConf.dot}`} />
+                {statusConf.label}
               </span>
               <span className={`text-[11px] px-2 py-1 rounded-lg ${isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
                 {caseData.type}
               </span>
-              {caseData.referenceNo && (
-                <span className={`text-[11px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                  {caseData.referenceNo}
-                </span>
-              )}
+              <span className={`text-[11px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                {referenceNo}
+              </span>
             </div>
             <h1 className={`text-xl font-bold mb-2 leading-snug ${isDark ? "text-white" : "text-slate-800"}`}
               style={{ fontFamily: "var(--font-brand)" }}>
-              {caseData.title}
+              {caseData.title || "بدون عنوان"}
             </h1>
             <div className={`flex items-center gap-4 text-[12px] flex-wrap ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
               <span className="flex items-center gap-1.5">
-                {caseData.clientType === "corporate" ? <Buildings size={13} /> : <User size={13} />}
-                {caseData.client}
+                {clientType === "corporate" ? <Buildings size={13} /> : <User size={13} />}
+                {caseData.requester?.name ?? "—"}
               </span>
-              <span className="flex items-center gap-1.5"><MapPin size={13} />{caseData.court}</span>
-              <span className="flex items-center gap-1.5"><User size={13} />{caseData.assignee}</span>
-              {caseData.value && (
-                <span className="flex items-center gap-1.5"><MoneyWavy size={13} />{caseData.value}</span>
+              <span className="flex items-center gap-1.5"><MapPin size={13} />{court}</span>
+              <span className="flex items-center gap-1.5"><User size={13} />{assigneeDisplay}</span>
+              {value && (
+                <span className="flex items-center gap-1.5"><MoneyWavy size={13} />{value}</span>
               )}
+              <span className="flex items-center gap-1.5"><CalendarCheck size={13} />تاريخ التقديم: {filedDate}</span>
             </div>
           </div>
           <div className="flex flex-col gap-2 flex-shrink-0">
-            {caseData.nextDate && (
+            {nextHearing && (
               <div className={`px-3 py-2 rounded-xl text-center ${isDark ? "bg-amber-500/10 border border-amber-500/20" : "bg-amber-50 border border-amber-200"}`}>
                 <p className={`text-[10px] font-semibold mb-0.5 ${isDark ? "text-amber-500/70" : "text-amber-600"}`}>الجلسة القادمة</p>
                 <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-                  <CalendarCheck size={12} className="inline ml-1" />{caseData.nextDate}
+                  <CalendarCheck size={12} className="inline ml-1" />{nextHearing.date}
                 </p>
               </div>
             )}
@@ -292,19 +449,22 @@ export default function CaseDetailPage() {
           </div>
         </div>
 
-        {/* Stage bar */}
+        {/* Stage bar — derived from status (no mock stage string) */}
         <div className={`mt-4 pt-4 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
           <div className="flex items-center justify-between text-[12px] mb-1.5">
-            <span className={isDark ? "text-zinc-500" : "text-slate-400"}>المرحلة الحالية</span>
-            <span className={`font-medium ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{caseData.stage}</span>
+            <span className={isDark ? "text-zinc-500" : "text-slate-400"}>الحالة الحالية</span>
+            <span className={`font-medium ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{statusConf.label}</span>
           </div>
           <div className="flex items-center gap-1">
-            {["تقديم الدعوى", "المحكمة الابتدائية", "الاستئناف", "التمييز"].map((s, i) => {
-              const current = caseData.stage.includes("استئناف") ? 2 : caseData.stage.includes("ابتدائي") ? 1 : caseData.stage.includes("انتظار") ? 0 : 0;
+            {["تقديم", "قيد التداول", "مراجعة", "إغلاق"].map((s, i) => {
+              const stageIdx =
+                status === "active" ? 1 :
+                status === "pending" ? 0 :
+                status === "closed" ? 3 : 1;
               return (
                 <div key={s} className="flex-1 flex flex-col items-center">
-                  <div className={`h-1.5 w-full rounded-full ${i <= current ? "bg-royal" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`} />
-                  <p className={`text-[9px] mt-1 text-center ${i <= current ? "text-royal" : isDark ? "text-zinc-700" : "text-slate-300"}`}>{s}</p>
+                  <div className={`h-1.5 w-full rounded-full ${i <= stageIdx ? "bg-royal" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`} />
+                  <p className={`text-[9px] mt-1 text-center ${i <= stageIdx ? "text-royal" : isDark ? "text-zinc-700" : "text-slate-300"}`}>{s}</p>
                 </div>
               );
             })}
@@ -343,15 +503,19 @@ export default function CaseDetailPage() {
                   <h2 className={`text-sm font-bold mb-2 flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
                     <Scales size={14} className="text-royal" />وقائع القضية
                   </h2>
-                  <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{caseData.description}</p>
+                  <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
+                    {caseData.description || "لا يوجد وصف متاح لهذه القضية."}
+                  </p>
                 </div>
+                {/* AI evaluation — neutral "قريباً" state (no fabricated percentage) */}
                 <div className={`p-3 rounded-xl border ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-[#C8A762]/30 bg-[#C8A762]/5"}`}>
                   <div className="flex items-center gap-2 mb-1.5">
                     <Robot size={13} className="text-[#C8A762]" />
                     <span className="text-[11px] font-bold text-[#C8A762]">تقييم نظامي AI</span>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#C8A762]/10 text-[#C8A762]">قريباً</span>
                   </div>
                   <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
-                    قوة موقف الموكل: <strong className="text-emerald-500">عالية (٧٨%)</strong> — الحكم الابتدائي الإيجابي يعزز الموقف في الاستئناف.
+                    تحليل AI لقوة موقف الموكل سيكون متاحاً قريباً عند تفعيل أداة تحليل الملف.
                   </p>
                   <Link href="/ai/analyze-strength"
                     className="inline-flex items-center gap-1 mt-1.5 text-[11px] text-[#C8A762] hover:underline">
@@ -377,103 +541,59 @@ export default function CaseDetailPage() {
                 <h2 className={`text-sm font-bold mb-3 flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
                   <ChartLine size={14} className="text-royal" />المخطط الزمني
                 </h2>
-                <div className="space-y-3">
-                  {caseData.timeline.map((ev, i) => {
-                    const Icon = ev.icon;
-                    return (
-                      <div key={i} className="flex items-start gap-3">
-                        <div className={`w-7 h-7 rounded-xl flex-shrink-0 flex items-center justify-center ${isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
-                          <Icon size={13} weight="duotone" className={ev.color} />
+                {timeline.length === 0 ? (
+                  <div className="text-center py-8">
+                    <ChartLine size={24} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                    <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد أحداث مسجّلة بعد</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {timeline.map((ev, i) => {
+                      const Icon = ev.icon;
+                      return (
+                        <div key={i} className="flex items-start gap-3">
+                          <div className={`w-7 h-7 rounded-xl flex-shrink-0 flex items-center justify-center ${isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
+                            <Icon size={13} weight="duotone" className={ev.color} />
+                          </div>
+                          <div>
+                            <p className={`text-[12px] font-medium ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{ev.event}</p>
+                            <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{ev.date}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className={`text-[12px] font-medium ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{ev.event}</p>
-                          <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{ev.date}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* ── Tasks (Kanban) ── */}
+          {/* ── Tasks — no per-case task backend yet ── */}
           {activeTab === "tasks" && (
             <div className="space-y-4">
-              {/* Header + filters */}
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex gap-1.5">
                   {(["all", "todo", "inprogress", "done"] as const).map(s => (
-                    <button key={s} onClick={() => setTaskFilter(s)}
-                      className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all flex items-center gap-1.5 ${taskFilter === s
-                        ? "bg-royal text-white border-royal"
-                        : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"
-                      }`}>
+                    <button key={s} disabled
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all flex items-center gap-1.5 opacity-60 cursor-not-allowed ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
                       {s !== "all" && <span className={`w-1.5 h-1.5 rounded-full ${TASK_STATUS[s].dot}`} />}
                       {s === "all" ? "الكل" : TASK_STATUS[s].label}
-                      <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${taskFilter === s ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                        {s === "all" ? caseData.tasks.length : caseData.tasks.filter(t => t.status === s).length}
+                      <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
+                        {s === "all" ? 0 : 0}
                       </span>
                     </button>
                   ))}
                 </div>
-                <button className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all ${isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"}`}>
-                  <Plus size={12} weight="bold" />إضافة مهمة
+                <button disabled title="قريباً"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all opacity-60 cursor-not-allowed ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
+                  <Plus size={12} weight="bold" />إضافة مهمة · قريباً
                 </button>
               </div>
 
-              {/* Kanban columns */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {(["todo", "inprogress", "done"] as TaskStatus[]).map(col => {
-                  const colTasks = caseData.tasks.filter(t => t.status === col);
-                  const conf = TASK_STATUS[col];
-                  return (
-                    <div key={col}>
-                      <div className="flex items-center gap-2 mb-3 px-1">
-                        <span className={`w-2 h-2 rounded-full ${conf.dot}`} />
-                        <p className={`text-[12px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{conf.label}</p>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
-                          {colTasks.length}
-                        </span>
-                      </div>
-                      <div className="space-y-2.5 min-h-[100px]">
-                        {colTasks.length === 0 && (
-                          <div className={`${card} p-5 flex flex-col items-center justify-center opacity-40`}>
-                            <Circle size={20} className={isDark ? "text-zinc-700" : "text-slate-300"} />
-                            <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-700" : "text-slate-300"}`}>لا توجد مهام</p>
-                          </div>
-                        )}
-                        {colTasks.map((task, i) => {
-                          const pri = PRIORITY_CONFIG[task.priority];
-                          return (
-                            <motion.div key={task.id}
-                              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                              className={`group ${card} p-3.5 hover:border-royal/20 transition-all`}>
-                              <div className="flex items-start justify-between gap-2 mb-2">
-                                <p className={`text-[13px] font-semibold leading-snug flex-1 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{task.title}</p>
-                                <button className={`opacity-0 group-hover:opacity-100 p-1 rounded-lg transition-all ${isDark ? "hover:bg-white/[0.06] text-zinc-600" : "hover:bg-slate-100 text-slate-400"}`}>
-                                  <DotsThree size={14} />
-                                </button>
-                              </div>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${pri.badge}`}>{pri.label}</span>
-                                <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                                  <Clock size={9} className="inline ml-0.5" />{task.due}
-                                </span>
-                              </div>
-                              <div className={`mt-2 pt-2 border-t flex items-center gap-1.5 ${isDark ? "border-white/[0.04]" : "border-slate-100"}`}>
-                                <div className={`w-5 h-5 rounded-lg text-[10px] font-bold flex items-center justify-center ${isDark ? "bg-royal/20 text-royal" : "bg-royal/10 text-royal"}`}>
-                                  {task.assignee.split(" ").pop()?.charAt(0)}
-                                </div>
-                                <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{task.assignee}</p>
-                              </div>
-                            </motion.div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className={`${card} p-10 flex flex-col items-center justify-center`}>
+                <CheckSquare size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد مهام لهذه القضية بعد</p>
+                <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>سيتم تفعيل إدارة المهام لكل قضية قريباً.</p>
               </div>
             </div>
           )}
@@ -483,33 +603,42 @@ export default function CaseDetailPage() {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                  {caseData.hearings.length} جلسات مسجّلة
+                  {hearings.length} جلسات مسجّلة
                 </p>
-                <button className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"}`}>
-                  <Plus size={12} weight="bold" />إضافة جلسة
+                <button disabled title="قريباً"
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all opacity-60 cursor-not-allowed ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
+                  <Plus size={12} weight="bold" />إضافة جلسة · قريباً
                 </button>
               </div>
-              {caseData.hearings.map((h, i) => (
-                <motion.div key={i}
-                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                  className={`${card} p-4 flex items-start gap-4 ${h.status === "upcoming" ? "border-l-4 border-l-royal" : ""}`}>
-                  <div className={`w-11 h-11 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 ${h.status === "upcoming" ? "bg-royal/10" : isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
-                    {h.status === "upcoming"
-                      ? <Clock size={18} weight="duotone" className="text-royal" />
-                      : <CheckCircle size={18} weight="duotone" className="text-emerald-500" />}
-                    <span className={`text-[9px] font-bold mt-0.5 ${h.status === "upcoming" ? "text-royal" : "text-emerald-500"}`}>
-                      {h.status === "upcoming" ? "قادمة" : "منتهية"}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{h.date}</p>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-md ${isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>{h.court}</span>
+              {hearings.length === 0 ? (
+                <div className={`${card} p-10 flex flex-col items-center justify-center`}>
+                  <CalendarCheck size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد جلسات مسجّلة</p>
+                  <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>ستظهر الجلسات هنا عند إضافتها.</p>
+                </div>
+              ) : (
+                hearings.map((h, i) => (
+                  <motion.div key={i}
+                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                    className={`${card} p-4 flex items-start gap-4 ${h.status === "upcoming" ? "border-l-4 border-l-royal" : ""}`}>
+                    <div className={`w-11 h-11 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 ${h.status === "upcoming" ? "bg-royal/10" : isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
+                      {h.status === "upcoming"
+                        ? <Clock size={18} weight="duotone" className="text-royal" />
+                        : <CheckCircle size={18} weight="duotone" className="text-emerald-500" />}
+                      <span className={`text-[9px] font-bold mt-0.5 ${h.status === "upcoming" ? "text-royal" : "text-emerald-500"}`}>
+                        {h.status === "upcoming" ? "قادمة" : "منتهية"}
+                      </span>
                     </div>
-                    <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{h.result}</p>
-                  </div>
-                </motion.div>
-              ))}
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{h.date}</p>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-md ${isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>{h.court}</span>
+                      </div>
+                      <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{h.result}</p>
+                    </div>
+                  </motion.div>
+                ))
+              )}
             </div>
           )}
 
@@ -517,28 +646,53 @@ export default function CaseDetailPage() {
           {activeTab === "documents" && (
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{caseData.documents.length} مستندات</p>
-                <label className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer transition-all ${isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"}`}>
-                  <UploadSimple size={12} />رفع مستند<input type="file" className="hidden" />
+                <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{documents.length} مستندات</p>
+                <label className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer transition-all ${uploading ? "opacity-60 pointer-events-none" : ""} ${isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"}`}>
+                  <UploadSimple size={12} />{uploading ? "جاري الرفع..." : "رفع مستند"}
+                  <input
+                    ref={setFileInputEl}
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUpload(f);
+                      if (fileInputEl) fileInputEl.value = "";
+                    }}
+                  />
                 </label>
               </div>
-              {caseData.documents.map((doc, i) => (
-                <motion.div key={i}
-                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className={`group ${card} p-4 flex items-center gap-3 hover:border-royal/20 transition-all`}>
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${doc.type === "pdf" ? "bg-red-500/10 text-red-500" : "bg-blue-500/10 text-blue-500"}`}>
-                    <FileText size={18} weight="duotone" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-[13px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{doc.name}</p>
-                    <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{doc.size} · {doc.date}</p>
-                  </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className={`p-2 rounded-xl ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}><Eye size={14} /></button>
-                    <button className={`p-2 rounded-xl ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}><Download size={14} /></button>
-                  </div>
-                </motion.div>
-              ))}
+              {uploadError && (
+                <div className={`p-3 rounded-xl border text-[12px] ${isDark ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-red-200 bg-red-50 text-red-600"}`}>
+                  <Warning size={12} className="inline ml-1" />{uploadError}
+                </div>
+              )}
+              {documents.length === 0 ? (
+                <div className={`${card} p-10 flex flex-col items-center justify-center`}>
+                  <FolderOpen size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد مستندات</p>
+                  <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>ارفع أول مستند لهذه القضية.</p>
+                </div>
+              ) : (
+                documents.map((doc, i) => (
+                  <motion.div key={doc.id ?? i}
+                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+                    className={`group ${card} p-4 flex items-center gap-3 hover:border-royal/20 transition-all`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${(doc.mime_type ?? "").includes("pdf") ? "bg-red-500/10 text-red-500" : "bg-blue-500/10 text-blue-500"}`}>
+                      <FileText size={18} weight="duotone" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[13px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{doc.name}</p>
+                      <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{formatFileSize(doc.file_size)} · {formatDate(doc.created_at)}</p>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => handleDownload(doc)} title="عرض/تحميل"
+                        className={`p-2 rounded-xl ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}><Eye size={14} /></button>
+                      <button onClick={() => handleDownload(doc)} title="تحميل"
+                        className={`p-2 rounded-xl ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}><Download size={14} /></button>
+                    </div>
+                  </motion.div>
+                ))
+              )}
             </div>
           )}
 
@@ -547,13 +701,16 @@ export default function CaseDetailPage() {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                  {caseData.team.length} أعضاء في الفريق
+                  {team.length} أعضاء في الفريق
                 </p>
               </div>
-              {caseData.team.map((m, i) => {
-                const memberTasks = caseData.tasks.filter(t => t.assignee === m.name);
-                const doneTasks = memberTasks.filter(t => t.status === "done").length;
-                return (
+              {team.length === 0 ? (
+                <div className={`${card} p-10 flex flex-col items-center justify-center`}>
+                  <UsersThree size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا يوجد فريق معيّن</p>
+                </div>
+              ) : (
+                team.map((m, i) => (
                   <motion.div key={i}
                     initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                     className={`${card} p-4`}>
@@ -565,28 +722,10 @@ export default function CaseDetailPage() {
                         <p className={`text-[14px] font-semibold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{m.name}</p>
                         <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{m.role}</p>
                       </div>
-                      <div className="text-left">
-                        <p className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
-                          {doneTasks}/{memberTasks.length}
-                        </p>
-                        <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>مهام مكتملة</p>
-                      </div>
                     </div>
-                    {memberTasks.length > 0 && (
-                      <div className={`mt-3 pt-3 border-t ${isDark ? "border-white/[0.04]" : "border-slate-100"}`}>
-                        <div className="space-y-1.5">
-                          {memberTasks.slice(0, 3).map((t, j) => (
-                            <div key={j} className="flex items-center gap-2">
-                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${TASK_STATUS[t.status].dot}`} />
-                              <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{t.title}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </motion.div>
-                );
-              })}
+                ))
+              )}
             </div>
           )}
 
@@ -612,7 +751,6 @@ export default function CaseDetailPage() {
               <div className="h-[calc(100%-48px)]">
                 <CaseGraphView isDark={isDark} isGlobal={false} />
               </div>
-              {/* Fullscreen Overlay */}
               {graphFullscreen && (
                 <div className="fixed inset-0 z-[200] flex flex-col" style={{ background: isDark ? "#0f0f0f" : "#f8f8f8" }}>
                   <div className={`flex items-center gap-3 p-3 border-b ${isDark ? "border-white/[0.06] bg-zinc-900" : "border-slate-200 bg-white"}`}>
@@ -639,7 +777,10 @@ export default function CaseDetailPage() {
           {activeTab === "notes" && (
             <div className="space-y-4">
               <div className={`${card} p-4`}>
-                <p className={`text-[12px] font-semibold mb-2 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>ملاحظة جديدة</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>ملاحظة جديدة</p>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#C8A762]/10 text-[#C8A762]">قريباً</span>
+                </div>
                 <textarea
                   value={noteInput}
                   onChange={e => setNoteInput(e.target.value)}
@@ -647,30 +788,42 @@ export default function CaseDetailPage() {
                   rows={3}
                   className={`w-full text-sm bg-transparent outline-none resize-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`}
                 />
-                <div className="flex justify-end mt-2">
-                  <button onClick={() => setNoteInput("")} disabled={!noteInput.trim()}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors disabled:opacity-40">
+                <div className="flex justify-end mt-2 items-center gap-2">
+                  {noteSaved && (
+                    <span className="text-[10px] text-amber-500 font-bold">سيتم تفعيل حفظ الملاحظات قريباً</span>
+                  )}
+                  <button onClick={saveNote} disabled={!noteInput.trim() || noteSaving}
+                    title="قريباً"
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors disabled:opacity-40 flex items-center gap-1.5">
+                    {noteSaving ? <Spinner size={12} className="animate-spin" /> : null}
                     حفظ الملاحظة
                   </button>
                 </div>
               </div>
               <div className="space-y-3">
-                {caseData.notes.map((note, i) => (
-                  <motion.div key={i}
-                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                    className={`${card} p-4`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-xl bg-royal/10 flex items-center justify-center">
-                          <span className="text-[11px] font-bold text-royal">{note.author.split(" ").pop()?.charAt(0)}</span>
+                {notes.length === 0 ? (
+                  <div className={`${card} p-8 text-center`}>
+                    <ChatDots size={24} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                    <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد ملاحظات بعد</p>
+                  </div>
+                ) : (
+                  notes.map((note, i) => (
+                    <motion.div key={i}
+                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+                      className={`${card} p-4`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-xl bg-royal/10 flex items-center justify-center">
+                            <span className="text-[11px] font-bold text-royal">{note.author.charAt(0)}</span>
+                          </div>
+                          <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{note.author}</p>
                         </div>
-                        <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{note.author}</p>
+                        <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{note.date}</p>
                       </div>
-                      <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{note.date}</p>
-                    </div>
-                    <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{note.text}</p>
-                  </motion.div>
-                ))}
+                      <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{note.text}</p>
+                    </motion.div>
+                  ))
+                )}
               </div>
             </div>
           )}

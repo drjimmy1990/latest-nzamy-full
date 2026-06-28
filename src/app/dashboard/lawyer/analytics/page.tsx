@@ -172,6 +172,7 @@ export default function LawyerAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [winStats, setWinStats] = useState(WIN);
   const [workDistribution, setWorkDistribution] = useState(WORK_DIST);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isSupabaseMode) {
@@ -179,10 +180,26 @@ export default function LawyerAnalyticsPage() {
       return;
     }
 
+    let casesFailed = false;
+    let summaryFailed = false;
+
     Promise.all([
-      getCases().catch(() => []),
-      getLawyerDashboardSummary().catch(() => null),
+      getCases().catch((e) => {
+        console.error("[lawyer analytics] getCases failed:", e);
+        casesFailed = true;
+        return [] as Awaited<ReturnType<typeof getCases>>;
+      }),
+      getLawyerDashboardSummary().catch((e) => {
+        console.error("[lawyer analytics] getLawyerDashboardSummary failed:", e);
+        summaryFailed = true;
+        return null;
+      }),
     ]).then(([cases, summary]) => {
+      if (casesFailed && summaryFailed) {
+        setFetchError("تعذّر تحميل بيانات التحليلات من الخادم.");
+      } else if (casesFailed || summaryFailed) {
+        setFetchError("تعذّر تحميل بعض بيانات التحليلات — قد لا تكون الأرقام كاملة.");
+      }
       // Process cases for win stats
       if (cases && cases.length > 0) {
         let won = 0;
@@ -262,6 +279,20 @@ export default function LawyerAnalyticsPage() {
           <div>
             <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
             <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>التحليلات ستتوفر تلقائياً بعد استخدام المنصة</p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Fetch error banner */}
+      {fetchError && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-500/20 bg-red-500/10" : "border-red-200 bg-red-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-red-500/15" : "bg-red-100"}`}>
+            <Warning size={18} weight="fill" className="text-red-500" />
+          </div>
+          <div>
+            <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>خطأ في تحميل البيانات</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-red-600/70"}`}>{fetchError}</p>
           </div>
         </motion.div>
       )}

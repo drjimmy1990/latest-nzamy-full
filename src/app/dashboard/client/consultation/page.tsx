@@ -399,6 +399,7 @@ export default function ConsultationListPage() {
   const [ratingTarget, setRatingTarget] = useState<Consultation | null>(null);
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     const toConsultation = (request: WorkflowRequest): Consultation => ({
@@ -417,11 +418,29 @@ export default function ConsultationListPage() {
       notes: `رقم الطلب: ${request.id}`,
     });
 
+    // Track failures per source so we can surface an error banner without
+    // hiding a partial success (one source may legitimately return []).
+    let serviceFailed = false;
+    let workflowFailed = false;
+
     Promise.all([
-      getConsultations().catch(() => []),
-      listClientWorkflowRequests({ requesterUserId: user.userId }).catch(() => []),
+      getConsultations().catch((e) => {
+        console.error("[consultation list] getConsultations failed:", e);
+        serviceFailed = true;
+        return [] as Awaited<ReturnType<typeof getConsultations>>;
+      }),
+      listClientWorkflowRequests({ requesterUserId: user.userId }).catch((e) => {
+        console.error("[consultation list] listClientWorkflowRequests failed:", e);
+        workflowFailed = true;
+        return [] as WorkflowRequest[];
+      }),
     ])
       .then(([serviceConsultations, workflowRequests]) => {
+        if (serviceFailed && workflowFailed) {
+          setFetchError("تعذّر تحميل الاستشارات. حاول مرة أخرى لاحقاً.");
+        } else if (serviceFailed || workflowFailed) {
+          setFetchError("تعذّر تحميل بعض مصادر الاستشارات — قد لا تكون القائمة كاملة.");
+        }
         // Map service consultations to page shape
         const fromService: Consultation[] = serviceConsultations.map(sc => ({
           id: sc.id,
@@ -496,6 +515,20 @@ export default function ConsultationListPage() {
           <div className="mt-8"><SkeletonList count={4} /></div>
         ) : (
         <>
+        {/* Error banner */}
+        {fetchError && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+            className={`mb-6 rounded-2xl border p-4 flex items-center gap-3 ${isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50"}`}>
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-red-500/15" : "bg-red-100"}`}>
+              <Warning size={18} weight="fill" className="text-red-500" />
+            </div>
+            <div>
+              <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>خطأ في تحميل الاستشارات</p>
+              <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-red-600/70"}`}>{fetchError}</p>
+            </div>
+          </motion.div>
+        )}
+
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 mb-8">
           <div>

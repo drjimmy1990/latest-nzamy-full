@@ -47,7 +47,13 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/v1/consultations — Create a new consultation
- * Body: { lawyer_user_id?, mode, description?, preferred_date? }
+ * Body: { lawyer_user_id? | lawyer_id?, mode | type, specialty? | topic?,
+ *        description?, preferred_date? }
+ *
+ * consultations columns: id, requester_user_id, lawyer_user_id, mode, specialty,
+ * scheduled_at, status, metadata, created_at (NO `notes` column). `description`
+ * is stored in `metadata.description`. Accepts alias fields from the frontend
+ * (casesService.createConsultation) which sends lawyer_id/type/topic.
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -62,7 +68,8 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
 
-  if (!body.mode) {
+  const mode = body.mode ?? body.type;
+  if (!mode) {
     return NextResponse.json(
       { error: "mode is required" },
       { status: 400 },
@@ -72,17 +79,22 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase
     .from("consultations")
     .insert({
+      id: body.id ?? crypto.randomUUID(),
       requester_user_id: user.id,
-      lawyer_user_id: body.lawyer_user_id ?? null,
-      mode: body.mode,
-      notes: body.description ?? "",
-      status: "pending",
+      lawyer_user_id: body.lawyer_user_id ?? body.lawyer_id ?? null,
+      mode,
+      specialty: body.specialty ?? body.topic ?? null,
       scheduled_at: body.preferred_date ?? null,
+      status: "pending",
+      metadata: body.description
+        ? { description: body.description }
+        : (body.metadata ?? {}),
     })
     .select()
     .single();
 
   if (error) {
+    console.error("[consultations POST] Supabase error:", error.message, error.details, error.hint, error.code);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

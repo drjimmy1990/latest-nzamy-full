@@ -35,7 +35,7 @@ export async function GET() {
         .from("service_requests")
         .select("*")
         .eq("requester_user_id", uid)
-        .in("status", ["submitted", "in_review", "approved"])
+        .in("status", ["pending_assignment", "assigned", "in_review"])
         .order("created_at", { ascending: false })
         .limit(3),
     )

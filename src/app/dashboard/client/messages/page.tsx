@@ -240,6 +240,7 @@ export default function MessagesPage() {
   const [input, setInput] = useState("");
   const [search, setSearch] = useState("");
   const [callModal, setCallModal] = useState<null | "voice" | "video">(null);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   // Auto-select first thread when loaded
   useEffect(() => {
@@ -281,16 +282,18 @@ export default function MessagesPage() {
     );
   }
 
-  function sendMessage() {
+  async function sendMessage() {
     if (!input.trim() || isClosed || !activeThread) return;
     const text = input.trim();
+    const tempId = `msg-${Date.now()}`;
     const newMsg: Message = {
-      id: `msg-${Date.now()}`,
+      id: tempId,
       sender: "client",
       text,
       time: "الآن",
       read: true,
     };
+    setSendError(null);
     // Update local state optimistically
     setThreads((prev) =>
       prev.map((t) =>
@@ -299,9 +302,28 @@ export default function MessagesPage() {
           : t
       )
     );
-    // Send via service
-    chat.sendMessage(text).catch(console.error);
     setInput("");
+    // Send via service — surface errors and revert the optimistic bubble on failure
+    try {
+      await chat.sendMessage(text);
+    } catch (err) {
+      console.error("[messages] send failed:", err);
+      setThreads((prev) =>
+        prev.map((t) => {
+          if (t.id !== activeThreadId) return t;
+          const revertedMessages = t.messages.filter((m) => m.id !== tempId);
+          const prevLast = revertedMessages[revertedMessages.length - 1];
+          return {
+            ...t,
+            messages: revertedMessages,
+            lastMessage: prevLast?.text ?? "",
+            lastTime: prevLast?.time ?? "",
+          };
+        }),
+      );
+      setInput(text); // restore so the user can retry
+      setSendError("تعذّر إرسال الرسالة. تحقق من الاتصال وحاول مرة أخرى.");
+    }
   }
 
 
@@ -513,6 +535,23 @@ export default function MessagesPage() {
               <span>المحادثات محمية وسرية — لا تشارك معلومات حساسة خارج المنصة</span>
             </div>
           </div>
+
+          {/* Send error banner */}
+          {sendError && (
+            <div className="px-5 pb-2">
+              <div className="flex items-center gap-2 rounded-xl border border-red-200 dark:border-red-900/30 bg-red-50 dark:bg-red-900/15 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+                <Warning size={14} weight="fill" className="flex-shrink-0" />
+                <span>{sendError}</span>
+                <button
+                  onClick={() => setSendError(null)}
+                  className="ms-auto text-red-400 hover:text-red-600 dark:hover:text-red-300"
+                  aria-label="إغلاق"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Input — disabled when closed */}
           <div className="px-5 pb-5">

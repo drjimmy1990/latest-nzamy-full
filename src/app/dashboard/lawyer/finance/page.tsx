@@ -12,7 +12,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import confetti from "canvas-confetti";
 
 import { type FinanceTab, type InvoiceStatus, type FeeType, type Period, type ExpenseCategory, type Invoice, type Expense, STATUS_CFG, EXP_CFG } from "@/constants/lawyerFinanceData";
-import { apiGet, isSupabaseMode } from "@/lib/services/api";
+import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { AreaBarChart, DonutChart } from "@/components/dashboard/lawyer/FinanceCharts";
 
@@ -54,6 +54,7 @@ export default function FinancePage() {
   const [newInvFee, setNewInvFee] = useState("");
   const [newInvType, setNewInvType] = useState<FeeType>("full");
   const [newInvCase, setNewInvCase] = useState("");
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
   const cardCls = isDark
     ? "rounded-[2rem] border border-white/[0.06] bg-zinc-900/60 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
@@ -173,46 +174,76 @@ export default function FinancePage() {
   };
 
   // ── معالجة إضافة فاتورة جديدة ──
-  const handleCreateInvoice = (e: React.FormEvent) => {
+  const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInvClient || !newInvFee) return;
 
+    setInvoiceError(null);
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      const feeNum = parseFloat(newInvFee);
-      const newInv: Invoice = {
-        id: `INV-0${invoices.length + 1}`,
-        client: newInvClient,
-        clientType: "company",
-        caseTitle: newInvCase || "—",
-        desc: newInvDesc || "أتعاب نظامية متفق عليها",
-        totalFee: feeNum,
-        paidAmount: 0,
-        feeType: newInvType,
-        status: "pending",
-        date: "١ يونيو ٢٠٢٦",
-        month: 4,
-        quarter: 2
-      };
+    const feeNum = parseFloat(newInvFee);
 
-      setInvoices(prev => [newInv, ...prev]);
-      setIsSubmitting(false);
-      setIsInvoiceModalOpen(false);
-      
-      // تفريغ الحقول
-      setNewInvClient("");
-      setNewInvDesc("");
-      setNewInvFee("");
-      setNewInvCase("");
-      
-      // إطلاق كرات الاحتفال بالنجاح
-      confetti({
-        particleCount: 120,
-        spread: 80,
-        origin: { y: 0.6 }
-      });
-    }, 1800);
+    if (isSupabaseMode) {
+      try {
+        const res = await apiMutate<{ data: any }>("/api/v1/lawyer/finance", "POST", {
+          client: newInvClient,
+          description: newInvDesc || "أتعاب نظامية متفق عليها",
+          amount: feeNum,
+          feeType: newInvType,
+          caseTitle: newInvCase || undefined,
+          clientType: "company",
+        });
+        const d = res?.data;
+        if (d) {
+          setInvoices(prev => [d, ...prev]);
+          window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
+        }
+        setIsSubmitting(false);
+        setIsInvoiceModalOpen(false);
+
+        // تفريغ الحقول
+        setNewInvClient("");
+        setNewInvDesc("");
+        setNewInvFee("");
+        setNewInvCase("");
+
+        // إطلاق كرات الاحتفال بالنجاح
+        confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+      } catch (err: any) {
+        console.error("[finance] create invoice failed:", err);
+        setInvoiceError(err?.message || "تعذّر إصدار الفاتورة. حاول مرة أخرى.");
+        setIsSubmitting(false);
+      }
+    } else {
+      // Demo fallback: local only
+      setTimeout(() => {
+        const newInv: Invoice = {
+          id: `INV-0${invoices.length + 1}`,
+          client: newInvClient,
+          clientType: "company",
+          caseTitle: newInvCase || "—",
+          desc: newInvDesc || "أتعاب نظامية متفق عليها",
+          totalFee: feeNum,
+          paidAmount: 0,
+          feeType: newInvType,
+          status: "pending",
+          date: "١ يونيو ٢٠٢٦",
+          month: 4,
+          quarter: 2,
+        };
+
+        setInvoices(prev => [newInv, ...prev]);
+        setIsSubmitting(false);
+        setIsInvoiceModalOpen(false);
+
+        setNewInvClient("");
+        setNewInvDesc("");
+        setNewInvFee("");
+        setNewInvCase("");
+
+        confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+      }, 1200);
+    }
   };
 
   return (
@@ -1060,6 +1091,13 @@ export default function FinancePage() {
                         }`}
                       />
                     </div>
+
+                    {invoiceError && (
+                      <div className={`p-3 rounded-xl flex items-center gap-2 text-[11px] font-semibold ${isDark ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-red-50 border border-red-200 text-red-700"}`}>
+                        <Warning size={14} weight="fill" className="flex-shrink-0" />
+                        <span>{invoiceError}</span>
+                      </div>
+                    )}
 
                     <div className="pt-4 flex gap-3">
                       <motion.button

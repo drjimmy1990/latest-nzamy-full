@@ -12,7 +12,8 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
+import { getWorkflowRequestsByReceiver, createWorkflowRequest } from "@/lib/services/workflowService";
+import { createWorkflowId } from "@/lib/workflowStore";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -60,6 +61,13 @@ function workflowModeToConsultMode(mode: unknown): ConsultMode {
   return "video";
 }
 
+// Reverse mapping: UI ConsultMode → workflow metadata mode string.
+function consultModeToWorkflowMode(mode: ConsultMode): string {
+  if (mode === "inPerson") return "in-person";
+  if (mode === "chat") return "text";
+  return mode; // "phone" | "video"
+}
+
 function workflowToConsultation(request: WorkflowRequest): Consultation {
   return {
     id: request.id,
@@ -96,6 +104,8 @@ function BookingModal({ isDark, onClose }: { isDark: boolean; onClose: () => voi
   const [duration, setDuration] = useState(60);
   const [clientName, setClientName] = useState("");
   const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-800"
@@ -103,6 +113,39 @@ function BookingModal({ isDark, onClose }: { isDark: boolean; onClose: () => voi
 
   const steps: BookingStep[] = ["type", "mode", "datetime", "confirm"];
   const stepIdx = steps.indexOf(step);
+
+  // L10: persist the consultation as a service_request on confirm.
+  const handleConfirm = async () => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const consultLabel = CONSULT_TYPES.find((t) => t.id === consultType)?.label ?? consultType;
+      await createWorkflowRequest({
+        id: createWorkflowId(),
+        type: "consultation",
+        title: consultLabel || "استشارة قانونية",
+        description: notes || "",
+        receiver: "lawyer",
+        status: "pending_assignment",
+        requester: { name: clientName || "عميل", role: "individual", tier: "free" },
+        payment: { amount: 0, status: "not_required" },
+        sourcePath: "",
+        metadata: {
+          day: date,
+          time,
+          mode: mode ? consultModeToWorkflowMode(mode) : "video",
+          duration,
+        },
+      });
+      window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
+      setSubmitting(false);
+      onClose();
+    } catch (e: any) {
+      console.error("[consultations] booking confirm failed:", e);
+      setError(e?.message || "تعذّر تأكيد الاستشارة. حاول مرة أخرى.");
+      setSubmitting(false);
+    }
+  };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -272,14 +315,23 @@ function BookingModal({ isDark, onClose }: { isDark: boolean; onClose: () => voi
             </button>
           )}
           <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+            disabled={submitting}
             onClick={() => {
               if (stepIdx < steps.length - 1) setStep(steps[stepIdx + 1]);
-              else onClose();
+              else handleConfirm();
             }}
-            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[13px] font-bold text-[#C8A762]">
-            {step === "confirm" ? <><CheckCircle size={15} weight="fill" /> تأكيد الجدولة</> : <>التالي <ArrowRight size={13} /></>}
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[13px] font-bold text-[#C8A762] disabled:opacity-60">
+            {step === "confirm" ? <><CheckCircle size={15} weight="fill" /> {submitting ? "جارٍ التأكيد..." : "تأكيد الجدولة"}</> : <>التالي <ArrowRight size={13} /></>}
           </motion.button>
         </div>
+
+        {/* Error banner */}
+        {error && (
+          <div className={`mx-5 mb-4 p-3 rounded-xl flex items-center gap-2 text-[11px] font-semibold ${isDark ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-red-50 border border-red-200 text-red-700"}`}>
+            <Warning size={14} weight="fill" className="flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );

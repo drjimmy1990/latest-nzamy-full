@@ -10,7 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
-import { createGroup, getGroupState, getGroupMembers } from "@/lib/services/groupService";
+import { createGroup, joinGroup, inviteToGroup, getGroupState, getGroupMembers, getGroups } from "@/lib/services/groupService";
 import { SkeletonCard } from "../_components/DashboardSkeleton";
 import { useUser } from "@/hooks/useUser";
 
@@ -135,6 +135,11 @@ export default function MyGroupPage() {
   const [showJoin, setShowJoin] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [groupName, setGroupName] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteCode, setInviteCode] = useState<string>("");
 
   // Dynamic data from service
   const [groupData, setGroupData] = useState<{ group: any; members: Member[] } | null>(null);
@@ -151,11 +156,15 @@ export default function MyGroupPage() {
           setGroupData(null);
           return;
         }
-        // Fetch members if we have a groupId
+        // Fetch members + the group's join_code (for the invite link) in parallel.
         let members: Member[] = [];
+        let code = "";
         if (state.groupId) {
           try {
-            const apiMembers = await getGroupMembers(state.groupId);
+            const [apiMembers, groups] = await Promise.all([
+              getGroupMembers(state.groupId),
+              getGroups(),
+            ]);
             members = apiMembers.map((m, i) => ({
               id: m.user_id,
               name: m.profile?.display_name || m.user_id,
@@ -167,10 +176,13 @@ export default function MyGroupPage() {
               skippedTurns: 0,
               status: m.status === "active" ? "active" as const : "inactive" as const,
             }));
+            const matched = groups.find((g) => g.id === state.groupId);
+            code = matched?.join_code ?? "";
           } catch { /* keep empty */ }
         }
+        setInviteCode(code);
         setGroupData({
-          group: { ...DEFAULT_GROUP, id: state.groupId || "", name: state.groupName || DEFAULT_GROUP.name },
+          group: { ...DEFAULT_GROUP, id: state.groupId || "", name: state.groupName || DEFAULT_GROUP.name, invite_code: code },
           members,
         });
       })
@@ -254,11 +266,24 @@ export default function MyGroupPage() {
                   <p className={`text-xs leading-relaxed ${isDark ? "text-emerald-400/80" : "text-emerald-700/80"}`}>سيتم سحب 499 ر.س كأول دورة تناوب. ستحصل على رابط الدعوة فوراً لدعوة باقي الأعضاء.</p>
                 </div>
 
-                <motion.button 
+                {createError && (
+                  <div className={`mb-4 rounded-xl border px-4 py-2.5 text-xs ${isDark ? "border-rose-500/20 bg-rose-500/10 text-rose-400" : "border-rose-200 bg-rose-50 text-rose-700"}`}>
+                    {createError}
+                  </div>
+                )}
+
+                <motion.button
                   whileHover={{ scale:1.02 }} whileTap={{ scale:0.98 }}
                   onClick={async () => {
-                    await createGroup({ name: groupName.trim() || GROUP.name });
-                    setShowCreate(false);
+                    setCreateError(null);
+                    try {
+                      await createGroup({ name: groupName.trim() || GROUP.name });
+                      setShowCreate(false);
+                      await membership.refresh();
+                    } catch (err) {
+                      console.error("[my-group] create failed:", err);
+                      setCreateError("تعذّر إنشاء المجموعة. حاول مرة أخرى لاحقاً.");
+                    }
                   }}
                   className="w-full py-3 rounded-xl bg-emerald-500 text-white font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 transition-colors"
                 >
@@ -290,13 +315,26 @@ export default function MyGroupPage() {
                   className={`w-full text-center text-lg font-mono tracking-widest rounded-xl px-4 py-3 border outline-none mb-4 transition-colors ${isDark ? "bg-zinc-800 border-white/10 focus:border-royal/50 uppercase text-white" : "bg-zinc-50 border-zinc-200 focus:border-royal/50 uppercase text-zinc-900"}`}
                 />
                 
+                {joinError && (
+                  <div className={`mb-4 rounded-xl border px-4 py-2.5 text-xs ${isDark ? "border-rose-500/20 bg-rose-500/10 text-rose-400" : "border-rose-200 bg-rose-50 text-rose-700"}`}>
+                    {joinError}
+                  </div>
+                )}
+
                 <div className="flex gap-2">
                   <button onClick={() => setShowJoin(false)} className={`flex-1 py-3 rounded-xl border text-sm font-medium transition-colors ${isDark ? "border-white/10 hover:bg-white/5" : "border-zinc-200 hover:bg-zinc-50"}`}>إلغاء</button>
-                  <motion.button 
+                  <motion.button
                     whileHover={{ scale:1.02 }} whileTap={{ scale:0.98 }}
                     onClick={async () => {
-                      await createGroup({ name: joinCode.trim() ? `مجموعة ${joinCode.trim()}` : GROUP.name });
-                      setShowJoin(false);
+                      setJoinError(null);
+                      try {
+                        await joinGroup(joinCode.trim());
+                        setShowJoin(false);
+                        await membership.refresh();
+                      } catch (err) {
+                        console.error("[my-group] join failed:", err);
+                        setJoinError("تعذّر الانضمام بهذا الكود. تأكد من الكود وحاول مرة أخرى.");
+                      }
                     }}
                     disabled={joinCode.length < 5}
                     className="flex-1 py-3 rounded-xl bg-royal text-white text-sm font-bold hover:bg-blue-600 transition-colors disabled:opacity-50"
@@ -313,13 +351,31 @@ export default function MyGroupPage() {
   }
 
   const isMyTurn = CURRENT_PAYER.id === CURRENT_USER_ID;
-  const inviteLink = typeof window !== 'undefined' ? `${window.location.origin}/group/join/${groupData?.group?.invite_code || ''}` : '';
+  const inviteLink = typeof window !== 'undefined' ? `${window.location.origin}/group/join/${inviteCode || ''}` : '';
 
   const copyLink = () => {
     navigator.clipboard.writeText(inviteLink).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  // Generate/fetch the group's invite code, then reveal the invite banner.
+  async function handleInvite() {
+    setInviteError(null);
+    const groupId = groupData?.group?.id;
+    if (!groupId) return;
+    setInviteLoading(true);
+    try {
+      const { inviteCode: code } = await inviteToGroup(groupId);
+      if (code) setInviteCode(code);
+      setShowInvite(true);
+    } catch (err) {
+      console.error("[my-group] invite failed:", err);
+      setInviteError("تعذّر إنشاء رابط الدعوة. حاول مرة أخرى لاحقاً.");
+    } finally {
+      setInviteLoading(false);
+    }
+  }
 
   return (
     <div className={`p-6 md:p-10 space-y-6 max-w-5xl ${isDark ? "text-white" : "text-zinc-900"}`} dir="rtl">
@@ -342,10 +398,14 @@ export default function MyGroupPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <motion.button onClick={() => setShowInvite(v => !v)} whileHover={{ scale:1.05 }} whileTap={{ scale:0.97 }} transition={sp}
-              className={`flex items-center gap-2 px-4 py-2 rounded-[1rem] border text-sm font-medium transition-colors ${isDark ? "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10" : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 shadow-sm"}`}>
-              <UserPlus size={16} /> دعوة عضو
+            <motion.button onClick={handleInvite} whileHover={{ scale:1.05 }} whileTap={{ scale:0.97 }} transition={sp}
+              disabled={inviteLoading}
+              className={`flex items-center gap-2 px-4 py-2 rounded-[1rem] border text-sm font-medium transition-colors disabled:opacity-60 ${isDark ? "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10" : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 shadow-sm"}`}>
+              <UserPlus size={16} /> {inviteLoading ? "جارٍ…" : "دعوة عضو"}
             </motion.button>
+            {inviteError && (
+              <span className={`text-xs ${isDark ? "text-rose-400" : "text-rose-600"}`}>{inviteError}</span>
+            )}
             <motion.button whileHover={{ scale:1.05 }} whileTap={{ scale:0.97 }} transition={sp}
               className={`w-9 h-9 rounded-[0.75rem] border flex items-center justify-center transition-colors ${isDark ? "border-white/10 bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10" : "border-zinc-200 bg-white text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 shadow-sm"}`}>
               <Gear size={16} />

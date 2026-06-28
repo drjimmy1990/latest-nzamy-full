@@ -1,5 +1,6 @@
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { getPaymentGatewayStatus } from "@/lib/access-control";
+import { RequestEvent } from "@/lib/events";
 
 type WorkflowRequestInput = Omit<WorkflowRequest, "createdAt" | "auditTrail"> & {
   auditEvent?: string;
@@ -26,10 +27,34 @@ function headers(extra?: HeadersInit): HeadersInit {
   };
 }
 
-function eventFromRequest(input: WorkflowRequestInput, createdAt: string) {
+/**
+ * Map a legacy free-text audit event to the namespaced vocabulary. Passes
+ * through already-namespaced values unchanged.
+ */
+function namespaceEvent(raw: string | undefined, fallback: string): string {
+  if (!raw) return fallback;
+  switch (raw) {
+    case "created":
+      return RequestEvent.SERVICE_REQUEST_CREATED;
+    case "status_change":
+    case "status_changed":
+      return RequestEvent.SERVICE_REQUEST_STATUS_CHANGED;
+    case "updated":
+      return RequestEvent.SERVICE_REQUEST_UPDATED;
+    case "cancelled":
+      return RequestEvent.SERVICE_REQUEST_CANCELLED;
+    case "completed":
+      return RequestEvent.SERVICE_REQUEST_COMPLETED;
+    default:
+      return raw;
+  }
+}
+
+function eventFromRequest(input: WorkflowRequestInput, createdAt: string, actorUserId: string | null) {
   return {
     request_id: input.id,
-    event: input.auditEvent ?? "created",
+    event: namespaceEvent(input.auditEvent, RequestEvent.SERVICE_REQUEST_CREATED),
+    ...(actorUserId ? { actor_user_id: actorUserId } : {}),
     actor_name: input.requester.name || "backend",
     created_at: createdAt,
   };
@@ -124,7 +149,7 @@ export async function insertRequest(input: WorkflowRequestInput): Promise<Workfl
   await fetch(restUrl("request_events"), {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify(eventFromRequest(input, createdAt)),
+    body: JSON.stringify(eventFromRequest(input, createdAt, requesterUserId)),
   });
 
   const paymentResponse = await fetch(restUrl("payments"), {
@@ -149,7 +174,7 @@ export async function insertRequest(input: WorkflowRequestInput): Promise<Workfl
   const inserted = ((await requestResponse.json()) as Array<Record<string, unknown>>)[0];
   return {
     ...mapRequestRow({ ...inserted, request_events: [] }),
-    auditTrail: [{ at: createdAt, event: input.auditEvent ?? "created", by: input.requester.name || "backend" }],
+    auditTrail: [{ at: createdAt, event: namespaceEvent(input.auditEvent, RequestEvent.SERVICE_REQUEST_CREATED), by: input.requester.name || "backend" }],
   };
 }
 
@@ -158,6 +183,7 @@ export async function patchRequest(
   patch: Partial<Omit<WorkflowRequest, "id" | "createdAt" | "auditTrail">>,
   auditEvent = "updated",
   by = "backend",
+  actorUserId?: string,
 ): Promise<WorkflowRequest> {
   const row: Record<string, unknown> = {};
   if (patch.title !== undefined) row.title = patch.title;
@@ -180,12 +206,18 @@ export async function patchRequest(
   await fetch(restUrl("request_events"), {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ request_id: id, event: auditEvent, actor_name: by, created_at: at }),
+    body: JSON.stringify({
+      request_id: id,
+      event: namespaceEvent(auditEvent, RequestEvent.SERVICE_REQUEST_UPDATED),
+      ...(actorUserId ? { actor_user_id: actorUserId } : {}),
+      actor_name: by,
+      created_at: at,
+    }),
   });
 
   const updated = ((await response.json()) as Array<Record<string, unknown>>)[0];
   return {
     ...mapRequestRow({ ...updated, request_events: [] }),
-    auditTrail: [{ at, event: auditEvent, by }],
+    auditTrail: [{ at, event: namespaceEvent(auditEvent, RequestEvent.SERVICE_REQUEST_UPDATED), by }],
   };
 }

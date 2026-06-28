@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, CalendarCheck, CheckCircle, Clock,
@@ -10,7 +10,10 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import { getCaseDetail } from "@/lib/services/casesService";
+import {
+  getServiceRequestDetail,
+  type ServiceRequestDetail,
+} from "@/lib/services/casesService";
 
 type CaseStage = "filed" | "pending" | "session" | "judgment" | "closed";
 
@@ -29,66 +32,10 @@ interface CaseData {
   timeline: TimelineEvent[];
   documents: { name: string; date: string; type: string }[];
   aiInsight?: string;
-  // ─── Cross-Role: ما سمح به المحامي للعميل ───────────────────────────────
   sharedTasks?: { title: string; status: "todo" | "doing" | "done"; visibleToClient: true }[];
   team?: { name: string; role: string; initials: string }[];
   lawyerNoteForClient?: string;
 }
-
-const MOCK_CASES: Record<string, CaseData> = {
-  "2025-001": {
-    id: "2025-001", title: "قضية فصل تعسفي", caseNo: "٢٠٢٥-٠٠١",
-    court: "المحكمة العمالية — الرياض", stage: "session", progress: 60, urgent: true,
-    lawyer: { name: "أحمد الغامدي", type: "محامي عمالي", phone: "+966501234567", rating: 4.8 },
-    nextSession: { date: "١٥ أبريل ٢٠٢٦", time: "١٠:٠٠ ص", location: "قاعة ٣أ" },
-    fee: { total: 8000, paid: 5000 },
-    aiInsight: "استناداً لنظام العمل المادة ٧٤، فصل العامل بدون سبب مشروع يُوجب التعويض بمقدار أجر شهر عن كل سنة خدمة. بناءً على ٦ سنوات، يُتوقع التعويض بين ٤٠،٠٠٠–٦٠،٠٠٠ ريال.",
-    timeline: [
-      { date: "١ مارس ٢٠٢٦",  title: "تقديم صحيفة الدعوى",             type: "milestone", done: true, desc: "تم رفع الدعوى رسمياً أمام المحكمة العمالية" },
-      { date: "١٠ مارس ٢٠٢٦", title: "تبليغ المدعى عليه",               type: "document",  done: true, desc: "استلم صاحب العمل إشعار المحكمة" },
-      { date: "١٥ مارس ٢٠٢٦", title: "رفع مذكرة المطالبة التفصيلية",   type: "document",  done: true },
-      { date: "١ أبريل ٢٠٢٦",  title: "جلسة الاستماع الأولى",            type: "session",   done: true, desc: "تمت — قرر القاضي تأجيل الجلسة لتقديم المستندات" },
-      { date: "١٥ أبريل ٢٠٢٦", title: "جلسة التحقيق والمرافعة",          type: "session",   done: false, desc: "جلسة قادمة — يُرجى حضور العميل" },
-      { date: "١ مايو ٢٠٢٦",   title: "صدور الحكم الابتدائي (متوقع)",    type: "milestone", done: false },
-      { date: "—",              title: "استئناف (إن اقتضى)",              type: "update",    done: false },
-      { date: "—",              title: "إغلاق القضية",                    type: "milestone", done: false },
-    ],
-    documents: [
-      { name: "صحيفة الدعوى.pdf",       date: "١ مارس ٢٠٢٦",  type: "PDF"  },
-      { name: "عقد العمل الأصلي.pdf",   date: "١ مارس ٢٠٢٦",  type: "PDF"  },
-      { name: "مذكرة المطالبة.docx",    date: "١٥ مارس ٢٠٢٦", type: "Word" },
-      { name: "محضر الجلسة الأولى.pdf", date: "١ أبريل ٢٠٢٦", type: "PDF"  },
-    ],
-    sharedTasks: [
-      { title: "إعداد مذكرة الدفاع للجلسة القادمة",  status: "doing", visibleToClient: true },
-      { title: "مراجعة عقد العمل الأصلي",            status: "done",  visibleToClient: true },
-      { title: "التواصل مع خبير العمل",               status: "todo",  visibleToClient: true },
-    ],
-    team: [
-      { name: "أحمد الغامدي",  role: "المحامي الرئيسي",  initials: "أ" },
-      { name: "سلمى الشريف",  role: "مساعد قانوني",      initials: "س" },
-    ],
-    lawyerNoteForClient: "الجلسة القادمة بالغة الأهمية — يُرجى إحضار عقد العمل الأصلي وشهادات الخدمة. سنراجع المستندات قبل الجلسة بساعة.",
-  },
-  "2025-002": {
-    id: "2025-002", title: "نزاع عقاري — أرض بحي النخيل", caseNo: "٢٠٢٥-٠٠٢",
-    court: "المحكمة العامة — الرياض", stage: "pending", progress: 30, urgent: false,
-    lawyer: { name: "سارة العتيبي", type: "محامية عقارية", phone: "+966509876543", rating: 4.6 },
-    fee: { total: 12000, paid: 6000 },
-    aiInsight: "نزاعات الملكية العقارية تستغرق عادةً ١٢–٢٤ شهراً. يُوصى بتجهيز صك الملكية الأصلي وخرائط المساحة.",
-    timeline: [
-      { date: "١٥ فبراير ٢٠٢٦", title: "تقديم الدعوى العقارية", type: "milestone", done: true },
-      { date: "٢٠ فبراير ٢٠٢٦", title: "تبليغ الخصم",            type: "document",  done: true },
-      { date: "—", title: "موعد الجلسة الأولى",   type: "session",   done: false, desc: "قيد الانتظار" },
-      { date: "—", title: "تقرير المساح المعتمد",  type: "document",  done: false },
-      { date: "—", title: "جلسة الحكم",            type: "milestone", done: false },
-    ],
-    documents: [
-      { name: "صك الملكية.pdf",   date: "١٥ فبراير ٢٠٢٦", type: "PDF" },
-      { name: "صحيفة الدعوى.pdf", date: "١٥ فبراير ٢٠٢٦", type: "PDF" },
-    ],
-  },
-};
 
 const STAGES: { key: CaseStage; label: string }[] = [
   { key: "filed",    label: "مرفوعة" },
@@ -107,57 +54,170 @@ const EVENT_COLOR: Record<TimelineEvent["type"], string> = {
   milestone: "text-[#C8A762]", message: "text-emerald-500",
 };
 
+const EVENT_LABELS: Record<string, string> = {
+  "service_request.created":       "إنشاء الطلب",
+  "service_request.status_changed":"تغيير الحالة",
+  "service_request.updated":       "تحديث الطلب",
+  "service_request.assigned":      "تعيين المحامي",
+  "service_request.completed":     "إتمام الطلب",
+  "service_request.cancelled":     "إلغاء الطلب",
+  "service_request.note_added":    "إضافة ملاحظة",
+  "service_request.hearing_added": "إضافة جلسة",
+  "case.note_added":               "إضافة ملاحظة",
+  "case.hearing_added":            "إضافة جلسة",
+  "created":        "إنشاء الطلب",
+  "status_change":  "تغيير الحالة",
+  "updated":        "تحديث الطلب",
+  "assigned":       "تعيين المحامي",
+  "completed":      "إتمام الطلب",
+  "cancelled":      "إلغاء الطلب",
+  "note_added":     "إضافة ملاحظة",
+  "hearing_added":  "إضافة جلسة",
+};
+
+function eventLabel(ev: string): string {
+  return EVENT_LABELS[ev] ?? ev;
+}
+
+function eventTimelineType(ev: string): TimelineEvent["type"] {
+  const e = ev.toLowerCase();
+  if (e.includes("hearing") || e.includes("session")) return "session";
+  if (e.includes("note") || e.includes("message")) return "message";
+  if (e.includes("document") || e.includes("file")) return "document";
+  if (e.includes("completed") || e.includes("cancelled") || e.includes("created")) return "milestone";
+  return "update";
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+  } catch {
+    return String(iso);
+  }
+}
+
+function mapStage(status: string | undefined): CaseStage {
+  switch (status) {
+    case "draft":
+      return "filed";
+    case "pending_payment":
+    case "pending_assignment":
+      return "pending";
+    case "assigned":
+    case "in_review":
+      return "session";
+    case "completed":
+    case "cancelled":
+      return "closed";
+    default:
+      return "pending";
+  }
+}
+
+/** Map a ServiceRequestDetail to the CaseData shape used by this page. */
+function toCaseData(r: ServiceRequestDetail): CaseData {
+  const meta = (r.metadata ?? {}) as Record<string, any>;
+  const now = Date.now();
+
+  // Hearings
+  const rawHearings = Array.isArray(meta.hearings) ? meta.hearings : [];
+  const upcoming = rawHearings
+    .map((h: any) => ({ h, ts: h.date ? new Date(h.date).getTime() : NaN }))
+    .filter((x: any) => !isNaN(x.ts) && x.ts >= now)
+    .sort((a: any, b: any) => a.ts - b.ts)[0];
+
+  const nextSession = upcoming
+    ? {
+        date: formatDate(upcoming.h.date),
+        time: String(upcoming.h.time ?? "—"),
+        location: String(upcoming.h.location ?? "—"),
+      }
+    : undefined;
+
+  // Timeline from events
+  const timeline: TimelineEvent[] = (r.events ?? [])
+    .slice()
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .map((e) => ({
+      date: formatDate(e.created_at),
+      title: eventLabel(e.event),
+      type: eventTimelineType(e.event),
+      done: true,
+    }));
+
+  // Documents from attachments
+  const documents = (r.attachments ?? []).map((a) => ({
+    name: a.name,
+    date: formatDate(a.created_at),
+    type: (a.mime_type ?? "").includes("pdf") ? "PDF" : "ملف",
+  }));
+
+  // Payment
+  const amount = Number(r.payment?.amount ?? 0);
+  const paid =
+    r.payment?.status === "paid" || r.status === "completed" ? amount : 0;
+
+  const urgent =
+    String(meta.priority ?? "").toLowerCase() === "high" ||
+    String(meta.priority ?? "").toLowerCase() === "urgent" ||
+    String(meta.urgency ?? "").toLowerCase() === "high";
+
+  return {
+    id: r.id,
+    title: r.title || "قضية",
+    caseNo: r.id,
+    court: String(meta.court ?? "—"),
+    stage: mapStage(r.status),
+    progress: 0,
+    urgent,
+    lawyer: {
+      name: r.assignedTo ?? "—",
+      type: "—",
+      phone: "",
+      rating: 0,
+    },
+    nextSession,
+    fee: { total: amount, paid },
+    timeline,
+    documents,
+    // aiInsight intentionally omitted — no fabricated AI analysis.
+    // sharedTasks / team / lawyerNoteForClient not surfaced to client yet.
+  };
+}
+
 export default function ClientCaseDetailPage({ params }: { params: { id: string } }) {
   const { isDark } = useTheme();
   const [liveCase, setLiveCase] = useState<CaseData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getCaseDetail(params.id)
-      .then((result) => {
-        if (!cancelled && result) {
-          // Map SharedCase fields to CaseData shape where applicable
-          const r: any = result;
-          setLiveCase({
-            id: r.id,
-            title: r.title,
-            caseNo: r.case_number ?? r.id,
-            court: r.court ?? "—",
-            stage: (r.status as CaseStage) ?? "filed",
-            progress: r.progress ?? 0,
-            urgent: r.priority === "high" || r.priority === "urgent",
-            lawyer: {
-              name: r.lawyer_name ?? "—",
-              type: r.type ?? "—",
-              phone: "",
-              rating: 0,
-            },
-            nextSession: r.next_session_date
-              ? {
-                  date: r.next_session_date,
-                  time: r.next_session_time ?? "",
-                  location: r.next_session_location ?? "",
-                }
-              : undefined,
-            fee: {
-              total: r.total_fees ?? 0,
-              paid: r.paid_fees ?? 0,
-            },
-            timeline: r.timeline ?? [],
-            documents: r.documents ?? [],
-            aiInsight: r.ai_insight,
-          } as CaseData);
+    setLoading(true);
+    setFetchError(null);
+    getServiceRequestDetail(params.id)
+      .then((r) => {
+        if (cancelled) return;
+        if (r) {
+          setLiveCase(toCaseData(r));
+        } else {
+          setLiveCase(null);
+          setFetchError("لم يتم العثور على القضية.");
         }
       })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .catch((e) => {
+        if (cancelled) return;
+        console.error("[client case detail] fetch failed:", e);
+        setFetchError("تعذّر تحميل بيانات القضية.");
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [params.id]);
 
-  const data = liveCase ?? MOCK_CASES[params.id] ?? null;
+  const data = liveCase;
   const [showDocs, setShowDocs] = useState(false);
 
   if (loading) {
@@ -168,12 +228,12 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
     );
   }
 
-  if (!data) {
+  if (fetchError || !data) {
     return (
       <div className="max-w-3xl mx-auto py-20 text-center" dir="rtl">
         <div className={`inline-flex flex-col items-center gap-3 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
           <Warning size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
-          <p className="text-lg font-bold">القضية غير موجودة</p>
+          <p className="text-lg font-bold">{fetchError ?? "القضية غير موجودة"}</p>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>لم يتم العثور على قضية بهذا المعرف، أو قد تكون محذوفة.</p>
           <Link href="/dashboard/client/cases" className="mt-2 text-sm text-[#0B3D2E] hover:underline">← العودة لقضاياي</Link>
         </div>
@@ -187,7 +247,7 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
   const sm = isDark ? "text-zinc-500" : "text-slate-400";
 
   const stageIdx = STAGES.findIndex(s => s.key === data.stage);
-  const paidPct  = Math.round((data.fee.paid / data.fee.total) * 100);
+  const paidPct  = data.fee.total > 0 ? Math.round((data.fee.paid / data.fee.total) * 100) : 0;
 
   return (
     <div className="max-w-3xl mx-auto space-y-4" dir="rtl">
@@ -240,7 +300,7 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
             })}
           </div>
 
-          {/* Progress bar */}
+          {/* Progress bar — progress not yet available from backend (0%) */}
           <div className={`h-1.5 rounded-full overflow-hidden mb-1 ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
             <motion.div className="h-full rounded-full bg-gradient-to-l from-emerald-400 to-[#0B3D2E]"
               initial={{ width:0 }} animate={{ width: `${data.progress}%` }}
@@ -257,15 +317,11 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
               <div>
                 <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{data.lawyer.name}</p>
                 <p className={`text-[10px] flex items-center gap-1 ${sm}`}>
-                  {data.lawyer.type} <span className="text-amber-500 font-bold">★ {data.lawyer.rating}</span>
+                  {data.lawyer.type}
                 </p>
               </div>
             </div>
             <div className="flex gap-2">
-              <a href={`tel:${data.lawyer.phone}`}
-                className={`w-8 h-8 rounded-xl flex items-center justify-center border ${isDark ? "border-white/[0.06] text-zinc-400 hover:text-emerald-400" : "border-slate-200 text-slate-500 hover:text-emerald-600"} transition-colors`}>
-                <Phone size={13} />
-              </a>
               <Link href="/dashboard/client/messages"
                 className={`w-8 h-8 rounded-xl flex items-center justify-center border ${isDark ? "border-white/[0.06] text-zinc-400 hover:text-blue-400" : "border-slate-200 text-slate-500 hover:text-blue-500"} transition-colors`}>
                 <ChatDots size={13} />
@@ -289,18 +345,6 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
         )}
       </motion.div>
 
-      {/* AI Insight */}
-      {data.aiInsight && (
-        <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.05 }}
-          className={`p-4 rounded-2xl border ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkle size={13} weight="fill" className="text-[#C8A762]" />
-            <p className={`text-[12px] font-bold ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}>تحليل نظامي AI</p>
-          </div>
-          <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-amber-800"}`}>{data.aiInsight}</p>
-        </motion.div>
-      )}
-
       {/* Timeline */}
       <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.08 }}
         className={`${card} p-4`}>
@@ -312,47 +356,52 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
           </span>
         </div>
 
-        <div className="relative">
-          <div className={`absolute start-[18px] top-3 bottom-3 w-px ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`} />
-          <div className="space-y-1">
-            {data.timeline.map((ev, i) => {
-              const EvIcon = EVENT_ICON[ev.type];
-              const evColor = EVENT_COLOR[ev.type];
-              return (
-                <motion.div key={i}
-                  initial={{ opacity:0, x:-6 }} animate={{ opacity:1, x:0 }} transition={{ delay: i * 0.04 }}
-                  className={`flex items-start gap-3 py-2 px-2 rounded-xl ${ev.done ? "" : "opacity-45"}`}>
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 relative z-10 border ${
-                    ev.done
-                      ? isDark ? "bg-emerald-500/15 border-emerald-500/30" : "bg-emerald-50 border-emerald-200"
-                      : isDark ? "bg-zinc-800 border-white/[0.06]" : "bg-slate-50 border-slate-200"
-                  }`}>
-                    {ev.done
-                      ? <CheckCircle size={16} weight="fill" className="text-emerald-500" />
-                      : <EvIcon size={14} className={evColor} />}
-                  </div>
-                  <div className="flex-1 pt-1.5">
-                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                      <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{ev.title}</p>
-                      {ev.date !== "—" && (
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/[0.04] text-zinc-600" : "bg-slate-100 text-slate-500"}`}>{ev.date}</span>
-                      )}
-                    </div>
-                    {ev.desc && <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-600" : "text-slate-500"}`}>{ev.desc}</p>}
-                  </div>
-                </motion.div>
-              );
-            })}
+        {data.timeline.length === 0 ? (
+          <div className="text-center py-8">
+            <Scales size={28} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+            <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد أحداث مسجّلة بعد</p>
           </div>
-        </div>
+        ) : (
+          <div className="relative">
+            <div className={`absolute start-[18px] top-3 bottom-3 w-px ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`} />
+            <div className="space-y-1">
+              {data.timeline.map((ev, i) => {
+                const EvIcon = EVENT_ICON[ev.type];
+                const evColor = EVENT_COLOR[ev.type];
+                return (
+                  <motion.div key={i}
+                    initial={{ opacity:0, x:-6 }} animate={{ opacity:1, x:0 }} transition={{ delay: i * 0.04 }}
+                    className={`flex items-start gap-3 py-2 px-2 rounded-xl ${ev.done ? "" : "opacity-45"}`}>
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 relative z-10 border ${
+                      ev.done
+                        ? isDark ? "bg-emerald-500/15 border-emerald-500/30" : "bg-emerald-50 border-emerald-200"
+                        : isDark ? "bg-zinc-800 border-white/[0.06]" : "bg-slate-50 border-slate-200"
+                    }`}>
+                      {ev.done
+                        ? <CheckCircle size={16} weight="fill" className="text-emerald-500" />
+                        : <EvIcon size={14} className={evColor} />}
+                    </div>
+                    <div className="flex-1 pt-1.5">
+                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                        <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{ev.title}</p>
+                        {ev.date !== "—" && (
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/[0.04] text-zinc-600" : "bg-slate-100 text-slate-500"}`}>{ev.date}</span>
+                        )}
+                      </div>
+                      {ev.desc && <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-600" : "text-slate-500"}`}>{ev.desc}</p>}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </motion.div>
 
       {/* ─── Cross-Role: ما شاركه المحامي مع العميل ─── */}
       {(data.sharedTasks?.length || data.team?.length || data.lawyerNoteForClient) && (
         <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.09 }}
           className={`${card} p-4 space-y-4`}>
-
-          {/* Header */}
           <div className="flex items-center gap-2">
             <Eye size={14} className="text-[#0B3D2E]" />
             <h2 className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>ما شاركه معك محاميك</h2>
@@ -361,17 +410,13 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
             </span>
           </div>
 
-          {/* Lawyer note for client */}
           {data.lawyerNoteForClient && (
-            <div className={`rounded-xl p-3 border-r-2 border-[#0B3D2E] ${
-              isDark ? "bg-[#0B3D2E]/10" : "bg-emerald-50"
-            }`}>
+            <div className={`rounded-xl p-3 border-r-2 border-[#0B3D2E] ${isDark ? "bg-[#0B3D2E]/10" : "bg-emerald-50"}`}>
               <p className={`text-[10px] font-bold mb-1 ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>رسالة من محاميك</p>
               <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{data.lawyerNoteForClient}</p>
             </div>
           )}
 
-          {/* Shared tasks */}
           {data.sharedTasks && data.sharedTasks.length > 0 && (
             <div>
               <div className="flex items-center gap-1.5 mb-2">
@@ -380,9 +425,7 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
               </div>
               <div className="space-y-1.5">
                 {data.sharedTasks.map((task, i) => (
-                  <div key={i} className={`flex items-center gap-2.5 px-3 py-2 rounded-xl ${
-                    isDark ? "bg-white/[0.03]" : "bg-slate-50"
-                  }`}>
+                  <div key={i} className={`flex items-center gap-2.5 px-3 py-2 rounded-xl ${isDark ? "bg-white/[0.03]" : "bg-slate-50"}`}>
                     <div className={`w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0 text-[8px] font-black ${
                       task.status === "done"  ? "bg-emerald-500/15 text-emerald-500" :
                       task.status === "doing" ? "bg-blue-500/15 text-blue-500" :
@@ -408,7 +451,6 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
             </div>
           )}
 
-          {/* Team */}
           {data.team && data.team.length > 0 && (
             <div>
               <div className="flex items-center gap-1.5 mb-2">
@@ -417,9 +459,7 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
               </div>
               <div className="flex flex-wrap gap-2">
                 {data.team.map((m, i) => (
-                  <div key={i} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border ${
-                    isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-slate-100 bg-slate-50"
-                  }`}>
+                  <div key={i} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-slate-100 bg-slate-50"}`}>
                     <div className="w-6 h-6 rounded-full bg-[#0B3D2E] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
                       {m.initials}
                     </div>
@@ -433,7 +473,6 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
             </div>
           )}
 
-          {/* Privacy notice */}
           <div className={`flex items-center gap-1.5 text-[9px] ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
             <Lock size={9} />
             <span>يتحكم محاميك في ما تراه — بعض التفاصيل محجوبة للحفاظ على سرية العمل القانوني</span>
@@ -458,15 +497,19 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
           {showDocs && (
             <motion.div initial={{ height:0, opacity:0 }} animate={{ height:"auto", opacity:1 }} exit={{ height:0, opacity:0 }} transition={{ duration:0.2 }} className="overflow-hidden">
               <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"} p-3 space-y-1`}>
-                {data.documents.map((doc, i) => (
-                  <div key={i} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-slate-50"}`}>
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[9px] font-black flex-shrink-0 ${doc.type === "PDF" ? "bg-red-500/10 text-red-500" : "bg-blue-500/10 text-blue-500"}`}>{doc.type}</div>
-                    <div className="flex-1">
-                      <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{doc.name}</p>
-                      <p className={`text-[10px] ${sm}`}>{doc.date}</p>
+                {data.documents.length === 0 ? (
+                  <p className={`text-center text-[11px] py-4 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد مستندات</p>
+                ) : (
+                  data.documents.map((doc, i) => (
+                    <div key={i} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-slate-50"}`}>
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[9px] font-black flex-shrink-0 ${doc.type === "PDF" ? "bg-red-500/10 text-red-500" : "bg-blue-500/10 text-blue-500"}`}>{doc.type}</div>
+                      <div className="flex-1">
+                        <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{doc.name}</p>
+                        <p className={`text-[10px] ${sm}`}>{doc.date}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </motion.div>
           )}

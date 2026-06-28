@@ -11,8 +11,10 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import EmptyState from "@/components/ui/EmptyState";
-import { getWorkflowRequestsByReceiver, updateWorkflowRequestById } from "@/lib/services/workflowService";
+import { getWorkflowRequestsByReceiver, updateWorkflowRequestById, createWorkflowRequest } from "@/lib/services/workflowService";
 import type { WorkflowRequest } from "@/lib/workflowStore";
+import { createWorkflowId } from "@/lib/workflowStore";
+import { useUser } from "@/hooks/useUser";
 
 // ─── Types & Mock Data ─────────────────────────────────────────────────────────
 
@@ -77,6 +79,7 @@ const CONTRACT_TYPES = [
 
 export default function ContractsPage() {
   const { isDark } = useTheme();
+  const user = useUser();
   const [search,        setSearch]        = useState("");
   const [archiveSearch, setArchiveSearch] = useState("");
   const [filter,        setFilter]        = useState<ContractStatus | "all">("all");
@@ -130,31 +133,94 @@ export default function ContractsPage() {
     setExpandedId(null);
     showToast("تم حذف العقد");
     // Soft-delete on the backend (no hard DELETE endpoint on service-requests).
-    updateWorkflowRequestById(id, { status: "cancelled" }, "contract_deleted").catch(() => {});
+    updateWorkflowRequestById(id, { status: "cancelled" }, "contract_deleted").catch((err) => {
+      console.error("[contracts] deleteContract failed:", err);
+    });
   }
   function changeStatus(id: string, status: ContractStatus) {
     setContracts(prev => prev.map(c => c.id === id ? { ...c, status } : c));
     showToast(status === "pending_sign" ? "تم إرسال العقد للتوقيع" : "تم تحديث حالة العقد");
-    updateWorkflowRequestById(id, { status: workflowStatusFor[status] }, "contract_status_changed").catch(() => {});
+    updateWorkflowRequestById(id, { status: workflowStatusFor[status] }, "contract_status_changed").catch((err) => {
+      console.error("[contracts] changeStatus failed:", err);
+    });
   }
   function archiveContract(id: string) {
     setContracts(prev => prev.map(c => c.id === id ? { ...c, manualArchive: true } : c));
     setExpandedId(null);
     showToast("🗂 تم نقل العقد للأرشيف");
-    updateWorkflowRequestById(id, { status: "cancelled" }, "contract_archived").catch(() => {});
+    updateWorkflowRequestById(id, { status: "cancelled" }, "contract_archived").catch((err) => {
+      console.error("[contracts] archiveContract failed:", err);
+    });
   }
   function restoreContract(id: string, title: string) {
     setContracts(prev => prev.map(c => c.id === id ? { ...c, manualArchive: false, status: "draft" } : c));
     showToast(`✅ تم استعادة "${title}" — راجعه في قائمة المسودات`);
-    updateWorkflowRequestById(id, { status: "draft" }, "contract_restored").catch(() => {});
+    updateWorkflowRequestById(id, { status: "draft" }, "contract_restored").catch((err) => {
+      console.error("[contracts] restoreContract failed:", err);
+    });
   }
-  function saveDraft() {
-    setContracts(prev => [{ id: Date.now().toString(), title: newTitle || `عقد جديد — ${newParty}`, party: newParty, type: (newType || "service_agreement") as Contract["type"], status: "draft", value: newValue || undefined }, ...prev]);
+  // Build a workflow request for the current new-contract modal inputs.
+  async function persistNewContract(targetStatus: "draft" | "in_review"): Promise<WorkflowRequest | null> {
+    const id = createWorkflowId();
+    const title = newTitle.trim() || `عقد جديد — ${newParty.trim()}`;
+    try {
+      const row = await createWorkflowRequest({
+        id,
+        type: "business_case",
+        title,
+        description: "",
+        receiver: "lawyer",
+        status: targetStatus,
+        requester: {
+          userId: user.userId,
+          name: newParty.trim() || user.name || "عميل نظامي",
+          role: user.userType ?? "lawyer",
+          tier: user.tier,
+        },
+        payment: { amount: 0, status: "not_required" },
+        sourcePath: "",
+        metadata: {
+          contractType: newType || "service_agreement",
+          party: newParty.trim(),
+          value: newValue.trim(),
+        },
+        assignedTo: user.userId ?? null,
+      });
+      return row;
+    } catch (err) {
+      console.error("[contracts] persistNewContract failed:", err);
+      return null;
+    }
+  }
+  async function saveDraft() {
+    const row = await persistNewContract("draft");
+    if (!row) { showToast("تعذّر حفظ المسودة — حاول مرة أخرى"); return; }
+    const contract: Contract = {
+      id: row.id,
+      title: row.title,
+      party: newParty.trim() || "عميل نظامي",
+      type: (newType || "service_agreement") as Contract["type"],
+      status: "draft",
+      value: newValue.trim() || undefined,
+    };
+    setContracts(prev => [contract, ...prev]);
     closeModal(); showToast("تم حفظ المسودة");
+    window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
   }
-  function sendSign() {
-    setContracts(prev => [{ id: Date.now().toString(), title: newTitle || `عقد جديد — ${newParty}`, party: newParty, type: (newType || "service_agreement") as Contract["type"], status: "pending_sign", value: newValue || undefined }, ...prev]);
+  async function sendSign() {
+    const row = await persistNewContract("in_review");
+    if (!row) { showToast("تعذّر إرسال العقد — حاول مرة أخرى"); return; }
+    const contract: Contract = {
+      id: row.id,
+      title: row.title,
+      party: newParty.trim() || "عميل نظامي",
+      type: (newType || "service_agreement") as Contract["type"],
+      status: "pending_sign",
+      value: newValue.trim() || undefined,
+    };
+    setContracts(prev => [contract, ...prev]);
     closeModal(); showToast("تم إرسال العقد للتوقيع ✓");
+    window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
   }
 
   // isArchived = منتهية تلقائياً OR أُرشفت يدوياً

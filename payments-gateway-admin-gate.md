@@ -1,11 +1,4 @@
----
-name: payments-gateway-admin-gate
-description: How the admin payment-gateway toggle works and where its call-sites are gated
-metadata: 
-  node_type: memory
-  type: project
-  originSessionId: d4d12ca2-bdbe-44d9-9bc4-15d6f3a55652
----
+# Payments Gateway — Admin Gate
 
 The real payment provider is **not decided yet**. Instead of wiring a gateway, an admin-controlled runtime flag gates all payment flows.
 
@@ -16,4 +9,4 @@ The real payment provider is **not decided yet**. Instead of wiring a gateway, a
 - Server-side defense in `src/app/api/client-workflow/_supabase.ts` rejects stub-paid requests when disabled.
 - Wallet/finance amber "gateway being activated" banners should render only when `status !== "live"`.
 
-When the user picks a real provider later: replace `createPaymentIntentStub` body + flip status to `test`/`live`. See [[nzamy-audit-fix-status]].
+When the user picks a real provider later: replace `createPaymentIntentStub` body + flip status to `test`/`live`. See [nzamy-audit-fix-status.md](./nzamy-audit-fix-status.md).

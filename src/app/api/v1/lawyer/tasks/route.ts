@@ -1,9 +1,37 @@
 import { NextResponse, NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { recordEvent, RequestEvent } from "@/lib/events";
+
+// ─── Status mapping ─────────────────────────────────────────────────────────
+// DB service_requests.status enum:
+//   draft | pending_payment | pending_assignment | assigned | in_review | completed | cancelled
+// UI TaskStatus: todo | in_progress | done | archived
+// Mapping (DB → UI task status, read direction):
+const DB_TO_TASK_STATUS: Record<string, string> = {
+  draft: "todo",
+  pending_payment: "todo",
+  pending_assignment: "todo",
+  assigned: "in_progress",
+  in_review: "in_progress",
+  completed: "done",
+  cancelled: "archived",
+};
+
+// Valid DB statuses (for PATCH validation)
+const VALID_DB_STATUSES = new Set([
+  "draft",
+  "pending_payment",
+  "pending_assignment",
+  "assigned",
+  "in_review",
+  "completed",
+  "cancelled",
+]);
 
 /**
  * GET /api/v1/lawyer/tasks
- * Auth required. Returns tasks for this lawyer derived from request events.
+ * Auth required. Returns tasks for this lawyer derived from service requests.
+ * Maps DB status → UI task status (todo/in_progress/done/archived).
  */
 export async function GET() {
   try {
@@ -19,13 +47,19 @@ export async function GET() {
 
     const uid = user.id;
 
-    // Get active service requests assigned to this lawyer as implicit tasks
-    // Note: service_requests table does NOT have due_date column
+    // Get service requests assigned to this lawyer across all relevant statuses
+    // (include completed/cancelled so done/archived tasks surface in the UI).
     const { data: requests } = await supabase
       .from("service_requests")
       .select("id, title, status, type, created_at, updated_at, metadata")
       .eq("assigned_to", uid)
-      .in("status", ["assigned", "pending_assignment", "in_review"])
+      .in("status", [
+        "pending_assignment",
+        "assigned",
+        "in_review",
+        "completed",
+        "cancelled",
+      ])
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -40,25 +74,32 @@ export async function GET() {
           .limit(100)
       : { data: [] };
 
-    // Map requests to task-like objects
+    // Map requests to task-like objects (map DB status → UI task status)
     const tasks = (requests ?? []).map((req) => {
       const reqEvents = (events ?? []).filter((e) => e.request_id === req.id);
+      const meta = (req.metadata as Record<string, unknown> | null) ?? {};
 
-      let category: string = 'case';
-      if (req.type === 'document' || req.type === 'contract_draft') category = 'document';
-      else if (req.type === 'consultation') category = 'client';
+      let category: string = "case";
+      if (req.type === "document" || req.type === "contract_draft") category = "document";
+      else if (req.type === "consultation") category = "client";
+      else if (typeof meta.category === "string") category = meta.category;
+
+      const priority =
+        typeof meta.priority === "string" ? meta.priority : "normal";
 
       return {
         id: req.id,
         title: req.title || "مهمة بدون عنوان",
-        status: req.status,
+        status: DB_TO_TASK_STATUS[req.status] ?? "todo",
         type: req.type,
         category,
-        priority: "medium",
+        priority,
         createdAt: req.created_at,
         created_at: req.created_at,
         updatedAt: req.updated_at,
-        dueDate: null,
+        dueDate: typeof meta.dueDate === "string" ? meta.dueDate : null,
+        caseId: typeof meta.caseId === "string" ? meta.caseId : undefined,
+        caseRef: typeof meta.caseRef === "string" ? meta.caseRef : undefined,
         eventsCount: reqEvents.length,
         lastEvent: reqEvents[0] || null,
       };
@@ -72,8 +113,107 @@ export async function GET() {
 }
 
 /**
+ * POST /api/v1/lawyer/tasks
+ * Create a new task (service_request row) for this lawyer.
+ * Body: { title, category?, priority?, dueDate?, caseId?, caseRef?, notes? }
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { title, category, priority, dueDate, caseId, caseRef, notes } = body as {
+      title?: string;
+      category?: string;
+      priority?: string;
+      dueDate?: string;
+      caseId?: string;
+      caseRef?: string;
+      notes?: string;
+    };
+
+    if (!title || !title.trim()) {
+      return NextResponse.json({ error: "title required" }, { status: 400 });
+    }
+
+    const id = crypto.randomUUID();
+    const metadata: Record<string, unknown> = {
+      task: true,
+      priority: priority || "normal",
+    };
+    if (category) metadata.category = category;
+    if (dueDate) metadata.dueDate = dueDate;
+    if (caseId) metadata.caseId = caseId;
+    if (caseRef) metadata.caseRef = caseRef;
+    if (notes) metadata.notes = notes;
+
+    const { data, error } = await supabase
+      .from("service_requests")
+      .insert({
+        id,
+        requester_user_id: user.id,
+        type: "service",
+        title: title.trim(),
+        description: notes || "",
+        requester: { name: "lawyer", role: "lawyer", tier: "free" },
+        receiver: "lawyer",
+        assigned_to: user.id,
+        status: "pending_assignment",
+        payment: { amount: 0, status: "not_required" },
+        source_path: "",
+        metadata,
+      })
+      .select("id, title, status, type, created_at, updated_at, metadata")
+      .single();
+
+    if (error || !data) {
+      return NextResponse.json({ error: error?.message || "Insert failed" }, { status: 500 });
+    }
+
+    // F7 — record a namespaced task.created event (does not throw on failure).
+    await recordEvent({
+      supabase,
+      requestId: id,
+      event: RequestEvent.TASK_CREATED,
+      actorUserId: user.id,
+    });
+
+    const meta = (data.metadata as Record<string, unknown> | null) ?? {};
+    return NextResponse.json({
+      data: {
+        id: data.id,
+        title: data.title,
+        status: DB_TO_TASK_STATUS[data.status] ?? "todo",
+        type: data.type,
+        category: typeof meta.category === "string" ? meta.category : "case",
+        priority: typeof meta.priority === "string" ? meta.priority : "normal",
+        dueDate: typeof meta.dueDate === "string" ? meta.dueDate : null,
+        caseId: typeof meta.caseId === "string" ? meta.caseId : undefined,
+        caseRef: typeof meta.caseRef === "string" ? meta.caseRef : undefined,
+        createdAt: data.created_at,
+        created_at: data.created_at,
+        updatedAt: data.updated_at,
+        eventsCount: 0,
+        lastEvent: null,
+      },
+    });
+  } catch (err) {
+    console.error("[lawyer/tasks POST] Unexpected error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
  * PATCH /api/v1/lawyer/tasks
- * Update a task (service request) status.
+ * Update a task (service request) status. Expects a valid DB enum status.
  */
 export async function PATCH(request: NextRequest) {
   try {
@@ -94,6 +234,13 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "taskId and status required" }, { status: 400 });
     }
 
+    if (!VALID_DB_STATUSES.has(status)) {
+      return NextResponse.json(
+        { error: `Invalid status. Valid: ${Array.from(VALID_DB_STATUSES).join(", ")}` },
+        { status: 400 },
+      );
+    }
+
     const { error } = await supabase
       .from("service_requests")
       .update({ status, updated_at: new Date().toISOString() })
@@ -103,6 +250,14 @@ export async function PATCH(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // F7 — record a namespaced task.status_changed event (does not throw).
+    await recordEvent({
+      supabase,
+      requestId: taskId,
+      event: RequestEvent.TASK_STATUS_CHANGED,
+      actorUserId: user.id,
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

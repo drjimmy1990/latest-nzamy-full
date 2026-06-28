@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { recordEvent } from "@/lib/events";
 
 /**
  * GET /api/v1/service-requests/[id]/events — Get timeline events for a request
@@ -75,14 +76,26 @@ export async function POST(
     );
   }
 
+  // F7 — record via the shared helper for a consistent insert shape. The
+  // caller names the event, so we pass it through unchanged (callers should
+  // use the namespaced vocabulary, but this endpoint does not force it).
+  // recordEvent logs+swallows errors; to preserve this endpoint's contract
+  // (return the created row), we re-select after the insert.
+  await recordEvent({
+    supabase,
+    requestId,
+    event: body.event,
+    actorUserId: user.id,
+    ...(typeof body.actor_name === "string" ? { actorName: body.actor_name } : {}),
+  });
+
+  // Re-fetch the latest event for this request so we can return the created row.
   const { data, error } = await supabase
     .from("request_events")
-    .insert({
-      request_id: requestId,
-      event: body.event,
-      actor_user_id: user.id,
-    })
-    .select()
+    .select("*")
+    .eq("request_id", requestId)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .single();
 
   if (error) {

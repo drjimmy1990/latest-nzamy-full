@@ -31,6 +31,7 @@ export interface GroupDetail {
   max_members: number;
   member_count: number;
   is_active: boolean;
+  join_code?: string;
   created_at: string;
 }
 
@@ -106,9 +107,30 @@ export async function getGroupMembers(groupId: string): Promise<GroupMember[]> {
   return (await apiGet<{ data: GroupMember[] }>(`/api/v1/groups/${groupId}/members`)).data;
 }
 
-export async function inviteToGroup(groupId: string, email: string): Promise<void> {
-  if (!isSupabaseMode) return;
-  await apiMutate(`/api/v1/groups/${groupId}/invite`, "POST", { email });
+export async function inviteToGroup(
+  groupId: string,
+  email?: string,
+): Promise<{ inviteCode: string }> {
+  if (!isSupabaseMode) return { inviteCode: "" };
+  const res = await apiMutate<{ data: { invite_code: string } }>(
+    `/api/v1/groups/${groupId}/invite`,
+    "POST",
+    email ? { email } : {},
+  );
+  return { inviteCode: res.data.invite_code };
+}
+
+export async function joinGroup(code: string): Promise<{ groupId: string }> {
+  if (!isSupabaseMode) {
+    activateClientGroup("joined", `مجموعة ${code}`);
+    return { groupId: "grp-001" };
+  }
+  const res = await apiMutate<{ data: { groupId: string } }>(
+    "/api/v1/groups/join",
+    "POST",
+    { code },
+  );
+  return { groupId: res.data.groupId };
 }
 
 export async function removeGroupMember(groupId: string, userId: string): Promise<void> {

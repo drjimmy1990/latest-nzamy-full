@@ -1,5 +1,7 @@
 # Nzamy Automation: Comprehensive n8n Workflows Specification
 
+> **STATUS (2026-06-28):** Superseded by `n8n_master_guide_latest.md` (action plan) + `n8n/README.md` (integration contract). Kept as a technical reference. The Next.js trigger layer is now built: `POST /api/v1/n8n/trigger` + `src/lib/n8n/payload.ts` + `src/lib/events.ts` (namespaced events). Importable workflow JSON templates live at `n8n/workflows/`.
+
 > **Last Updated: 2026-06-17** | **38 total workflows** (20 operational + 18 AI)
 
 This document provides a highly technical, production-grade specification for all automation workflows in the Nzamy ecosystem. It is divided into onboarding, request, billing, communication, admin management, and **AI-powered legal tools** categories.

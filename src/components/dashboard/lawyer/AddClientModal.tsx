@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  User, Buildings, Star, Check, X
+  User, Buildings, Star, Check, X, Warning
 } from "@phosphor-icons/react";
 import { type Client, type ClientFlag, FLAG_CONFIG } from "@/constants/lawyerClientsData";
+import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 
 export default function AddClientModal({ isDark, onClose, onAdd }: {
   isDark: boolean;
@@ -14,10 +15,13 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
   const [name,     setName]     = useState("");
   const [type,     setType]     = useState<"individual" | "company">("individual");
   const [phone,    setPhone]    = useState("");
+  const [email,    setEmail]    = useState("");
   const [total,    setTotal]    = useState("");
   const [paid,     setPaid]     = useState("");
   const [flags,    setFlags]    = useState<Set<ClientFlag>>(new Set());
   const [rating,   setRating]   = useState<1|2|3|4|5>(3);
+  const [submitting, setSubmitting] = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
 
   const toggleFlag = (f: ClientFlag) => setFlags(prev => {
     const s = new Set(prev); s.has(f) ? s.delete(f) : s.add(f); return s;
@@ -25,10 +29,14 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
 
   const canNext = step === 0 ? name.trim().length > 0 && phone.trim().length > 0 : true;
 
-  const handleSubmit = () => {
-    onAdd({
+  const handleSubmit = async () => {
+    setError(null);
+    setSubmitting(true);
+
+    const baseClient: Client = {
       id: Date.now().toString(),
       name: name.trim(),
+      email: email.trim(),
       type,
       phone: phone.trim(),
       activeCases: 0,
@@ -39,8 +47,45 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
       lastContact: "اليوم",
       flags: [...flags],
       rating,
-    });
-    onClose();
+    };
+
+    if (isSupabaseMode) {
+      try {
+        const res = await apiMutate<{ data: any }>("/api/v1/lawyer/clients", "POST", {
+          name: name.trim(),
+          phone: phone.trim(),
+          email: email.trim() || undefined,
+          type,
+          flags: [...flags],
+          rating,
+          totalFees: Number(total) || 0,
+          paidFees: Number(paid) || 0,
+        });
+        const d = res?.data;
+        if (d) {
+          onAdd({
+            ...baseClient,
+            id: d.id,
+            name: d.name || baseClient.name,
+            email: d.email || baseClient.email,
+            phone: d.phone || baseClient.phone,
+            activeCases: d.activeCount ?? 0,
+            lastContact: baseClient.lastContact,
+          });
+          window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
+        }
+        setSubmitting(false);
+        onClose();
+      } catch (e: any) {
+        console.error("[AddClientModal] create failed:", e);
+        setError(e?.message || "تعذّر حفظ الموكّل. حاول مرة أخرى.");
+        setSubmitting(false);
+      }
+    } else {
+      onAdd(baseClient);
+      setSubmitting(false);
+      onClose();
+    }
   };
 
   const overlay = isDark
@@ -115,6 +160,11 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
                   <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+966 5X XXX XXXX" dir="ltr"
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${isDark ? "border-white/[0.06] bg-zinc-800 text-zinc-200 placeholder:text-zinc-600" : "border-slate-200 bg-slate-50 text-slate-800 placeholder:text-slate-400"}`} />
                 </div>
+                <div>
+                  <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${isDark ? "text-zinc-500" : "text-slate-400"}`}>البريد الإلكتروني (اختياري)</label>
+                  <input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" dir="ltr"
+                    className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${isDark ? "border-white/[0.06] bg-zinc-800 text-zinc-200 placeholder:text-zinc-600" : "border-slate-200 bg-slate-50 text-slate-800 placeholder:text-slate-400"}`} />
+                </div>
               </motion.div>
             )}
             {/* Step 1: Fees */}
@@ -164,8 +214,8 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
 
           {/* Footer */}
           <div className={`flex items-center justify-between px-5 py-4 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-            <button onClick={() => step > 0 ? setStep(s => s - 1) : onClose()}
-              className={`px-4 py-2 rounded-xl text-[12px] font-bold border transition-colors ${isDark ? "border-white/[0.07] text-zinc-400 hover:text-zinc-200" : "border-slate-200 text-slate-500 hover:text-slate-700"}`}>
+            <button onClick={() => step > 0 ? setStep(s => s - 1) : onClose()} disabled={submitting}
+              className={`px-4 py-2 rounded-xl text-[12px] font-bold border transition-colors ${isDark ? "border-white/[0.07] text-zinc-400 hover:text-zinc-200" : "border-slate-200 text-slate-500 hover:text-slate-700"} disabled:opacity-40`}>
               {step === 0 ? "إلغاء" : "السابق"}
             </button>
             {step < 2 ? (
@@ -174,12 +224,20 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
                 التالي
               </button>
             ) : (
-              <button onClick={handleSubmit}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-[12px] font-bold bg-emerald-600 text-white">
-                <Check size={13} weight="bold" /> إضافة الموكّل
+              <button onClick={handleSubmit} disabled={submitting}
+                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-[12px] font-bold bg-emerald-600 text-white disabled:opacity-60 transition-opacity">
+                <Check size={13} weight="bold" /> {submitting ? "جارٍ الحفظ..." : "إضافة الموكّل"}
               </button>
             )}
           </div>
+
+          {/* Error banner */}
+          {error && (
+            <div className={`mx-5 mb-4 p-3 rounded-xl flex items-center gap-2 text-[11px] font-semibold ${isDark ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-red-50 border border-red-200 text-red-700"}`}>
+              <Warning size={14} weight="fill" className="flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
         </motion.div>
       </motion.div>
     </AnimatePresence>

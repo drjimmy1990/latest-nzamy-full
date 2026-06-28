@@ -1,0 +1,136 @@
+{
+  "name": "WF 1.1 — Welcome Email + WhatsApp",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-user",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "webhookId": "11111111-1111-4111-8111-111111111112"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, full_name, email, phone, user_type FROM public.profiles WHERE id = $1;",
+        "options": {
+          "queryParameters": "={{[$json.body.entity.id]}}"
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111113",
+      "name": "Fetch Profile",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "11111111-1111-4111-8111-111111111114",
+              "leftValue": "={{$json.phone}}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "11111111-1111-4111-8111-111111111115",
+      "name": "If Has Phone",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.RESEND_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{$env.EMAIL_FROM_NAME}} <{{$env.EMAIL_FROM}}>\",\n  \"to\": \"{{$json.email}}\",\n  \"subject\": \"مرحباً بك في منصة نظامي\",\n  \"html\": \"<p>مرحباً {{$json.full_name}}،</p><p>يسعدنا انضمامك إلى منصة نظامي القانونية. يمكنك الآن البدء بطلب خدماتك القانونية بكل سهولة.</p>\"\n}",
+        "options": {}
+      },
+      "id": "11111111-1111-4111-8111-111111111116",
+      "name": "Send Welcome Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, -100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.EVOLUTION_API_URL}}/message/sendText/{{$env.EVOLUTION_INSTANCE_NAME}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "{{$env.EVOLUTION_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{$json.phone}}\",\n  \"textMessage\": {\n    \"text\": \"مرحباً {{$json.full_name}}، يسعدنا انضمامك إلى منصة نظامي القانونية. يمكنك الآن البدء بطلب خدماتك القانونية بكل سهولة.\"\n  }\n}",
+        "options": {}
+      },
+      "id": "11111111-1111-4111-8111-111111111117",
+      "name": "Send WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [880, -100]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.audit_log (actor_id, action, target_type, target_id, metadata) VALUES ($1, 'welcome_dispatched', 'profile', $2, '{\"channel\":\"email,whatsapp\"}');",
+        "options": {
+          "queryParameters": "={{[$json.body.actor.id, $json.body.entity.id]}}"
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111118",
+      "name": "Log Audit",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1100, -100]
+    },
+    {
+      "parameters": {},
+      "id": "11111111-1111-4111-8111-111111111119",
+      "name": "No Phone — Skip",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [660, 100]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Fetch Profile", "type": "main", "index": 0 }]] },
+    "Fetch Profile": { "main": [[{ "node": "If Has Phone", "type": "main", "index": 0 }]] },
+    "If Has Phone": {
+      "main": [
+        [{ "node": "Send Welcome Email", "type": "main", "index": 0 }],
+        [{ "node": "No Phone — Skip", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Welcome Email": { "main": [[{ "node": "Send WhatsApp", "type": "main", "index": 0 }]] },
+    "Send WhatsApp": { "main": [[{ "node": "Log Audit", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

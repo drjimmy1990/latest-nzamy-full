@@ -67,7 +67,7 @@ const steps = [
   },
 ];
 
-const friends = [
+const FRIENDS_MOCK = [
   {
     initials: "أح",
     initialsEn: "AH",
@@ -155,6 +155,10 @@ export default function ReferralPage() {
   const [referralUrl, setReferralUrl] = useState("");
   const [statValues, setStatValues] = useState<number[]>([0, 0, 0]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // `friends` starts as the mock list; replaced with real data when the API
+  // returns a non-empty list. The mock is only kept while loading or when the
+  // API returns no friends.
+  const [friends, setFriends] = useState(FRIENDS_MOCK);
 
   useEffect(() => {
     fetch("/api/v1/referrals", { credentials: "same-origin" })
@@ -167,6 +171,26 @@ export default function ReferralPage() {
           Number(data?.stats?.joined ?? 0),
           Number(data?.stats?.totalRewards ?? 0),
         ]);
+        // Map DB referral rows onto the friend-card shape.
+        const apiFriends = Array.isArray(data?.friends) ? data.friends : [];
+        const mapped = apiFriends.map((r: any) => {
+          const name = r?.friend?.display_name || r?.referee_id || "صديق";
+          const joined = r?.status === "converted";
+          const initials = String(name).slice(0, 2);
+          const credits = Number(r?.commission_amount || 0);
+          return {
+            initials,
+            initialsEn: initials,
+            nameAr: name,
+            nameEn: name,
+            statusAr: joined ? "منضم" : "بانتظار",
+            statusEn: joined ? "Joined" : "Pending",
+            joined,
+            creditsAr: joined ? `+${toArDigits(credits)} ر.س` : "—",
+            creditsEn: joined ? `+${credits}` : "—",
+          };
+        });
+        if (mapped.length > 0) setFriends(mapped);
         setLoadError(null);
       })
       .catch((err) => {

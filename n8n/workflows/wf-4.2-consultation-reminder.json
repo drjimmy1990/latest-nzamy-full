@@ -1,0 +1,163 @@
+{
+  "name": "WF 4.2 — Consultation Reminder",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 30 }]
+        }
+      },
+      "id": "66666666-6666-4666-8666-666666666601",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.id, c.scheduled_at, c.client_user_id, c.lawyer_user_id, cp.email AS client_email, cp.phone AS client_phone, cp.full_name AS client_name, lp.email AS lawyer_email, lp.phone AS lawyer_phone, lp.full_name AS lawyer_name, CASE WHEN c.scheduled_at BETWEEN NOW() AND NOW() + INTERVAL '1 hour' THEN '1h' WHEN c.scheduled_at BETWEEN NOW() AND NOW() + INTERVAL '24 hours' THEN '24h' END AS reminder_window FROM public.consultations c JOIN public.profiles cp ON c.client_user_id = cp.id JOIN public.profiles lp ON c.lawyer_user_id = lp.id WHERE (c.scheduled_at BETWEEN NOW() AND NOW() + INTERVAL '24 hours' AND COALESCE(c.reminder_sent, false) = false) OR (c.scheduled_at BETWEEN NOW() AND NOW() + INTERVAL '1 hour' AND COALESCE(c.reminder_1h_sent, false) = false);",
+        "options": {}
+      },
+      "id": "66666666-6666-4666-8666-666666666602",
+      "name": "Query Upcoming Consultations",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "dataTypeSelector": "string",
+        "values": { "string": ["={{$json.reminder_window}}"] },
+        "rules": {
+          "rules": [
+            { "value2": "24h", "outputKey": 0 },
+            { "value2": "1h", "outputKey": 1 }
+          ]
+        },
+        "fallbackOutput": 2,
+        "options": {}
+      },
+      "id": "66666666-6666-4666-8666-666666666603",
+      "name": "Switch 24h vs 1h",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.RESEND_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{$env.EMAIL_FROM_NAME}} <{{$env.EMAIL_FROM}}>\",\n  \"to\": \"{{$json.client_email}}\",\n  \"subject\": \"تذكير: استشارتك القانونية غداً\",\n  \"html\": \"<p>تذكير: لديك استشارة قانونية يوم غد. يرجى الاستعداد.</p>\"\n}",
+        "options": {}
+      },
+      "id": "66666666-6666-4666-8666-666666666604",
+      "name": "Email 24h Reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, -160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.EVOLUTION_API_URL}}/message/sendText/{{$env.EVOLUTION_INSTANCE_NAME}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "{{$env.EVOLUTION_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{$json.client_phone}}\",\n  \"textMessage\": { \"text\": \"تذكير: لديك استشارة قانونية خلال 24 ساعة القادمة.\" }\n}",
+        "options": {}
+      },
+      "id": "66666666-6666-4666-8666-666666666605",
+      "name": "WhatsApp 24h",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [880, -160]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.consultations SET reminder_sent = true WHERE id = $1;",
+        "options": { "queryParameters": "={{[$json.id]}}" }
+      },
+      "id": "66666666-6666-4666-8666-666666666606",
+      "name": "Mark 24h Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1100, -160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.EVOLUTION_API_URL}}/message/sendText/{{$env.EVOLUTION_INSTANCE_NAME}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "{{$env.EVOLUTION_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{$json.client_phone}}\",\n  \"textMessage\": { \"text\": \"تذكير عاجل: استشارتك القانونية خلال ساعة واحدة من الآن.\" }\n}",
+        "options": {}
+      },
+      "id": "66666666-6666-4666-8666-666666666607",
+      "name": "WhatsApp 1h Urgent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, 80]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.consultations SET reminder_1h_sent = true WHERE id = $1;",
+        "options": { "queryParameters": "={{[$json.id]}}" }
+      },
+      "id": "66666666-6666-4666-8666-666666666608",
+      "name": "Mark 1h Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [880, 80]
+    },
+    {
+      "parameters": {},
+      "id": "66666666-6666-4666-8666-666666666609",
+      "name": "No Match — Skip",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [660, 280]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": { "main": [[{ "node": "Query Upcoming Consultations", "type": "main", "index": 0 }]] },
+    "Query Upcoming Consultations": { "main": [[{ "node": "Switch 24h vs 1h", "type": "main", "index": 0 }]] },
+    "Switch 24h vs 1h": {
+      "main": [
+        [{ "node": "Email 24h Reminder", "type": "main", "index": 0 }],
+        [{ "node": "WhatsApp 1h Urgent", "type": "main", "index": 0 }],
+        [{ "node": "No Match — Skip", "type": "main", "index": 0 }]
+      ]
+    },
+    "Email 24h Reminder": { "main": [[{ "node": "WhatsApp 24h", "type": "main", "index": 0 }]] },
+    "WhatsApp 24h": { "main": [[{ "node": "Mark 24h Sent", "type": "main", "index": 0 }]] },
+    "WhatsApp 1h Urgent": { "main": [[{ "node": "Mark 1h Sent", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

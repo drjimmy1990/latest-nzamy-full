@@ -1,8 +1,10 @@
 # ⚡ Nzamy — Workflows Roadmap
 
-> **Last Updated**: 2026-06-05
+> **Last Updated**: 2026-06-28
 > **Purpose**: Two lists — (1) what we build NOW to finish العميل والمحامي flows, (2) everything else for later.
 > **Dashboard Status**: ✅ Both Client (10 pages) and Lawyer (17 pages) dashboards are production-ready.
+
+> **Integration contract:** see `n8n/README.md` — the canonical n8n integration doc. Importable workflow JSON templates live at `n8n/workflows/` (Phase 1 = 7 templates created 2026-06-28). The Next.js trigger layer is built: `POST /api/v1/n8n/trigger` + `src/lib/n8n/payload.ts` + `src/lib/events.ts` (namespaced events).
 
 ---
 
@@ -11,7 +13,10 @@
 - [ ] n8n connected to Supabase (Postgres node or HTTP + service role key)
 - [ ] Set `N8N_WEBHOOK_URL` in `.env.local`
 - [ ] Set `N8N_API_KEY` in `.env.local`
-- [ ] Create `/api/v1/n8n/trigger` — generic webhook endpoint
+- [x] ✅ **DONE (2026-06-28):** Create `/api/v1/n8n/trigger` — generic webhook endpoint
+- [x] ✅ **DONE (2026-06-28):** Event standardization (`src/lib/events.ts`) — namespaced event vocabulary + `recordEvent()` helper
+- [x] ✅ **DONE (2026-06-28):** Payload assembler (`src/lib/n8n/payload.ts`) — `buildWebhookPayload()` canonical shape
+- [x] ✅ **DONE (2026-06-28):** Phase-1 workflow JSON templates (`n8n/workflows/`) — 7 importable templates
 - [ ] Evolution API webhook configured → n8n receives WhatsApp messages
 - [ ] Create at least 2 email templates first: `welcome` + `request-received`
 

@@ -11,9 +11,10 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { useUser } from "@/hooks/useUser";
 import { getWorkflowRequestsByReceiver, updateWorkflowRequestById } from "@/lib/services/workflowService";
 import type { WorkflowRequest } from "@/lib/workflowStore";
-import type { CaseStatus, CaseType, CourtDegree, Priority, KanbanCol, CollabFilter, ViewMode, KanbanGroupBy, Case } from "./_types";
+import type { CaseStatus, CaseType, CourtDegree, Priority, CollabFilter, ViewMode, KanbanGroupBy, Case } from "./_types";
 import AddCaseModal from "../_components/AddCaseModal";
 import EmptyState from "@/components/ui/EmptyState";
 
@@ -33,6 +34,7 @@ import {
 
 export default function CasesPage() {
   const { isDark } = useTheme();
+  const user = useUser();
   const [search,        setSearch]        = useState("");
   const [statusFilter,  setStatusFilter]  = useState<CaseStatus | "all">("all");
   const [typeFilter,    setTypeFilter]    = useState<CaseType | "all">("all");
@@ -50,37 +52,39 @@ export default function CasesPage() {
   const [collabFilter,  setCollabFilter]  = useState<CollabFilter>("all"); // S59
   const [archiveSearch, setArchiveSearch] = useState(""); // S82
 
-  // Drag & drop state for Kanban
+  // Drag & drop state for Kanban. Column keys are strings (vary by grouping mode);
+  // drag is only enabled in "status" mode where keys are active/pending/suspended/closed.
   const dragId = useRef<string | null>(null);
-  const [dragOverCol, setDragOverCol] = useState<KanbanCol | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
 
   const onKanbanDragStart = useCallback((id: string) => { dragId.current = id; }, []);
-  const onKanbanDrop = useCallback((col: KanbanCol) => {
+  const onKanbanDrop = useCallback((col: string) => {
     if (!dragId.current) return;
     const caseId = dragId.current;
     // Capture the original column BEFORE the optimistic update so the .catch()
     // revert restores the real prior value. Reading c.kanbanCol inside .catch()
     // would already return the new column (a no-op revert).
-    let originalCol: KanbanCol = col;
+    let originalCol: string = col;
     setCases(prev => {
       const found = prev.find(c => c.id === caseId);
       if (found) originalCol = found.kanbanCol;
-      return prev.map(c => c.id === caseId ? { ...c, kanbanCol: col } : c);
+      return prev.map(c => c.id === caseId ? { ...c, kanbanCol: col as Case["kanbanCol"] } : c);
     });
     dragId.current = null;
     setDragOverCol(null);
-    // Persist the status change to the backend (optimistic; the list re-syncs
-    // via the workflow-updated event on failure is not automatic, so revert on error).
-    const statusForCol: Record<KanbanCol, WorkflowRequest["status"]> = {
-      new: "pending_assignment",
-      docs_prep: "assigned",
-      hearing: "in_review",
-      appeal: "in_review",
+    // Persist the status change to the backend (optimistic; revert on error).
+    // Keys match the status-mode columns rendered in KanbanView.
+    const statusForCol: Record<string, WorkflowRequest["status"]> = {
+      active: "assigned",
+      pending: "pending_assignment",
+      suspended: "in_review",
       closed: "completed",
     };
-    updateWorkflowRequestById(caseId, { status: statusForCol[col] }).catch(() => {
+    const nextStatus = statusForCol[col];
+    if (!nextStatus) return;
+    updateWorkflowRequestById(caseId, { status: nextStatus }).catch(() => {
       // Revert to the column captured before the optimistic update.
-      setCases(prev => prev.map(c => (c.id === caseId ? { ...c, kanbanCol: originalCol } : c)));
+      setCases(prev => prev.map(c => (c.id === caseId ? { ...c, kanbanCol: originalCol as Case["kanbanCol"] } : c)));
     });
   }, []);
 
@@ -276,8 +280,8 @@ export default function CasesPage() {
               <div key={col.key}
                 className={`flex-shrink-0 rounded-3xl transition-all ${isDark?"bg-zinc-800/40":"bg-slate-50/80"} ${isOver?isDark?"ring-2 ring-royal/40":"ring-2 ring-royal/30 bg-royal/[0.02]":""}`}
                 style={{minWidth:260,width:260}}
-                onDragOver={e=>{e.preventDefault();if(isDraggable)setDragOverCol(col.key as KanbanCol);}}
-                onDrop={()=>{if(isDraggable)onKanbanDrop(col.key as KanbanCol);}}
+                onDragOver={e=>{e.preventDefault();if(isDraggable)setDragOverCol(col.key);}}
+                onDrop={()=>{if(isDraggable)onKanbanDrop(col.key);}}
               >
                 <div className={`flex items-center gap-2 px-4 py-3.5 border-b ${isDark?"border-white/[0.06]":"border-slate-200/80"} border-dashed`}>
                   <span className={`text-[11px] font-black uppercase tracking-wider flex-1 ${col.color}`}>{col.label}</span>
@@ -720,7 +724,7 @@ export default function CasesPage() {
         </div>
       </motion.div>
       <AnimatePresence>
-        {showAddCase && <AddCaseModal onClose={() => setShowAddCase(false)} isDark={isDark} />}
+        {showAddCase && <AddCaseModal onClose={() => setShowAddCase(false)} isDark={isDark} user={{ userId: user.userId, name: user.name, userType: user.userType, tier: user.tier }} />}
       </AnimatePresence>
     </div>
   );

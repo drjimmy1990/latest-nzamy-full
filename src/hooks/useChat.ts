@@ -78,8 +78,14 @@ export function useChat(): UseChatReturn {
               filter: `room_id=eq.${activeRoomId}`,
             },
             (payload) => {
-              const newMsg = payload.new as ChatMessage;
-              setMessages(prev => [...prev, newMsg]);
+              // Realtime delivers the raw row (column `body`); map to `content`.
+              const row = payload.new as { body: string } & Partial<ChatMessage>;
+              const { body, ...rest } = row;
+              const newMsg: ChatMessage = { ...rest, content: body } as ChatMessage;
+              setMessages(prev => {
+                if (prev.some(m => m.id === newMsg.id)) return prev;
+                return [...prev, newMsg];
+              });
             },
           )
           .subscribe();
