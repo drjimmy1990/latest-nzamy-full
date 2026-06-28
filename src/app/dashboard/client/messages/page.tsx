@@ -58,6 +58,9 @@ interface Thread {
     isActive: boolean;        // computed: still within window?
   };
   messages: Message[];
+  // Whether voice/video call buttons should be shown for this thread
+  // (direct/case rooms — not group/broadcast rooms).
+  supportsCalls?: boolean;
 }
 
 // ─── Call Modal ───────────────────────────────────────────────────────────────
@@ -208,6 +211,7 @@ export default function MessagesPage() {
       unread: room.unread_count || 0,
       status: "active" as ThreadStatus,
       messages: [],
+      supportsCalls: room.type !== "group",
     }));
     setThreads(mapped);
     setLoading(false);
@@ -430,8 +434,8 @@ export default function MessagesPage() {
             </div>
 
             <div className="flex items-center gap-1">
-              {/* Call buttons — open modal, not navigate away */}
-              {!isClosed && activeThread.id !== "t2" && (
+              {/* Call buttons — only for threads that support calls (not group/broadcast) */}
+              {!isClosed && activeThread.supportsCalls !== false && (
                 <>
                   <button
                     onClick={() => setCallModal("voice")}

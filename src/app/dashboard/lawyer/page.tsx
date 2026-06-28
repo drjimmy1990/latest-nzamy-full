@@ -11,7 +11,6 @@ import {
   Warning, ArrowUp,
   Bell, Hourglass, Plus,
   Flag, Lock, Crown, ArrowRight, Storefront,
-  Buildings, ArrowSquareOut, ShieldCheck,
   Timer, Folder, Money, Briefcase,
 } from "@phosphor-icons/react";
 import HijriDateWidget from "@/components/HijriDateWidget";
@@ -41,6 +40,7 @@ import AddCaseModal from "./_components/AddCaseModal";
 import AddTaskModal from "./_components/AddTaskModal";
 import { AI_QUICK, ACTIVITY_TYPE_CONFIG } from "./_data/mockData";
 import { getLawyerDashboardSummary, type LawyerDashboardSummary } from "@/lib/services/lawyerDashboardService";
+import { isSupabaseMode } from "@/lib/services/api";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ function mapEventType(eventType: string): string {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LawyerDashboardPage() {
-  const { name } = useUser();
+  const { name, tier: userTier } = useUser();
   const { isDark } = useTheme();
   const [activityTab, setActivityTab] = useState<"all" | "ai">("all");
   const [showAddCase, setShowAddCase] = useState(false);
@@ -97,7 +97,25 @@ export default function LawyerDashboardPage() {
   }, []);
 
   // ─── Derived tier ─────────────────────────────────────────────────────────
-  const lawyerTier: LawyerTier = "free"; // TODO: derive from profile/subscription API
+  // Map the user's real subscription tier (UserTier) to the lawyer page's
+  // LawyerTier vocabulary so the upgrade banner + AI-tool gating reflect the
+  // actual plan instead of a hardcoded "free".
+  function deriveLawyerTier(t: string | undefined | null): LawyerTier {
+    switch (t) {
+      case "max":
+      case "corp":
+      case "enterprise":
+        return "premium";
+      case "pro":
+        return "pro";
+      case "ai":
+      case "shield":
+        return "starter";
+      default:
+        return "free";
+    }
+  }
+  const lawyerTier: LawyerTier = deriveLawyerTier(userTier);
 
   // ─── Computed stats ───────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -140,25 +158,27 @@ export default function LawyerDashboardPage() {
   // ─── Computed activity timeline ───────────────────────────────────────────
   const activityTimeline = useMemo(() => {
     if (!dashboardData) return [];
-    const events = dashboardData.recentActivity as Array<{ id: string; event_type: string; payload?: { action?: string; case_ref?: string }; created_at: string; request_id?: string }>;
+    // API returns { event, created_at, request_id } — no event_type/payload.
+    const events = dashboardData.recentActivity as Array<{ id: string; event: string; created_at: string; request_id?: string }>;
     return events.map((e, i) => ({
       id: i + 1,
       time: relativeTime(e.created_at),
-      action: e.payload?.action || e.event_type || "نشاط",
-      type: mapEventType(e.event_type) as "warning" | "success" | "info" | "urgent" | "ai",
-      caseRef: e.payload?.case_ref || e.request_id || "—",
-      category: (e.event_type.includes("ai") ? "ai" : "manual") as "ai" | "manual" | "system",
+      action: e.event || "نشاط",
+      type: mapEventType(e.event) as "warning" | "success" | "info" | "urgent" | "ai",
+      caseRef: e.request_id || "—",
+      category: (e.event?.includes("ai") ? "ai" : "manual") as "ai" | "manual" | "system",
     }));
   }, [dashboardData]);
 
   // ─── Computed deadlines ───────────────────────────────────────────────────
   const upcomingDeadlines = useMemo(() => {
     if (!dashboardData) return [];
-    const items = dashboardData.upcomingDeadlines as Array<{ id: string; scheduled_at: string; type?: string }>;
+    // API returns consultations with { id, scheduled_at, mode, requester_user_id } — no `type`.
+    const items = dashboardData.upcomingDeadlines as Array<{ id: string; scheduled_at: string; type?: string; mode?: string }>;
     return items.map((d) => {
       const days = daysUntil(d.scheduled_at);
       return {
-        label: d.type || "موعد قادم",
+        label: d.type || (d.mode ? "استشارة قادمة" : "موعد قادم"),
         date: new Date(d.scheduled_at).toLocaleDateString("ar-SA", { day: "numeric", month: "long" }),
         daysLeft: days,
         severity: (days <= 2 ? "urgent" : days <= 7 ? "warning" : "normal") as "urgent" | "warning" | "normal",
@@ -286,17 +306,19 @@ export default function LawyerDashboardPage() {
         </motion.div>
       )}
 
-      {/* ── Demo Data Banner ── */}
-      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
-          <Warning size={18} weight="fill" className="text-amber-500" />
-        </div>
-        <div>
-          <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
-          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>لوحة التحكم تعرض بياناتك الفعلية — في حال عدم وجود بيانات ستظهر حالة فارغة</p>
-        </div>
-      </motion.div>
+      {/* ── Demo Data Banner (only in demo mode) ── */}
+      {!isSupabaseMode && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+            <Warning size={18} weight="fill" className="text-amber-500" />
+          </div>
+          <div>
+            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>تعمل المنصة في الوضع التجريبي — اضبط NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase لعرض بياناتك الفعلية.</p>
+          </div>
+        </motion.div>
+      )}
 
       {/* ── Urgent Deadlines Banner ── */}
       {upcomingDeadlines.some(d => d.severity === "urgent") && (
@@ -421,60 +443,7 @@ export default function LawyerDashboardPage() {
         })}
       </div>
 
-      {/* ── Secondment Banner (shown when lawyer has active secondments) ── */}
-      {/* Hidden: no real secondment data yet — UI code preserved */}
-      {false && (
-      <motion.div
-        initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-        className={`rounded-2xl border p-4 flex flex-wrap items-center gap-4 ${
-          isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50/70"
-        }`}
-      >
-        {/* Icon */}
-        <div className={`h-11 w-11 shrink-0 rounded-xl flex items-center justify-center bg-gradient-to-br from-[#0B3D2E] to-[#155e41] shadow-sm`}>
-          <Buildings size={20} weight="duotone" className="text-[#C8A762]" />
-        </div>
-
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>
-            لديك انتداب قانوني نشط
-          </p>
-          <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-            انتداب نشط لدى شركتَين · ٢٨ ساعة من أصل ٤٠ مُستخدمة هذا الشهر
-          </p>
-        </div>
-
-        {/* Pill stats */}
-        <div className="flex items-center gap-2">
-          {[
-            { label: "عقود نشطة", value: "٢", icon: ShieldCheck },
-            { label: "ساعات/شهر",  value: "٢٨س", icon: Clock    },
-          ].map(s => {
-            const Icon = s.icon;
-            return (
-              <div key={s.label} className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 border text-[11px] ${
-                isDark ? "border-white/[0.06] bg-white/[0.03] text-zinc-300" : "border-zinc-200 bg-white text-zinc-600"
-              }`}>
-                <Icon size={12} weight="duotone" className="text-[#C8A762]" />
-                <span className="font-bold font-mono">{s.value}</span>
-                <span className={isDark ? "text-zinc-600" : "text-zinc-400"}>{s.label}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* CTA */}
-        <Link
-          href="/dashboard/lawyer/secondment"
-          className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-[12px] font-bold text-[#C8A762] hover:bg-[#155e41] transition-colors"
-        >
-          <ArrowSquareOut size={13} />
-          إدارة الانتدابات
-        </Link>
-      </motion.div>
-      )}
+      {/* ── Secondment: no real data yet — entry point is the sidebar link to /dashboard/lawyer/secondment (gated there) ── */}
 
       {/* ── Second Grid: Tasks + Hearings + Deadlines ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

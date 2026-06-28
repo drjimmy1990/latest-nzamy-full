@@ -97,7 +97,12 @@ export { getLawyers, getLawyerById } from "./lawyerService";
 export type { LawyerProfile, LawyerFilters } from "./lawyerService";
 
 // Document service
-export { getDocuments, uploadDocument } from "./documentService";
+export {
+  getDocuments,
+  uploadDocumentFile,
+  getDocumentFileUrl,
+  deleteDocument,
+} from "./documentService";
 export type { Document, DocumentInput } from "./documentService";
 
 // Dashboard service

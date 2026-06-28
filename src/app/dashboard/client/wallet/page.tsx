@@ -24,7 +24,7 @@ import {
   HourglassHigh
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { apiGet, isSupabaseMode } from "@/lib/services/api";
+import { apiGet } from "@/lib/services/api";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 
@@ -53,8 +53,8 @@ interface TxRow {
   date: string;
 }
 
-const WALLET_BALANCE = 250;   // SAR — مكتسب من الإحالات
-const PENDING_BALANCE = 50;   // SAR — معلق (صديق لم يستخدم بعد)
+const WALLET_BALANCE = 0;   // SAR — يُملأ من /api/v1/wallet (لا قيمة افتراضية مزيفة)
+const PENDING_BALANCE = 0;   // SAR — يُملأ من /api/v1/wallet
 
 const coupons: Coupon[] = [
   {
@@ -181,17 +181,21 @@ export default function WalletPage() {
   const [pendingBalance, setPendingBalance] = useState(PENDING_BALANCE);
   const [liveCoupons, setLiveCoupons] = useState<Coupon[]>(coupons);
   const [liveTransactions, setLiveTransactions] = useState<TxRow[]>(transactions);
+  const [walletError, setWalletError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isSupabaseMode) return;
     apiGet<{ data: { balance?: number; pendingBalance?: number; transactions?: TxRow[]; coupons?: Coupon[] } }>("/api/v1/wallet")
       .then((res) => {
+        setWalletError(null);
         if (res.data?.balance !== undefined) setWalletBalance(res.data.balance);
         if (res.data?.pendingBalance !== undefined) setPendingBalance(res.data.pendingBalance);
         if (res.data?.transactions?.length) setLiveTransactions(res.data.transactions);
         if (res.data?.coupons?.length) setLiveCoupons(res.data.coupons);
       })
-      .catch(() => { /* keep mock fallback */ });
+      .catch((err) => {
+        console.error("[wallet] failed to load:", err);
+        setWalletError("تعذر تحميل رصيد المحفظة. حاول مرة أخرى لاحقاً.");
+      });
   }, []);
   const [activeTab, setActiveTab] = useState<"overview" | "coupons" | "history">("overview");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -225,15 +229,17 @@ export default function WalletPage() {
           <span className={isDark ? "text-zinc-300" : "text-zinc-600"}>محفظتي والمكافآت</span>
         </div>
 
-        {/* ── Demo Data Banner ── */}
-        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-[12px] ${
-          isDark
-            ? "bg-amber-900/10 border-amber-700/20 text-amber-400"
-            : "bg-amber-50 border-amber-200 text-amber-700"
-        }`}>
-          <Clock size={16} weight="duotone" className="flex-shrink-0" />
-          <span>البيانات المعروضة توضيحية — سيتم تحديثها تلقائياً عند ربط حسابك.</span>
-        </div>
+        {/* ── Load Error Banner ── */}
+        {walletError && (
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-[12px] ${
+            isDark
+              ? "bg-red-900/10 border-red-700/20 text-red-400"
+              : "bg-red-50 border-red-200 text-red-700"
+          }`}>
+            <Clock size={16} weight="duotone" className="flex-shrink-0" />
+            <span>{walletError}</span>
+          </div>
+        )}
 
         {/* ── Hero Balance Card ── */}
         <motion.div

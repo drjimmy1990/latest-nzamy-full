@@ -418,7 +418,7 @@ export default function MyRequestsPage() {
   ];
 
   const handleCancel = async (id: string) => {
-    await updateWorkflowRequestById(id, { status: "cancelled" }, "cancelled_by_client", "demo-client");
+    await updateWorkflowRequestById(id, { status: "cancelled" }, "cancelled_by_client", user.name || user.userId || "client");
     setRequests(await listClientWorkflowRequests({ requesterUserId: user.userId }));
   };
 

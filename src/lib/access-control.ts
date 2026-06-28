@@ -151,6 +151,7 @@ export async function checkLibraryAccess(
   userId: string | null,
   lawSlug: string,
   articleIndex: number,
+  contentType: "laws" | "decrees" | "principles" | "feqh" | "books" | "precedents" = "laws",
 ): Promise<LibraryAccessResult> {
   const adminClient = await createServiceClient();
 
@@ -158,7 +159,12 @@ export async function checkLibraryAccess(
   const { data: settings } = await adminClient
     .from("platform_settings")
     .select("key, value")
-    .in("key", ["library_whitelisted_laws", "library_free_article_limit", "library_free_law_overrides"]);
+    .in("key", [
+      "library_whitelisted_laws",
+      "library_free_article_limit",
+      "library_free_law_overrides",
+      "library_free_items",
+    ]);
 
   const settingsMap: Record<string, unknown> = {};
   settings?.forEach((s: { key: string; value: unknown }) => {
@@ -172,8 +178,15 @@ export async function checkLibraryAccess(
   const overrides: Record<string, number> =
     (settingsMap.library_free_law_overrides as { overrides?: Record<string, number> })?.overrides ?? {};
 
-  // 2. Check if law is whitelisted (always free)
-  const isWhitelisted = whitelistedSlugs.includes(lawSlug);
+  // Per-content-type "always free" slugs/ids written by the admin "free items" toggle.
+  // Shape: { laws: string[], decrees: string[], principles: string[], feqh: string[], books?: string[], precedents?: string[] }
+  const freeItemsMap = (settingsMap.library_free_items as Record<string, string[]>) ?? {};
+  const freeItemsForType: string[] = Array.isArray(freeItemsMap[contentType]) ? freeItemsMap[contentType] : [];
+
+  // 2. Check if law is whitelisted (always free).
+  //    library_whitelisted_laws is law-slug-keyed (backward compat); library_free_items
+  //    is per-content-type. Merge both so the admin toggle actually unlocks content.
+  const isWhitelisted = whitelistedSlugs.includes(lawSlug) || freeItemsForType.includes(lawSlug);
   if (isWhitelisted) {
     return {
       allowed: true,
@@ -255,6 +268,40 @@ export async function checkCreditBalance(
     message: allowed
       ? undefined
       : `رصيد النقاط غير كافٍ — لديك ${currentBalance} وتحتاج ${requiredCredits}`,
+  };
+}
+
+// ─── Payment gateway status ─────────────────────────────────────────────────────
+// Admin-controlled gate (platform_settings.payments_gateway). Until a real
+// payment provider is decided, the admin keeps status = "disabled" and payment
+// call-sites block submit. "test" runs the stub adapter; "live" is reserved for
+// the future real provider.
+
+export type PaymentGatewayStatus = "disabled" | "test" | "live";
+
+export interface PaymentGatewayState {
+  status: PaymentGatewayStatus;
+  provider: string | null;
+  /** True when payments are NOT available (status === "disabled"). */
+  disabled: boolean;
+}
+
+export async function getPaymentGatewayStatus(): Promise<PaymentGatewayState> {
+  const adminClient = await createServiceClient();
+  const { data: setting } = await adminClient
+    .from("platform_settings")
+    .select("value")
+    .eq("key", "payments_gateway")
+    .maybeSingle();
+
+  const value = (setting?.value as { status?: string; provider?: string | null }) ?? {};
+  const status = (value.status as PaymentGatewayStatus) ?? "disabled";
+  const provider = value.provider ?? null;
+
+  return {
+    status,
+    provider,
+    disabled: status === "disabled",
   };
 }
 

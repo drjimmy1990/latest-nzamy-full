@@ -16,6 +16,25 @@ import { useUser } from '@/hooks/useUser';
 
 type ContractStatus = 'active' | 'pending_signature' | 'expired' | 'draft';
 
+/** Map a workflow request status to the contract-card status vocabulary. */
+function mapContractStatus(requestStatus: string): ContractStatus {
+  switch (requestStatus) {
+    case 'completed':
+    case 'signed':
+      return 'active';
+    case 'in_review':
+    case 'pending_signature':
+    case 'pending_assignment':
+      return 'pending_signature';
+    case 'cancelled':
+    case 'rejected':
+    case 'expired':
+      return 'expired';
+    default:
+      return 'draft';
+  }
+}
+
 interface ActivityEvent {
   id: string;
   type: 'created' | 'signed' | 'viewed' | 'expired' | 'revised' | 'ai_analyzed' | 'sent';
@@ -175,6 +194,7 @@ export default function ClientContractsPage() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [activityLog, setActivityLog] = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const toContract = (request: WorkflowRequest): Contract => ({
@@ -182,8 +202,8 @@ export default function ClientContractsPage() {
       title: request.title,
       party: request.requester.name || 'العميل',
       type: String(request.metadata?.contractType ?? 'مسودة AI'),
-      status: 'draft',
-      signedAt: null,
+      status: mapContractStatus(request.status),
+      signedAt: request.status === 'completed' ? request.createdAt : null,
       expiresAt: null,
       value: request.payment.amount ? `${request.payment.amount} ر.س` : null,
     });
@@ -205,7 +225,10 @@ export default function ClientContractsPage() {
         setActivityLog(activities);
         if (mapped.length) setSelectedId(mapped[0]?.id ?? null);
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error('[contracts] failed to load workflow requests:', err);
+        setError('تعذر تحميل العقود. حاول مرة أخرى لاحقاً.');
+      })
       .finally(() => setLoading(false));
   }, [user.userId]);
 
@@ -236,6 +259,20 @@ export default function ClientContractsPage() {
   ];
 
   if (loading) return <div className="p-6 md:p-8 max-w-[1300px] mx-auto" dir="rtl"><SkeletonList count={4} /></div>;
+
+  if (error) {
+    return (
+      <div className="p-6 md:p-8 max-w-[1300px] mx-auto" dir="rtl">
+        <div className={`flex items-start gap-3 p-5 rounded-2xl border ${isDark ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-800"}`}>
+          <WarningCircle size={20} weight="fill" className="mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-bold">تعذر تحميل العقود</p>
+            <p className="text-xs mt-1 opacity-80">{error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`p-6 md:p-8 max-w-[1300px] mx-auto ${isDark ? "text-white" : "text-zinc-900"}`} dir="rtl" suppressHydrationWarning>
@@ -394,10 +431,17 @@ export default function ClientContractsPage() {
                 {/* Action buttons */}
                 {selectedContract.status === 'pending_signature' && (
                   <div className={`px-6 py-4 border-b ${isDark ? "bg-amber-900/20 border-white/5" : "bg-amber-50 border-amber-100"}`}>
-                    <button className="w-full flex items-center justify-center gap-2 py-3 bg-amber-600 text-white rounded-xl text-[13px] font-bold shadow-md hover:bg-amber-700 transition-colors">
+                    <button
+                      disabled
+                      title="التوقيع الإلكتروني غير متاح حالياً"
+                      className="w-full flex items-center justify-center gap-2 py-3 bg-amber-600/60 text-white/80 rounded-xl text-[13px] font-bold cursor-not-allowed"
+                    >
                       <Pen size={16} weight="fill" />
-                      وقّع العقد الآن
+                      التوقيع الإلكتروني قريباً
                     </button>
+                    <p className={`text-center text-[11px] mt-2 ${isDark ? "text-amber-400/70" : "text-amber-700/70"}`}>
+                      التوقيع الإلكتروني غير مفعّل بعد — راجع العقد وتواصل مع محاميك لإتمام التوقيع.
+                    </p>
                   </div>
                 )}
 

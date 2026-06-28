@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { normalizeSearch } from '@/utils/normalizeArabic';
 
 /**
  * GET /api/library/autocomplete?q=بطلان
@@ -19,7 +20,8 @@ export async function GET(request: Request) {
     }
 
     const supabase = await createClient();
-    const searchTerm = `%${query}%`;
+    // Normalize so `الإثبات` matches stored `الاثبات` and ١٤٤٤ matches 1444.
+    const searchTerm = `%${normalizeSearch(query)}%`;
 
     // Run all count queries in parallel for speed
     const [lawsCount, precedentsCount, ordersCount, feqhCount, topLaws, topPrecedents, topOrders] = await Promise.all([

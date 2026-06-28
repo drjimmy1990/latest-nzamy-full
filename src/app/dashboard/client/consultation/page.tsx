@@ -472,6 +472,10 @@ export default function ConsultationListPage() {
     cancelled: consultations.filter(c => c.status === "cancelled").length,
   };
 
+  // The active session alert links to the real active consultation (not a
+  // hardcoded "c-002" / "أحمد الغامدي").
+  const activeConsult = consultations.find(c => c.status === "active");
+
   const FILTERS: { key: FilterStatus; label: string; count: number }[] = [
     { key: "all",       label: "الكل",     count: counts.all },
     { key: "active",    label: "جارية",    count: counts.active },
@@ -522,10 +526,10 @@ export default function ConsultationListPage() {
               </div>
               <div>
                 <p className={`text-sm font-black ${isDark ? "text-emerald-300" : "text-emerald-800"}`}>جلسة نشطة الآن!</p>
-                <p className={`text-xs mt-0.5 ${isDark ? "text-emerald-400/80" : "text-emerald-700/80"}`}>استشارتك مع أ. أحمد الغامدي جارية الآن</p>
+                <p className={`text-xs mt-0.5 ${isDark ? "text-emerald-400/80" : "text-emerald-700/80"}`}>استشارتك مع أ. {activeConsult?.lawyerName ?? "المحامي"} جارية الآن</p>
               </div>
             </div>
-            <Link href={`/dashboard/client/consultation/c-002`}>
+            <Link href={`/dashboard/client/consultation/${activeConsult?.id ?? ""}`}>
               <button className="flex items-center gap-1.5 text-xs font-bold text-[#0B3D2E] bg-emerald-400 hover:bg-emerald-300 px-4 py-2.5 rounded-xl transition-colors shadow-sm">
                 دخول الجلسة
                 <CaretRight size={14} weight="bold" />

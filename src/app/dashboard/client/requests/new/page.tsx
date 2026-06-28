@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
 import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
+import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
 import { createPaymentIntentStub } from "@/lib/paymentAdapter";
 import { getClientServiceById, quoteClientService } from "@/lib/pricingRepository";
@@ -38,11 +39,23 @@ export default function NewRequestWizard() {
   const [couponApplied, setCouponApplied] = useState(false);
   const [couponError, setCouponError] = useState<string | null>(null);
   const { catalog, source: pricingSource } = useClientPricingCatalog();
+  const payments = usePaymentsStatus();
 
   const serviceInfo = getClientServiceById(typeParam, catalog);
   const price = serviceInfo.requiresPayment ? serviceInfo.basePrice : 0;
   const serviceLabel = serviceInfo.label;
-  const walletBalance = 150;
+  const [walletBalance, setWalletBalance] = useState(0);
+
+  // Load the real wallet balance (no hardcoded 150 mock).
+  useEffect(() => {
+    fetch("/api/v1/wallet", { credentials: "same-origin" })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((body) => {
+        const balance = body?.data?.balance;
+        if (typeof balance === "number") setWalletBalance(balance);
+      })
+      .catch(() => { /* wallet optional — keep 0 */ });
+  }, []);
   const couponCode = coupon.trim().toUpperCase();
   const quote = quoteClientService(serviceInfo.serviceId, {
     couponCode: couponApplied ? couponCode : undefined,
@@ -53,6 +66,8 @@ export default function NewRequestWizard() {
   const discount = quote.discount;
   const walletUsed = quote.walletUsed;
   const finalTotal = quote.finalTotal;
+  // Payment gate: block paid submissions while the admin gateway is disabled.
+  const paymentsBlocked = payments.disabled && finalTotal > 0;
 
   const handleNext = () => {
     if (currentStep < STEPS.length - 1) setCurrentStep(c => c + 1);
@@ -107,6 +122,11 @@ export default function NewRequestWizard() {
     if (coupon.trim() && !couponApplied) {
       setCurrentStep(2);
       setSubmitError("طبّق كود الخصم أولا أو احذفه قبل إرسال الطلب.");
+      return;
+    }
+
+    if (paymentsBlocked) {
+      setSubmitError("الدفع غير متاح حالياً — سيتم تفعيل بوابة الدفع قريباً. لا يمكن إتمام الطلب المدفوع حتى التفعيل.");
       return;
     }
 
@@ -237,7 +257,14 @@ export default function NewRequestWizard() {
       case 2:
         return (
           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            
+
+            {paymentsBlocked && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-700 dark:border-red-800/40 dark:bg-red-900/20 dark:text-red-300 flex items-start gap-2">
+                <Info size={16} className="flex-shrink-0 mt-0.5" />
+                <span>الدفع غير متاح حالياً — سيتم تفعيل بوابة الدفع قريباً. لا يمكن إتمام الطلب المدفوع حتى التفعيل.</span>
+              </div>
+            )}
+
             {/* Wallet Integration */}
             <div className="bg-white dark:bg-[#161b22] border border-gray-200 dark:border-white/10 rounded-2xl p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -409,7 +436,7 @@ export default function NewRequestWizard() {
         </button>
         <button
           onClick={currentStep === STEPS.length - 1 ? handleSubmit : handleNext}
-          disabled={isSubmitting || (currentStep === 0 && (!subject || !description))}
+          disabled={isSubmitting || (currentStep === 0 && (!subject || !description)) || (currentStep === STEPS.length - 1 && paymentsBlocked)}
           className="flex items-center gap-2 px-8 py-3.5 bg-[#0B3D2E] text-white rounded-2xl font-bold text-[13.5px] hover:bg-[#0a3328] transition-all shadow-[0_4px_14px_0_rgba(11,61,46,0.3)] disabled:opacity-50 active:scale-[0.98]"
         >
           {isSubmitting ? (

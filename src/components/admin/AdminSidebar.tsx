@@ -56,6 +56,7 @@ const NAV = [
   {
     section: "الإعدادات",
     items: [
+      { href: "/dashboard/admin/settings", icon: Gear,          label: "إعدادات المنصة" },
       { href: "/dashboard/admin/audit-log", icon: ClipboardText, label: "سجل التدقيق" },
       { href: "/dashboard/admin/security",  icon: ShieldCheck,   label: "الأمان" },
       { href: "/dashboard/admin/system",    icon: Database,      label: "إعدادات النظام" },

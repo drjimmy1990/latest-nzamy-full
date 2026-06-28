@@ -11,7 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
+import { getWorkflowRequestsByReceiver, updateWorkflowRequestById } from "@/lib/services/workflowService";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import type { CaseStatus, CaseType, CourtDegree, Priority, KanbanCol, CollabFilter, ViewMode, KanbanGroupBy, Case } from "./_types";
 import AddCaseModal from "../_components/AddCaseModal";
@@ -57,9 +57,23 @@ export default function CasesPage() {
   const onKanbanDragStart = useCallback((id: string) => { dragId.current = id; }, []);
   const onKanbanDrop = useCallback((col: KanbanCol) => {
     if (!dragId.current) return;
-    setCases(prev => prev.map(c => c.id === dragId.current ? { ...c, kanbanCol: col } : c));
+    const caseId = dragId.current;
+    setCases(prev => prev.map(c => c.id === caseId ? { ...c, kanbanCol: col } : c));
     dragId.current = null;
     setDragOverCol(null);
+    // Persist the status change to the backend (optimistic; the list re-syncs
+    // via the workflow-updated event on failure is not automatic, so revert on error).
+    const statusForCol: Record<KanbanCol, WorkflowRequest["status"]> = {
+      new: "pending_assignment",
+      docs_prep: "assigned",
+      hearing: "in_review",
+      appeal: "in_review",
+      closed: "completed",
+    };
+    updateWorkflowRequestById(caseId, { status: statusForCol[col] }).catch(() => {
+      // Revert the column on failure.
+      setCases(prev => prev.map(c => (c.id === caseId ? { ...c, kanbanCol: c.kanbanCol } : c)));
+    });
   }, []);
 
   useEffect(() => {

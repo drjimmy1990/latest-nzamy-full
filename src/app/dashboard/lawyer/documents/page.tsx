@@ -27,13 +27,19 @@ import type { Document } from "@/lib/services/documentService";
 function apiDocToDoc(d: Document): Doc {
   const typeMap: Record<string, Doc["type"]> = { pdf: "pdf", docx: "docx", doc: "docx", png: "image", jpg: "image", jpeg: "image" };
   const ext = d.file_name.split(".").pop()?.toLowerCase() ?? "";
+  const bytes = d.size_bytes ?? 0;
+  const sizeStr = bytes
+    ? bytes < 1024 * 1024
+      ? `${Math.round(bytes / 1024)} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    : "";
   return {
-    id: d.id,
+    id: String(d.id),
     name: d.file_name,
     type: typeMap[ext] ?? "other",
     category: "briefs",
-    size: d.file_size,
-    date: new Date(d.created_at).toLocaleDateString("ar-SA"),
+    size: sizeStr,
+    date: d.created_at ? new Date(d.created_at).toLocaleDateString("ar-SA") : "",
   };
 }
 

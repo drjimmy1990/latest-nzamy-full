@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   BookBookmark,
   Check,
+  CreditCard,
   FloppyDisk,
   Gear,
   Plus,
@@ -28,9 +29,10 @@ interface TierLimit {
 }
 
 interface SettingsData {
-  library_free_article_limit: { default: number };
-  library_whitelisted_laws: { slugs: string[] };
-  tier_limits: TierLimit[];
+  library_free_article_limit?: { default: number };
+  library_whitelisted_laws?: { slugs: string[] };
+  tier_limits?: TierLimit[];
+  payments_gateway?: { status: "disabled" | "test" | "live"; provider?: string | null };
 }
 
 const TIER_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -68,6 +70,10 @@ export default function AdminSettingsPage() {
   // Tier limits
   const [tierLimits, setTierLimits] = useState<TierLimit[]>(DEFAULT_TIERS);
 
+  // Payment gateway
+  const [paymentStatus, setPaymentStatus] = useState<"disabled" | "test" | "live">("disabled");
+  const [paymentProvider, setPaymentProvider] = useState<string>("");
+
   // ── Styles ──
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -90,20 +96,28 @@ export default function AdminSettingsPage() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((data: SettingsData) => {
-        if (data.library_free_article_limit?.default != null) {
-          setFreeArticleLimit(data.library_free_article_limit.default);
+      .then((data: SettingsData | { data: SettingsData }) => {
+        // Route returns { data: {...} }; tolerate either shape.
+        const settings = (data as { data?: SettingsData })?.data ?? (data as SettingsData);
+        if (settings.library_free_article_limit?.default != null) {
+          setFreeArticleLimit(settings.library_free_article_limit.default);
         }
-        if (Array.isArray(data.library_whitelisted_laws?.slugs)) {
-          setWhitelistedSlugs(data.library_whitelisted_laws.slugs);
+        if (Array.isArray(settings.library_whitelisted_laws?.slugs)) {
+          setWhitelistedSlugs(settings.library_whitelisted_laws.slugs);
         }
-        if (Array.isArray(data.tier_limits) && data.tier_limits.length > 0) {
+        if (Array.isArray(settings.tier_limits) && settings.tier_limits.length > 0) {
           setTierLimits(
-            data.tier_limits.map((t) => ({
+            settings.tier_limits.map((t) => ({
               ...t,
               label: TIER_META[t.tier]?.label ?? t.tier,
             })),
           );
+        }
+        if (settings.payments_gateway?.status) {
+          setPaymentStatus(settings.payments_gateway.status);
+        }
+        if (typeof settings.payments_gateway?.provider === "string") {
+          setPaymentProvider(settings.payments_gateway.provider);
         }
         setLoading(false);
       })
@@ -143,6 +157,14 @@ export default function AdminSettingsPage() {
 
   function saveTierLimits() {
     saveSettingKey("tier_limits", tierLimits, "تم حفظ حدود الاستخدام لجميع المستويات.");
+  }
+
+  function savePaymentGateway() {
+    saveSettingKey(
+      "payments_gateway",
+      { status: paymentStatus, provider: paymentProvider.trim() || null },
+      "تم حفظ إعدادات بوابة الدفع.",
+    );
   }
 
   // ── Slug Helpers ──
@@ -548,6 +570,103 @@ export default function AdminSettingsPage() {
           <div className="flex items-center gap-1.5">
             <Trash size={12} className={muted} />
             <span className={`text-[11px] ${muted}`}>أدخل -1 لإلغاء الحد</span>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* ── Section 3: Payment Gateway ── */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }} className={`${card} overflow-hidden`}>
+        {/* Section Header */}
+        <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-xl ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600"}`}>
+              <CreditCard size={20} weight="duotone" />
+            </div>
+            <div>
+              <h2 className={`text-base font-black ${isDark ? "text-white" : "text-gray-900"}`}>بوابة الدفع</h2>
+              <p className={`text-xs mt-0.5 ${muted}`}>تحكم في تفعيل مدفوعات المنصة حتى يقرر مزود الدفع النهائي (Moyasar / Tap / HyperPay)</p>
+            </div>
+          </div>
+          <button
+            onClick={savePaymentGateway}
+            disabled={saving === "payments_gateway"}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-[#0B3D2E] text-white hover:bg-[#0a3328] disabled:opacity-50 transition-colors"
+          >
+            {saving === "payments_gateway" ? (
+              <SpinnerGap size={16} className="animate-spin" />
+            ) : (
+              <FloppyDisk size={16} />
+            )}
+            حفظ
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Status selector */}
+          <div>
+            <label className={`text-sm font-bold block mb-3 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+              حالة البوابة
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {([
+                { key: "disabled", label: "معطّلة", desc: "لا توجد مدفوعات — يُحظر إنشاء الطلبات المدفوعة", color: "red" },
+                { key: "test", label: "تجريبية", desc: "يعمل محول الدفع التجريبي (stub) — للاختبار فقط", color: "amber" },
+                { key: "live", label: "فعّالة", desc: "مزود دفع حقيقي مفعّل", color: "emerald" },
+              ] as const).map((opt) => {
+                const active = paymentStatus === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setPaymentStatus(opt.key)}
+                    className={`text-right p-4 rounded-2xl border-2 transition-all ${
+                      active
+                        ? opt.color === "red"
+                          ? "border-red-500 bg-red-500/5"
+                          : opt.color === "amber"
+                            ? "border-amber-500 bg-amber-500/5"
+                            : "border-emerald-500 bg-emerald-500/5"
+                        : isDark
+                          ? "border-white/10 hover:border-white/20"
+                          : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <p className={`text-sm font-black mb-1 ${
+                      active
+                        ? opt.color === "red" ? "text-red-500"
+                          : opt.color === "amber" ? "text-amber-500"
+                          : "text-emerald-500"
+                        : isDark ? "text-zinc-200" : "text-slate-700"
+                    }`}>{opt.label}</p>
+                    <p className={`text-[11px] leading-relaxed ${muted}`}>{opt.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Provider */}
+          <div className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+            <label className={`text-sm font-bold block mb-3 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+              مزود الدفع (اختياري)
+            </label>
+            <input
+              type="text"
+              value={paymentProvider}
+              onChange={(e) => setPaymentProvider(e.target.value)}
+              placeholder="مثال: moyasar / tap / hyperpay — اتركه فارغاً حتى التفعيل"
+              className={`w-full px-4 py-2.5 rounded-xl border text-sm font-mono outline-none ${
+                isDark
+                  ? "bg-[#0d1117] border-white/10 text-white placeholder:text-zinc-600 focus:border-[#C8A762]/40"
+                  : "bg-white border-slate-200 text-gray-900 placeholder:text-slate-400 focus:border-[#0B3D2E]/40"
+              }`}
+            />
+            <p className={`text-xs mt-2 ${muted}`}>
+              عند ضبط الحالة على «معطّلة»، تُحظر جميع إجراءات الدفع في المنصة ويعرض المستخدمون رسالة «الدفع غير متاح حالياً».
+            </p>
           </div>
         </div>
       </motion.div>

@@ -1,4 +1,5 @@
 import type { WorkflowRequest } from "@/lib/workflowStore";
+import { getPaymentGatewayStatus } from "@/lib/access-control";
 
 type WorkflowRequestInput = Omit<WorkflowRequest, "createdAt" | "auditTrail"> & {
   auditEvent?: string;
@@ -84,6 +85,16 @@ export async function listRequests(options: { receiver?: string; requesterUserId
 }
 
 export async function insertRequest(input: WorkflowRequestInput): Promise<WorkflowRequest> {
+  // Defense-in-depth: reject stub-paid requests while the admin gateway is disabled.
+  // The client gates this too, but never trust the client.
+  const provider = (input.metadata?.paymentProvider as string | undefined) ?? "stub";
+  if (input.payment.amount > 0 && provider === "stub") {
+    const gateway = await getPaymentGatewayStatus();
+    if (gateway.disabled) {
+      throw new Error("payments_disabled");
+    }
+  }
+
   const createdAt = new Date().toISOString();
   const requesterUserId =
     input.requester.userId ??

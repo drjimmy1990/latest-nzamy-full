@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { parseSearchQuery } from '@/utils/normalizeArabic';
+import { parseSearchQuery, normalizeSearch } from '@/utils/normalizeArabic';
 
 /**
  * POST /api/library/search
@@ -46,6 +46,12 @@ export async function POST(request: Request) {
     const parsed = parseSearchQuery(query);
     const offset = (page - 1) * limit;
 
+    // Normalize search terms (أ→ا, ة→ه, ى→ي, Arabic-Indic digits→Western) so
+    // `الإثبات` matches stored `الاثبات` and ١٤٤٤ matches 1444. The DB columns
+    // are ilike-compared against this normalized pattern.
+    const normTerms = parsed.plainTerms.map(normalizeSearch).filter(Boolean);
+    const ilikePattern = `%${normTerms.join('%')}%`;
+
     // Collect results from each section
     const results: Record<string, unknown[]> = { laws: [], precedents: [], orders: [], feqh: [] };
     const counts: Record<string, number> = { laws: 0, precedents: 0, orders: 0, feqh: 0 };
@@ -62,7 +68,7 @@ export async function POST(request: Request) {
             executive_reg_text, executive_reg_ref, law_slug,
             laws!inner ( slug, title, type, section_code, section_name )
           `, { count: 'exact' })
-          .or(`text.ilike.%${parsed.plainTerms.join('%')}%,executive_reg_text.ilike.%${parsed.plainTerms.join('%')}%,title.ilike.%${parsed.plainTerms.join('%')}%`);
+          .or(`text.ilike.${ilikePattern},executive_reg_text.ilike.${ilikePattern},title.ilike.${ilikePattern}`);
 
         // Apply filters
         if (filters.category) {
@@ -113,7 +119,7 @@ export async function POST(request: Request) {
             decision_number, year_hijri,
             judicial_collections!inner ( id, title, court, track, source_id )
           `, { count: 'exact' })
-          .or(`text.ilike.%${parsed.plainTerms.join('%')}%,ruling_basis.ilike.%${parsed.plainTerms.join('%')}%,issuing_body.ilike.%${parsed.plainTerms.join('%')}%`);
+          .or(`text.ilike.${ilikePattern},ruling_basis.ilike.${ilikePattern},issuing_body.ilike.${ilikePattern}`);
 
         if (filters.track) {
           precQuery = precQuery.eq('judicial_collections.track', filters.track);
@@ -163,7 +169,7 @@ export async function POST(request: Request) {
           .schema('library')
           .from('decrees_circulars')
           .select('id, title, type, issuer, ref, date, summary_brief, category, hashtags', { count: 'exact' })
-          .or(`title.ilike.%${parsed.plainTerms.join('%')}%,summary_brief.ilike.%${parsed.plainTerms.join('%')}%,ref.ilike.%${parsed.plainTerms.join('%')}%`);
+          .or(`title.ilike.${ilikePattern},summary_brief.ilike.${ilikePattern},ref.ilike.${ilikePattern}`);
 
         if (filters.issuer) {
           orderQuery = orderQuery.eq('issuer', filters.issuer);
@@ -219,7 +225,7 @@ export async function POST(request: Request) {
               )
             )
           `, { count: 'exact' })
-          .or(`topic.ilike.%${parsed.plainTerms.join('%')}%,matn.ilike.%${parsed.plainTerms.join('%')}%,sharh.ilike.%${parsed.plainTerms.join('%')}%`);
+          .or(`topic.ilike.${ilikePattern},matn.ilike.${ilikePattern},sharh.ilike.${ilikePattern}`);
 
         if (section === 'feqh') {
           feqhQuery = feqhQuery.range(offset, offset + limit - 1);
@@ -275,18 +281,23 @@ export async function POST(request: Request) {
   }
 }
 
-/** Truncate text around the first match, preserving word boundaries */
+/** Truncate text around the first match, preserving word boundaries.
+ *  Matching is done on normalized text (أ→ا, ة→ه, ى→ي, digits) so that a query
+ *  for `الإثبات` centers the snippet on stored `الاثبات`. Slice indices map
+ *  back to the original text because normalization is 1:1 per character. */
 function truncateWithHighlight(text: string | null, terms: string[], maxLength: number): string {
   if (!text) return '';
   if (!terms.length) return text.slice(0, maxLength);
 
-  const lowerText = text.toLowerCase();
-  const firstTerm = terms[0].toLowerCase();
-  const matchIndex = lowerText.indexOf(firstTerm);
+  const normText = normalizeSearch(text);
+  const firstTerm = normalizeSearch(terms[0]);
+  const matchIndex = normText.indexOf(firstTerm);
 
   if (matchIndex === -1) return text.slice(0, maxLength) + (text.length > maxLength ? '...' : '');
 
-  // Center the snippet around the match
+  // Center the snippet around the match.
+  // Normalization is character-by-character 1:1, so normText indices map
+  // directly back to original-text indices.
   const contextBefore = Math.max(0, matchIndex - Math.floor(maxLength / 3));
   const contextAfter = Math.min(text.length, matchIndex + firstTerm.length + Math.floor(maxLength * 2 / 3));
 

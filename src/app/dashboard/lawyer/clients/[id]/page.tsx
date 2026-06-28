@@ -11,7 +11,8 @@ import {
   PaperclipHorizontal, CaretLeft, ShieldCheck,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { apiGet, isSupabaseMode } from "@/lib/services/api";
+import { isSupabaseMode } from "@/lib/services/api";
+import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
 
 // ─── Shared mock data (same as clients/page.tsx) ─────────────────────────────
 
@@ -153,10 +154,31 @@ export default function ClientDetailPage() {
 
   useEffect(() => {
     if (!isSupabaseMode) return;
-    apiGet<{ data: Client[] }>("/api/v1/lawyer/clients")
-      .then((res) => {
-        const found = res.data?.find((c: Client) => c.id === clientId);
-        if (found) setLiveClient(found);
+    // The /api/v1/lawyer/clients route returns a bare array (no `data` wrapper),
+    // so use the typed service instead of a hand-rolled apiGet.
+    getLawyerClients()
+      .then((clients: LawyerClient[]) => {
+        const found = clients.find((c) => c.id === clientId);
+        if (!found) return;
+        // Map the lean LawyerClient shape to the richer Client shape used by this page.
+        // Fee/case counts are not returned by the clients endpoint, so default to 0
+        // (honest empty state) rather than showing mock fee figures.
+        const mapped: Client = {
+          id: found.id,
+          name: found.name,
+          type: found.userType === "company" || found.userType === "business" ? "company" : "individual",
+          phone: found.phone ?? "",
+          email: found.email ?? undefined,
+          activeCases: found.activeCount ?? 0,
+          closedCases: 0,
+          totalFees: 0,
+          paidFees: 0,
+          since: "",
+          lastContact: found.lastActivity ?? "",
+          flags: [],
+          rating: 3,
+        };
+        setLiveClient(mapped);
       })
       .catch(() => {});
     // Additional endpoints for cases/contracts/consultations can be wired here:
@@ -195,9 +217,11 @@ export default function ClientDetailPage() {
 
   const unpaid = client.totalFees - client.paidFees;
   const payPct = client.totalFees ? Math.round((client.paidFees / client.totalFees) * 100) : 100;
-  const cases = liveCases ?? MOCK_CASES[clientId] ?? [];
-  const contracts = liveContracts ?? MOCK_CONTRACTS[clientId] ?? [];
-  const consultations = liveConsultations ?? MOCK_CONSULTATIONS[clientId] ?? [];
+  // Per-client cases/contracts/consultations endpoints aren't wired yet, so
+  // show an honest empty state (no mock fallback that fakes real data).
+  const cases = liveCases ?? [];
+  const contracts = liveContracts ?? [];
+  const consultations = liveConsultations ?? [];
   const revenue = REVENUE_DATA[clientId] ?? [0,0,0,0,0,0];
   const totalRevenue = revenue.reduce((a, b) => a + b, 0);
   const hasBad = client.flags.includes("bad");

@@ -157,8 +157,29 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
     return () => { cancelled = true; };
   }, [params.id]);
 
-  const data = liveCase ?? MOCK_CASES[params.id] ?? MOCK_CASES["2025-001"];
+  const data = liveCase ?? MOCK_CASES[params.id] ?? null;
   const [showDocs, setShowDocs] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto py-20 text-center" dir="rtl">
+        <div className="inline-block w-8 h-8 rounded-full border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] animate-spin" />
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="max-w-3xl mx-auto py-20 text-center" dir="rtl">
+        <div className={`inline-flex flex-col items-center gap-3 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
+          <Warning size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
+          <p className="text-lg font-bold">القضية غير موجودة</p>
+          <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>لم يتم العثور على قضية بهذا المعرف، أو قد تكون محذوفة.</p>
+          <Link href="/dashboard/client/cases" className="mt-2 text-sm text-[#0B3D2E] hover:underline">← العودة لقضاياي</Link>
+        </div>
+      </div>
+    );
+  }
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/70"

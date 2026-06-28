@@ -19,11 +19,26 @@ export async function GET(request: NextRequest) {
 
   const adminClient = await createServiceClient();
 
+  // Unified category vocabulary shared with the admin LibraryTab UI.
+  // Each law category maps to a keyword matched against section_name/title;
+  // the other categories map directly to their content table.
+  const CATEGORY_MAP: Record<string, { table: "laws" | "decrees" | "principles" | "feqh"; lawKeyword?: string }> = {
+    "أنظمة العمل":       { table: "laws", lawKeyword: "عمل" },
+    "أنظمة تجارية":      { table: "laws", lawKeyword: "تجار" },
+    "أنظمة جنائية":       { table: "laws", lawKeyword: "جنائ" },
+    "الأنظمة المدنية":   { table: "laws", lawKeyword: "مدني" },
+    "الأنظمة الإجرائية": { table: "laws", lawKeyword: "إجرائ" },
+    "مبادئ قضائية":      { table: "principles" },
+    "تعاميم ومراسم":     { table: "decrees" },
+    "فقه وشريعة":        { table: "feqh" },
+  };
+  const cat = category ? CATEGORY_MAP[category] : null;
+
   // Determine which tables to fetch from based on category filter
-  const fetchLaws = !category || (category !== "تعاميم ومراسم" && category !== "مبادئ قضائية" && category !== "فقه وشريعة");
-  const fetchDecrees = !category || category === "تعاميم ومراسم";
-  const fetchPrinciples = !category || category === "مبادئ قضائية";
-  const fetchFeqh = !category || category === "فقه وشريعة";
+  const fetchLaws = !cat || cat.table === "laws";
+  const fetchDecrees = !cat || cat.table === "decrees";
+  const fetchPrinciples = !cat || cat.table === "principles";
+  const fetchFeqh = !cat || cat.table === "feqh";
 
   try {
     const queries: PromiseLike<any>[] = [];
@@ -37,8 +52,11 @@ export async function GET(request: NextRequest) {
       if (search) {
         q = q.ilike("title", `%${search}%`);
       }
-      if (category) {
-        q = q.or(`section_name.eq.${category},type.eq.${category}`);
+      // Map the UI category label to a section_name/title keyword so law
+      // categories actually return rows (section_name is e.g. "القسم العمالي",
+      // not the UI label "أنظمة العمل").
+      if (cat?.lawKeyword) {
+        q = q.or(`section_name.ilike.%${cat.lawKeyword}%,title.ilike.%${cat.lawKeyword}%`);
       }
       queries.push(q.then(res => ({ type: "law", data: res.data || [], error: res.error })));
     } else {

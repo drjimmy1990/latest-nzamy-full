@@ -9,12 +9,13 @@ import Link from 'next/link';
 import {
   MagnifyingGlass, Star, MapPin, Briefcase, CalendarCheck,
   SealCheck, Clock, X, SlidersHorizontal,
-  CheckCircle, CaretUpDown,
+  CheckCircle, CaretUpDown, Info,
   Buildings, House, Users, ShieldCheck,
   Lightbulb, Handshake, Factory,
   Scales,
 } from '@phosphor-icons/react';
 import { useUser } from '@/hooks/useUser';
+import { usePaymentsStatus } from '@/hooks/usePaymentsStatus';
 import { createWorkflowId, createWorkflowRequest } from '@/lib/clientWorkflowRepository';
 import { createPaymentIntentStub } from '@/lib/paymentAdapter';
 import { type Lawyer } from './data';
@@ -283,6 +284,7 @@ function FilterChip({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function FindLawyerPage() {
   const user = useUser();
+  const payments = usePaymentsStatus();
   const [lawyers, setLawyers]         = useState<Lawyer[]>([]);
   const [loading, setLoading]         = useState(true);
   const [fetchError, setFetchError]   = useState(false);
@@ -295,6 +297,7 @@ export default function FindLawyerPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [sortOpen, setSortOpen]       = useState(false);
   const [bookingNotice, setBookingNotice] = useState<{ id: string; lawyer: string } | null>(null);
+  const [paymentsNotice, setPaymentsNotice] = useState(false);
 
   useEffect(() => {
     getLawyers()
@@ -343,6 +346,11 @@ export default function FindLawyerPage() {
   const availableCount = lawyers.filter((l) => l.available).length;
 
   const handleBook = useCallback(async (lawyer: Lawyer) => {
+    // Payment gate: block booking while the admin gateway is disabled.
+    if (payments.disabled) {
+      setPaymentsNotice(true);
+      return;
+    }
     const requestId = createWorkflowId('LAW-CON');
     const paymentIntent = await createPaymentIntentStub({
       amount: lawyer.priceMin,
@@ -381,11 +389,21 @@ export default function FindLawyerPage() {
       auditEvent: 'find_lawyer_consultation_requested',
     });
     setBookingNotice({ id: request.id, lawyer: lawyer.name });
-  }, [user.businessRole, user.name, user.tier, user.userType]);
+  }, [user.businessRole, user.name, user.tier, user.userType, payments.disabled]);
 
   return (
     <div className="min-h-[100dvh] bg-[#f9fafb]" dir="rtl">
       <div className="max-w-7xl mx-auto px-4 md:px-8 py-8">
+        {paymentsNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 flex items-start gap-2"
+          >
+            <Info size={16} className="flex-shrink-0 mt-0.5" />
+            <span>الدفع غير متاح حالياً — سيتم تفعيل بوابة الدفع قريباً. تعذّر إنشاء طلب الحجز حتى التفعيل.</span>
+          </motion.div>
+        )}
         {bookingNotice && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}

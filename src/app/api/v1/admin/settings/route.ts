@@ -6,6 +6,9 @@ const ALLOWED_SETTINGS_KEYS = [
   "library_free_article_limit",
   "library_whitelisted_laws",
   "library_free_law_overrides",
+  "library_free_items",
+  "tier_limits",
+  "payments_gateway",
 ] as const;
 
 /**

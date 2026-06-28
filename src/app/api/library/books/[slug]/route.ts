@@ -36,7 +36,7 @@ export async function GET(
     const userId = user?.id || null;
 
     // Check library access (using book id as slug, article 0 for initial check)
-    const access = await checkLibraryAccess(userId, slug, 0);
+    const access = await checkLibraryAccess(userId, slug, 0, "feqh");
 
     // Fetch full TOC (chapters with sections, no blocks for performance)
     const { data: chapters } = await supabase

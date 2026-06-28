@@ -57,15 +57,27 @@ const LIFECYCLE: { key: Status; label: string }[] = [
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function ConsultationDetailPage({ params }: { params: { id: string } }) {
   const { isDark } = useTheme();
-  const raw = MOCK[params.id];
+  const raw = MOCK[params.id] ?? null;
 
-  // fallback for unknown IDs
-  const data = raw ?? MOCK["1"];
-
-  const [status, setStatus]     = useState<Status>(data.status);
-  const [notes, setNotes]       = useState(data.notes ?? "");
+  const [status, setStatus]     = useState<Status>(raw?.status ?? "requested");
+  const [notes, setNotes]       = useState(raw?.notes ?? "");
   const [editNotes, setEditNotes] = useState(false);
   const [saved, setSaved]       = useState(false);
+
+  if (!raw) {
+    return (
+      <div className="max-w-3xl mx-auto py-20 text-center" dir="rtl">
+        <div className={`inline-flex flex-col items-center gap-3 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
+          <Warning size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
+          <p className="text-lg font-bold">الاستشارة غير موجودة</p>
+          <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>لم يتم العثور على استشارة بهذا المعرف. قد تكون محذوفة أو أن الرابط غير صحيح.</p>
+          <Link href="/dashboard/lawyer/consultations" className="mt-2 text-sm text-[#0B3D2E] hover:underline">← العودة للاستشارات</Link>
+        </div>
+      </div>
+    );
+  }
+
+  const data = raw;
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"

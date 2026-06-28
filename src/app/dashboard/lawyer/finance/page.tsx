@@ -13,10 +13,12 @@ import confetti from "canvas-confetti";
 
 import { type FinanceTab, type InvoiceStatus, type FeeType, type Period, type ExpenseCategory, type Invoice, type Expense, STATUS_CFG, EXP_CFG } from "@/constants/lawyerFinanceData";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
+import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { AreaBarChart, DonutChart } from "@/components/dashboard/lawyer/FinanceCharts";
 
 export default function FinancePage() {
   const { isDark } = useTheme();
+  const payments = usePaymentsStatus();
   const [activeTab, setActiveTab] = useState<FinanceTab>("overview");
   const [period,    setPeriod]    = useState<Period>("monthly");
   const [filter,    setFilter]    = useState<InvoiceStatus | "all">("all");
@@ -216,17 +218,25 @@ export default function FinancePage() {
   return (
     <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-10 space-y-8 text-right" dir="rtl">
 
-      {/* ── بانر بوابة الدفع ── */}
-      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl p-4 border flex items-center gap-3 mb-5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
-          <Warning size={18} weight="fill" className="text-amber-500" />
-        </div>
-        <div>
-          <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بوابة الدفع قيد التفعيل</p>
-          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>البيانات المالية تعرض من قاعدة البيانات — بوابة الدفع قيد الإعداد</p>
-        </div>
-      </motion.div>
+      {/* ── بانر بوابة الدفع (يظهر فقط عندما لا تكون البوابة مفعّلة فعلياً) ── */}
+      {payments.status !== "live" && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 mb-5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+            <Warning size={18} weight="fill" className="text-amber-500" />
+          </div>
+          <div>
+            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+              {payments.disabled ? "بوابة الدفع غير مفعّلة حالياً" : "بوابة الدفع قيد التفعيل"}
+            </p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>
+              {payments.disabled
+                ? "البيانات المالية تعرض من قاعدة البيانات — الدفع والسحب غير متاحين حتى تفعيل البوابة"
+                : "البيانات المالية تعرض من قاعدة البيانات — بوابة الدفع قيد الإعداد"}
+            </p>
+          </div>
+        </motion.div>
+      )}
       
       {/* ── الرأس وتوزيع عناصرها بغير تماثل ── */}
       <motion.div 

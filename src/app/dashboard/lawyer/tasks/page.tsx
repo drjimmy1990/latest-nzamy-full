@@ -174,27 +174,35 @@ export default function LawyerTasksPage() {
 
   // Actions
   const onToggle = useCallback((id: string) => {
+    let newStatus: TaskStatus = "done";
     setTasks(prev => {
-      const next = prev.map(t =>
-        t.id === id ? ({ ...t, status: t.status === "done" ? "todo" : "done" } as Task) : t
-      );
-      const wasJustDone = next.find(t => t.id === id)?.status === "done";
-      if (wasJustDone) {
-        playSuccessBeep();
-        const task = next.find(t => t.id === id);
-        showAchievement(task?.title ?? "تم إنجاز المهمة!");
-      }
-      return next;
+      const current = prev.find(t => t.id === id);
+      newStatus = current?.status === "done" ? "todo" : "done";
+      return prev.map(t => (t.id === id ? { ...t, status: newStatus } : t));
     });
+    // Persist the toggle (optimistic; rollback on failure).
+    updateLawyerTaskStatus(id, newStatus).catch(() => {
+      setTasks(prev => prev.map(t => (t.id === id ? { ...t, status: t.status === "done" ? "todo" : "done" } : t)));
+    });
+    if (newStatus === "done") {
+      playSuccessBeep();
+      setTasks(prev => {
+        const task = prev.find(t => t.id === id);
+        showAchievement(task?.title ?? "تم إنجاز المهمة!");
+        return prev;
+      });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onDelete  = useCallback((id: string) => setTasks(prev => prev.filter(t => t.id !== id)), []);
   const onArchive = useCallback((id: string) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: "archived" } : t));
+    updateLawyerTaskStatus(id, "archived").catch(() => {});
   }, []);
   const onRestore = useCallback((id: string) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: "todo" } : t));
+    updateLawyerTaskStatus(id, "todo").catch(() => {});
   }, []);
   const onStatusChange = useCallback((id: string, s: TaskStatus) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: s } : t));

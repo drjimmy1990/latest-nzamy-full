@@ -11,7 +11,7 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import EmptyState from "@/components/ui/EmptyState";
-import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
+import { getWorkflowRequestsByReceiver, updateWorkflowRequestById } from "@/lib/services/workflowService";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 
 // ─── Types & Mock Data ─────────────────────────────────────────────────────────
@@ -116,16 +116,37 @@ export default function ContractsPage() {
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(null), 2800); }
   function openModal() { setShowModal(true); setModalStep(1); setNewType(""); setNewParty(""); setNewValue(""); setNewTitle(""); }
   function closeModal() { setShowModal(false); }
-  function deleteContract(id: string) { setContracts(prev => prev.filter(c => c.id !== id)); setExpandedId(null); showToast("تم حذف العقد"); }
-  function changeStatus(id: string, status: ContractStatus) { setContracts(prev => prev.map(c => c.id === id ? { ...c, status } : c)); showToast(status === "pending_sign" ? "تم إرسال العقد للتوقيع" : "تم تحديث حالة العقد"); }
+
+  // Map a contract-card status to the workflow request status for persistence.
+  const workflowStatusFor: Record<ContractStatus, "draft" | "in_review" | "completed" | "cancelled"> = {
+    draft: "draft",
+    pending_sign: "in_review",
+    active: "completed",
+    expired: "cancelled",
+  };
+
+  function deleteContract(id: string) {
+    setContracts(prev => prev.filter(c => c.id !== id));
+    setExpandedId(null);
+    showToast("تم حذف العقد");
+    // Soft-delete on the backend (no hard DELETE endpoint on service-requests).
+    updateWorkflowRequestById(id, { status: "cancelled" }, "contract_deleted").catch(() => {});
+  }
+  function changeStatus(id: string, status: ContractStatus) {
+    setContracts(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+    showToast(status === "pending_sign" ? "تم إرسال العقد للتوقيع" : "تم تحديث حالة العقد");
+    updateWorkflowRequestById(id, { status: workflowStatusFor[status] }, "contract_status_changed").catch(() => {});
+  }
   function archiveContract(id: string) {
     setContracts(prev => prev.map(c => c.id === id ? { ...c, manualArchive: true } : c));
     setExpandedId(null);
     showToast("🗂 تم نقل العقد للأرشيف");
+    updateWorkflowRequestById(id, { status: "cancelled" }, "contract_archived").catch(() => {});
   }
   function restoreContract(id: string, title: string) {
     setContracts(prev => prev.map(c => c.id === id ? { ...c, manualArchive: false, status: "draft" } : c));
     showToast(`✅ تم استعادة "${title}" — راجعه في قائمة المسودات`);
+    updateWorkflowRequestById(id, { status: "draft" }, "contract_restored").catch(() => {});
   }
   function saveDraft() {
     setContracts(prev => [{ id: Date.now().toString(), title: newTitle || `عقد جديد — ${newParty}`, party: newParty, type: (newType || "service_agreement") as Contract["type"], status: "draft", value: newValue || undefined }, ...prev]);

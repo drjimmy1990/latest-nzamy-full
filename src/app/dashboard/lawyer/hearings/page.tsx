@@ -268,6 +268,7 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
             <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}}
               className="overflow-hidden mt-3 pt-3 border-t border-dashed">
               <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark?"text-zinc-600":"text-slate-400"}`}>خطوات العمل</p>
+              <p className={`text-[10px] mb-2 ${isDark?"text-amber-400/70":"text-amber-600/70"}`}>ملاحظة: تعديل الخطوات مرئي فقط هذه الجلسة وغير محفوظ بعد — ربط خطوات الجلسة بقاعدة البيانات قيد التطوير.</p>
               <div className="space-y-1.5 mb-4">
                 {steps.map((step, si) => (
                   <button key={si} onClick={() => toggleStep(si)}

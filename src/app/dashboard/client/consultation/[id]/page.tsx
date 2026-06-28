@@ -210,7 +210,9 @@ export default function ConsultationRoomPage() {
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [showAIPanel, setShowAIPanel] = useState(false);
-  const [sessionTimeLeft] = useState("٤٧:١٣");
+  // NOTE: a real session countdown requires a session-clock API (not built yet).
+  // Showing a frozen "٤٧:١٣" fakes a live timer — use an honest static label.
+  const [sessionTimeLeft] = useState("جارية");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 

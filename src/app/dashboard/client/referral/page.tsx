@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Gift,
@@ -21,14 +21,11 @@ import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
-const REFERRAL_URL = "https://nezamy.online/join?ref=JUDGE47";
-
-const stats = [
+// Referral link + stats are loaded from /api/v1/referrals (no hardcoded mock URL).
+const STATS_TEMPLATE = [
   {
     labelAr: "دعوات مُرسلة",
     labelEn: "Invites Sent",
-    value: "١٢",
-    valueEn: "12",
     icon: Users,
     color: "text-sky-400",
     bg: "bg-sky-400/10",
@@ -36,8 +33,6 @@ const stats = [
   {
     labelAr: "انضموا",
     labelEn: "Joined",
-    value: "٥",
-    valueEn: "5",
     icon: CheckCircle,
     color: "text-emerald-400",
     bg: "bg-emerald-400/10",
@@ -45,8 +40,6 @@ const stats = [
   {
     labelAr: "مكافآت مكتسبة (ر.س)",
     labelEn: "Rewards Earned (SAR)",
-    value: "٢٥٠",
-    valueEn: "250",
     icon: Coins,
     color: "text-amber-400",
     bg: "bg-amber-400/10",
@@ -159,17 +152,51 @@ export default function ReferralPage() {
   const isAr = lang === "ar";
 
   const [copied, setCopied] = useState(false);
+  const [referralUrl, setReferralUrl] = useState("");
+  const [statValues, setStatValues] = useState<number[]>([0, 0, 0]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/v1/referrals", { credentials: "same-origin" })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((body) => {
+        const data = body?.data ?? body;
+        setReferralUrl(data?.referralUrl ?? "");
+        setStatValues([
+          Number(data?.stats?.totalInvites ?? 0),
+          Number(data?.stats?.joined ?? 0),
+          Number(data?.stats?.totalRewards ?? 0),
+        ]);
+        setLoadError(null);
+      })
+      .catch((err) => {
+        console.error("[referral] failed to load:", err);
+        setLoadError(isAr ? "تعذر تحميل بيانات الإحالة. حاول مرة أخرى لاحقاً." : "Failed to load referral data.");
+      });
+  }, [isAr]);
+
+  function toArDigits(n: number): string {
+    return String(n).replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]);
+  }
+
+  const stats = STATS_TEMPLATE.map((s, i) => ({
+    ...s,
+    value: toArDigits(statValues[i] ?? 0),
+    valueEn: String(statValues[i] ?? 0),
+  }));
 
   function handleCopy() {
-    navigator.clipboard.writeText(REFERRAL_URL).catch(() => {});
+    if (!referralUrl) return;
+    navigator.clipboard.writeText(referralUrl).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
   function handleWhatsApp() {
+    if (!referralUrl) return;
     const msg = isAr
-      ? `انضم إلى منصة نظامي القانونية الذكية واحصل على أفضل الخدمات القانونية: ${REFERRAL_URL}`
-      : `Join Nezamy – the AI legal platform: ${REFERRAL_URL}`;
+      ? `انضم إلى منصة نظامي القانونية الذكية واحصل على أفضل الخدمات القانونية: ${referralUrl}`
+      : `Join Nezamy – the AI legal platform: ${referralUrl}`;
     window.open(
       `https://wa.me/?text=${encodeURIComponent(msg)}`,
       "_blank",
@@ -203,15 +230,17 @@ export default function ReferralPage() {
           </a>
         </motion.div>
 
-        {/* ── Demo Data Banner ── */}
-        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-[12px] ${
-          isDark
-            ? "bg-amber-900/10 border-amber-700/20 text-amber-400"
-            : "bg-amber-50 border-amber-200 text-amber-700"
-        }`}>
-          <Clock size={16} weight="duotone" className="flex-shrink-0" />
-          <span>البيانات المعروضة توضيحية — سيتم تحديثها تلقائياً عند ربط حسابك.</span>
-        </div>
+        {/* ── Load Error Banner ── */}
+        {loadError && (
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-[12px] ${
+            isDark
+              ? "bg-red-900/10 border-red-700/20 text-red-400"
+              : "bg-red-50 border-red-200 text-red-700"
+          }`}>
+            <Clock size={16} weight="duotone" className="flex-shrink-0" />
+            <span>{loadError}</span>
+          </div>
+        )}
 
         {/* ── Hero card ─────────────────────────────────────────────────── */}
         <motion.div
@@ -253,7 +282,7 @@ export default function ReferralPage() {
             <div className="flex flex-wrap gap-3 pt-1">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white">
                 <Coins size={13} weight="fill" className="text-amber-400" />
-                {isAr ? "٢٥٠ ر.س مكتسبة" : "250 SAR Earned"}
+                {isAr ? `${toArDigits(statValues[2] ?? 0)} ر.س مكتسبة` : `${statValues[2] ?? 0} SAR Earned`}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white">
                 <Star size={13} weight="fill" className="text-amber-400" />
@@ -300,7 +329,7 @@ export default function ReferralPage() {
                 isDark ? "text-gray-300" : "text-gray-700"
               }`}
             >
-              {REFERRAL_URL}
+              {referralUrl || (isAr ? "جارٍ التحميل…" : "Loading…")}
             </span>
 
             {/* Copy button */}
@@ -361,8 +390,9 @@ export default function ReferralPage() {
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={() => {
+                if (!referralUrl) return;
                 if (navigator.share) {
-                  navigator.share({ url: REFERRAL_URL }).catch(() => {});
+                  navigator.share({ url: referralUrl }).catch(() => {});
                 } else {
                   handleCopy();
                 }

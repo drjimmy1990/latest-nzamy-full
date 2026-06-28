@@ -31,7 +31,7 @@ export async function GET(
     const userId = user?.id || null;
 
     // Check library access
-    const access = await checkLibraryAccess(userId, id, 0);
+    const access = await checkLibraryAccess(userId, id, 0, "decrees");
     const hasAccess = access.allowed || access.isWhitelisted;
 
     // Fetch pages

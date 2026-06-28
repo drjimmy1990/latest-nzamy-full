@@ -15,6 +15,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useUser } from "@/hooks/useUser";
 import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
+import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
 import { createPaymentIntentStub } from "@/lib/paymentAdapter";
 import { getClientServiceById, getConsultationModeServiceId } from "@/lib/pricingRepository";
@@ -38,6 +39,7 @@ export default function NewConsultationPage() {
   const subscription = useSubscription();
   const user = useUser();
   const { catalog, source: pricingSource } = useClientPricingCatalog();
+  const payments = usePaymentsStatus();
   const isDark = theme === "dark";
   const selectedLawyer = MOCK_LAWYERS.find((lawyer) => lawyer.id === searchParams.get("lawyer"));
   const modeConfig = useMemo(() => (
@@ -108,11 +110,18 @@ export default function NewConsultationPage() {
   const serviceId = path === "ai" ? "ai-consult" : getConsultationModeServiceId(mode);
   const total = getClientServiceById(serviceId, catalog).basePrice;
   const consultationLimit = subscription.tierRank >= 3 ? 5 : subscription.tierRank >= 2 ? 1 : 0;
+  // TODO: derive consultationsUsed from a real consultations-count endpoint
+  // (count of the user's consultation workflow requests). 0 is the honest
+  // default until that endpoint exists — it does not fake a number.
   const consultationsUsed = 0;
   const consultationIncluded = path === "lawyer" && consultationsUsed < consultationLimit;
+  // Payment gate: when the admin has disabled the gateway, block paid submissions.
+  const needsPayment = !consultationIncluded && total > 0;
+  const paymentsBlocked = payments.disabled && needsPayment;
 
   const confirmConsultation = async () => {
     if (!path) return;
+    if (paymentsBlocked) return; // do not create a request when payments are disabled
     const requestId = createWorkflowId(path === "ai" ? "AIC" : "CON");
     const payableTotal = path === "lawyer" && consultationIncluded ? 0 : total;
     const paymentIntent = await createPaymentIntentStub({
@@ -602,13 +611,22 @@ export default function NewConsultationPage() {
                 </div>
               </div>
 
-              {/* Pending notice */}
-              <div className={`rounded-xl p-3.5 flex items-start gap-2.5 mb-5 text-[11px] ${isDark ? "bg-amber-900/15 border border-amber-700/20" : "bg-amber-50 border border-amber-200"}`}>
-                <Warning size={13} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-amber-400" : "text-amber-600"}`} weight="fill" />
-                <p className={isDark ? "text-amber-300/80" : "text-amber-700"}>
-                  بعد الضغط على «تأكيد وادفع» سيتم إنشاء طلب فعلي في طبقة الـ workflow مع payment intent تجريبي لحين ربط مزود الدفع النهائي.
-                </p>
-              </div>
+              {/* Pending / payment-disabled notice */}
+              {paymentsBlocked ? (
+                <div className={`rounded-xl p-3.5 flex items-start gap-2.5 mb-5 text-[11px] ${isDark ? "bg-red-900/15 border border-red-700/25" : "bg-red-50 border border-red-200"}`}>
+                  <Warning size={13} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-red-400" : "text-red-600"}`} weight="fill" />
+                  <p className={isDark ? "text-red-300/80" : "text-red-700"}>
+                    الدفع غير متاح حالياً — سيتم تفعيل بوابة الدفع قريباً. لا يمكن إتمام الطلب المدفوع حتى التفعيل.
+                  </p>
+                </div>
+              ) : (
+                <div className={`rounded-xl p-3.5 flex items-start gap-2.5 mb-5 text-[11px] ${isDark ? "bg-amber-900/15 border border-amber-700/20" : "bg-amber-50 border border-amber-200"}`}>
+                  <Warning size={13} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-amber-400" : "text-amber-600"}`} weight="fill" />
+                  <p className={isDark ? "text-amber-300/80" : "text-amber-700"}>
+                    بعد الضغط على «تأكيد وادفع» سيتم إنشاء طلب فعلي في طبقة الـ workflow مع payment intent تجريبي لحين ربط مزود الدفع النهائي.
+                  </p>
+                </div>
+              )}
 
               <div className="flex justify-between">
                 <button
@@ -618,9 +636,14 @@ export default function NewConsultationPage() {
                   <ArrowRight size={13} /> رجوع
                 </button>
                 <motion.button
-                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  whileHover={{ scale: !paymentsBlocked ? 1.02 : 1 }} whileTap={{ scale: !paymentsBlocked ? 0.98 : 1 }}
                   onClick={confirmConsultation}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#0B3D2E] text-white text-[13px] font-black rounded-xl hover:bg-[#0d4d39] transition-colors shadow-lg shadow-[#0B3D2E]/20"
+                  disabled={paymentsBlocked}
+                  className={`flex items-center gap-2 px-6 py-3 text-white text-[13px] font-black rounded-xl transition-colors shadow-lg shadow-[#0B3D2E]/20 ${
+                    paymentsBlocked
+                      ? "bg-zinc-400/60 cursor-not-allowed shadow-none"
+                      : "bg-[#0B3D2E] hover:bg-[#0d4d39]"
+                  }`}
                 >
                   <CreditCard size={15} />
                   {consultationIncluded

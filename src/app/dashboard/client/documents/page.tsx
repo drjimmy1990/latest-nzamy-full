@@ -1,13 +1,20 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, useInView } from 'framer-motion';
 import {
   FileText, FilePdf, FileDoc, UploadSimple, MagnifyingGlass, FolderOpen,
-  DownloadSimple, Trash, Eye, PlusCircle, SortAscending,
+  DownloadSimple, Trash, Eye, PlusCircle, SortAscending, WarningCircle, SpinnerGap,
 } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
-import { getDocuments } from '@/lib/services';
+import {
+  getDocuments,
+  uploadDocumentFile,
+  getDocumentFileUrl,
+  deleteDocument,
+  type Document as ApiDocument,
+} from '@/lib/services';
+import { isSupabaseMode } from '@/lib/services/api';
 import { SkeletonList } from '../_components/DashboardSkeleton';
 
 type DocType = 'contract' | 'evidence' | 'official' | 'other';
@@ -20,6 +27,7 @@ interface Doc {
   size: string;
   uploadedAt: string;
   format: 'pdf' | 'docx' | 'other';
+  storagePath?: string;
 }
 
 const typeConfig: Record<DocType, { label: string; light: string; dark: string }> = {
@@ -29,13 +37,64 @@ const typeConfig: Record<DocType, { label: string; light: string; dark: string }
   other: { label: 'أخرى', light: 'bg-slate-100 text-slate-600 border-slate-200', dark: 'bg-white/5 text-zinc-400 border-white/10' },
 };
 
+function formatBytes(bytes: number | null | undefined): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function docTypeFromName(name: string): DocType {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (['pdf'].includes(ext)) return 'official';
+  if (['doc', 'docx'].includes(ext)) return 'contract';
+  if (['png', 'jpg', 'jpeg'].includes(ext)) return 'evidence';
+  return 'other';
+}
+
+function docFormatFromName(name: string): Doc['format'] {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'pdf') return 'pdf';
+  if (['doc', 'docx'].includes(ext)) return 'docx';
+  return 'other';
+}
+
+function apiDocToDoc(d: ApiDocument): Doc {
+  return {
+    id: String(d.id),
+    name: d.file_name,
+    caseRef: d.request_id || '',
+    type: docTypeFromName(d.file_name),
+    size: formatBytes(d.size_bytes),
+    uploadedAt: d.created_at ? new Date(d.created_at).toLocaleDateString('ar-SA') : '',
+    format: docFormatFromName(d.file_name),
+    storagePath: d.storage_path,
+  };
+}
+
 const FormatIcon = ({ format, isDark }: { format: Doc['format']; isDark: boolean }) => {
   if (format === 'pdf') return <FilePdf size={22} weight="fill" className={isDark ? "text-red-400" : "text-red-500"} />;
   if (format === 'docx') return <FileDoc size={22} weight="fill" className={isDark ? "text-blue-400" : "text-blue-600"} />;
   return <FileText size={22} weight="fill" className={isDark ? "text-zinc-400" : "text-zinc-500"} />;
 };
 
-function DocRow({ doc, index, isDark }: { doc: Doc; index: number; isDark: boolean }) {
+function DocRow({
+  doc,
+  index,
+  isDark,
+  onView,
+  onDownload,
+  onDelete,
+  busy,
+}: {
+  doc: Doc;
+  index: number;
+  isDark: boolean;
+  onView: (d: Doc) => void;
+  onDownload: (d: Doc) => void;
+  onDelete: (d: Doc) => void;
+  busy: boolean;
+}) {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true });
 
@@ -48,8 +107,8 @@ function DocRow({ doc, index, isDark }: { doc: Doc; index: number; isDark: boole
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ delay: index * 0.05, duration: 0.4, type: "spring", stiffness: 100, damping: 20 }}
       className={`group relative flex items-center gap-4 p-4 rounded-[1.25rem] border transition-all duration-300 ${
-        isDark 
-          ? "bg-zinc-900/50 border-white/10 hover:bg-zinc-800/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]" 
+        isDark
+          ? "bg-zinc-900/50 border-white/10 hover:bg-zinc-800/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
           : "bg-white border-zinc-200 hover:border-[#0B3D2E]/20 hover:shadow-md hover:shadow-[#0B3D2E]/5"
       }`}
     >
@@ -61,7 +120,7 @@ function DocRow({ doc, index, isDark }: { doc: Doc; index: number; isDark: boole
 
       <div className="flex-1 min-w-0">
         <p className={`text-[14px] font-bold truncate leading-snug mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}>{doc.name}</p>
-        <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{doc.caseRef}</p>
+        <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{doc.caseRef || '—'}</p>
       </div>
 
       <span className={`hidden sm:inline-flex text-[10px] px-2.5 py-1 rounded-full font-bold border flex-shrink-0 ${
@@ -76,19 +135,32 @@ function DocRow({ doc, index, isDark }: { doc: Doc; index: number; isDark: boole
       </div>
 
       <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 pl-2">
-        <button className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-          isDark ? "text-zinc-400 hover:text-white hover:bg-white/10" : "text-zinc-400 hover:text-[#0B3D2E] hover:bg-[#0B3D2E]/10"
-        }`}>
+        <button
+          onClick={() => onView(doc)}
+          title="عرض"
+          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+            isDark ? "text-zinc-400 hover:text-white hover:bg-white/10" : "text-zinc-400 hover:text-[#0B3D2E] hover:bg-[#0B3D2E]/10"
+          }`}
+        >
           <Eye size={16} weight="bold" />
         </button>
-        <button className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-          isDark ? "text-zinc-400 hover:text-white hover:bg-white/10" : "text-zinc-400 hover:text-[#0B3D2E] hover:bg-[#0B3D2E]/10"
-        }`}>
+        <button
+          onClick={() => onDownload(doc)}
+          title="تنزيل"
+          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+            isDark ? "text-zinc-400 hover:text-white hover:bg-white/10" : "text-zinc-400 hover:text-[#0B3D2E] hover:bg-[#0B3D2E]/10"
+          }`}
+        >
           <DownloadSimple size={16} weight="bold" />
         </button>
-        <button className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-          isDark ? "text-zinc-400 hover:text-red-400 hover:bg-red-500/20" : "text-zinc-400 hover:text-red-600 hover:bg-red-50"
-        }`}>
+        <button
+          onClick={() => onDelete(doc)}
+          disabled={busy}
+          title="حذف"
+          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40 ${
+            isDark ? "text-zinc-400 hover:text-red-400 hover:bg-red-500/20" : "text-zinc-400 hover:text-red-600 hover:bg-red-50"
+          }`}
+        >
           <Trash size={16} weight="bold" />
         </button>
       </div>
@@ -102,20 +174,87 @@ export default function ClientDocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadDocs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getDocuments();
+      setDocs(data.map(apiDocToDoc));
+    } catch (err) {
+      console.error('[documents] failed to load:', err);
+      setError('تعذر تحميل المستندات. حاول مرة أخرى لاحقاً.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    getDocuments()
-      .then(data => setDocs(data.map(d => ({
-        id: d.id,
-        name: d.file_name,
-        caseRef: d.request_id || '',
-        type: (d.file_type === 'contract' || d.file_type === 'evidence' || d.file_type === 'official' ? d.file_type : 'other') as DocType,
-        size: d.file_size || '',
-        uploadedAt: d.created_at || '',
-        format: (d.file_type === 'pdf' || d.file_type === 'docx' ? d.file_type : 'other') as Doc['format'],
-      }))))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    loadDocs();
+  }, [loadDocs]);
+
+  const handleFiles = useCallback(async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    if (!isSupabaseMode) {
+      setUploadError('الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات (NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase).');
+      return;
+    }
+    setUploading(true);
+    setUploadError(null);
+    try {
+      for (const file of Array.from(fileList)) {
+        await uploadDocumentFile(file);
+      }
+      await loadDocs();
+    } catch (err) {
+      console.error('[documents] upload failed:', err);
+      const msg = err instanceof Error ? err.message : 'فشل رفع الملف.';
+      setUploadError(`فشل رفع الملف: ${msg}`);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, [loadDocs]);
+
+  const handleView = useCallback(async (d: Doc) => {
+    try {
+      const url = await getDocumentFileUrl(d.storagePath ?? '');
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      console.error('[documents] view failed:', err);
+    }
+  }, []);
+
+  const handleDownload = useCallback(async (d: Doc) => {
+    try {
+      const url = await getDocumentFileUrl(d.storagePath ?? '');
+      if (!url) return;
+      const a = window.document.createElement('a');
+      a.href = url;
+      a.download = d.name;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      window.document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      console.error('[documents] download failed:', err);
+    }
+  }, []);
+
+  const handleDelete = useCallback(async (d: Doc) => {
+    if (!confirm(`حذف المستند «${d.name}»؟ لا يمكن التراجع.`)) return;
+    try {
+      await deleteDocument(d.id, d.storagePath);
+      setDocs((prev) => prev.filter((x) => x.id !== d.id));
+    } catch (err) {
+      console.error('[documents] delete failed:', err);
+      setUploadError('فشل حذف المستند. حاول مرة أخرى.');
+    }
   }, []);
 
   const filtered = useMemo(() => {
@@ -133,33 +272,75 @@ export default function ClientDocumentsPage() {
           <h1 className="text-2xl md:text-3xl font-black tracking-tight" style={{ fontFamily: 'var(--font-brand)' }}>مستنداتي</h1>
           <p className={`text-sm mt-1.5 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>كل ملفاتك ومستنداتك القانونية في مكان واحد آمن</p>
         </div>
-        <label className="inline-flex items-center gap-2 px-5 py-3 bg-[#0B3D2E] text-white rounded-xl text-sm font-bold cursor-pointer transition-all hover:bg-[#0a3328] shadow-md hover:-translate-y-0.5 active:scale-95 self-start md:self-auto">
-          <PlusCircle size={18} weight="bold" />
+        <label className={`inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold transition-all shadow-md self-start md:self-auto ${
+          isSupabaseMode
+            ? "bg-[#0B3D2E] text-white cursor-pointer hover:bg-[#0a3328] hover:-translate-y-0.5 active:scale-95"
+            : "bg-zinc-400/30 text-zinc-400 cursor-not-allowed"
+        }`}>
+          {uploading ? <SpinnerGap size={18} weight="bold" className="animate-spin" /> : <PlusCircle size={18} weight="bold" />}
           رفع مستند جديد
-          <input type="file" className="hidden" multiple accept=".pdf,.doc,.docx,.png,.jpg" />
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+            disabled={!isSupabaseMode || uploading}
+            onChange={(e) => handleFiles(e.target.files)}
+          />
         </label>
       </div>
+
+      {/* Demo-mode gate / upload error */}
+      {(!isSupabaseMode || uploadError) && (
+        <div className={`flex items-start gap-3 p-4 mb-6 rounded-2xl border text-sm ${
+          isDark ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"
+        }`}>
+          <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
+          <span>
+            {!isSupabaseMode
+              ? "الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات (NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase)."
+              : uploadError}
+          </span>
+        </div>
+      )}
+
+      {/* Load error */}
+      {error && (
+        <div className={`flex items-start gap-3 p-4 mb-6 rounded-2xl border text-sm ${
+          isDark ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-800"
+        }`}>
+          <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
       {/* Upload Drop Zone */}
       <motion.div
         onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
         onDragLeave={() => setIsDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setIsDragOver(false); }}
-        animate={{ 
-          borderColor: isDragOver ? (isDark ? 'rgba(52, 211, 153, 0.5)' : 'rgba(11,61,46,0.5)') : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(228,228,231,1)'), 
-          backgroundColor: isDragOver ? (isDark ? 'rgba(52, 211, 153, 0.05)' : 'rgba(11,61,46,0.04)') : (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(250,250,250,1)') 
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDragOver(false);
+          handleFiles(e.dataTransfer.files);
         }}
-        className="border-2 border-dashed rounded-[2rem] p-10 text-center mb-8 transition-colors cursor-pointer"
+        animate={{
+          borderColor: isDragOver ? (isDark ? 'rgba(52, 211, 153, 0.5)' : 'rgba(11,61,46,0.5)') : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(228,228,231,1)'),
+          backgroundColor: isDragOver ? (isDark ? 'rgba(52, 211, 153, 0.05)' : 'rgba(11,61,46,0.04)') : (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(250,250,250,1)')
+        }}
+        className="border-2 border-dashed rounded-[2rem] p-10 text-center mb-8 transition-colors"
       >
         <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 transition-colors ${
-          isDragOver 
+          isDragOver
             ? isDark ? "bg-emerald-500/20 text-emerald-400" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
             : isDark ? "bg-white/5 text-zinc-500" : "bg-zinc-100 text-zinc-400"
         }`}>
-          <UploadSimple size={28} weight={isDragOver ? "fill" : "regular"} />
+          {uploading ? <SpinnerGap size={28} weight="bold" className="animate-spin" /> : <UploadSimple size={28} weight={isDragOver ? "fill" : "regular"} />}
         </div>
-        <p className={`text-[15px] font-bold mb-1.5 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>اسحب وأفلت الملفات هنا</p>
-        <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>PDF، Word، صور — حتى ٢٠ ميجابايت لكل ملف</p>
+        <p className={`text-[15px] font-bold mb-1.5 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+          {uploading ? "جاري الرفع…" : "اسحب وأفلت الملفات هنا"}
+        </p>
+        <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>PDF، Word، صور — حتى ١٠٠ ميجابايت لكل ملف</p>
       </motion.div>
 
       {/* Search + Sort */}
@@ -195,7 +376,16 @@ export default function ClientDocumentsPage() {
         {filtered.length > 0 ? (
           <motion.div key="list" className="space-y-3">
             {filtered.map((doc, i) => (
-              <DocRow key={doc.id} doc={doc} index={i} isDark={isDark} />
+              <DocRow
+                key={doc.id}
+                doc={doc}
+                index={i}
+                isDark={isDark}
+                onView={handleView}
+                onDownload={handleDownload}
+                onDelete={handleDelete}
+                busy={uploading}
+              />
             ))}
           </motion.div>
         ) : (

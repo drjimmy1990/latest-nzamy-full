@@ -3,7 +3,18 @@ import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { BookOpen, Plus, Check, X, MagnifyingGlass, Funnel, Eye, PencilSimple, Trash, ArrowUpRight, Lock, LockOpen } from "@phosphor-icons/react";
 
-const CATS = ["الكل", "أنظمة عمل", "أنظمة تجارية", "أنظمة جنائية", "مبادئ قضائية", "تشريعات دولية"];
+// Must match the CATEGORY_MAP keys in src/app/api/v1/admin/library/route.ts.
+const CATS = [
+  "الكل",
+  "الأنظمة الإجرائية",
+  "أنظمة تجارية",
+  "أنظمة جنائية",
+  "الأنظمة المدنية",
+  "أنظمة العمل",
+  "مبادئ قضائية",
+  "تعاميم ومراسم",
+  "فقه وشريعة",
+];
 const STATUS_CFG: Record<string, { cls: string; label: string }> = {
   published: { cls: "bg-emerald-500/15 border-emerald-500/30 text-emerald-400", label: "منشور" },
   active:    { cls: "bg-emerald-500/15 border-emerald-500/30 text-emerald-400", label: "منشور" },

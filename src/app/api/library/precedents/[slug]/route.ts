@@ -31,7 +31,7 @@ export async function GET(
     const userId = user?.id || null;
 
     // Check library access
-    const access = await checkLibraryAccess(userId, slug, 0);
+    const access = await checkLibraryAccess(userId, slug, 0, "principles");
     const hasAccess = access.allowed || access.isWhitelisted;
 
     // Fetch principles with paragraphs
