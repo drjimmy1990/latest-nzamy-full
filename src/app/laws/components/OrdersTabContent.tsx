@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { CaretLeft, CaretRight } from "@phosphor-icons/react";
-import { type DemoOrder } from "../demo-data";
+import { type DemoOrder } from "../demo-data-access";
 import { OrderCard, OrderRow, EmptyState } from "./ListItems";
 
 interface OrdersTabContentProps {

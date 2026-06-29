@@ -1,6 +1,6 @@
 # ⚡ Nzamy — n8n Automation Workflows (Phase 4)
 
-> **STATUS (2026-06-28):** Superseded by `n8n_master_guide_latest.md` (action plan) + `n8n/README.md` (integration contract). Kept as a technical reference. The Next.js trigger layer is now built: `POST /api/v1/n8n/trigger` + `src/lib/n8n/payload.ts` + `src/lib/events.ts` (namespaced events). Importable workflow JSON templates live at `n8n/workflows/`.
+> **STATUS (2026-06-29):** Superseded by `n8n_master_guide_latest.md` (action plan) + `n8n/README.md` (integration contract). Kept as a technical reference. The Next.js trigger layer is built: `POST /api/v1/n8n/trigger` + `src/lib/n8n/payload.ts` + `src/lib/events.ts` (namespaced events + shared `namespaceEvent`). Importable workflow JSON templates live at `n8n/workflows/` (7 files). **⚠️ Build status: 0 workflows are built/imported into any n8n instance yet — the JSON are template files only and no n8n instance is hosted. This is the next step.**
 
 ---
 

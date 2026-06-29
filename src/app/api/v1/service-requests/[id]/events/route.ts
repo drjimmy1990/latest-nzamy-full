@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { recordEvent } from "@/lib/events";
+import { recordEvent, namespaceEvent, RequestEvent } from "@/lib/events";
 
 /**
  * GET /api/v1/service-requests/[id]/events — Get timeline events for a request
@@ -76,15 +76,23 @@ export async function POST(
     );
   }
 
-  // F7 — record via the shared helper for a consistent insert shape. The
-  // caller names the event, so we pass it through unchanged (callers should
-  // use the namespaced vocabulary, but this endpoint does not force it).
-  // recordEvent logs+swallows errors; to preserve this endpoint's contract
-  // (return the created row), we re-select after the insert.
+  // F7 — record via the shared helper for a consistent insert shape. Force
+  // namespacing through `namespaceEvent` so legacy free-text events (e.g.
+  // `client_consultation_created`) are mapped to the canonical vocabulary
+  // before being persisted. Unknown strings are still inserted (we never drop
+  // audit data) but a warning is logged so unmapped events surface for triage.
+  const namespaced = namespaceEvent(body.event, RequestEvent.SERVICE_REQUEST_CREATED);
+  if (namespaced === body.event && !body.event.includes(".")) {
+    console.warn(
+      "[events POST] unmapped event string inserted verbatim — add it to namespaceEvent:",
+      "event=", body.event,
+      "request_id=", requestId,
+    );
+  }
   await recordEvent({
     supabase,
     requestId,
-    event: body.event,
+    event: namespaced,
     actorUserId: user.id,
     ...(typeof body.actor_name === "string" ? { actorName: body.actor_name } : {}),
   });

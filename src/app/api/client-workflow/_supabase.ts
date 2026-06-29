@@ -1,6 +1,6 @@
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { getPaymentGatewayStatus } from "@/lib/access-control";
-import { RequestEvent } from "@/lib/events";
+import { RequestEvent, namespaceEvent } from "@/lib/events";
 
 type WorkflowRequestInput = Omit<WorkflowRequest, "createdAt" | "auditTrail"> & {
   auditEvent?: string;
@@ -27,28 +27,6 @@ function headers(extra?: HeadersInit): HeadersInit {
   };
 }
 
-/**
- * Map a legacy free-text audit event to the namespaced vocabulary. Passes
- * through already-namespaced values unchanged.
- */
-function namespaceEvent(raw: string | undefined, fallback: string): string {
-  if (!raw) return fallback;
-  switch (raw) {
-    case "created":
-      return RequestEvent.SERVICE_REQUEST_CREATED;
-    case "status_change":
-    case "status_changed":
-      return RequestEvent.SERVICE_REQUEST_STATUS_CHANGED;
-    case "updated":
-      return RequestEvent.SERVICE_REQUEST_UPDATED;
-    case "cancelled":
-      return RequestEvent.SERVICE_REQUEST_CANCELLED;
-    case "completed":
-      return RequestEvent.SERVICE_REQUEST_COMPLETED;
-    default:
-      return raw;
-  }
-}
 
 function eventFromRequest(input: WorkflowRequestInput, createdAt: string, actorUserId: string | null) {
   return {

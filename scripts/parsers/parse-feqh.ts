@@ -353,13 +353,16 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
       flushPage();
       currentPage = {
         page_number: header.page,
-        volume: 1, // Will be updated if volume info is available
+        // TODO: volume detection is not implemented — parsePageHeader() does not
+        // extract a volume from the `#### صفحة N - Title - Author - Source` header
+        // format, and no other path sets currentPage.volume. Hardcoded to 1 until a
+        // reliable detector (e.g. a volume field in page metadata or a prefix in the
+        // page number) is available.
+        volume: 1,
         text: "",
         verses: [],
       };
 
-      // Try to detect volume from page number pattern or metadata
-      // Some files encode volume in the page number (e.g., 1001 = vol 1, page 1)
       continue;
     }
 

@@ -20,7 +20,7 @@ import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRep
 import { createPaymentIntentStub } from "@/lib/paymentAdapter";
 import { getClientServiceById, getConsultationModeServiceId } from "@/lib/pricingRepository";
 import { LEGAL_BRANCHES_REGULAR } from "@/components/draft/draftConstants";
-import { MOCK_LAWYERS } from "@/app/dashboard/client/find-lawyer/data";
+import { getLawyerById, type LawyerProfile } from "@/lib/services/lawyerService";
 
 import {
   type ConsultPath,
@@ -41,7 +41,8 @@ export default function NewConsultationPage() {
   const { catalog, source: pricingSource } = useClientPricingCatalog();
   const payments = usePaymentsStatus();
   const isDark = theme === "dark";
-  const selectedLawyer = MOCK_LAWYERS.find((lawyer) => lawyer.id === searchParams.get("lawyer"));
+  const [selectedLawyer, setSelectedLawyer] = useState<LawyerProfile | null>(null);
+  const urlLawyerId = searchParams.get("lawyer");
   const modeConfig = useMemo(() => (
     Object.fromEntries(
       (Object.entries(MODE_COPY) as [LawyerMode, typeof MODE_COPY[LawyerMode]][]).map(([key, cfg]) => [
@@ -68,6 +69,21 @@ export default function NewConsultationPage() {
   const [requestId, setRequestId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // ── Resolve the selected lawyer from the real DB when a lawyer id is in the URL ──
+  useEffect(() => {
+    if (!urlLawyerId) {
+      setSelectedLawyer(null);
+      return;
+    }
+    let cancelled = false;
+    getLawyerById(urlLawyerId).then((lawyer) => {
+      if (cancelled) return;
+      setSelectedLawyer(lawyer);
+      if (lawyer) setSpecialty(lawyer.specialty);
+    });
+    return () => { cancelled = true; };
+  }, [urlLawyerId]);
+
   // ── Pre-fill from URL context (e.g. coming from Services or AI assistant) ──
   useEffect(() => {
     const urlSpecialty = searchParams.get("specialty");
@@ -84,10 +100,9 @@ export default function NewConsultationPage() {
     if (urlSpecialty) setSpecialty(urlSpecialty);
     if (urlQ)         setAiQuestion(urlQ);
     if (urlLawyer) {
-      const lawyer = MOCK_LAWYERS.find((item) => item.id === urlLawyer);
+      // Lawyer details + specialty are resolved by the dedicated effect above.
       setPath("lawyer");
       setMode("video");
-      if (lawyer) setSpecialty(lawyer.specialty);
       setStep(2);
       return;
     }

@@ -4,11 +4,16 @@
 > It replaces: `n8n_workflows.md`, `workflows_roadmap.md`, and `n8n_workflows_list.md`
 >
 > **Total: 38 workflows** (20 operational + 18 AI-powered)
-> **Last Updated: 2026-06-28**
+> **Last Updated: 2026-06-29**
 
 ---
 
-## ✅ Built on the Next.js side (2026-06-28)
+> 🚧 **n8n BUILD STATUS (2026-06-29): 0 workflows built or running in any n8n instance.**
+> No n8n instance is hosted/provisioned yet. The 7 JSON files in `n8n/workflows/` are **importable template files only** — they have NOT been imported into n8n, and no webhook URL is live. Building/hosting n8n + importing these templates is the **next step** (owner: user). Everything below this banner is the *spec* + the Next.js-side plumbing that is ready to feed n8n once it exists.
+
+---
+
+## ✅ Built on the Next.js side (updated 2026-06-29)
 
 The Next.js trigger layer + event standardization are **done**. n8n itself is not yet hosted/connected, but the app side is ready to feed it.
 
@@ -16,8 +21,9 @@ The Next.js trigger layer + event standardization are **done**. n8n itself is no
 |-------|------|--------|
 | **Trigger endpoint** | `POST /api/v1/n8n/trigger` | ✅ Auth-required; fetches `service_requests` row + actor profile, builds payload, `console.log`s it, returns `{ data: payload, delivered: false, note: "n8n not yet wired — payload assembled only" }`. **Makes NO outbound HTTP today.** Once `N8N_WEBHOOK_BASE_URL` is set and the endpoint is flipped to send, it will POST the payload to the matching n8n webhook. |
 | **Payload assembler** | `src/lib/n8n/payload.ts` | ✅ `buildWebhookPayload({ event, timestamp, request, actor? })` → canonical shape (see **Payload Contract** below). |
-| **Event helper + namespaced vocabulary** | `src/lib/events.ts` | ✅ `recordEvent({ supabase, requestId, event, actorUserId, actorName?, metadata? })` + `RequestEvent` namespace map. All write routes now insert namespaced events with `actor_user_id` + `actor_name`. |
-| **Importable workflow JSON templates** | `n8n/workflows/wf-*.json` (7 Phase-1 workflows) + `n8n/README.md` | ✅ Created by a concurrent agent — importable into an n8n instance. Reference these by path for the exact workflow definitions. |
+| **Event helper + namespaced vocabulary + `namespaceEvent`** | `src/lib/events.ts` | ✅ `recordEvent({ supabase, requestId, event, actorUserId, actorName?, metadata? })` + `RequestEvent` namespace map. All write routes now insert namespaced events with `actor_user_id` + `actor_name`. **2026-06-29:** shared `namespaceEvent(raw, fallback)` helper extracted here; `POST /api/v1/service-requests/[id]/events` now namespaces free-text client events (`client_consultation_created` / `client_request_created` / `find_lawyer_consultation_requested` → `service_request.created`) so the audit event stream is consistent for n8n routing. |
+| **Live AI→n8n outbound routes** | `POST /api/ai/library-chat`, `POST /api/ai/explain-article` | ✅ These two are the **only** paths that make a real outbound `fetch()` to an n8n webhook today (`N8N_LIBRARY_CHAT_WEBHOOK_URL` / `N8N_EXPLAIN_WEBHOOK_URL`). When the env var is unset they return 503 + "قريباً/غير مُهيّأ" — so today they are effectively off. The 18 `/api/v1/ai/*` routes from the spec do **not** exist yet. |
+| **Importable workflow JSON templates** | `n8n/workflows/wf-*.json` (7 Phase-1 workflows) + `n8n/README.md` | 📄 **Template files only — NOT imported into any n8n instance.** 7 well-formed JSON files (WF 1.1, 1.2, 2.1, 2.2, 2.3, 4.1, 4.2) ready for **n8n → Import from File** once an n8n instance is hosted. Reference these by path for the exact workflow definitions. |
 
 **Namespaced event vocabulary** (emitted into `request_events`):
 `service_request.created` / `service_request.status_changed` / `service_request.updated` / `service_request.cancelled` / `service_request.completed` · `consultation.created` / `consultation.status_changed` · `task.created` / `task.status_changed` / `task.deleted` · `contract.created` / `contract.status_changed` · `hearing.created` · `payment.created`

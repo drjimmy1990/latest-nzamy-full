@@ -1,14 +1,11 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CaretDown, CaretUp, Microphone, PaperPlaneTilt, Sparkle, X,
 } from "@phosphor-icons/react";
 import type { LawArticle } from "../data";
-import { createCommunityQuestion } from "@/lib/communityStore";
-import { useUser } from "@/hooks/useUser";
 
 
 const QUICK_PROMPTS = [
@@ -103,24 +100,39 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
     setOpen(true);
     setMsgs(m => [...m, { role: "user", text: query }]);
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1400));
+
+    // Honest AI: call the n8n-backed /api/ai/library-chat route.
+    // When the webhook is not configured (503) or the call fails, show a
+    // clear "قريباً / coming soon" message instead of fabricating an answer.
     let reply = "";
-    if (!isRTL)
-      reply = "I found the closest relevant areas in the Companies Law. The current legal text is preserved in Arabic, but you can use the draft tools, article index, principles, and precedents from the English interface.";
-    else if (query.includes("تأسيس") || query.includes("تسجيل"))
-      reply = "المواد ذات الصلة بالتأسيس:\n• المادة السادسة: طلب تأسيس الشركة\n• المادة السابعة: وثائق التأسيس\n• المادة الثامنة: القيد لدى السجل التجاري\n• المادة التاسعة: اكتساب الشخصية الاعتبارية";
-    else if (query.includes("مسؤولية") || query.includes("شركاء"))
-      reply = "المواد المتعلقة بمسؤولية الشركاء:\n• المادة الثالثة عشرة: حصة الشريك\n• المادة الرابعة عشرة: تقديم الحصة\n• المادة الخامسة عشرة: التأخر في تقديم الحصة";
-    else if (query.includes("مالي") || query.includes("قوائم"))
-      reply = "المواد المتعلقة بالمالية:\n• المادة السادسة عشرة: السنة المالية\n• المادة السابعة عشرة: السجلات المحاسبية والقوائم المالية";
-    else if (query.includes("ميثاق") || query.includes("عائلي"))
-      reply = "المادة الحادية عشرة تنظم الميثاق العائلي:\n• يجوز للمساهمين إبرام ميثاق عائلي\n• ينظم الملكية وحوكمة الأسرة وسياسة التوظيف\n• يكون ملزماً ويجوز أن يكون جزءاً من النظام الأساس";
-    else if (query.includes("رأس المال") || query.includes("متطلبات"))
-      reply = "متطلبات رأس المال تجدها في:\n• المادة الثالثة عشرة: الحصص النقدية والعينية\n• المادة الرابعة عشرة: أحكام الضمان\n• المادة الخامسة عشرة: عواقب التأخر في التسديد";
-    else if (query.includes("تظلم"))
-      reply = "الحق في التظلم وارد في:\n• المادة السادسة (فقرة 4): يجوز التظلم أمام الوزارة خلال 60 يوماً من رفض الطلب\n• المادة السادسة (فقرة 5): عند رفض التظلم أو التأخر في البت، يحق اللجوء للقضاء";
-    else
-      reply = "سؤالك يتعلق بنظام الشركات السعودي. يمكنك استخدام الأوامر السريعة أعلاه لاستخراج نصوص محددة، أو اكتب سؤالاً أكثر تفصيلاً مثل: \"ما المواد المتعلقة بالشركة ذات المسؤولية المحدودة؟\"";
+    try {
+      const res = await fetch("/api/ai/library-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: query, context: {} }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const incoming =
+          (data && (data.reply || data.explanation || data.message)) ||
+          (data && typeof data === "string" ? data : "");
+        reply =
+          typeof incoming === "string" && incoming.trim().length > 0
+            ? incoming
+            : isRTL
+              ? "لم أتلقَّ رداً صالحاً من الخدمة حالياً."
+              : "No valid reply from the AI service right now.";
+      } else {
+        reply = isRTL
+          ? "الذكاء الاصطناعي قيد التفعيل وقريباً سيتوفر.\nحالياً يمكنك تصفح المواد والاستعانة بالفهرس والمبادئ والسوابق."
+          : "The AI assistant is being activated and will be available soon.\nFor now, browse the articles, index, principles, and precedents.";
+      }
+    } catch {
+      reply = isRTL
+        ? "الذكاء الاصطناعي قيد التفعيل وقريباً سيتوفر.\nحالياً يمكنك تصفح المواد والاستعانة بالفهرس والمبادئ والسوابق."
+        : "The AI assistant is being activated and will be available soon.\nFor now, browse the articles, index, principles, and precedents.";
+    }
+
     setMsgs(m => [...m, { role: "ai", text: reply }]);
     setLoading(false);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -262,10 +274,14 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true }: 
     setInput("");
     setMsgs(m => [...m, { role: "user", text: query }]);
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1500));
+    // Honest gate: the article-explanation AI is not yet activated.
+    // Show a clear "قريباً / coming soon" message instead of fabricating an
+    // explanation. When the n8n explain-article webhook is wired and the
+    // lawSlug is plumbed through, this can call /api/ai/explain-article.
+    await new Promise(r => setTimeout(r, 600));
     const reply = isRTL
-      ? `بناءً على ${article.num}، نصها يشير إلى أن: ${article.text.split("\\n")[0]}...\nهذا يعني أن النظام اشترط ذلك لضمان استقرار المراكز القانونية. هل تحتاج توضيحاً لأي فقرة محددة في المادة؟`
-      : `Based on ${article.num}, the article starts with: ${article.text.split("\\n")[0]}...\nThe legal text is currently preserved in Arabic, but I can help you identify the relevant paragraph, summarize it, or prepare it for your draft.`;
+      ? "شرح المواد بالذكاء الاصطناعي قيد التفعيل وقريباً سيتوفر.\nحالياً يمكنك الاعتماد على نص المادة أعلاه، والفهرس، والمبادئ والسوابق المرتبطة."
+      : "AI article explanation is being activated and will be available soon.\nFor now, rely on the article text above, the index, and related principles/precedents.";
     setMsgs(m => [...m, { role: "ai", text: reply }]);
     setLoading(false);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -372,25 +388,12 @@ export function CommunityQuestionModal({
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
   const lbl   = isDark ? "text-zinc-300" : "text-gray-700";
 
-  const user = useUser();
-  const router = useRouter();
-
+  // Honest gate: posting to the legal community is not yet wired to the
+  // backend. Instead of storing to localStorage and pretending it was
+  // published to lawyers, show a clear "قريباً / coming soon" state.
   const handleSubmit = () => {
     if (!title.trim()) return;
-    // Save to communityStore (localStorage) so it appears in /community feed
-    const newQ = createCommunityQuestion({
-      title: title.trim(),
-      body: body.trim() || undefined,
-      category: (cat as never) || "labor",
-      asker: isAnon ? "مستخدم مجهول" : (user.name || "مستخدم"),
-      askerType: isAnon ? "guest" : (user.userType === "lawyer" ? "lawyer" : "user"),
-      isAnonymous: isAnon,
-    });
     setSent(true);
-    setTimeout(() => {
-      onClose();
-      router.push(`/community/${newQ.id}`);
-    }, 2200);
   };
 
   return (
@@ -418,14 +421,14 @@ export function CommunityQuestionModal({
         {/* Body */}
         {sent ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12 px-6">
-            <div className={`w-14 h-14 rounded-full flex items-center justify-center ${isDark ? "bg-green-900/30 text-green-400" : "bg-green-50 text-green-600"}`}>
+            <div className={`w-14 h-14 rounded-full flex items-center justify-center ${isDark ? "bg-amber-900/30 text-amber-400" : "bg-amber-50 text-amber-600"}`}>
               <Sparkle size={28} weight="fill" />
             </div>
-            <p className={`text-[15px] font-black ${isDark ? "text-white" : "text-gray-900"}`}>{isRTL ? "تم إرسال سؤالك!" : "Question Sent!"}</p>
+            <p className={`text-[15px] font-black ${isDark ? "text-white" : "text-gray-900"}`}>{isRTL ? "قريباً" : "Coming Soon"}</p>
             <p className={`text-[12px] text-center ${muted}`}>
-              {isAnon
-                ? (isRTL ? "نُشر سؤالك بشكل مجهول — سيتلقى المحامون إشعاراً" : "Posted anonymously — lawyers will be notified")
-                : (isRTL ? "سيتلقى المحامون إشعاراً بسؤالك" : "Lawyers will be notified")}
+              {isRTL
+                ? "نشر الأسئلة في المجتمع القانوني قيد التفعيل. لن يُرسل سؤالك حالياً — سيتوفر قريباً مع ربط المحامين والإشعارات."
+                : "Posting to the legal community is being activated. Your question was not submitted — it will be available soon with lawyer notifications."}
             </p>
           </div>
         ) : (

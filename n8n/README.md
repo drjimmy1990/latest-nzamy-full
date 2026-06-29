@@ -2,8 +2,8 @@
 
 > Saudi legal platform automation layer. This directory contains the **importable n8n workflow templates** (Phase 1 / Section A) plus the integration contract that binds them to the Next.js app.
 >
-> **Last Updated: 2026-06-28**
-> **Status:** Trigger layer is built on the Next.js side. The 7 workflows below are importable n8n templates. n8n is **not yet hosted/connected** — no outbound HTTP is sent today.
+> **Last Updated: 2026-06-29**
+> **Status:** Trigger layer is built on the Next.js side. The 7 workflows below are **importable n8n template files only — 0 are built/imported into any n8n instance yet, and no n8n instance is hosted.** The generic trigger endpoint sends no outbound HTTP today. **Exception:** `/api/ai/library-chat` and `/api/ai/explain-article` DO `fetch()` their n8n webhooks when `N8N_LIBRARY_CHAT_WEBHOOK_URL` / `N8N_EXPLAIN_WEBHOOK_URL` are set (today they're unset → 503 "قريباً"). Building/hosting n8n + importing these templates is the next step.
 
 ---
 
@@ -235,8 +235,9 @@ The Evolution API (WhatsApp) sends incoming messages directly to `/whatsapp-inco
 
 ## 11. Status
 
-- **Last Updated: 2026-06-28**
-- **Trigger layer:** Built (`src/lib/events.ts`, `src/lib/n8n/payload.ts`, `POST /api/v1/n8n/trigger`). Logs only — does not send.
-- **Workflows:** The 7 Phase 1 / Section A workflows are importable n8n templates in `n8n/workflows/`. Each JSON has been validated as well-formed.
-- **n8n hosting:** Not yet provisioned. No webhook URLs are live.
+- **Last Updated: 2026-06-29**
+- **Trigger layer:** Built (`src/lib/events.ts`, `src/lib/n8n/payload.ts`, `POST /api/v1/n8n/trigger`). Generic trigger logs only — does not send. **2026-06-29:** shared `namespaceEvent` helper now lives in `src/lib/events.ts` and is used by `POST /api/v1/service-requests/[id]/events` to namespace free-text client events → `service_request.created`, keeping the audit event stream consistent for n8n routing.
+- **Live AI→n8n routes:** `/api/ai/library-chat` + `/api/ai/explain-article` are the only paths that POST to n8n today (when their webhook env vars are set; currently unset → 503). The 18 `/api/v1/ai/*` routes from the spec do not exist yet.
+- **Workflows:** The 7 Phase 1 / Section A workflows are **importable template files** in `n8n/workflows/` (well-formed JSON). **0 are imported into / running in any n8n instance yet.**
+- **n8n hosting:** Not yet provisioned. No webhook URLs are live. **Building/hosting n8n + importing these templates is the next step.**
 - **Payments:** Admin-gated, real provider deferred to Phase 3.

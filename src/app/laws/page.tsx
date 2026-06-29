@@ -26,7 +26,7 @@ import {
   type DemoPrecedent,
   type DemoOrder,
   type PrincipleSourceId,
-} from "./demo-data";
+} from "./demo-data-access";
 import RecentSessions from "./components/RecentSessions";
 import SmartFolders from "./components/SmartFolders";
 import { MyNotesSection } from "./components/MyNotesSection";

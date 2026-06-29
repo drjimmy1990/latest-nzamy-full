@@ -6,7 +6,7 @@ import {
   Scales, Gavel, Scroll, CheckCircle, Clock, BookOpen, MagnifyingGlass, ArrowsClockwise
 } from "@phosphor-icons/react";
 import * as PhosphorIcons from "@phosphor-icons/react";
-import { type DemoPrinciple, type DemoPrecedent, type DemoOrder } from "../demo-data";
+import { type DemoPrinciple, type DemoPrecedent, type DemoOrder } from "../demo-data-access";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 
 export function highlightText(text: string, q: string, isDark: boolean) {

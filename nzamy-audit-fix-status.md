@@ -23,6 +23,46 @@ Audit fix pass (plan: `C:\Users\LOQ\.claude\plans\floofy-humming-starlight.md`).
 - **L11 + detail-page rewires DONE:** new `casesService.getServiceRequestDetail(id)` → `GET /api/v1/service-requests/[id]` (the workflow/Kanban source-of-truth, NOT the mostly-unused `cases` table). `service-requests/[id]/route.ts` GET now also returns `attachments` (mapped from `attachments` table). `lawyer/cases/[id]/page.tsx`: `CASES_DB` removed → real fetch; 7 tabs preserved; overview timeline from real `events`; tasks empty-state + gated "قريباً"; hearings from `metadata.hearings`; documents from real `attachments` (upload wired to `documentService`); team = assigned lawyer + client; notes save gated "قريباً" (no `metadata` column to store text); fake "٧٨٪" AI score → honest "تحليل AI قريباً". `client/cases/[id]/page.tsx`: `?? MOCK_CASES["2025-001"]` removed → real fetch + not-found. `lawyer/clients/[id]/page.tsx`: `MOCK_CLIENTS/CASES/CONTRACTS/CONSULTATIONS` + `REVENUE_DATA` removed → real client via `getLawyerClients()` + related `service_requests` filtered by `requester_user_id`; contracts = honest empty state; `.catch(()=>{})` → error banner. `client/consultation/[id]/page.tsx`: `MOCK_CONSULTATIONS` fallback + `MOCK_MESSAGES` seed + fake `setTimeout` lawyer reply all removed; chat wired to real `chatService` (`getChatRooms`/`createChatRoom`/`getChatMessages`/`sendChatMessage` via `related_id=consultation.id`); `SessionChatPane` kept (presentational). No realtime polling (chatService has no subscribe primitive) — history loads on mount, lawyer replies appear on refresh.
 - Error-swallows fixed: `client/consultation/page.tsx` + `lawyer/analytics/page.tsx` `.catch(()=>[])` → error banners.
 
-**⚠️ Migrations still NOT applied to any DB** (`20260628_documents_upload.sql` + `20260628_payments_gateway.sql` + `20260629_payments_and_storage_policies.sql`) — deferred to user to run `npx supabase db push` (or `npx supabase migration up --linked`). All idempotent. Until applied: `documents` storage bucket + `attachments.request_id` nullable + `platform_settings.payments_gateway` row + `payments.id` default + `payments.payer_user_id` column + storage.objects RLS for the documents bucket do not exist in the DB. (The `20260629` migration is what makes the lawyer case-detail Documents tab upload + document download actually work end-to-end.)
+**✅ Migrations applied 2026-06-29 by user** (`20260628_documents_upload.sql` + `20260628_payments_gateway.sql` + `20260629_payments_and_storage_policies.sql` + manual `storage.objects` RLS policies). So now in the DB: `documents` storage bucket, `attachments.request_id`, `platform_settings.payments_gateway=disabled`, `payments.id` default, `payments.payer_user_id`, storage.objects RLS for the documents bucket. Document upload/download now works end-to-end.
+**⚠️ NEW migration pending user apply (via SQL editor):** `20260630_handle_new_user_sectors.sql` — `handle_new_user` provisions `government_profiles`/`ngo_profiles`/`business_profiles` (corporate, was wrongly →`firm_profiles`) + keeps firm/lawyer/provider/micro + `user_settings`. Idempotent (`CREATE OR REPLACE` + `DROP TRIGGER IF EXISTS`).
 
 GitNexus MCP tools were NOT connected this session (or the follow-up) — mitigated with `tsc --noEmit` + `next build` + `git diff --stat` scope check. CLAUDE.md mandates `gitnexus_impact` before edits and `gitnexus_detect_changes` before commit; run when MCP is available. The follow-up commit was made with explicit user authorization on `main` despite MCP being unavailable.
+
+---
+
+## 2026-06-29 full code audit + fix pass (index `latest-nzamy-full` @ HEAD `4438e79`, GitNexus MCP connected)
+
+**Audit (6 parallel GitNexus+file passes).** Corrections to the ledger above:
+- **More done than docs imply:** lawyer modals L1/L9/L14/L10/L12/L16 + finance/clients POST routes ALL wired to real backend now (old "UI-only mock" claim outdated). API bugs B1-B9,B11,B12,RC-2 all genuinely fixed. B12 payment-gate gap CLOSED on both write paths. Chat/documents/my-group/tasks/case-detail all real.
+- **Falsely-claimed-fixed (real bugs found):** (1) `client/referral/page.tsx:161,193` kept `FRIENDS_MOCK` (5 fake people) when API returned empty — replacement gated on `mapped.length>0`. (2) `client/consultation/new/page.tsx:23,44,87` still selected lawyers from `MOCK_LAWYERS` — real DB lawyer IDs never matched, pre-select path dead.
+- **Newly-found still-broken (not in old ledger):** `storage.objects` RLS for documents bucket commented out (`20260628_documents_upload.sql:28-49`) → upload 403 until applied (✅ now applied by user); `handle_new_user` under-provisions government/ngo + corporate→wrong table (`20260616:116-169`); `smart_folder_items` DELETE IDOR no ownership check (`api/library/folders/route.ts:138-142`); library `demo-data*.ts` imported unconditionally in prod (no env gate, 8+ pages); AI `_ai-components.tsx:106,265,353` fake `setTimeout` replies + no قريباً gate + `POST /api/community/questions` TODO; `precedents/judgment/[slug]` mock-only; `seed-library --clean` no-op; library init unpaginated; FTS GIN indexes dead weight (`search`/`autocomplete` routes used `.ilike`, never queried `fts`); `parse-feqh.ts:356` `volume:1` hardcoded; `law_metadata` table still absent.
+- **Latent:** consultations POST wrote `status:"pending"` (convention `pending_assignment`); B10 `_supabase.ts` still service-role + client-supplied `requester_user_id` (gate added, auth not fixed); lawyer Kanban drag didn't reposition (optimistic wrote `kanbanCol`, columns filter by `status`, no refresh dispatch); lawyer `consultations/[id]` fully mock; wallet hero/overview hardcoded stats + fake txns during loading; free-text audit events (`client_consultation_created` etc.) bypassed `namespaceEvent` → would break n8n routing; `events/[id]` POST accepted arbitrary `body.event`.
+- **Note:** `api/ai/library-chat` + `api/ai/explain-article` already make real outbound n8n webhook calls — n8n partially live for AI, not fully deferred.
+
+**Fix pass (user applied migrations + storage policies; then code fixes done — `tsc --noEmit` 0 errors, `next build` exit 0, `gitnexus_detect_changes` in scope; NOT committed):**
+- ✅ `smart_folder_items` DELETE IDOR → ownership check (`api/library/folders/route.ts`).
+- ✅ library `search`+`autocomplete` → `.textSearch('fts', ..., {config:'library.arabic', type:'plain'})` (GIN indexes now used). ⚠️ **Regression:** Arabic normalization (`الإثبات`↔`الاثبات`, `١٤٤٤`↔`1444`) no longer applied for matching — `library.arabic` is `copy=simple`. Fix options: (A) re-add `normalizeSearch`+`ilike` as OR fallback, or (B) SQL normalize fn + rebuild `fts`. Tracked in `library_testing_arabic.md` #4.
+- ✅ `library/init` paginated (`?limit`/`?page`, default 100).
+- ✅ `seed-library --clean` wired to per-type seeders (delete-before-insert).
+- ✅ `parse-feqh.ts` volume → honest TODO (not faked).
+- ✅ library `demo-data*.ts` gated via new `src/app/laws/demo-data-access.ts` (prod `[]` unless `NEXT_PUBLIC_LIB_DEMO_FALLBACK=1`); import sites repointed.
+- ✅ `_ai-components.tsx`: `LibraryAI` → real `/api/ai/library-chat` (fallback قريباً); `ArticleExplainModal` + `CommunityQuestionModal` gated قريباً (no `setTimeout` fakes).
+- ✅ `precedents/judgment/[slug]` → `DashboardComingSoon` قريباً (no `/api/library/judgment` route or `library.judgments` table).
+- ✅ referral `FRIENDS_MOCK` empty-case (always `setFriends(mapped)` in supabase mode, init `[]` + empty state).
+- ✅ `consultation/new` uses real `getLawyerById` (`MOCK_LAWYERS` removed).
+- ✅ wallet hero/overview stats from API `stats`, `—` while loading, fake txns/coupons only in demo mode.
+- ✅ lawyer Kanban `onKanbanDrop` updates `c.status` + dispatches `nzamy-workflow-updated` (repositions + re-syncs).
+- ✅ `consultations/[id]` (lawyer) → `DashboardComingSoon` قريباً.
+- ✅ `POST /api/v1/consultations` status → `body.status ?? "pending_assignment"`.
+- ✅ event-listener leak fixed in 3 list pages (stable handler ref).
+- ✅ free-text audit events — shared `namespaceEvent` extracted to `src/lib/events.ts`, maps `client_consultation_created`/`client_request_created`/`find_lawyer_consultation_requested` → `service_request.created`; `events/[id]` POST namespaces via it (warns on unmapped).
+- 🆕 `supabase/migrations/20260630_handle_new_user_sectors.sql` — `handle_new_user` provisions government/ngo/business(corporate) profiles + keeps the rest. **Pending user apply via SQL editor.**
+
+**Still deferred (not done this pass):**
+- B10 `_supabase.ts` service-role + client-supplied `requester_user_id` auth refactor (RLS implications, bigger change).
+- `law_metadata` table (still 584-line `law-metadata-map.ts`).
+- `ArticleExplainModal` real n8n wiring (gated قريباً instead).
+- `POST /api/community/questions` real impl (gated قريباً instead).
+- `checkLibraryAccess` per-type whitelist keys.
+- `parse-feqh.ts` real volume detection.
+- Arabic-normalization regression fix (see above).

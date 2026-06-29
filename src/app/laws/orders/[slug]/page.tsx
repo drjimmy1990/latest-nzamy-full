@@ -17,7 +17,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
-import { DEMO_ORDERS, DemoOrder } from "../../demo-data";
+import { DEMO_ORDERS, type DemoOrder } from "../../demo-data-access";
 import { ISSUER_MAP } from "../../components/ListItems";
 import { useDraftCart } from "@/hooks/useDraftCart";
 import { SmartFolder } from "../../components/SmartFolders";

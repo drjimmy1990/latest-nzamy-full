@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
       mode,
       specialty: body.specialty ?? body.topic ?? null,
       scheduled_at: body.preferred_date ?? null,
-      status: "pending",
+      status: body.status ?? "pending_assignment",
       metadata: body.description
         ? { description: body.description }
         : (body.metadata ?? {}),

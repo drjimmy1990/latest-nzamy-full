@@ -4,7 +4,7 @@
 > **Purpose**: Two lists — (1) what we build NOW to finish العميل والمحامي flows, (2) everything else for later.
 > **Dashboard Status**: ✅ Both Client (10 pages) and Lawyer (17 pages) dashboards are production-ready.
 
-> **Integration contract:** see `n8n/README.md` — the canonical n8n integration doc. Importable workflow JSON templates live at `n8n/workflows/` (Phase 1 = 7 templates created 2026-06-28). The Next.js trigger layer is built: `POST /api/v1/n8n/trigger` + `src/lib/n8n/payload.ts` + `src/lib/events.ts` (namespaced events).
+> **Integration contract:** see `n8n/README.md` — the canonical n8n integration doc. Importable workflow JSON templates live at `n8n/workflows/` (Phase 1 = 7 template files). The Next.js trigger layer is built: `POST /api/v1/n8n/trigger` + `src/lib/n8n/payload.ts` + `src/lib/events.ts` (namespaced events + shared `namespaceEvent`). **⚠️ Build status (2026-06-29): 0 workflows are built/imported into any n8n instance yet — the 7 JSON are template files only and no n8n instance is hosted. Building n8n is the next step.**
 
 ---
 

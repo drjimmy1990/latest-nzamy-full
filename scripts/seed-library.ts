@@ -174,12 +174,25 @@ async function seedLaws(
   client: NonNullable<typeof supabaseClient>,
   data: Record<string, unknown>,
   dryRun: boolean,
-  errors: string[]
+  errors: string[],
+  clean: boolean
 ): Promise<SeedStats[]> {
   const allStats: SeedStats[] = [];
   const laws = (data.laws || []) as any[];
 
   console.log(`\n🏛️  Seeding ${laws.length} laws...\n`);
+
+  if (clean && !dryRun) {
+    console.log("    🧹 Cleaning laws tables (delete before insert)...");
+    // FK-safe order: children first.
+    for (const t of ["article_amendments", "articles", "chapters", "laws"]) {
+      const { error } = await client.delete(t, {});
+      if (error) {
+        console.error(`    ✗ clean ${t}: ${error}`);
+        errors.push(`clean ${t}: ${error}`);
+      }
+    }
+  }
 
   const lawRows: Record<string, unknown>[] = [];
   const chapterRows: Record<string, unknown>[] = [];
@@ -291,12 +304,24 @@ async function seedDecrees(
   client: NonNullable<typeof supabaseClient>,
   data: Record<string, unknown>,
   dryRun: boolean,
-  errors: string[]
+  errors: string[],
+  clean: boolean
 ): Promise<SeedStats[]> {
   const allStats: SeedStats[] = [];
   const decrees = (data.decrees || []) as any[];
 
   console.log(`\n📋 Seeding ${decrees.length} decrees...\n`);
+
+  if (clean && !dryRun) {
+    console.log("    🧹 Cleaning decrees tables (delete before insert)...");
+    for (const t of ["decree_pages", "decrees_circulars"]) {
+      const { error } = await client.delete(t, {});
+      if (error) {
+        console.error(`    ✗ clean ${t}: ${error}`);
+        errors.push(`clean ${t}: ${error}`);
+      }
+    }
+  }
 
   const decreeRows: Record<string, unknown>[] = [];
   const pageRows: Record<string, unknown>[] = [];
@@ -370,13 +395,25 @@ async function seedPrecedents(
   client: NonNullable<typeof supabaseClient>,
   data: Record<string, unknown>,
   dryRun: boolean,
-  errors: string[]
+  errors: string[],
+  clean: boolean
 ): Promise<SeedStats[]> {
   const allStats: SeedStats[] = [];
   const collections = (data.collections || []) as any[];
   const courtPrecs = (data.court_precedents || []) as any[];
 
   console.log(`\n⚖️  Seeding ${collections.length} collections + ${courtPrecs.length} precedents...\n`);
+
+  if (clean && !dryRun) {
+    console.log("    🧹 Cleaning precedents tables (delete before insert)...");
+    for (const t of ["principle_paragraphs", "principles", "judicial_collections"]) {
+      const { error } = await client.delete(t, {});
+      if (error) {
+        console.error(`    ✗ clean ${t}: ${error}`);
+        errors.push(`clean ${t}: ${error}`);
+      }
+    }
+  }
 
   const collRows: Record<string, unknown>[] = [];
   const principleRows: Record<string, unknown>[] = [];
@@ -504,12 +541,24 @@ async function seedFeqh(
   client: NonNullable<typeof supabaseClient>,
   data: Record<string, unknown>,
   dryRun: boolean,
-  errors: string[]
+  errors: string[],
+  clean: boolean
 ): Promise<SeedStats[]> {
   const allStats: SeedStats[] = [];
   const books = (data.books || []) as any[];
 
   console.log(`\n📖 Seeding ${books.length} feqh books...\n`);
+
+  if (clean && !dryRun) {
+    console.log("    🧹 Cleaning feqh tables (delete before insert)...");
+    for (const t of ["feqh_blocks", "feqh_sections", "feqh_chapters", "feqh_books"]) {
+      const { error } = await client.delete(t, {});
+      if (error) {
+        console.error(`    ✗ clean ${t}: ${error}`);
+        errors.push(`clean ${t}: ${error}`);
+      }
+    }
+  }
 
   const bookRows: Record<string, unknown>[] = [];
   const chapterRows: Record<string, unknown>[] = [];
@@ -698,16 +747,16 @@ export async function seedLibrary(options: {
 
     switch (type) {
       case "laws":
-        stats = await seedLaws(client, data, options.dryRun, errors);
+        stats = await seedLaws(client, data, options.dryRun, errors, options.clean ?? false);
         break;
       case "decrees":
-        stats = await seedDecrees(client, data, options.dryRun, errors);
+        stats = await seedDecrees(client, data, options.dryRun, errors, options.clean ?? false);
         break;
       case "precedents":
-        stats = await seedPrecedents(client, data, options.dryRun, errors);
+        stats = await seedPrecedents(client, data, options.dryRun, errors, options.clean ?? false);
         break;
       case "feqh":
-        stats = await seedFeqh(client, data, options.dryRun, errors);
+        stats = await seedFeqh(client, data, options.dryRun, errors, options.clean ?? false);
         break;
     }
 

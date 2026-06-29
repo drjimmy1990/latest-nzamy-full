@@ -1,7 +1,7 @@
 "use client";
 
 import { FolderSimple, TextT, NotePencil } from "@phosphor-icons/react";
-import { DemoOrder } from "../../demo-data";
+import { type DemoOrder } from "../../demo-data-access";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 
 interface SidebarPanelProps {

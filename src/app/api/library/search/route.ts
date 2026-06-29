@@ -46,11 +46,15 @@ export async function POST(request: Request) {
     const parsed = parseSearchQuery(query);
     const offset = (page - 1) * limit;
 
-    // Normalize search terms (أ→ا, ة→ه, ى→ي, Arabic-Indic digits→Western) so
-    // `الإثبات` matches stored `الاثبات` and ١٤٤٤ matches 1444. The DB columns
-    // are ilike-compared against this normalized pattern.
-    const normTerms = parsed.plainTerms.map(normalizeSearch).filter(Boolean);
-    const ilikePattern = `%${normTerms.join('%')}%`;
+    // Full-text search uses the generated `fts` tsvector columns (GIN-indexed)
+    // defined in 20260626_legal_library_schema.sql, built with
+    // `to_tsvector('library.arabic', ...)`. We query them with
+    // `plainto_tsquery('library.arabic', <raw query>)` so the query is tokenized
+    // with the SAME config as the stored tsvector (the `library.arabic` config is
+    // `copy = simple`, so tokens preserve original Arabic forms — we therefore
+    // pass the raw query, not the normalizeSearch-processed one).
+    // `normalizeSearch` is still applied client-side below for snippet highlighting.
+    const ftsQuery = parsed.raw;
 
     // Collect results from each section
     const results: Record<string, unknown[]> = { laws: [], precedents: [], orders: [], feqh: [] };
@@ -68,7 +72,7 @@ export async function POST(request: Request) {
             executive_reg_text, executive_reg_ref, law_slug,
             laws!inner ( slug, title, type, section_code, section_name )
           `, { count: 'exact' })
-          .or(`text.ilike.${ilikePattern},executive_reg_text.ilike.${ilikePattern},title.ilike.${ilikePattern}`);
+          .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' });
 
         // Apply filters
         if (filters.category) {
@@ -119,7 +123,7 @@ export async function POST(request: Request) {
             decision_number, year_hijri,
             judicial_collections!inner ( id, title, court, track, source_id )
           `, { count: 'exact' })
-          .or(`text.ilike.${ilikePattern},ruling_basis.ilike.${ilikePattern},issuing_body.ilike.${ilikePattern}`);
+          .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' });
 
         if (filters.track) {
           precQuery = precQuery.eq('judicial_collections.track', filters.track);
@@ -169,7 +173,7 @@ export async function POST(request: Request) {
           .schema('library')
           .from('decrees_circulars')
           .select('id, title, type, issuer, ref, date, summary_brief, category, hashtags', { count: 'exact' })
-          .or(`title.ilike.${ilikePattern},summary_brief.ilike.${ilikePattern},ref.ilike.${ilikePattern}`);
+          .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' });
 
         if (filters.issuer) {
           orderQuery = orderQuery.eq('issuer', filters.issuer);
@@ -225,7 +229,7 @@ export async function POST(request: Request) {
               )
             )
           `, { count: 'exact' })
-          .or(`topic.ilike.${ilikePattern},matn.ilike.${ilikePattern},sharh.ilike.${ilikePattern}`);
+          .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' });
 
         if (section === 'feqh') {
           feqhQuery = feqhQuery.range(offset, offset + limit - 1);

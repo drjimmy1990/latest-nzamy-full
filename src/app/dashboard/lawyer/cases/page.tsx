@@ -61,14 +61,23 @@ export default function CasesPage() {
   const onKanbanDrop = useCallback((col: string) => {
     if (!dragId.current) return;
     const caseId = dragId.current;
-    // Capture the original column BEFORE the optimistic update so the .catch()
-    // revert restores the real prior value. Reading c.kanbanCol inside .catch()
-    // would already return the new column (a no-op revert).
+    // Capture the original column + status BEFORE the optimistic update so the
+    // .catch() revert restores the real prior values. Reading them inside
+    // .catch() would already return the new values (a no-op revert).
     let originalCol: string = col;
+    let originalStatus: CaseStatus | undefined;
+    // KanbanView status columns filter by c.status, so we must update the
+    // case's status field too — otherwise the card stays in the old column
+    // even though kanbanCol moved. Column keys are the CaseStatus values.
     setCases(prev => {
       const found = prev.find(c => c.id === caseId);
-      if (found) originalCol = found.kanbanCol;
-      return prev.map(c => c.id === caseId ? { ...c, kanbanCol: col as Case["kanbanCol"] } : c);
+      if (found) {
+        originalCol = found.kanbanCol;
+        originalStatus = found.status;
+      }
+      return prev.map(c => c.id === caseId
+        ? { ...c, kanbanCol: col as Case["kanbanCol"], status: col as CaseStatus }
+        : c);
     });
     dragId.current = null;
     setDragOverCol(null);
@@ -82,10 +91,20 @@ export default function CasesPage() {
     };
     const nextStatus = statusForCol[col];
     if (!nextStatus) return;
-    updateWorkflowRequestById(caseId, { status: nextStatus }).catch(() => {
-      // Revert to the column captured before the optimistic update.
-      setCases(prev => prev.map(c => (c.id === caseId ? { ...c, kanbanCol: originalCol as Case["kanbanCol"] } : c)));
-    });
+    updateWorkflowRequestById(caseId, { status: nextStatus })
+      .then(() => {
+        // Dispatch the refresh event so list/kanban views re-sync from the
+        // backend (matching how other mutations refresh these list pages).
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("nzamy-workflow-updated"));
+        }
+      })
+      .catch(() => {
+        // Revert to the column/status captured before the optimistic update.
+        setCases(prev => prev.map(c => (c.id === caseId
+          ? { ...c, kanbanCol: originalCol as Case["kanbanCol"], status: originalStatus ?? c.status }
+          : c)));
+      });
   }, []);
 
   useEffect(() => {
@@ -104,8 +123,9 @@ export default function CasesPage() {
     };
 
     syncCases();
-    window.addEventListener("nzamy-workflow-updated", () => syncCases());
-    return () => window.removeEventListener("nzamy-workflow-updated", () => {});
+    const handler = () => syncCases();
+    window.addEventListener("nzamy-workflow-updated", handler);
+    return () => window.removeEventListener("nzamy-workflow-updated", handler);
   }, []);
 
   const card = isDark

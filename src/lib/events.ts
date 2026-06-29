@@ -77,3 +77,40 @@ export const RequestEvent = {
 } as const;
 
 export type RequestEventName = typeof RequestEvent[keyof typeof RequestEvent];
+
+/**
+ * Map a legacy free-text audit event string to the canonical namespaced
+ * vocabulary. Already-namespaced values pass through unchanged. Unknown
+ * strings also pass through (callers should log a warning) so audit data is
+ * never silently dropped.
+ *
+ * Shared by `src/app/api/client-workflow/_supabase.ts` and
+ * `src/app/api/v1/service-requests/[id]/events/route.ts` to keep n8n routing
+ * consistent across every insert site.
+ */
+export function namespaceEvent(raw: string | undefined, fallback: string): string {
+  if (!raw) return fallback;
+  switch (raw) {
+    case "created":
+      return RequestEvent.SERVICE_REQUEST_CREATED;
+    case "status_change":
+    case "status_changed":
+      return RequestEvent.SERVICE_REQUEST_STATUS_CHANGED;
+    case "updated":
+      return RequestEvent.SERVICE_REQUEST_UPDATED;
+    case "cancelled":
+      return RequestEvent.SERVICE_REQUEST_CANCELLED;
+    case "completed":
+      return RequestEvent.SERVICE_REQUEST_COMPLETED;
+    // Legacy client-side free-text events that bypassed the namespaced
+    // vocabulary — mapped to the canonical "service request created" event so
+    // n8n routes them correctly. See client/consultation/new/page.tsx,
+    // client/requests/new/page.tsx, client/find-lawyer/page.tsx.
+    case "client_consultation_created":
+    case "client_request_created":
+    case "find_lawyer_consultation_requested":
+      return RequestEvent.SERVICE_REQUEST_CREATED;
+    default:
+      return raw;
+  }
+}

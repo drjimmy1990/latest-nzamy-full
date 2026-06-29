@@ -18,6 +18,7 @@ import {
   Clock,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isSupabaseMode } from "@/lib/services/api";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -67,7 +68,19 @@ const steps = [
   },
 ];
 
-const FRIENDS_MOCK = [
+type FriendRow = {
+  initials: string;
+  initialsEn: string;
+  nameAr: string;
+  nameEn: string;
+  statusAr: string;
+  statusEn: string;
+  joined: boolean;
+  creditsAr: string;
+  creditsEn: string;
+};
+
+const FRIENDS_MOCK: FriendRow[] = [
   {
     initials: "أح",
     initialsEn: "AH",
@@ -155,10 +168,11 @@ export default function ReferralPage() {
   const [referralUrl, setReferralUrl] = useState("");
   const [statValues, setStatValues] = useState<number[]>([0, 0, 0]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // `friends` starts as the mock list; replaced with real data when the API
-  // returns a non-empty list. The mock is only kept while loading or when the
-  // API returns no friends.
-  const [friends, setFriends] = useState(FRIENDS_MOCK);
+  // `friends` starts empty in Supabase mode (real data only). In demo mode the
+  // mock list is shown as a fallback so the UI isn't blank without a backend.
+  const [friends, setFriends] = useState<FriendRow[]>(
+    isSupabaseMode ? [] : FRIENDS_MOCK
+  );
 
   useEffect(() => {
     fetch("/api/v1/referrals", { credentials: "same-origin" })
@@ -173,7 +187,7 @@ export default function ReferralPage() {
         ]);
         // Map DB referral rows onto the friend-card shape.
         const apiFriends = Array.isArray(data?.friends) ? data.friends : [];
-        const mapped = apiFriends.map((r: any) => {
+        const mapped: FriendRow[] = apiFriends.map((r: any) => {
           const name = r?.friend?.display_name || r?.referee_id || "صديق";
           const joined = r?.status === "converted";
           const initials = String(name).slice(0, 2);
@@ -190,7 +204,10 @@ export default function ReferralPage() {
             creditsEn: joined ? `+${credits}` : "—",
           };
         });
-        if (mapped.length > 0) setFriends(mapped);
+        // Always replace with the API result (even if empty → empty state).
+        // In demo mode we only replace when the API returned rows, so the mock
+        // fallback stays visible when the demo backend has no referral data.
+        if (isSupabaseMode || mapped.length > 0) setFriends(mapped);
         setLoadError(null);
       })
       .catch((err) => {
@@ -595,6 +612,17 @@ export default function ReferralPage() {
 
           {/* Rows */}
           <ul className="divide-y divide-dashed">
+            {friends.length === 0 && (
+              <li
+                className={`px-5 py-8 text-center text-sm ${
+                  isDark ? "text-gray-500" : "text-gray-400"
+                }`}
+              >
+                {isAr
+                  ? "لم تدعُ أي أصدقاء بعد — شارك رابطك لتبدأ كسب المكافآت."
+                  : "You haven't invited any friends yet — share your link to start earning."}
+              </li>
+            )}
             {friends.map((f, i) => (
               <motion.li
                 key={i}

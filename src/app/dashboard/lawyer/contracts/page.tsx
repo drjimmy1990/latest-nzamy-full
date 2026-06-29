@@ -112,8 +112,9 @@ export default function ContractsPage() {
     };
 
     syncContracts();
-    window.addEventListener("nzamy-workflow-updated", () => syncContracts());
-    return () => window.removeEventListener("nzamy-workflow-updated", () => {});
+    const handler = () => syncContracts();
+    window.addEventListener("nzamy-workflow-updated", handler);
+    return () => window.removeEventListener("nzamy-workflow-updated", handler);
   }, []);
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(null), 2800); }

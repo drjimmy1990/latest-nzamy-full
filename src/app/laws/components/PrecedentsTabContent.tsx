@@ -9,7 +9,7 @@ import {
   type DemoPrinciple,
   type DemoPrecedent,
   PRINCIPLE_SOURCES,
-} from "../demo-data";
+} from "../demo-data-access";
 import {
   PREC_MODES,
   PRINCIPLE_SOURCE_LABELS_EN,

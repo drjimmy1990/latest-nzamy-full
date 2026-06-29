@@ -486,8 +486,9 @@ export default function ConsultationsPage() {
     };
 
     syncConsultations();
-    window.addEventListener("nzamy-workflow-updated", () => syncConsultations());
-    return () => window.removeEventListener("nzamy-workflow-updated", () => {});
+    const handler = () => syncConsultations();
+    window.addEventListener("nzamy-workflow-updated", handler);
+    return () => window.removeEventListener("nzamy-workflow-updated", handler);
   }, []);
 
   const filtered = consults.filter(c => {

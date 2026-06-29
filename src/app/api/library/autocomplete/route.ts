@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { normalizeSearch } from '@/utils/normalizeArabic';
 
 /**
  * GET /api/library/autocomplete?q=بطلان
@@ -20,8 +19,13 @@ export async function GET(request: Request) {
     }
 
     const supabase = await createClient();
-    // Normalize so `الإثبات` matches stored `الاثبات` and ١٤٤٤ matches 1444.
-    const searchTerm = `%${normalizeSearch(query)}%`;
+    // Full-text search on the generated `fts` tsvector columns (GIN-indexed),
+    // built with `to_tsvector('library.arabic', ...)`. We query with
+    // `plainto_tsquery('library.arabic', <raw query>)` so query tokens are
+    // produced with the same config as the stored tsvector (the `library.arabic`
+    // config is `copy = simple` and does not normalize Arabic forms, so the raw
+    // query is used as-is).
+    const ftsQuery = query;
 
     // Run all count queries in parallel for speed
     const [lawsCount, precedentsCount, ordersCount, feqhCount, topLaws, topPrecedents, topOrders] = await Promise.all([
@@ -30,35 +34,35 @@ export async function GET(request: Request) {
         .schema('library')
         .from('articles')
         .select('id', { count: 'exact', head: true })
-        .or(`text.ilike.${searchTerm},title.ilike.${searchTerm}`),
+        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' }),
       
       // Count: principles matching
       supabase
         .schema('library')
         .from('principles')
         .select('id', { count: 'exact', head: true })
-        .ilike('text', searchTerm),
+        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' }),
       
       // Count: decrees matching
       supabase
         .schema('library')
         .from('decrees_circulars')
         .select('id', { count: 'exact', head: true })
-        .or(`title.ilike.${searchTerm},summary_brief.ilike.${searchTerm}`),
+        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' }),
       
       // Count: feqh blocks matching
       supabase
         .schema('library')
         .from('feqh_blocks')
         .select('id', { count: 'exact', head: true })
-        .or(`topic.ilike.${searchTerm},matn.ilike.${searchTerm},sharh.ilike.${searchTerm}`),
+        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' }),
       
       // Top 2 law matches
       supabase
         .schema('library')
         .from('laws')
         .select('slug, title, type')
-        .ilike('title', searchTerm)
+        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' })
         .limit(2),
       
       // Top 2 principle matches
@@ -66,7 +70,7 @@ export async function GET(request: Request) {
         .schema('library')
         .from('principles')
         .select('id, principle_number, issuing_body, text')
-        .ilike('text', searchTerm)
+        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' })
         .limit(2),
       
       // Top 2 decree matches
@@ -74,7 +78,7 @@ export async function GET(request: Request) {
         .schema('library')
         .from('decrees_circulars')
         .select('id, title, type, ref')
-        .or(`title.ilike.${searchTerm},summary_brief.ilike.${searchTerm}`)
+        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' })
         .limit(2),
     ]);
 

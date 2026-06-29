@@ -134,7 +134,40 @@ export async function DELETE(request: Request) {
     const itemId = searchParams.get('itemId');
 
     if (itemId) {
-      // Delete a single item from a folder
+      // Delete a single item from a folder.
+      // IDOR guard: verify the item belongs to a smart_folder owned by this user
+      // before deleting. Mirrors the folder-level DELETE's `.eq('user_id', user.id)`.
+      const { data: item, error: lookupError } = await supabase
+        .schema('library')
+        .from('smart_folder_items')
+        .select('id, folder_id')
+        .eq('id', itemId)
+        .maybeSingle();
+
+      if (lookupError) {
+        console.error('[Folders DELETE] Item lookup error:', lookupError);
+        return NextResponse.json({ error: 'Failed to remove item' }, { status: 500 });
+      }
+      if (!item) {
+        return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+      }
+
+      const { data: ownerFolder, error: folderError } = await supabase
+        .schema('library')
+        .from('smart_folders')
+        .select('id')
+        .eq('id', item.folder_id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (folderError) {
+        console.error('[Folders DELETE] Folder ownership check error:', folderError);
+        return NextResponse.json({ error: 'Failed to remove item' }, { status: 500 });
+      }
+      if (!ownerFolder) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+
       const { error } = await supabase
         .schema('library')
         .from('smart_folder_items')

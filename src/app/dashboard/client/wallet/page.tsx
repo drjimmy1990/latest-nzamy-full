@@ -24,7 +24,7 @@ import {
   HourglassHigh
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { apiGet } from "@/lib/services/api";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 
@@ -51,6 +51,25 @@ interface TxRow {
   descAr: string;
   descEn: string;
   date: string;
+}
+
+interface WalletStats {
+  successfulReferrals?: number;
+  activeOffers?: number;
+  totalSaved?: number;          // SAR saved via wallet/coupons
+  referralEarnings?: number;    // SAR earned from referrals
+  spentOnServices?: number;     // SAR spent from wallet on services
+  pendingReferralReward?: number; // SAR pending from not-yet-subscribed referrals
+}
+
+interface WalletApiResponse {
+  data: {
+    balance?: number;
+    pendingBalance?: number;
+    transactions?: TxRow[];
+    coupons?: Coupon[];
+    stats?: WalletStats;
+  };
 }
 
 const WALLET_BALANCE = 0;   // SAR — يُملأ من /api/v1/wallet (لا قيمة افتراضية مزيفة)
@@ -179,6 +198,7 @@ export default function WalletPage() {
   const { isDark } = useTheme();
   const [walletBalance, setWalletBalance] = useState(WALLET_BALANCE);
   const [pendingBalance, setPendingBalance] = useState(PENDING_BALANCE);
+  const [stats, setStats] = useState<WalletStats | null>(null);
   // Live arrays start empty — mock data is only shown while `loading` is true.
   const [liveCoupons, setLiveCoupons] = useState<Coupon[]>([]);
   const [liveTransactions, setLiveTransactions] = useState<TxRow[]>([]);
@@ -186,11 +206,12 @@ export default function WalletPage() {
   const [walletError, setWalletError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiGet<{ data: { balance?: number; pendingBalance?: number; transactions?: TxRow[]; coupons?: Coupon[] } }>("/api/v1/wallet")
+    apiGet<WalletApiResponse>("/api/v1/wallet")
       .then((res) => {
         setWalletError(null);
         if (res.data?.balance !== undefined) setWalletBalance(res.data.balance);
         if (res.data?.pendingBalance !== undefined) setPendingBalance(res.data.pendingBalance);
+        setStats(res.data?.stats ?? null);
         // Always replace with the API result (which may be []) — never keep mock
         // data after the call resolves.
         setLiveTransactions(res.data?.transactions ?? []);
@@ -202,11 +223,23 @@ export default function WalletPage() {
         // On failure show nothing rather than fake rows.
         setLiveTransactions([]);
         setLiveCoupons([]);
+        setStats(null);
       })
       .finally(() => setWalletLoading(false));
   }, []);
   const [activeTab, setActiveTab] = useState<"overview" | "coupons" | "history">("overview");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  // Arabic-Indic digits for displaying stats numbers.
+  function toArDigits(n: number): string {
+    return String(n).replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]);
+  }
+  // During loading in Supabase mode we show placeholders instead of fake mock
+  // numbers. In demo mode the mock arrays/numbers remain as a fallback.
+  const showPlaceholders = walletLoading && isSupabaseMode;
+  const successfulReferrals = stats?.successfulReferrals ?? 0;
+  const activeOffers = stats?.activeOffers ?? 0;
+  const totalSaved = stats?.totalSaved ?? 0;
 
   const card = isDark
     ? "bg-zinc-900 border border-white/[0.06] rounded-2xl"
@@ -278,15 +311,31 @@ export default function WalletPage() {
             <div className="flex flex-wrap gap-3">
               <div className="flex items-center gap-1.5 bg-white/10 rounded-xl px-3 py-2 text-xs text-white/80">
                 <Users size={13} className="text-emerald-400" />
-                <span><strong className="text-white">٥</strong> إحالات ناجحة</span>
+                <span>
+                  <strong className="text-white">
+                    {showPlaceholders ? "—" : toArDigits(successfulReferrals)}
+                  </strong>{" "}
+                  إحالات ناجحة
+                </span>
               </div>
               <div className="flex items-center gap-1.5 bg-white/10 rounded-xl px-3 py-2 text-xs text-white/80">
                 <Gift size={13} className="text-amber-400" />
-                <span><strong className="text-white">٣</strong> عروض نشطة</span>
+                <span>
+                  <strong className="text-white">
+                    {showPlaceholders ? "—" : toArDigits(activeOffers)}
+                  </strong>{" "}
+                  عروض نشطة
+                </span>
               </div>
               <div className="flex items-center gap-1.5 bg-white/10 rounded-xl px-3 py-2 text-xs text-white/80">
                 <Percent size={13} className="text-purple-400" />
-                <span>وفّرت <strong className="text-white">٨٠ ر.س</strong> حتى الآن</span>
+                <span>
+                  وفّرت{" "}
+                  <strong className="text-white">
+                    {showPlaceholders ? "—" : `${toArDigits(totalSaved)} ر.س`}
+                  </strong>{" "}
+                  حتى الآن
+                </span>
               </div>
             </div>
           </div>
@@ -369,9 +418,36 @@ export default function WalletPage() {
                   </h3>
                   <div className="space-y-3">
                     {[
-                      { labelAr: "مكتسب من الإحالات (٥ أصدقاء)", icon: Users, color: "text-emerald-500", bg: isDark ? "bg-emerald-900/20" : "bg-emerald-50", amount: "٢٥٠ ر.س", positive: true },
-                      { labelAr: "مُستخدم على خدمات سابقة", icon: Receipt, color: "text-red-400", bg: isDark ? "bg-red-900/20" : "bg-red-50", amount: "−٨٠ ر.س", positive: false },
-                      { labelAr: "رصيد معلق (صديق لم يشترك)", icon: Clock, color: "text-amber-400", bg: isDark ? "bg-amber-900/20" : "bg-amber-50", amount: "٥٠ ر.س", positive: null },
+                      {
+                        labelAr: `مكتسب من الإحالات${stats?.referralEarnings !== undefined ? "" : " (قريباً)"}`,
+                        icon: Users, color: "text-emerald-500", bg: isDark ? "bg-emerald-900/20" : "bg-emerald-50",
+                        amount: showPlaceholders
+                          ? "—"
+                          : stats?.referralEarnings !== undefined
+                            ? `${toArDigits(stats.referralEarnings)} ر.س`
+                            : "—",
+                        positive: true,
+                      },
+                      {
+                        labelAr: `مُستخدم على خدمات سابقة${stats?.spentOnServices !== undefined ? "" : " (قريباً)"}`,
+                        icon: Receipt, color: "text-red-400", bg: isDark ? "bg-red-900/20" : "bg-red-50",
+                        amount: showPlaceholders
+                          ? "—"
+                          : stats?.spentOnServices !== undefined
+                            ? `−${toArDigits(stats.spentOnServices)} ر.س`
+                            : "—",
+                        positive: false,
+                      },
+                      {
+                        labelAr: `رصيد معلق (صديق لم يشترك)${stats?.pendingReferralReward !== undefined ? "" : " (قريباً)"}`,
+                        icon: Clock, color: "text-amber-400", bg: isDark ? "bg-amber-900/20" : "bg-amber-50",
+                        amount: showPlaceholders
+                          ? "—"
+                          : stats?.pendingReferralReward !== undefined
+                            ? `${toArDigits(stats.pendingReferralReward)} ر.س`
+                            : "—",
+                        positive: null,
+                      },
                     ].map((row, i) => {
                       const Icon = row.icon;
                       return (
@@ -426,12 +502,12 @@ export default function WalletPage() {
                 <p className={`text-xs mb-4 leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                   انسخ الكود وأدخله في صفحة الدفع، أو سيُطبّق تلقائياً عند حجزك للخدمة المرتبطة به.
                 </p>
-                {(walletLoading ? coupons : liveCoupons).length === 0 ? (
+                {(walletLoading && !isSupabaseMode ? coupons : liveCoupons).length === 0 ? (
                   <div className={`text-center text-sm py-10 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                     {walletLoading ? "جارٍ التحميل…" : "لا توجد كوبونات حالياً."}
                   </div>
                 ) : null}
-                {(walletLoading ? coupons : liveCoupons).map((c, i) => (
+                {(walletLoading && !isSupabaseMode ? coupons : liveCoupons).map((c, i) => (
                   <motion.div
                     key={c.code}
                     custom={i}
@@ -547,12 +623,12 @@ export default function WalletPage() {
                   </h3>
                 </div>
                 <div className="divide-y divide-dashed divide-zinc-100 dark:divide-white/[0.05]">
-                  {(walletLoading ? transactions : liveTransactions).length === 0 ? (
+                  {(walletLoading && !isSupabaseMode ? transactions : liveTransactions).length === 0 ? (
                     <div className={`text-center text-sm py-10 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                       {walletLoading ? "جارٍ التحميل…" : "لا توجد معاملات بعد."}
                     </div>
                   ) : null}
-                  {(walletLoading ? transactions : liveTransactions).map((tx, i) => (
+                  {(walletLoading && !isSupabaseMode ? transactions : liveTransactions).map((tx, i) => (
                     <motion.div
                       key={tx.id}
                       custom={i}

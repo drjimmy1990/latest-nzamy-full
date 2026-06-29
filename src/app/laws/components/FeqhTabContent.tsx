@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { useSubscription } from "@/hooks/useSubscription";
 import { Lock, Sparkle, ArrowRight, CaretLeft, CaretRight } from "@phosphor-icons/react";
-import { type FeqhBookDemo } from "../demo-data";
+import { type FeqhBookDemo } from "../demo-data-access";
 import { FEQH_TYPES, type FeqhType } from "@/constants/lawsLibraryData";
 import { EmptyState } from "./ListItems";
 
