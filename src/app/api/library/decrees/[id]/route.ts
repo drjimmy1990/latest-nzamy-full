@@ -30,9 +30,13 @@ export async function GET(
     const { data: { user } } = await supabase.auth.getUser();
     const userId = user?.id || null;
 
-    // Check library access
-    const access = await checkLibraryAccess(userId, id, 0, "decrees");
-    const hasAccess = access.allowed || access.isWhitelisted;
+    // Check library access — probe once for freeLimit/tier, then gate EACH page
+    // by its own index below. (Probing at index 0 and treating access.allowed as
+    // a document-level gate unlocked the whole decree for guests — the bug.)
+    const probe = await checkLibraryAccess(userId, id, 0, "decrees");
+    const isWhitelisted = probe.isWhitelisted;
+    const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
+    const hasFullAccess = freeLimit === -1 || isWhitelisted;
 
     // Fetch pages
     const { data: pages } = await supabase
@@ -54,16 +58,25 @@ export async function GET(
       summary_brief: decree.summary_brief,
       cat: decree.category,
       preamble: decree.preamble || '',
-      articles: (pages || []).map((p: Record<string, unknown>) => {
+      paywall: {
+        isWhitelisted,
+        freeLimit,
+        hasFullAccess,
+        totalItems: pages?.length ?? 0,
+      },
+      articles: (pages || []).map((p: Record<string, unknown>, idx: number) => {
         const content = p.content as string;
-        if (!hasAccess && typeof content === 'string' && content.length > 200) {
-          return content.substring(0, 200) + '...';
+        const isLocked = !hasFullAccess && freeLimit !== -1 && idx >= freeLimit;
+        if (isLocked && typeof content === 'string') {
+          return content.substring(0, 200) + (content.length > 200 ? '...' : '');
         }
         return content;
       }),
+      // Pages the client may render in full; the rest are truncated previews.
+      unlockedCount: hasFullAccess ? (pages?.length ?? 0) : Math.min(freeLimit, pages?.length ?? 0),
       hashtags: decree.hashtags || [],
       official_url: decree.official_url || '',
-      hasAccess,
+      hasAccess: hasFullAccess, // legacy field kept for existing client checks
     };
 
     return NextResponse.json(response);

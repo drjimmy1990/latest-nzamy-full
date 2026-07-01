@@ -115,14 +115,6 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-function appendWorkflowListParams(path: string, options: WorkflowListOptions = {}) {
-  const params = new URLSearchParams();
-  if (options.receiver) params.set("receiver", options.receiver);
-  if (options.requesterUserId) params.set("requesterUserId", options.requesterUserId);
-  const query = params.toString();
-  return query ? `${path}?${query}` : path;
-}
-
 export async function listWorkflowRequests(options: WorkflowListOptions = {}): Promise<WorkflowRequest[]> {
   const localRequests = readWorkflowRequestsLocal()
     .filter((request) => !options.receiver || request.receiver === options.receiver)
@@ -130,7 +122,19 @@ export async function listWorkflowRequests(options: WorkflowListOptions = {}): P
 
   if (!BACKEND_ENABLED) return localRequests;
   try {
-    return await apiRequest<WorkflowRequest[]>(appendWorkflowListParams("/api/client-workflow/requests", options));
+    // Repointed to the authed, RLS-scoped /api/v1/service-requests endpoint. The
+    // old /api/client-workflow path used the service-role key with a
+    // client-supplied requesterUserId (horizontal IDOR) and has been deleted.
+    // v1 derives the requester from the session, so only `receiver` is forwarded
+    // and results are already scoped to the caller by RLS. Rows are wrapped in
+    // { data: [...] }.
+    const params = new URLSearchParams();
+    if (options.receiver) params.set("receiver", options.receiver);
+    const query = params.toString();
+    const res = await apiRequest<{ data: WorkflowRequest[] }>(
+      `/api/v1/service-requests${query ? `?${query}` : ""}`,
+    );
+    return res.data ?? [];
   } catch {
     return localRequests;
   }
@@ -154,16 +158,17 @@ export async function createWorkflowRequest(input: WorkflowRequestInput): Promis
   // Demo mode: keep the local-only behavior.
   if (!BACKEND_ENABLED) return createWorkflowRequestLocal(input);
 
-  // Supabase mode: do NOT silently fall back to localStorage on API failure.
-  // Re-throw so the caller can surface the error to the user (otherwise a
-  // "successful" return would hide that the row never reached the server and
-  // would vanish cross-device on the next list GET).
-  const request = await apiRequest<WorkflowRequest>("/api/client-workflow/requests", {
+  // Supabase mode: POST to the authed /api/v1/service-requests endpoint, which
+  // sets requester_user_id = session user.id server-side (client input ignored).
+  // Do NOT silently fall back to localStorage on API failure — re-throw so the
+  // caller can surface the error (and abort before uploading orphaned
+  // attachments). v1 wraps the row in { data }.
+  const res = await apiRequest<{ data: WorkflowRequest }>("/api/v1/service-requests", {
     method: "POST",
     body: JSON.stringify(input),
   });
-  dispatchWorkflowUpdate(request);
-  return request;
+  dispatchWorkflowUpdate(res.data);
+  return res.data;
 }
 
 export async function updateWorkflowRequestById(
@@ -175,11 +180,15 @@ export async function updateWorkflowRequestById(
   // Demo mode: keep the local-only behavior.
   if (!BACKEND_ENABLED) return updateWorkflowRequestLocal(id, patch, auditEvent, by);
 
-  // Supabase mode: surface API failures instead of silently writing locally.
-  const updated = await apiRequest<WorkflowRequest>(`/api/client-workflow/requests/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ patch, auditEvent, by }),
-  });
-  dispatchWorkflowUpdate(updated);
-  return updated;
+  // Supabase mode: PATCH the authed /api/v1/service-requests/[id] endpoint.
+  // Ownership is enforced by RLS (participants-only UPDATE policy); the handler
+  // reads `body.patch ?? body`, so a flat { ...patch, auditEvent } body works and
+  // `by` is server-derived from the session. Surface API failures (no local
+  // fallback) so callers see write failures.
+  const res = await apiRequest<{ data: WorkflowRequest }>(
+    `/api/v1/service-requests/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify({ ...patch, auditEvent }) },
+  );
+  dispatchWorkflowUpdate(res.data);
+  return res.data ?? null;
 }

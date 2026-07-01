@@ -12,7 +12,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
 import { createGroup, joinGroup, inviteToGroup, getGroupState, getGroupMembers, getGroups } from "@/lib/services/groupService";
 import { SkeletonCard } from "../_components/DashboardSkeleton";
-import { useUser } from "@/hooks/useUser";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Member {
@@ -125,7 +125,6 @@ export default function MyGroupPage() {
   const { isDark } = useTheme();
   const searchParams = useSearchParams();
   const membership = useClientGroupMembership();
-  const user = useUser();
   const hasGroup = membership.hasGroup;
   const [showInvite, setShowInvite] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -193,16 +192,10 @@ export default function MyGroupPage() {
   // Derive display data from service response
   const GROUP = groupData?.group || DEFAULT_GROUP;
   const MEMBERS: Member[] = groupData?.members || [];
-  const ROTATION: RotationEntry[] = MEMBERS.map((m, i) => ({
-    month: `شهر ${i + 1}`,
-    memberId: m.id,
-    memberName: m.name,
-    status: i === 0 ? "paid" as const : i === 1 ? "current" as const : "upcoming" as const,
-    amount: GROUP.totalCost,
-  }));
-  const CURRENT_USER_ID = user?.userId || '';
-  const CURRENT_PAYER = MEMBERS.length > 1 ? MEMBERS[1] : MEMBERS[0] || { id: '', name: '', initials: '--' };
-  const NEXT_PAYER = MEMBERS.length > 2 ? MEMBERS[2] : MEMBERS[0] || { id: '', name: '', initials: '--' };
+  // Rotation/payer/billing derivations removed — there is no rotation or billing
+  // backend, so those values were pure array-index fiction rendered to real
+  // users as "money owed". The billing/rotation UI is gated behind
+  // DashboardComingSoon below; only the real membership features remain.
   const activeGroup = { ...GROUP, name: membership.groupName ?? GROUP.name };
 
   const card = isDark
@@ -258,12 +251,12 @@ export default function MyGroupPage() {
                   </div>
                 </div>
 
-                <div className={`mt-6 p-4 rounded-xl mb-6 ${isDark ? "bg-emerald-500/10 border border-emerald-500/20" : "bg-emerald-50 border border-emerald-200"}`}>
+                <div className={`mt-6 p-4 rounded-xl mb-6 ${isDark ? "bg-white/5 border border-white/10" : "bg-zinc-50 border border-zinc-200"}`}>
                   <div className="flex items-center gap-2 mb-2">
-                    <CheckCircle size={16} weight="fill" className={isDark ? "text-emerald-400" : "text-emerald-600"} />
-                    <p className={`text-sm font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>تفاصيل الدفع (دورة كاملة)</p>
+                    <UsersThree size={16} weight="fill" className={isDark ? "text-emerald-400" : "text-emerald-600"} />
+                    <p className={`text-sm font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>إنشاء المجموعة</p>
                   </div>
-                  <p className={`text-xs leading-relaxed ${isDark ? "text-emerald-400/80" : "text-emerald-700/80"}`}>سيتم سحب 499 ر.س كأول دورة تناوب. ستحصل على رابط الدعوة فوراً لدعوة باقي الأعضاء.</p>
+                  <p className={`text-xs leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>ستحصل على رابط الدعوة فوراً لدعوة باقي الأعضاء. نظام الفوترة والتناوب قيد التطوير — لن يتم سحب أي مبلغ الآن.</p>
                 </div>
 
                 {createError && (
@@ -287,7 +280,7 @@ export default function MyGroupPage() {
                   }}
                   className="w-full py-3 rounded-xl bg-emerald-500 text-white font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 transition-colors"
                 >
-                  <CreditCard size={18} weight="fill" /> ادفع 499 ر.س وأنشئ المجموعة
+                  <UsersThree size={18} weight="fill" /> أنشئ المجموعة
                 </motion.button>
               </motion.div>
             </motion.div>
@@ -350,7 +343,6 @@ export default function MyGroupPage() {
     );
   }
 
-  const isMyTurn = CURRENT_PAYER.id === CURRENT_USER_ID;
   const inviteLink = typeof window !== 'undefined' ? `${window.location.origin}/group/join/${inviteCode || ''}` : '';
 
   const copyLink = () => {
@@ -434,96 +426,12 @@ export default function MyGroupPage() {
           )}
         </AnimatePresence>
 
-        {/* ── Current Payer Hero ── */}
-        <motion.div variants={fadeUp}
-          className={`relative rounded-[1.5rem] border overflow-hidden p-6 ${isDark ? "border-emerald-500/25 bg-gradient-to-br from-emerald-900/40 via-zinc-900/80 to-teal-900/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" : "border-[#0B3D2E]/20 bg-gradient-to-l from-[#0B3D2E] to-[#0d5238] shadow-[0_8px_32px_-8px_rgba(11,61,46,0.5)]"}`}>
-          {/* Noise grain — pointer-events-none fixed pseudo to avoid GPU repaint */}
-          <div className={`absolute inset-0 ${isDark ? "bg-[radial-gradient(ellipse_at_top_right,rgba(16,185,129,0.10),transparent_65%)]" : "opacity-[0.05]"}`} />
-          {isDark && <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(20,184,166,0.06),transparent_70%)]" />}
-          
-          <div className="relative z-10 flex flex-col sm:flex-row items-start justify-between gap-6">
-            {/* Left — payer identity */}
-            <div className="flex items-center gap-4">
-              <div className="relative flex-shrink-0">
-                <Avatar initials={CURRENT_PAYER.initials} size="lg" glow isDark={isDark} />
-                <motion.span animate={{ scale:[1,1.2,1] }} transition={{ repeat:Infinity, duration:2 }}
-                  className={`absolute -top-1 -left-1 w-4 h-4 rounded-full bg-emerald-400 border-2 ${isDark ? "border-zinc-950" : "border-[#0B3D2E]"}`} />
-              </div>
-              <div>
-                <p className={`text-[11px] font-semibold tracking-wider uppercase mb-1 ${isDark ? "text-emerald-400/80" : "text-emerald-300/70"}`}>عليه الدور هذا الشهر</p>
-                <p className="text-2xl font-bold text-white leading-tight">{CURRENT_PAYER.name}</p>
-                <div className="flex items-center gap-1.5 mt-2">
-                  <Clock size={13} className="text-amber-400 flex-shrink-0" />
-                  <p className={`text-[13px] ${isDark ? "text-zinc-300" : "text-emerald-100/70"}`}>آخر موعد: <span className="text-amber-300 font-semibold">٣ فبراير ٢٠٢٦</span></p>
-                </div>
-                <p className={`text-[11px] mt-1.5 flex items-center gap-1 ${isDark ? "text-zinc-400" : "text-emerald-100/60"}`}>
-                  <Warning size={11} className="text-amber-500 flex-shrink-0" />
-                  بعد ٣ أيام ينتقل الدور تلقائياً لـ <span className={`font-medium ${isDark ? "text-zinc-200" : "text-white"}`}>{NEXT_PAYER.name}</span>
-                </p>
-              </div>
-            </div>
-
-            {/* Right — amount + CTA */}
-            <div className="text-right flex-shrink-0">
-              <p className={`text-[11px] font-medium mb-1 ${isDark ? "text-zinc-500" : "text-emerald-200/60"}`}>المبلغ المستحق</p>
-              <p className="text-[2.5rem] font-black text-white font-mono leading-none">
-                {GROUP.totalCost}
-                <span className={`text-base font-semibold mr-1.5 ${isDark ? "text-zinc-400" : "text-emerald-300/80"}`}>ر.س</span>
-              </p>
-              <p className={`text-[11px] mt-1.5 ${isDark ? "text-emerald-400/80" : "text-emerald-200"}`}>
-                للمجموعة كاملةً · <span className="font-mono">{GROUP.perPerson}</span> ر.س متوسط/شخص
-              </p>
-              {isMyTurn ? (
-                <motion.button whileHover={{ scale:1.04, y:-2 }} whileTap={{ scale:0.97 }} transition={sp}
-                  className="mt-4 flex items-center gap-2 px-6 py-2.5 rounded-[1rem] bg-emerald-500 text-white font-bold text-sm hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20">
-                  <CreditCard size={18} weight="bold" /> ادفع الآن
-                </motion.button>
-              ) : (
-                <motion.button whileHover={{ scale:1.04, y:-2 }} whileTap={{ scale:0.97 }} transition={sp}
-                  className={`mt-4 flex items-center gap-2 px-5 py-2.5 rounded-[1rem] border font-medium text-sm transition-colors ${isDark ? "border-white/10 bg-white/[0.06] text-zinc-200 hover:bg-white/[0.10]" : "border-white/20 bg-white/10 text-white hover:bg-white/20 backdrop-blur-sm"}`}>
-                  <PaperPlaneTilt size={16} /> تذكير واتساب
-                </motion.button>
-              )}
-            </div>
-          </div>
-        </motion.div>
-
-        {/* ── Rotation Timeline ── */}
-        <motion.div variants={fadeUp} className={`${card} p-6`}>
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <Repeat size={18} className={isDark ? "text-zinc-400" : "text-zinc-500"} />
-              <p className={`text-sm font-semibold ${isDark ? "text-white" : "text-zinc-900"}`}>دورة التناوب</p>
-            </div>
-            <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>كل شهر يدور الدور تلقائياً</p>
-          </div>
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {ROTATION.map((r, i) => {
-              const isPaid    = r.status === "paid";
-              const isCurrent = r.status === "current";
-              const isUpcoming= r.status === "upcoming";
-              return (
-                <motion.div key={i} initial={{ opacity:0, scale:0.9 }} animate={{ opacity:1, scale:1 }} transition={{ ...sp, delay:i*0.06 }}
-                  className={`flex-shrink-0 rounded-xl border p-4 min-w-[148px] space-y-2 ${
-                    isCurrent ? (isDark ? "border-emerald-500/30 bg-emerald-500/5" : "border-emerald-200 bg-emerald-50") :
-                    isPaid    ? (isDark ? "border-white/10 bg-white/[0.02]" : "border-zinc-200 bg-zinc-50") :
-                                (isDark ? "border-white/5 bg-transparent opacity-50" : "border-zinc-100 bg-transparent opacity-60")
-                  }`}>
-                  <div className="flex items-center justify-between">
-                    <span className={`text-[11px] font-medium ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{r.month}</span>
-                    {isPaid    && <CheckCircle size={14} weight="fill" className={isDark ? "text-emerald-400" : "text-emerald-500"} />}
-                    {isCurrent && <motion.span animate={{ scale:[1,1.3,1] }} transition={{ repeat:Infinity, duration:1.5 }}><Clock size={14} className={isDark ? "text-amber-400" : "text-amber-500"} /></motion.span>}
-                    {isUpcoming&& <Clock size={14} className={isDark ? "text-zinc-600" : "text-zinc-400"} />}
-                  </div>
-                  <Avatar initials={MEMBERS.find(m=>m.id===r.memberId)?.initials ?? "--"} size="sm" isDark={isDark} />
-                  <p className={`text-xs font-medium leading-tight ${isDark ? "text-white" : "text-zinc-800"}`}>{r.memberName}</p>
-                  <p className={`text-[11px] font-mono ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{r.amount} ر.س</p>
-                  {isCurrent && <span className={`text-[10px] px-2 py-0.5 rounded-full border block text-center ${isDark ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-600 border-amber-200"}`}>جارٍ</span>}
-                  {isPaid    && <span className={`text-[10px] px-2 py-0.5 rounded-full border block text-center ${isDark ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-600 border-emerald-200"}`}>مدفوع</span>}
-                </motion.div>
-              );
-            })}
-          </div>
+        {/* ── Billing & rotation — no backend yet, gated honestly ── */}
+        <motion.div variants={fadeUp}>
+          <DashboardComingSoon
+            title="نظام التناوب والدفع الجماعي"
+            description="إدارة دورة الدفع الشهرية بين أعضاء المجموعة قيد التطوير. حالياً يمكنك إنشاء المجموعة ودعوة الأعضاء فقط — لا توجد فوترة فعلية بعد."
+          />
         </motion.div>
 
         {/* ── Members List ── */}
@@ -532,70 +440,39 @@ export default function MyGroupPage() {
           <div className="flex items-center justify-between">
             <p className={`text-sm font-semibold ${isDark ? "text-white" : "text-zinc-900"}`}>أعضاء المجموعة</p>
             <div className={`flex items-center gap-1.5 text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
-              <ChartBar size={13} />
-              <span>استهلاك الاستفسارات:&nbsp;
-                <span className={`font-mono font-semibold ${isDark ? "text-white" : "text-zinc-800"}`}>{GROUP.totalUsed}/{GROUP.totalQuota}</span>
-              </span>
+              <UsersThree size={13} />
+              <span className={`font-mono font-semibold ${isDark ? "text-white" : "text-zinc-800"}`}>{MEMBERS.length}/{GROUP.maxMembers} أعضاء</span>
             </div>
           </div>
 
           {/* Members as a clean vertical list */}
           <div className="space-y-2">
             {MEMBERS.map((m, i) => {
-              const isCurrentPayer = m.id === CURRENT_PAYER.id;
-              const isAdmin        = m.role === "admin";
+              const isAdmin = m.role === "admin";
               return (
                 <motion.div
                   key={m.id}
                   initial={{ opacity:0, x: 12 }} animate={{ opacity:1, x:0 }}
                   transition={{ ...sp, delay: i * 0.06 }}
-                  className={[
-                    "flex items-center gap-4 px-4 py-3 rounded-2xl border transition-colors",
-                    isCurrentPayer
-                      ? (isDark ? "border-amber-500/25 bg-amber-500/5" : "border-amber-200 bg-amber-50")
-                      : (isDark ? "border-white/8 bg-white/[0.025] hover:bg-white/[0.04]" : "border-zinc-200 bg-white hover:bg-zinc-50 shadow-sm"),
-                  ].join(" ")}
+                  className={`flex items-center gap-4 px-4 py-3 rounded-2xl border transition-colors ${isDark ? "border-white/8 bg-white/[0.025] hover:bg-white/[0.04]" : "border-zinc-200 bg-white hover:bg-zinc-50 shadow-sm"}`}
                 >
                   {/* Avatar */}
                   <div className="relative flex-shrink-0">
-                    <Avatar initials={m.initials} size="md" glow={isCurrentPayer} isDark={isDark} />
-                    {isCurrentPayer && (
-                      <motion.div
-                        animate={{ scale:[1,1.25,1] }} transition={{ repeat:Infinity, duration:2 }}
-                        className={`absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-amber-400 border-2 ${isDark ? "border-zinc-950" : "border-white"}`}
-                      />
-                    )}
+                    <Avatar initials={m.initials} size="md" isDark={isDark} />
                   </div>
 
-                  {/* Name + badges */}
+                  {/* Name + role */}
                   <div className="flex-1 min-w-0">
                     <p className={`text-[15px] font-semibold leading-tight truncate ${isDark ? "text-white" : "text-zinc-900"}`}>{m.name}</p>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      {isAdmin && (
+                      {isAdmin ? (
                         <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-medium ${isDark ? "bg-amber-500/10 border-amber-500/20 text-amber-400" : "bg-amber-50 border-amber-200 text-amber-600"}`}>
                           <Crown size={9} weight="fill" /> مدير
                         </span>
-                      )}
-                      {isCurrentPayer && (
-                        <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-medium ${isDark ? "bg-amber-500/15 border-amber-400/30 text-amber-300" : "bg-amber-100 border-amber-300 text-amber-700"}`}>
-                          دوره الآن
-                        </span>
-                      )}
-                      {m.skippedTurns > 0 && (
-                        <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-medium ${isDark ? "bg-rose-500/10 border-rose-500/20 text-rose-400" : "bg-rose-50 border-rose-200 text-rose-600"}`}>
-                          تخطّى {m.skippedTurns} {m.skippedTurns === 1 ? "مرة" : "مرات"}
-                        </span>
-                      )}
-                      {!isCurrentPayer && !isAdmin && m.skippedTurns === 0 && (
+                      ) : (
                         <span className={`text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-500"}`}>عضو</span>
                       )}
                     </div>
-                  </div>
-
-                  {/* Rotation index badge */}
-                  <div className="flex-shrink-0 text-left">
-                    <p className={`text-[10px] mb-0.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>الدور رقم</p>
-                    <p className={`text-sm font-bold font-mono text-center ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{m.rotationIndex + 1}</p>
                   </div>
                 </motion.div>
               );
@@ -622,24 +499,8 @@ export default function MyGroupPage() {
           </div>
         </motion.div>
 
-        {/* ── Group Stats Row ── */}
-        <motion.div variants={fadeUp} className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { label:"إجمالي الاستفسارات", val:`${GROUP.totalUsed}/${GROUP.totalQuota}`, icon:ChartBar, color: isDark ? "text-blue-400" : "text-blue-600", bg: isDark ? "bg-blue-500/10" : "bg-blue-50" },
-            { label:"استشارات متبقية", val:`${GROUP.lawyerConsultsLeft}/شهر`,       icon:Gavel,       color: isDark ? "text-emerald-400" : "text-emerald-600", bg: isDark ? "bg-emerald-500/10" : "bg-emerald-50" },
-            { label:"التكلفة/شخص",        val:"99 ر.س",                  icon:CreditCard,  color: isDark ? "text-amber-400" : "text-amber-600", bg: isDark ? "bg-amber-500/10" : "bg-amber-50" },
-            { label:"قضية السنة الجماعية",  val:GROUP.caseUsed ? "مُستخدمة" : "متاحة", icon:Star, color:GROUP.caseUsed ? "text-zinc-500" : (isDark ? "text-purple-400" : "text-purple-600"), bg: GROUP.caseUsed ? (isDark ? "bg-zinc-800" : "bg-zinc-100") : (isDark ? "bg-purple-500/10" : "bg-purple-50") },
-          ].map((s,i) => (
-            <motion.div key={i} initial={{ opacity:0, scale:0.95 }} animate={{ opacity:1, scale:1 }} transition={{ ...sp, delay:i*0.06 }}
-              className={`${card} p-4 space-y-2 flex flex-col items-start`}>
-              <div className={`w-8 h-8 rounded-lg ${s.bg} flex items-center justify-center mb-1`}>
-                <s.icon size={16} className={s.color} weight="duotone" />
-              </div>
-              <p className={`text-xl font-bold font-mono ${isDark ? "text-white" : "text-zinc-900"}`}>{s.val}</p>
-              <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{s.label}</p>
-            </motion.div>
-          ))}
-        </motion.div>
+        {/* Group Stats Row removed — quota/cost/consults were DEFAULT_GROUP
+            constants (0/100, 99 ر.س, 1/شهر), not real group data. */}
       </motion.div>
     </div>
   );

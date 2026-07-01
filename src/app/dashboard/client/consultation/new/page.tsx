@@ -21,6 +21,7 @@ import { createPaymentIntentStub } from "@/lib/paymentAdapter";
 import { getClientServiceById, getConsultationModeServiceId } from "@/lib/pricingRepository";
 import { LEGAL_BRANCHES_REGULAR } from "@/components/draft/draftConstants";
 import { getLawyerById, type LawyerProfile } from "@/lib/services/lawyerService";
+import { uploadDocumentFile } from "@/lib/services/documentService";
 
 import {
   type ConsultPath,
@@ -177,9 +178,25 @@ export default function NewConsultationPage() {
         lawyerName: selectedLawyer?.name ?? null,
         paymentIntentId: paymentIntent.id,
         paymentProvider: paymentIntent.provider,
+        attachmentCount: attachments.length,
       },
       auditEvent: "client_consultation_created",
     });
+    // Upload attachments AFTER the request is created. createWorkflowRequest now
+    // throws on API failure, so files are never uploaded against a request that
+    // doesn't exist (no orphaned blobs). Best-effort: on failure the request
+    // still exists and the user can attach documents later from the documents
+    // page. Previously these File[] were collected but never uploaded — silent
+    // data loss on navigation.
+    if (attachments.length > 0) {
+      try {
+        for (const file of attachments) {
+          await uploadDocumentFile(file, { requestId: request.id });
+        }
+      } catch (err) {
+        console.error("[consultation] attachment upload failed:", err);
+      }
+    }
     setRequestId(request.id);
     setConfirmed(true);
   };

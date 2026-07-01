@@ -379,7 +379,7 @@ export function MyRequestsTab({
             <div className={`${card} p-12 text-center`}>
               <UserCircle size={48} className={`mx-auto mb-4 opacity-30 ${muted}`} weight="duotone" />
               <p className={`font-semibold mb-4 ${isDark ? "text-gray-300" : "text-gray-600"}`}>لم تطلب محامياً بعينه بعد</p>
-              <Link href="/lawyers/browse"
+              <Link href="/services/lawyers"
                 className="inline-flex items-center gap-2 px-6 py-3 bg-[#0B3D2E] text-white font-bold rounded-xl text-sm">
                 <UserCircle size={16} /> تصفح المحامين
               </Link>
@@ -437,7 +437,7 @@ export function MyRequestsTab({
                           </button>
                         )}
                         {req.status === "declined" && (
-                          <Link href="/lawyers/browse"
+                          <Link href="/services/lawyers"
                             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border transition ${
                               isDark ? "border-[#2d3748] text-gray-300" : "border-gray-200 text-gray-600"
                             }`}>

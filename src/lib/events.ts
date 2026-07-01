@@ -84,9 +84,9 @@ export type RequestEventName = typeof RequestEvent[keyof typeof RequestEvent];
  * strings also pass through (callers should log a warning) so audit data is
  * never silently dropped.
  *
- * Shared by `src/app/api/client-workflow/_supabase.ts` and
- * `src/app/api/v1/service-requests/[id]/events/route.ts` to keep n8n routing
- * consistent across every insert site.
+ * Used by `src/app/api/v1/service-requests/[id]/events/route.ts` (and the other
+ * service-request insert sites) to keep n8n routing consistent across every
+ * insert site.
  */
 export function namespaceEvent(raw: string | undefined, fallback: string): string {
   if (!raw) return fallback;

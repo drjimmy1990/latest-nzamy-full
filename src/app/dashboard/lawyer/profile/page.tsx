@@ -44,30 +44,31 @@ import {
 } from "../_data/analytics";
 
 
-const MOCK_PROFILE = {
-  name: "أ. محمد العتيبي",
+// Honest empty defaults. In supabase mode the effect below overwrites the
+// identity/professional fields with the authenticated lawyer's real
+// profiles + lawyer_profiles rows; on fetch failure or in demo mode these
+// blanks render — never a fabricated identity or a false "verified" seal.
+const EMPTY_PROFILE = {
+  name: "",
   title: "محامٍ ومستشار قانوني",
-  specialty: "قانون تجاري وعقود",
-  city: "الرياض",
-  phone: "+966 50 123 4567",
-  email: "mohammed@nzamy.sa",
-  barNumber: "SA-2019-00482",
-  yearsExp: 7,
-  casesWon: 143,
-  rating: 4.8,
-  reviewCount: 89,
-  verified: true,
-  bio: "محامٍ معتمد من وزارة العدل السعودية، متخصص في القانون التجاري وصياغة العقود التجارية وقضايا الشركات. خبرة 7 سنوات في تمثيل الشركات والأفراد أمام محاكم المملكة العربية السعودية بجميع درجاتها.",
-  expertise: ["قانون تجاري", "عقود الشركات", "النزاعات التجارية", "نظام العمل", "التحكيم التجاري"],
-  languages: ["العربية", "الإنجليزية"],
-  education: [
-    { degree: "بكالوريوس القانون", institution: "جامعة الملك سعود", year: "2017" },
-    { degree: "دبلوم القانون التجاري", institution: "معهد الإدارة العامة", year: "2019" },
-  ],
-  courts: ["المحكمة التجارية بالرياض", "محكمة الاستئناف", "المحكمة العامة"],
-  linkedin: "linkedin.com/in/mohammed",
-  twitter: "@mo_lawyer",
-  website: "mohammed-law.sa",
+  specialty: "",
+  city: "",
+  phone: "",
+  email: "",
+  barNumber: "",
+  yearsExp: 0,
+  casesWon: 0,
+  rating: 0,
+  reviewCount: 0,
+  verified: false,
+  bio: "",
+  expertise: [] as string[],
+  languages: ["العربية"],
+  education: [] as { degree: string; institution: string; year: string }[],
+  courts: [] as string[],
+  linkedin: "",
+  twitter: "",
+  website: "",
 };
 
 const ACHIEVEMENTS = [
@@ -131,30 +132,54 @@ function getNpsTier(nps: number) {
 export default function LawyerProfilePage() {
   const { isDark } = useTheme();
   const user = useUser();
-  const [profileData, setProfileData] = useState(MOCK_PROFILE);
+  const [profileData, setProfileData] = useState(EMPTY_PROFILE);
+
+  type ProfileApiResponse = {
+    profile: {
+      display_name?: string | null;
+      email?: string | null;
+      phone?: string | null;
+      city?: string | null;
+    } | null;
+    roleProfile: {
+      license_number?: string | null;
+      specialties?: string[] | null;
+      years_experience?: number | null;
+      bio_ar?: string | null;
+      city?: string | null;
+      verification_status?: "pending" | "verified" | "rejected" | "suspended" | null;
+    } | null;
+  };
 
   useEffect(() => {
     if (!isSupabaseMode) return;
-    apiGet<{ data: Record<string, unknown> }>("/api/v1/profile")
+    // GET /api/v1/profile returns { profile, roleProfile, subscription } — NOT
+    // { data }. The previous code guarded on res.data (always undefined), so it
+    // never mapped and rendered a fabricated identity + a false "verified" seal.
+    apiGet<ProfileApiResponse>("/api/v1/profile")
       .then((res) => {
-        if (res.data) {
-          const d: any = res.data;
-          setProfileData((prev) => ({
-            ...prev,
-            name: d.name ? String(d.name) : prev.name,
-            title: d.title ? String(d.title) : prev.title,
-            specialty: d.specialty ? String(d.specialty) : prev.specialty,
-            city: d.city ? String(d.city) : prev.city,
-            phone: d.phone ? String(d.phone) : prev.phone,
-            email: d.email ? String(d.email) : prev.email,
-            barNumber: d.bar_number ? String(d.bar_number) : prev.barNumber,
-            yearsExp: d.years_exp ? Number(d.years_exp) : prev.yearsExp,
-            bio: d.bio ? String(d.bio) : prev.bio,
-          }));
-        }
+        const p = res.profile;
+        const r = res.roleProfile;
+        if (!p && !r) return;
+        setProfileData((prev) => ({
+          ...prev,
+          // Identity from `profiles`; honest empties, never a mock identity.
+          name: p?.display_name?.trim() || user.name || "",
+          email: p?.email?.trim() || "",
+          phone: p?.phone?.trim() || "",
+          city: (r?.city ?? p?.city)?.trim() || "",
+          // Professional fields from `lawyer_profiles` (real column names).
+          bio: r?.bio_ar?.trim() || "",
+          barNumber: r?.license_number?.trim() || "",
+          yearsExp: typeof r?.years_experience === "number" ? r.years_experience : 0,
+          expertise: r?.specialties?.length ? r.specialties : [],
+          specialty: r?.specialties?.length ? r.specialties[0] : "",
+          // Verified seal driven by the REAL status, never hardcoded true.
+          verified: r?.verification_status === "verified",
+        }));
       })
-      .catch(() => { /* keep MOCK_PROFILE as fallback */ });
-  }, []);
+      .catch(() => { /* leave placeholders; never fall back to a mock identity */ });
+  }, [user.name]);
   const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
   const [performanceRange, setPerformanceRange] = useState<StatRange>("today");
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("سنة");
@@ -176,7 +201,7 @@ export default function LawyerProfilePage() {
   const performanceContext = getPerformanceContext(user);
   const performanceSnapshot = getPerformanceSnapshot(performanceRange);
   const performanceBenchmarks = getBenchmarks(performanceContext, {
-    city: MOCK_PROFILE.city,
+    city: profileData.city || undefined,
     firmName: user.affiliation?.entityName,
   });
   const benchmarkSummary = getBenchmarkSummary(performanceSnapshot, performanceBenchmarks);

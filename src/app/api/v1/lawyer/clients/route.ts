@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { assertRole } from "@/lib/auth/assertRole";
 
 // Valid DB service_requests.status values that count as "active" for a client.
 const ACTIVE_STATUSES = ["pending_assignment", "assigned", "in_review"];
@@ -13,15 +13,9 @@ const ACTIVE_STATUSES = ["pending_assignment", "assigned", "in_review"];
  */
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await assertRole(["lawyer", "firm"]);
+    if (!auth.ok) return auth.response;
+    const { user, supabase } = auth;
 
     const uid = user.id;
 
@@ -136,15 +130,9 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await assertRole(["lawyer", "firm"]);
+    if (!auth.ok) return auth.response;
+    const { user, supabase } = auth;
 
     const body = await request.json();
     const { name, phone, email, type, flags, rating, totalFees, paidFees } = body as {

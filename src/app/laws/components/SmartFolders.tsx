@@ -40,16 +40,26 @@ export default function SmartFolders({
   const [activeTab, setActiveTab] = useState<"all" | "law" | "book" | "order" | "precedent">("all");
 
   useEffect(() => {
+    // In production, do NOT seed fabricated demo folders — users start with an
+    // empty set unless the demo fallback flag is on (dev/preview). Folders the
+    // user creates still persist to localStorage (API wiring is a follow-up).
+    const seedFolders: SmartFolder[] =
+      process.env.NEXT_PUBLIC_LIB_DEMO_FALLBACK === "1" ||
+      process.env.NODE_ENV !== "production"
+        ? DEMO_FOLDERS
+        : [];
     const saved = localStorage.getItem("nzamy_smart_folders");
     if (saved) {
       try {
         setFolders(JSON.parse(saved));
       } catch {
-        setFolders(DEMO_FOLDERS);
+        setFolders(seedFolders);
       }
     } else {
-      setFolders(DEMO_FOLDERS);
-      localStorage.setItem("nzamy_smart_folders", JSON.stringify(DEMO_FOLDERS));
+      setFolders(seedFolders);
+      if (seedFolders.length > 0) {
+        localStorage.setItem("nzamy_smart_folders", JSON.stringify(seedFolders));
+      }
     }
     setExpandedId("default-daily");
     setIsMounted(true);

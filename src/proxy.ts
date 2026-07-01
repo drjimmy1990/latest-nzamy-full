@@ -27,7 +27,10 @@ const PROTECTED = [
   "/onboarding",
 ];
 
-
+// ─── Protected API prefixes (require an authenticated session) ─────────────────
+// Defense-in-depth: unauthenticated hits get a JSON 401 here; per-endpoint role
+// authorization (lawyer/firm/admin) is enforced by assertRole() in the handlers.
+const PROTECTED_API = ["/api/v1/lawyer", "/api/v1/admin", "/api/v1/firm"];
 
 // ─── Deprecated route redirects ────────────────────────────────────────────────
 const REDIRECTS: Record<string, string> = {
@@ -51,6 +54,34 @@ export default async function proxy(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = REDIRECTS[pathname];
     return NextResponse.redirect(url, 301);
+  }
+
+  // 1b. Protect sensitive API prefixes with a middleware-level JSON 401 when the
+  //     session is missing (defense-in-depth on top of the handler assertRole()).
+  if (isSupabaseMode && PROTECTED_API.some((p) => pathname.startsWith(p))) {
+    const apiResponse = NextResponse.next({ request: req });
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return req.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
+            cookiesToSet.forEach(({ name, value, options }) =>
+              apiResponse.cookies.set(name, value, options),
+            );
+          },
+        },
+      },
+    );
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiResponse;
   }
 
   // 2. Check if route requires authentication

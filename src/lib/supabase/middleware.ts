@@ -5,7 +5,9 @@ import { NextResponse, type NextRequest } from 'next/server';
  * Refreshes the user's auth session on every request.
  * This ensures the JWT token doesn't expire while the user is active.
  *
- * Called from `middleware.ts` at the project root.
+ * NOTE: This helper is currently unused — this project's active middleware is
+ * `src/proxy.ts` (Next.js 16 renamed `middleware` → `proxy`), which inlines its
+ * own session refresh + route protection. Kept for reference.
  *
  * Usage in middleware.ts:
  * ```ts

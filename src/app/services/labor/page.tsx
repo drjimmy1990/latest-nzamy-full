@@ -171,7 +171,7 @@ export default function LaborServicePage() {
                   <ArrowLeft size={18} weight="bold" />
                 </Link>
                 <Link
-                  href="/lawyers/browse"
+                  href="/services/lawyers"
                   className="inline-flex items-center gap-2 px-7 py-3.5 border border-white/20 text-white rounded-xl text-sm font-medium hover:bg-white/10 transition-colors"
                 >
                   تصفح محامين عماليين

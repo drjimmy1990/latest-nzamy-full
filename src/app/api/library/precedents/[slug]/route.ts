@@ -30,9 +30,14 @@ export async function GET(
     const { data: { user } } = await supabase.auth.getUser();
     const userId = user?.id || null;
 
-    // Check library access
-    const access = await checkLibraryAccess(userId, slug, 0, "principles");
-    const hasAccess = access.allowed || access.isWhitelisted;
+    // Check library access — probe once for freeLimit/tier, then gate EACH
+    // principle by its own enumeration index below. (Probing at index 0 and
+    // treating access.allowed as a document-level gate unlocked the whole
+    // collection for guests — the bug.)
+    const probe = await checkLibraryAccess(userId, slug, 0, "principles");
+    const isWhitelisted = probe.isWhitelisted;
+    const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
+    const hasFullAccess = freeLimit === -1 || isWhitelisted;
 
     // Fetch principles with paragraphs
     const { data: principles } = await supabase
@@ -58,10 +63,19 @@ export async function GET(
       description: collection.description,
       rulingCount: collection.ruling_count,
       free: collection.free,
-      principles: (principles || []).map((p: Record<string, unknown>) => {
+      paywall: {
+        isWhitelisted,
+        freeLimit,
+        hasFullAccess,
+        totalItems: principles?.length ?? 0,
+      },
+      principles: (principles || []).map((p: Record<string, unknown>, idx: number) => {
+        const isLocked = !hasFullAccess && freeLimit !== -1 && idx >= freeLimit;
         const paragraphs = p.principle_paragraphs as Record<string, unknown>[];
         const truncate = (val: unknown, len: number) =>
-          typeof val === 'string' && !hasAccess ? val.substring(0, len) + '...' : val;
+          typeof val === 'string'
+            ? val.substring(0, len) + (val.length > len ? '...' : '')
+            : val;
         return {
           id: p.id,
           number: p.principle_number,
@@ -69,24 +83,28 @@ export async function GET(
           session_date: p.session_date,
           decision_number: p.decision_number,
           reference: p.reference,
-          text: hasAccess ? p.text : truncate(p.text, 150),
-          locked: !hasAccess,
-          paragraphs: (paragraphs || [])
-            .sort((a, b) => (a.order_index as number) - (b.order_index as number))
-            .map((pg) => ({
-              letter: pg.letter,
-              text: hasAccess ? pg.text : truncate(pg.text, 150),
-              keywords: pg.keywords || [],
-            })),
-          details: hasAccess ? {
+          text: isLocked ? truncate(p.text, 150) : p.text,
+          locked: isLocked,
+          lockedMessage: isLocked ? 'يتطلب اشتراك Pro أو أعلى لعرض المبدأ كاملاً' : undefined,
+          // Locked principles: paragraphs & details are withheld from the payload.
+          paragraphs: isLocked
+            ? []
+            : (paragraphs || [])
+                .sort((a, b) => (a.order_index as number) - (b.order_index as number))
+                .map((pg) => ({
+                  letter: pg.letter,
+                  text: pg.text,
+                  keywords: pg.keywords || [],
+                })),
+          details: isLocked ? null : {
             ruling_basis: p.ruling_basis,
             facts: p.facts,
             reasons: p.reasons,
             ruling: p.ruling,
-          } : null,
+          },
         };
       }),
-      hasAccess,
+      hasAccess: hasFullAccess, // legacy field kept for existing client checks
     };
 
     return NextResponse.json(response);

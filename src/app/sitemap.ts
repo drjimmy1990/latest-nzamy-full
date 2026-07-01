@@ -1,4 +1,5 @@
 import { MetadataRoute } from "next";
+import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 
 const BASE_URL = "https://nezamy.online";
 
@@ -94,7 +95,12 @@ const publicRoutes: SitemapRoute[] = [
 export default function sitemap(): MetadataRoute.Sitemap {
   const today = new Date().toISOString().split("T")[0];
 
-  return publicRoutes.map(({ url, priority, changeFrequency }) => ({
+  // The multi-vendor lawyer directory is hidden during single-firm beta.
+  const routes = BETA_MONOPOLY_MODE
+    ? publicRoutes.filter((r) => r.url !== "/lawyers" && r.url !== "/lawyers/browse")
+    : publicRoutes;
+
+  return routes.map(({ url, priority, changeFrequency }) => ({
     url: `${BASE_URL}${url}`,
     lastModified: today,
     changeFrequency,

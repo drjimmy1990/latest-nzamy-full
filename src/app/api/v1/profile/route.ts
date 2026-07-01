@@ -87,8 +87,8 @@ export async function PATCH(request: Request) {
 
   const body = await request.json();
 
-  // Allowlist of updatable fields
-  const allowedFields = [
+  // profiles allowlist (+ city).
+  const profileFields = [
     "display_name",
     "display_name_en",
     "phone",
@@ -97,35 +97,79 @@ export async function PATCH(request: Request) {
     "calendar_type",
     "theme",
     "country_code",
+    "city",
+  ];
+  // lawyer_profiles allowlist (real column names from the 20260603 schema).
+  // NOTE: verification_status is intentionally NOT self-editable (admin-only) —
+  // self-verification would be a trust-badge bypass.
+  const lawyerFields = [
+    "bio_ar",
+    "bio_en",
+    "specialties",
+    "years_experience",
+    "hourly_rate",
+    "license_number",
+    "bar_association",
+    "city",
+    "marketplace_visible",
+    "is_accepting_clients",
   ];
 
-  const updates: Record<string, unknown> = {};
-  for (const key of allowedFields) {
-    if (key in body) {
-      updates[key] = body[key];
-    }
-  }
+  const profileUpdates: Record<string, unknown> = {};
+  for (const key of profileFields) if (key in body) profileUpdates[key] = body[key];
 
-  if (Object.keys(updates).length === 0) {
+  const lawyerUpdates: Record<string, unknown> = {};
+  for (const key of lawyerFields) if (key in body) lawyerUpdates[key] = body[key];
+
+  if (
+    Object.keys(profileUpdates).length === 0 &&
+    Object.keys(lawyerUpdates).length === 0
+  ) {
     return NextResponse.json(
       { error: "No valid fields to update" },
       { status: 400 },
     );
   }
 
-  const { data, error } = await supabase
+  // Determine user_type to route role-profile updates (mirrors GET).
+  const { data: baseProfile, error: baseErr } = await supabase
     .from("profiles")
-    .update(updates)
+    .select("user_type")
     .eq("id", user.id)
-    .select()
     .single();
-
-  if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
+  if (baseErr || !baseProfile) {
+    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ profile: data });
+  let profile = null;
+  if (Object.keys(profileUpdates).length > 0) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .update(profileUpdates)
+      .eq("id", user.id)
+      .select()
+      .single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    profile = data;
+  }
+
+  let roleProfile = null;
+  if (Object.keys(lawyerUpdates).length > 0) {
+    if (baseProfile.user_type !== "lawyer") {
+      return NextResponse.json(
+        { error: "Role fields not allowed for this account type" },
+        { status: 403 },
+      );
+    }
+    const { data, error } = await supabase
+      .from("lawyer_profiles")
+      .update(lawyerUpdates)
+      .eq("user_id", user.id)
+      .select()
+      .single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    roleProfile = data;
+  }
+
+  return NextResponse.json({ profile, roleProfile });
 }

@@ -395,12 +395,7 @@ export default function LegalLibraryPage() {
         type: "laws",
         subType: "basic"
       }))
-    : [
-        { id: "sys-1", slug: "civil-transactions", title: "نظام المعاملات المدنية", titleEn: "Civil Transactions Law", desc: "القانون المدني السعودي الشامل المنظم للعقود والالتزامات والمسؤولية التقصيرية والممتلكات.", descEn: "The comprehensive Saudi civil code regulating contracts, obligations, tort liability, and property rights.", free: true, progress: 60, articlesCount: 720, chaptersCount: 3, lastUpdated: "١٤٤٦/٥/١٢هـ", cat: "SA-03", type: "laws", subType: "basic" },
-        { id: "sys-2", slug: "commercial-courts", title: "نظام المحاكم التجارية", titleEn: "Commercial Courts Law", desc: "تنظيم اختصاصات وإجراءات المحاكم التجارية ونظر الدعاوى والطلبات المتعلقة بالتجار.", descEn: "Regulating the jurisdiction, rules, and procedures of commercial courts for merchants and companies.", free: true, progress: 20, articlesCount: 96, chaptersCount: 2, lastUpdated: "١٤٤٥/١٠/٨هـ", cat: "SA-04", type: "laws", subType: "basic" },
-        { id: "sys-3", slug: "labor-law", title: "نظام العمل السعودي", titleEn: "Saudi Labor Law", desc: "تنظيم العلاقة التعاقدية بين صاحب العمل والعامل وحقوق الطرفين والنزاعات العمالية.", descEn: "Regulating employer-employee contracts, statutory rights, working hours, and labor disputes resolution.", free: true, progress: 0, articlesCount: 245, chaptersCount: 4, lastUpdated: "١٤٤٦/٢/١هـ", cat: "SA-04", type: "laws", subType: "basic" },
-        { id: "sys-4", slug: "companies-law", title: "نظام الشركات الجديد", titleEn: "New Companies Law", desc: "تنظيم شركات المساهمة والمحدودة والتضامن وحوكمتها وقواعد الاندماج والاستحواذ.", descEn: "Regulating joint-stock, LLCs, partnerships, corporate governance, mergers, and acquisitions.", free: true, progress: 0, articlesCount: 282, chaptersCount: 5, lastUpdated: "١٤٤٥/١٢/٢٢هـ", cat: "SA-04", type: "laws", subType: "basic" }
-      ]) as any[];
+    : []) as any[]; // honest empty state — no fabricated laws in prod (mirrors the gated DEMO_* lists)
 
   const ordersList = (dbDecrees.length > 0
     ? dbDecrees.map((d: any) => ({

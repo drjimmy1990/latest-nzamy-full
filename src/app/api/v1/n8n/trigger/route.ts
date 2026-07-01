@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
+import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { RequestEvent, type RequestEventName } from "@/lib/events";
 
 /**
  * POST /api/v1/n8n/trigger
  *
- * F7 — n8n readiness. Assembles a webhook payload for a service request and
- * LOGS it. Does NOT make any outbound HTTP call — n8n is not yet wired. This
- * endpoint exists so the frontend can call it now and the payload shape is
- * stable by the time n8n is connected.
+ * Assembles a webhook payload for a service request and dispatches it to n8n
+ * (best-effort). The dispatch is INERT — no outbound call — while
+ * N8N_WEBHOOK_BASE_URL is unset, so the payload shape stays stable and this is
+ * safe to call before n8n is connected.
  *
  * Body: { requestId: string, event?: string }
- * Response (200): { data: WebhookPayload, delivered: false, note: string }
+ * Response (200): { data: WebhookPayload, delivered: boolean, note: string }
  * Errors: 400 (missing requestId), 401 (unauth), 404 (row not found).
  */
 export async function POST(request: NextRequest) {
@@ -81,14 +82,17 @@ export async function POST(request: NextRequest) {
     actor: actorProfile as unknown as Record<string, unknown> | null,
   });
 
-  // Log the assembled payload — this is the "delivery" surface until n8n is wired.
-  console.log("[n8n trigger] payload:", JSON.stringify(payload));
+  // Best-effort outbound dispatch to n8n. Inert (no network call) while
+  // N8N_WEBHOOK_BASE_URL is unset; never throws.
+  const { delivered } = await dispatchToN8n(event, payload);
 
   return NextResponse.json(
     {
       data: payload,
-      delivered: false,
-      note: "n8n not yet wired — payload assembled only",
+      delivered,
+      note: delivered
+        ? "dispatched to n8n"
+        : "n8n dispatch skipped (unset base URL or unmapped event)",
     },
     { status: 200 },
   );

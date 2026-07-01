@@ -111,7 +111,7 @@ export default function CasesServicePage() {
                 <CalendarCheck size={18} weight="bold" />
               </Link>
               <Link
-                href="/lawyers/browse"
+                href="/services/lawyers"
                 className="inline-flex items-center gap-2 px-6 py-3 border border-slate-200 text-ink rounded-xl text-sm font-semibold transition-all duration-300 hover:border-royal/30 hover:bg-royal/5 active:scale-[0.98]"
               >
                 تصفح المحامين

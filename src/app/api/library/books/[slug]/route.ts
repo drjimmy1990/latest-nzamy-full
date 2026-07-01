@@ -35,8 +35,14 @@ export async function GET(
     const { data: { user } } = await supabase.auth.getUser();
     const userId = user?.id || null;
 
-    // Check library access (using book id as slug, article 0 for initial check)
-    const access = await checkLibraryAccess(userId, slug, 0, "feqh");
+    // Check library access — probe once for freeLimit/tier, then gate EACH block
+    // by its own order_index below. (Treating access.allowed as a document-level
+    // gate unlocked the whole book for guests — the bug. order_index is
+    // pagination- and section-filter-independent, unlike a per-page loop index.)
+    const probe = await checkLibraryAccess(userId, slug, 0, "feqh");
+    const isWhitelisted = probe.isWhitelisted;
+    const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
+    const hasFullAccess = freeLimit === -1 || isWhitelisted;
 
     // Fetch full TOC (chapters with sections, no blocks for performance)
     const { data: chapters } = await supabase
@@ -109,21 +115,30 @@ export async function GET(
               })),
           };
         }),
-      blocks: (blocks || []).map((b: Record<string, unknown>, idx: number) => {
-        const blockAllowed = access.allowed || access.isWhitelisted;
+      blocks: (blocks || []).map((b: Record<string, unknown>) => {
+        // Gate on the block's own book-global order_index so locking is correct
+        // across pagination pages and section-filtered loads.
+        const isLocked =
+          !hasFullAccess && freeLimit !== -1 && (b.order_index as number) >= freeLimit;
         return {
           id: b.id,
           topic: b.topic,
           vol: b.volume_number,
           page: b.page_number,
-          matn: blockAllowed ? b.matn : (typeof b.matn === 'string' ? b.matn.substring(0, 100) + '...' : b.matn),
-          sharh: blockAllowed ? b.sharh : (typeof b.sharh === 'string' ? b.sharh.substring(0, 100) + '...' : b.sharh),
-          hashiyah: blockAllowed ? b.hashiyah : null,
+          matn: isLocked ? (typeof b.matn === 'string' ? b.matn.substring(0, 100) + (b.matn.length > 100 ? '...' : '') : b.matn) : b.matn,
+          sharh: isLocked ? (typeof b.sharh === 'string' ? b.sharh.substring(0, 100) + (b.sharh.length > 100 ? '...' : '') : b.sharh) : b.sharh,
+          hashiyah: isLocked ? null : b.hashiyah,
           sectionId: b.section_id,
-          locked: !blockAllowed,
+          locked: isLocked,
         };
       }),
-      hasAccess: access.allowed || access.isWhitelisted,
+      paywall: {
+        isWhitelisted,
+        freeLimit,
+        hasFullAccess,
+        totalItems: totalBlocks || 0,
+      },
+      hasAccess: hasFullAccess, // legacy field kept for existing client checks
       pagination: {
         page,
         limit,
