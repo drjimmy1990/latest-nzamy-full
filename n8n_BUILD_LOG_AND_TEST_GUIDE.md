@@ -52,8 +52,8 @@
 | # | الحاوية / Container | ID | الحالة / Status |
 |---|--------------------|-----|----------------|
 | 1 | **Service Requests** (طلبات الخدمة) | `YkvR5SI8ljcSOfuC` | ✅ **مبني** (3 فروع + DUMMY) — WF 2.4 placeholder |
-| 2 | **Onboarding & Verification** (التسجيل والتوثيق) | `5mg451RaFPJXwME4` | ⬜ لم يُبنَ بعد |
-| 3 | **Communication** (التواصل والتذكيرات) | `Y8SnEGaXTC3dboGA` | ⬜ لم يُبنَ بعد |
+| 2 | **Onboarding & Verification** (التسجيل والتوثيق) | `5mg451RaFPJXwME4` | ✅ **مبني** (4 فروع + DUMMY) — 1.2b placeholder |
+| 3 | **Communication** (التواصل والتذكيرات) | `Y8SnEGaXTC3dboGA` | ⛔ مؤجّل — يحتاج Supabase + LLM + Evolution |
 | 4 | **Admin & Moderation** (الإدارة والإشراف) | `vOjQdg5CPgO9naa6` | ⬜ لم يُبنَ بعد |
 | 5 | **Billing & Wallet** (الفوترة والمحفظة) | `nLcTncqGZnSKCOoQ` | ⛔ محجوب على قرار بوابة الدفع |
 | 6 | **AI Legal Tools** (الأدوات الذكية) | `rtj1TC9rd6Ule7am` | ⬜ لم يُبنَ بعد (37 عقدة) |
@@ -89,6 +89,32 @@
 - **الحالة / Status:** ⬜ ما زال placeholder (NoOp). يحتاج **بيانات اعتماد Supabase** في n8n ليستعلم عن الطلبات المتأخّرة (cron كل ساعة). يُبنى لاحقاً.
 
 > **عقدة DUMMY / The DUMMY node:** كل فرع ينتهي بعقدة HTTP اسمها `2.x Deliver ⟶ DUMMY` ترسل `POST` إلى `$env.NZAMY_DELIVERY_URL` (أو placeholder `https://replace-me.invalid/deliver`). مضبوطة `continueOnFail` فلا تُفشل التشغيل. **للتفعيل الحقيقي:** غيّر الرابط إلى Evolution WhatsApp / خدمة البريد، وأضف استعلام Supabase لتحويل `to_user_id` إلى جوال/بريد.
+
+---
+
+## 2ب. ✅ Onboarding & Verification — التسجيل والتوثيق (مبنية جزئياً)
+
+**ID:** `5mg451RaFPJXwME4` · **الرابط / Open:** `https://n8n.asra3.com/workflow/5mg451RaFPJXwME4`
+
+نفس النمط: **Webhook → Compose → Deliver(DUMMY)**. الحمولة المتوقّعة = صفّ الملف الشخصي الجديد (profile row) داخل `body`.
+
+| الفرع / Branch | المسار / Path | ماذا يفعل / Does | الحالة |
+|----------------|---------------|------------------|--------|
+| **1.1 Welcome** | `POST /webhook/new-user` | رسالة ترحيب «مرحباً بك في نظامي» للمستخدم الجديد | ✅ مبني |
+| **1.2a Notify admin** | `POST /webhook/verification` | يُبلّغ الأدمن «طلب توثيق محامٍ جديد» | ✅ مبني |
+| **1.2b Approval callback** | `GET /webhook/lawyer-approval` | يضبط `is_verified` للمحامي (كتابة DB) | ⬜ placeholder — يحتاج **Supabase cred** |
+| **1.3 Firm onboarding** | `POST /webhook/new-firm` | ترحيب بمكتب المحاماة (post-beta) | ✅ مبني |
+| **1.4 Provider** | `POST /webhook/new-provider` | إبلاغ الأدمن بطلب توثيق مزوّد (post-beta) | ✅ مبني |
+
+> **⚠️ مشغّل التسجيل / Signup trigger:** التسجيل يمرّ عبر Supabase Auth (`handle_new_user` DB trigger) لا عبر route في التطبيق — لذلك `/new-user` **لن يُستدعى تلقائياً** بـ app-side push. لتفعيله: إمّا **Supabase DB webhook** على `INSERT profiles` → `/webhook/new-user`، أو ربط استدعاء في تدفّق صفحة التسجيل. أما `/verification` فيمكن استدعاؤه من مسار تقديم التوثيق في التطبيق مستقبلاً.
+
+**اختبار / Test** (نفس أسلوب القسم 4، بحمولة profile):
+```bash
+curl -X POST https://n8n.asra3.com/webhook/new-user \
+  -H "Content-Type: application/json" \
+  -d '{ "id": "user_new_1", "display_name": "سارة", "user_type": "individual", "email": "test@example.com" }'
+```
+المتوقّع: تشغيل ناجح، عقدة Compose تُخرج «أهلاً سارة! …»، وDeliver يحاول الإرسال (DUMMY).
 
 ---
 
@@ -158,11 +184,12 @@ curl -X POST https://n8n.asra3.com/webhook/new-request \
 
 | الأولوية | العنصر / Item | يحتاج / Needs |
 |----------|---------------|---------------|
-| 🥇 التالي | **Onboarding → WF 1.1 Welcome** (ترحيب بالتسجيل) | **مشغّل التسجيل**: التسجيل يمرّ عبر Supabase Auth (`handle_new_user` DB trigger) لا عبر route — فإمّا DB webhook أو ربط في صفحة التسجيل |
-| 🥇 | **Communication → تذكير الاستشارات** (cron 24h/1h) | **بيانات اعتماد Supabase** في n8n (لقراءة المواعيد) + الأعمدة `consultations.reminder_sent/reminder_1h_sent` |
+| ✅ مبني (n8n) | ~~Service Requests~~ + ~~Onboarding (1.1/1.2a/1.3/1.4)~~ | جاهزة بـ DUMMY. Service Requests مربوطة بـ app-push؛ Onboarding يحتاج **مشغّل تسجيل** (DB webhook على `INSERT profiles` أو ربط في صفحة التسجيل) |
+| ⛔ التالي (محجوب على creds) | **Communication** (4.1 triage · 4.2/4.3 reminders) | 4.1: **Evolution + LLM** · 4.2/4.3: **Supabase cred** + الأعمدة `consultations.reminder_sent/reminder_1h_sent` و`cases.hearing_reminder_sent` (migrations معلّقة). بناؤها بـ DUMMY بلا فائدة — تُبنى عند توفّر الـ creds |
 | 🥈 | **Admin & Moderation** (ملخّص يومي، إشراف) | Supabase cred |
 | ⛔ | **Billing & Wallet** | قرار بوابة الدفع (محجوب — الدفع مُعطّل حالياً) |
 | ⬜ | **AI Legal Tools** (18 أداة) | أولوية أقل: مخرجات AI محجوبة بالمراجعة في البيتا |
+| ⬜ | **WF 2.4 + 1.2b** | Supabase cred (استعلام/كتابة DB) |
 
 ---
 
@@ -178,4 +205,5 @@ curl -X POST https://n8n.asra3.com/webhook/new-request \
 
 ## سجل التغييرات / Change log
 
-- **2026-07-06:** بُنيت حاوية Service Requests (فروع 2.1/2.2/2.3 + DUMMY delivery)، ومُدمج app-side push (commit `bb6ba41`). 0 workflows فعّالة بعد. WF 2.4 وبقية الحاويات لم تُبنَ.
+- **2026-07-06:** بُنيت حاوية Service Requests (فروع 2.1/2.2/2.3 + DUMMY delivery)، ومُدمج app-side push (commit `bb6ba41`). 0 workflows فعّالة بعد.
+- **2026-07-06:** بُنيت حاوية Onboarding (فروع 1.1/1.2a/1.3/1.4 + DUMMY، بـ `onError` بلا تحذيرات؛ 1.2b placeholder). Communication مؤجّلة (تحتاج Supabase/LLM/Evolution). كلها ما زالت `inactive`.
