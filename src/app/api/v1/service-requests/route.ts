@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getPaymentGatewayStatus } from "@/lib/access-control";
 import { recordEvent, RequestEvent } from "@/lib/events";
+import { dispatchToN8n } from "@/lib/n8n/dispatch";
+import { buildWebhookPayload } from "@/lib/n8n/payload";
 
 /**
  * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
@@ -177,6 +179,27 @@ export async function POST(request: NextRequest) {
         actorUserId: user.id,
         ...(actorName ? { actorName } : {}),
       });
+    }
+
+    // Best-effort push to n8n (inert unless N8N_WEBHOOK_BASE_URL is set) so the
+    // "new request" notification workflow (/new-request) fires. Never breaks the create.
+    try {
+      const { data: actorProfile } = await supabase
+        .from("profiles")
+        .select("id, display_name, user_type")
+        .eq("id", user.id)
+        .single();
+      await dispatchToN8n(
+        RequestEvent.SERVICE_REQUEST_CREATED,
+        buildWebhookPayload({
+          event: RequestEvent.SERVICE_REQUEST_CREATED,
+          timestamp: new Date().toISOString(),
+          request: serviceRequest as unknown as Record<string, unknown>,
+          actor: actorProfile as unknown as Record<string, unknown> | null,
+        }),
+      );
+    } catch (e) {
+      console.error("[service-requests POST] n8n dispatch failed:", (e as Error).message);
     }
 
     // B2/D7 — Create the payment record if this is a paid request. The payments

@@ -146,6 +146,9 @@ export function buildWebhookPayload(
       receiver: request.receiver ?? null,
       assignedTo: request.assigned_to ?? null,
       requester: request.requester ?? null,
+      // requesterUserId lets n8n target the CLIENT on assigned/completed
+      // notifications (recipient.id resolves to the assignee once assigned).
+      requesterUserId: request.requester_user_id ?? null,
       createdAt: request.created_at ?? null,
     },
   };

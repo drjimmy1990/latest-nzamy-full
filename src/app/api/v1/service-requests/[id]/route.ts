@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { recordEvent, RequestEvent } from "@/lib/events";
+import { dispatchToN8n } from "@/lib/n8n/dispatch";
+import { buildWebhookPayload } from "@/lib/n8n/payload";
 
 /**
  * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
@@ -141,6 +143,27 @@ export async function PATCH(
     event: eventName,
     actorUserId: user.id,
   });
+
+  // Best-effort push to n8n (inert unless N8N_WEBHOOK_BASE_URL is set): dispatch.ts
+  // routes to /request-assigned or /request-completed by the new status. Never breaks the update.
+  try {
+    const { data: actorProfile } = await supabase
+      .from("profiles")
+      .select("id, display_name, user_type")
+      .eq("id", user.id)
+      .single();
+    await dispatchToN8n(
+      eventName,
+      buildWebhookPayload({
+        event: eventName,
+        timestamp: new Date().toISOString(),
+        request: data as unknown as Record<string, unknown>,
+        actor: actorProfile as unknown as Record<string, unknown> | null,
+      }),
+    );
+  } catch (e) {
+    console.error("[service-requests PATCH] n8n dispatch failed:", (e as Error).message);
+  }
 
   return NextResponse.json({ data: toWorkflowRequest(data as unknown as Record<string, unknown>) });
 }

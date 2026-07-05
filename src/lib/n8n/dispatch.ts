@@ -1,11 +1,22 @@
 import type { WebhookPayload } from "./payload";
 
-/** Maps a namespaced RequestEvent → the n8n webhook path segment. */
-const EVENT_PATH: Record<string, string> = {
-  "service_request.created": "new-request",
-  "service_request.status_changed": "request-status", // n8n branches on entity.status
-  "service_request.completed": "request-completed",
-};
+/**
+ * Resolve the n8n webhook path from the event + the request's new status.
+ * Matches the webhook paths on the "NZAMY · Service Requests" workflow:
+ *   /new-request · /request-assigned · /request-completed
+ * A status_changed event only notifies on the transitions that have a branch
+ * (assigned, completed); other status changes return null (no dispatch).
+ */
+function resolvePath(event: string, status: string | undefined): string | null {
+  if (event === "service_request.created") return "new-request";
+  if (event === "service_request.completed") return "request-completed";
+  if (event === "service_request.status_changed") {
+    if (status === "assigned") return "request-assigned";
+    if (status === "completed") return "request-completed";
+    return null;
+  }
+  return null;
+}
 
 /**
  * Best-effort outbound POST to n8n. Never throws — a dispatch failure must not
@@ -21,7 +32,7 @@ export async function dispatchToN8n(
 ): Promise<{ delivered: boolean }> {
   const base = process.env.N8N_WEBHOOK_BASE_URL;
   if (!base) return { delivered: false };
-  const path = EVENT_PATH[event];
+  const path = resolvePath(event, payload.entity?.status);
   if (!path) return { delivered: false };
   try {
     const res = await fetch(`${base.replace(/\/$/, "")}/${path}`, {
