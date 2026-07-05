@@ -43,6 +43,7 @@
 | `TEST_REVIEW_RECONCILIATION.md` | Fix cycle | ✅ | The owner's QA review (109 findings) classified vs our fixes |
 | `TEST_REVIEW_FIX_PLAN.md` | Fix cycle | ✅ | Round-2 remediation spec (§4.1–§4.9, exact code/SQL) |
 | `IMPLEMENTATION_STATUS.md` | Fix cycle | ✅ | Round-2 done-vs-deferred ledger; **current deploy state** |
+| `PROJECT_STATUS_REVIEW_2026-07-06.md` | Fix cycle | ✅ | **Current** full-surface "what's actually left" audit (~411 pages/routes) + prioritized build order |
 | `دليل_اختبار_المالك.md` | Testing | ✅ | Arabic owner test guide (what to re-test on live) |
 | `test/` (folder) | Testing | 📄 | The owner's returned QA review — `README.md` (52 cases), `modifications/` (10 proposed edits), `screenshots/` |
 
@@ -270,4 +271,4 @@
 
 ---
 
-> **Trust hierarchy when docs conflict:** for the **production-fix cycle / current deploy state**, `IMPLEMENTATION_STATUS.md` + the §I set win (they're the newest, 2026-07-05). For everything else, `nzamy-audit-fix-status.md` + `NEXT_STEPS.md` + `ARCHITECTURE.md` + `n8n_master_guide_latest.md` are the source of truth. `project_reference.md`, `client_dashboard_audit.md`, and the three superseded n8n docs are historical — don't rely on them for current status.
+> **Trust hierarchy when docs conflict:** for **"what's left to build" / current state**, `PROJECT_STATUS_REVIEW_2026-07-06.md` wins (newest, verified page-by-page). For the **production-fix cycle / deploy state**, `IMPLEMENTATION_STATUS.md` + the §I set win (2026-07-05). For everything else, `nzamy-audit-fix-status.md` + `NEXT_STEPS.md` + `ARCHITECTURE.md` + `n8n_master_guide_latest.md` are the source of truth. `project_reference.md`, `client_dashboard_audit.md`, and the three superseded n8n docs are historical — don't rely on them for current status.
