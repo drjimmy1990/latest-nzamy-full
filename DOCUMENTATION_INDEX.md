@@ -1,7 +1,7 @@
 # 📚 NZAMY — Documentation Index
 
 > **What this is:** a map of every Markdown file in the project — what each one contains, when you need it, and how fresh it is.
-> **Generated:** 2026-06-29 · **Location:** `nzamy-website/` (plus 2 files in the parent `SITE MAPS NZAMY/` dir).
+> **Generated:** 2026-06-29 · **Last updated:** 2026-07-05 (added the **production-fix cycle** docs — see §I, and the QA `test/` folder) · **Location:** `nzamy-website/` (plus 2 files in the parent `SITE MAPS NZAMY/` dir).
 >
 > **Legend:** ✅ Current/canonical · 🟡 Partially stale (trust the dated sections) · 🔴 Stale (historical only) · 📄 Reference · 🤖 Machine-read (AI instructions)
 
@@ -38,6 +38,13 @@
 | `client_lawyer_testing_arabic (1).md` | Testing | ✅ | QA-testing client + lawyer flows (Arabic) |
 | `payments-gateway-admin-gate.md` | Payments | ✅ | Working on payments / the admin gate mechanism |
 | `deployment_guide.md` | Deployment | 🟡 | Deploying to a Linux VPS (aaPanel + PM2 + Nginx) |
+| `PRODUCTION_FIX_PLAN.md` | Fix cycle | ✅ | Round-1 production-blocker remediation spec (§7 = 8 per-blocker specs) |
+| `PRODUCTION_FIX_IMPLEMENTATION.md` | Fix cycle | ✅ | What round-1 actually changed, file-by-file (companion to the plan) |
+| `TEST_REVIEW_RECONCILIATION.md` | Fix cycle | ✅ | The owner's QA review (109 findings) classified vs our fixes |
+| `TEST_REVIEW_FIX_PLAN.md` | Fix cycle | ✅ | Round-2 remediation spec (§4.1–§4.9, exact code/SQL) |
+| `IMPLEMENTATION_STATUS.md` | Fix cycle | ✅ | Round-2 done-vs-deferred ledger; **current deploy state** |
+| `دليل_اختبار_المالك.md` | Testing | ✅ | Arabic owner test guide (what to re-test on live) |
+| `test/` (folder) | Testing | 📄 | The owner's returned QA review — `README.md` (52 cases), `modifications/` (10 proposed edits), `screenshots/` |
 
 ---
 
@@ -204,10 +211,51 @@
 
 ---
 
+## 🚀 I. Production-fix cycle (2026-07-01 → 2026-07-05)
+
+> **What this is:** the two remediation rounds that took the app from the 2026-07-01 production-readiness review to a deployed beta. All committed + pushed + **deployed** (`a5b10c3` round 1; `c7b0867` + `5e23b6c` round 2; PM2 reload 2026-07-05 18:43). Read these as: **plan → implementation → status**, in order.
+
+### `PRODUCTION_FIX_PLAN.md` (round 1 — spec)
+- **Contains:** the full remediation spec for the 6 verified production blockers (client-workflow IDOR, dead library search, paywall bypass, always-mock lawyer profile, fabricated my-group billing, fake content) — §7 = 8 per-blocker specs (exact code/SQL/acceptance), §8 = hardening gaps, sequencing, migration order, deploy checklist.
+- **When you need it:** the "why + how" behind round 1; the source of truth for the deferred hardening items.
+- **Status:** ✅ 2026-07-01 (one cosmetic `$`-artifact in an example SQL block; real migration files are correct).
+
+### `PRODUCTION_FIX_IMPLEMENTATION.md` (round 1 — what shipped)
+- **Contains:** file-by-file record of what round 1 changed, with decisions/deviations. Companion to the plan.
+- **When you need it:** verifying exactly which files/behaviours round 1 touched.
+- **Status:** ✅ Updated 2026-07-05 (committed + deployed; the §7.5 edit-form deferral is now resolved in round 2).
+
+### `TEST_REVIEW_RECONCILIATION.md` (round 2 — the owner's QA, classified)
+- **Contains:** the owner's QA tester review (52 cases run against live nezamy.sa, 10 proposed modifications, ~50 screenshots) reconciled into 109 findings, each classified FIXED_BY_US / STILL_OPEN / PRODUCT_UX / etc. against the current source.
+- **When you need it:** deciding what the QA round actually requires vs. what our commits already cover.
+- **Status:** ✅ Updated 2026-07-05 (fixes now deployed; LAWYER-6.1/6.3 marked resolved).
+
+### `TEST_REVIEW_FIX_PLAN.md` (round 2 — spec)
+- **Contains:** the round-2 remediation spec (§4.1–§4.9) with exact code/SQL, reviewer corrections folded in — beta teardown, honest AI gating, lawyer/client UX bugs, lawyer profile PII + edit-form, plus the deferred library work (search/FTS, book detail, persistence).
+- **When you need it:** implementing any remaining §4.x item (esp. the deferred library work when real data is seeded).
+- **Status:** ✅ 2026-07-05.
+
+### `IMPLEMENTATION_STATUS.md` (round 2 — done vs deferred) ← **current deploy state**
+- **Contains:** what round 2 implemented (§4.1/§4.4/§4.3/§4.9/§4.2) vs. what's deferred and why (library search+FTS, book detail, persistence→DB, tester-mod merge). Header carries the live commit + deploy + pending-migration state.
+- **When you need it:** "where are we right now, and what's the next safe chunk?"
+- **Status:** ✅ 2026-07-05 — the most current fix-cycle status doc.
+
+### `test/` (folder) — the owner's returned QA review
+- **Contains:** `README.md` (52 numbered Arabic test cases + findings), `modifications/` (10 proposed code edits — 2 conflict with our fixes, 4 would reintroduce removed fake data; merge deliberately), `screenshots/` (~50 bug shots). Excluded from `tsconfig` (the modification files have broken imports by design).
+- **When you need it:** re-testing on live, or cherry-picking the tester's modifications (§4.8, deferred).
+- **Status:** 📄 Input artifact (committed `4a043cb`).
+
+### `دليل_اختبار_المالك.md` — Arabic owner test guide
+- **Contains:** the Arabic guide sent to the owner describing what to re-test on the live site after deploy.
+- **Status:** ✅ (committed `b93521a`).
+
+---
+
 ## ⚡ Where to start (cheat sheet)
 
 | You want to… | Read this first |
 |--------------|-----------------|
+| Know the current production-fix + deploy state | `IMPLEMENTATION_STATUS.md` (then the §I fix-cycle set) |
 | Know what to work on next | `NEXT_STEPS.md` |
 | See what's fixed vs deferred | `nzamy-audit-fix-status.md` |
 | Understand the codebase structure | `ARCHITECTURE.md` |
@@ -222,4 +270,4 @@
 
 ---
 
-> **Trust hierarchy when docs conflict:** `nzamy-audit-fix-status.md` + `NEXT_STEPS.md` + `ARCHITECTURE.md` + `n8n_master_guide_latest.md` are the current source of truth. `project_reference.md`, `client_dashboard_audit.md`, and the three superseded n8n docs are historical — don't rely on them for current status.
+> **Trust hierarchy when docs conflict:** for the **production-fix cycle / current deploy state**, `IMPLEMENTATION_STATUS.md` + the §I set win (they're the newest, 2026-07-05). For everything else, `nzamy-audit-fix-status.md` + `NEXT_STEPS.md` + `ARCHITECTURE.md` + `n8n_master_guide_latest.md` are the source of truth. `project_reference.md`, `client_dashboard_audit.md`, and the three superseded n8n docs are historical — don't rely on them for current status.

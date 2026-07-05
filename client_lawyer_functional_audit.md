@@ -26,7 +26,7 @@ Subsequent fix passes (16-finding audit pass + post-review follow-up commit `432
 - **Mock-data sweep ✅** — `MOCK["1"]`/`CASES_DB["1"]`/`MOCK_CASES["2025-001"]`/`MOCK_CLIENTS`/`MOCK_CONSULTATIONS`/`MOCK_MESSAGES`/fake `setTimeout` reply/`REVENUE_DATA`/`ref=JUDGE47`/frozen `٤٧:١٣` timer/`walletBalance=150` etc. removed; sector pages gated behind `DashboardComingSoon.tsx`.
 
 **Still deferred (not done):**
-- **F0 — apply migrations.** `20260628_documents_upload.sql` + `20260628_payments_gateway.sql` + `20260629_payments_and_storage_policies.sql` are committed but **NOT applied to the DB**. Run `npx supabase db push`. Until applied: documents bucket + `attachments.request_id` nullable + `payments_gateway` seed + `payments.id` default + `payments.payer_user_id` column + storage.objects RLS for the documents bucket do not exist end-to-end.
+- **F0 — apply migrations.** ~~`20260628_*` + `20260629_payments_and_storage_policies.sql`~~ **were applied 2026-06-29** (documents bucket, payment-gate seed, storage RLS are live). **Updated 2026-07-05:** the pending set is now the **4 migrations after `20260629`** — `20260630_handle_new_user_sectors`, `20260701_client_workflow_rls_assert`, `20260701_smart_folder_items_display_cols`, `20260705_lawyer_show_contact` (the last is **required** or `/api/v1/lawyers` 500s). Run `npx supabase db push` then `supabase/migrations/_verify.sql`. See [`NEXT_STEPS.md`](./NEXT_STEPS.md) Phase 0.
 - **F1 — mock-modal pattern (remainder).** `AddCaseModal`/`AddHearingModal`/`AddClientModal`/consultations booking confirm/finance "new invoice" — these create flows are still UI-only or partially wired (not part of the F7+L11 pass).
 - **F2 — backend insert/query bugs (remainder).** B1/B2/B3/B4/B5/B6/B7/B12 from §5.1/§5.2 not addressed in the F7+L11 pass (some were mitigated by the 16-finding pass; verify against current routes before claiming fixed).
 - **F5 — My Group + mock-data display (remainder).** C4/C8/C9/C10/C11 — not in the F7+L11 pass.
@@ -62,7 +62,7 @@ The dashboards **read** real data correctly in most places, but a large fraction
 - **Entire chat feature is broken** (`content` vs `body` field mismatch — every send 400s, every loaded message renders as an empty bubble).
 - **Document upload is impossible** until storage RLS policies are applied (they're commented out in the migration).
 - **n8n trigger layer does not exist** — no `/api/v1/n8n/trigger`, no webhook payload assembler. Wiring n8n later requires building this from scratch.
-- **~3 migrations are committed but likely not applied** to the DB — including the one that fixes most "didn't appear" symptoms.
+- **Pending migrations** — see the corrected **F0** above (updated 2026-07-05): the `20260628`/`20260629` set is applied; the 4 pending ones are those after `20260629`.
 
 ---
 

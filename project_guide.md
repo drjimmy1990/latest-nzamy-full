@@ -12,7 +12,7 @@
 | Automation | n8n (self-hosted) | ⬜ Not started |
 | WhatsApp | Evolution API | ⬜ Not connected |
 | Payments | TBD (Moyasar / Tap / HyperPay) | ⬜ Not decided |
-| Hosting | VPS with aaPanel + PM2 + Nginx | ⬜ Not deployed |
+| Hosting | VPS with aaPanel + PM2 + Nginx | 🟢 Live (beta) — PM2 `nzamy`, port 3055 |
 
 ---
 

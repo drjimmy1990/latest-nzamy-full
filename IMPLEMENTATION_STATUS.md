@@ -1,8 +1,9 @@
 # NZAMY — Implementation Status (QA-review remediation, round 2)
 
-> **Date:** 2026-07-05 · **Branch:** `main` (uncommitted at time of writing) · **Plan:** [`TEST_REVIEW_FIX_PLAN.md`](./TEST_REVIEW_FIX_PLAN.md) · **Reconciliation:** [`TEST_REVIEW_RECONCILIATION.md`](./TEST_REVIEW_RECONCILIATION.md)
+> **Date:** 2026-07-05 · **Branch:** `main` — **committed + pushed + deployed** (commits `c7b0867` = §4.1/§4.4/§4.3/§4.9 + plans, `5e23b6c` = §4.2; live via PM2 reload 2026-07-05 18:43 on port 3055) · **Plan:** [`TEST_REVIEW_FIX_PLAN.md`](./TEST_REVIEW_FIX_PLAN.md) · **Reconciliation:** [`TEST_REVIEW_RECONCILIATION.md`](./TEST_REVIEW_RECONCILIATION.md)
 > **This round** executed the QA-review fixes that do **not** depend on the real seeded library data, per the instruction to "fix all we can, document what's done vs not, and go." The genuinely data-dependent library work (search corpus, book content) is deferred with reasons below.
 > **Gates:** `tsc --noEmit` = 0 errors · `eslint .` = 0 errors (warnings only) · `next build` = exit 0.
+> **⚠️ Deploy dependency:** this round's code is live, but the lawyer directory (`/api/v1/lawyers`) now `SELECT`s `show_contact` — **apply `supabase/migrations/20260705_lawyer_show_contact.sql`** (plus the 3 other pending migrations after `20260629`) or that route 500s. Confirm with `supabase/migrations/_verify.sql`. Full pending-migration list at the bottom of [`NEXT_STEPS.md`](./NEXT_STEPS.md).
 
 ---
 

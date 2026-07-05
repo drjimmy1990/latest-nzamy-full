@@ -219,12 +219,14 @@ Task state and hearing metadata are stored in `metadata` (JSONB) on the same row
 v1 routes (`/api/v1/**`) return a `{ data: <row | rows> }` envelope. `apiGet`/`apiMutate` unwrap the envelope once. PATCH routes accept camelCase keys and remap to snake_case via a per-route `keyMap`. GET routes return snake_case rows; frontend services map snake_case → camelCase where needed (in-progress sweep — see `client_lawyer_functional_audit.md` RC-2).
 
 ### Migrations not yet applied
-Three migrations are committed but **not yet applied to the DB** (verify with `npx supabase migration list --linked`, apply with `npx supabase db push`):
-1. `20260628_documents_upload.sql` — `documents` storage bucket + nullable `attachments.request_id`.
-2. `20260628_payments_gateway.sql` — `platform_settings.payments_gateway` seed row.
-3. `20260629_payments_and_storage_policies.sql` — `payments.id` default + `payments.payer_user_id` column + `storage.objects` RLS for the documents bucket.
+> **Updated 2026-07-05.** The `20260628_*` + `20260629_payments_and_storage_policies.sql` set was applied on 2026-06-29 (documents bucket, payment-gate seed, storage RLS are live). The **4 pending** migrations are the ones added *after* `20260629`. Verify with `npx supabase migration list --linked`, apply with `npx supabase db push` (all idempotent), then run `supabase/migrations/_verify.sql`.
 
-Until these are applied: document upload end-to-end, the admin payment-gate toggle persistence, and payment inserts will not work against the DB.
+1. `20260630_handle_new_user_sectors.sql` — fixes the `handle_new_user()` trigger to provision government/NGO/business sector profiles on signup.
+2. `20260701_client_workflow_rls_assert.sql` — assertion-only guard that fails the deploy if the RLS policies backing the client-workflow IDOR fix are missing (no data change).
+3. `20260701_smart_folder_items_display_cols.sql` — adds `title`/`title_en`/`cat_id` columns + a unique index to `smart_folder_items`.
+4. `20260705_lawyer_show_contact.sql` — **required this deploy:** adds the `show_contact` opt-in flag to `lawyer_profiles`. The public `/api/v1/lawyers` route now `SELECT`s this column, so **until it's applied that route 500s.**
+
+`_verify.sql` in the same folder is a read-only check (not a migration) — run it after `db push` to confirm the schema landed.
 
 ## 7. Events & n8n trigger layer
 

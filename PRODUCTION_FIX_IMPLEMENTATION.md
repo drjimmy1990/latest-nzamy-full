@@ -1,6 +1,6 @@
 # NZAMY — Production Fix Implementation Report
 
-> **Date:** 2026-07-01 · **Branch:** `main` (changes **uncommitted**) · **Companion:** [`PRODUCTION_FIX_PLAN.md`](./PRODUCTION_FIX_PLAN.md)
+> **Date:** 2026-07-01 (round 1) · **Branch:** `main` — **committed + pushed + deployed** (round-1 commit `a5b10c3`; a later round-2 pass `c7b0867`/`5e23b6c` extended it — see [`IMPLEMENTATION_STATUS.md`](./IMPLEMENTATION_STATUS.md)). Live via PM2 reload 2026-07-05 18:43. · **Companion:** [`PRODUCTION_FIX_PLAN.md`](./PRODUCTION_FIX_PLAN.md)
 > **What this is:** exactly what was changed in the implementation pass that executed `PRODUCTION_FIX_PLAN.md`, file-by-file, with the decisions and deviations made along the way.
 
 ---
@@ -13,7 +13,7 @@ Implemented **6.5 of 8 workstreams — all 5 code-fixable blockers**. One blocke
 |---|-----------|---------|--------|
 | 7.1 | Security — client-workflow IDOR | #1 CRITICAL | ✅ Done |
 | 7.3 | Library paywall bypass | #3 | ✅ Done |
-| 7.5 | Lawyer profile mock + false verified | #4 | ✅ Done (edit-form UI deferred) |
+| 7.5 | Lawyer profile mock + false verified | #4 | ✅ Done · **edit-form UI shipped in round 2** (§4.2, commit `5e23b6c` — `dashboard/lawyer/profile/edit`) |
 | 7.7 | Infra — eslint, role-gates, env, deploy, beta gate | HIGH | ✅ Done |
 | 7.4 | Fake library content + folders backend | #6 | ✅ Blocker done (full folder-UI wiring deferred) |
 | 7.6 | my-group fake billing + attachments | #5 | ✅ Blocker + data-loss done (3 MEDs deferred) |
@@ -84,7 +84,7 @@ Implemented **6.5 of 8 workstreams — all 5 code-fixable blockers**. One blocke
   - Routes role-field updates via a `user_type` branch (mirrors GET); returns **403** if a non-lawyer sends role fields.
   - `verification_status` intentionally **excluded** (admin-only — self-verification would be a trust-badge bypass).
 
-**Deferred:** Step 4 — the dedicated edit-form page. The API now persists edits, but the `/dashboard/lawyer/profile/edit` link is still a dead route (a MED "read-only" gap, not the blocker).
+**~~Deferred~~ → RESOLVED in round 2 (2026-07-05, commit `5e23b6c`):** Step 4 — the dedicated edit-form page — is now built: `src/app/dashboard/lawyer/profile/edit/page.tsx` loads via `apiGet`, saves via `apiMutate("/api/v1/profile","PATCH",…)`, and edits bio/specialties/experience/rate/license/city + the `marketplace_visible`/`is_accepting_clients`/`show_contact` toggles. The "تعديل" link now resolves; the dead "تصدير PDF" button is gated (disabled + "قريباً"). Details in [`IMPLEMENTATION_STATUS.md`](./IMPLEMENTATION_STATUS.md) §4.2.
 
 ---
 

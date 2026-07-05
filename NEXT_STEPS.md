@@ -9,6 +9,15 @@
 
 ---
 
+> ## 🆕 UPDATE 2026-07-05 — production-blocker rounds done + deployed
+> This roadmap was written 2026-06-28. Since then, two focused remediation rounds landed on `main` and are **deployed** (PM2 reload 2026-07-05 18:43):
+> - **Round 1** (`a5b10c3`, from [`PRODUCTION_FIX_PLAN.md`](./PRODUCTION_FIX_PLAN.md) → [`PRODUCTION_FIX_IMPLEMENTATION.md`](./PRODUCTION_FIX_IMPLEMENTATION.md)): closed the client-workflow **IDOR**, the **library paywall bypass**, the **always-mock lawyer profile**, fabricated my-group billing, and fake-content leaks; added `assertRole` gates + proxy API-401 + startup env assertion.
+> - **Round 2** (`c7b0867` + `5e23b6c`, from [`TEST_REVIEW_FIX_PLAN.md`](./TEST_REVIEW_FIX_PLAN.md) → [`IMPLEMENTATION_STATUS.md`](./IMPLEMENTATION_STATUS.md)): beta teardown / dev-switcher out of prod, honest **AI review-gate** on all result surfaces, lawyer dashboard misroutes, the lawyer **profile edit-form + contact-PII fix**.
+> - **Still deferred** (need real seeded library data or a live-DB maintenance window): library search + Arabic FTS (§4.6/§7.2), book detail (§4.5), persistence→DB (§4.7), the tester's 10 modifications (§4.8). See [`IMPLEMENTATION_STATUS.md`](./IMPLEMENTATION_STATUS.md).
+> - **Pending DB migrations are now 4, not 2** (see the corrected Phase 0 below): everything after `20260629`.
+
+---
+
 ## 0. Current-state snapshot (what is already finished)
 
 | Area | Status | Evidence |
@@ -33,16 +42,18 @@
 
 ## Phase 0 — Apply pending DB migrations (CRITICAL, do first)
 
-Two migrations are committed but **NOT applied to any database**. Until applied, the `documents` storage bucket, `attachments.request_id` nullability, and the `platform_settings.payments_gateway` row do not exist in the DB — meaning the audit fixes for documents upload and the payment gate are code-only.
+> **Corrected 2026-07-05.** The `20260628_*` + `20260629_payments_and_storage_policies.sql` set (documents bucket, payment-gate seed, storage RLS) was applied on 2026-06-29 — those are live. The **4 pending** migrations are the ones added *after* `20260629`. All idempotent.
 
 - [ ] `npx supabase db push` (or `npx supabase migration up --linked`) to apply:
-  - `20260628_documents_upload.sql` — `documents` storage bucket + `attachments.request_id` nullable + RLS (wrapped in `begin/commit`, idempotent).
-  - `20260628_payments_gateway.sql` — seeds `platform_settings.payments_gateway = {"status":"disabled","provider":null}` (`on conflict do nothing`).
-- [ ] Verify in Supabase Studio: `platform_settings` row exists; `storage.buckets` has `documents`; `attachments.request_id` is nullable.
-- [ ] **Add `supabase db push` to `deploy.sh`** so future migrations apply automatically on every deploy (currently `deploy.sh` only does `git pull → npm install → npm run build → pm2 restart`).
-- [ ] After apply, smoke-test: admin flips `payments_gateway` → confirm `consultation/new`, `requests/new`, `find-lawyer` submit blocks; client uploads a document → persists.
+  - `20260630_handle_new_user_sectors.sql` — `handle_new_user()` trigger provisions government/NGO/business sector profiles on signup.
+  - `20260701_client_workflow_rls_assert.sql` — assertion-only guard (fails deploy if client-workflow RLS policies are missing; no data change).
+  - `20260701_smart_folder_items_display_cols.sql` — `title`/`title_en`/`cat_id` columns + unique index on `smart_folder_items`.
+  - `20260705_lawyer_show_contact.sql` — **required:** `show_contact` opt-in flag on `lawyer_profiles`; the public `/api/v1/lawyers` route now `SELECT`s it, so **until applied that route 500s.**
+- [ ] Run `supabase/migrations/_verify.sql` (read-only) to confirm the schema landed.
+- [ ] **Add `supabase db push` to `deploy.sh`** so future migrations apply automatically on every deploy (currently `deploy.sh` does `git pull → npm install → npm run build → pm2 reload`).
+- [ ] After apply, smoke-test: browse `/services/lawyers` (confirms `show_contact` column exists); register a sector user (confirms trigger); admin flips `payments_gateway` → `consultation/new`, `requests/new`, `find-lawyer` submit blocks.
 
-**Acceptance:** migrations applied on staging + production; payment gate toggles live; documents upload round-trips to Storage.
+**Acceptance:** the 4 migrations applied on staging + production; `_verify.sql` clean; lawyer directory loads; sector signup provisions the right profile row.
 
 ---
 
