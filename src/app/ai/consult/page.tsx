@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useRef, useEffect } from "react";
+import BetaReviewGate from "@/components/BetaReviewGate";
 import {
   PaperPlaneTilt, Microphone, Robot, User, Sparkle,
   Lightning, Books, Paperclip, X, CaretDown,
@@ -278,12 +279,22 @@ export default function AIConsultPage() {
         ) : (
           <div className="px-5 py-5 space-y-5 max-w-4xl mx-auto">
             {messages.map((msg, i) => (
-              <AIMessageBubble
-                key={msg.id}
-                msg={msg}
-                isDark={isDark}
-                isLatest={i === messages.length - 1 && msg.role === "ai"}
-              />
+              msg.role === "ai" ? (
+                <BetaReviewGate key={msg.id} toolId="consult.result" toolName="الاستشارة القانونية الذكية" reviewScope="legal-data">
+                  <AIMessageBubble
+                    msg={msg}
+                    isDark={isDark}
+                    isLatest={i === messages.length - 1 && msg.role === "ai"}
+                  />
+                </BetaReviewGate>
+              ) : (
+                <AIMessageBubble
+                  key={msg.id}
+                  msg={msg}
+                  isDark={isDark}
+                  isLatest={false}
+                />
+              )
             ))}
 
             {/* Thinking indicator */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUser } from "@/hooks/useUser";
 import { useTheme } from "@/components/ThemeProvider";
@@ -86,8 +86,9 @@ export default function LawyerDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<LawyerDashboardSummary | null>(null);
 
-  // Fetch real dashboard data from Supabase-backed service
-  useEffect(() => {
+  // Fetch real dashboard data, and re-fetch whenever a workflow item is
+  // added/changed (the add-case / add-task modals dispatch nzamy-workflow-updated).
+  const loadSummary = useCallback(() => {
     getLawyerDashboardSummary()
       .then((data) => {
         setDashboardData(data);
@@ -95,6 +96,13 @@ export default function LawyerDashboardPage() {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadSummary();
+    const handler = () => loadSummary();
+    window.addEventListener("nzamy-workflow-updated", handler);
+    return () => window.removeEventListener("nzamy-workflow-updated", handler);
+  }, [loadSummary]);
 
   // ─── Derived tier ─────────────────────────────────────────────────────────
   // Map the user's real subscription tier (UserTier) to the lawyer page's
@@ -255,7 +263,7 @@ export default function LawyerDashboardPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <HijriDateWidget />
-          <Link href="/dashboard/lawyer/profile"
+          <Link href="/dashboard/lawyer/marketplace"
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${
               isDark ? "border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10" : "border-[#C8A762]/40 text-[#C8A762] hover:bg-[#C8A762]/5"
             }`}
@@ -298,7 +306,7 @@ export default function LawyerDashboardPage() {
             </p>
           </div>
           <Link
-            href="/dashboard/lawyer/finance"
+            href="/pricing"
             className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-[#C8A762] hover:bg-[#155e41] transition-colors"
           >
             ترقية الباقة <ArrowRight size={12} />
@@ -365,7 +373,7 @@ export default function LawyerDashboardPage() {
 
           {[
             { label: "قضية جديدة",      icon: Plus,          action: () => setShowAddCase(true),  shortcut: "Q",  accent: false },
-            { label: "استشارة جديدة",    icon: CalendarCheck, href: "/dashboard/lawyer/consultations/new", shortcut: "C",  accent: false },
+            { label: "استشارة جديدة",    icon: CalendarCheck, href: "/dashboard/lawyer/consultations?book=1", shortcut: "C",  accent: false },
             { label: "صيغ مستند",       icon: PencilSimple,  href: "/ai/draft",   shortcut: "D",  accent: true  },
             { label: "جدول الجلسات",     icon: Gavel,         href: "/dashboard/lawyer/hearings", shortcut: "",   accent: false },
             { label: "مستنداتي",           icon: Folder,        href: "/dashboard/lawyer/documents", shortcut: "",  accent: false },

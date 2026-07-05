@@ -463,6 +463,10 @@ function notifyAll() { _listeners.forEach(fn => fn()); }
 /** Switch demo account — instant update across all components */
 export function setDemoSession(session: UserSession, key: string = ""): void {
   if (typeof window === "undefined") return;
+  // Never write a demo session/cookie in production (supabase mode). The demo
+  // switchers that call this are gated out of prod builds; this is defense in
+  // depth so a stray caller can't forge a fabricated session on a live account.
+  if (isSupabaseMode) return;
   localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(session));
   localStorage.setItem(DEMO_KEY_STORAGE, key); // store the account key for bypass check
   document.cookie = "nzamy_demo_role=true; path=/";

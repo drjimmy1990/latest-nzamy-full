@@ -27,6 +27,7 @@ import { authenticateTest, TEST_ACCOUNTS, TEST_PASSWORD } from "@/lib/test-crede
 import { setDemoSession } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { isDemoUiEnabled } from "@/lib/runtimeMode";
 
 const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
 
@@ -634,7 +635,8 @@ export default function LoginPage() {
                 </a>
               </motion.div>
 
-              {/* ── Dev: link to full demo-login page ── */}
+              {/* ── Dev: link to full demo-login page — DEMO MODE ONLY ── */}
+              {isDemoUiEnabled && (
               <motion.div variants={itemVariants} className="mt-6 text-center">
                 <a
                   href="/demo-login"
@@ -645,6 +647,7 @@ export default function LoginPage() {
                   <ArrowRight size={11} />
                 </a>
               </motion.div>
+              )}
             </motion.div>
           </div>
         </div>

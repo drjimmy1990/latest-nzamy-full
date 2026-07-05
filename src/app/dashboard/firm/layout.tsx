@@ -6,6 +6,7 @@ import FloatingButtons from "@/components/FloatingButtons";
 import { EntityRouteGuard } from "@/components/dashboard/EntityRouteGuard";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser, setDemoSession } from "@/hooks/useUser";
+import { isDemoUiEnabled } from "@/lib/runtimeMode";
 import { Scales, UsersThree, UserCircle, ArrowDown, ShieldCheck, PenNib } from "@phosphor-icons/react";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
 import type { FirmRole } from "@/types/firmBackendReady";
@@ -267,11 +268,13 @@ export default function FirmDashboardLayout({
   const [open, setOpen] = useState(false);
   const { isDark, lang } = useTheme();
   const isAr = lang === "ar";
+  // Demo role switcher — never for real (supabase) firm users, even unaffiliated.
   const canDemoSwitchRole =
-    user.userType === "admin" ||
-    !user.affiliation ||
-    user.affiliation.role === "managing_partner" ||
-    user.affiliation.role === "partner";
+    isDemoUiEnabled &&
+    (user.userType === "admin" ||
+      !user.affiliation ||
+      user.affiliation.role === "managing_partner" ||
+      user.affiliation.role === "partner");
 
   // [U6] Stamp last_dashboard so AI layout can infer correct sidebar
   useEffect(() => {

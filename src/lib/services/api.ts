@@ -32,7 +32,7 @@ export async function apiGet<T>(path: string, params?: Record<string, string | n
     }
   }
   const response = await fetch(url.toString(), {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json; charset=utf-8" },
     cache: "no-store",
   });
   if (!response.ok) {
@@ -50,7 +50,7 @@ export async function apiMutate<T>(
 ): Promise<T> {
   const response = await fetch(path, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json; charset=utf-8" },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import BetaReviewGate from "@/components/BetaReviewGate";
 import {
   FileText, WarningCircle, Copy, Check, Scales,
   MagicWand, Spinner, ArrowsLeftRight, CheckCircle, Warning, Sparkle
@@ -40,6 +41,7 @@ export function ResultView({ isDark, docAName, docBName }: { isDark: boolean; do
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+      <BetaReviewGate toolId="compare.result" toolName="المقارنة الذكية للمستندات" reviewScope="legal-data">
 
       {/* Scores row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -212,6 +214,7 @@ export function ResultView({ isDark, docAName, docBName }: { isDark: boolean; do
           </motion.div>
         )}
       </AnimatePresence>
+      </BetaReviewGate>
     </motion.div>
   );
 }

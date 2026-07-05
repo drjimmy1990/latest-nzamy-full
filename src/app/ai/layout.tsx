@@ -92,6 +92,15 @@ export default function AILayout({ children }: { children: React.ReactNode }) {
     return <MicroDashboardLayout>{children}</MicroDashboardLayout>;
   }
 
+  // Lawyer-facing AI tools that have no /ai/<role>/ prefix → lawyer sidebar, so a
+  // fresh-session / new-tab open (before user.userType resolves) doesn't fall
+  // through to the Business default. Only genuinely lawyer-exclusive tools here
+  // (NOT shared tools like /ai/draft or /ai/contracts).
+  const LAWYER_AI_PREFIXES = ["/ai/collector", "/ai/brief-check"];
+  if (LAWYER_AI_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+    return <LawyerDashboardLayout>{children}</LawyerDashboardLayout>;
+  }
+
   // ── 3. LAST-DASHBOARD STAMP [U6] ─────────────────────────────────────
   // Handles demo session mismatch (e.g. corporate user with session="individual")
   if (lastDashboard === "business") {

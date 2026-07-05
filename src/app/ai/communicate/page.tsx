@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
+import BetaReviewGate from "@/components/BetaReviewGate";
 import {
   Envelope, PencilSimple, Sparkle, Copy,
   CheckCircle, CaretDown, WhatsappLogo, ArrowRight,
@@ -183,7 +184,7 @@ export default function AICommunicatePage() {
                   </p>
                 </div>
               ) : (
-                <>
+                <BetaReviewGate toolId="communicate.result" toolName="المتحدث الذكي" reviewScope="legal-data">
                   <div className={`rounded-2xl p-5 ${isDark ? "bg-zinc-800/40 border border-white/[0.05]" : "bg-zinc-50 border border-zinc-100"}`}>
                     <pre className={`whitespace-pre-wrap font-sans text-[13px] leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{output}</pre>
                   </div>
@@ -194,7 +195,7 @@ export default function AICommunicatePage() {
                     showHumanReview
                     className="justify-start mt-2"
                   />
-                </>
+                </BetaReviewGate>
               )}
             </div>
           </div>

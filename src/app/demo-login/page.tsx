@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
+import { notFound, useRouter } from "next/navigation";
+import { isDemoUiEnabled } from "@/lib/runtimeMode";
 import {
   Gavel, Shield, Star, User, Buildings, Storefront,
   Stamp, UserCircleGear, HandHeart, ArrowLeft,
@@ -83,6 +84,9 @@ const GATED_PAGES = [
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DemoLoginPage() {
+  // 404 in production (supabase) build — this whole page is demo-only.
+  // isDemoUiEnabled is a build-time constant, so hook order stays stable.
+  if (!isDemoUiEnabled) notFound();
   const router  = useRouter();
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [loading, setLoading]     = useState(false);

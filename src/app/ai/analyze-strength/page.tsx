@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useCallback, useRef } from "react";
+import BetaReviewGate from "@/components/BetaReviewGate";
 import {
   ChartBar, Shield, Target, Scales,
   Warning, CheckCircle, Minus, ArrowRight,
@@ -261,6 +262,7 @@ export default function AIStrengthPage() {
         </div>
       ) : (
         <div className="space-y-5">
+        <BetaReviewGate toolId="analyze-strength.result" toolName="محلل الموقف والخصم" reviewScope="legal-data">
           {/* ── Tab bar ── */}
           <div className={`rounded-xl p-1 flex gap-1 ${isDark ? "bg-zinc-800/60" : "bg-zinc-100"}`}>
             {TABS.map(tab => {
@@ -543,6 +545,7 @@ export default function AIStrengthPage() {
               <ArrowRight size={14} /> تحليل قضية جديدة
             </motion.button>
           </div>
+        </BetaReviewGate>
         </div>
       )}
     </div>

@@ -13,6 +13,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser, setDemoSession } from "@/hooks/useUser";
 import { DEMO_ACCOUNTS } from "@/constants/demoAccountsData";
+import { isDemoUiEnabled } from "@/lib/runtimeMode";
 import { BackendReadyNotice, LocalActionStatus, SectionTitle } from "./_shared";
 
 // ── Field definitions per user type ───────────────────────────────────
@@ -378,7 +379,9 @@ export function ProfileTab() {
         </div>
       </div>
 
-      {/* Developer Demo Console */}
+      {/* Developer Demo Console — DEMO MODE ONLY. Dead-code-eliminated from a
+          supabase (production) build so it never ships to real users. */}
+      {isDemoUiEnabled && (
       <div className="bg-amber-500/[0.03] dark:bg-amber-500/[0.02] rounded-[2rem] border border-amber-500/20 p-7 shadow-[0_20px_40px_-15px_rgba(245,158,11,0.02)] space-y-5">
         <div className="flex items-center gap-3 border-b border-amber-500/10 pb-4">
           <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500 dark:text-amber-400">
@@ -431,6 +434,7 @@ export function ProfileTab() {
           })()}
         </div>
       </div>
+      )}
 
       {/* Action alerts and Save button */}
       <LocalActionStatus show={Boolean(localMessage)} message={localMessage ?? undefined} />

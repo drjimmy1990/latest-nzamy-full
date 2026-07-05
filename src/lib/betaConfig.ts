@@ -138,6 +138,10 @@ export const LEGAL_DATA_REVIEW_GATED_TOOLS: LegalDataReviewGatedTool[] = [
   { id: "wargaming.result", route: "/ai/wargaming", label: "Litigation simulation and memo improvement", risk: "legal-data", teardown: "Remove the result wrapper after simulation QA is live." },
   { id: "transcriber.legal-result", route: "/ai/transcriber", label: "Legal facts extraction from transcript", risk: "legal-data", teardown: "Remove the result wrapper after legal extraction QA is live." },
   { id: "contract-negotiator.result", route: "/ai/contract-negotiator", label: "Contract negotiation strategy", risk: "legal-data", teardown: "Remove the result wrapper after negotiation strategy QA is live." },
+  { id: "assistant.result", route: "/ai/assistant", label: "AI legal assistant answer", risk: "rag", teardown: "Remove the message-level BetaReviewGate wrapper from the assistant page after assistant citations are production-verified." },
+  { id: "analyze-strength.result", route: "/ai/analyze-strength", label: "Case strength and opponent analysis", risk: "legal-data", teardown: "Remove the result BetaReviewGate wrapper after strength-analysis QA is live." },
+  { id: "communicate.result", route: "/ai/communicate", label: "Legal communication drafting", risk: "legal-data", teardown: "Remove the output BetaReviewGate wrapper after communication drafting QA is live." },
+  { id: "compare.result", route: "/ai/compare", label: "Document comparison legal verdict", risk: "legal-data", teardown: "Remove the ResultView BetaReviewGate wrapper after compare-verdict QA is live." },
 ];
 
 export const LEGAL_DATA_REVIEW_GATED_TOOL_IDS = LEGAL_DATA_REVIEW_GATED_TOOLS.map((tool) => tool.id);

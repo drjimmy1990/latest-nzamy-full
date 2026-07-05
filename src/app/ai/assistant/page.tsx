@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import BetaReviewGate from "@/components/BetaReviewGate";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Robot, PaperPlaneTilt, Microphone, Stop, Copy, Check,
@@ -477,7 +478,13 @@ export default function AssistantPage() {
       <div className={`flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-thin ${isDark ? "bg-zinc-950/60" : "bg-slate-50/60"}`}>
         {!hasChat
           ? <WelcomeScreen onPrompt={t => { setInput(t); sendMessage(t); }} isDark={isDark} />
-          : messages.map(msg => <MessageBubble key={msg.id} msg={msg} isDark={isDark} />)
+          : messages.map(msg =>
+              msg.role === "assistant" && !msg.thinking ? (
+                <BetaReviewGate key={msg.id} toolId="assistant.result" toolName="نظامي أسيستنت" reviewScope="legal-data">
+                  <MessageBubble msg={msg} isDark={isDark} />
+                </BetaReviewGate>
+              ) : <MessageBubble key={msg.id} msg={msg} isDark={isDark} />
+            )
         }
         <div ref={bottomRef} />
       </div>
