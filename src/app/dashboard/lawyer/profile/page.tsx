@@ -288,7 +288,11 @@ export default function LawyerProfilePage() {
             </div>
             {/* Action buttons */}
             <div className="flex flex-wrap items-center gap-2 pb-1 sm:ms-auto">
-              <button className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold border transition-all ${isDark ? "border-white/[0.08] text-zinc-400 hover:text-zinc-200" : "border-slate-200 text-slate-500 hover:border-slate-300"}`}>
+              <button
+                disabled
+                title="تصدير PDF — قريباً"
+                aria-label="تصدير PDF — قريباً"
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold border transition-all opacity-50 cursor-not-allowed ${isDark ? "border-white/[0.08] text-zinc-500" : "border-slate-200 text-slate-400"}`}>
                 <FilePdf size={13} /> تصدير PDF
               </button>
               <button onClick={() => setShareOpen(true)} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold border transition-all ${isDark ? "border-white/[0.08] text-zinc-400 hover:text-zinc-200" : "border-slate-200 text-slate-500 hover:border-slate-300"}`}>
@@ -332,7 +336,7 @@ export default function LawyerProfilePage() {
               </div>
             ))}
             <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
-              <SealCheck size={11} className="text-[#C8A762]" /> رقم النقابة: {profileData.barNumber}
+              <SealCheck size={11} className="text-[#C8A762]" /> رقم الترخيص: {profileData.barNumber}
             </div>
           </div>
         </div>

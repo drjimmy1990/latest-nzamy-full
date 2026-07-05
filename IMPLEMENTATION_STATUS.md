@@ -36,6 +36,11 @@ No AI page returns fabricated legal text to a user during beta.
 - **CLIENT-2.6** settings sidebar overlap: `settings/layout.tsx` is now a pass-through (the settings page already renders its own Navbar + rail + Footer + FloatingButtons; the dashboard wrapper was pure duplication causing the overlap).
 - **CLIENT-2.5** library in client sidebar: **no code change (working as designed)** — `/laws` is a public, per-item paywall-gated funnel (our committed §7.3 gating), so the tester's "Pro-only" premise is incorrect. Flagged for owner sign-off only.
 
+### §4.2 — Lawyer profile: contact-PII privacy + edit form + buttons + localization (LAWYER-6.1/6.3/6.2, HIGH) — **DONE**
+- **LAWYER-6.1 (PII leak):** the public `/api/v1/lawyers` route no longer `SELECT *` — it uses an explicit projection that **never returns `profiles.phone`/`email`**, and **strips `license_number`** for any lawyer with `show_contact=false`. New migration `20260705_lawyer_show_contact.sql` (opt-in flag, default false) + `show_contact` added to the `database.ts` type and the `/api/v1/profile` PATCH allowlist. Existing specialty/available filters + sort preserved.
+- **LAWYER-6.3 (edit form):** built `src/app/dashboard/lawyer/profile/edit/page.tsx` — loads via `apiGet`, saves via `apiMutate` (PATCH), edits bio/specialties/experience/rate/license/city + the visibility & `show_contact` toggles. The existing "تعديل" link now resolves. The dead "تصدير PDF" button is gated (disabled + "قريباً").
+- **LAWYER-6.2 (localization):** "رقم النقابة" → "رقم الترخيص" (Egyptian→Saudi term).
+
 ---
 
 ## ⏳ Deferred — needs the real library data, a live-DB migration, or a larger build
@@ -48,7 +53,7 @@ These are fully specified in [`TEST_REVIEW_FIX_PLAN.md`](./TEST_REVIEW_FIX_PLAN.
 | **§4.5 — Book/reference detail** (LIB-19.1/2/3) | The code fix (remove the 2-slug hardcode → fetch by slug, fix the hydration crash, fix شرعي/وضعي label) is buildable, but "working well" needs the **real book data seeded** to verify. Specced, not yet applied. |
 | **§4.7 — Persistence (folders/notes/drafts → DB)** | Large feature (~22h): notes table + RLS + CRUD, atomic SmartFolders API wiring, draft persistence. |
 | **§4.8 — Merge the tester's 10 modifications** | Careful merge; 2 files conflict with our edits, and 4 hunks would reintroduce fake data we removed. Needs deliberate cherry-picking. |
-| **§4.2 — Lawyer profile privacy + edit form** (LAWYER-6.1/6.3/6.2) | HIGH but needs a `show_contact` migration + PATCH-allowlist change + a new edit-form page. Specced; not yet built. |
+| ~~§4.2 — Lawyer profile privacy + edit form~~ | ✅ **DONE** (see above) — `show_contact` migration + PATCH allowlist + PII projection/strip + edit page + PDF gate + localization. Apply `20260705_lawyer_show_contact.sql` on deploy. |
 | **§4.4 Part C** — subscription cards to real state (AI-3.2/3.1) | Contained; deferred with the profile work. |
 | **§4.3** — mojibake data-repair migration + `cleanArabicText`; **§4.3** consult `?book=1` auto-open modal | Data migration needs DB verification; auto-open needs a `Suspense` wrapper (build-risk to validate). |
 | **§4.9** — CLIENT-2.1 (new-tab session), CLIENT-2.3 (question handoff), CLIENT-3.1/3.6 (success dead-ends) | Contained; not reached this round. CLIENT-2.1 touches middleware (`proxy.ts`) and needs staging verification. |

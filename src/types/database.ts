@@ -105,6 +105,7 @@ export interface LawyerProfile {
   free_briefs_remaining: number;
   marketplace_visible: boolean;
   is_accepting_clients: boolean;
+  show_contact: boolean;
   city: string | null;
   active_roles: string[];
   display_mode: 'full' | 'light';

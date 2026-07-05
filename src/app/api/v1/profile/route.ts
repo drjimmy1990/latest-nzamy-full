@@ -113,6 +113,7 @@ export async function PATCH(request: Request) {
     "city",
     "marketplace_visible",
     "is_accepting_clients",
+    "show_contact",
   ];
 
   const profileUpdates: Record<string, unknown> = {};
