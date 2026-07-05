@@ -40,6 +40,8 @@
 
 These block or corrupt the client ↔ Nzamy-lawyer loop. Ranked.
 
+> **✅ UPDATE 2026-07-06 — Phase 0 honesty-gates shipped** (commit `41007a5`; tsc 0 / eslint 0 / build exit 0). Blockers **#2, #3, #4, #5 below are now fixed**: the ungated AI fabrications (report-generator, smart-inspector, legal-opinion cross-exam + letter) are wrapped in `BetaReviewGate`; `/marketplace` + the services Featured-Lawyers block are gated behind `BETA_MONOPOLY_MODE`; the lawyer `sharing`/`activity`/`profile` surfaces are made honest. **Redeploy to make live.** Blocker **#1 (n8n notifications) remains — it is the launch gate.**
+
 ### 🥇 #1 — No notifications fire for the entire core loop · CRITICAL
 - **Files:** `src/lib/n8n/dispatch.ts`, `supabase/migrations/`, `n8n/workflows/wf-*.json`
 - **Why:** Client registers → creates request → lawyer assigned → completed, with **zero email/WhatsApp at any step**. Three independent failures stack:
@@ -136,10 +138,10 @@ Grouped. Known-deferred items are folded in and **not re-litigated**.
 
 The goal is a **real** client↔lawyer beta, then expand. Order matters: notifications and honesty gates are cheap-to-medium and unblock trust; the n8n build is the long pole.
 
-**Phase 0 — Honesty gates (hours, ship immediately, unblocks trust):**
-1. Gate `report-generator`, `smart-inspector`, `legal-opinion` with `<BetaReviewGate>` (blocker #2, #3).
-2. Add monopoly redirect to `marketplace/layout.tsx`; fix `services/page.tsx` `/lawyers` link + mock featured-lawyers (blocker #4).
-3. Gate lawyer `sharing` قريباً; `EmptyState` on empty `activity`; gate profile achievements/reviews tabs (blocker #5).
+**Phase 0 — Honesty gates — ✅ DONE 2026-07-06 (commit `41007a5`):**
+1. ✅ Gated `report-generator`, `smart-inspector`, `legal-opinion` (cross-exam + letter) with `<BetaReviewGate>` (blocker #2, #3).
+2. ✅ Added monopoly redirect to `marketplace/layout.tsx`; hid `services/page.tsx` Featured-Lawyers block + `/lawyers` link (blocker #4).
+3. ✅ Gated lawyer `sharing` قريباً; honest empty state on `activity`; removed profile achievements/reviews tabs (blocker #5).
 
 **Phase 1 — n8n Section A build (the #1 blocker, multi-day, the long pole):**
 4. Add the **missing migrations first**: `consultations.reminder_sent`/`reminder_1h_sent`, `request_events.metadata jsonb`.
