@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
+import BetaReviewGate from "@/components/BetaReviewGate";
 
 // ─── Mock report types ─────────────────────────────────────────────────────────
 
@@ -249,6 +250,7 @@ export default function ReportGeneratorPage() {
         {/* Step 4: Done */}
         {step === "done" && (
           <motion.div key="done" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+            <BetaReviewGate toolId="report-generator.result" toolName="التقرير الذكي" reviewScope="legal-data">
             <div className={`${card} p-4 flex items-center gap-3`}>
               <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center">
                 <CheckCircle size={20} weight="fill" className="text-emerald-500" />
@@ -280,6 +282,7 @@ export default function ReportGeneratorPage() {
               showHumanReview
               className="justify-start"
             />
+            </BetaReviewGate>
           </motion.div>
         )}
       </AnimatePresence>

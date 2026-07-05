@@ -13,6 +13,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import AiResultActions from "@/components/AiResultActions";
+import BetaReviewGate from "@/components/BetaReviewGate";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type InputMode = "landing" | "file" | "manual" | "result";
@@ -427,6 +428,7 @@ export default function SmartInspectorPage() {
         </motion.button>
       </div>
 
+      <BetaReviewGate toolId="smart-inspector.result" toolName="الفاحص الذكي" reviewScope="legal-data">
       {/* Score + verdict */}
       <div className={`${card} p-6 flex flex-col sm:flex-row items-center gap-6`}>
         <ScoreBar score={result.score} isDark={isDark} />
@@ -495,6 +497,7 @@ export default function SmartInspectorPage() {
         showHumanReview
         className="justify-start"
       />
+      </BetaReviewGate>
 
       {/* CTA — book lawyer */}
       <div className={`${card} p-5`}>

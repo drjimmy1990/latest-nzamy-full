@@ -142,6 +142,10 @@ export const LEGAL_DATA_REVIEW_GATED_TOOLS: LegalDataReviewGatedTool[] = [
   { id: "analyze-strength.result", route: "/ai/analyze-strength", label: "Case strength and opponent analysis", risk: "legal-data", teardown: "Remove the result BetaReviewGate wrapper after strength-analysis QA is live." },
   { id: "communicate.result", route: "/ai/communicate", label: "Legal communication drafting", risk: "legal-data", teardown: "Remove the output BetaReviewGate wrapper after communication drafting QA is live." },
   { id: "compare.result", route: "/ai/compare", label: "Document comparison legal verdict", risk: "legal-data", teardown: "Remove the ResultView BetaReviewGate wrapper after compare-verdict QA is live." },
+  { id: "report-generator.result", route: "/ai/report-generator", label: "Generated legal report (case/client/hearing summaries)", risk: "legal-data", teardown: "Remove the done-step BetaReviewGate wrapper on report-generator after real report generation + QA is live." },
+  { id: "smart-inspector.result", route: "/ai/smart-inspector", label: "Smart case position assessment", risk: "legal-data", teardown: "Remove the result BetaReviewGate wrapper on smart-inspector after real case-analysis QA is live." },
+  { id: "legal-opinion.cross-exam", route: "/ai/legal-opinion", label: "Cross-examination question battery", risk: "legal-data", teardown: "Remove the CrossExamResultView BetaReviewGate wrapper after cross-exam generation QA is live." },
+  { id: "legal-opinion.letter", route: "/ai/legal-opinion", label: "Legal letter draft (warning/complaint/objection)", risk: "legal-data", teardown: "Remove the LetterWorkflow step-4 BetaReviewGate wrapper after real letter drafting + QA is live." },
 ];
 
 export const LEGAL_DATA_REVIEW_GATED_TOOL_IDS = LEGAL_DATA_REVIEW_GATED_TOOLS.map((tool) => tool.id);

@@ -25,6 +25,7 @@ import { StepProgress, ProcessingView } from "./_components/SharedViews";
 import { ResultView } from "./_components/ResultView";
 import { LetterWorkflow } from "./_components/LetterWorkflow";
 import { SettingsStep } from "./_components/SettingsStep";
+import BetaReviewGate from "@/components/BetaReviewGate";
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
@@ -325,7 +326,9 @@ export default function AILegalOpinionPage() {
         {currentStep === "result" && (
           <motion.div key="step-result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             {selectedType === "cross-exam" ? (
-              <CrossExamResultView isDark={isDark} card={card} onReset={reset} />
+              <BetaReviewGate toolId="legal-opinion.cross-exam" toolName="مُولّد الاستجواب" reviewScope="legal-data">
+                <CrossExamResultView isDark={isDark} card={card} onReset={reset} />
+              </BetaReviewGate>
             ) : (
               <ResultView
                 outputType={selectedType as OutputType}

@@ -9,6 +9,7 @@ import {
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { LETTER_TYPES, GOV_ENTITIES } from "../_constants";
 import AiResultActions from "@/components/AiResultActions";
+import BetaReviewGate from "@/components/BetaReviewGate";
 import { useUser } from "@/hooks/useUser";
 
 interface LetterWorkflowProps {
@@ -445,6 +446,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
       {/* Step 4 — الخطاب الجاهز */}
       {letterDone && (
         <motion.div key="ls4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+          <BetaReviewGate toolId="legal-opinion.letter" toolName="الخطاب القانوني" reviewScope="legal-data">
           <div className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-emerald-700/30 bg-emerald-900/10" : "border-emerald-200 bg-emerald-50"}`}>
             <CheckCircle size={18} weight="fill" className="text-emerald-500 flex-shrink-0" />
             <div>
@@ -524,6 +526,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               />
             </div>
           </div>
+          </BetaReviewGate>
         </motion.div>
       )}
     </AnimatePresence>

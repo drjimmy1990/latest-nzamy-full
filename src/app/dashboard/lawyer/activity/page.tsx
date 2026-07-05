@@ -92,9 +92,11 @@ export default function ActivityLogPage() {
   const [typeFilter,setTypeFilter] = useState<ActivityType|"all">("all");
   const [dayFilter,setDayFilter] = useState<"all"|"today"|"yesterday"|"this_week"|"older">("all");
   const [showFilters,setShowFilters] = useState(false);
-  const [activities, setActivities] = useState<Activity[]>(MOCK_ACTIVITIES);
+  // In supabase mode start from [] so an empty feed shows the honest empty state
+  // (no invented history); demo mode keeps MOCK_ACTIVITIES for the showcase.
+  const [activities, setActivities] = useState<Activity[]>(isSupabaseMode ? [] : MOCK_ACTIVITIES);
 
-  // Fetch real activities from service; fall back to mock if empty
+  // Fetch real activities from service; in supabase mode an empty result stays empty.
   useEffect(() => {
     getLawyerActivity()
       .then((data) => {
@@ -202,7 +204,7 @@ export default function ActivityLogPage() {
               <s.icon size={18} weight="duotone" className={s.color}/>
             </div>
             <div>
-              <p className={`text-xl font-black ${isDark?"text-white":"text-slate-800"}`}>{s.value}</p>
+              <p className={`text-xl font-black ${isDark?"text-white":"text-slate-800"}`}>{isSupabaseMode ? "—" : s.value}</p>
               <p className={`text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}>{s.label}</p>
             </div>
           </motion.div>

@@ -14,6 +14,7 @@ import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import ServiceRequestWizard from "@/components/services/ServiceRequestWizard";
+import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type UserRole = "individual" | "corporate" | "lawyer_client" | "lawyer_provider";
@@ -407,7 +408,9 @@ export default function ServicesMarketplacePage() {
               )}
 
               {/* ── Featured Lawyers — for seeker roles ── */}
-              {role !== "lawyer_provider" && (
+              {/* Hidden during the single-firm beta (BETA_MONOPOLY_MODE): no external/mock
+                  lawyer directory + the /lawyers link round-trips through a redirect. */}
+              {role !== "lawyer_provider" && !BETA_MONOPOLY_MODE && (
                 <div className="pt-10 border-t mt-8 border-gray-200 dark:border-gray-800">
                   <div className="flex items-center justify-between mb-6">
                     <div>

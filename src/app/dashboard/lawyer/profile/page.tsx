@@ -103,7 +103,9 @@ const STATS = [
 
 type ProfileTab = "overview" | "performance" | "achievements" | "reviews";
 
-const PROFILE_TABS: ProfileTab[] = ["overview", "performance", "achievements", "reviews"];
+// achievements + reviews are hidden during beta (fabricated badges/reviews, no real
+// reputation source yet) — excluded here so ?tab=achievements|reviews falls back to overview.
+const PROFILE_TABS: ProfileTab[] = ["overview", "performance"];
 
 function isProfileTab(value: string | null): value is ProfileTab {
   return !!value && PROFILE_TABS.includes(value as ProfileTab);
@@ -232,8 +234,8 @@ export default function LawyerProfilePage() {
   const tabs = [
     { id: "overview",     label: "الملف المهني" },
     { id: "performance",  label: "الأداء" },
-    { id: "achievements", label: "إنجازاتي" },
-    { id: "reviews",      label: "التقييمات" },
+    // achievements + reviews tabs hidden during beta — they render fabricated
+    // badges / 5-star reviews with no real source. Re-add when wired to real data.
   ] as const;
 
   return (
