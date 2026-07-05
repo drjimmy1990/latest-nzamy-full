@@ -51,7 +51,7 @@
 
 | # | الحاوية / Container | ID | الحالة / Status |
 |---|--------------------|-----|----------------|
-| 1 | **Service Requests** (طلبات الخدمة) | `YkvR5SI8ljcSOfuC` | ✅ **مبني** (3 فروع + DUMMY) — WF 2.4 placeholder |
+| 1 | **Service Requests** (طلبات الخدمة) | `YkvR5SI8ljcSOfuC` | ✅ **مبني بالكامل** (2.1/2.2/2.3 + **Supabase resolve** + 2.4 SLA) |
 | 2 | **Onboarding & Verification** (التسجيل والتوثيق) | `5mg451RaFPJXwME4` | ✅ **مبني** (4 فروع + DUMMY) — 1.2b placeholder |
 | 3 | **Communication** (التواصل والتذكيرات) | `Y8SnEGaXTC3dboGA` | ⛔ مؤجّل — يحتاج Supabase + LLM + Evolution |
 | 4 | **Admin & Moderation** (الإدارة والإشراف) | `vOjQdg5CPgO9naa6` | ⬜ لم يُبنَ بعد |
@@ -86,9 +86,11 @@
 - **ماذا يفعل / Does:** يبني رسالة «اكتمل طلبك — نودّ رأيك» موجّهة للعميل (سيُضاف رابط التقييم عند الإرسال الحقيقي).
 
 ### 2.4 — تصعيد SLA 48 ساعة / 48h SLA escalation
-- **الحالة / Status:** ⬜ ما زال placeholder (NoOp). يحتاج **بيانات اعتماد Supabase** في n8n ليستعلم عن الطلبات المتأخّرة (cron كل ساعة). يُبنى لاحقاً.
+- **الحالة / Status:** ✅ **مبني** (2026-07-06). `Cron كل ساعة` → عقدة Supabase `2.4 Query stale` (getAll على `service_requests` بحالة `pending_assignment`) → عقدة Code تُبقي ما مضى عليه >48 ساعة → إشعار للأدمن → DUMMY.
 
-> **عقدة DUMMY / The DUMMY node:** كل فرع ينتهي بعقدة HTTP اسمها `2.x Deliver ⟶ DUMMY` ترسل `POST` إلى `$env.NZAMY_DELIVERY_URL` (أو placeholder `https://replace-me.invalid/deliver`). مضبوطة `continueOnFail` فلا تُفشل التشغيل. **للتفعيل الحقيقي:** غيّر الرابط إلى Evolution WhatsApp / خدمة البريد، وأضف استعلام Supabase لتحويل `to_user_id` إلى جوال/بريد.
+> **✅ تحليل جهة الاتصال / Contact resolution (2026-07-06):** فرعا 2.2 و2.3 صارا: `Compose → **Resolve client (Supabase get على `profiles` بـ `id`)** → Deliver`. أي أن عقدة الإرسال الآن تحمل **`to_email` و`to_phone` الحقيقيين** للعميل، لا مجرّد ID. يستخدم بيانات اعتماد Supabase المسمّاة **`nzamy`**.
+>
+> **عقدة DUMMY / The DUMMY node:** كل فرع ينتهي بعقدة HTTP اسمها `2.x Deliver DUMMY` ترسل `POST` إلى `$env.NZAMY_DELIVERY_URL` (أو placeholder). مضبوطة `onError: continueRegularOutput`. **للتفعيل الحقيقي:** غيّر الرابط إلى Evolution WhatsApp / خدمة البريد فقط — التواصل صار محلولاً.
 
 ---
 
@@ -185,11 +187,11 @@ curl -X POST https://n8n.asra3.com/webhook/new-request \
 | الأولوية | العنصر / Item | يحتاج / Needs |
 |----------|---------------|---------------|
 | ✅ مبني (n8n) | ~~Service Requests~~ + ~~Onboarding (1.1/1.2a/1.3/1.4)~~ | جاهزة بـ DUMMY. Service Requests مربوطة بـ app-push؛ Onboarding يحتاج **مشغّل تسجيل** (DB webhook على `INSERT profiles` أو ربط في صفحة التسجيل) |
-| ⛔ التالي (محجوب على creds) | **Communication** (4.1 triage · 4.2/4.3 reminders) | 4.1: **Evolution + LLM** · 4.2/4.3: **Supabase cred** + الأعمدة `consultations.reminder_sent/reminder_1h_sent` و`cases.hearing_reminder_sent` (migrations معلّقة). بناؤها بـ DUMMY بلا فائدة — تُبنى عند توفّر الـ creds |
-| 🥈 | **Admin & Moderation** (ملخّص يومي، إشراف) | Supabase cred |
+| 🥇 التالي | **Communication 4.2/4.3 reminders** | Supabase cred ✅ جاهز — يحتاج فقط **migration** يضيف `consultations.reminder_sent/reminder_1h_sent` + `cases.hearing_reminder_sent` (للحماية من التكرار). 4.1 triage يحتاج Evolution + LLM |
+| ⬜ | **1.2b lawyer-approval callback** | يحتاج **token موقّع**: رابط GET مفتوح يضبط `is_verified` = ثغرة. (الأدمن يوثّق حالياً من لوحة الإدارة بأمان) |
+| 🥈 | **Admin & Moderation** (ملخّص يومي، إشراف) | Supabase cred ✅ جاهز — يُبنى متى شئت |
 | ⛔ | **Billing & Wallet** | قرار بوابة الدفع (محجوب — الدفع مُعطّل حالياً) |
 | ⬜ | **AI Legal Tools** (18 أداة) | أولوية أقل: مخرجات AI محجوبة بالمراجعة في البيتا |
-| ⬜ | **WF 2.4 + 1.2b** | Supabase cred (استعلام/كتابة DB) |
 
 ---
 
@@ -206,4 +208,5 @@ curl -X POST https://n8n.asra3.com/webhook/new-request \
 ## سجل التغييرات / Change log
 
 - **2026-07-06:** بُنيت حاوية Service Requests (فروع 2.1/2.2/2.3 + DUMMY delivery)، ومُدمج app-side push (commit `bb6ba41`). 0 workflows فعّالة بعد.
-- **2026-07-06:** بُنيت حاوية Onboarding (فروع 1.1/1.2a/1.3/1.4 + DUMMY، بـ `onError` بلا تحذيرات؛ 1.2b placeholder). Communication مؤجّلة (تحتاج Supabase/LLM/Evolution). كلها ما زالت `inactive`.
+- **2026-07-06:** بُنيت حاوية Onboarding (فروع 1.1/1.2a/1.3/1.4 + DUMMY، بـ `onError` بلا تحذيرات؛ 1.2b placeholder). Communication مؤجّلة. كلها ما زالت `inactive`.
+- **2026-07-06 (Supabase cred `nzamy`, id `6D0tPh1noqoLzL6T`):** اكتملت Service Requests — أُضيف **تحليل جهة الاتصال** (Supabase `get` على `profiles` بـ `id`) لفرعَي 2.2/2.3 فصارت تحمل `to_email`/`to_phone`، وبُني **2.4 SLA** (Supabase `getAll` على `service_requests` + فلترة 48h). تحقّق: 0 أخطاء/تحذيرات. المتبقّي: reminders (يحتاج migration لأعمدة `reminder_sent`) و1.2b approval (يحتاج token موقّع).
