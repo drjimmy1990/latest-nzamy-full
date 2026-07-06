@@ -4,6 +4,7 @@ import { getPaymentGatewayStatus } from "@/lib/access-control";
 import { recordEvent, RequestEvent } from "@/lib/events";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
+import { recordNotification } from "@/lib/notify";
 
 /**
  * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
@@ -201,6 +202,14 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       console.error("[service-requests POST] n8n dispatch failed:", (e as Error).message);
     }
+
+    // In-app confirmation notification to the requester (best-effort).
+    await recordNotification({
+      userId: user.id,
+      title: "تم استلام طلبك",
+      body: `طلبك «${serviceRequest.title ?? ""}» قيد المعالجة وسنعلمك بأي تحديث.`,
+      href: "/dashboard",
+    });
 
     // B2/D7 — Create the payment record if this is a paid request. The payments
     // table has NO INSERT RLS policy, so we use the service-role client. The

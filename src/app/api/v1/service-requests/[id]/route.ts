@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { recordEvent, RequestEvent } from "@/lib/events";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
+import { recordNotification } from "@/lib/notify";
 
 /**
  * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
@@ -163,6 +164,41 @@ export async function PATCH(
     );
   } catch (e) {
     console.error("[service-requests PATCH] n8n dispatch failed:", (e as Error).message);
+  }
+
+  // In-app notifications on meaningful status transitions (best-effort).
+  const newStatus = typeof patch.status === "string" ? patch.status : null;
+  if (newStatus) {
+    const row = data as Record<string, unknown>;
+    const requesterId = (row.requester_user_id as string | null) ?? null;
+    const assignee = (row.assigned_to as string | null) ?? null;
+    if (newStatus === "assigned" || newStatus === "in_progress") {
+      if (requesterId) {
+        await recordNotification({
+          userId: requesterId,
+          title: "تم تعيين مختص لطلبك",
+          body: "بدأ العمل على طلبك.",
+          href: "/dashboard",
+        });
+      }
+      if (assignee && assignee !== requesterId) {
+        await recordNotification({
+          userId: assignee,
+          title: "طلب جديد بانتظارك",
+          body: "تم تعيين طلب خدمة جديد لك.",
+          href: "/dashboard",
+        });
+      }
+    } else if (newStatus === "completed") {
+      if (requesterId) {
+        await recordNotification({
+          userId: requesterId,
+          title: "تم إكمال طلبك",
+          body: "اكتمل تنفيذ طلبك بنجاح.",
+          href: "/dashboard",
+        });
+      }
+    }
   }
 
   return NextResponse.json({ data: toWorkflowRequest(data as unknown as Record<string, unknown>) });

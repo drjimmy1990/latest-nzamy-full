@@ -65,11 +65,12 @@ export async function PUT(request: NextRequest) {
 
   // Insert new items (if any)
   if (body.items.length > 0) {
-    const rows = body.items.map((item: { law_slug: string; article_number: string; article_title?: string }) => ({
+    const rows = body.items.map((item: { law_slug: string; article_number: string; article_title?: string; payload?: unknown }) => ({
       user_id: user.id,
       law_slug: item.law_slug,
       article_number: item.article_number,
       article_title: item.article_title ?? "",
+      payload: item.payload ?? null,
     }));
 
     const { error } = await supabase

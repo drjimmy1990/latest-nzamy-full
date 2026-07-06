@@ -89,7 +89,9 @@ export default function CommunityPage() {
   const card = `rounded-[2rem] border ${isDark ? "bg-[#161b22]/80 border-white/[0.06] backdrop-blur-xl" : "bg-white/80 border-slate-200/50 backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)]"}`;
   const muted = isDark ? "text-zinc-400" : "text-slate-500";
 
-  const questions = [...savedQuestions, ...ALL_QUESTIONS];
+  // In supabase mode, show ONLY real posts from the DB. The ALL_QUESTIONS mock
+  // seed is demo-only — merging it in prod polluted the real community feed.
+  const questions = isSupabaseMode ? savedQuestions : [...savedQuestions, ...ALL_QUESTIONS];
 
   const getVoteCount = (question: Question) => {
     const vote = questionVotes[question.id];
