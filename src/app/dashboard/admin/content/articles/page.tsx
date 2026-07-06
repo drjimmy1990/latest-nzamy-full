@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Article,
@@ -48,13 +48,75 @@ const EMPTY_ARTICLE: PlatformContentItem = {
   revision: 1,
 };
 
+// ─── DB row → PlatformContentItem mapping ────────────────────────────────────
+interface ArticleRow {
+  id: string;
+  slug?: string;
+  title: string;
+  status?: string | null;
+  author_name?: string | null;
+  views?: number | null;
+  published_at?: string | null;
+}
+
+const DB_STATUS_MAP: Record<string, PlatformContentStatus> = {
+  draft: "draft",
+  published: "published",
+  archived: "archived",
+  review: "review",
+};
+
+function rowToItem(row: ArticleRow, index: number): PlatformContentItem {
+  return {
+    id: row.id,
+    type: "article",
+    title: row.title,
+    status: DB_STATUS_MAP[row.status ?? "draft"] ?? "draft",
+    seoScore: 80,
+    author: row.author_name || "فريق المحتوى",
+    revision: index + 1,
+    publishedAt: row.published_at ?? undefined,
+  };
+}
+
+// Map the admin UI status onto the DB's allowed statuses (no 'review' column).
+function toDbStatus(status: PlatformContentStatus): string {
+  return status === "review" ? "draft" : status;
+}
+
+function slugify(title: string): string {
+  const base = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/(^-+|-+$)/g, "");
+  return `${base || "article"}-${Date.now().toString(36)}`;
+}
+
 export default function AdminArticlesPage() {
   const { isDark } = useTheme();
-  const [articles, setArticles] = useState(INITIAL_ARTICLES);
+  const [articles, setArticles] = useState<PlatformContentItem[]>(INITIAL_ARTICLES);
   const [search, setSearch] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<PlatformContentStatus | "all">("all");
   const [draft, setDraft] = useState<PlatformContentItem | null>(null);
-  const [toast, setToast] = useState("إدارة المقالات Backend-ready: التغييرات محلية حتى ربط CMS/DB.");
+  const [toast, setToast] = useState("إدارة المقالات: مرتبطة بقاعدة البيانات عبر CMS API.");
+
+  // ── Load articles from the CMS API (falls back to the static catalog) ──
+  const fetchArticles = useCallback(async () => {
+    try {
+      const res = await fetch("/api/v1/admin/articles", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as { data?: ArticleRow[] };
+      const rows = Array.isArray(json.data) ? json.data : [];
+      if (rows.length > 0) setArticles(rows.map(rowToItem));
+    } catch {
+      // keep the fallback catalog on failure
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchArticles();
+  }, [fetchArticles]);
 
   const filteredArticles = articles.filter((article) => {
     const matchesSearch = article.title.includes(search) || article.author.includes(search);
@@ -78,28 +140,84 @@ export default function AdminArticlesPage() {
     setDraft({ ...EMPTY_ARTICLE, id: `draft-${articles.length + 1}` });
   }
 
-  function saveDraft() {
+  // A draft coming from "new" has a synthetic id (draft-*); existing DB rows
+  // have a uuid id and go through PATCH.
+  const isNewDraft = (id: string) => id.startsWith("draft");
+
+  async function saveDraft() {
     if (!draft?.title.trim()) {
       setToast("المقال يحتاج عنوان قبل تجهيزه للنشر.");
       return;
     }
-    const normalized = { ...draft, revision: draft.revision + 1 };
-    setArticles((current) => {
-      const exists = current.some((article) => article.id === normalized.id);
-      return exists ? current.map((article) => (article.id === normalized.id ? normalized : article)) : [normalized, ...current];
+    const current = draft;
+    // Optimistic local update so the UI stays responsive.
+    const normalized = { ...current, revision: current.revision + 1 };
+    setArticles((list) => {
+      const exists = list.some((article) => article.id === normalized.id);
+      return exists ? list.map((article) => (article.id === normalized.id ? normalized : article)) : [normalized, ...list];
     });
     setDraft(null);
-    setToast(`تم تجهيز "${normalized.title}" محلياً. النشر الحقيقي ينتظر CMS API.`);
+    try {
+      if (isNewDraft(current.id)) {
+        const res = await fetch("/api/v1/admin/articles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: current.title.trim(),
+            slug: slugify(current.title),
+            status: toDbStatus(current.status),
+            author_name: current.author,
+          }),
+        });
+        if (!res.ok) throw new Error("create failed");
+        setToast(`تم إنشاء "${current.title}" في قاعدة البيانات.`);
+      } else {
+        const res = await fetch(`/api/v1/admin/articles/${current.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: current.title.trim(),
+            status: toDbStatus(current.status),
+            author_name: current.author,
+          }),
+        });
+        if (!res.ok) throw new Error("update failed");
+        setToast(`تم حفظ التعديلات على "${current.title}".`);
+      }
+      await fetchArticles();
+    } catch {
+      setToast("تعذّر الحفظ في قاعدة البيانات — التغيير محلي فقط.");
+    }
   }
 
-  function setArticleStatus(id: string, status: PlatformContentStatus) {
-    setArticles((current) => current.map((article) => (article.id === id ? { ...article, status, revision: article.revision + 1 } : article)));
-    setToast(`تم تغيير حالة المقال محلياً إلى "${STATUS_LABEL[status]}".`);
+  async function setArticleStatus(id: string, status: PlatformContentStatus) {
+    setArticles((list) => list.map((article) => (article.id === id ? { ...article, status, revision: article.revision + 1 } : article)));
+    setToast(`تم تغيير حالة المقال إلى "${STATUS_LABEL[status]}".`);
+    if (isNewDraft(id)) return;
+    try {
+      const res = await fetch(`/api/v1/admin/articles/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: toDbStatus(status) }),
+      });
+      if (!res.ok) throw new Error("status update failed");
+      await fetchArticles();
+    } catch {
+      setToast("تعذّر تحديث الحالة في قاعدة البيانات — التغيير محلي فقط.");
+    }
   }
 
-  function removeArticle(id: string) {
-    setArticles((current) => current.filter((article) => article.id !== id));
-    setToast("تم حذف المقال من الواجهة فقط. الحذف الحقيقي يحتاج CMS وAudit trail.");
+  async function removeArticle(id: string) {
+    setArticles((list) => list.filter((article) => article.id !== id));
+    setToast("تم حذف المقال.");
+    if (isNewDraft(id)) return;
+    try {
+      const res = await fetch(`/api/v1/admin/articles/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
+      await fetchArticles();
+    } catch {
+      setToast("تعذّر الحذف من قاعدة البيانات — أُزيل من الواجهة فقط.");
+    }
   }
 
   return (

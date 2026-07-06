@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, use } from "react";
 import { motion } from "framer-motion";
 import {
   Clock, Eye, Share, BookmarkSimple, CheckCircle, ArrowRight,
@@ -16,10 +16,72 @@ import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import {
   getPlatformBlogArticle,
   getRelatedPlatformBlogArticles,
+  PLATFORM_BLOG_CATEGORIES,
 } from "@/constants/platformContent";
+import type { PlatformBlogArticle } from "@/constants/platformContent";
 
-// Blog detail reads only from the shared platform content catalog.
-const RELATED = (slug: string) => getRelatedPlatformBlogArticles(slug, 3);
+// ─── DB row → PlatformBlogArticle mapping ────────────────────────────────────
+interface BlogRow {
+  id?: string;
+  slug: string;
+  title: string;
+  title_en?: string | null;
+  excerpt?: string | null;
+  excerpt_en?: string | null;
+  body?: string | null;
+  category?: string | null;
+  author_name?: string | null;
+  cover?: string | null;
+  read_time?: string | null;
+  views?: number | null;
+  likes?: number | null;
+  featured?: boolean | null;
+  published_at?: string | null;
+}
+
+function formatDate(iso?: string | null, en = false): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(en ? "en-US" : "ar-SA", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function rowToDetail(row: BlogRow): PlatformBlogArticle {
+  const cat = PLATFORM_BLOG_CATEGORIES.find((c) => c.id === row.category);
+  const authorName = row.author_name || "فريق المحتوى";
+  return {
+    id: row.id || row.slug,
+    slug: row.slug,
+    category: row.category || "news",
+    tag: cat?.label || "أخبار قانونية",
+    tagEn: cat?.labelEn || "Legal News",
+    title: row.title,
+    titleEn: row.title_en || row.title,
+    excerpt: row.excerpt || "",
+    excerptEn: row.excerpt_en || row.excerpt || "",
+    author: {
+      name: authorName,
+      nameEn: authorName,
+      slug: "",
+      specialty: "قانوني",
+      specialtyEn: "Legal",
+      rating: 5,
+      reviewCount: 0,
+    },
+    date: formatDate(row.published_at),
+    dateEn: formatDate(row.published_at, true),
+    publishedDate: row.published_at || "",
+    readTime: row.read_time || "٥ دقائق",
+    readTimeEn: row.read_time || "5 min",
+    views: row.views ?? 0,
+    likes: row.likes ?? 0,
+    featured: Boolean(row.featured),
+    status: "published",
+    seoScore: 0,
+    source: "backend-ready",
+    content: row.body || "",
+  };
+}
 
 // Simple Markdown renderer (lightweight)
 function RenderContent({ md, isDark }: { md: string; isDark: boolean }) {
@@ -42,20 +104,68 @@ function RenderContent({ md, isDark }: { md: string; isDark: boolean }) {
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────
-export default function BlogArticlePage({ params }: { params: { slug: string } }) {
+export default function BlogArticlePage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
   const { isRTL, isDark } = useTheme();
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [dbArticle, setDbArticle] = useState<PlatformBlogArticle | null>(null);
+  const [dbRelated, setDbRelated] = useState<PlatformBlogArticle[] | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        // One published article by slug.
+        const res = await fetch(`/api/v1/blog/${encodeURIComponent(slug)}`, { cache: "no-store" });
+        if (res.ok) {
+          const json = (await res.json()) as { data?: BlogRow | null };
+          if (active && json?.data) setDbArticle(rowToDetail(json.data));
+        }
+        // Related: fetch the list, filter to same category (or any), exclude self.
+        const listRes = await fetch("/api/v1/blog", { cache: "no-store" });
+        if (listRes.ok) {
+          const listJson = (await listRes.json()) as { data?: BlogRow[] };
+          const rows = Array.isArray(listJson.data) ? listJson.data : [];
+          if (active && rows.length > 0) setDbRelated(rows.map(rowToDetail));
+        }
+      } catch {
+        // keep fallback
+      } finally {
+        if (active) setLoaded(true);
+      }
+    })();
+    return () => { active = false; };
+  }, [slug]);
+
   if (!mounted) return null;
 
-  const article = getPlatformBlogArticle(params.slug);
+  // Prefer the DB-backed article; fall back to the static catalog.
+  const article = dbArticle ?? getPlatformBlogArticle(slug);
   const muted = isDark ? "text-gray-400" : "text-gray-500";
   const card = `rounded-2xl border p-6 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
 
   if (!article) {
+    // Still fetching — don't flash the not-found state for DB-only slugs.
+    if (!loaded) {
+      return (
+        <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
+          <Navbar />
+          <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-20 text-center">
+            <div className={`${card} animate-pulse`}>
+              <Newspaper size={40} className="mx-auto mb-4 text-[#C8A762]" weight="duotone" />
+              <p className={`text-sm ${muted}`}>{isRTL ? "جارٍ التحميل..." : "Loading..."}</p>
+            </div>
+          </main>
+          <Footer />
+          <FloatingButtons />
+        </div>
+      );
+    }
     return (
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
         <Navbar />
@@ -79,7 +189,13 @@ export default function BlogArticlePage({ params }: { params: { slug: string } }
     );
   }
 
-  const related = RELATED(article.slug);
+  // Related: prefer DB list (same category first, then any), else static catalog.
+  const related: PlatformBlogArticle[] = dbRelated
+    ? [
+        ...dbRelated.filter((r) => r.slug !== article.slug && r.category === article.category),
+        ...dbRelated.filter((r) => r.slug !== article.slug && r.category !== article.category),
+      ].slice(0, 3)
+    : getRelatedPlatformBlogArticles(article.slug, 3);
 
   return (
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>

@@ -97,26 +97,90 @@ const ARTICLES = [
   },
 ];
 
+// ─── DB row → card item mapping ──────────────────────────────────────────────
+type Article = typeof ARTICLES[0];
+
+interface BlogRow {
+  id?: string;
+  slug: string;
+  title: string;
+  title_en?: string | null;
+  excerpt?: string | null;
+  excerpt_en?: string | null;
+  category?: string | null;
+  author_name?: string | null;
+  cover?: string | null;
+  read_time?: string | null;
+  views?: number | null;
+  featured?: boolean | null;
+  published_at?: string | null;
+}
+
+function rowToArticle(row: BlogRow, index: number): Article {
+  const cat = CATEGORIES.find(c => c.id === row.category);
+  const author = row.author_name || (index % 2 === 0 ? "أ. أحمد الغامدي" : "أ. سارة العتيبي");
+  return {
+    id: (index + 1) as Article["id"],
+    slug: row.slug,
+    category: row.category || "news",
+    tag: cat?.label || "أخبار قانونية",
+    tagEn: cat?.labelEn || "Legal News",
+    title: row.title,
+    titleEn: row.title_en || row.title,
+    excerpt: row.excerpt || "",
+    excerptEn: row.excerpt_en || row.excerpt || "",
+    author,
+    authorSlug: "",
+    authorEn: row.author_name || author,
+    date: "",
+    dateEn: "",
+    readTime: row.read_time || "٥ دقائق",
+    readTimeEn: row.read_time || "5 min",
+    views: row.views ?? 0,
+    featured: Boolean(row.featured),
+  };
+}
+
 // ─── Component ─────────────────────────────────────────────────────────────
 export default function BlogPage() {
   const { isRTL, isDark } = useTheme();
   const [category, setCategory] = useState("all");
   const [search, setSearch] = useState("");
   const [mounted, setMounted] = useState(false);
+  const [items, setItems] = useState<Article[]>([]);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/blog", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { data?: BlogRow[] };
+        const rows = Array.isArray(json.data) ? json.data : [];
+        if (active && rows.length > 0) setItems(rows.map(rowToArticle));
+      } catch {
+        // keep fallback
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
   if (!mounted) return null;
 
   const muted = isDark ? "text-zinc-400" : "text-slate-500";
   const card = `rounded-[2rem] border overflow-hidden backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)] ${isDark ? "bg-[#161b22]/80 border-white/[0.06]" : "bg-white/80 border-slate-200/50"}`;
 
-  const featured = ARTICLES.filter(a => a.featured);
-  const filtered = ARTICLES
+  // Prefer DB-backed articles; fall back to the static catalog when empty.
+  const source: Article[] = items.length > 0 ? items : ARTICLES;
+  const featured = source.filter(a => a.featured);
+  const filtered = source
     .filter(a => !a.featured || category !== "all")
     .filter(a => category === "all" || a.category === category)
     .filter(a => search === "" || (isRTL ? a.title : a.titleEn).toLowerCase().includes(search.toLowerCase()));
 
-  const ArticleCard = ({ article, big = false }: { article: typeof ARTICLES[0]; big?: boolean }) => (
+  const ArticleCard = ({ article, big = false }: { article: Article; big?: boolean }) => (
     <Link href={`/blog/${article.slug}`} className={`group ${card} flex flex-col hover:border-[#0B3D2E]/30 transition-colors`}>
       {/* Image placeholder */}
       <div className={`w-full ${big ? "h-52" : "h-36"} bg-gradient-to-br from-[#0B3D2E]/10 via-[#C8A762]/10 to-[#0B3D2E]/5 flex items-center justify-center relative`}>
