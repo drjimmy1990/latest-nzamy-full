@@ -23,6 +23,15 @@
 >    - Only unbuilt: Billing (blocked on payment decision), AI Legal Tools (needs per-tool LLM prompts), WF 4.3 hearing reminder (needs a hearings table).
 > **So the real #1 now is: deploy + activate + wire a delivery endpoint (Evolution/email), NOT "build n8n."** See [`n8n_BUILD_LOG_AND_TEST_GUIDE.md`](./n8n_BUILD_LOG_AND_TEST_GUIDE.md) + [`DEPLOY_AND_SMOKETEST_RUNBOOK.md`](./DEPLOY_AND_SMOKETEST_RUNBOOK.md).
 
+> ## 🟢 SECOND UPDATE — 2026-07-06 (later): admin-controlled entitlements + production wiring
+> A **7-phase** build landed on `main` (`1497ff6 · e20a44a · 46ae7e0 · c7f29a0 · 597ea04 · 89ab077 · d9aa5ae · 8b4b447`; `tsc` 0 · `build` 392/392 · `eslint` 0 · adversarial review 0 findings). Authoritative doc: **[`ENTITLEMENTS_AND_WIRING_BUILD_LOG.md`](./ENTITLEMENTS_AND_WIRING_BUILD_LOG.md)**. This shifts several rows in the tables below:
+> - **Admin dashboard (was 6 real / 33 mock):** now **~14 real** — added the **entitlements grant editor** + **requests queue** (new), and wired **tickets, broadcasts, coupons, audit-log, community-moderation, payments** off their mock consts to real admin-gated routes.
+> - **Payments (no gateway):** the dead paid CTAs (pricing/laws/media/wallet) now file an **`entitlement_request`**; admin approves → `grantEntitlement` writes the real subscription/credits/wallet row → existing `access-control.ts` unlocks it. This is the admin-controlled substitute for a gateway.
+> - **Public + content (was 30 mock):** **contact/partners** real writes, **share/[token]** server-side passcode verify (security fix), **promo/invite** real, and a real **Blog CMS** (`articles` table + admin authoring; blog served from DB).
+> - **Cross-cutting wiring:** in-app notifications now fire on entitlement/verification/service-request events; community mock-seed merge removed in supabase mode; draft-cart persisted to DB (lossless).
+> - **⚠️ Apply migrations:** `20260706_entitlement_requests.sql`, `20260706_draft_cart_payload.sql`, `20260706_content_and_ops.sql`, `20260706_articles_seed.sql`. Until then, new surfaces show mock fallback (no crashes). **Still deferred:** real gateway, Academy LMS, sector dashboards, i18n.
+> **The per-area counts in §1 below are the ORIGINAL audit — treat them as pre-this-build.**
+
 ---
 
 ## 1. Executive summary
