@@ -6,6 +6,11 @@
 >
 > **Total: 38 workflows** — 20 operational + 18 AI-powered legal tools.
 > **Last Updated: 2026-06-29**
+>
+> ## 🟢 BUILD STATUS — 2026-07-06
+> The **operational containers are now BUILT + validated** on the live instance (all **inactive** until activated): **Service Requests** (`YkvR5SI8ljcSOfuC`), **Onboarding** (`5mg451RaFPJXwME4`), **Communication** (`Y8SnEGaXTC3dboGA`), **Admin & Moderation** (`vOjQdg5CPgO9naa6`) — with app-side push wired (`src/lib/n8n/dispatch.ts`), Supabase (`nzamy` cred) contact-resolution + consultation reminders + 48h SLA + daily digest + token-guarded lawyer-approval + keyword triage/moderation. Delivery is a plain-URL **dummy** node (edit to go live). New migration `20260706_reminder_flags.sql`.
+> **Not built:** Billing (`nLcTncqGZnSKCOoQ`, blocked on payment-gateway decision), AI Legal Tools (`rtj1TC9rd6Ule7am`, needs per-tool LLM prompts), WF 4.3 hearing reminder (needs a hearings table).
+> 👉 **What's actually built + per-branch detail + curl tests:** [`n8n_BUILD_LOG_AND_TEST_GUIDE.md`](./n8n_BUILD_LOG_AND_TEST_GUIDE.md) · **activate + smoke-test:** [`DEPLOY_AND_SMOKETEST_RUNBOOK.md`](./DEPLOY_AND_SMOKETEST_RUNBOOK.md). The plan below remains the reference for the unbuilt pieces + the original design.
 
 ---
 
@@ -13,7 +18,7 @@
 
 | Item | Status |
 |------|--------|
-| **Live n8n instance** | ✅ `https://n8n.asra3.com` — MCP v2.61.0, healthy (verified 2026-06-29). **Shared/personal instance** — already contains ~100+ unrelated workflows (CRM, Salla, Facebook, WhatsApp API, RAG, lessons, etc.). **Zero NZAMY legal workflows imported yet.** |
+| **Live n8n instance** | ✅ `https://n8n.asra3.com` — MCP v2.61.0, healthy (verified 2026-06-29). **Shared/personal instance** — already contains ~100+ unrelated workflows (CRM, Salla, Facebook, WhatsApp API, RAG, lessons, etc.). **Update 2026-07-06: the 4 operational NZAMY containers are now built (inactive) — see the 🟢 BUILD STATUS banner above.** |
 | **Importable JSON templates** | ✅ 7 Phase‑1 templates exist at `n8n/workflows/wf-*.json` (WF 1.1, 1.2, 2.1, 2.2, 2.3, 4.1, 4.2) — ready to import. The other 31 workflows have no JSON yet. |
 | **Next.js trigger layer** | ✅ Built: `POST /api/v1/n8n/trigger` + `src/lib/n8n/payload.ts` + `src/lib/events.ts` (namespaced events + `namespaceEvent`). Endpoint assembles + logs payloads only — **makes no outbound HTTP yet** (needs `N8N_WEBHOOK_BASE_URL` + a `dispatchToN8n()` helper to flip to send). |
 | **Live AI→n8n outbound** | Only `/api/ai/library-chat` + `/api/ai/explain-article` make real `fetch()` to n8n today (env vars unset → 503). The 18 `/api/v1/ai/*` routes do **not** exist yet. |

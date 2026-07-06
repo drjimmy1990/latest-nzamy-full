@@ -18,6 +18,8 @@
 >
 > ## 🆕 UPDATE 2026-07-06 — full-surface review
 > A verified page-by-page audit (all 9 dashboards + 75 AI tools + library + API + n8n, ~411 pages/routes) is captured in **[`PROJECT_STATUS_REVIEW_2026-07-06.md`](./PROJECT_STATUS_REVIEW_2026-07-06.md)** — **the current authoritative "what's actually left" doc.** Headline: the client↔lawyer core loop is genuinely built; the mock mass (firm + 5 sectors + AI shells = ~184 pages) is outside the beta loop and hidden by monopoly mode. **Real launch blockers:** (1) **0 n8n workflows** → no notifications fire (the long pole), (2) a few ungated `setTimeout` AI fabrications, (3) an inconsistent `/marketplace` monopoly gate. Recommended build order: **Phase 0 honesty-gates (hours) → Phase 1 n8n Section A (multi-day) → Phase 2 library seeding.**
+>
+> **✅ Update (end of 2026-07-06):** Phase 0 gates shipped (`41007a5`), and **all operational n8n workflows are now BUILT** — Service Requests / Onboarding / Communication / Admin, app-side push wired (`bb6ba41`), with Supabase contact-resolution + reminders + 48h SLA + admin digest + token-guarded approval (all **inactive**; delivery = plain-URL dummy). The n8n "long pole" is done; what remains is **deploy + activate + wire a real delivery endpoint (Evolution/email)**. See [`n8n_BUILD_LOG_AND_TEST_GUIDE.md`](./n8n_BUILD_LOG_AND_TEST_GUIDE.md) + [`DEPLOY_AND_SMOKETEST_RUNBOOK.md`](./DEPLOY_AND_SMOKETEST_RUNBOOK.md).
 
 ---
 
@@ -147,6 +149,8 @@ From `master_checklist2.md` Phase 3 + `payments-gateway-admin-gate.md`. The admi
 ---
 
 ## Phase 5 — n8n automation (Section A first, then B)
+
+> **✅ BUILT 2026-07-06 — this section is largely done.** The operational workflows (Service Requests, Onboarding, Communication, Admin) are built + validated on `n8n.asra3.com` (inactive) with app-side push wired. The plan below is the original spec; for **what's actually built + how to activate/test**, use [`n8n_BUILD_LOG_AND_TEST_GUIDE.md`](./n8n_BUILD_LOG_AND_TEST_GUIDE.md). Remaining: Billing (blocked on payments), AI Legal Tools (per-tool LLM), WF 4.3 hearing reminder.
 
 From `workflows_roadmap.md`. 18 workflows + 9 email templates. **Section A (7 workflows) is the launch blocker** — completes the client↔lawyer flow.
 

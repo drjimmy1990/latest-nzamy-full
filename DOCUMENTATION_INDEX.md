@@ -27,6 +27,8 @@
 | `client_dashboard_audit.md` | Audit | 🔴 | Client dashboard dummy-data inventory (mostly fixed now) |
 | `client_lawyer_functional_audit.md` | Audit | ✅ | Client+lawyer functional audit + fix plan + resolution status |
 | `n8n_master_guide_latest.md` | n8n | ✅ | **Building n8n** — canonical 38-workflow spec |
+| `n8n_BUILD_LOG_AND_TEST_GUIDE.md` | n8n | ✅ | **What's actually built** (AR/EN) — per-branch state + curl tests + go-live steps |
+| `DEPLOY_AND_SMOKETEST_RUNBOOK.md` | Deployment | ✅ | Deploy this session's work + activate n8n + smoke-test the loop (AR/EN) |
 | `n8n/README.md` | n8n | ✅ | Importing the 7 templates / payload contract / credentials |
 | `n8n_workflows_list.md` | n8n | 📄 | Deep technical reference (superseded by master guide) |
 | `n8n_workflows.md` | n8n | 📄 | Phase-4 AI workflow reference (superseded) |
@@ -260,7 +262,9 @@
 | Know what to work on next | `NEXT_STEPS.md` |
 | See what's fixed vs deferred | `nzamy-audit-fix-status.md` |
 | Understand the codebase structure | `ARCHITECTURE.md` |
-| Build n8n workflows | `n8n_master_guide_latest.md` → `n8n/README.md` |
+| See what n8n is built + how to test it | `n8n_BUILD_LOG_AND_TEST_GUIDE.md` |
+| Deploy + activate + smoke-test | `DEPLOY_AND_SMOKETEST_RUNBOOK.md` |
+| Build/plan more n8n workflows | `n8n_FINAL_MASTER_PLAN.md` → `n8n_master_guide_latest.md` |
 | Seed the library | `legal_library_guide.md` (scripts) or `manual_seeding_guide.md` (SQL) |
 | QA-test before launch | `library_testing_arabic.md` + `client_lawyer_testing_arabic (1).md` |
 | Work on the admin panel | `PROJECT.md` |

@@ -8,9 +8,20 @@
 **This document supersedes drift in older roadmaps.** Where they disagree with the audit findings below, this doc wins. Cross-references:
 - [NEXT_STEPS.md](./NEXT_STEPS.md)
 - [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
-- [n8n_FINAL_MASTER_PLAN.md](./n8n_FINAL_MASTER_PLAN.md) (still the authoritative n8n build plan — 0 of its workflows are live yet)
+- [n8n_FINAL_MASTER_PLAN.md](./n8n_FINAL_MASTER_PLAN.md) (the authoritative n8n plan) · [n8n_BUILD_LOG_AND_TEST_GUIDE.md](./n8n_BUILD_LOG_AND_TEST_GUIDE.md) (**what's actually built** — all operational containers, 2026-07-06) · [DEPLOY_AND_SMOKETEST_RUNBOOK.md](./DEPLOY_AND_SMOKETEST_RUNBOOK.md)
 
 **Status legend:** ✅ done · 🟡 partial · ⬜ not started
+
+---
+
+> ## 🟢 END-OF-SESSION UPDATE — 2026-07-06 (read this first)
+> Two things changed the picture after this review was written; the body below is the original audit, kept for reference.
+> 1. **Phase 0 honesty-gates shipped** (commit `41007a5`): blockers **#2–#5** below are fixed — AI fabrications gated, `/marketplace` monopoly-gated, lawyer `sharing`/`activity`/`profile` made honest.
+> 2. **Blocker #1 (n8n) is no longer "0 built".** The **entire operational automation layer is now built + validated** on `n8n.asra3.com` (all containers still **inactive** by design):
+>    - App-side push wired (commit `bb6ba41`) — `dispatch.ts` now fires on request create/assign/complete.
+>    - **Service Requests, Onboarding, Communication, Admin** containers built: Supabase contact-resolution (real email/phone), consultation reminders, 48h SLA, daily digest, token-guarded lawyer-approval, keyword triage/moderation. Delivery is a plain-URL **dummy** node (edit to go live). New migration `20260706_reminder_flags.sql`.
+>    - Only unbuilt: Billing (blocked on payment decision), AI Legal Tools (needs per-tool LLM prompts), WF 4.3 hearing reminder (needs a hearings table).
+> **So the real #1 now is: deploy + activate + wire a delivery endpoint (Evolution/email), NOT "build n8n."** See [`n8n_BUILD_LOG_AND_TEST_GUIDE.md`](./n8n_BUILD_LOG_AND_TEST_GUIDE.md) + [`DEPLOY_AND_SMOKETEST_RUNBOOK.md`](./DEPLOY_AND_SMOKETEST_RUNBOOK.md).
 
 ---
 
@@ -143,11 +154,11 @@ The goal is a **real** client↔lawyer beta, then expand. Order matters: notific
 2. ✅ Added monopoly redirect to `marketplace/layout.tsx`; hid `services/page.tsx` Featured-Lawyers block + `/lawyers` link (blocker #4).
 3. ✅ Gated lawyer `sharing` قريباً; honest empty state on `activity`; removed profile achievements/reviews tabs (blocker #5).
 
-**Phase 1 — n8n Section A build (the #1 blocker, multi-day, the long pole):**
-4. Add the **missing migrations first**: `consultations.reminder_sent`/`reminder_1h_sent`, `request_events.metadata jsonb`.
-5. Create **Supabase DB-webhook migrations** (INSERT `profiles`→/new-user, INSERT `lawyer_profiles`→/verification, UPDATE `service_requests`→/request-assigned|/request-completed) with `X-Webhook-Secret`. *(The app-side `dispatch.ts`/`trigger` path is a manual fallback with no auto-caller — the DB-webhook path is the production design.)*
-6. Configure n8n creds (Resend SMTP, Evolution WhatsApp, LLM); import + **activate** the 4 Section-A workflows (welcome, request-received, request-assigned, review-request). Split shared `/request-status` into `/request-assigned` + `/request-completed` (plan §8.4).
-7. Add **rate-limiting** on the two unauthenticated AI proxy routes **at the same time** webhooks go live (Section 4E).
+**Phase 1 — n8n Section A — ✅ BUILT 2026-07-06 (all operational containers; inactive until activated):**
+4. ✅ App-side push wired (`bb6ba41`): `dispatch.ts` fires `/new-request`, `/request-assigned`, `/request-completed` on the real write paths.
+5. ✅ Containers built with Supabase (`nzamy` cred): contact-resolution, consultation reminders (+ `20260706_reminder_flags.sql`), 48h SLA, admin digest, token-guarded lawyer-approval. Delivery = plain-URL dummy node (edit to go live).
+6. ⬜ **Remaining to go live (this is the new #1):** deploy the app (Phase 0 + push), apply the migration, set `N8N_WEBHOOK_BASE_URL`, **activate** the workflows, and point the Deliver nodes at a real Evolution/email endpoint. See the runbook.
+7. Add **rate-limiting** on the two unauthenticated AI proxy routes **at the same time** delivery goes live (Section 4E).
 
 **Phase 2 — Beta ops completeness (1–2 days):**
 8. Add POST to `/api/v1/admin/library` + wire the "إضافة سجل جديد" form so the corpus can be seeded from the UI (Section 3).
