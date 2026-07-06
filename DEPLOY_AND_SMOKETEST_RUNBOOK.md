@@ -55,12 +55,10 @@ pm2 logs nzamy --lines 20    # ⇒ يجب أن ترى: ✓ Ready in ...
 
 ## C — تجهيز n8n / Set up n8n
 
-1. **متغيّرات بيئة n8n** (في بيئة تشغيل n8n نفسها، لا واجهة الويب — لأن `$env` يقرأ process env):
-   - `NZAMY_DELIVERY_URL` = رابط إرسال Evolution WhatsApp / البريد (اتركه فارغاً الآن ⇒ الإرسال DUMMY).
-   - `NZAMY_APPROVAL_SECRET` = سرّ قوي (لفرع 1.2b توثيق المحامي).
-   - ⚠️ لو n8n يحجب `$env` (الافتراضي أحياناً): اضبط `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` في بيئة n8n. **لا يؤثّر على اختبار DUMMY** — يلزم فقط للإرسال الحقيقي و1.2b.
-2. **فعّل الحاويات / Activate** (زر Active): ابدأ بـ **NZAMY · Service Requests** (`YkvR5SI8ljcSOfuC`).
-   - Communication/Admin فيها cron — تفعيلها يبدأ المؤقّتات (غير ضارّ مع DUMMY).
+**لا حاجة لأي متغيّر بيئة في n8n — أزلنا `$env` نهائياً.** عُقد الإرسال تحمل رابطاً نصّياً واضحاً `https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send` — افتح العقدة وعدّل الحقل مباشرةً عند جاهزية Evolution/البريد. وسرّ 1.2b قيمة نصّية `CHANGE-ME-APPROVAL-SECRET` داخل عقدة `1.2b Check token` (عدّلها إن أردت تفعيل رابط الاعتماد).
+
+1. **فعّل الحاويات / Activate** (زر Active): ابدأ بـ **NZAMY · Service Requests** (`YkvR5SI8ljcSOfuC`).
+   - Communication/Admin فيها cron — تفعيلها يبدأ المؤقّتات (غير ضارّ مع رابط الإرسال الوهمي).
 
 ---
 
@@ -108,4 +106,4 @@ curl -s "https://<موقعك>/api/v1/lawyers" | head -c 600
 - [ ] D2: حلقة العميل↔المحامي كاملة ⇒ 3 executions + resolve يرجع جهة الاتصال
 - [ ] E: `/api/v1/lawyers` بلا PII
 
-**بعد نجاح كل ذلك:** الإرسال ما زال DUMMY — الخطوة التالية الحقيقية هي ربط Evolution/البريد (ضبط `NZAMY_DELIVERY_URL`) + التحصين الأمني (rate-limiting على مسارات AI العامة). راجع [`PROJECT_STATUS_REVIEW_2026-07-06.md`](./PROJECT_STATUS_REVIEW_2026-07-06.md) و [`n8n_BUILD_LOG_AND_TEST_GUIDE.md`](./n8n_BUILD_LOG_AND_TEST_GUIDE.md).
+**بعد نجاح كل ذلك:** الإرسال ما زال وهمياً — الخطوة التالية الحقيقية هي ربط Evolution/البريد (عدّل رابط عُقد الإرسال مباشرةً في n8n) + التحصين الأمني (rate-limiting على مسارات AI العامة). راجع [`PROJECT_STATUS_REVIEW_2026-07-06.md`](./PROJECT_STATUS_REVIEW_2026-07-06.md) و [`n8n_BUILD_LOG_AND_TEST_GUIDE.md`](./n8n_BUILD_LOG_AND_TEST_GUIDE.md).

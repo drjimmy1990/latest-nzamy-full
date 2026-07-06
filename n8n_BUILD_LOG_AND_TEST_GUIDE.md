@@ -92,7 +92,7 @@
 
 > **✅ تحليل جهة الاتصال / Contact resolution (2026-07-06):** فرعا 2.2 و2.3 صارا: `Compose → **Resolve client (Supabase get على `profiles` بـ `id`)** → Deliver`. أي أن عقدة الإرسال الآن تحمل **`to_email` و`to_phone` الحقيقيين** للعميل، لا مجرّد ID. يستخدم بيانات اعتماد Supabase المسمّاة **`nzamy`**.
 >
-> **عقدة DUMMY / The DUMMY node:** كل فرع ينتهي بعقدة HTTP اسمها `2.x Deliver DUMMY` ترسل `POST` إلى `$env.NZAMY_DELIVERY_URL` (أو placeholder). مضبوطة `onError: continueRegularOutput`. **للتفعيل الحقيقي:** غيّر الرابط إلى Evolution WhatsApp / خدمة البريد فقط — التواصل صار محلولاً.
+> **عقدة DUMMY / The DUMMY node:** كل فرع ينتهي بعقدة HTTP اسمها `2.x Deliver DUMMY` ترسل `POST` إلى رابط placeholder نصّي واضح `https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send` (لا `$env`). مضبوطة `onError: continueRegularOutput`. **للتفعيل الحقيقي:** افتح العقدة وضع رابط Evolution/البريد في حقل URL مباشرةً — التواصل صار محلولاً.
 
 ---
 
@@ -200,9 +200,9 @@ curl -X POST https://n8n.asra3.com/webhook/new-request \
 ## 6. لجعل الإرسال حقيقياً / To make delivery real
 
 عند نشر Evolution API واختيار مزوّد البريد:
-1. **n8n env:** اضبط `NZAMY_DELIVERY_URL` = رابط إرسال Evolution WhatsApp / خدمة البريد.
-2. **حلّ جهة الاتصال / Resolve contact:** أضف عقدة Supabase قبل الإرسال تستعلم عن جوال/بريد المستلم بـ `to_user_id` (الحمولة تحمل ID فقط). يحتاج **بيانات اعتماد Supabase** في n8n (على الأرجح موجودة أصلاً في workflows الـ RAG SUPABASE).
-3. **بدّل عقدة DUMMY** بعقدة Evolution/HTTP الحقيقية، أو أبقِها موجّهة إلى `NZAMY_DELIVERY_URL`.
+1. **عدّل رابط عُقد الإرسال مباشرةً:** افتح كل عقدة `… Deliver` وضع في حقل **URL** رابط إرسال Evolution WhatsApp / خدمة البريد بدلاً من `https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send`. **لا حاجة لأي متغيّر بيئة `$env`** (أُزيل).
+2. **جهة الاتصال محلولة أصلاً ✅:** فروع 2.2/2.3 و4.2 فيها عقدة Supabase `Resolve` تُرجع `to_email`/`to_phone` الحقيقيين. الفروع الأخرى تحمل الـ ID/البريد من الحمولة — أضف `Resolve` مماثلة إن لزم.
+3. **الحمولة المُرسَلة** JSON فيه `to_email`/`to_phone`/`subject_ar`/`body_ar` — هيّئ عقدة Evolution/البريد لقراءتها.
 4. **فعّل الحاوية** (Active) — تمام.
 
 ---
