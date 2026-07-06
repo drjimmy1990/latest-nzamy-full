@@ -1,6 +1,6 @@
 # Design — Admin-Controlled Entitlements + Production Wiring
 
-**Date:** 2026-07-06 · **Status:** Approved (design), pending implementation plan
+**Date:** 2026-07-06 · **Status:** ✅ Implemented 2026-07-06 (all 7 phases) — see [`ENTITLEMENTS_AND_WIRING_BUILD_LOG.md`](../../../ENTITLEMENTS_AND_WIRING_BUILD_LOG.md)
 **Backlog source:** [`PRODUCT_COMPLETENESS_BACKLOG.md`](../../../PRODUCT_COMPLETENESS_BACKLOG.md) · **Beta scope:** [`PROJECT_STATUS_REVIEW_2026-07-06.md`](../../../PROJECT_STATUS_REVIEW_2026-07-06.md)
 
 ## 1. Problem & goals

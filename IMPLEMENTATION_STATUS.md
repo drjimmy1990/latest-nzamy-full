@@ -7,6 +7,18 @@
 
 ---
 
+## ✅ Round 3 (2026-07-06) — Admin-controlled entitlements + production wiring
+
+A 7-phase build (commits `1497ff6 · e20a44a · 46ae7e0 · c7f29a0 · 597ea04 · 89ab077 · d9aa5ae · 8b4b447`). Full detail + runbook: [`ENTITLEMENTS_AND_WIRING_BUILD_LOG.md`](./ENTITLEMENTS_AND_WIRING_BUILD_LOG.md). **Gates:** `tsc` 0 · `next build` 392/392 · `eslint` 0 · adversarial review 0 findings.
+- **Entitlements grant layer (no gateway):** `entitlement_requests` table, `src/lib/entitlements.ts` (`grantEntitlement` → subscriptions/credits/wallet), request+approve APIs, admin **grant editor** + **requests queue** pages, and client paid CTAs (pricing/laws/media/wallet) that file a request instead of dead-ending.
+- **Wiring:** `recordNotification` on entitlement/verification/service-request events; killed the community mock-seed merge in supabase mode; draft-cart made dual-mode + lossless (`law_draft_carts.payload`); n8n verification dispatch.
+- **Admin console:** tickets, broadcasts, coupons, audit-log, community-moderation, payments wired off their mocks to real admin-gated routes.
+- **Content + Blog CMS:** real contact/partners/share-verify/promo/invite writes; `articles` table + public read + admin authoring; blog served from DB.
+- **⚠️ Migrations to apply:** `20260706_entitlement_requests.sql`, `20260706_draft_cart_payload.sql`, `20260706_content_and_ops.sql`, `20260706_articles_seed.sql` (plus prior pending). Until applied, new surfaces show mock fallback and writes error gracefully.
+- **Deferred (unchanged):** real gateway, Academy LMS, sector dashboards, i18n, provider binary doc upload.
+
+---
+
 ## ✅ Implemented this round
 
 ### §4.1 — Beta teardown / dev role-switcher out of production (CLIENT-2.7, CRITICAL) — **DONE**

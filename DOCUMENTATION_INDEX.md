@@ -20,6 +20,9 @@
 | `PROJECT.md` | Orientation | 🟡 | Working on the **Admin Panel** (milestones + API contracts) |
 | `ORIGINAL_REQUEST.md` | Orientation | 📄 | The original audit + admin-panel ask + acceptance criteria |
 | `NEXT_STEPS.md` | Roadmap | ✅ | "What do I do next?" — phased action plan |
+| `ENTITLEMENTS_AND_WIRING_BUILD_LOG.md` | Build log | ✅ | **2026-07-06 entitlements + wiring build** — what shipped (7 phases) + apply/operate runbook (AR/EN) |
+| `docs/superpowers/plans/2026-07-06-admin-entitlements-and-production-wiring.md` | Plan | ✅ | The implementation plan for the entitlements+wiring build |
+| `docs/superpowers/specs/2026-07-06-admin-entitlements-and-production-wiring-design.md` | Spec | ✅ | The approved design (now implemented) |
 | `nzamy-audit-fix-status.md` | Roadmap | ✅ | What's fixed vs deferred (audit fix ledger) |
 | `master_checklist.md` | Roadmap | 🟡 | Granular 6-phase deliverables checklist |
 | `master_checklist2.md` | Roadmap | 🟡 | Older checklist variant (same purpose) |

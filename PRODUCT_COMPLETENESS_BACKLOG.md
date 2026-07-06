@@ -5,6 +5,10 @@
 
 This is the owner's forward-looking build backlog for NZAMY — every feature across the *whole* product that is still **mock**, **partial**, or **not-built** after the beta review. It is deliberately NOT about the client↔lawyer core loop (service-request → assign → chat → complete), which is already **real and Supabase/RLS-backed**, nor about the n8n automation layer (already **built**, currently inactive by design). Those are done. This document covers the *rest* of the product — the public/content/registration surfaces, the community system, the LMS/CMS content system, the sector dashboards, the admin console, and the cross-cutting persistence/payments/notifications plumbing — so the owner can plan a full public launch. Each line quotes the real file and states, in one clause, what it needs to become real.
 
+## ✅ Update 2026-07-06 — partial build landed (entitlements + wiring, 7 phases)
+
+A follow-up build implemented the admin-controlled entitlements layer + a first production-wiring wave. See [`ENTITLEMENTS_AND_WIRING_BUILD_LOG.md`](./ENTITLEMENTS_AND_WIRING_BUILD_LOG.md). **Now BUILT** (previously mock/not-built in the tables below): admin-grant + user-request entitlement flow (replaces dead paid CTAs, no gateway); in-app notifications fired on events; community mock-merge removed in supabase mode; draft-cart persisted to DB (lossless); admin **tickets / broadcasts / coupons / audit-log / community-moderation / payments** wired to real routes; **contact / partners / share-token verify / promo / invite** real writes; **Blog CMS** (articles table + admin authoring + DB-served blog). Still deferred: real payment gateway, Academy LMS, sector dashboards, i18n, provider binary doc upload. Items below are **not** yet reconciled line-by-line against this build — cross-check the build log before starting one.
+
 ## Legend
 
 **Status:** ⬜ not-built · 🟡 mock · 🟠 partial
