@@ -319,8 +319,23 @@ export function Step3({ isAr, data, onChange }: { isAr: boolean; data: Record<st
               {isAr ? "اسحب الملف هنا أو اضغط للرفع" : "Drag file here or click to upload"}
             </span>
             <span className="text-[10px] text-ink-faint dark:text-gray-500">PDF, JPG, PNG — {isAr ? "حتى ٥ ميجا" : "Up to 5MB"}</span>
-            <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" />
+            <input
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                const names = Array.from(e.target.files ?? []).map((f) => f.name);
+                onChange("verification_docs", names.join(", "));
+              }}
+            />
           </label>
+          {data.verification_docs && (
+            <p className="mt-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              {isAr ? "الملفات المختارة: " : "Selected: "}
+              {data.verification_docs}
+            </p>
+          )}
           <p className="mt-2 text-xs text-ink-faint dark:text-gray-500">
             {isAr ? "سيتم مراجعة الوثائق خلال ٢٤ ساعة من قِبل فريق نظامي" : "Documents will be reviewed within 24 hours by the Nezamy team"}
           </p>

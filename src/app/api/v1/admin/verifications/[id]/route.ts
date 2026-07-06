@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { dispatchVerificationToN8n } from "@/lib/n8n/dispatch";
+import { recordNotification } from "@/lib/notify";
 
 /**
  * PATCH /api/v1/admin/verifications/[id] — Approve or reject a verification
@@ -147,6 +149,25 @@ export async function PATCH(
     before_state: { verification_status: "pending" },
     after_state: { verification_status: newStatus, reason: reason ?? null },
     metadata: { reason: reason ?? null },
+  });
+
+  // ── Notify the applicant + fire n8n (best-effort, non-blocking) ─────────────
+  // firm updates target owner_user_id, which === userId here, so notifying
+  // userId reaches the right person in all three table cases.
+  await recordNotification({
+    userId,
+    title: action === "approve" ? "تم اعتماد حسابك" : "لم يُقبل طلب التحقق",
+    body:
+      action === "approve"
+        ? "تهانينا! تم توثيق حسابك ويمكنك الآن استخدام كامل المزايا."
+        : `نعتذر، لم تتم الموافقة على طلب التحقق.${reason ? ` السبب: ${reason}` : ""}`,
+    href: "/dashboard",
+  });
+  await dispatchVerificationToN8n({
+    userId,
+    name: updatedName,
+    type: updatedType,
+    status: newStatus as "verified" | "rejected",
   });
 
   // ── Response ───────────────────────────────────────────────────────────────

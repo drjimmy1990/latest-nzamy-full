@@ -241,6 +241,9 @@ export default function RegisterProviderPage() {
                                   onboarding_completed: false,
                                   provider_type: providerType,
                                   provider_specialties: selectedSpecs,
+                                  verification_docs: formData.verification_docs
+                                    ? formData.verification_docs.split(", ")
+                                    : [],
                                   license_number: formData.licenseNumber,
                                   experience_years: formData.experience,
                                   selected_plan: selectedPlan,

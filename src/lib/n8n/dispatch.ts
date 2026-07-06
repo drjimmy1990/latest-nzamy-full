@@ -53,3 +53,37 @@ export async function dispatchToN8n(
     return { delivered: false };
   }
 }
+
+/**
+ * Best-effort verification event to n8n (provider/lawyer/firm approved or
+ * rejected). Same inert-until-configured + never-throw contract as
+ * dispatchToN8n. Posts to `${base}/verification` — the n8n side must expose a
+ * matching webhook (or N8N_WEBHOOK_BASE_URL stays unset and this is inert).
+ * Called server-side from the admin verifications PATCH route.
+ */
+export async function dispatchVerificationToN8n(payload: {
+  userId: string;
+  name?: string;
+  type?: string;
+  status: "verified" | "rejected";
+}): Promise<{ delivered: boolean }> {
+  const base = process.env.N8N_WEBHOOK_BASE_URL;
+  if (!base) return { delivered: false };
+  try {
+    const res = await fetch(`${base.replace(/\/$/, "")}/verification`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(process.env.N8N_WEBHOOK_SECRET
+          ? { "X-Webhook-Secret": process.env.N8N_WEBHOOK_SECRET }
+          : {}),
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(5000),
+    });
+    return { delivered: res.ok };
+  } catch (err) {
+    console.error("[dispatchVerificationToN8n] failed:", (err as Error).message);
+    return { delivered: false };
+  }
+}
