@@ -4,10 +4,12 @@ import { useRef, useState } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import {
   Check, Crown, ArrowLeft, Buildings,
-  Lightning, Star, Flame, Coins, Gift, Gavel, Users
+  Lightning, Star, Flame, Coins, Gift, Gavel, Users, CheckCircle
 } from "@phosphor-icons/react";
 import type { Plan, AudienceTab, Billing } from "@/constants/pricingData";
 import { lawyerServicesTable } from "@/constants/pricing/pricing.lawyers";
+import { useUser } from "@/hooks/useUser";
+import { requestEntitlement } from "@/lib/services/entitlementService";
 
 interface PricingCardsProps {
   planList: Plan[];
@@ -17,11 +19,25 @@ interface PricingCardsProps {
   libraryMode?: boolean;
 }
 
+/**
+ * A ctaHref is a subscribe/register call-to-action we should intercept for
+ * logged-in users. "Contact sales" (/contact) and free-tier links keep their
+ * default navigation. Everything else (register/subscribe) becomes an
+ * entitlement request instead of a dead-end since no gateway exists yet.
+ */
+function isSubscribeCta(href: string): boolean {
+  if (!href) return false;
+  if (href.startsWith("/contact")) return false;
+  return href.includes("/register") || href.includes("subscribe") || href.includes("/pricing");
+}
+
 /* ─── Spotlight Card — border lights up under cursor ─────────────────────── */
 function SpotlightCard({
-  plan, billing, index, isLawyer, isAr, compact = false,
+  plan, billing, index, isLawyer, isAr, compact = false, onSubscribe,
 }: {
   plan: Plan; billing: Billing; index: number; isLawyer: boolean; isAr: boolean; compact?: boolean;
+  /** Called for logged-in users on a subscribe CTA; returns true if handled (default nav suppressed). */
+  onSubscribe?: (plan: Plan) => boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const mouseX = useMotionValue(0);
@@ -237,6 +253,11 @@ function SpotlightCard({
         {/* CTA */}
         <motion.a
           href={plan.ctaHref}
+          onClick={(e) => {
+            // Logged-in users: turn subscribe CTAs into an entitlement request
+            // instead of the register/subscribe dead-end (no gateway yet).
+            if (onSubscribe?.(plan)) e.preventDefault();
+          }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.97, y: 1 }}
           className={`mt-7 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-wide transition-all ${
@@ -254,13 +275,13 @@ function SpotlightCard({
 }
 
 /* ─── Lawyer-specific layout: single 4-col row ───────────────────────────── */
-function LawyerCreditsLayout({ planList, billing, isAr }: { planList: Plan[]; billing: Billing; isAr: boolean }) {
+function LawyerCreditsLayout({ planList, billing, isAr, onSubscribe }: { planList: Plan[]; billing: Billing; isAr: boolean; onSubscribe?: (plan: Plan) => boolean }) {
   return (
     <div className="space-y-4 lg:space-y-5">
       {/* Single row: all 4 plans */}
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 lg:gap-4">
         {planList.map((plan, i) => (
-          <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer isAr={isAr} compact />
+          <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer isAr={isAr} compact onSubscribe={onSubscribe} />
         ))}
       </div>
 
@@ -383,7 +404,7 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
 
 
 /* ─── Default layout: flexible grid ─────────────────────────────────────── */
-function DefaultLayout({ planList, billing, isAr }: { planList: Plan[]; billing: Billing; isAr: boolean }) {
+function DefaultLayout({ planList, billing, isAr, onSubscribe }: { planList: Plan[]; billing: Billing; isAr: boolean; onSubscribe?: (plan: Plan) => boolean }) {
   const cols =
     planList.length <= 3 ? "md:grid-cols-3" :
     planList.length === 4 ? "md:grid-cols-2 lg:grid-cols-4" :
@@ -392,7 +413,7 @@ function DefaultLayout({ planList, billing, isAr }: { planList: Plan[]; billing:
   return (
     <div className={`grid gap-4 ${cols} lg:gap-5`}>
       {planList.map((plan, i) => (
-        <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer={false} isAr={isAr} />
+        <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer={false} isAr={isAr} onSubscribe={onSubscribe} />
       ))}
     </div>
   );
@@ -404,17 +425,40 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   const showEnterpriseRow = audience === "companies";
   const showSMESection    = false; // Removed as there is a dedicated Micro tab now
 
+  const { isLoggedIn } = useUser();
+  const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  /**
+   * Logged-in subscribe handler. For guests we return false so the CTA keeps
+   * its default register/login navigation. For logged-in users we send an
+   * entitlement request (no gateway yet) and surface an Arabic confirmation.
+   * Returns true when handled so the caller can suppress default navigation.
+   */
+  function handleSubscribe(plan: Plan): boolean {
+    if (!isLoggedIn) return false;
+    if (!isSubscribeCta(plan.ctaHref)) return false; // e.g. Contact Sales — let it navigate
+    void requestEntitlement({ kind: "plan", requested_ref: plan.name }).then((res) => {
+      setToast(
+        res.ok
+          ? { ok: true, msg: "تم إرسال طلبك للمراجعة" }
+          : { ok: false, msg: res.error ?? "تعذّر إرسال الطلب" },
+      );
+      window.setTimeout(() => setToast(null), 4000);
+    });
+    return true;
+  }
+
   return (
     <section className="pb-16 md:pb-24">
       <div className="mx-auto max-w-[1200px] px-4">
 
         {isLawyer && !libraryMode ? (
           <>
-            <LawyerCreditsLayout planList={planList} billing={billing} isAr={isAr} />
+            <LawyerCreditsLayout planList={planList} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />
             <LawyerServicesTable isAr={isAr} />
           </>
         ) : (
-          <DefaultLayout planList={planList} billing={billing} isAr={isAr} />
+          <DefaultLayout planList={planList} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />
         )}
 
         {/* Enterprise row */}
@@ -514,6 +558,28 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
           </div>
         )}
       </div>
+
+      {/* Entitlement-request toast (logged-in subscribe CTAs) */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            dir="rtl"
+            className="fixed bottom-6 inset-x-0 z-50 flex justify-center px-4"
+          >
+            <div
+              className={`flex items-center gap-2.5 rounded-2xl px-5 py-3.5 text-sm font-bold text-white shadow-xl ${
+                toast.ok ? "bg-[#0B3D2E]" : "bg-rose-600"
+              }`}
+            >
+              <CheckCircle size={18} weight="fill" className={toast.ok ? "text-[#C8A762]" : "text-white"} />
+              {toast.msg}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }

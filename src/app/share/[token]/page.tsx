@@ -18,6 +18,9 @@ export default function ClientSharePage({ params }: SharePageProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [docTitle, setDocTitle] = useState<string | null>(null);
+  const [documentId, setDocumentId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<"view"|"notes">("view");
   const [clientNotes, setClientNotes] = useState("");
@@ -31,13 +34,34 @@ export default function ClientSharePage({ params }: SharePageProps) {
     ? "border-white/[0.08] hover:bg-white/[0.04] text-zinc-300"
     : "border-zinc-200 hover:bg-zinc-50 text-zinc-700";
 
-  function handleAuth(e: React.FormEvent) {
+  async function handleAuth(e: React.FormEvent) {
     e.preventDefault();
-    if (passcode.length === 6) {
-      setIsAuthenticated(true);
-      setError("");
-    } else {
-      setError("الرجاء إدخال باسكود صحيح مكون من 6 أرقام");
+    if (verifying) return;
+    setVerifying(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/v1/share/${encodeURIComponent(token)}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passcode }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json?.success) {
+        setDocTitle(json?.data?.title ?? null);
+        setDocumentId(json?.data?.document_id ?? null);
+        setIsAuthenticated(true);
+        setError("");
+      } else {
+        setError(
+          typeof json?.error === "string" && json.error
+            ? json.error
+            : "الرجاء إدخال باسكود صحيح مكون من 6 أرقام",
+        );
+      }
+    } catch {
+      setError("تعذر التحقق من الرابط. يرجى المحاولة مرة أخرى.");
+    } finally {
+      setVerifying(false);
     }
   }
 
@@ -78,8 +102,9 @@ export default function ClientSharePage({ params }: SharePageProps) {
               {error && <p className="text-red-500 text-[11px] font-bold mt-2">{error}</p>}
             </div>
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit"
-              className="w-full py-3 rounded-xl bg-[#C8A762] text-white font-bold text-[14px] shadow-lg shadow-[#C8A762]/20">
-              فتح المستند
+              disabled={verifying}
+              className="w-full py-3 rounded-xl bg-[#C8A762] text-white font-bold text-[14px] shadow-lg shadow-[#C8A762]/20 disabled:opacity-60">
+              {verifying ? "جارٍ التحقق..." : "فتح المستند"}
             </motion.button>
           </form>
           <p className={`mt-6 text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
@@ -123,7 +148,7 @@ export default function ClientSharePage({ params }: SharePageProps) {
   }
 
   return (
-    <div className={`min-h-screen pb-20 ${isDark ? "bg-[#0A0A0A] text-zinc-300" : "bg-zinc-50 text-zinc-800"}`}>
+    <div data-document-id={documentId ?? undefined} className={`min-h-screen pb-20 ${isDark ? "bg-[#0A0A0A] text-zinc-300" : "bg-zinc-50 text-zinc-800"}`}>
       {/* Header */}
       <header className={`sticky top-0 z-10 px-4 py-3 sm:px-8 sm:py-4 flex items-center justify-between border-b backdrop-blur-md ${isDark ? "border-white/[0.05] bg-[#0A0A0A]/80" : "border-zinc-200 bg-white/80"}`}>
         <div className="flex items-center gap-3">
@@ -131,7 +156,7 @@ export default function ClientSharePage({ params }: SharePageProps) {
              <span className="font-bold text-[#C8A762] text-lg">N</span>
            </div>
            <div>
-             <h1 className={`text-[14px] font-bold leading-tight ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>مسودة عقد عمل (شركة مساهمة)</h1>
+             <h1 className={`text-[14px] font-bold leading-tight ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>{docTitle ?? "مسودة عقد عمل (شركة مساهمة)"}</h1>
              <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>مرسل من: المحامي أحمد فهد • يرجى المراجعة والاعتماد</p>
            </div>
         </div>

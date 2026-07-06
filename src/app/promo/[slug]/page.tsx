@@ -7,8 +7,16 @@ import { Tag, UserCircle, CheckCircle, ArrowLeft, ShieldCheck, Clock } from "@ph
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-// Mock fetching the promo link data
-function getMockPromoData(slug: string) {
+interface PromoData {
+  providerName: string;
+  providerType: string;
+  value: string;
+  serviceLabel: string;
+  expiresAt: string;
+}
+
+// Fallback promo display when the link is not found in the DB.
+function getMockPromoData(slug: string): PromoData {
   if (slug === "saud-consult-20") {
     return {
       providerName: "المحامي سعود القحطاني",
@@ -31,10 +39,42 @@ export default function PromoLandingPage() {
   const { isDark } = useTheme();
   const params = useParams();
   const slug = params.slug as string;
-  const data = getMockPromoData(slug);
-  
+
+  const [data, setData] = useState<PromoData>(() => getMockPromoData(slug));
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!slug) return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/v1/promo/${encodeURIComponent(slug)}`);
+        if (!res.ok) return; // 404 → keep fallback
+        const json = await res.json();
+        const row = json?.data as Record<string, unknown> | undefined;
+        if (!row || !active) return;
+        const fallback = getMockPromoData(slug);
+        setData({
+          providerName:
+            (row.providerName as string) || fallback.providerName,
+          providerType:
+            (row.providerType as string) || fallback.providerType,
+          value: (row.value as string) || fallback.value,
+          serviceLabel:
+            (row.serviceLabel as string) || fallback.serviceLabel,
+          expiresAt: row.expiresAt
+            ? new Date(row.expiresAt as string).toISOString().slice(0, 10)
+            : fallback.expiresAt,
+        });
+      } catch {
+        // network/parse error → keep fallback
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [slug]);
 
   if (!mounted) return null;
 

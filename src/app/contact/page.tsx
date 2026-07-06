@@ -42,12 +42,36 @@ export default function ContactPage() {
   const [form, setForm] = useState<FormState>({ name: "", email: "", phone: "", subject: "", message: "" });
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const Arrow = isRTL ? ArrowLeft : ArrowRight;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => { setLoading(false); setSubmitted(true); }, 1200);
+    setError(null);
+    try {
+      const res = await fetch("/api/v1/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          subject: form.subject,
+          message: form.message,
+          kind: "contact",
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error ?? "failed");
+      }
+      setSubmitted(true);
+    } catch {
+      setError(isRTL ? "تعذّر إرسال رسالتك، حاول مرة أخرى." : "Failed to send your message. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const inputClass = `w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-2 ${isDark
@@ -199,7 +223,7 @@ export default function ContactPage() {
                     <p className={`mt-2 text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
                       {isRTL ? "سنتواصل معك خلال ٢٤ ساعة." : "We'll get back to you within 24 hours."}
                     </p>
-                    <button onClick={() => { setSubmitted(false); setForm({ name: "", email: "", phone: "", subject: "", message: "" }); }} className="mt-6 rounded-xl bg-royal px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-royal/90">
+                    <button onClick={() => { setSubmitted(false); setError(null); setForm({ name: "", email: "", phone: "", subject: "", message: "" }); }} className="mt-6 rounded-xl bg-royal px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-royal/90">
                       {isRTL ? "إرسال رسالة أخرى" : "Send Another Message"}
                     </button>
                   </motion.div>
@@ -208,6 +232,13 @@ export default function ContactPage() {
                     <h2 className={`text-xl font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
                       {isRTL ? "أرسل لنا رسالة" : "Send Us a Message"}
                     </h2>
+
+                    {error && (
+                      <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-500">
+                        <Warning size={18} weight="fill" className="shrink-0" />
+                        <span>{error}</span>
+                      </div>
+                    )}
 
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>

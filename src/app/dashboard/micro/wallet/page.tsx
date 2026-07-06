@@ -9,6 +9,8 @@ import {
   ArrowUp, ArrowDown, Star,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { useUser } from "@/hooks/useUser";
+import { requestEntitlement } from "@/lib/services/entitlementService";
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
@@ -46,8 +48,10 @@ const fadeUp = {
 
 export default function MicroWalletPage() {
   const { isDark } = useTheme();
+  const { isLoggedIn } = useUser();
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"transactions" | "coupons">("transactions");
+  const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const card = isDark
     ? "bg-zinc-900 border border-white/[0.07] rounded-2xl"
@@ -58,6 +62,25 @@ export default function MicroWalletPage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  /**
+   * Wallet top-up. No gateway yet → logged-in users file an entitlement
+   * request (admin tops up manually). Guests are sent to login.
+   */
+  function handleTopUp() {
+    if (!isLoggedIn) {
+      window.location.href = "/login";
+      return;
+    }
+    void requestEntitlement({ kind: "wallet" }).then((res) => {
+      setToast(
+        res.ok
+          ? { ok: true, msg: "تم إرسال طلبك للمراجعة" }
+          : { ok: false, msg: res.error ?? "تعذّر إرسال الطلب" },
+      );
+      window.setTimeout(() => setToast(null), 4000);
+    });
+  }
 
   return (
     <div className={`p-5 md:p-8 max-w-[900px] mx-auto space-y-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
@@ -109,6 +132,7 @@ export default function MicroWalletPage() {
                 </motion.div>
               </Link>
               <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+                onClick={handleTopUp}
                 className="flex items-center gap-2 bg-white/10 border border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl text-sm backdrop-blur-sm cursor-pointer"
               >
                 <Plus size={15} /> إضافة رصيد
@@ -285,6 +309,27 @@ export default function MicroWalletPage() {
           </AnimatePresence>
         </div>
       </motion.div>
+
+      {/* Entitlement-request toast (wallet top-up) */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            className="fixed bottom-6 inset-x-0 z-50 flex justify-center px-4"
+          >
+            <div
+              className={`flex items-center gap-2.5 rounded-2xl px-5 py-3.5 text-[13px] font-bold text-white shadow-xl ${
+                toast.ok ? "bg-[#0B3D2E]" : "bg-rose-600"
+              }`}
+            >
+              <CheckCircle size={16} weight="fill" className={toast.ok ? "text-[#C8A762]" : "text-white"} />
+              {toast.msg}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

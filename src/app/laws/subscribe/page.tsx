@@ -12,6 +12,8 @@ import { useTheme } from "@/components/ThemeProvider";
 import FloatingButtons from "@/components/FloatingButtons";
 import { createLibrarySubscription } from "@/lib/invitationStore";
 import InvitationModal from "@/components/InvitationModal";
+import { useUser } from "@/hooks/useUser";
+import { requestEntitlement } from "@/lib/services/entitlementService";
 
 // ─── Bilingual ──────────────────────────────────────────────────────────────
 
@@ -224,18 +226,34 @@ const txt = {
 
 export default function LawsSubscribePage() {
   const { isDark, lang } = useTheme();
+  const { isLoggedIn } = useUser();
   const isAr = lang === "ar";
   const t = isAr ? txt.ar : txt.en;
   const Arrow = isAr ? ArrowLeft : ArrowRight;
   const [yearly, setYearly] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
   function handleSubscribe(planId: string) {
     if (planId === "free") {
       window.location.href = "/laws";
       return;
     }
+    // Logged-in users: send an entitlement request instead of the local
+    // subscription mock (no gateway yet). Admin approves it later.
+    if (isLoggedIn) {
+      void requestEntitlement({ kind: "library", requested_ref: planId }).then((res) => {
+        setToast(
+          res.ok
+            ? { ok: true, msg: "تم إرسال طلبك للمراجعة" }
+            : { ok: false, msg: res.error ?? "تعذّر إرسال الطلب" },
+        );
+        window.setTimeout(() => setToast(null), 4000);
+      });
+      return;
+    }
+    // Guests: keep the existing local subscription + invite flow.
     createLibrarySubscription(planId as any);
     setModalOpen(true);
   }
@@ -443,6 +461,25 @@ export default function LawsSubscribePage() {
         </motion.section>
 
       </div>
+
+      {/* Entitlement-request toast (logged-in subscribe) */}
+      {toast && (
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed bottom-6 inset-x-0 z-50 flex justify-center px-4"
+        >
+          <div
+            className={`flex items-center gap-2.5 rounded-2xl px-5 py-3.5 text-sm font-bold text-white shadow-xl ${
+              toast.ok ? "bg-[#0B3D2E]" : "bg-rose-600"
+            }`}
+          >
+            <Check size={18} weight="bold" className={toast.ok ? "text-[#C8A762]" : "text-white"} />
+            {toast.msg}
+          </div>
+        </motion.div>
+      )}
+
       <FloatingButtons />
       <InvitationModal open={modalOpen} onClose={() => setModalOpen(false)} isPostSubscription={true} />
     </div>

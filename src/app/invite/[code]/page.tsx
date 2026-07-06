@@ -44,6 +44,8 @@ export default function InvitePage() {
   const [valid, setValid]       = useState<boolean | null>(null);
   const [trialDays, setTrialDays] = useState(30);
   const [accepted, setAccepted] = useState(false);
+  const [accepting, setAccepting] = useState(false);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
   const [recipientName, setRecipientName] = useState<string | null>(null);
   const [licenseNumber, setLicenseNumber] = useState<string | null>(null);
 
@@ -64,9 +66,41 @@ export default function InvitePage() {
     }
   }, [code]);
 
-  function handleAccept() {
-    acceptInvitation(code, trialDays);
-    setAccepted(true);
+  async function handleAccept() {
+    if (accepting) return;
+    setAccepting(true);
+    setAcceptError(null);
+    try {
+      const res = await fetch(
+        `/api/v1/invite/${encodeURIComponent(code)}/accept`,
+        { method: "POST" },
+      );
+
+      // Not logged in → carry the code to the login flow.
+      if (res.status === 401) {
+        window.location.href = `/login?invite=${encodeURIComponent(code)}`;
+        return;
+      }
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAcceptError(
+          (json?.error as string) ||
+            (isRTL ? "تعذّر قبول الدعوة" : "Could not accept the invitation"),
+        );
+        return;
+      }
+
+      // Keep the local store in sync for the demo/display path.
+      acceptInvitation(code, trialDays);
+      setAccepted(true);
+    } catch {
+      setAcceptError(
+        isRTL ? "حدث خطأ في الاتصال" : "A connection error occurred",
+      );
+    } finally {
+      setAccepting(false);
+    }
   }
 
   const trialLabel = (days: number, ar: boolean) => {
@@ -232,14 +266,23 @@ export default function InvitePage() {
 
                   {/* CTA */}
                   <motion.button
-                    whileHover={{ scale: 1.01 }}
-                    whileTap={{ scale: 0.98 }}
+                    whileHover={accepting ? undefined : { scale: 1.01 }}
+                    whileTap={accepting ? undefined : { scale: 0.98 }}
                     onClick={handleAccept}
-                    className="w-full py-4 rounded-2xl bg-[#0B3D2E] text-white text-[14px] font-bold flex items-center justify-center gap-2 hover:bg-[#155e41] transition-colors shadow-lg"
+                    disabled={accepting}
+                    className="w-full py-4 rounded-2xl bg-[#0B3D2E] text-white text-[14px] font-bold flex items-center justify-center gap-2 hover:bg-[#155e41] transition-colors shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <Gift size={16} weight="fill" />
-                    {isRTL ? "قبول الدعوة وسجّل مجاناً" : "Accept Invitation & Register Free"}
+                    {accepting
+                      ? (isRTL ? "جارٍ التفعيل…" : "Activating…")
+                      : (isRTL ? "قبول الدعوة وسجّل مجاناً" : "Accept Invitation & Register Free")}
                   </motion.button>
+
+                  {acceptError && (
+                    <p className="text-center text-[11px] font-medium text-red-400">
+                      {acceptError}
+                    </p>
+                  )}
 
                   <p className={`text-center text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
                     {isRTL

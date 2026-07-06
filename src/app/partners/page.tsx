@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useState } from "react";
 import {
   Handshake,
   Buildings,
@@ -18,6 +19,8 @@ import {
   Megaphone,
   Code,
   Gavel,
+  PaperPlaneTilt,
+  Warning,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -93,10 +96,49 @@ const item = {
   visible: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 260, damping: 22 } },
 };
 
+type PartnerForm = { name: string; email: string; phone: string; message: string };
+
 export default function PartnersPage() {
   const { lang } = useTheme();
   const isAr = lang === "ar";
   const dir = isAr ? "rtl" : "ltr";
+
+  const [form, setForm] = useState<PartnerForm>({ name: "", email: "", phone: "", message: "" });
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleApply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/v1/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          subject: isAr ? "طلب شراكة" : "Partnership application",
+          message: form.message,
+          kind: "partner",
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error ?? "failed");
+      }
+      setSubmitted(true);
+    } catch {
+      setError(isAr ? "تعذّر إرسال طلبك، حاول مرة أخرى." : "Failed to send your application. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const partnerInputClass =
+    "w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-4 py-3 text-sm text-ink dark:text-gray-100 placeholder:text-ink-muted/60 dark:placeholder:text-gray-500 outline-none transition focus:border-royal/50 focus:ring-2 focus:ring-royal/15";
 
   return (
     <div dir={dir} className="min-h-screen bg-surface font-body dark:bg-dark-bg">
@@ -326,6 +368,127 @@ export default function PartnersPage() {
                 </a>
               </div>
             </div>
+          </motion.div>
+
+          {/* ── Partner application form ── */}
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ type: "spring", stiffness: 200, damping: 20, delay: 0.05 }}
+            className="mt-6 rounded-3xl border border-slate-200/60 dark:border-white/8 bg-white dark:bg-dark-card p-8 md:p-10"
+          >
+            {submitted ? (
+              <div className="flex flex-col items-center py-8 text-center">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10">
+                  <CheckCircle size={32} weight="fill" className="text-emerald-500" />
+                </div>
+                <h3 className="font-brand text-xl font-bold text-ink dark:text-gray-100">
+                  {isAr ? "تم استلام طلبك!" : "Application Received!"}
+                </h3>
+                <p className="mt-2 text-sm text-ink-muted dark:text-gray-400 max-w-[40ch]">
+                  {isAr
+                    ? "شكراً لاهتمامك بالشراكة. سيتواصل معك فريقنا خلال 24 ساعة."
+                    : "Thanks for your interest. Our team will reach out within 24 hours."}
+                </p>
+                <button
+                  onClick={() => { setSubmitted(false); setError(null); setForm({ name: "", email: "", phone: "", message: "" }); }}
+                  className="mt-6 rounded-2xl bg-royal px-6 py-3 text-sm font-semibold text-white transition hover:bg-royal-light"
+                >
+                  {isAr ? "إرسال طلب آخر" : "Submit Another Application"}
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleApply} className="space-y-4">
+                <div className="text-center mb-2">
+                  <h3 className="font-brand text-xl font-bold text-ink dark:text-gray-100">
+                    {isAr ? "قدّم طلب شراكة" : "Apply for Partnership"}
+                  </h3>
+                  <p className="mt-1.5 text-sm text-ink-muted dark:text-gray-400">
+                    {isAr ? "املأ النموذج وسنعود إليك قريباً." : "Fill in the form and we'll get back to you soon."}
+                  </p>
+                </div>
+
+                {error && (
+                  <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-500">
+                    <Warning size={18} weight="fill" className="shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-ink-muted dark:text-gray-400">
+                      {isAr ? "الاسم الكامل *" : "Full Name *"}
+                    </label>
+                    <input
+                      required
+                      value={form.name}
+                      onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                      placeholder={isAr ? "محمد أحمد" : "John Doe"}
+                      className={partnerInputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-ink-muted dark:text-gray-400">
+                      {isAr ? "رقم الجوال" : "Phone Number"}
+                    </label>
+                    <input
+                      type="tel"
+                      value={form.phone}
+                      onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                      placeholder="+966 5x xxx xxxx"
+                      className={partnerInputClass}
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-ink-muted dark:text-gray-400">
+                    {isAr ? "البريد الإلكتروني *" : "Email Address *"}
+                  </label>
+                  <input
+                    required
+                    type="email"
+                    value={form.email}
+                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                    placeholder="you@example.com"
+                    className={partnerInputClass}
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-ink-muted dark:text-gray-400">
+                    {isAr ? "نبذة عن الشراكة *" : "About the Partnership *"}
+                  </label>
+                  <textarea
+                    required
+                    rows={4}
+                    value={form.message}
+                    onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
+                    placeholder={isAr ? "أخبرنا عن نوع الشراكة التي تبحث عنها..." : "Tell us about the partnership you're looking for..."}
+                    className={`${partnerInputClass} resize-none`}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-royal py-4 text-sm font-semibold text-white transition hover:bg-royal-light disabled:opacity-60"
+                >
+                  {loading ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  ) : (
+                    <>
+                      {isAr ? "إرسال الطلب" : "Submit Application"}
+                      <PaperPlaneTilt size={18} weight="fill" />
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
           </motion.div>
         </div>
       </section>

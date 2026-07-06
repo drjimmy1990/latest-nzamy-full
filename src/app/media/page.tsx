@@ -9,12 +9,13 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
+import { requestEntitlement } from "@/lib/services/entitlementService";
 import { REELS, EPISODES, NOVELS, COMICS, MARQUEE } from "./data";
 
 type Tab = "reels" | "youtube" | "novels" | "comics";
 
 // ─── Lock overlay ────────────────────────────────────────────────────────────
-function GateOverlay({ isLoggedIn }: { isLoggedIn: boolean }) {
+function GateOverlay({ isLoggedIn, onSubscribe }: { isLoggedIn: boolean; onSubscribe: () => void }) {
   return (
     <div className="absolute inset-0 rounded-2xl flex flex-col items-center justify-center gap-3 z-10"
       style={{ backdropFilter:"blur(12px)", background:"rgba(5,10,8,.7)" }}>
@@ -24,10 +25,17 @@ function GateOverlay({ isLoggedIn }: { isLoggedIn: boolean }) {
       <p className="text-[12px] font-bold text-white text-center px-4">
         {isLoggedIn ? "اشتراك ميديا نظامي مطلوب" : "سجّل دخولك للوصول"}
       </p>
-      <Link href={isLoggedIn ? "/pricing" : "/login"}
-        className="text-[11px] font-bold px-4 py-2 rounded-xl bg-[#C8A762] text-[#050a08] hover:bg-[#C8A762]/90 transition-colors active:scale-[.97]">
-        {isLoggedIn ? "اشترك — ٩ ر.س/شهر" : "دخول مجاني"}
-      </Link>
+      {isLoggedIn ? (
+        <button onClick={onSubscribe}
+          className="text-[11px] font-bold px-4 py-2 rounded-xl bg-[#C8A762] text-[#050a08] hover:bg-[#C8A762]/90 transition-colors active:scale-[.97]">
+          اشترك — ٩ ر.س/شهر
+        </button>
+      ) : (
+        <Link href="/login"
+          className="text-[11px] font-bold px-4 py-2 rounded-xl bg-[#C8A762] text-[#050a08] hover:bg-[#C8A762]/90 transition-colors active:scale-[.97]">
+          دخول مجاني
+        </Link>
+      )}
     </div>
   );
 }
@@ -51,7 +59,7 @@ function Marquee() {
 }
 
 // ─── Subscription Banner ─────────────────────────────────────────────────────
-function SubBanner({ isLoggedIn }: { isLoggedIn: boolean }) {
+function SubBanner({ isLoggedIn, onSubscribe }: { isLoggedIn: boolean; onSubscribe: () => void }) {
   return (
     <div className="relative overflow-hidden rounded-3xl border border-[#C8A762]/20 bg-gradient-to-l from-[#C8A762]/8 via-[#050a08] to-[#0B3D2E]/15 p-8 my-12">
       <div className="absolute top-0 left-0 h-px w-full bg-gradient-to-r from-transparent via-[#C8A762]/40 to-transparent"/>
@@ -79,11 +87,19 @@ function SubBanner({ isLoggedIn }: { isLoggedIn: boolean }) {
           </div>
         </div>
         <div className="flex flex-col gap-3 min-w-[200px]">
-          <Link href={isLoggedIn ? "/pricing" : "/register"}
-            className="flex items-center justify-center gap-2 rounded-2xl bg-[#C8A762] hover:bg-[#C8A762]/90 px-6 py-4 text-[14px] font-black text-[#050a08] transition-all active:scale-[.98] shadow-[0_8px_32px_-8px_rgba(200,167,98,.4)]">
-            <Star size={14} weight="fill"/>
-            {isLoggedIn ? "اشترك الآن" : "ابدأ مجاناً"}
-          </Link>
+          {isLoggedIn ? (
+            <button onClick={onSubscribe}
+              className="flex items-center justify-center gap-2 rounded-2xl bg-[#C8A762] hover:bg-[#C8A762]/90 px-6 py-4 text-[14px] font-black text-[#050a08] transition-all active:scale-[.98] shadow-[0_8px_32px_-8px_rgba(200,167,98,.4)]">
+              <Star size={14} weight="fill"/>
+              اشترك الآن
+            </button>
+          ) : (
+            <Link href="/register"
+              className="flex items-center justify-center gap-2 rounded-2xl bg-[#C8A762] hover:bg-[#C8A762]/90 px-6 py-4 text-[14px] font-black text-[#050a08] transition-all active:scale-[.98] shadow-[0_8px_32px_-8px_rgba(200,167,98,.4)]">
+              <Star size={14} weight="fill"/>
+              ابدأ مجاناً
+            </Link>
+          )}
           {!isLoggedIn && (
             <Link href="/login"
               className="text-center text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors">
@@ -104,6 +120,23 @@ export default function MediaPage() {
   const hasMedia = false; // TODO: check media subscription from useUser when backend ready
   const scrollRef = useRef<HTMLDivElement>(null);
   const scroll = (d: "l"|"r") => scrollRef.current?.scrollBy({ left: d==="l"?-220:220, behavior:"smooth" });
+
+  const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  /**
+   * Logged-in media subscribe → entitlement request (no gateway yet).
+   * Guests keep their register/login navigation (handled at the CTA level).
+   */
+  function handleMediaSubscribe() {
+    void requestEntitlement({ kind: "media" }).then((res) => {
+      setToast(
+        res.ok
+          ? { ok: true, msg: "تم إرسال طلبك للمراجعة" }
+          : { ok: false, msg: res.error ?? "تعذّر إرسال الطلب" },
+      );
+      window.setTimeout(() => setToast(null), 4000);
+    });
+  }
 
   const TABS: { id: Tab; label: string; icon: React.ElementType; free: boolean }[] = [
     { id:"reels",   label:"ريلز",    icon:PlayCircle,   free:true  },
@@ -145,10 +178,17 @@ export default function MediaPage() {
             ريلز ويوتيوب مجاناً. روايات وكوميكس قانونية حصرية بـ ٩ ريال فقط في الشهر.
           </p>
           <div className="flex items-center gap-3">
-            <Link href={isLoggedIn ? "/pricing" : "/register"}
-              className="inline-flex items-center gap-2 rounded-xl bg-[#C8A762] hover:bg-[#C8A762]/90 px-5 py-3 text-[13px] font-black text-[#050a08] transition-all active:scale-[.98]">
-              <Lightning size={13} weight="fill"/> ٩ ريال/شهر
-            </Link>
+            {isLoggedIn ? (
+              <button onClick={handleMediaSubscribe}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#C8A762] hover:bg-[#C8A762]/90 px-5 py-3 text-[13px] font-black text-[#050a08] transition-all active:scale-[.98]">
+                <Lightning size={13} weight="fill"/> ٩ ريال/شهر
+              </button>
+            ) : (
+              <Link href="/register"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#C8A762] hover:bg-[#C8A762]/90 px-5 py-3 text-[13px] font-black text-[#050a08] transition-all active:scale-[.98]">
+                <Lightning size={13} weight="fill"/> ٩ ريال/شهر
+              </Link>
+            )}
             <button onClick={()=>setTab("reels")}
               className="inline-flex items-center gap-2 rounded-xl border border-white/[0.08] hover:border-white/[0.16] px-5 py-3 text-[13px] font-semibold text-zinc-400 hover:text-white transition-all">
               <PlayCircle size={13}/> تصفح مجاناً
@@ -276,9 +316,15 @@ export default function MediaPage() {
                       {!hasMedia && (
                         <div className="mt-4 flex items-center justify-between p-4 rounded-xl border border-[#C8A762]/20 bg-[#C8A762]/5">
                           <p className="text-[11px] text-zinc-400">الفصول ٢–{NOVELS[0].chapters} بـ اشتراك ميديا</p>
-                          <Link href={isLoggedIn?"/pricing":"/register"} className="text-[11px] font-black text-[#C8A762] flex items-center gap-1 hover:gap-2 transition-all">
-                            اشترك<ArrowUpRight size={11}/>
-                          </Link>
+                          {isLoggedIn ? (
+                            <button onClick={handleMediaSubscribe} className="text-[11px] font-black text-[#C8A762] flex items-center gap-1 hover:gap-2 transition-all">
+                              اشترك<ArrowUpRight size={11}/>
+                            </button>
+                          ) : (
+                            <Link href="/register" className="text-[11px] font-black text-[#C8A762] flex items-center gap-1 hover:gap-2 transition-all">
+                              اشترك<ArrowUpRight size={11}/>
+                            </Link>
+                          )}
                         </div>
                       )}
                     </div>
@@ -301,7 +347,7 @@ export default function MediaPage() {
                           <span className="text-[10px] text-zinc-700">{n.chapters} فصل</span>
                         </div>
                       </div>
-                      {!hasMedia && <GateOverlay isLoggedIn={isLoggedIn}/>}
+                      {!hasMedia && <GateOverlay isLoggedIn={isLoggedIn} onSubscribe={handleMediaSubscribe}/>}
                     </motion.div>
                   ))}
                 </div>
@@ -331,7 +377,7 @@ export default function MediaPage() {
                         <ArrowUpRight size={12} className="text-zinc-700 group-hover:text-[#C8A762] transition-colors"/>
                       </div>
                     </div>
-                    {!c.free && !hasMedia && <GateOverlay isLoggedIn={isLoggedIn}/>}
+                    {!c.free && !hasMedia && <GateOverlay isLoggedIn={isLoggedIn} onSubscribe={handleMediaSubscribe}/>}
                     {c.free && <div className="absolute top-3 left-3 text-[8px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">مجاني</div>}
                   </motion.div>
                 ))}
@@ -342,7 +388,7 @@ export default function MediaPage() {
         </AnimatePresence>
 
         {/* ── Sub Banner ── */}
-        <SubBanner isLoggedIn={isLoggedIn}/>
+        <SubBanner isLoggedIn={isLoggedIn} onSubscribe={handleMediaSubscribe}/>
 
         {/* ── Footer CTA ── */}
         <div className="border-t border-white/[0.05] pt-12 grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-6 items-center">
@@ -357,13 +403,41 @@ export default function MediaPage() {
               className="flex items-center justify-center gap-2 rounded-2xl bg-red-600 hover:bg-red-700 px-6 py-3.5 text-[13px] font-bold text-white transition-colors active:scale-[.98]">
               <YoutubeLogo size={15} weight="fill"/> اشترك في القناة
             </a>
-            <Link href={isLoggedIn?"/pricing":"/register"}
-              className="flex items-center justify-center gap-2 rounded-2xl border border-[#C8A762]/30 hover:border-[#C8A762]/60 px-6 py-3.5 text-[13px] font-bold text-[#C8A762] transition-all active:scale-[.98]">
-              <Lightning size={13} weight="fill"/> ميديا نظامي — ٩ ريال/شهر
-            </Link>
+            {isLoggedIn ? (
+              <button onClick={handleMediaSubscribe}
+                className="flex items-center justify-center gap-2 rounded-2xl border border-[#C8A762]/30 hover:border-[#C8A762]/60 px-6 py-3.5 text-[13px] font-bold text-[#C8A762] transition-all active:scale-[.98]">
+                <Lightning size={13} weight="fill"/> ميديا نظامي — ٩ ريال/شهر
+              </button>
+            ) : (
+              <Link href="/register"
+                className="flex items-center justify-center gap-2 rounded-2xl border border-[#C8A762]/30 hover:border-[#C8A762]/60 px-6 py-3.5 text-[13px] font-bold text-[#C8A762] transition-all active:scale-[.98]">
+                <Lightning size={13} weight="fill"/> ميديا نظامي — ٩ ريال/شهر
+              </Link>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Entitlement-request toast (logged-in media subscribe) */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            className="fixed bottom-6 inset-x-0 z-50 flex justify-center px-4"
+          >
+            <div
+              className={`flex items-center gap-2.5 rounded-2xl px-5 py-3.5 text-[13px] font-bold text-white shadow-xl ${
+                toast.ok ? "bg-[#0B3D2E]" : "bg-rose-600"
+              }`}
+            >
+              <Check size={16} weight="bold" className={toast.ok ? "text-[#C8A762]" : "text-white"} />
+              {toast.msg}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
