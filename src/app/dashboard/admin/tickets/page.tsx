@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Ticket, MagnifyingGlass, ArrowLeft, Clock, CheckCircle,
@@ -53,25 +53,147 @@ const PRIORITY_CONFIG: Record<TicketPriority, { label: string; color: string }> 
   low:      { label: "منخفضة",  color: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-500" },
 };
 
+// ─── DB row → page mapping ──────────────────────────────────────────────────────
+// support_tickets(id,user_id,subject,body,category,priority,status,assignee_id,metadata,created_at,updated_at)
+// DB status vocabulary: open | pending | resolved | closed → page uses "inprogress" for "pending".
+// DB priority vocabulary: low | normal | high | urgent → page uses medium/critical.
+interface SupportTicketRow {
+  id: string;
+  user_id: string | null;
+  subject: string;
+  body: string | null;
+  category: string | null;
+  priority: string | null;
+  status: string | null;
+  assignee_id: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+const DB_STATUS_TO_PAGE: Record<string, TicketStatus> = {
+  open: "open",
+  pending: "inprogress",
+  inprogress: "inprogress",
+  resolved: "resolved",
+  closed: "closed",
+};
+// Page status → DB status (for PATCH). "inprogress" persists as "pending".
+const PAGE_STATUS_TO_DB: Record<TicketStatus, string> = {
+  open: "open",
+  inprogress: "pending",
+  resolved: "resolved",
+  closed: "closed",
+};
+
+const DB_PRIORITY_TO_PAGE: Record<string, TicketPriority> = {
+  low: "low",
+  normal: "medium",
+  medium: "medium",
+  high: "high",
+  urgent: "critical",
+  critical: "critical",
+};
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const mins = Math.max(0, Math.floor((Date.now() - then) / 60000));
+  if (mins < 1) return "الآن";
+  if (mins < 60) return `منذ ${mins} دقيقة`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `منذ ${hrs} ساعة`;
+  const days = Math.floor(hrs / 24);
+  return `منذ ${days} يوم`;
+}
+
+function rowToTicket(row: SupportTicketRow): SupportTicket {
+  const metadata = row.metadata ?? {};
+  const userLabel =
+    (typeof metadata.user_name === "string" && metadata.user_name) ||
+    row.user_id ||
+    "مستخدم";
+  const userType =
+    (typeof metadata.user_type === "string" && metadata.user_type) || "مستخدم";
+  const assignee =
+    (typeof metadata.assignee_name === "string" && metadata.assignee_name) ||
+    row.assignee_id ||
+    undefined;
+  return {
+    id: row.id,
+    user: userLabel,
+    userType,
+    subject: row.subject,
+    category: row.category ?? "عام",
+    status: DB_STATUS_TO_PAGE[row.status ?? "open"] ?? "open",
+    priority: DB_PRIORITY_TO_PAGE[row.priority ?? "normal"] ?? "medium",
+    created: timeAgo(row.created_at),
+    lastReply: timeAgo(row.updated_at ?? row.created_at),
+    messages: 1,
+    ...(assignee ? { assignee } : {}),
+  };
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AdminTicketsPage() {
   const { isDark } = useTheme();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<TicketStatus | "all">("all");
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+
+  // Fetch tickets from the API; fall back to the mock TICKETS on empty/error.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/admin/tickets");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as { data?: SupportTicketRow[] };
+        const rows = json.data ?? [];
+        if (!active) return;
+        setTickets(rows.length > 0 ? rows.map(rowToTicket) : TICKETS);
+      } catch {
+        if (active) setTickets(TICKETS);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Persist a status change to the API, then update local state optimistically.
+  async function updateTicketStatus(ticketId: string, next: TicketStatus) {
+    setTickets((prev) =>
+      prev.map((t) => (t.id === ticketId ? { ...t, status: next } : t)),
+    );
+    setSelectedTicket((cur) =>
+      cur && cur.id === ticketId ? { ...cur, status: next } : cur,
+    );
+    try {
+      await fetch(`/api/v1/admin/tickets/${ticketId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: PAGE_STATUS_TO_DB[next] }),
+      });
+    } catch {
+      // best-effort; local optimistic state stays
+    }
+  }
 
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-zinc-100"}`;
 
-  const filtered = TICKETS
+  const filtered = tickets
     .filter(t => statusFilter === "all" || t.status === statusFilter)
     .filter(t => search === "" || t.subject.includes(search) || t.user.includes(search) || t.id.includes(search));
 
   const COUNTS = {
-    all: TICKETS.length,
-    open: TICKETS.filter(t => t.status === "open").length,
-    inprogress: TICKETS.filter(t => t.status === "inprogress").length,
-    resolved: TICKETS.filter(t => t.status === "resolved").length,
-    closed: TICKETS.filter(t => t.status === "closed").length,
+    all: tickets.length,
+    open: tickets.filter(t => t.status === "open").length,
+    inprogress: tickets.filter(t => t.status === "inprogress").length,
+    resolved: tickets.filter(t => t.status === "resolved").length,
+    closed: tickets.filter(t => t.status === "closed").length,
   };
 
   return (
@@ -88,10 +210,10 @@ export default function AdminTicketsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {TICKETS.filter(t => t.status === "open" && t.priority === "critical").length > 0 && (
+          {tickets.filter(t => t.status === "open" && t.priority === "critical").length > 0 && (
             <span className="flex items-center gap-1.5 text-xs font-bold bg-red-500 text-white px-3 py-1.5 rounded-xl animate-pulse">
               <Fire size={13} weight="fill" />
-              {TICKETS.filter(t => t.status === "open" && t.priority === "critical").length} تذكرة حرجة
+              {tickets.filter(t => t.status === "open" && t.priority === "critical").length} تذكرة حرجة
             </span>
           )}
         </div>
@@ -279,11 +401,15 @@ export default function AdminTicketsPage() {
                 </div>
                 <div className="flex items-center justify-between mt-3">
                   <div className="flex items-center gap-2">
-                    <select className={`text-xs rounded-lg border px-3 py-1.5 outline-none ${isDark ? "bg-zinc-800 border-white/[0.08] text-zinc-300" : "bg-white border-zinc-200 text-zinc-700"}`}>
-                      <option>تغيير الحالة</option>
-                      <option>جارٍ</option>
-                      <option>محلول</option>
-                      <option>مغلق</option>
+                    <select
+                      value={selectedTicket.status}
+                      onChange={(e) => updateTicketStatus(selectedTicket.id, e.target.value as TicketStatus)}
+                      className={`text-xs rounded-lg border px-3 py-1.5 outline-none ${isDark ? "bg-zinc-800 border-white/[0.08] text-zinc-300" : "bg-white border-zinc-200 text-zinc-700"}`}
+                    >
+                      <option value="open">مفتوح</option>
+                      <option value="inprogress">جارٍ</option>
+                      <option value="resolved">محلول</option>
+                      <option value="closed">مغلق</option>
                     </select>
                     <button className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition ${isDark ? "border-white/[0.08] text-zinc-400 hover:bg-white/[0.04]" : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"}`}>
                       <Robot size={13} /> رد AI تلقائي

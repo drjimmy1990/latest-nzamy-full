@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ClockCounterClockwise, MagnifyingGlass, Download, Funnel,
   SignIn, UserCirclePlus, CreditCard, ShieldCheck, Robot,
@@ -10,8 +10,36 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
-/* ── Mock ──────────────────────────────────────────────────────────────────── */
-const LOGS = [
+/* ── Types ─────────────────────────────────────────────────────────────────── */
+type Severity = "info" | "warning" | "critical";
+
+interface LogItem {
+  id: number | string;
+  actor: string;
+  target: string;
+  action: string;
+  detail: string;
+  severity: Severity;
+  time: string;
+}
+
+interface AuditEvent {
+  id: number | string;
+  actor_id: string | null;
+  actor_type: string;
+  actor_name: string;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  before_state: unknown;
+  after_state: unknown;
+  metadata: Record<string, unknown> | null;
+  severity: Severity;
+  created_at: string;
+}
+
+/* ── Mock (fallback if the API is empty/unavailable) ─────────────────────────── */
+const LOGS: LogItem[] = [
   { id:1, actor:"أدمن — أنت", target:"أ. سعد المالكي (U-0005)", action:"user.suspend", detail:"تعليق الحساب — سبب: مخالفة شروط الاستخدام", severity:"critical" as const, time:"منذ ١٢ دق" },
   { id:2, actor:"أ. محمد العتيبي", target:"—", action:"ai.request", detail:"استخدم الصائغ القانوني — ١,٢٤٠ tokens", severity:"info" as const, time:"منذ ١٨ دق" },
   { id:3, actor:"النظام", target:"مكتب البراك (U-0090)", action:"subscription.renew", detail:"تجديد تلقائي — Enterprise — ٢,٤٩٩ ر.س", severity:"info" as const, time:"منذ ساعة" },
@@ -37,16 +65,90 @@ const SEV_CFG: Record<string,{cls:string;label:string}> = {
   critical: { cls:"bg-red-500/10 border-red-500/20 text-red-400", label:"حرج" },
 };
 
+/* ── Actor label (Arabic) by actor_type ──────────────────────────────────────── */
+const ACTOR_TYPE_LABEL: Record<string,string> = {
+  admin:  "أدمن",
+  system: "النظام",
+  n8n:    "النظام",
+  api:    "API",
+  user:   "مستخدم",
+};
+
+/* ── Relative time in Arabic ─────────────────────────────────────────────────── */
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diff = Math.max(0, Date.now() - then);
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "الآن";
+  if (mins < 60) return `منذ ${mins} دق`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `منذ ${hours} ساعة`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "أمس";
+  if (days < 30) return `منذ ${days} يوم`;
+  const months = Math.floor(days / 30);
+  return `منذ ${months} شهر`;
+}
+
+/* ── Map an API audit event to the timeline log item shape ───────────────────── */
+function mapEvent(e: AuditEvent): LogItem {
+  const actor =
+    e.actor_name?.trim() ||
+    (ACTOR_TYPE_LABEL[e.actor_type] ?? "مستخدم");
+  const target =
+    e.target_id
+      ? (e.target_type ? `${e.target_type} (${e.target_id})` : String(e.target_id))
+      : "—";
+  const meta = (e.metadata ?? {}) as Record<string, unknown>;
+  const detail =
+    (typeof meta.detail === "string" && meta.detail) ||
+    (typeof meta.description === "string" && meta.description) ||
+    (typeof meta.reason === "string" && meta.reason) ||
+    (e.target_type ? `${e.action} — ${e.target_type}` : e.action);
+  return {
+    id: e.id,
+    actor,
+    target,
+    action: e.action,
+    detail,
+    severity: e.severity,
+    time: relativeTime(e.created_at),
+  };
+}
+
 export default function AuditLogPage() {
   const { isDark } = useTheme();
   const [sevFilter, setSevFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [logs, setLogs] = useState<LogItem[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/admin/audit-log?limit=200");
+        if (!res.ok) return;
+        const json = await res.json();
+        const events: AuditEvent[] = Array.isArray(json?.data) ? json.data : [];
+        if (!cancelled && events.length > 0) {
+          setLogs(events.map(mapEvent));
+        }
+      } catch {
+        // Keep the mock fallback on failure.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Prefer live DB events; fall back to the mock when nothing loaded.
+  const source: LogItem[] = logs.length > 0 ? logs : LOGS;
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
-  const filtered = LOGS.filter(l =>
+  const filtered = source.filter(l =>
     (sevFilter==="all" || l.severity===sevFilter) &&
     (l.detail.includes(search) || l.actor.includes(search) || l.action.includes(search))
   );

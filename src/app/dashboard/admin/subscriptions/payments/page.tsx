@@ -4,7 +4,17 @@ import { motion } from "framer-motion";
 import { Money, ArrowDown, ArrowUp, MagnifyingGlass, DownloadSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
-const PAYMENTS = [
+interface PaymentRow {
+  id: string;
+  user: string;
+  plan: string;
+  amount: string;
+  date: string;
+  method: string;
+  status: string;
+}
+
+const PAYMENTS: PaymentRow[] = [
   { id: "PAY-041", user: "أ. خالد الجهني",    plan: "MAX",    amount: "٣٩٩",  date: "٢٦ أبريل ٢٠٢٦", method: "بطاقة", status: "ناجح" },
   { id: "PAY-040", user: "شركة المستقبل",     plan: "CORP",   amount: "٢٩٩٩", date: "٢٥ أبريل ٢٠٢٦", method: "تحويل", status: "ناجح" },
   { id: "PAY-039", user: "جمعية البيئة",       plan: "PRO",    amount: "١٩٩",  date: "٢٤ أبريل ٢٠٢٦", method: "بطاقة", status: "ناجح" },
@@ -12,17 +22,111 @@ const PAYMENTS = [
   { id: "PAY-037", user: "مكتب السلمي",        plan: "PRO",    amount: "١٩٩",  date: "٢٢ أبريل ٢٠٢٦", method: "بطاقة", status: "ناجح" },
   { id: "PAY-036", user: "أ. عبدالرحمن",       plan: "AI",     amount: "١٤٩",  date: "٢١ أبريل ٢٠٢٦", method: "بطاقة", status: "فشل" },
 ];
+
+// Ledger entry returned by GET /api/v1/admin/payments (unified across
+// payments / wallet_transactions / credit_transactions).
+interface LedgerEntry {
+  id: string;
+  source: "payment" | "wallet" | "credit";
+  user_id?: string | null;
+  amount: number;
+  currency?: string | null;
+  status?: string | null;
+  description: string;
+  created_at: string;
+}
+
+// Map a ledger source to the "plan" column badge (which is repurposed as a
+// source/type badge for the real ledger).
+const SOURCE_LABEL: Record<LedgerEntry["source"], string> = {
+  payment: "دفعة",
+  wallet: "محفظة",
+  credit: "نقاط",
+};
+
+// Map a raw DB status/kind to the page's Arabic status vocabulary so the
+// existing STATUS_COLOR map keeps working (unknown values pass through).
+const STATUS_LABEL: Record<string, string> = {
+  paid: "ناجح",
+  purchase: "ناجح",
+  credit: "ناجح",
+  refunded: "مسترجع",
+  refund: "مسترجع",
+  reversal: "مسترجع",
+  failed: "فشل",
+  requires_payment: "قيد الدفع",
+  not_required: "غير مطلوب",
+  pending: "قيد الدفع",
+  debit: "خصم",
+  usage: "استخدام",
+  expiry: "انتهاء",
+};
+
+// Method label derived from the ledger source.
+const METHOD_LABEL: Record<LedgerEntry["source"], string> = {
+  payment: "بوابة",
+  wallet: "محفظة",
+  credit: "نقاط",
+};
+
+function mapLedgerToRow(entry: LedgerEntry): PaymentRow {
+  const rawStatus = entry.status ?? "";
+  const status = STATUS_LABEL[rawStatus] ?? (rawStatus || "—");
+  let date = "—";
+  try {
+    date = new Date(entry.created_at).toLocaleDateString("ar-SA", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  } catch {
+    date = entry.created_at;
+  }
+  const amount =
+    entry.currency && entry.currency !== "SAR"
+      ? `${entry.amount} ${entry.currency}`
+      : String(entry.amount);
+  return {
+    id: entry.id,
+    user: entry.description || entry.user_id || entry.id,
+    plan: SOURCE_LABEL[entry.source],
+    amount,
+    date,
+    method: METHOD_LABEL[entry.source],
+    status,
+  };
+}
+
 export default function AdminPaymentsPage() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState("");
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/admin/payments");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as { data?: LedgerEntry[] };
+        const rows = (json.data ?? []).map(mapLedgerToRow);
+        if (active) setPayments(rows.length > 0 ? rows : PAYMENTS);
+      } catch {
+        // Fall back to the mock ledger if the API is unavailable.
+        if (active) setPayments(PAYMENTS);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
   if (!mounted) return null;
   const bg = isDark ? "bg-[#0c0f12]" : "bg-gray-50";
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
   const STATUS_COLOR: Record<string, string> = { "ناجح": "text-emerald-500 bg-emerald-500/10", "مسترجع": "text-amber-500 bg-amber-500/10", "فشل": "text-rose-500 bg-rose-500/10" };
-  const filtered = PAYMENTS.filter(p => p.user.includes(search) || p.id.includes(search));
+  const filtered = payments.filter(p => p.user.includes(search) || p.id.includes(search));
   return (
     <div className={`${bg} min-h-screen`} dir="rtl">
       <div className="max-w-4xl mx-auto p-4 md:p-8 space-y-6">

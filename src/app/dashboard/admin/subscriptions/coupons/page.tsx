@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarBlank,
   Check,
@@ -19,6 +19,80 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
 import type { AdminCoupon, AdminCouponStatus, AdminDiscountType, AdminEligibleRole, AdminCouponType } from "@/types/adminBackendReady";
+
+// ─── DB row → AdminCoupon mapping ──────────────────────────────────────────────
+// The coupons table (20260603_phase1_003_subscriptions_billing.sql) uses
+// discount_type ('percentage'|'fixed'|'points_grant'|'plan_upgrade') and
+// eligible_user_types (with "individual" where the page uses "client").
+
+const USER_TYPE_TO_ROLE: Record<string, AdminEligibleRole> = {
+  individual: "client",
+  client: "client",
+  business: "business",
+  micro: "micro",
+  lawyer: "lawyer",
+  firm: "firm",
+  provider: "provider",
+  government: "government",
+  ngo: "ngo",
+};
+
+function toDateInput(value: unknown): string {
+  if (typeof value !== "string" || !value) return "";
+  return value.slice(0, 10);
+}
+
+function deriveStatus(row: Record<string, unknown>): AdminCouponStatus {
+  const metaStatus = ((row.metadata as Record<string, unknown> | null)?.status) as string | undefined;
+  if (metaStatus === "disabled") return "disabled";
+  if (row.active === false) return "disabled";
+
+  const now = Date.now();
+  const validUntil = typeof row.valid_until === "string" ? Date.parse(row.valid_until) : NaN;
+  if (!Number.isNaN(validUntil) && validUntil < now) return "expired";
+
+  const validFrom = typeof row.valid_from === "string" ? Date.parse(row.valid_from) : NaN;
+  if (!Number.isNaN(validFrom) && validFrom > now) return "scheduled";
+
+  return "active";
+}
+
+function mapRowToCoupon(row: Record<string, unknown>): AdminCoupon {
+  const dbType = String(row.discount_type ?? "percentage");
+
+  let couponType: AdminCouponType;
+  let discountType: AdminDiscountType = "percentage";
+  if (dbType === "points_grant") {
+    couponType = "points";
+  } else if (dbType === "plan_upgrade") {
+    couponType = "free_plan";
+  } else {
+    couponType = "discount";
+    discountType = dbType === "fixed" ? "fixed" : "percentage";
+  }
+
+  const userTypes = Array.isArray(row.eligible_user_types) ? (row.eligible_user_types as unknown[]) : [];
+  const eligibleRoles = userTypes
+    .map((t) => USER_TYPE_TO_ROLE[String(t)])
+    .filter((r): r is AdminEligibleRole => Boolean(r));
+
+  return {
+    code: String(row.code ?? ""),
+    couponType,
+    discountType,
+    value: Number(row.discount_value ?? 0),
+    pointsGranted: Number(row.points_granted ?? 0),
+    planGranted: typeof row.plan_granted === "string" ? row.plan_granted : undefined,
+    usedCount: Number(row.used_count ?? 0),
+    usageLimit: Number(row.max_uses ?? 0) || 0,
+    startsAt: toDateInput(row.valid_from),
+    expiresAt: toDateInput(row.valid_until),
+    status: deriveStatus(row),
+    eligibleRoles: eligibleRoles.length ? eligibleRoles : ["client"],
+    createdAt: toDateInput(row.created_at),
+    usageLog: [],
+  };
+}
 
 const ROLE_LABEL: Record<AdminEligibleRole, string> = {
   client: "الأفراد",
@@ -109,10 +183,42 @@ const EMPTY_COUPON: AdminCoupon = {
 
 export default function AdminCouponsPage() {
   const { isDark } = useTheme();
-  const [coupons, setCoupons] = useState(INITIAL_COUPONS);
+  const [coupons, setCoupons] = useState<AdminCoupon[]>(INITIAL_COUPONS);
+  // Maps the page's coupon `code` → the DB row `id` so mutations can target it.
+  const [codeToId, setCodeToId] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState<AdminCoupon | null>(null);
   const [selectedCoupon, setSelectedCoupon] = useState<AdminCoupon | null>(null);
-  const [toast, setToast] = useState("جاهز للربط بالباك إند: لا يوجد حفظ خادمي في هذه المرحلة.");
+  const [toast, setToast] = useState("جارٍ تحميل الكوبونات…");
+
+  async function loadCoupons() {
+    try {
+      const res = await fetch("/api/v1/admin/coupons");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as { data?: Record<string, unknown>[] };
+      const rows = json.data ?? [];
+      if (rows.length === 0) {
+        // Keep INITIAL_COUPONS as a visual fallback when the table is empty.
+        setToast("لا توجد كوبونات محفوظة بعد — تُعرض بيانات تجريبية.");
+        return;
+      }
+      const idMap: Record<string, string> = {};
+      const mapped = rows.map((row) => {
+        const coupon = mapRowToCoupon(row);
+        if (typeof row.id === "string") idMap[coupon.code] = row.id;
+        return coupon;
+      });
+      setCoupons(mapped);
+      setCodeToId(idMap);
+      setToast(`تم تحميل ${mapped.length} كوبون من قاعدة البيانات.`);
+    } catch (err) {
+      console.error("[coupons] load failed:", err);
+      setToast("تعذّر الاتصال بالخادم — تُعرض بيانات تجريبية.");
+    }
+  }
+
+  useEffect(() => {
+    loadCoupons();
+  }, []);
 
   const activeCount = coupons.filter((coupon) => coupon.status === "active").length;
   const totalUsage = useMemo(() => coupons.reduce((sum, coupon) => sum + coupon.usedCount, 0), [coupons]);
@@ -123,32 +229,89 @@ export default function AdminCouponsPage() {
     setDraft({ ...EMPTY_COUPON, code: `NZ-${coupons.length + 1}00` });
   }
 
-  function saveDraft() {
+  async function saveDraft() {
     if (!draft) return;
     const code = draft.code.trim().toUpperCase();
     if (!code) {
-      setToast("الكوبون يحتاج كود واضح قبل تجهيزه للربط.");
+      setToast("الكوبون يحتاج كود واضح قبل حفظه.");
       return;
     }
 
     const normalized = { ...draft, code };
-    setCoupons((current) => {
-      const exists = current.some((coupon) => coupon.code === code);
-      return exists ? current.map((coupon) => (coupon.code === code ? normalized : coupon)) : [normalized, ...current];
-    });
-    setDraft(null);
-    setToast(`تم تحديث ${code} محلياً. عقد AdminCoupon جاهز للربط بالباك إند.`);
+    const existingId = codeToId[code];
+
+    try {
+      let res: Response;
+      if (existingId) {
+        // Update an existing coupon.
+        res = await fetch(`/api/v1/admin/coupons/${existingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(normalized),
+        });
+      } else {
+        // Create a new coupon.
+        res = await fetch("/api/v1/admin/coupons", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(normalized),
+        });
+      }
+
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        setToast(err.error ?? `تعذّر حفظ ${code} على الخادم.`);
+        return;
+      }
+
+      setDraft(null);
+      setToast(`تم حفظ ${code} في قاعدة البيانات.`);
+      await loadCoupons();
+    } catch (err) {
+      console.error("[coupons] save failed:", err);
+      // Optimistic local fallback so the admin still sees the change.
+      setCoupons((current) => {
+        const exists = current.some((coupon) => coupon.code === code);
+        return exists
+          ? current.map((coupon) => (coupon.code === code ? normalized : coupon))
+          : [normalized, ...current];
+      });
+      setDraft(null);
+      setToast(`تعذّر الاتصال بالخادم — تم تحديث ${code} محلياً فقط.`);
+    }
   }
 
-  function toggleDisabled(code: string) {
-    setCoupons((current) =>
-      current.map((coupon) =>
-        coupon.code === code
-          ? { ...coupon, status: coupon.status === "disabled" ? "active" : "disabled" }
-          : coupon,
-      ),
-    );
-    setToast(`تم تغيير حالة ${code} في الواجهة فقط. الحفظ الحقيقي ينتظر API الكوبونات.`);
+  async function toggleDisabled(code: string) {
+    const current = coupons.find((coupon) => coupon.code === code);
+    const nextStatus: AdminCouponStatus = current?.status === "disabled" ? "active" : "disabled";
+    const id = codeToId[code];
+
+    if (!id) {
+      // No DB row (fallback/demo coupon) — toggle in the UI only.
+      setCoupons((list) =>
+        list.map((coupon) => (coupon.code === code ? { ...coupon, status: nextStatus } : coupon)),
+      );
+      setToast(`تم تغيير حالة ${code} محلياً (كوبون تجريبي غير محفوظ).`);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/v1/admin/coupons/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: nextStatus !== "disabled", status: nextStatus }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        setToast(err.error ?? `تعذّر تغيير حالة ${code} على الخادم.`);
+        return;
+      }
+      setToast(`تم ${nextStatus === "disabled" ? "تعطيل" : "تفعيل"} ${code}.`);
+      await loadCoupons();
+    } catch (err) {
+      console.error("[coupons] toggle failed:", err);
+      setToast(`تعذّر الاتصال بالخادم لتغيير حالة ${code}.`);
+    }
   }
 
   function toggleRole(role: AdminEligibleRole) {

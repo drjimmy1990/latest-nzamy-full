@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle,
   Flag,
@@ -53,11 +53,65 @@ const INITIAL_REPORTS: CommunityModerationItem[] = [
   },
 ];
 
+// API GET returns the CommunityModerationItem shape plus a couple of extra
+// context fields; we only rely on the item shape the page already uses.
+interface ModerationApiItem extends CommunityModerationItem {
+  category?: string;
+  visibility?: string;
+}
+
+// The page's decision buttons pass UI statuses (approved/rejected/escalated).
+// The PATCH route accepts those UI values directly as action aliases.
+const STATUS_TO_ACTION: Record<CommunityModerationStatus, string> = {
+  approved: "approve",
+  rejected: "reject",
+  escalated: "escalate",
+  pending: "approve", // not wired to a button, but keep the map total
+};
+
 export default function AdminCommunityModerationPage() {
   const { isDark } = useTheme();
-  const [reports, setReports] = useState(INITIAL_REPORTS);
+  const [reports, setReports] = useState<CommunityModerationItem[]>(INITIAL_REPORTS);
   const [search, setSearch] = useState("");
-  const [toast, setToast] = useState("CommunityModerationItem جاهز كواجهة. قرارات moderation لا تحفظ في باك إند الآن.");
+  const [toast, setToast] = useState("جاري تحميل طابور الإشراف...");
+
+  // Fetch the real moderation queue on mount. Falls back to INITIAL_REPORTS if
+  // the request fails or returns no rows (tables may not be applied remotely yet).
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/admin/community/moderation", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as { data?: ModerationApiItem[] };
+        const rows = json.data ?? [];
+        if (!active) return;
+        if (rows.length > 0) {
+          setReports(
+            rows.map((row) => ({
+              id: row.id,
+              postId: row.postId,
+              postTitle: row.postTitle,
+              reportReason: row.reportReason,
+              reporter: row.reporter,
+              assignedModerator: row.assignedModerator,
+              status: row.status,
+              createdAt: row.createdAt,
+            })),
+          );
+          setToast("طابور الإشراف متصل بقاعدة البيانات. القرارات تُحفظ على المنشور مباشرة.");
+        } else {
+          setToast("لا توجد منشورات مجتمع بعد. تُعرض بيانات توضيحية محلية.");
+        }
+      } catch {
+        if (!active) return;
+        setToast("تعذر الاتصال بطابور الإشراف. تُعرض بيانات توضيحية محلية كاحتياط.");
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filteredReports = reports.filter((item) =>
     [item.postTitle, item.reportReason, item.reporter, item.assignedModerator ?? ""].some((value) =>
@@ -75,16 +129,36 @@ export default function AdminCommunityModerationPage() {
   const card = `rounded-2xl border ${isDark ? "bg-[#0d1117] border-white/10" : "bg-white border-gray-200 shadow-sm"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
 
-  function setStatus(id: string, status: CommunityModerationStatus) {
+  async function setStatus(id: string, status: CommunityModerationStatus) {
+    // Optimistic update, then persist via the moderation PATCH route.
+    const previous = reports.find((item) => item.id === id)?.status;
     setReports((current) => current.map((item) => (item.id === id ? { ...item, status } : item)));
-    setToast(`تم وضع القرار "${STATUS_LABEL[status]}" محلياً. التنفيذ الحقيقي يحتاج moderation API وسجل تدقيق.`);
+    setToast(`جاري حفظ القرار "${STATUS_LABEL[status]}"...`);
+    try {
+      const res = await fetch(`/api/v1/admin/community/moderation/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: STATUS_TO_ACTION[status] }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setToast(`تم حفظ القرار "${STATUS_LABEL[status]}" على المنشور وسجل التدقيق.`);
+    } catch {
+      // Revert on failure so the UI reflects the real (unchanged) backend state.
+      if (previous) {
+        setReports((current) => current.map((item) => (item.id === id ? { ...item, status: previous } : item)));
+      }
+      setToast(`تعذر حفظ القرار "${STATUS_LABEL[status]}". تم التراجع عن التغيير.`);
+    }
   }
 
+  // Assigning a moderator has no backing column on community_posts (no
+  // assigned_moderator field in the community schema), so this stays local-only.
+  // Persisting it would require a schema change (out of scope for this task).
   function assignModerator(id: string) {
     setReports((current) =>
       current.map((item) => (item.id === id ? { ...item, assignedModerator: item.assignedModerator ? undefined : "مشرف مناوب" } : item)),
     );
-    setToast("تم تعديل المشرف المسؤول محلياً فقط. التعيين الحقيقي ينتظر RBAC/Workflow backend.");
+    setToast("تعيين المشرف محلي فقط — لا يوجد عمود assigned_moderator في مخطط المجتمع.");
   }
 
   return (
