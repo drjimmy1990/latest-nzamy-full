@@ -9,7 +9,7 @@ import {
   Gear, SignOut, Bell, ChartLine, Buildings,
   Scales, ShieldCheck, Database, CaretDown, ClipboardText,
   Money, Megaphone, Star, Globe, BookOpen, Article,
-  Storefront, ToggleRight, Flag, Tag, UsersFour,
+  Storefront, ToggleRight, Flag, Tag, UsersFour, Crown, Tray,
 } from "@phosphor-icons/react";
 
 const NAV = [
@@ -30,6 +30,8 @@ const NAV = [
       { href: "/dashboard/admin/sector-profiles", icon: Globe, label: "بروفيلات القطاعات" },
       { href: "/dashboard/admin/subscriptions", icon: CreditCard, label: "الاشتراكات" },
       { href: "/dashboard/admin/subscriptions/coupons", icon: Tag, label: "الكوبونات" },
+      { href: "/dashboard/admin/entitlements", icon: Crown, label: "منح الصلاحيات" },
+      { href: "/dashboard/admin/entitlements/requests", icon: Tray, label: "طلبات الترقية" },
       { href: "/dashboard/admin/team", icon: UsersFour, label: "فريق نظامي" },
     ],
   },
