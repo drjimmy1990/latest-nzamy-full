@@ -46,6 +46,7 @@
 | `TEST_REVIEW_FIX_PLAN.md` | Fix cycle | ✅ | Round-2 remediation spec (§4.1–§4.9, exact code/SQL) |
 | `IMPLEMENTATION_STATUS.md` | Fix cycle | ✅ | Round-2 done-vs-deferred ledger; **current deploy state** |
 | `PROJECT_STATUS_REVIEW_2026-07-06.md` | Fix cycle | ✅ | **Current** full-surface "what's actually left" audit (~411 pages/routes) + prioritized build order |
+| `PRODUCT_COMPLETENESS_BACKLOG.md` | Roadmap | ✅ | **Full-product backlog** — 104 unbuilt/mock features (registration, community, blog, academy/LMS, media, sectors, admin, cross-cutting) + 5-wave build order |
 | `دليل_اختبار_المالك.md` | Testing | ✅ | Arabic owner test guide (what to re-test on live) |
 | `test/` (folder) | Testing | 📄 | The owner's returned QA review — `README.md` (52 cases), `modifications/` (10 proposed edits), `screenshots/` |
 
@@ -259,6 +260,7 @@
 | You want to… | Read this first |
 |--------------|-----------------|
 | Know the current production-fix + deploy state | `IMPLEMENTATION_STATUS.md` (then the §I fix-cycle set) |
+| See the full-product build backlog (post-beta) | `PRODUCT_COMPLETENESS_BACKLOG.md` |
 | Know what to work on next | `NEXT_STEPS.md` |
 | See what's fixed vs deferred | `nzamy-audit-fix-status.md` |
 | Understand the codebase structure | `ARCHITECTURE.md` |
