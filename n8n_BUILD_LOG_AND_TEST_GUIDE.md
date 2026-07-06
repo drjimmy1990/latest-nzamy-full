@@ -53,10 +53,12 @@
 |---|--------------------|-----|----------------|
 | 1 | **Service Requests** (طلبات الخدمة) | `YkvR5SI8ljcSOfuC` | ✅ **مبني بالكامل** (2.1/2.2/2.3 + **Supabase resolve** + 2.4 SLA) |
 | 2 | **Onboarding & Verification** (التسجيل والتوثيق) | `5mg451RaFPJXwME4` | ✅ **مبني** (4 فروع + DUMMY) — 1.2b placeholder |
-| 3 | **Communication** (التواصل والتذكيرات) | `Y8SnEGaXTC3dboGA` | ⛔ مؤجّل — يحتاج Supabase + LLM + Evolution |
-| 4 | **Admin & Moderation** (الإدارة والإشراف) | `vOjQdg5CPgO9naa6` | ⬜ لم يُبنَ بعد |
+| 3 | **Communication** (التواصل والتذكيرات) | `Y8SnEGaXTC3dboGA` | ✅ **مبني** (4.1 triage + 4.2 reminder؛ 4.3 مؤجّل) |
+| 4 | **Admin & Moderation** (الإدارة والإشراف) | `vOjQdg5CPgO9naa6` | ✅ **مبني** (5.1 digest · 5.2 security · 5.3 moderation) |
 | 5 | **Billing & Wallet** (الفوترة والمحفظة) | `nLcTncqGZnSKCOoQ` | ⛔ محجوب على قرار بوابة الدفع |
-| 6 | **AI Legal Tools** (الأدوات الذكية) | `rtj1TC9rd6Ule7am` | ⬜ لم يُبنَ بعد (37 عقدة) |
+| 6 | **AI Legal Tools** (الأدوات الذكية) | `rtj1TC9rd6Ule7am` | ⬜ مؤجّل — يحتاج prompts + LLM لكل أداة (18) |
+
+> **⚠️ Migration جديد / New migration:** طبّق `supabase/migrations/20260706_reminder_flags.sql` (يضيف `consultations.reminder_sent`/`reminder_1h_sent`) قبل تفعيل WF 4.2 وإلّا استعلام التذكير يفشل. `npx supabase db push`.
 
 **كلها `inactive` (مسودّات) — لا يعمل أي منها الآن.** All inactive drafts — none running yet.
 
@@ -209,4 +211,5 @@ curl -X POST https://n8n.asra3.com/webhook/new-request \
 
 - **2026-07-06:** بُنيت حاوية Service Requests (فروع 2.1/2.2/2.3 + DUMMY delivery)، ومُدمج app-side push (commit `bb6ba41`). 0 workflows فعّالة بعد.
 - **2026-07-06:** بُنيت حاوية Onboarding (فروع 1.1/1.2a/1.3/1.4 + DUMMY، بـ `onError` بلا تحذيرات؛ 1.2b placeholder). Communication مؤجّلة. كلها ما زالت `inactive`.
-- **2026-07-06 (Supabase cred `nzamy`, id `6D0tPh1noqoLzL6T`):** اكتملت Service Requests — أُضيف **تحليل جهة الاتصال** (Supabase `get` على `profiles` بـ `id`) لفرعَي 2.2/2.3 فصارت تحمل `to_email`/`to_phone`، وبُني **2.4 SLA** (Supabase `getAll` على `service_requests` + فلترة 48h). تحقّق: 0 أخطاء/تحذيرات. المتبقّي: reminders (يحتاج migration لأعمدة `reminder_sent`) و1.2b approval (يحتاج token موقّع).
+- **2026-07-06 (Supabase cred `nzamy`, id `6D0tPh1noqoLzL6T`):** اكتملت Service Requests — أُضيف **تحليل جهة الاتصال** (Supabase `get` على `profiles` بـ `id`) لفرعَي 2.2/2.3 فصارت تحمل `to_email`/`to_phone`، وبُني **2.4 SLA** (Supabase `getAll` + فلترة 48h). تحقّق: 0/0.
+- **2026-07-06 «finish all»:** بُنيت **Communication** (4.1 keyword triage → DUMMY reply؛ 4.2 consultation reminder: `getAll due → filter 24h → resolve → DUMMY → mark reminder_sent`؛ 4.3 مؤجّل — hearings في JSONB) + **Admin** (5.1 daily digest عبر `getAll` وعدّ بالحالة؛ 5.2 security alert؛ 5.3 keyword moderation) + **1.2b** lawyer-approval (IF token = `$env.NZAMY_APPROVAL_SECRET` → Supabase update `verification_status='verified'`). Migration جديد `20260706_reminder_flags.sql`. تحقّق كل الحاويات: 0/0. **المتبقّي فقط:** Billing (محجوب على الدفع) + AI Legal Tools (يحتاج prompts+LLM) + WF 4.3 (hearings). كلها ما زالت `inactive`.
