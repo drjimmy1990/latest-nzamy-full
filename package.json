@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "test": "node scripts/smoke-routes.mjs",
     "test:smoke": "node scripts/smoke-routes.mjs",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "seed:blog": "node scripts/seed-blog.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.7",
