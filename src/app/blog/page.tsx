@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   MagnifyingGlass, Newspaper, Clock, Eye, ArrowRight, Tag,
@@ -97,6 +97,8 @@ const ARTICLES = [
   },
 ];
 
+const PAGE_SIZE = 24;
+
 // ─── DB row → card item mapping ──────────────────────────────────────────────
 type Article = typeof ARTICLES[0];
 
@@ -148,37 +150,58 @@ export default function BlogPage() {
   const [search, setSearch] = useState("");
   const [mounted, setMounted] = useState(false);
   const [items, setItems] = useState<Article[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const offsetRef = useRef(0);
 
   useEffect(() => setMounted(true), []);
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/v1/blog", { cache: "no-store" });
-        if (!res.ok) return;
-        const json = (await res.json()) as { data?: BlogRow[] };
-        const rows = Array.isArray(json.data) ? json.data : [];
-        if (active && rows.length > 0) setItems(rows.map(rowToArticle));
-      } catch {
-        // keep fallback
-      }
-    })();
-    return () => { active = false; };
+  // Fetch one page. reset=true replaces the list (mount / new search); reset=false
+  // appends (load more). Search is applied server-side; pagination via limit/offset.
+  const fetchPage = useCallback(async (reset: boolean, query: string) => {
+    const base = reset ? 0 : offsetRef.current;
+    setLoadingMore(true);
+    try {
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(base) });
+      if (query.trim()) params.set("q", query.trim());
+      const res = await fetch(`/api/v1/blog?${params.toString()}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as { data?: BlogRow[]; total?: number; hasMore?: boolean };
+      const rows = Array.isArray(json.data) ? json.data : [];
+      const mapped = rows.map((row, i) => rowToArticle(row, base + i));
+      offsetRef.current = base + mapped.length;
+      setItems((prev) => (reset ? mapped : [...prev, ...mapped]));
+      setTotal(json.total ?? mapped.length);
+      setHasMore(Boolean(json.hasMore));
+    } catch {
+      /* keep whatever is already loaded */
+    } finally {
+      setLoadingMore(false);
+    }
   }, []);
+
+  // Initial load, and a debounced refetch when the search term changes.
+  useEffect(() => {
+    const t = setTimeout(() => { void fetchPage(true, search); }, search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [search, fetchPage]);
 
   if (!mounted) return null;
 
   const muted = isDark ? "text-zinc-400" : "text-slate-500";
   const card = `rounded-[2rem] border overflow-hidden backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)] ${isDark ? "bg-[#161b22]/80 border-white/[0.06]" : "bg-white/80 border-slate-200/50"}`;
 
-  // Prefer DB-backed articles; fall back to the static catalog when empty.
-  const source: Article[] = items.length > 0 ? items : ARTICLES;
+  // DB-backed once seeded; the static catalog is a pre-seed fallback only (shown
+  // when there is no search and the DB returned nothing).
+  const usingDb = items.length > 0 || search.trim() !== "" || total > 0;
+  const source: Article[] = usingDb ? items : ARTICLES;
   const featured = source.filter(a => a.featured);
+  // Search is applied server-side; category is a client refinement over the
+  // currently-loaded page(s).
   const filtered = source
     .filter(a => !a.featured || category !== "all")
-    .filter(a => category === "all" || a.category === category)
-    .filter(a => search === "" || (isRTL ? a.title : a.titleEn).toLowerCase().includes(search.toLowerCase()));
+    .filter(a => category === "all" || a.category === category);
 
   const ArticleCard = ({ article, big = false }: { article: Article; big?: boolean }) => (
     <Link href={`/blog/${article.slug}`} className={`group ${card} flex flex-col hover:border-[#0B3D2E]/30 transition-colors`}>
@@ -243,7 +266,7 @@ export default function BlogPage() {
               <span className={`text-[11px] uppercase tracking-widest font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{isRTL ? "مقالات مميزة" : "Featured Articles"}</span>
             </div>
             <div className={`grid grid-cols-1 sm:grid-cols-2 gap-5`}>
-              {featured.map(a => <ArticleCard key={a.id} article={a} big />)}
+              {featured.map(a => <ArticleCard key={a.slug} article={a} big />)}
             </div>
           </motion.div>
         )}
@@ -279,10 +302,26 @@ export default function BlogPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {filtered.map((a, i) => (
-              <motion.div key={a.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}>
+              <motion.div key={a.slug} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: (i % PAGE_SIZE) * 0.05 }}>
                 <ArticleCard article={a} />
               </motion.div>
             ))}
+          </div>
+        )}
+
+        {/* Load more */}
+        {hasMore && (
+          <div className="flex flex-col items-center gap-2 mt-8">
+            <button
+              onClick={() => void fetchPage(false, search)}
+              disabled={loadingMore}
+              className="px-8 py-3 rounded-2xl text-sm font-bold bg-[#0B3D2E] text-white hover:bg-[#0a3328] disabled:opacity-50 transition-all shadow-[0_4px_14px_0_rgba(11,61,46,0.25)] active:scale-[0.98]"
+            >
+              {loadingMore ? (isRTL ? "جارٍ التحميل…" : "Loading…") : (isRTL ? "تحميل المزيد" : "Load more")}
+            </button>
+            <span className={`text-xs ${muted}`}>
+              {isRTL ? `عُرض ${items.length} من ${total}` : `Showing ${items.length} of ${total}`}
+            </span>
           </div>
         )}
 

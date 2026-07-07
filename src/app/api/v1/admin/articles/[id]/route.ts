@@ -18,6 +18,41 @@ const PATCHABLE_FIELDS = [
 ] as const;
 
 /**
+ * GET /api/v1/admin/articles/[id] — Fetch one full article (any status) so the
+ * admin editor can pre-fill cover/excerpt/category/body. Admin-gated.
+ */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const gate = await requireAdmin();
+  if (!gate.isAdmin) {
+    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
+  }
+
+  const { id } = await params;
+
+  try {
+    const supabase = await createServiceClient();
+    const { data, error } = await supabase
+      .from("articles")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) {
+      console.error("[admin/articles/[id] GET] Supabase error:", error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!data) return NextResponse.json({ error: "المقال غير موجود" }, { status: 404 });
+    return NextResponse.json({ data });
+  } catch (err) {
+    console.error("[admin/articles/[id] GET] Unexpected error:", err);
+    return NextResponse.json({ error: "حدث خطأ" }, { status: 500 });
+  }
+}
+
+/**
  * PATCH /api/v1/admin/articles/[id] — Update an article.
  *
  * Admin-gated. Only allowlisted fields are applied. When `status` transitions

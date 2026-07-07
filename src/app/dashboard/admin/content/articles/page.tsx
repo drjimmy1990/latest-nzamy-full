@@ -48,6 +48,17 @@ const EMPTY_ARTICLE: PlatformContentItem = {
   revision: 1,
 };
 
+// Rich content fields the CMS editor manages alongside the PlatformContentItem
+// (cover image, excerpt, category, slug, markdown body).
+interface ArticleContent {
+  slug: string;
+  cover: string;
+  excerpt: string;
+  category: string;
+  body: string;
+}
+const EMPTY_CONTENT: ArticleContent = { slug: "", cover: "", excerpt: "", category: "", body: "" };
+
 // ─── DB row → PlatformContentItem mapping ────────────────────────────────────
 interface ArticleRow {
   id: string;
@@ -57,6 +68,10 @@ interface ArticleRow {
   author_name?: string | null;
   views?: number | null;
   published_at?: string | null;
+  cover?: string | null;
+  excerpt?: string | null;
+  category?: string | null;
+  body?: string | null;
 }
 
 const DB_STATUS_MAP: Record<string, PlatformContentStatus> = {
@@ -99,6 +114,7 @@ export default function AdminArticlesPage() {
   const [search, setSearch] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<PlatformContentStatus | "all">("all");
   const [draft, setDraft] = useState<PlatformContentItem | null>(null);
+  const [content, setContent] = useState<ArticleContent>(EMPTY_CONTENT);
   const [toast, setToast] = useState("إدارة المقالات: مرتبطة بقاعدة البيانات عبر CMS API.");
 
   // ── Load articles from the CMS API (falls back to the static catalog) ──
@@ -137,6 +153,7 @@ export default function AdminArticlesPage() {
   const muted = isDark ? "text-gray-400" : "text-gray-500";
 
   function openNewArticle() {
+    setContent(EMPTY_CONTENT);
     setDraft({ ...EMPTY_ARTICLE, id: `draft-${articles.length + 1}` });
   }
 
@@ -144,12 +161,38 @@ export default function AdminArticlesPage() {
   // have a uuid id and go through PATCH.
   const isNewDraft = (id: string) => id.startsWith("draft");
 
+  // Open the editor for an existing article — fetch its full row (cover/excerpt/
+  // category/body) so those fields pre-fill (the list GET omits heavy body text).
+  async function openEdit(article: PlatformContentItem) {
+    setDraft(article);
+    setContent(EMPTY_CONTENT);
+    if (isNewDraft(article.id)) return;
+    try {
+      const res = await fetch(`/api/v1/admin/articles/${article.id}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as { data?: ArticleRow };
+      const row = json.data;
+      if (row) {
+        setContent({
+          slug: row.slug ?? "",
+          cover: row.cover ?? "",
+          excerpt: row.excerpt ?? "",
+          category: row.category ?? "",
+          body: row.body ?? "",
+        });
+      }
+    } catch {
+      /* keep empty content on failure */
+    }
+  }
+
   async function saveDraft() {
     if (!draft?.title.trim()) {
       setToast("المقال يحتاج عنوان قبل تجهيزه للنشر.");
       return;
     }
     const current = draft;
+    const currentContent = content;
     // Optimistic local update so the UI stays responsive.
     const normalized = { ...current, revision: current.revision + 1 };
     setArticles((list) => {
@@ -157,6 +200,7 @@ export default function AdminArticlesPage() {
       return exists ? list.map((article) => (article.id === normalized.id ? normalized : article)) : [normalized, ...list];
     });
     setDraft(null);
+    setContent(EMPTY_CONTENT);
     try {
       if (isNewDraft(current.id)) {
         const res = await fetch("/api/v1/admin/articles", {
@@ -164,9 +208,13 @@ export default function AdminArticlesPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             title: current.title.trim(),
-            slug: slugify(current.title),
+            slug: currentContent.slug.trim() || slugify(current.title),
             status: toDbStatus(current.status),
             author_name: current.author,
+            cover: currentContent.cover || null,
+            excerpt: currentContent.excerpt || null,
+            category: currentContent.category || null,
+            body: currentContent.body || null,
           }),
         });
         if (!res.ok) throw new Error("create failed");
@@ -179,6 +227,10 @@ export default function AdminArticlesPage() {
             title: current.title.trim(),
             status: toDbStatus(current.status),
             author_name: current.author,
+            cover: currentContent.cover || null,
+            excerpt: currentContent.excerpt || null,
+            category: currentContent.category || null,
+            body: currentContent.body || null,
           }),
         });
         if (!res.ok) throw new Error("update failed");
@@ -284,9 +336,23 @@ export default function AdminArticlesPage() {
               </select>
             </Field>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Field label="التصنيف"><input value={content.category} onChange={(event) => setContent({ ...content, category: event.target.value })} className={inputClass(isDark)} placeholder="مثال: قانون العمل" /></Field>
+            <Field label="الرابط (slug)"><input value={content.slug} onChange={(event) => setContent({ ...content, slug: event.target.value })} className={inputClass(isDark)} placeholder="يُولّد تلقائياً إن تُرك فارغاً" dir="ltr" /></Field>
+            <Field label="رابط صورة الغلاف"><input value={content.cover} onChange={(event) => setContent({ ...content, cover: event.target.value })} className={inputClass(isDark)} placeholder="/blog/images/name.webp أو https://..." dir="ltr" /></Field>
+          </div>
+          {content.cover && (
+            <div className="h-36 w-full max-w-md rounded-xl border border-white/10 bg-cover bg-center" style={{ backgroundImage: `url(${content.cover})` }} aria-label="معاينة صورة الغلاف" />
+          )}
+          <Field label="المقتطف (excerpt)">
+            <textarea value={content.excerpt} onChange={(event) => setContent({ ...content, excerpt: event.target.value })} rows={2} className={inputClass(isDark)} />
+          </Field>
+          <Field label="المحتوى (Markdown)">
+            <textarea value={content.body} onChange={(event) => setContent({ ...content, body: event.target.value })} rows={12} className={`${inputClass(isDark)} font-mono leading-6`} dir="auto" />
+          </Field>
           <div className="flex justify-end gap-2">
-            <button onClick={() => setDraft(null)} className={`px-4 py-2 rounded-xl text-sm font-bold border ${isDark ? "border-white/10 text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>إلغاء</button>
-            <button onClick={saveDraft} className="px-4 py-2 rounded-xl text-sm font-bold bg-[#0B3D2E] text-white">حفظ محلي</button>
+            <button onClick={() => { setDraft(null); setContent(EMPTY_CONTENT); }} className={`px-4 py-2 rounded-xl text-sm font-bold border ${isDark ? "border-white/10 text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>إلغاء</button>
+            <button onClick={saveDraft} className="px-4 py-2 rounded-xl text-sm font-bold bg-[#0B3D2E] text-white">حفظ</button>
           </div>
         </motion.div>
       )}
@@ -336,7 +402,7 @@ export default function AdminArticlesPage() {
                   <td className="px-6 py-5">
                     <div className="flex gap-1">
                       <Link href={`/blog/${article.id}`} title="معاينة" className={actionClass(isDark)}><Eye size={14} /></Link>
-                      <button title="تعديل" onClick={() => setDraft(article)} className={actionClass(isDark)}><PencilSimple size={14} /></button>
+                      <button title="تعديل" onClick={() => openEdit(article)} className={actionClass(isDark)}><PencilSimple size={14} /></button>
                       <button title="أرشفة" onClick={() => setArticleStatus(article.id, "archived")} className={actionClass(isDark)}><Archive size={14} /></button>
                       <button title="حذف محلي" onClick={() => removeArticle(article.id)} className={actionClass(isDark)}><Trash size={14} /></button>
                     </div>

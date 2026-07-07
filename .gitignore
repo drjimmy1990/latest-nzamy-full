@@ -74,3 +74,6 @@ supabase/.branches/
 *.tgz
 .cache/
 .turbo/
+
+# ─── Blog content source (seed via scripts/seed-blog.mjs; not shipped in git) ──
+blog_final/
