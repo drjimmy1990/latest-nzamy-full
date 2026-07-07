@@ -119,14 +119,14 @@ interface BlogRow {
 }
 
 function rowToArticle(row: BlogRow, index: number): Article {
-  const cat = CATEGORIES.find(c => c.id === row.category);
   const author = row.author_name || (index % 2 === 0 ? "أ. أحمد الغامدي" : "أ. سارة العتيبي");
+  const cat = (row.category || "").trim();
   return {
     id: (index + 1) as Article["id"],
     slug: row.slug,
-    category: row.category || "news",
-    tag: cat?.label || "أخبار قانونية",
-    tagEn: cat?.labelEn || "Legal News",
+    category: cat || "news",
+    tag: cat || "أخبار قانونية",
+    tagEn: cat || "Legal News",
     title: row.title,
     titleEn: row.title_en || row.title,
     excerpt: row.excerpt || "",
@@ -153,18 +153,35 @@ export default function BlogPage() {
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [dbCategories, setDbCategories] = useState<{ category: string; count: number }[]>([]);
   const offsetRef = useRef(0);
 
   useEffect(() => setMounted(true), []);
 
-  // Fetch one page. reset=true replaces the list (mount / new search); reset=false
-  // appends (load more). Search is applied server-side; pagination via limit/offset.
-  const fetchPage = useCallback(async (reset: boolean, query: string) => {
+  // Distinct categories (with counts) drive the pills — real taxonomy, not a
+  // hardcoded list.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/blog/categories", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { data?: { category: string; count: number }[] };
+        if (Array.isArray(json.data)) setDbCategories(json.data);
+      } catch {
+        /* keep fallback pills */
+      }
+    })();
+  }, []);
+
+  // Fetch one page. reset=true replaces the list (mount / new search or category);
+  // reset=false appends (load more). Search + category are server-side.
+  const fetchPage = useCallback(async (reset: boolean, query: string, cat: string) => {
     const base = reset ? 0 : offsetRef.current;
     setLoadingMore(true);
     try {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(base) });
       if (query.trim()) params.set("q", query.trim());
+      if (cat && cat !== "all") params.set("category", cat);
       const res = await fetch(`/api/v1/blog?${params.toString()}`, { cache: "no-store" });
       if (!res.ok) return;
       const json = (await res.json()) as { data?: BlogRow[]; total?: number; hasMore?: boolean };
@@ -181,11 +198,11 @@ export default function BlogPage() {
     }
   }, []);
 
-  // Initial load, and a debounced refetch when the search term changes.
+  // Initial load, and a refetch when search (debounced) or category changes.
   useEffect(() => {
-    const t = setTimeout(() => { void fetchPage(true, search); }, search ? 300 : 0);
+    const t = setTimeout(() => { void fetchPage(true, search, category); }, search ? 300 : 0);
     return () => clearTimeout(t);
-  }, [search, fetchPage]);
+  }, [search, category, fetchPage]);
 
   if (!mounted) return null;
 
@@ -194,14 +211,17 @@ export default function BlogPage() {
 
   // DB-backed once seeded; the static catalog is a pre-seed fallback only (shown
   // when there is no search and the DB returned nothing).
-  const usingDb = items.length > 0 || search.trim() !== "" || total > 0;
+  const usingDb = items.length > 0 || search.trim() !== "" || category !== "all" || total > 0;
   const source: Article[] = usingDb ? items : ARTICLES;
   const featured = source.filter(a => a.featured);
-  // Search is applied server-side; category is a client refinement over the
-  // currently-loaded page(s).
-  const filtered = source
-    .filter(a => !a.featured || category !== "all")
-    .filter(a => category === "all" || a.category === category);
+  // Search + category are both server-side now; only the featured/grid split is client.
+  const filtered = source.filter(a => !a.featured || category !== "all");
+
+  // Category pills from the real DB taxonomy (fallback to the static list pre-seed).
+  const allCount = dbCategories.reduce((s, c) => s + c.count, 0);
+  const pills: { id: string; label: string; count?: number }[] = dbCategories.length > 0
+    ? [{ id: "all", label: isRTL ? "الكل" : "All", count: allCount }, ...dbCategories.map(c => ({ id: c.category, label: c.category, count: c.count }))]
+    : CATEGORIES.map(c => ({ id: c.id, label: isRTL ? c.label : c.labelEn }));
 
   const ArticleCard = ({ article, big = false }: { article: Article; big?: boolean }) => (
     <Link href={`/blog/${article.slug}`} className={`group ${card} flex flex-col hover:border-[#0B3D2E]/30 transition-colors`}>
@@ -281,14 +301,15 @@ export default function BlogPage() {
 
         {/* Category pills */}
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide mb-6">
-          {CATEGORIES.map(cat => {
-            const Icon = cat.icon;
-            return (
-              <button key={cat.id} onClick={() => setCategory(cat.id)} className={`flex-shrink-0 flex items-center gap-1.5 px-5 py-2.5 rounded-2xl text-[13px] font-semibold border backdrop-blur-sm transition-all active:scale-[0.97] ${category === cat.id ? "bg-[#0B3D2E] text-white border-[#0B3D2E] shadow-md" : `${muted} bg-white/60 dark:bg-[#161b22]/60 border-slate-200/60 dark:border-white/[0.06] hover:border-[#0B3D2E]/30`}`}>
-                <Icon size={16} weight={category === cat.id ? "fill" : "regular"} />{isRTL ? cat.label : cat.labelEn}
-              </button>
-            );
-          })}
+          {pills.map(cat => (
+            <button key={cat.id} onClick={() => setCategory(cat.id)} className={`flex-shrink-0 flex items-center gap-1.5 px-5 py-2.5 rounded-2xl text-[13px] font-semibold border backdrop-blur-sm transition-all active:scale-[0.97] whitespace-nowrap ${category === cat.id ? "bg-[#0B3D2E] text-white border-[#0B3D2E] shadow-md" : `${muted} bg-white/60 dark:bg-[#161b22]/60 border-slate-200/60 dark:border-white/[0.06] hover:border-[#0B3D2E]/30`}`}>
+              <Tag size={15} weight={category === cat.id ? "fill" : "regular"} />
+              {cat.label}
+              {typeof cat.count === "number" && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${category === cat.id ? "bg-white/20" : isDark ? "bg-white/10" : "bg-black/5"}`}>{cat.count}</span>
+              )}
+            </button>
+          ))}
         </div>
 
         {/* Articles grid */}
@@ -313,7 +334,7 @@ export default function BlogPage() {
         {hasMore && (
           <div className="flex flex-col items-center gap-2 mt-8">
             <button
-              onClick={() => void fetchPage(false, search)}
+              onClick={() => void fetchPage(false, search, category)}
               disabled={loadingMore}
               className="px-8 py-3 rounded-2xl text-sm font-bold bg-[#0B3D2E] text-white hover:bg-[#0a3328] disabled:opacity-50 transition-all shadow-[0_4px_14px_0_rgba(11,61,46,0.25)] active:scale-[0.98]"
             >

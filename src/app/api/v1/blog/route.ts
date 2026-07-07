@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(60, Math.max(1, parseInt(searchParams.get("limit") ?? "24", 10)));
     const offset = Math.max(0, parseInt(searchParams.get("offset") ?? "0", 10));
     const q = (searchParams.get("q") ?? "").trim();
+    const category = (searchParams.get("category") ?? "").trim();
 
     const supabase = await createServiceClient();
 
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1);
 
     if (q) query = query.ilike("title", `%${q}%`);
+    if (category) query = query.eq("category", category);
 
     const { data, error, count } = await query;
 
