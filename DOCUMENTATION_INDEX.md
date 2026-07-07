@@ -23,6 +23,7 @@
 | `ENTITLEMENTS_AND_WIRING_BUILD_LOG.md` | Build log | ✅ | **2026-07-06 entitlements + wiring build** — what shipped (7 phases) + apply/operate runbook (AR/EN) |
 | `docs/superpowers/plans/2026-07-06-admin-entitlements-and-production-wiring.md` | Plan | ✅ | The implementation plan for the entitlements+wiring build |
 | `docs/superpowers/specs/2026-07-06-admin-entitlements-and-production-wiring-design.md` | Spec | ✅ | The approved design (now implemented) |
+| `BLOG_SEEDING_GUIDE.md` | Runbook | ✅ | **Seed the blog** — run `npm run seed:blog` to load `blog_final/` (608 articles) into `articles` (AR/EN) |
 | `nzamy-audit-fix-status.md` | Roadmap | ✅ | What's fixed vs deferred (audit fix ledger) |
 | `master_checklist.md` | Roadmap | 🟡 | Granular 6-phase deliverables checklist |
 | `master_checklist2.md` | Roadmap | 🟡 | Older checklist variant (same purpose) |
