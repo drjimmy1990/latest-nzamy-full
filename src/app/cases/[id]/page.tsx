@@ -23,7 +23,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 
 const MOCK_CASE = {
@@ -154,7 +153,7 @@ export default function CaseDetailPage() {
     >
       <Navbar />
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-10">
+      <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-10">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -16 }}
@@ -487,10 +486,9 @@ export default function CaseDetailPage() {
             </motion.div>
           </div>
         </div>
-      </main>
+      </div>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

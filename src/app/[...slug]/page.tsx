@@ -1,6 +1,5 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import ComingSoon from "@/components/ComingSoon";
 
 export default async function CatchAllPage({ params }: { params: Promise<{ slug: string[] }> }) {
@@ -10,11 +9,10 @@ export default async function CatchAllPage({ params }: { params: Promise<{ slug:
   return (
     <>
       <Navbar />
-      <main>
+      <div>
         <ComingSoon path={path} />
-      </main>
+      </div>
       <Footer />
-      <FloatingButtons />
-    </>
+          </>
   );
 }

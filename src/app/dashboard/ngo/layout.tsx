@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import SharedSidebar from "@/components/dashboard/SharedSidebar";
-import FloatingButtons from "@/components/FloatingButtons";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
 
 export default function NGOLayout({ children }: { children: React.ReactNode }) {
@@ -19,8 +18,7 @@ export default function NGOLayout({ children }: { children: React.ReactNode }) {
             {children}
           </div>
         </main>
-        <FloatingButtons />
-      </div>
+              </div>
     </UserTypeGuard>
   );
 }

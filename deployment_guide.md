@@ -698,3 +698,14 @@ Run through this before going live:
 - [ ] **Test**: Open `https://nzamy.com` → site loads
 - [ ] **Test**: Register new user → verify in Supabase
 - [ ] **Test**: Login → dashboard loads with real data
+
+
+
+cd /www/wwwroot/nzamy/latest-nzamy-full && git pull origin main
+
+npm install --production=false
+
+npm run build
+
+pm2 reload nzamy
+rm -rf /www/server/nginx/proxy_cache_dir/*

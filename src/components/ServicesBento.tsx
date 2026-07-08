@@ -200,7 +200,7 @@ export default function ServicesBento() {
             initial={{ opacity: 0, x: isAr ? -20 : 20 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            className="flex items-center gap-2 rounded-2xl bg-slate-100/80 p-1.5 dark:bg-white/5 backdrop-blur-sm self-start md:self-end"
+            className="flex items-center gap-2 rounded-2xl bg-slate-100/80 p-1.5 dark:bg-white/5 backdrop-blur-sm self-center sm:self-auto"
             role="tablist"
             aria-label={isAr ? "اختر نوع المستخدم" : "Select user type"}
           >
@@ -243,7 +243,7 @@ export default function ServicesBento() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ type: "spring", stiffness: 100, damping: 20 }}
-            className="row-span-2 group/ai overflow-hidden rounded-[2.5rem] border border-slate-200/50 bg-white p-8 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] dark:border-white/10 dark:bg-dark-card md:p-10"
+            className="md:row-span-2 group/ai overflow-hidden rounded-[2.5rem] border border-slate-200/50 bg-white p-5 sm:p-8 md:p-10 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] dark:border-white/10 dark:bg-dark-card"
           >
             <Link href="/ai" className="block h-full flex flex-col justify-between">
               <div>
@@ -302,7 +302,7 @@ export default function ServicesBento() {
                   damping: 20,
                   delay: i * 0.05,
                 }}
-                className={`group flex flex-col justify-between rounded-[2rem] border transition-all hover:-translate-y-1 hover:shadow-xl dark:shadow-none p-6 md:p-8 ${
+                className={`group flex flex-col justify-between rounded-[2rem] border transition-all hover:-translate-y-1 hover:shadow-xl dark:shadow-none p-5 sm:p-8 md:p-10 ${
                   isDark
                     ? "border-white/10 bg-dark-card hover:border-white/20"
                     : "border-slate-200/50 bg-white hover:border-royal/20"

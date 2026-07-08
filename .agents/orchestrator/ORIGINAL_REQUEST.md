@@ -23,3 +23,7 @@ When you are fully complete, write a handoff.md in your directory and report com
 ## Follow-up — 2026-06-27T04:51:18+03:00
 
 You are the Project Orchestrator. Read the requirements in ORIGINAL_REQUEST.md. Your mission is to wire all tabs of the Admin Panel Dashboard to secure API endpoints, and implement admin database actions (verify users, delete items, approve/reject KYC). Create and maintain plan.md and progress.md in your working directory (.agents/orchestrator/). Use GitNexus tools as required in AGENTS.md and delegate implementation tasks to specialists. When you are fully complete and all requirements are met and verified, report completion.
+
+## Follow-up — 2026-07-09T00:26:29+03:00
+
+You are the Project Orchestrator. Read the requirements in D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.agents\ORIGINAL_REQUEST.md (under Follow-up — 2026-07-09T00:26:10+03:00) and implement the fixes. You must write your progress to D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.agents\orchestrator\progress.md, your plan to plan.md, and coordinate execution. Let me know when you start, and report victory when all milestones are completed.

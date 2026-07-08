@@ -8,7 +8,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 
@@ -153,6 +152,7 @@ export default function BlogPage() {
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [dbCategories, setDbCategories] = useState<{ category: string; count: number }[]>([]);
   const offsetRef = useRef(0);
 
@@ -195,6 +195,7 @@ export default function BlogPage() {
       /* keep whatever is already loaded */
     } finally {
       setLoadingMore(false);
+      setInitialLoading(false);
     }
   }, []);
 
@@ -210,9 +211,9 @@ export default function BlogPage() {
   const card = `rounded-[2rem] border overflow-hidden backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)] ${isDark ? "bg-[#161b22]/80 border-white/[0.06]" : "bg-white/80 border-slate-200/50"}`;
 
   // DB-backed once seeded; the static catalog is a pre-seed fallback only (shown
-  // when there is no search and the DB returned nothing).
+  // when there is no search and the DB returned nothing AND initial load finished).
   const usingDb = items.length > 0 || search.trim() !== "" || category !== "all" || total > 0;
-  const source: Article[] = usingDb ? items : ARTICLES;
+  const source: Article[] = usingDb ? items : (initialLoading ? [] : ARTICLES);
   const featured = source.filter(a => a.featured);
   // Search + category are both server-side now; only the featured/grid split is client.
   const filtered = source.filter(a => !a.featured || category !== "all");
@@ -261,7 +262,7 @@ export default function BlogPage() {
     <div className={`min-h-[100dvh] flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-[#f9fafb] text-zinc-900"}`} dir={isRTL ? "rtl" : "ltr"} suppressHydrationWarning>
       <Navbar />
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
+      <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
@@ -313,7 +314,24 @@ export default function BlogPage() {
         </div>
 
         {/* Articles grid */}
-        {filtered.length === 0 ? (
+        {initialLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className={`${card} animate-pulse`}>
+                <div className={`w-full h-36 ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`} />
+                <div className="p-5 space-y-3">
+                  <div className={`h-4 rounded-full w-3/4 ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
+                  <div className={`h-3 rounded-full w-full ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`} />
+                  <div className={`h-3 rounded-full w-2/3 ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`} />
+                  <div className="flex justify-between pt-2">
+                    <div className={`h-3 rounded-full w-20 ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`} />
+                    <div className={`h-3 rounded-full w-16 ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
           <div className={`rounded-[2rem] border p-16 text-center backdrop-blur-sm min-h-[300px] flex flex-col items-center justify-center ${isDark ? "bg-[#161b22]/80 border-white/[0.06]" : "bg-white/80 border-slate-200/50 shadow-sm"}`}>
             <div className="w-20 h-20 rounded-3xl bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-5 dark:bg-zinc-800 dark:border-white/10">
               <Newspaper size={36} color="#C8A762" weight="duotone" />
@@ -363,10 +381,9 @@ export default function BlogPage() {
             </button>
           </div>
         </motion.div>
-      </main>
+      </div>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

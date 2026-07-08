@@ -123,7 +123,7 @@ export default function InvitePage() {
     return (
       <div dir={isRTL ? "rtl" : "ltr"} className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-zinc-50 text-zinc-900"}`}>
         <Navbar />
-        <main className="flex-1 flex items-center justify-center px-4">
+        <div className="flex-1 flex items-center justify-center px-4">
           <div className={`rounded-3xl border p-8 text-center max-w-sm ${isDark ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-zinc-100 shadow-lg"}`}>
             <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-5">
               <Lock size={28} className="text-red-400" />
@@ -144,7 +144,7 @@ export default function InvitePage() {
               {isRTL ? "تصفح المكتبة مجاناً" : "Browse Library for Free"}
             </Link>
           </div>
-        </main>
+        </div>
         <Footer />
       </div>
     );
@@ -154,7 +154,7 @@ export default function InvitePage() {
     <div dir={isRTL ? "rtl" : "ltr"} className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-zinc-50 text-zinc-900"}`}>
       <Navbar />
 
-      <main className="flex-1 flex items-center justify-center px-4 py-16">
+      <div className="flex-1 flex items-center justify-center px-4 py-16">
         <div className="w-full max-w-lg">
 
           {/* Hero Card */}
@@ -299,7 +299,7 @@ export default function InvitePage() {
             {isRTL ? `كود الدعوة: ${code}` : `Invite code: ${code}`}
           </p>
         </div>
-      </main>
+      </div>
 
       <Footer />
     </div>

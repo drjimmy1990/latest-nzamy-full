@@ -34,7 +34,7 @@ export default function BookConsultationPage() {
   return (
     <>
       <Navbar />
-      <main className="min-h-screen bg-surface pb-24 pt-28 dark:bg-dark-bg transition-colors duration-300 md:pt-32">
+      <div className="min-h-screen bg-surface pb-24 pt-28 dark:bg-dark-bg transition-colors duration-300 md:pt-32">
         <div className="mx-auto max-w-[720px] px-4">
           
           {/* Breadcrumb */}
@@ -107,7 +107,7 @@ export default function BookConsultationPage() {
             )}
           </div>
         </div>
-      </main>
+      </div>
       <Footer />
     </>
   );

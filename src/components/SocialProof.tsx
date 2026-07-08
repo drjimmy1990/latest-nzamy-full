@@ -60,8 +60,8 @@ const LogoMarquee = memo(function LogoMarquee({ isAr }: { isAr: boolean }) {
 
   return (
     <div className="mt-16 border-t border-slate-100 pt-10 dark:border-white/10 overflow-hidden relative">
-      <div className="absolute left-0 top-0 z-10 w-24 h-full bg-gradient-to-r from-surface dark:from-dark-bg to-transparent" />
-      <div className="absolute right-0 top-0 z-10 w-24 h-full bg-gradient-to-l from-surface dark:from-dark-bg to-transparent" />
+      <div className="absolute left-0 top-0 z-10 w-8 sm:w-16 md:w-24 h-full bg-gradient-to-r from-surface dark:from-dark-bg to-transparent" />
+      <div className="absolute right-0 top-0 z-10 w-8 sm:w-16 md:w-24 h-full bg-gradient-to-l from-surface dark:from-dark-bg to-transparent" />
       
       <p className="mb-6 text-center text-sm font-semibold text-ink-muted uppercase tracking-wider">{isAr ? "يثق بنا أكثر من ٣٢,٠٠٠ عميل وشركة" : "Trusted by over 32,000 clients & companies"}</p>
       
@@ -123,11 +123,11 @@ export default function SocialProof() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ type: "spring", stiffness: 100, damping: 20 }}
-          className={`rounded-[2.5rem] border p-8 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] md:p-12 ${
+          className={`rounded-[2.5rem] border p-4 sm:p-8 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] ${
             isDark ? "border-white/10 bg-dark-card shadow-black/40" : "border-slate-200/50 bg-white"
           }`}
         >
-          <div className="grid grid-cols-2 gap-8 md:grid-cols-4 md:gap-0 md:divide-x md:divide-x-reverse md:divide-slate-100 dark:md:divide-white/10">
+          <div className="grid grid-cols-2 gap-4 sm:gap-8 md:grid-cols-4 md:gap-0 md:divide-x md:divide-x-reverse md:divide-slate-100 dark:md:divide-white/10">
             {stats.map((stat, i) => (
               <motion.div
                 key={stat.label}
@@ -137,7 +137,7 @@ export default function SocialProof() {
                 transition={{ delay: i * 0.1 }}
                 className="text-center"
               >
-                <div className={`font-brand text-3xl font-extrabold md:text-5xl ${isDark ? "text-emerald-400" : "text-royal"}`}>
+                <div className={`font-brand text-2xl sm:text-3xl md:text-5xl font-extrabold ${isDark ? "text-emerald-400" : "text-royal"}`}>
                   <AnimatedCounter target={stat.value} suffix={stat.suffix} locale={isAr ? "ar-SA" : "en-US"} />
                 </div>
                 <div className={`mt-3 text-sm font-semibold ${isDark ? "text-gray-400" : "text-ink-muted"}`}>{stat.label}</div>

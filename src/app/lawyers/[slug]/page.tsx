@@ -36,7 +36,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Data ──────────────────────────────────────────────────────────────────
@@ -220,7 +219,7 @@ export default function LawyerProfilePage() {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-10 space-y-6">
+      <div className="flex-1 max-w-5xl mx-auto w-full px-4 py-10 space-y-6">
 
         {/* ── Hero Card ── */}
         <motion.section initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className={`${card} relative overflow-hidden`}>
@@ -662,10 +661,9 @@ export default function LawyerProfilePage() {
 
           </motion.div>
         </AnimatePresence>
-      </main>
+      </div>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

@@ -166,7 +166,7 @@ export default function MarketplaceDetailPage() {
     <div className={`min-h-screen flex flex-col ${bg}`} dir="rtl">
       <Navbar />
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
+      <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
 
         {/* Back button */}
         <Link href="/marketplace"
@@ -487,7 +487,7 @@ export default function MarketplaceDetailPage() {
 
           </aside>
         </div>
-      </main>
+      </div>
 
       <Footer />
     </div>

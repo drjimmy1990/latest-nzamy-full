@@ -337,7 +337,7 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
       className={`nzamy-reader-block rounded-2xl border shadow-sm overflow-hidden cursor-pointer transition-colors ${isDark ? "bg-zinc-900" : "bg-white"} ${cardBorder}`}
     >
       {/* Header */}
-      <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${isDark ? "border-white/[0.05] bg-zinc-800/50" : "border-slate-100 bg-slate-50/80"}`}
+      <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-2.5 border-b ${isDark ? "border-white/[0.05] bg-zinc-800/50" : "border-slate-100 bg-slate-50/80"}`}
            onClick={e => e.stopPropagation()}>
 
         <span className={`text-[11px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${mainBadgeStyle}`}>

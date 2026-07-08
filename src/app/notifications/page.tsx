@@ -14,7 +14,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 
 type NotificationType = "system" | "cases" | "payments" | "appointments" | "completed";
@@ -250,7 +249,7 @@ export default function NotificationsPage() {
     >
       <Navbar />
 
-      <main className="max-w-3xl mx-auto px-4 py-10">
+      <div className="max-w-3xl mx-auto px-4 py-10">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -16 }}
@@ -429,10 +428,9 @@ export default function NotificationsPage() {
             </motion.div>
           )}
         </AnimatePresence>
-      </main>
+      </div>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

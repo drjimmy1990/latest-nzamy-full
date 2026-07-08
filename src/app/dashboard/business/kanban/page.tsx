@@ -276,7 +276,7 @@ export default function BusinessKanbanPage() {
 
   return (
     <SubscriptionGuard featureKey="kanban">
-    <main className={`min-h-screen py-8 px-4 ${isDark ? "bg-zinc-950" : "bg-zinc-50/50"}`} dir="rtl">
+    <div className={`min-h-screen py-8 px-4 ${isDark ? "bg-zinc-950" : "bg-zinc-50/50"}`} dir="rtl">
         <div className="mx-auto max-w-[1400px] px-4">
 
           {/* Header */}
@@ -649,7 +649,7 @@ export default function BusinessKanbanPage() {
             );
           })()}
         </div>
-    </main>
+    </div>
     </SubscriptionGuard>
   );
 }

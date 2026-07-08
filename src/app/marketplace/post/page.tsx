@@ -123,7 +123,7 @@ export default function MarketplacePostPage() {
     return (
       <div className={`min-h-screen flex flex-col ${bg}`} dir="rtl">
         <Navbar />
-        <main className="flex-1 flex items-center justify-center p-4">
+        <div className="flex-1 flex items-center justify-center p-4">
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -151,7 +151,7 @@ export default function MarketplacePostPage() {
               </Link>
             </div>
           </motion.div>
-        </main>
+        </div>
         <Footer />
       </div>
     );
@@ -161,7 +161,7 @@ export default function MarketplacePostPage() {
     <div className={`min-h-screen flex flex-col ${bg}`} dir="rtl">
       <Navbar />
 
-      <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-8">
+      <div className="flex-1 max-w-3xl mx-auto w-full px-4 py-8">
 
         {/* ── Page Header ──────────────────────────────────────────────────── */}
         <div className="mb-8">
@@ -602,7 +602,7 @@ export default function MarketplacePostPage() {
           </>
         )}
 
-      </main>
+      </div>
       <Footer />
     </div>
   );

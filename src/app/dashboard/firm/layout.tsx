@@ -2,7 +2,6 @@
 
 import { useState, useEffect, createContext, useContext } from "react";
 import SharedSidebar from "@/components/dashboard/SharedSidebar";
-import FloatingButtons from "@/components/FloatingButtons";
 import { EntityRouteGuard } from "@/components/dashboard/EntityRouteGuard";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser, setDemoSession } from "@/hooks/useUser";
@@ -421,8 +420,7 @@ export default function FirmDashboardLayout({
           </div>
         </main>
 
-        <FloatingButtons />
-      </div>
+              </div>
     </FirmRoleContext.Provider>
     </UserTypeGuard>
   );

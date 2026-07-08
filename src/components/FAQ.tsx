@@ -103,7 +103,7 @@ export default function FAQ() {
               >
                 <button
                   onClick={() => toggleFAQ(index)}
-                  className="flex w-full items-center justify-between p-5 text-start md:p-6"
+                  className="flex w-full items-center justify-between p-4 sm:p-6 text-start"
                 >
                   <span className={`text-base font-bold md:text-lg ${
                     isOpen 
@@ -112,7 +112,7 @@ export default function FAQ() {
                   }`}>
                     {faq.q}
                   </span>
-                  <div className={`ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+                  <div className={`ms-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
                     isOpen
                       ? (isDark ? "bg-emerald-500/20 text-emerald-400" : "bg-royal/10 text-royal")
                       : (isDark ? "bg-white/5 text-gray-400" : "bg-slate-200/50 text-ink-faint")
@@ -129,7 +129,7 @@ export default function FAQ() {
                       transition={{ duration: 0.2 }}
                       className="overflow-hidden"
                     >
-                      <p className={`px-5 pb-6 text-sm leading-relaxed md:px-6 md:text-base ${isDark ? "text-gray-400" : "text-ink-muted"}`}>
+                      <p className={`px-4 pb-5 sm:px-6 sm:pb-6 text-sm leading-relaxed ${isDark ? "text-gray-400" : "text-ink-muted"}`}>
                         {faq.a}
                       </p>
                     </motion.div>

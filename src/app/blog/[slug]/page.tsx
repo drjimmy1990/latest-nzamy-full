@@ -9,7 +9,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
@@ -155,21 +154,20 @@ export default function BlogArticlePage({ params }: { params: Promise<{ slug: st
       return (
         <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
           <Navbar />
-          <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-20 text-center">
+          <div className="flex-1 max-w-3xl mx-auto w-full px-4 py-20 text-center">
             <div className={`${card} animate-pulse`}>
               <Newspaper size={40} className="mx-auto mb-4 text-[#C8A762]" weight="duotone" />
               <p className={`text-sm ${muted}`}>{isRTL ? "جارٍ التحميل..." : "Loading..."}</p>
             </div>
-          </main>
+          </div>
           <Footer />
-          <FloatingButtons />
-        </div>
+                  </div>
       );
     }
     return (
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
         <Navbar />
-        <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-20 text-center">
+        <div className="flex-1 max-w-3xl mx-auto w-full px-4 py-20 text-center">
           <div className={`${card}`}>
             <Newspaper size={40} className="mx-auto mb-4 text-[#C8A762]" weight="duotone" />
             <h1 className={`text-2xl font-black mb-3 ${isDark ? "text-white" : "text-gray-900"}`}>
@@ -182,10 +180,9 @@ export default function BlogArticlePage({ params }: { params: Promise<{ slug: st
               {isRTL ? "العودة للمدونة" : "Back to blog"}
             </Link>
           </div>
-        </main>
+        </div>
         <Footer />
-        <FloatingButtons />
-      </div>
+              </div>
     );
   }
 
@@ -201,7 +198,7 @@ export default function BlogArticlePage({ params }: { params: Promise<{ slug: st
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-10">
+      <div className="flex-1 max-w-5xl mx-auto w-full px-4 py-10">
         {/* Breadcrumb */}
         <div className={`flex items-center gap-2 text-xs mb-6 ${muted}`}>
           <Link href="/blog" className="hover:text-[#0B3D2E] dark:hover:text-[#C8A762] transition">{isRTL ? "المدونة" : "Blog"}</Link>
@@ -324,10 +321,9 @@ export default function BlogArticlePage({ params }: { params: Promise<{ slug: st
             </div>
           </aside>
         </div>
-      </main>
+      </div>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

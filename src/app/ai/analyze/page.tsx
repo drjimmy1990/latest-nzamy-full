@@ -2,7 +2,6 @@
 
 import { Suspense } from "react";
 import Navbar from "@/components/Navbar";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import AttachmentSqueezer from "./_components/AttachmentSqueezer";
 import SmartAnalyzer from "./_components/SmartAnalyzer";
@@ -27,8 +26,7 @@ function AnalyzePageInner() {
           <SmartAnalyzer isDark={isDark} isRTL={isRTL} />
         )}
       </div>
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }
 

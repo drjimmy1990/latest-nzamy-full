@@ -72,7 +72,7 @@ const FadeUp = ({
 
 export default function CasesServicePage() {
   return (
-    <main
+    <div
       className="min-h-[100dvh] bg-surface pt-24 pb-20"
       dir="rtl"
       lang="ar"
@@ -229,6 +229,6 @@ export default function CasesServicePage() {
           </div>
         </FadeUp>
       </section>
-    </main>
+    </div>
   );
 }

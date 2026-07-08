@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Navbar          from "@/components/Navbar";
 import Footer          from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme }    from "@/components/ThemeProvider";
 import { getPlanList, getComparisonList, faqs } from "@/constants/pricingData";
 import type { AudienceTab, Billing, CompanySize } from "@/constants/pricingData";
@@ -55,7 +54,7 @@ export default function PricingPage() {
   return (
     <>
       <Navbar />
-      <main className="bg-surface dark:bg-dark-bg transition-colors duration-300">
+      <div className="bg-surface dark:bg-dark-bg transition-colors duration-300">
 
         {/* Hero + audience tabs + billing toggle + company filters */}
         <PricingHero
@@ -94,9 +93,8 @@ export default function PricingPage() {
         {/* Bottom CTA */}
         <PricingCTA isAr={isAr} />
 
-      </main>
+      </div>
       <Footer />
-      <FloatingButtons />
-    </>
+          </>
   );
 }

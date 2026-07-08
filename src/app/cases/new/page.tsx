@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Check, ArrowRight, ArrowLeft } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import SmartSchedulingPicker from "@/components/SmartSchedulingPicker";
 import { useTheme } from "@/components/ThemeProvider";
 import {
@@ -98,7 +97,7 @@ export default function NewCasePage() {
     >
       <Navbar />
 
-      <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-12">
+      <div className="flex-1 max-w-3xl mx-auto w-full px-4 py-12">
         {/* Page title */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -274,10 +273,9 @@ export default function NewCasePage() {
             )}
           </div>
         )}
-      </main>
+      </div>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

@@ -15,7 +15,6 @@ import { LibraryAI, CommunityQuestionModal } from "@/app/laws/[slug]/_ai-compone
 import { getLawMeta } from "@/app/laws/law-metadata-map";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import { DEMO_ORDERS, type DemoOrder } from "../../demo-data-access";
 import { ISSUER_MAP } from "../../components/ListItems";
@@ -353,7 +352,7 @@ export default function OrderReaderPage() {
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12]" : "bg-gray-50"} font-sans`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 pt-32 pb-24">
+      <div className="flex-1 max-w-[1200px] w-full mx-auto px-4 pt-32 pb-24">
         
         <div className="h-6" />
 
@@ -681,7 +680,7 @@ export default function OrderReaderPage() {
           )}
         </div>
 
-      </main>
+      </div>
 
       {/* ── Folder Selection Modal ── */}
       {currentDoc && (
@@ -707,12 +706,7 @@ export default function OrderReaderPage() {
 
 
       <Footer />
-      <FloatingButtons
-        reportConfig={{ pageSlug: `order-${slug}`, pageType: "order" }}
-        cartCount={cart.length}
-        onCartClick={() => setShowCart(true)}
-      />
-
+      
       {showCart && (
         <>
           <motion.div

@@ -67,7 +67,7 @@ const types = [
 
 export default function CollectionServicePage() {
   return (
-    <main className="min-h-[100dvh] bg-surface pt-24 pb-20" dir="rtl" lang="ar">
+    <div className="min-h-[100dvh] bg-surface pt-24 pb-20" dir="rtl" lang="ar">
 
       {/* ── Hero ── */}
       <section className="max-w-[1400px] mx-auto px-6 md:px-10 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center min-h-[55vh]">
@@ -199,6 +199,6 @@ export default function CollectionServicePage() {
         </FadeUp>
       </section>
 
-    </main>
+    </div>
   );
 }

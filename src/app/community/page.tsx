@@ -40,7 +40,6 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import Link from "next/link";
 import {
   type StoredCommunityQuestion,
@@ -124,7 +123,7 @@ export default function CommunityPage() {
     <div className={`min-h-screen flex flex-col ${bg}`} dir="rtl">
       <Navbar />
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
+      <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
 
         {/* ── Page Header ── */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -501,7 +500,7 @@ export default function CommunityPage() {
                                 {sortedAnswers.map((ans, ai) => (
                                   <div
                                     key={ans.id}
-                                    className={`flex gap-4 rounded-2xl p-5 ${
+                                    className={`relative flex gap-4 rounded-2xl p-5 ${
                                       ans.isAccepted
                                         ? isDark ? "bg-emerald-900/15 border border-emerald-800/30" : "bg-emerald-50/80 border border-emerald-200/60"
                                         : ans.authorType === "lawyer"
@@ -592,11 +591,10 @@ export default function CommunityPage() {
             </div>
           </div>
         </div>
-      </main>
+      </div>
 
       <Footer />
-      <FloatingButtons />
-
+      
       {/* ── Floating Action Button (Add Question) ── */}
       <Link
         href="/community/ask"

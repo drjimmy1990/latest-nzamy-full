@@ -442,7 +442,7 @@ export function AdvancedSearchModal({
                 {/* Identity row */}
                 <div>
                   <SectionLabel label={isRTL ? "هوية التشريع" : "Legislation Identity"} />
-                  <div className={`grid grid-cols-4 gap-2.5 p-3 rounded-xl border ${sec}`}>
+                  <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 p-3 rounded-xl border ${sec}`}>
                     <div>
                       <label className={lbl}>{isRTL ? "عنوان التشريع" : "Legislation Title"}</label>
                       <input type="text" placeholder={isRTL ? "نظام الشركات..." : "Companies Law..."} className={field} />
@@ -465,7 +465,7 @@ export function AdvancedSearchModal({
                 {/* Classification row */}
                 <div>
                   <SectionLabel label={isRTL ? "التصنيف والحالة" : "Classification & Status"} />
-                  <div className="grid grid-cols-4 gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
                     <SelectField lbl={isRTL ? "الجهة المُصدِرة" : "Issuing Authority"} opts={ISSUERS} />
                     <SelectField lbl={isRTL ? "القسم القانوني" : "Legal Section"} opts={BRANCHES} />
                     <SelectField lbl={isRTL ? "حالة التشريع" : "Status"} opts={STATUSES} />
@@ -479,7 +479,7 @@ export function AdvancedSearchModal({
                 {/* Dates row */}
                 <div>
                   <SectionLabel label={isRTL ? "التواريخ" : "Dates"} />
-                  <div className={`grid grid-cols-5 gap-2.5 p-3 rounded-xl border ${sec}`}>
+                  <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 p-3 rounded-xl border ${sec}`}>
                     <DateField lbl={isRTL ? "تاريخ الإصدار" : "Issuance Date"} ph={isRTL ? "1/1/1446" : "1/1/2025"} />
                     <DateField lbl={isRTL ? "تاريخ النشر" : "Publication Date"} ph={isRTL ? "1/1/1446" : "1/1/2025"} />
                     <DateField lbl={isRTL ? "تاريخ النفاذ" : "Effective Date"} ph={isRTL ? "1/1/1446" : "1/1/2025"} />

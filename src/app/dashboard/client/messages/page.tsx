@@ -431,7 +431,7 @@ export default function MessagesPage() {
         </aside>
 
         {/* ── Chat View ──────────────────────────────────────────────── */}
-        <main className="flex-1 flex flex-col bg-gray-50 dark:bg-[#0c0f12] min-w-0">
+        <div className="flex-1 flex flex-col bg-gray-50 dark:bg-[#0c0f12] min-w-0">
 
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-3.5 bg-white dark:bg-[#161b22] border-b border-gray-100 dark:border-white/8">
@@ -600,7 +600,7 @@ export default function MessagesPage() {
               </div>
             )}
           </div>
-        </main>
+        </div>
       </div>
     </>
   );

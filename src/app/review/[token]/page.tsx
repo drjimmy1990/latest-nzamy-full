@@ -408,7 +408,7 @@ export default function CorporateReviewPage({ params }: { params: Promise<{ toke
       </div>
 
       {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         <div className={`grid gap-6 ${visibleAnnotations.length > 0 && activeTab === "read" ? "lg:grid-cols-3" : "lg:grid-cols-1"}`}>
 
           {/* Document */}
@@ -489,7 +489,7 @@ export default function CorporateReviewPage({ params }: { params: Promise<{ toke
             </motion.div>
           )}
         </div>
-      </main>
+      </div>
     </div>
   );
 }

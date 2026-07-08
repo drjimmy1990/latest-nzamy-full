@@ -330,7 +330,7 @@ export default function RegisterPage() {
       </motion.header>
 
       {/* ── MAIN CONTENT ── */}
-      <main className="mx-auto max-w-5xl px-5 py-12 md:py-16">
+      <div className="mx-auto max-w-5xl px-5 py-12 md:py-16">
         {/* Page heading */}
         <motion.div
           initial={{ opacity: 0, y: 24 }}
@@ -469,7 +469,7 @@ export default function RegisterPage() {
             {txt.signIn}
           </a>
         </motion.div>
-      </main>
+      </div>
 
       {/* ── BACKGROUND DECORATION ── */}
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">

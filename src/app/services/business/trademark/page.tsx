@@ -9,7 +9,6 @@ import {
   CurrencyDollar, CaretDown, Lightning, Warning, Globe,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import FloatingButtons from "@/components/FloatingButtons";
 
 const txt = {
   ar: {
@@ -224,7 +223,6 @@ export default function TrademarkPage() {
         </section>
 
       </div>
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

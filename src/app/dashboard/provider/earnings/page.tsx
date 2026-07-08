@@ -71,7 +71,7 @@ export default function ProviderEarningsPage() {
   const surface = isDark ? "border-white/[0.06] bg-zinc-900" : "border-slate-200 bg-white";
 
   return (
-    <main className={`min-h-screen py-8 px-4 ${isDark ? "bg-zinc-950" : "bg-zinc-50/50"}`}>
+    <div className={`min-h-screen py-8 px-4 ${isDark ? "bg-zinc-950" : "bg-zinc-50/50"}`}>
       <div className="mx-auto max-w-4xl space-y-6">
 
           {/* Header */}
@@ -181,6 +181,6 @@ export default function ProviderEarningsPage() {
           </div>
 
       </div>
-    </main>
+    </div>
   );
 }

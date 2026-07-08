@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import { Lock, ShieldCheck, Eye, Trash, ArrowUp, Database, Globe, Cookie, Bell, UserCircle } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
@@ -335,7 +334,6 @@ export default function PrivacyPage() {
       </section>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

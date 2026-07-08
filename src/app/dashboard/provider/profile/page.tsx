@@ -93,7 +93,7 @@ export default function ProviderProfilePage() {
   };
 
   return (
-    <main className={`min-h-screen py-8 px-4 ${isDark ? "bg-zinc-950" : "bg-zinc-50/50"}`}>
+    <div className={`min-h-screen py-8 px-4 ${isDark ? "bg-zinc-950" : "bg-zinc-50/50"}`}>
         <div className="mx-auto max-w-4xl px-4">
 
           {/* Header */}
@@ -392,6 +392,6 @@ export default function ProviderProfilePage() {
             </div>
           </div>
         </div>
-    </main>
+    </div>
   );
 }

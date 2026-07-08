@@ -8,7 +8,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
@@ -329,7 +328,7 @@ export default function LawSystemPage() {
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <main className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24">
+      <div className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24">
 
         <div className="h-6" />
 
@@ -682,16 +681,11 @@ export default function LawSystemPage() {
           )}
 
         </div>
-      </main>
+      </div>
 
       <Footer />
 
-      <FloatingButtons
-        reportConfig={{ pageSlug: slug, pageType: "law" }}
-        cartCount={cart.length}
-        onCartClick={() => setShowCart(true)}
-      />
-
+      
       <AnimatePresence>
         {showCart && (
           <>

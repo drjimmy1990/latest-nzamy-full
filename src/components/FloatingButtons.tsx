@@ -13,6 +13,9 @@ import WhatsAppWidget from "./floating/WhatsAppWidget";
 import type { UserCategory } from "./floating/types";
 import { useUser } from "@/hooks/useUser";
 import { submitIssueReport, type IssueReport, type AttachedFile } from "@/lib/invitationStore";
+import { usePathname } from "next/navigation";
+import { useDraftCart } from "@/hooks/useDraftCart";
+import { DraftDrawer } from "@/components/laws/DraftDrawer";
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -427,7 +430,37 @@ function ReportDrawer({
 // Single WhatsApp FAB + optional Report mini-FAB stacked above it.
 // Pass reportConfig to show the orange Report button (library pages only).
 
-export default function FloatingButtons({ reportConfig, cartCount = 0, onCartClick }: FloatingButtonsProps = {}) {
+export default function FloatingButtons({ reportConfig: propReportConfig, cartCount: propCartCount, onCartClick: propOnCartClick }: FloatingButtonsProps = {}) {
+  const pathname = usePathname();
+  const { cart, setCart } = useDraftCart();
+  const [showCart, setShowCart] = useState(false);
+
+  // Dynamically calculate reportConfig based on pathname
+  let reportConfig: ReportConfig | undefined = undefined;
+  if (pathname === "/laws") {
+    reportConfig = { pageSlug: "laws-index", pageType: "law" };
+  } else if (pathname.startsWith("/laws/orders/")) {
+    const slug = pathname.substring("/laws/orders/".length);
+    reportConfig = { pageSlug: "order-" + slug, pageType: "order" };
+  } else if (pathname.startsWith("/laws/")) {
+    const slug = pathname.substring("/laws/".length);
+    reportConfig = { pageSlug: slug, pageType: "law" };
+  } else if (pathname.startsWith("/precedents/")) {
+    const slug = pathname.substring("/precedents/".length);
+    reportConfig = { pageSlug: slug, pageType: "precedent" };
+  }
+
+  // Use props if provided, otherwise use internal draft cart
+  const cartCount = propCartCount !== undefined ? propCartCount : cart.length;
+  const removeArticle = (id: string) => {
+    setCart(prev => prev.filter(item => item.articleId !== id));
+  };
+  const clearAll = () => {
+    setCart([]);
+  };
+
+  const handleCartClick = propOnCartClick || (() => setShowCart(true));
+
   const { lang, isDark } = useTheme();
   const isRTL = lang === "ar";
   const { category: autoCategory, isLoggedIn } = useAutoCategory();
@@ -441,6 +474,12 @@ export default function FloatingButtons({ reportConfig, cartCount = 0, onCartCli
 
   const openWa  = useCallback(() => setWaOpen(true),  []);
   const closeWa = useCallback(() => setWaOpen(false), []);
+
+  useEffect(() => {
+    const handler = () => setShowCart(true);
+    window.addEventListener("nzamy-open-cart", handler);
+    return () => window.removeEventListener("nzamy-open-cart", handler);
+  }, []);
 
   useEffect(() => {
     const refreshPrimaryInstance = () => {
@@ -571,7 +610,7 @@ export default function FloatingButtons({ reportConfig, cartCount = 0, onCartCli
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={onCartClick}
+              onClick={handleCartClick}
               className="relative w-14 h-14 rounded-full bg-[#0B3D2E] hover:bg-[#082d22] text-[#C8A762] shadow-[0_8px_20px_rgba(11,61,46,0.3)] flex items-center justify-center border border-white/10 transition-all duration-300 hover:scale-105 active:scale-95"
               aria-label={isRTL ? "المسودة" : "Draft"}
             >
@@ -583,6 +622,20 @@ export default function FloatingButtons({ reportConfig, cartCount = 0, onCartCli
           </div>
         </div>
       )}
+
+      {/* ── Draft Drawer ── */}
+      <AnimatePresence>
+        {showCart && (
+          <DraftDrawer
+            cart={cart}
+            onRemoveArticle={removeArticle}
+            onClearAll={clearAll}
+            onClose={() => setShowCart(false)}
+            isDark={isDark}
+            isRTL={isRTL}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -10,7 +10,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 
@@ -187,7 +186,7 @@ This maps closely to the concepts of legal capacity (Article 48) and contract va
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <main className="flex-1 max-w-[1440px] mx-auto w-full px-4 py-8 mt-12">
+      <div className="flex-1 max-w-[1440px] mx-auto w-full px-4 py-8 mt-12">
         <div className="h-6" />
 
         {/* Header Block */}
@@ -504,10 +503,9 @@ This maps closely to the concepts of legal capacity (Article 48) and contract va
           </aside>
 
         </div>
-      </main>
+      </div>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

@@ -15,7 +15,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 
 import { serviceCards, trackingSteps, govEntities, pricingTiers, faqs } from "@/components/tracking/constants";
@@ -41,8 +40,7 @@ export default function TrackingPage() {
       dir={isRTL ? "rtl" : "ltr"}
     >
       <Navbar />
-      <FloatingButtons />
-
+      
       {/* ── Hero ── */}
       <section className="relative overflow-hidden bg-gradient-to-br from-[#0B3D2E] via-[#0c4234] to-[#071f17] pt-32 pb-28">
         <div className="absolute inset-0 opacity-[0.06] bg-[radial-gradient(ellipse_at_80%_20%,#C8A762_0%,transparent_60%)]" />

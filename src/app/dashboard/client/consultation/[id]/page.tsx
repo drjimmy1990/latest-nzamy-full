@@ -640,7 +640,7 @@ export default function ConsultationRoomPage() {
         </header>
 
         {/* Content Workspace */}
-        <main className="flex-1 overflow-y-auto custom-scrollbar px-6 py-8">
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-8">
           <div className="max-w-4xl mx-auto space-y-6">
 
             {/* Title & Info Bento Card */}
@@ -814,7 +814,7 @@ export default function ConsultationRoomPage() {
             </div>
 
           </div>
-        </main>
+        </div>
 
         {/* Branded Footer disclaimer */}
         <footer className={`flex-shrink-0 flex items-center justify-center gap-2 py-3 text-[11px] font-bold border-t ${

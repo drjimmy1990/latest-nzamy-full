@@ -5,7 +5,6 @@ import { motion } from "framer-motion";
 import { FileText, ArrowLeft, ArrowRight, ArrowUp } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
@@ -350,7 +349,6 @@ export default function TermsPage() {
       </section>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

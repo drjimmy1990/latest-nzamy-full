@@ -250,7 +250,7 @@ export default function ReferralPage() {
       dir={isRTL ? "rtl" : "ltr"}
       className={`min-h-screen flex flex-col`}
     >
-      <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-8 space-y-6">
+      <div className="flex-1 max-w-3xl mx-auto w-full px-4 py-8 space-y-6">
 
         {/* ── Back link ─────────────────────────────────────────────────── */}
         <motion.div
@@ -698,7 +698,7 @@ export default function ReferralPage() {
             ? "الشروط: يجب أن يشترك الصديق في باقة مدفوعة — صلاحية الرابط ٩٠ يوماً"
             : "Terms: friend must subscribe to a paid plan — link valid for 90 days"}
         </motion.p>
-      </main>
+      </div>
 
     </div>
   );

@@ -46,7 +46,7 @@ export default function LegalVaultPage() {
   return (
     <>
       <Navbar />
-      <main className={`min-h-screen ${isDark ? "bg-[#080808]" : "bg-white"}`}>
+      <div className={`min-h-screen ${isDark ? "bg-[#080808]" : "bg-white"}`}>
 
         {/* Hero */}
         <section className="relative overflow-hidden pt-32 pb-20">
@@ -256,7 +256,7 @@ export default function LegalVaultPage() {
             </motion.div>
           </div>
         </section>
-      </main>
+      </div>
       <Footer />
     </>
   );

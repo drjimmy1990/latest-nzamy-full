@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Scales, ArrowLeft } from "@phosphor-icons/react";
+import { Scales, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 
@@ -80,7 +80,7 @@ export default function Footer() {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="-mt-32 mb-16 rounded-[2.5rem] bg-royal p-10 shadow-[0_20px_60px_-15px_rgba(11,61,46,0.4)] md:p-14"
+            className="-mt-16 sm:-mt-24 md:-mt-32 mb-16 rounded-[2.5rem] bg-royal p-6 sm:p-10 shadow-[0_20px_60px_-15px_rgba(11,61,46,0.4)]"
           >
             <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
               <div>
@@ -95,17 +95,17 @@ export default function Footer() {
                 href="/register"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                className="inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-sm font-bold text-royal shadow-[0_4px_16px_-4px_rgba(0,0,0,0.15)]"
+                className="inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-sm font-bold text-royal shadow-[0_4px_16px_-4px_rgba(0,0,0,0.15)] w-full justify-center sm:w-auto"
               >
                 {isAr ? "سجّل مجاناً" : "Sign Up Free"}
-                <ArrowLeft size={16} weight="bold" />
+                {isAr ? <ArrowLeft size={16} weight="bold" /> : <ArrowRight size={16} weight="bold" />}
               </motion.a>
             </div>
           </motion.div>
         )}
 
         {/* Links grid */}
-        <div className="grid grid-cols-2 gap-8 md:grid-cols-4 lg:gap-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8 lg:gap-12">
           {Object.entries(footerLinks).map(([category, links]) => (
             <div key={category}>
               <h3 className="font-brand mb-4 text-sm font-bold text-ink">{category}</h3>

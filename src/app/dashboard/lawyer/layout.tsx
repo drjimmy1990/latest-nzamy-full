@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import SharedSidebar from "@/components/dashboard/SharedSidebar";
-import FloatingButtons from "@/components/FloatingButtons";
 
 /**
  * Lawyer Dashboard Layout
@@ -30,8 +29,7 @@ export default function LawyerDashboardLayout({
         </div>
       </main>
 
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }
 

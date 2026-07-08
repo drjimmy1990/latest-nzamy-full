@@ -146,7 +146,7 @@ export default function MediaPage() {
   ];
 
   return (
-    <main className="min-h-[100dvh] bg-[#050a08] text-white pt-28 pb-24" dir="rtl">
+    <div className="min-h-[100dvh] bg-[#050a08] text-white pt-28 pb-24" dir="rtl">
 
       {/* ── HERO (split — text right, visual left in RTL) ── */}
       <section className="mx-auto max-w-[1400px] px-6 grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-12 items-center mb-4">
@@ -438,6 +438,6 @@ export default function MediaPage() {
           </motion.div>
         )}
       </AnimatePresence>
-    </main>
+    </div>
   );
 }

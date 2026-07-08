@@ -89,7 +89,7 @@ export default function ProviderCalendarPage() {
   const weekEarnings = allBookings.reduce((s, b) => s + b.fee, 0);
 
   return (
-    <main className={`min-h-screen py-8 px-4 ${isDark ? "bg-zinc-950" : "bg-zinc-50/50"}`}>
+    <div className={`min-h-screen py-8 px-4 ${isDark ? "bg-zinc-950" : "bg-zinc-50/50"}`}>
         <div className="mx-auto max-w-5xl">
 
           {/* Header */}
@@ -292,6 +292,6 @@ export default function ProviderCalendarPage() {
             )}
           </AnimatePresence>
         </div>
-    </main>
+    </div>
   );
 }

@@ -24,7 +24,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -200,8 +199,7 @@ export default function NotaryPage() {
       dir={isRTL ? "rtl" : "ltr"}
     >
       <Navbar />
-      <FloatingButtons />
-
+      
       {/* ── Hero ── */}
       <section className="relative overflow-hidden bg-gradient-to-br from-[#0B3D2E] via-[#0d4a38] to-[#071f17] pt-32 pb-24">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_70%_50%,#C8A762_0%,transparent_60%)]" />

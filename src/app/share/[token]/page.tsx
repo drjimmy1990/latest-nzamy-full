@@ -171,7 +171,7 @@ export default function ClientSharePage({ params }: SharePageProps) {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto p-4 sm:p-8 mt-4">
+      <div className="max-w-4xl mx-auto p-4 sm:p-8 mt-4">
         
         {/* Mobile Download */}
         <button className={`sm:hidden w-full mb-6 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-[13px] font-bold ${btnSecondary}`}>
@@ -266,7 +266,7 @@ export default function ClientSharePage({ params }: SharePageProps) {
           </motion.div>
         )}
 
-      </main>
+      </div>
     </div>
   );
 }

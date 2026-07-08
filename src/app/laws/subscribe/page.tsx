@@ -9,7 +9,6 @@ import {
   Lightning, Star, FileText, Crown, Users,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import FloatingButtons from "@/components/FloatingButtons";
 import { createLibrarySubscription } from "@/lib/invitationStore";
 import InvitationModal from "@/components/InvitationModal";
 import { useUser } from "@/hooks/useUser";
@@ -480,8 +479,7 @@ export default function LawsSubscribePage() {
         </motion.div>
       )}
 
-      <FloatingButtons />
-      <InvitationModal open={modalOpen} onClose={() => setModalOpen(false)} isPostSubscription={true} />
+            <InvitationModal open={modalOpen} onClose={() => setModalOpen(false)} isPostSubscription={true} />
     </div>
   );
 }

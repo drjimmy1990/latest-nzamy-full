@@ -18,12 +18,25 @@ export async function GET(
     const { slug } = await params;
     const supabase = await createServiceClient();
 
-    const { data, error } = await supabase
+    // Try lookup by slug first; if the param looks like a UUID, also try by id.
+    let { data, error } = await supabase
       .from("articles")
       .select("*")
       .eq("slug", slug)
       .eq("status", "published")
       .maybeSingle();
+
+    // Fallback: if no match by slug and the param looks like a UUID, try by id.
+    if (!data && !error && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug)) {
+      const idResult = await supabase
+        .from("articles")
+        .select("*")
+        .eq("id", slug)
+        .eq("status", "published")
+        .maybeSingle();
+      data = idResult.data;
+      error = idResult.error;
+    }
 
     if (error) {
       console.error("[blog/[slug] GET] Supabase error:", error.message, error.details, error.hint, error.code);

@@ -22,7 +22,6 @@ import {
   CaretLeft,
 } from "@phosphor-icons/react";
 
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -257,7 +256,7 @@ export default function DepartmentsPage() {
     <RoleGuard blockedRoles={["employee"]}>
     <SubscriptionGuard featureKey="departments">
     <div dir={isRTL ? "rtl" : "ltr"}>
-      <main className="max-w-5xl mx-auto w-full px-4 py-8">
+      <div className="max-w-5xl mx-auto w-full px-4 py-8">
 
         {/* Breadcrumb */}
         <div className="mb-6 flex items-center gap-2 text-xs" style={{ color: isDark ? "#6b7280" : "#9ca3af" }}>
@@ -526,7 +525,7 @@ export default function DepartmentsPage() {
               : "💡 Budget is shared across all departments from the company plan. Representatives can only request services — they cannot manage the account or view company data. Only the account owner can add departments and representatives."}
           </p>
         </div>
-      </main>
+      </div>
 
       <AddDeptModal isOpen={addOpen} onClose={() => setAddOpen(false)} isRTL={isRTL} isDark={isDark} />
     </div>

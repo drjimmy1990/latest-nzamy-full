@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowRight, CheckCircle, Brain, PencilSimple } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { createWorkflowId, saveWorkflowRequest } from "@/lib/workflowStore";
@@ -322,7 +321,6 @@ export default function ContractDrafterPage() {
       </section>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

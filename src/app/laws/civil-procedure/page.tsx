@@ -12,7 +12,6 @@ import {
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 
@@ -213,7 +212,7 @@ export default function CivilProcedureLawPage() {
     <div className={`min-h-screen ${isDark ? "bg-dark-bg" : "bg-[#f8f9fa]"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <main className="max-w-[1200px] mx-auto px-4 pt-32 pb-20 relative flex flex-col lg:flex-row gap-8">
+      <div className="max-w-[1200px] mx-auto px-4 pt-32 pb-20 relative flex flex-col lg:flex-row gap-8">
         
         {/* Left Column: Main Content */}
         <div className="flex-1 min-w-0">
@@ -329,10 +328,9 @@ export default function CivilProcedureLawPage() {
           </div>
         </div>
 
-      </main>
+      </div>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

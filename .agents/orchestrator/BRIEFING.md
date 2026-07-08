@@ -1,22 +1,24 @@
-# BRIEFING — 2026-06-27T05:39:00+03:00
+# BRIEFING — 2026-07-09T00:26:29+03:00
 
 ## Mission
-Wire all tabs of the NZAMY Admin Panel Dashboard to secure Next.js API endpoints, and implement admin database actions (verify users, delete items, approve/reject KYC).
+Fix mobile responsive views, broken/missing navigation elements, and layout bugs across the existing NZAMY (نظامي) legal services website.
 
 ## 🔒 My Identity
 - Archetype: teamwork_preview_orchestrator
 - Roles: orchestrator, user_liaison, human_reporter, successor
-- Working directory: d:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.agents\orchestrator
+- Working directory: D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.agents\orchestrator
 - Original parent: main agent
 - Original parent conversation ID: dd222dcf-f670-496e-b8f9-80ad7740c249
 
 ## 🔒 My Workflow
 - **Pattern**: Project
-- **Scope document**: d:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\PROJECT.md
-1. **Decompose**: We decompose the integration task into three logical milestones:
-   - Milestone 1: Create secure Next.js API endpoints under `/api/v1/admin/`
-   - Milestone 2: Wire admin dashboard frontend tabs to fetch/SWR and trigger DB actions
-   - Milestone 3: Perform verification, run typecheck & build, and run forensic audit checks
+- **Scope document**: D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\PROJECT.md
+1. **Decompose**: We decompose the task into four key milestones:
+   - Milestone 1: Fix Structural HTML & Viewport Issues (remove maximumScale, duplicate FloatingButtons, and nested mains)
+   - Milestone 2: Fix Navbar & Breakpoint Dead Zone (align breakpoints to xl and fix dead zones)
+   - Milestone 3: Homepage Mobile Responsiveness (badges, Bento cards, showcases, social proof, footer, etc.)
+   - Milestone 4: Full-Site Mobile Audit & Fix (public-facing pages)
+   - Milestone 5: Verification & Integrity Auditing (build and forensic check)
 2. **Dispatch & Execute** (pick ONE):
    - **Delegate (sub-orchestrator)**: [TBD]
    - **Direct (iteration loop)**: Use Explorer -> Worker -> Reviewer -> Challenger/Auditor loop per milestone.
@@ -29,12 +31,13 @@ Wire all tabs of the NZAMY Admin Panel Dashboard to secure Next.js API endpoints
    - Escalate: report to parent (sub-orchestrators only, last resort)
 4. **Succession**: At 16 spawns, write handoff.md, spawn successor.
 - **Work items**:
-  1. Create PROJECT.md at root [done]
-  2. Implement secure admin API endpoints [done]
-  3. Wire admin dashboard frontend tabs [done]
-  4. Verify build & run forensic audit [done]
-- **Current phase**: 4
-- **Current focus**: Complete handoff and report to parent
+  1. Fix Structural HTML & Viewport Issues [pending]
+  2. Fix Navbar & Breakpoint Dead Zone [pending]
+  3. Fix Homepage Mobile Responsiveness [pending]
+  4. Full-Site Mobile Audit & Fix [pending]
+  5. Run build and verify [pending]
+- **Current phase**: 1
+- **Current focus**: Planning, update scope and dispatch explorer for initial codebase review
 
 ## 🔒 Key Constraints
 - NEVER write, modify, or create source code or document files outside .agents/ folder directly.
@@ -43,18 +46,14 @@ Wire all tabs of the NZAMY Admin Panel Dashboard to secure Next.js API endpoints
 
 ## Current Parent
 - Conversation ID: dd222dcf-f670-496e-b8f9-80ad7740c249
-- Updated: 2026-06-27T05:39:00+03:00
+- Updated: 2026-07-09T00:26:29+03:00
 
 ## Key Decisions Made
-- Decomposed work into three milestones.
-- Completed step 1: PROJECT.md successfully created.
-- Completed step 2: Backend API routes implemented.
-- Completed step 3: Frontend dashboard tabs integrated.
-- Audit check failed on CorporateTab (facade mockup, localStorage). Dispatched worker bd5d53f6-0c67-4187-9c84-2cf90b924359 to replace it with database-backed endpoint.
-- Remediation completed by worker. Launched new auditor check (Conv ID: 7d820eb1-3550-48f3-aca1-d229c85219f5).
-- Audit recheck passed successfully with verdict CLEAN. Typecheck compiles with no errors.
+- Decomposed layout, responsive design, and navigation fixes into five milestones.
+- Ran GitNexus analyzer (drop-embeddings) to sync index with latest repository state.
 
 ## Team Roster
+### Previous Phase (Admin Panel Integration)
 | Agent | Type | Work Item | Status | Conv ID |
 |-------|------|-----------|--------|---------|
 | worker_doc | teamwork_preview_worker | Create PROJECT.md at root | completed | ab7ba2ef-1071-474b-829f-4b003351ad02 |
@@ -64,19 +63,30 @@ Wire all tabs of the NZAMY Admin Panel Dashboard to secure Next.js API endpoints
 | worker_corp | teamwork_preview_worker | Wire Corporate Tab to database | completed | bd5d53f6-0c67-4187-9c84-2cf90b924359 |
 | auditor_final | teamwork_preview_auditor | Verify build & run forensic audit (recheck) | completed | 7d820eb1-3550-48f3-aca1-d229c85219f5 |
 
+### Current Phase (Responsive Overhaul)
+| Agent | Type | Work Item | Status | Conv ID |
+| worker_doc_resp | teamwork_preview_worker | Update PROJECT.md at root | completed | 62cf1695-8143-447d-8719-b7e01445336c |
+| explorer_m1_m2 | teamwork_preview_explorer | Analyze HTML/Navbar layout | completed | 5669de76-05d8-4788-a259-f70ccefe224c |
+| explorer_m3 | teamwork_preview_explorer | Analyze homepage responsiveness | completed | 1bcd9075-4860-48d9-a236-35da1cdf65d0 |
+| explorer_m4 | teamwork_preview_explorer | Analyze site-wide responsiveness | completed | 719b44db-c7a6-4e10-90fa-6c948557af84 |
+| worker_resp_fixes | teamwork_preview_worker | Implement responsive/layout fixes | completed | ceee86fb-9447-468c-a6e3-f0b689b4b729 |
+| reviewer_1 | teamwork_preview_reviewer | Review responsive fixes | in-progress | 60bfe45b-7516-429a-965f-41e7e77918d0 |
+| reviewer_2 | teamwork_preview_reviewer | Review HTML/Navbar layout | in-progress | a08861de-1a79-422e-8858-b3b412618d8f |
+| challenger_1 | teamwork_preview_challenger | Validate homepage layout | in-progress | 2d2e7dda-bd0e-423e-aa9a-c6b1aaf6045c |
+| challenger_2 | teamwork_preview_challenger | Validate site-wide layout | in-progress | f20bc409-8308-431b-95a4-412efb7652cf |
+| auditor_resp | teamwork_preview_auditor | Forensic integrity check | in-progress | 58d7261d-d396-4fbd-bd3d-593b5f7acb4a |
+
 ## Succession Status
-- Succession required: no
-- Spawn count: 6 / 16
+- Succession required: yes
+- Spawn count: 16 / 16
 - Pending subagents: none
 - Predecessor: none
 - Successor: not yet spawned
 
 ## Active Timers
-- Heartbeat cron: dd222dcf-f670-496e-b8f9-80ad7740c249/task-93
+- Heartbeat cron: a38039ee-c228-44d5-872f-89d05818f652/task-25
 - Safety timer: none
-- On succession: kill all timers before spawning successor
-- On context truncation: run `manage_task(Action="list")` — re-create if missing
 
 ## Artifact Index
-- d:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.agents\orchestrator\plan.md — Orchestrator plan
-- d:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.agents\orchestrator\progress.md — Orchestrator progress heartbeat
+- D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.agents\orchestrator\plan.md — Orchestrator plan
+- D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.agents\orchestrator\progress.md — Orchestrator progress heartbeat

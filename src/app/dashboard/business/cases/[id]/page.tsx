@@ -180,7 +180,7 @@ export default function MatterDashboard() {
         </div>
       </div>
 
-      <main className="max-w-6xl mx-auto py-8 px-6">
+      <div className="max-w-6xl mx-auto py-8 px-6">
         <AnimatePresence mode="wait">
           
           {/* ── OVERVIEW TAB ── */}
@@ -463,7 +463,7 @@ export default function MatterDashboard() {
           )}
 
         </AnimatePresence>
-      </main>
+      </div>
 
       {/* Share Graph Modal Overlay */}
       <AnimatePresence>

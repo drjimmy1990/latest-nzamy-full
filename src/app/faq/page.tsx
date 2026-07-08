@@ -11,7 +11,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 
 type Category = "all" | "clients" | "providers" | "payment" | "tech";
@@ -440,7 +439,6 @@ export default function FAQPage() {
       </section>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

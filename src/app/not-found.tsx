@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import { HouseLine, MagnifyingGlass, ArrowLeft, Scales, ShieldCheck } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 
 export default function NotFound() {
@@ -41,7 +40,7 @@ export default function NotFound() {
   return (
     <>
       <Navbar />
-      <main className="relative min-h-[100dvh] overflow-hidden pt-32 pb-20">
+      <div className="relative min-h-[100dvh] overflow-hidden pt-32 pb-20">
         {/* Background decoration */}
         <div className="pointer-events-none absolute inset-0">
           <motion.div
@@ -134,9 +133,8 @@ export default function NotFound() {
             </motion.a>
           </motion.div>
         </div>
-      </main>
+      </div>
       <Footer />
-      <FloatingButtons />
-    </>
+          </>
   );
 }

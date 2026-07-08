@@ -22,7 +22,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import Link from "next/link";
@@ -190,7 +189,7 @@ export default function LawyersCommunityPage() {
     <div className={`min-h-screen flex flex-col ${bg}`} dir="rtl">
       <Navbar />
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
+      <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
 
         {/* ── Page Header ── */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -568,10 +567,9 @@ export default function LawyersCommunityPage() {
             </div>
           </div>
         </div>
-      </main>
+      </div>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

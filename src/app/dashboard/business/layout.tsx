@@ -3,7 +3,6 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import SharedSidebar from "@/components/dashboard/SharedSidebar";
-import FloatingButtons from "@/components/FloatingButtons";
 import { EntityRouteGuard } from "@/components/dashboard/EntityRouteGuard";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
 import { Storefront } from "@phosphor-icons/react";
@@ -70,8 +69,7 @@ export default function BusinessDashboardLayout({
           </div>
         </main>
 
-        <FloatingButtons />
-      </div>
+              </div>
     </UserTypeGuard>
   );
 }

@@ -9,7 +9,6 @@ import {
   Clock, CurrencyDollar, MapPin, Lightning, CaretDown,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import FloatingButtons from "@/components/FloatingButtons";
 
 // ─── Bilingual ──────────────────────────────────────────────────────────────
 
@@ -268,7 +267,6 @@ export default function CompanyFormationPage() {
         </motion.div>
 
       </div>
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

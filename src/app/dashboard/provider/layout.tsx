@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import SharedSidebar from "@/components/dashboard/SharedSidebar";
-import FloatingButtons from "@/components/FloatingButtons";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
 
 /**
@@ -26,8 +25,7 @@ export default function ProviderDashboardLayout({
         <main className="lg:mr-64 pt-[60px] lg:pt-0 min-h-[100dvh]">
           <div className="p-4 md:p-6">{children}</div>
         </main>
-        <FloatingButtons />
-      </div>
+              </div>
     </UserTypeGuard>
   );
 }

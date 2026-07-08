@@ -29,7 +29,6 @@ export const metadata: Metadata = {
   },
 };
 
-import FloatingButtons from "@/components/FloatingButtons";
 import HomeRedirectGuard from "@/components/HomeRedirectGuard";
 
 export default function Home() {
@@ -38,7 +37,7 @@ export default function Home() {
       {/* S79: redirect مستخدم مسجّل لداشبورده تلقائياً */}
       <HomeRedirectGuard />
       <Navbar />
-      <main>
+      <div className="flex flex-col">
         <Hero />
         <UserTypeSelector />
         <ServicesBento />
@@ -47,9 +46,8 @@ export default function Home() {
         <SocialProof />
         <CommunityHighlights />
         <FAQ />
-      </main>
+      </div>
       <Footer />
-      <FloatingButtons />
     </>
   );
 }

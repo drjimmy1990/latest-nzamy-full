@@ -507,7 +507,7 @@ export default function Navbar() {
                 animate={{ height: "auto", opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ type: "spring", stiffness: 200, damping: 25 }}
-                className="overflow-hidden lg:hidden"
+                className="overflow-hidden xl:hidden"
               >
                 <div className="border-t border-slate-100 pt-4 pb-2 dark:border-white/10">
                   {ACTIVE_NAV.map((link) => (
@@ -520,31 +520,90 @@ export default function Navbar() {
                     </a>
                   ))}
 
-                  <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4 dark:border-white/10">
+                  {/* Region badge (always visible in mobile menu for feature parity) */}
+                  <div className="flex items-center gap-1.5 rounded-lg border border-slate-200/50 px-2.5 py-1.5 dark:border-white/10 w-fit my-2 mx-4">
+                    <Flag size={14} weight="fill" className="text-emerald-600" />
+                    <span className="text-xs font-medium text-ink-muted dark:text-zinc-400">SA</span>
+                  </div>
+
+                  <div className="mt-4 border-t border-slate-100 pt-4 dark:border-white/10">
                     {isLoggedIn ? (
-                      <>
-                        <a
-                          href={dashboardHref}
-                          className="rounded-xl border border-slate-200 dark:border-white/10 px-4 py-3 text-center text-sm font-medium text-royal dark:text-white"
-                        >
-                          {isAr ? "لوحة التحكم" : "Dashboard"}
-                        </a>
-                      <button
-                          onClick={() => { logout(); }}
-                          className="rounded-xl border border-red-200 dark:border-red-500/20 px-4 py-3 text-center text-sm font-medium text-red-500 w-full"
-                        >
-                          {isAr ? "تسجيل الخروج" : "Sign Out"}
-                        </button>
-                      </>
+                      <div className="flex flex-col">
+                        {/* User Identity Header */}
+                        <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 dark:border-white/10 mb-2">
+                          <div className="w-9 h-9 rounded-lg bg-royal flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                            {name?.charAt(0) ?? "م"}
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-sm font-bold text-ink dark:text-white truncate">
+                              {name}
+                            </span>
+                            <span className="text-[11px] text-ink-muted dark:text-zinc-400 truncate mt-0.5">
+                              {getRoleLabel(userType)}
+                            </span>
+                            {affiliation?.entityName && (
+                              <span className="text-[10px] text-royal/60 dark:text-gold/60 truncate flex items-center gap-1 mt-0.5">
+                                <Buildings size={11} />
+                                {affiliation.entityName}
+                              </span>
+                            )}
+                          </div>
+                          <div className="ms-auto flex items-center">
+                            <NotificationsBell isAr={isAr} />
+                          </div>
+                        </div>
+
+                        {/* Navigation Links for parity */}
+                        <div className="flex flex-col gap-1 px-2 mb-4">
+                          <Link
+                            href={dashboardHref}
+                            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5 transition-colors"
+                          >
+                            <Layout size={16} weight="duotone" />
+                            {isAr ? "لوحة التحكم" : "Dashboard"}
+                          </Link>
+                          <Link
+                            href="/settings"
+                            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5 transition-colors"
+                          >
+                            <GearSix size={16} weight="duotone" />
+                            {isAr ? "الملف الشخصي" : "My Account"}
+                          </Link>
+                          <Link
+                            href="/pricing"
+                            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5 transition-colors"
+                          >
+                            <ChartBar size={16} weight="duotone" />
+                            {isAr ? "الاشتراك والباقة" : "Plan & Billing"}
+                          </Link>
+                          <Link
+                            href="/notifications"
+                            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5 transition-colors"
+                          >
+                            <Bell size={16} weight="duotone" />
+                            {isAr ? "الإشعارات" : "Notifications"}
+                          </Link>
+                        </div>
+
+                        {/* Sign Out Button */}
+                        <div className="px-4">
+                          <button
+                            onClick={() => { logout(); }}
+                            className="rounded-xl border border-red-200 dark:border-red-500/20 px-4 py-3 text-center text-sm font-medium text-red-500 w-full hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                          >
+                            {isAr ? "تسجيل الخروج" : "Sign Out"}
+                          </button>
+                        </div>
+                      </div>
                     ) : (
-                      <>
-                        <a href="/login" className="rounded-xl px-4 py-3 text-center text-sm font-medium text-ink-muted dark:text-zinc-400">
+                      <div className="flex flex-col gap-2 px-4">
+                        <a href="/login" className="rounded-xl px-4 py-3 text-center text-sm font-medium text-ink-muted dark:text-zinc-400 hover:bg-royal/5 hover:text-royal transition-colors">
                           {isAr ? "دخول" : "Login"}
                         </a>
-                        <a href="/register" className="rounded-xl bg-royal px-4 py-3 text-center text-sm font-semibold text-white">
+                        <a href="/register" className="rounded-xl bg-royal px-4 py-3 text-center text-sm font-semibold text-white hover:bg-royal-light transition-colors">
                           {isAr ? "سجّل مجاناً" : "Sign Up Free"}
                         </a>
-                      </>
+                      </div>
                     )}
                   </div>
                 </div>

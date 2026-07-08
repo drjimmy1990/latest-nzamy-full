@@ -84,6 +84,7 @@ const DB_STATUS_MAP: Record<string, PlatformContentStatus> = {
 function rowToItem(row: ArticleRow, index: number): PlatformContentItem {
   return {
     id: row.id,
+    slug: row.slug || row.id,
     type: "article",
     title: row.title,
     status: DB_STATUS_MAP[row.status ?? "draft"] ?? "draft",
@@ -389,7 +390,7 @@ export default function AdminArticlesPage() {
                 <tr key={article.id} className={`border-b last:border-0 ${isDark ? "border-white/5 hover:bg-white/[0.02]" : "border-gray-100 hover:bg-gray-50"}`}>
                   <td className="px-6 py-5">
                     <p className={`text-sm font-bold max-w-[360px] ${isDark ? "text-gray-200" : "text-gray-900"}`}>{article.title}</p>
-                    <p className={`text-xs font-mono ${muted}`}>{article.id}</p>
+                    <p className={`text-xs font-mono ${muted}`}>{article.slug || article.id}</p>
                   </td>
                   <td className={`px-6 py-5 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`}>{article.author}</td>
                   <td className="px-6 py-5">
@@ -401,7 +402,7 @@ export default function AdminArticlesPage() {
                   <td className={`px-6 py-5 text-xs font-mono ${muted}`}>v{article.revision}</td>
                   <td className="px-6 py-5">
                     <div className="flex gap-1">
-                      <Link href={`/blog/${article.id}`} title="معاينة" className={actionClass(isDark)}><Eye size={14} /></Link>
+                      <Link href={`/blog/${article.slug || article.id}`} title="معاينة" className={actionClass(isDark)}><Eye size={14} /></Link>
                       <button title="تعديل" onClick={() => openEdit(article)} className={actionClass(isDark)}><PencilSimple size={14} /></button>
                       <button title="أرشفة" onClick={() => setArticleStatus(article.id, "archived")} className={actionClass(isDark)}><Archive size={14} /></button>
                       <button title="حذف محلي" onClick={() => removeArticle(article.id)} className={actionClass(isDark)}><Trash size={14} /></button>

@@ -98,7 +98,7 @@ export default function ProviderReviewsPage() {
   const SentimentIcon = sentimentIcon;
 
   return (
-    <main className={`min-h-screen py-8 px-4 ${isDark ? "bg-zinc-950" : "bg-zinc-50/50"}`}>
+    <div className={`min-h-screen py-8 px-4 ${isDark ? "bg-zinc-950" : "bg-zinc-50/50"}`}>
       <div className="mx-auto max-w-3xl space-y-6">
 
           {/* Header */}
@@ -262,6 +262,6 @@ export default function ProviderReviewsPage() {
           </div>
 
       </div>
-    </main>
+    </div>
   );
 }

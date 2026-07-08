@@ -101,7 +101,7 @@ export default function NewMatterIntake() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl py-10 px-6">
+      <div className="mx-auto max-w-4xl py-10 px-6">
         <AnimatePresence mode="wait">
           
           {/* ── STEP 1: CONFLICT CHECK ── */}
@@ -329,7 +329,7 @@ export default function NewMatterIntake() {
           )}
 
         </AnimatePresence>
-      </main>
+      </div>
 
     </div>
     </RoleGuard>

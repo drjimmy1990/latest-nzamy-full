@@ -296,7 +296,7 @@ export default function ContractAnalysisShowcase() {
             initial={{ opacity: 0, x: -20 }}
             animate={inView ? { opacity: 1, x: 0 } : {}}
             transition={{ duration: 0.55, delay: 0.1 }}
-            className="order-2 lg:order-1 lg:sticky lg:top-24 space-y-6"
+            className="lg:order-1 lg:sticky lg:top-24 space-y-6"
           >
             {/* Legend cards — minimal, no 3-col */}
             <div className="space-y-3">
@@ -348,12 +348,12 @@ export default function ContractAnalysisShowcase() {
             </div>
 
             {/* CTA — magnetic feel via spring scale */}
-            <Link href="/ai">
+            <Link href="/ai" className="w-full sm:w-fit block">
               <motion.div
                 whileHover={{ scale: 1.02, y: -2 }}
                 whileTap={{ scale: 0.97 }}
                 transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                className="flex items-center gap-3 rounded-2xl bg-[#0B3D2E] dark:bg-[#C8A762] px-7 py-4 text-sm font-bold text-white dark:text-zinc-900 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.35)] dark:shadow-[0_8px_32px_-8px_rgba(200,167,98,0.35)] w-fit"
+                className="flex items-center justify-center gap-3 rounded-2xl bg-[#0B3D2E] dark:bg-[#C8A762] px-7 py-4 text-sm font-bold text-white dark:text-zinc-900 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.35)] dark:shadow-[0_8px_32px_-8px_rgba(200,167,98,0.35)] w-full sm:w-fit"
               >
                 <MagnifyingGlass size={16} weight="fill" />
                 {isAr ? "جرّب تحليل عقدك مجاناً" : "Analyze your contract free"}
@@ -367,7 +367,7 @@ export default function ContractAnalysisShowcase() {
             initial={{ opacity: 0, y: 24 }}
             animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.55, delay: 0.18 }}
-            className="order-1 lg:order-2"
+            className="order-2 lg:order-2"
           >
             {/* Chrome bar */}
             <div className={`flex items-center justify-between rounded-t-[1.75rem] border border-b-0 px-5 py-3 ${isDark ? "border-white/[0.08] bg-zinc-900" : "border-slate-200 bg-slate-50"}`}>
@@ -433,7 +433,7 @@ export default function ContractAnalysisShowcase() {
                   <button
                     key={val}
                     onClick={() => setFilterTab(val)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 ${
+                    className={`flex items-center gap-1.5 py-2.5 px-4 sm:py-1.5 sm:px-3 rounded-lg text-[11px] font-semibold transition-all duration-200 ${
                       active
                         ? s ? `${s.activeBg} text-white` : "bg-zinc-800 dark:bg-white text-white dark:text-zinc-900"
                         : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
@@ -579,7 +579,7 @@ export default function ContractAnalysisShowcase() {
                                   <div className={`flex mb-0 border rounded-xl overflow-hidden text-[11px] font-bold ${isDark ? "border-white/[0.08]" : "border-slate-200"}`}>
                                     {([["a", isAr ? "الخيار (أ) — الحماية القصوى" : "Option A — Max Protection"], ["b", isAr ? "الخيار (ب) — المتوازن" : "Option B — Balanced"]] as const).map(([t, label]) => (
                                       <button key={t} onClick={e => { e.stopPropagation(); setAmendTab(t); }}
-                                        className={`flex-1 py-2 px-3 transition-colors text-center ${
+                                        className={`flex-1 py-3 px-4 sm:py-2 sm:px-3 transition-colors text-center ${
                                           amendTab === t
                                             ? t === "a"
                                               ? isDark ? "bg-emerald-900/60 text-emerald-300" : "bg-emerald-600 text-white"

@@ -90,7 +90,7 @@ export default function AskQuestionPage() {
     return (
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
         <Navbar />
-        <main className="flex-1 flex items-center justify-center px-4">
+        <div className="flex-1 flex items-center justify-center px-4">
           <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className={`${card} max-w-md w-full text-center`}>
             <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto mb-5">
               <CheckCircle size={36} color="#22c55e" weight="fill" />
@@ -122,7 +122,7 @@ export default function AskQuestionPage() {
               )}
             </div>
           </motion.div>
-        </main>
+        </div>
         <Footer />
       </div>
     );
@@ -132,7 +132,7 @@ export default function AskQuestionPage() {
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-10">
+      <div className="flex-1 max-w-3xl mx-auto w-full px-4 py-10">
 
         {/* Header */}
         <div className="mb-8">
@@ -271,7 +271,7 @@ export default function AskQuestionPage() {
             {isRTL ? "نشر السؤال" : "Post Question"}
           </motion.button>
         </div>
-      </main>
+      </div>
 
       <Footer />
     </div>

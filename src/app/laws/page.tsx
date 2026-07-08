@@ -9,7 +9,6 @@ import {
 import * as PhosphorIcons from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import InvitationBanner from "@/components/InvitationBanner";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -811,8 +810,8 @@ export default function LegalLibraryPage() {
           </div>
 
           {/* ROW 2: Category section tabs */}
-          <div className="flex flex-wrap items-center gap-2 mb-8">
-            <div className={`inline-flex items-center p-1.5 rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
+          <div className="mb-8 overflow-x-auto scrollbar-none w-full">
+            <div className={`inline-flex items-center p-1.5 rounded-2xl border whitespace-nowrap ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
               {MAIN_CATEGORIES.map(cat => {
                 const isActive = activeCat === cat.id;
                 const Icon     = cat.icon;
@@ -931,7 +930,7 @@ export default function LegalLibraryPage() {
             )}
 
             {/* Center Column: Results & Active Tab Panels (Desktop Col 6, Mobile stacks at top) */}
-            <main className={`order-1 lg:order-2 space-y-6 ${showSidebars ? "lg:col-span-6" : "lg:col-span-12"}`}>
+            <div className={`order-1 lg:order-2 space-y-6 ${showSidebars ? "lg:col-span-6" : "lg:col-span-12"}`}>
               {/* ── Tab Content Panels ── */}
               <AnimatePresence mode="wait">
                 {dbLoading ? (
@@ -1038,7 +1037,7 @@ export default function LegalLibraryPage() {
                   </>
                 )}
               </AnimatePresence>
-            </main>
+            </div>
 
             {/* Left Column: Activity & Updates (Desktop Col 3, Mobile stacks at bottom) */}
             {showSidebars && (
@@ -1053,8 +1052,7 @@ export default function LegalLibraryPage() {
       </section>
 
       <Footer />
-      <FloatingButtons reportConfig={{ pageSlug: "laws-index", pageType: "law" }} />
-      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} isRTL={isRTL} isDark={isDark} />
+            <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} isRTL={isRTL} isDark={isDark} />
       <AdvancedSearchModal 
         isOpen={showAdvSearch} 
         onClose={() => setShowAdvSearch(false)} 

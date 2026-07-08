@@ -11,7 +11,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
@@ -336,7 +335,7 @@ export default function LawyersPage() {
   return (
     <>
       <Navbar />
-      <main className="bg-surface dark:bg-dark-bg transition-colors duration-300">
+      <div className="bg-surface dark:bg-dark-bg transition-colors duration-300">
 
         {/* ── Hero ──────────────────────────────────────────────────────────── */}
         <section className="relative overflow-hidden pb-24 pt-32 md:pt-40">
@@ -659,9 +658,8 @@ export default function LawyersPage() {
           </div>
         </section>
 
-      </main>
+      </div>
       <Footer />
-      <FloatingButtons />
-    </>
+          </>
   );
 }

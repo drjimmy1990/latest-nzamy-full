@@ -21,7 +21,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 
 import { services, faqs } from "@/constants/servicesData";
@@ -40,7 +39,7 @@ export default function IndividualsPage() {
   return (
     <>
       <Navbar />
-      <main className="bg-surface dark:bg-dark-bg transition-colors duration-300">
+      <div className="bg-surface dark:bg-dark-bg transition-colors duration-300">
         {/* ── Hero ─────────────────────────────────────────────────────────── */}
         <section className="relative overflow-hidden pb-24 pt-32 md:pt-40">
           <div className="pointer-events-none absolute inset-0">
@@ -457,9 +456,8 @@ export default function IndividualsPage() {
             </motion.div>
           </div>
         </section>
-      </main>
+      </div>
       <Footer />
-      <FloatingButtons />
-    </>
+          </>
   );
 }

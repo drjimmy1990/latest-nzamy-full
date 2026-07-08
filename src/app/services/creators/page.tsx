@@ -78,7 +78,7 @@ const creators = [
 
 export default function CreatorsServicePage() {
   return (
-    <main className="min-h-[100dvh] bg-surface pt-24 pb-20" dir="rtl" lang="ar">
+    <div className="min-h-[100dvh] bg-surface pt-24 pb-20" dir="rtl" lang="ar">
 
       {/* ── Hero ── */}
       <section className="max-w-[1400px] mx-auto px-6 md:px-10 grid grid-cols-1 lg:grid-cols-[55%_45%] gap-12 items-start min-h-[55vh] pt-10">
@@ -189,6 +189,6 @@ export default function CreatorsServicePage() {
         </FadeUp>
       </section>
 
-    </main>
+    </div>
   );
 }

@@ -21,7 +21,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import SmartSchedulingPicker, { type SchedulingChoice } from "@/components/SmartSchedulingPicker";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -562,7 +561,6 @@ export default function ConsultationsPage() {
       </section>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

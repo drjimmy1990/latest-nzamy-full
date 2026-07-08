@@ -9,7 +9,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -329,7 +328,7 @@ export default function BrowseLawyersPage() {
         </div>
       </div>
 
-      <main className="flex-1 max-w-[1400px] mx-auto w-full px-5 md:px-8 pb-16">
+      <div className="flex-1 max-w-[1400px] mx-auto w-full px-5 md:px-8 pb-16">
         <div className="flex gap-7 items-start">
 
           {/* ── Sidebar Filters (desktop) ── */}
@@ -576,7 +575,7 @@ export default function BrowseLawyersPage() {
             )}
           </div>
         </div>
-      </main>
+      </div>
 
       {/* ── Mobile Sidebar Drawer ── */}
       <AnimatePresence>
@@ -668,7 +667,6 @@ export default function BrowseLawyersPage() {
       </AnimatePresence>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }

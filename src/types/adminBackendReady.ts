@@ -116,6 +116,7 @@ export type PlatformContentStatus = "published" | "draft" | "review" | "archived
 
 export interface PlatformContentItem {
   id: string;
+  slug?: string;
   type: PlatformContentType;
   title: string;
   status: PlatformContentStatus;

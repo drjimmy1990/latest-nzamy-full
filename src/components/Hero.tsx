@@ -154,7 +154,7 @@ export default function Hero() {
 
       {/* Grain overlay */}
       <div
-        className="pointer-events-none fixed inset-0 z-50 opacity-[0.02] mix-blend-overlay"
+        className="pointer-events-none fixed inset-0 z-30 opacity-[0.02] mix-blend-overlay"
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
         }}
@@ -206,13 +206,13 @@ export default function Hero() {
             </p>
 
             {/* CTAs */}
-            <div className="mt-8 flex flex-wrap items-center gap-4">
+            <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center w-full sm:w-auto gap-4">
               <motion.a
                 href="#services"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className="group inline-flex items-center gap-2 rounded-2xl bg-royal px-7 py-4 text-sm font-semibold text-white shadow-[0_8px_32px_-8px_rgba(11,61,46,0.5)] transition-shadow hover:shadow-[0_12px_40px_-8px_rgba(11,61,46,0.6)]"
+                className="group inline-flex items-center gap-2 rounded-2xl bg-royal px-7 py-4 text-sm font-semibold text-white shadow-[0_8px_32px_-8px_rgba(11,61,46,0.5)] transition-shadow hover:shadow-[0_12px_40px_-8px_rgba(11,61,46,0.6)] w-full justify-center sm:w-auto"
               >
                 {isAr ? "اطلب خدمة فورية" : "Get Started Now"}
                 <ArrowLeft
@@ -227,7 +227,7 @@ export default function Hero() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className={`inline-flex items-center gap-3 rounded-2xl border px-6 py-4 text-sm font-medium shadow-sm transition-all hover:border-royal/20 ${isDark ? "border-white/10 bg-white/5 text-gray-200 hover:text-emerald-400" : "border-slate-200 bg-white text-ink-muted hover:text-royal"}`}
+                className={`inline-flex items-center gap-3 rounded-2xl border px-6 py-4 text-sm font-medium shadow-sm transition-all hover:border-royal/20 w-full justify-center sm:w-auto ${isDark ? "border-white/10 bg-white/5 text-gray-200 hover:text-emerald-400" : "border-slate-200 bg-white text-ink-muted hover:text-royal"}`}
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-royal/5 dark:bg-emerald-500/10">
                   <Play size={16} weight="fill" className="text-royal dark:text-emerald-400" />
@@ -237,16 +237,16 @@ export default function Hero() {
             </div>
 
             {/* Trust badges */}
-            <div className={`mt-10 flex flex-wrap items-center gap-4 text-xs font-medium border-t pt-8 ${isDark ? "border-white/10 text-gray-400" : "border-slate-100 text-slate-500"}`}>
-              <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-3 py-1.5">
+            <div className={`mt-10 flex flex-wrap items-center gap-4 text-[10px] sm:text-xs font-medium border-t pt-8 ${isDark ? "border-white/10 text-gray-400" : "border-slate-100 text-slate-500"}`}>
+              <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-2.5 py-1 sm:px-3 sm:py-1.5">
                 <Buildings size={16} className="text-royal dark:text-emerald-400" />
                 {isAr ? "مرخّص من وزارة العدل" : "Ministry of Justice Licensed"}
               </div>
-              <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-3 py-1.5">
+              <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-2.5 py-1 sm:px-3 sm:py-1.5">
                 <LockKey size={16} className="text-royal dark:text-emerald-400" />
                 {isAr ? "تشفير 256-bit SSL" : "256-bit SSL Security"}
               </div>
-              <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-3 py-1.5">
+              <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-2.5 py-1 sm:px-3 sm:py-1.5">
                 <CheckCircle size={16} className="text-gold-dark" />
                 {isAr ? "ضمان Escrow المالي" : "Escrow Financial Guarantee"}
               </div>
@@ -366,7 +366,7 @@ export default function Hero() {
               initial={{ opacity: 0, scale: 0.8, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ delay: 2, type: "spring", stiffness: 100, damping: 15 }}
-              className="absolute -bottom-4 -right-4 rounded-2xl border border-white bg-white px-5 py-3 shadow-[0_12px_24px_-8px_rgba(0,0,0,0.08)] dark:border-white/10 dark:bg-dark-card"
+              className="hidden md:flex md:absolute md:-bottom-4 md:-right-4 rounded-2xl border border-white bg-white px-5 py-3 shadow-[0_12px_24px_-8px_rgba(0,0,0,0.08)] dark:border-white/10 dark:bg-dark-card"
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gold/10">

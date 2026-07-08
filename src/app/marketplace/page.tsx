@@ -28,7 +28,6 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import Link from "next/link";
@@ -226,7 +225,7 @@ function MarketplaceInner() {
       </div>
 
       {/* ── Content ──────────────────────────────────────────── */}
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
+      <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
 
         {/* Tab: My Requests */}
         {activeTab === "my-requests" && (
@@ -377,11 +376,10 @@ function MarketplaceInner() {
             </div>
           </div>
         )}
-      </main>
+      </div>
 
       <Footer />
-      <FloatingButtons />
-    </div>
+          </div>
   );
 }
 

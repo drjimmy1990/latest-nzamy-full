@@ -199,7 +199,7 @@ export default function CommunityHighlights() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ type: "spring", stiffness: 80, damping: 20, delay: 0.05 }}
-            className={`lg:col-span-2 lg:row-span-2 rounded-[2.5rem] border p-8 md:p-10 ${
+            className={`lg:col-span-2 lg:row-span-2 rounded-[2.5rem] border p-5 sm:p-8 md:p-10 ${
               isDark ? "border-white/10 bg-dark-card" : "border-slate-200/60 bg-white shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)]"
             }`}
           >
@@ -256,7 +256,7 @@ export default function CommunityHighlights() {
                     <p className={`text-sm font-semibold leading-snug ${isDark ? "text-gray-200 group-hover:text-white" : "text-gray-800 group-hover:text-[#0B3D2E]"} transition-colors`}>
                       {q.title}
                     </p>
-                    <div className="flex items-center gap-3 mt-2.5 flex-wrap">
+                    <div className="flex items-center gap-2 sm:gap-3 mt-2 flex-wrap">
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${q.categoryColor}`}>
                         {q.category}
                       </span>
@@ -283,7 +283,7 @@ export default function CommunityHighlights() {
               href="/community/ask"
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
-              className="mt-6 flex items-center justify-center gap-2 w-full py-3 rounded-2xl border-2 border-dashed border-[#0B3D2E]/20 text-sm font-semibold text-[#0B3D2E] dark:text-emerald-400 dark:border-emerald-500/20 hover:border-[#0B3D2E]/40 dark:hover:border-emerald-500/40 transition-all"
+              className="mt-6 flex items-center justify-center gap-2 w-full py-3.5 min-h-[44px] rounded-2xl border-2 border-dashed border-[#0B3D2E]/20 text-sm font-semibold text-[#0B3D2E] dark:text-emerald-400 dark:border-emerald-500/20 hover:border-[#0B3D2E]/40 dark:hover:border-emerald-500/40 transition-all"
             >
               <ChatTeardropDots size={16} weight="fill" />
               {isAr ? "اطرح سؤالك على المجتمع" : "Ask the Community"}
@@ -296,7 +296,7 @@ export default function CommunityHighlights() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ type: "spring", stiffness: 80, damping: 20, delay: 0.1 }}
-            className={`rounded-[2.5rem] border p-7 ${
+            className={`rounded-[2.5rem] border p-5 sm:p-8 md:p-10 ${
               isDark ? "border-white/10 bg-dark-card" : "border-slate-200/60 bg-white shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)]"
             }`}
           >
@@ -320,7 +320,7 @@ export default function CommunityHighlights() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ type: "spring", stiffness: 80, damping: 20, delay: 0.15 }}
-            className={`rounded-[2.5rem] border p-7 ${
+            className={`rounded-[2.5rem] border p-5 sm:p-8 md:p-10 ${
               isDark ? "border-white/10 bg-dark-card" : "border-slate-200/60 bg-white shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)]"
             }`}
           >
@@ -391,7 +391,7 @@ export default function CommunityHighlights() {
               viewport={{ once: true }}
               transition={{ type: "spring", stiffness: 100, damping: 20, delay: i * 0.1 }}
               whileHover={{ y: -4 }}
-              className={`group rounded-[2rem] border p-6 flex flex-col gap-4 transition-all ${
+              className={`group rounded-[2rem] border p-5 sm:p-8 md:p-10 flex flex-col gap-4 transition-all ${
                 isDark
                   ? "border-white/10 bg-dark-card hover:bg-white/5"
                   : "border-slate-200/60 bg-white hover:shadow-lg hover:border-[#0B3D2E]/20"

@@ -99,7 +99,7 @@ const plans = [
 
 export default function CorporateServicePage() {
   return (
-    <main className="min-h-[100dvh] bg-surface pt-24 pb-20" dir="rtl" lang="ar">
+    <div className="min-h-[100dvh] bg-surface pt-24 pb-20" dir="rtl" lang="ar">
 
       {/* ── Hero ── */}
       <section className="max-w-[1400px] mx-auto px-6 md:px-10 grid grid-cols-1 lg:grid-cols-[60%_40%] gap-12 items-center min-h-[56vh]">
@@ -236,6 +236,6 @@ export default function CorporateServicePage() {
         </div>
       </section>
 
-    </main>
+    </div>
   );
 }
