@@ -94,10 +94,10 @@ export default function ContactPage() {
               <ChatCircleDots size={14} weight="fill" />
               {isRTL ? "تواصل معنا" : "Contact Us"}
             </span>
-            <h1 className={`mt-3 text-4xl font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
+            <h1 className={`mt-3 text-2xl sm:text-4xl font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
               {isRTL ? "كيف يمكننا مساعدتك؟" : "How Can We Help You?"}
             </h1>
-            <p className={`mx-auto mt-4 max-w-xl text-lg ${isDark ? "text-gray-400" : "text-slate-500"}`}>
+            <p className={`mx-auto mt-4 max-w-xl text-base sm:text-lg ${isDark ? "text-gray-400" : "text-slate-500"}`}>
               {isRTL
                 ? "فريقنا جاهز للإجابة على جميع استفساراتك خلال أوقات العمل الرسمية."
                 : "Our team is ready to answer all your inquiries during official working hours."}
@@ -343,14 +343,14 @@ export default function ContactPage() {
             <iframe
               src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3714.5!2d39.8555!3d21.3891!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x15c20f0071aac771%3A0xc363c31091368f1e!2z2LTYsdmD2Kkg2YbYuNin2YXZiiDZhNmE2YXYrdin2YXYp9ip!5e0!3m2!1sar!2ssa!4v1712550000000!5m2!1sar!2ssa"
               width="100%"
-              height="400"
+              height="300"
               style={{ border: 0, filter: isDark ? "invert(90%) hue-rotate(180deg) brightness(0.95) contrast(0.9)" : "none" }}
               allowFullScreen
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
               title={isRTL ? "موقع شركة نظامي للمحاماة — مكة المكرمة" : "Nzamy Law Firm Location — Makkah"}
             />
-            <div className={`flex items-center justify-between px-6 py-4 ${isDark ? "bg-dark-card" : "bg-white"}`}>
+            <div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 sm:px-6 py-4 ${isDark ? "bg-dark-card" : "bg-white"}`}>
               <div className="flex items-center gap-3">
                 <div className="rounded-xl bg-amber-500/10 p-2.5">
                   <MapPin size={20} weight="fill" className="text-amber-500" />

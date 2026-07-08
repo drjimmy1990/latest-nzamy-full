@@ -731,13 +731,13 @@ export default function LegalLibraryPage() {
                 )}
               </AnimatePresence>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <button
                 onClick={() => setShowAdvSearch(true)}
                 className="shrink-0 flex items-center justify-center gap-2 px-6 py-4 bg-[#0B3D2E] text-white rounded-2xl font-bold text-sm hover:bg-[#0a3328] transition-colors shadow-md"
               >
                 <Faders size={20} weight="fill" />
-                {isRTL ? "بحث متقدم" : "Advanced"}
+                <span className="hidden sm:inline">{isRTL ? "بحث متقدم" : "Advanced"}</span>
               </button>
 
               <div className={`flex items-center p-1.5 rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-sm`}>

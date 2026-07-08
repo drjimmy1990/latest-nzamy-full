@@ -432,7 +432,7 @@ export function AiLandingPage() {
                 transition={{ delay: i * 0.1 }}
                 className="text-center"
               >
-                <div className="font-brand mb-2 text-5xl font-bold text-[#C8A762]">
+                <div className="font-brand mb-2 text-3xl md:text-5xl font-bold text-[#C8A762]">
                   {isRTL ? stat.valueAr : stat.valueEn}
                 </div>
                 <div className="text-base font-medium text-white/80">

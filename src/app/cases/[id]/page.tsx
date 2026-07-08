@@ -270,7 +270,7 @@ export default function CaseDetailPage() {
                       >
                         {isLawyer ? "أغ" : "أ"}
                       </div>
-                      <div className={`max-w-xs ${!isLawyer ? (isRTL ? "items-start" : "items-end") : ""}`}>
+                      <div className={`max-w-[85%] sm:max-w-xs ${!isLawyer ? (isRTL ? "items-start" : "items-end") : ""}`}>
                         <div
                           className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                             isLawyer
@@ -299,7 +299,7 @@ export default function CaseDetailPage() {
                   placeholder={isRTL ? "اكتب رسالة..." : "Type a message..."}
                   className={`flex-1 rounded-xl px-4 py-2.5 text-sm outline-none border transition-colors ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-white placeholder-gray-600 focus:border-[#C8A762]" : "bg-gray-50 border-gray-200 text-gray-800 focus:border-[#0B3D2E]"}`}
                 />
-                <button className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center hover:bg-[#0a3328] transition-colors flex-shrink-0">
+                <button className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl bg-[#0B3D2E] flex items-center justify-center hover:bg-[#0a3328] transition-colors flex-shrink-0">
                   <PaperPlaneRight size={16} color="#C8A762" weight="duotone" />
                 </button>
               </div>

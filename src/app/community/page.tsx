@@ -360,7 +360,7 @@ export default function CommunityPage() {
             {/* Questions list */}
             <AnimatePresence>
               {filtered.length === 0 ? (
-                <div className={`${card} p-16 text-center flex flex-col items-center justify-center min-h-[300px]`}>
+                <div className={`${card} p-6 sm:p-16 text-center flex flex-col items-center justify-center min-h-[300px]`}>
                   <div className="w-20 h-20 rounded-3xl bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-5 dark:bg-zinc-800 dark:border-white/10">
                     <Scales size={36} color="#C8A762" weight="duotone" />
                   </div>
@@ -392,7 +392,7 @@ export default function CommunityPage() {
                           <div className="flex flex-col items-center gap-1 pt-0.5 flex-shrink-0">
                             <button
                               onClick={() => handleQuestionVote(q, "up")}
-                              className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
+                              className={`w-11 h-11 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
                                 questionVotes[q.id] === "up"
                                   ? "bg-[#0B3D2E] text-white"
                                   : isDark ? "hover:bg-white/10" : "hover:bg-gray-100"
@@ -403,7 +403,7 @@ export default function CommunityPage() {
                             <span className={`text-sm font-bold font-mono ${isDark ? "text-gray-200" : "text-gray-700"}`}>{getVoteCount(q)}</span>
                             <button
                               onClick={() => handleQuestionVote(q, "down")}
-                              className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
+                              className={`w-11 h-11 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
                                 questionVotes[q.id] === "down"
                                   ? "bg-red-500/10 text-red-500"
                                   : isDark ? "hover:bg-white/10" : "hover:bg-gray-100"
@@ -519,7 +519,7 @@ export default function CommunityPage() {
 
                                     {/* Vote */}
                                     <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
-                                      <button className={`w-6 h-6 rounded-lg flex items-center justify-center transition cursor-pointer ${isDark ? "hover:bg-white/10" : "hover:bg-white/60"}`}>
+                                      <button className={`w-11 h-11 sm:w-6 sm:h-6 rounded-lg flex items-center justify-center transition cursor-pointer ${isDark ? "hover:bg-white/10" : "hover:bg-white/60"}`}>
                                         <ArrowUp size={13} className="text-[#0B3D2E]" />
                                       </button>
                                       <span className={`text-xs font-bold font-mono ${isDark ? "text-gray-300" : "text-gray-600"}`}>{ans.votes}</span>

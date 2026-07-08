@@ -238,7 +238,7 @@ export default function ServicesMarketplacePage() {
           <p className={`text-center text-sm font-bold mb-6 ${muted}`}>
             {isRTL ? "أخبرنا بطبيعة احتياجك للمتابعة" : "Let us know your role to continue"}
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {ROLES.map(r => {
               const Icon = r.icon;
               const isActive = role === r.id;
@@ -308,7 +308,7 @@ export default function ServicesMarketplacePage() {
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
                           <span className={`text-sm font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{req.budget}</span>
-                          <button className="px-5 py-2 bg-[#0B3D2E] hover:bg-[#0a3328] text-white text-xs font-bold rounded-xl transition">
+                          <button className="px-5 py-2.5 min-h-[44px] bg-[#0B3D2E] hover:bg-[#0a3328] text-white text-xs font-bold rounded-xl transition">
                             {isRTL ? "تقديم عرض" : "Submit Offer"}
                           </button>
                         </div>
@@ -391,7 +391,7 @@ export default function ServicesMarketplacePage() {
                                   </div>
                                   <button
                                     onClick={() => setWizardService({ id: srv.id, title: srv.title, titleEn: srv.titleEn })}
-                                    className="w-full py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition"
+                                    className="w-full py-3 min-h-[44px] bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition"
                                   >
                                     {isRTL ? "طلب الخدمة الآن" : "Request Service"}
                                   </button>

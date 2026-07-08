@@ -267,7 +267,7 @@ export default function FAQPage() {
       <Navbar />
 
       {/* Header */}
-      <section className="bg-royal pt-32 pb-20 px-4 text-center relative overflow-hidden">
+      <section className="bg-royal pt-28 sm:pt-32 pb-14 sm:pb-20 px-4 text-center relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_bottom,_#C8A762_0%,_transparent_60%)]" />
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -278,10 +278,10 @@ export default function FAQPage() {
           <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center mx-auto mb-6">
             <ChatCircle size={32} className="text-gold" weight="duotone" />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-3">
+          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-3">
             {isRTL ? "الأسئلة الشائعة" : "Frequently Asked Questions"}
           </h1>
-          <p className="text-white/70 text-lg mb-8">
+          <p className="text-white/70 text-base sm:text-lg mb-6 sm:mb-8">
             {isRTL
               ? "كل ما تحتاج معرفته عن نظامي في مكان واحد"
               : "Everything you need to know about Nezamy in one place"}
@@ -312,7 +312,7 @@ export default function FAQPage() {
               <button
                 key={cat.id}
                 onClick={() => { setActiveCategory(cat.id); setOpenId(null); }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`px-4 py-2.5 min-h-[44px] rounded-lg text-sm font-medium transition-all ${
                   activeCategory === cat.id
                     ? "bg-royal text-white"
                     : isDark

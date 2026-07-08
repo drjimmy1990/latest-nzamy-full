@@ -373,7 +373,7 @@ export default function AiDisclaimerPage() {
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="rounded-[2.5rem] bg-royal p-10 text-center shadow-[0_20px_60px_-15px_rgba(11,61,46,0.4)] md:p-14"
+              className="rounded-[2.5rem] bg-royal p-6 text-center shadow-[0_20px_60px_-15px_rgba(11,61,46,0.4)] md:p-10 lg:p-14"
             >
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-gold">
                 <Brain size={28} weight="duotone" />

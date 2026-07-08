@@ -171,7 +171,7 @@ export default function SocialProof() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1, type: "spring", stiffness: 100, damping: 20 }}
-                className={`group relative rounded-[2rem] border p-8 transition-shadow hover:shadow-xl dark:shadow-none ${
+                className={`group relative rounded-[2rem] border p-5 transition-shadow hover:shadow-xl dark:shadow-none sm:p-8 ${
                   isDark ? "border-white/10 bg-white/5 hover:bg-white/10" : "border-slate-200/50 bg-white hover:border-royal/20"
                 }`}
               >

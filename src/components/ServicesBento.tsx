@@ -209,7 +209,7 @@ export default function ServicesBento() {
               aria-selected={activeTab === "individual"}
               aria-controls="services-individual-panel"
               onClick={() => setActiveTab("individual")}
-              className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 min-h-[44px] sm:px-5 text-sm font-semibold transition-all ${
                 activeTab === "individual"
                   ? "bg-white text-royal shadow-sm dark:bg-royal dark:text-emerald-400"
                   : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
@@ -223,7 +223,7 @@ export default function ServicesBento() {
               aria-selected={activeTab === "business"}
               aria-controls="services-business-panel"
               onClick={() => setActiveTab("business")}
-              className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 min-h-[44px] sm:px-5 text-sm font-semibold transition-all ${
                 activeTab === "business"
                   ? "bg-white text-royal shadow-sm dark:bg-royal dark:text-emerald-400"
                   : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
@@ -327,7 +327,7 @@ export default function ServicesBento() {
         </div>
 
         {/* Dual Marquee Specializations */}
-        <div className="mt-8 rounded-[2.5rem] border border-slate-200/50 bg-white p-8 shadow-sm dark:border-white/10 dark:bg-dark-card">
+        <div className="mt-8 rounded-[2.5rem] border border-slate-200/50 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-dark-card sm:p-8">
           <div className="mb-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-gold" />
             <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-ink"}`}>

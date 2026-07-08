@@ -236,7 +236,7 @@ export default function CommunityHighlights() {
                   viewport={{ once: true }}
                   transition={{ delay: 0.1 + i * 0.1, type: "spring", stiffness: 100, damping: 20 }}
                   whileHover={{ x: isAr ? -4 : 4 }}
-                  className={`group flex items-start gap-4 rounded-2xl border p-5 transition-all ${
+                  className={`group flex items-start gap-3 rounded-2xl border p-5 transition-all ${
                     isDark
                       ? "border-white/10 bg-white/5 hover:bg-white/10"
                       : "border-slate-100 bg-slate-50/60 hover:bg-white hover:shadow-sm hover:border-[#0B3D2E]/20"
@@ -306,7 +306,7 @@ export default function CommunityHighlights() {
                 {isAr ? "المجتمع بالأرقام" : "Community in Numbers"}
               </h3>
             </div>
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-2 gap-4 sm:gap-6">
               <StatCounter value={4820} suffix="+" label={isAr ? "سؤال في المجتمع" : "Community Questions"} isDark={isDark} />
               <StatCounter value={1240} suffix="+" label={isAr ? "إجابة موثوقة" : "Verified Answers"} isDark={isDark} />
               <StatCounter value={87} suffix="" label={isAr ? "محامٍ نشط" : "Active Lawyers"} isDark={isDark} />

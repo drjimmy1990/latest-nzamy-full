@@ -274,7 +274,7 @@ export default function ContractAnalysisShowcase() {
               {isAr ? "احمِ نفسك قبل التوقيع" : "Protect yourself before signing"}
             </span>
           </div>
-          <h2 className="font-brand text-4xl md:text-5xl font-extrabold tracking-tight text-zinc-900 dark:text-white leading-[1.1]">
+          <h2 className="font-brand text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-zinc-900 dark:text-white leading-[1.1]">
             {isAr ? "اكتشف الثغرات المخفية" : "Discover hidden flaws"}
             <br />
             <span className="text-[#B89A52] dark:text-[#C8A762]">
@@ -425,7 +425,7 @@ export default function ContractAnalysisShowcase() {
             </AnimatePresence>
 
             {/* Filter tabs */}
-            <div className={`flex flex-wrap gap-1 border-x border-b px-3 py-2 ${isDark ? "border-white/[0.08] bg-zinc-900" : "border-slate-200 bg-slate-50/60"}`}>
+            <div className={`flex gap-1 overflow-x-auto sm:flex-wrap border-x border-b px-3 py-2 scrollbar-hide ${isDark ? "border-white/[0.08] bg-zinc-900" : "border-slate-200 bg-slate-50/60"}`}>
               {tabs.map(({ val, label, count }) => {
                 const active = filterTab === val;
                 const s = val !== "all" ? categoryStyle[val as ClauseCategory] : null;
@@ -449,7 +449,7 @@ export default function ContractAnalysisShowcase() {
             </div>
 
             {/* Clause list */}
-            <div className={`rounded-b-[1.75rem] border border-t-0 divide-y overflow-y-auto max-h-[540px] ${
+            <div className={`rounded-b-[1.75rem] border border-t-0 divide-y overflow-y-auto max-h-[400px] sm:max-h-[540px] ${
               isDark
                 ? "border-white/[0.08] bg-zinc-900 divide-white/[0.05]"
                 : "border-slate-200 bg-white divide-slate-100"
@@ -579,7 +579,7 @@ export default function ContractAnalysisShowcase() {
                                   <div className={`flex mb-0 border rounded-xl overflow-hidden text-[11px] font-bold ${isDark ? "border-white/[0.08]" : "border-slate-200"}`}>
                                     {([["a", isAr ? "الخيار (أ) — الحماية القصوى" : "Option A — Max Protection"], ["b", isAr ? "الخيار (ب) — المتوازن" : "Option B — Balanced"]] as const).map(([t, label]) => (
                                       <button key={t} onClick={e => { e.stopPropagation(); setAmendTab(t); }}
-                                        className={`flex-1 py-3 px-4 sm:py-2 sm:px-3 transition-colors text-center ${
+                                        className={`flex-1 py-3 px-3 sm:py-2 sm:px-3 transition-colors text-center text-[10px] sm:text-[11px] font-bold ${
                                           amendTab === t
                                             ? t === "a"
                                               ? isDark ? "bg-emerald-900/60 text-emerald-300" : "bg-emerald-600 text-white"

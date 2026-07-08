@@ -268,7 +268,7 @@ export default function Hero() {
               {isAr ? "معاينة مباشرة للمنصة" : "Live Platform Preview"}
             </div>
             {/* Main card */}
-            <div className="relative rounded-[2.5rem] border border-slate-200/50 bg-white p-8 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] dark:border-white/10 dark:bg-dark-card dark:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.4)] md:p-10">
+            <div className="relative rounded-[2.5rem] border border-slate-200/50 bg-white p-5 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] dark:border-white/10 dark:bg-dark-card dark:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.4)] sm:p-8 md:p-10">
               {/* Glass inner border */}
               <div className="absolute inset-0 rounded-[2.5rem] border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]" />
 
@@ -295,7 +295,7 @@ export default function Hero() {
                 </Link>
 
                 {/* Service cards — clickable shortcuts */}
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3">
                   {[
                     { icon: Scales, label: isAr ? "استشارة" : "Consult", color: "bg-royal/5 text-royal", href: "/services/consultations" },
                     { icon: ShieldCheck, label: isAr ? "عقود" : "Contracts", color: "bg-gold/10 text-gold-dark", href: "/services/contracts" },

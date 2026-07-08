@@ -88,7 +88,7 @@ export default function UserTypeSelector() {
               }}
               whileHover={{ y: -4 }}
               whileTap={{ scale: 0.98, y: -1 }}
-              className={`group relative overflow-hidden rounded-[2rem] border border-slate-200/50 bg-gradient-to-bl ${type.gradient} p-8 transition-shadow hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.07)] md:p-10`}
+              className={`group relative overflow-hidden rounded-[2rem] border border-slate-200/50 bg-gradient-to-bl ${type.gradient} p-6 transition-shadow hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.07)] sm:p-8 md:p-10`}
             >
               <div className="flex items-start justify-between">
                 <div>
@@ -134,7 +134,7 @@ export default function UserTypeSelector() {
               href="/join"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="inline-flex items-center gap-2 rounded-xl bg-royal px-6 py-3 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)]"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-royal px-6 py-3 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] min-h-[44px] w-full sm:w-auto"
             >
               {isAr ? "انضم لنظامي برو" : "Join Nezamy Pro"}
               <ArrowLeft size={16} weight="bold" />

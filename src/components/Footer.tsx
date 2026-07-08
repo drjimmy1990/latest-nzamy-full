@@ -114,7 +114,7 @@ export default function Footer() {
                   <li key={link.label}>
                     <a
                       href={link.href}
-                      className="text-sm text-ink-muted transition-colors hover:text-royal"
+                      className="inline-block py-1 text-sm text-ink-muted transition-colors hover:text-royal"
                     >
                       {link.label}
                     </a>

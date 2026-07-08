@@ -136,11 +136,11 @@ export default function AIShowcase() {
                 : "Not just general chat — your right arm exclusively trained on Saudi laws, regulations, and precedents. Does hours of work in seconds with extreme precision."}
             </p>
 
-            <Link href="/ai" className="mt-8 inline-block">
+            <Link href="/ai" className="mt-8 block w-full sm:inline-block sm:w-auto">
               <motion.div
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                className="group flex items-center justify-center gap-3 rounded-2xl bg-royal px-8 py-4 text-sm font-bold text-white shadow-lg shadow-royal/30 transition-all hover:bg-royal-light"
+                className="group flex items-center justify-center gap-3 rounded-2xl bg-royal px-8 py-4 text-sm font-bold text-white shadow-lg shadow-royal/30 transition-all hover:bg-royal-light min-h-[44px] w-full sm:w-auto"
               >
                 <Brain size={20} weight="fill" className="text-gold" />
                 {isAr ? "جرّب قدرات AI الآن" : "Try AI Capabilities Now"}
@@ -150,7 +150,7 @@ export default function AIShowcase() {
           </motion.div>
 
           {/* Right Grid (Bento) */}
-          <div className="lg:w-2/3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="lg:w-2/3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {aiFeatures.map((feature, idx) => (
               <AiFeatureCard
                 key={idx}

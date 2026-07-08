@@ -112,7 +112,7 @@ export default function FAQ() {
                   }`}>
                     {faq.q}
                   </span>
-                  <div className={`ms-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+                  <div className={`ms-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 ${
                     isOpen
                       ? (isDark ? "bg-emerald-500/20 text-emerald-400" : "bg-royal/10 text-royal")
                       : (isDark ? "bg-white/5 text-gray-400" : "bg-slate-200/50 text-ink-faint")

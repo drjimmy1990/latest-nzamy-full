@@ -482,6 +482,7 @@ export default function Navbar() {
 
             {/* ── Mobile controls ── */}
             <div className="flex items-center gap-2 xl:hidden">
+              {isLoggedIn && <NotificationsBell isAr={isAr} />}
               <button onClick={toggleTheme} aria-label={isAr ? "تغيير المظهر" : "Toggle theme"} className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted dark:text-zinc-400">
                 {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
               </button>
