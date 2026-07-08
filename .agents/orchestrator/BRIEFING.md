@@ -70,11 +70,11 @@ Fix mobile responsive views, broken/missing navigation elements, and layout bugs
 | explorer_m3 | teamwork_preview_explorer | Analyze homepage responsiveness | completed | 1bcd9075-4860-48d9-a236-35da1cdf65d0 |
 | explorer_m4 | teamwork_preview_explorer | Analyze site-wide responsiveness | completed | 719b44db-c7a6-4e10-90fa-6c948557af84 |
 | worker_resp_fixes | teamwork_preview_worker | Implement responsive/layout fixes | completed | ceee86fb-9447-468c-a6e3-f0b689b4b729 |
-| reviewer_1 | teamwork_preview_reviewer | Review responsive fixes | in-progress | 60bfe45b-7516-429a-965f-41e7e77918d0 |
-| reviewer_2 | teamwork_preview_reviewer | Review HTML/Navbar layout | in-progress | a08861de-1a79-422e-8858-b3b412618d8f |
+| reviewer_1 | teamwork_preview_reviewer | Review responsive fixes | completed | 60bfe45b-7516-429a-965f-41e7e77918d0 |
+| reviewer_2 | teamwork_preview_reviewer | Review HTML/Navbar layout | completed | a08861de-1a79-422e-8858-b3b412618d8f |
 | challenger_1 | teamwork_preview_challenger | Validate homepage layout | in-progress | 2d2e7dda-bd0e-423e-aa9a-c6b1aaf6045c |
-| challenger_2 | teamwork_preview_challenger | Validate site-wide layout | in-progress | f20bc409-8308-431b-95a4-412efb7652cf |
-| auditor_resp | teamwork_preview_auditor | Forensic integrity check | in-progress | 58d7261d-d396-4fbd-bd3d-593b5f7acb4a |
+| challenger_2 | teamwork_preview_challenger | Validate site-wide layout | failed (report delivered) | f20bc409-8308-431b-95a4-412efb7652cf |
+| auditor_resp | teamwork_preview_auditor | Forensic integrity check | completed | 58d7261d-d396-4fbd-bd3d-593b5f7acb4a |
 
 ## Succession Status
 - Succession required: yes

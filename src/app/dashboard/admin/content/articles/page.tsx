@@ -111,7 +111,8 @@ function slugify(title: string): string {
 
 export default function AdminArticlesPage() {
   const { isDark } = useTheme();
-  const [articles, setArticles] = useState<PlatformContentItem[]>(INITIAL_ARTICLES);
+  const [articles, setArticles] = useState<PlatformContentItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<PlatformContentStatus | "all">("all");
   const [draft, setDraft] = useState<PlatformContentItem | null>(null);
@@ -122,12 +123,19 @@ export default function AdminArticlesPage() {
   const fetchArticles = useCallback(async () => {
     try {
       const res = await fetch("/api/v1/admin/articles", { cache: "no-store" });
-      if (!res.ok) return;
+      if (!res.ok) {
+        // API failed — use static fallback only if still empty
+        setArticles((prev) => prev.length > 0 ? prev : INITIAL_ARTICLES);
+        return;
+      }
       const json = (await res.json()) as { data?: ArticleRow[] };
       const rows = Array.isArray(json.data) ? json.data : [];
-      if (rows.length > 0) setArticles(rows.map(rowToItem));
+      setArticles(rows.length > 0 ? rows.map(rowToItem) : INITIAL_ARTICLES);
     } catch {
       // keep the fallback catalog on failure
+      setArticles((prev) => prev.length > 0 ? prev : INITIAL_ARTICLES);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -386,33 +394,46 @@ export default function AdminArticlesPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredArticles.map((article) => (
-                <tr key={article.id} className={`border-b last:border-0 ${isDark ? "border-white/5 hover:bg-white/[0.02]" : "border-gray-100 hover:bg-gray-50"}`}>
-                  <td className="px-6 py-5">
-                    <p className={`text-sm font-bold max-w-[360px] ${isDark ? "text-gray-200" : "text-gray-900"}`}>{article.title}</p>
-                    <p className={`text-xs font-mono ${muted}`}>{article.slug || article.id}</p>
-                  </td>
-                  <td className={`px-6 py-5 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`}>{article.author}</td>
-                  <td className="px-6 py-5">
-                    <div className={`w-16 h-1.5 rounded-full ${isDark ? "bg-white/10" : "bg-gray-200"}`}>
-                      <div className={`h-full rounded-full ${(article.seoScore ?? 0) >= 85 ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${article.seoScore ?? 0}%` }} />
-                    </div>
-                  </td>
-                  <td className="px-6 py-5"><StatusBadge status={article.status} /></td>
-                  <td className={`px-6 py-5 text-xs font-mono ${muted}`}>v{article.revision}</td>
-                  <td className="px-6 py-5">
-                    <div className="flex gap-1">
-                      <Link href={`/blog/${article.slug || article.id}`} title="معاينة" className={actionClass(isDark)}><Eye size={14} /></Link>
-                      <button title="تعديل" onClick={() => openEdit(article)} className={actionClass(isDark)}><PencilSimple size={14} /></button>
-                      <button title="أرشفة" onClick={() => setArticleStatus(article.id, "archived")} className={actionClass(isDark)}><Archive size={14} /></button>
-                      <button title="حذف محلي" onClick={() => removeArticle(article.id)} className={actionClass(isDark)}><Trash size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {loading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={`skel-${i}`} className={`border-b last:border-0 animate-pulse ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                    <td className="px-6 py-5"><div className={`h-4 rounded w-48 mb-2 ${isDark ? "bg-white/[0.06]" : "bg-gray-200"}`} /><div className={`h-3 rounded w-32 ${isDark ? "bg-white/[0.04]" : "bg-gray-100"}`} /></td>
+                    <td className="px-6 py-5"><div className={`h-3 rounded w-24 ${isDark ? "bg-white/[0.06]" : "bg-gray-200"}`} /></td>
+                    <td className="px-6 py-5"><div className={`w-16 h-1.5 rounded-full ${isDark ? "bg-white/10" : "bg-gray-200"}`} /></td>
+                    <td className="px-6 py-5"><div className={`h-5 rounded-full w-14 ${isDark ? "bg-white/[0.06]" : "bg-gray-200"}`} /></td>
+                    <td className="px-6 py-5"><div className={`h-3 rounded w-8 ${isDark ? "bg-white/[0.04]" : "bg-gray-100"}`} /></td>
+                    <td className="px-6 py-5"><div className="flex gap-1">{Array.from({ length: 4 }).map((_, j) => <div key={j} className={`w-8 h-8 rounded-lg ${isDark ? "bg-white/[0.04]" : "bg-gray-100"}`} />)}</div></td>
+                  </tr>
+                ))
+              ) : (
+                filteredArticles.map((article) => (
+                  <tr key={article.id} className={`border-b last:border-0 ${isDark ? "border-white/5 hover:bg-white/[0.02]" : "border-gray-100 hover:bg-gray-50"}`}>
+                    <td className="px-6 py-5">
+                      <p className={`text-sm font-bold max-w-[360px] ${isDark ? "text-gray-200" : "text-gray-900"}`}>{article.title}</p>
+                      <p className={`text-xs font-mono ${muted}`}>{article.slug || article.id}</p>
+                    </td>
+                    <td className={`px-6 py-5 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`}>{article.author}</td>
+                    <td className="px-6 py-5">
+                      <div className={`w-16 h-1.5 rounded-full ${isDark ? "bg-white/10" : "bg-gray-200"}`}>
+                        <div className={`h-full rounded-full ${(article.seoScore ?? 0) >= 85 ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${article.seoScore ?? 0}%` }} />
+                      </div>
+                    </td>
+                    <td className="px-6 py-5"><StatusBadge status={article.status} /></td>
+                    <td className={`px-6 py-5 text-xs font-mono ${muted}`}>v{article.revision}</td>
+                    <td className="px-6 py-5">
+                      <div className="flex gap-1">
+                        <Link href={`/blog/${article.slug || article.id}`} title="معاينة" className={actionClass(isDark)}><Eye size={14} /></Link>
+                        <button title="تعديل" onClick={() => openEdit(article)} className={actionClass(isDark)}><PencilSimple size={14} /></button>
+                        <button title="أرشفة" onClick={() => setArticleStatus(article.id, "archived")} className={actionClass(isDark)}><Archive size={14} /></button>
+                        <button title="حذف محلي" onClick={() => removeArticle(article.id)} className={actionClass(isDark)}><Trash size={14} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
-          {filteredArticles.length === 0 && <div className={`p-12 text-center ${muted}`}>لا توجد نتائج مطابقة للبحث</div>}
+          {!loading && filteredArticles.length === 0 && <div className={`p-12 text-center ${muted}`}>لا توجد نتائج مطابقة للبحش</div>}
         </div>
       </div>
     </div>

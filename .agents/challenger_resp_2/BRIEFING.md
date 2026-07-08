@@ -39,9 +39,9 @@ Validate site-wide public pages responsiveness and layout corrections.
 - D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.agents\challenger_resp_2\ORIGINAL_REQUEST.md — Original request
 
 ## Attack Surface
-- **Hypotheses tested**: [TBD]
-- **Vulnerabilities found**: [TBD]
-- **Untested angles**: [TBD]
+- **Hypotheses tested**: Checked Next.js build compilation of the codebase and verified layout responsiveness manually in source code.
+- **Vulnerabilities found**: Next.js production build fails due to a TypeScript error in `src/app/ai/page.tsx` because of a custom named export (`AiLandingPage`) that violates App Router page constraints.
+- **Untested angles**: Actual programmatic viewport/visual layout regression checking.
 
 ## Loaded Skills
 - **Source**: C:\Users\LOQ\.gemini\config\skills\verification-before-completion\SKILL.md
