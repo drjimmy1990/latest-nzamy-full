@@ -52,12 +52,31 @@ function RenderContent({ md, isDark }: { md: string; isDark: boolean }) {
       continue;
     }
 
-    if (line.startsWith("## ")) { out.push(<h2 key={key++} className={`text-lg font-bold mt-8 mb-3 ${isDark ? "text-white" : "text-gray-900"}`}>{line.slice(3)}</h2>); i++; continue; }
-    if (line.startsWith("### ")) { out.push(<h3 key={key++} className={`text-base font-bold mt-6 mb-2 ${isDark ? "text-gray-100" : "text-gray-800"}`}>{line.slice(4)}</h3>); i++; continue; }
-    if (line.match(/^\d+\. /)) { out.push(<p key={key++} className={`ms-4 mb-1 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`}>{line}</p>); i++; continue; }
-    if (line.startsWith("- ")) { out.push(<p key={key++} className={`ms-4 mb-1 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`}>• {line.slice(2)}</p>); i++; continue; }
-    if (line.startsWith("> ")) { out.push(<blockquote key={key++} className={`border-s-4 border-[#C8A762] ps-4 my-1 text-sm italic ${isDark ? "text-gray-300" : "text-gray-600"}`}>{line.slice(2)}</blockquote>); i++; continue; }
+    // Horizontal rule
+    if (/^-{3,}$/.test(line.trim())) { out.push(<hr key={key++} className={`my-6 border-t ${isDark ? "border-white/10" : "border-gray-200"}`} />); i++; continue; }
+
+    // Headings (h1, h2, h3)
+    if (line.startsWith("# ") && !line.startsWith("## ")) { out.push(<h1 key={key++} className={`text-xl font-bold mt-10 mb-4 ${isDark ? "text-white" : "text-gray-900"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line.slice(2)) }} />); i++; continue; }
+    if (line.startsWith("## ")) { out.push(<h2 key={key++} className={`text-lg font-bold mt-8 mb-3 ${isDark ? "text-white" : "text-gray-900"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line.slice(3)) }} />); i++; continue; }
+    if (line.startsWith("### ")) { out.push(<h3 key={key++} className={`text-base font-bold mt-6 mb-2 ${isDark ? "text-gray-100" : "text-gray-800"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line.slice(4)) }} />); i++; continue; }
+
+    // Numbered lists
+    if (line.match(/^\d+\. /)) { out.push(<p key={key++} className={`ms-4 mb-1 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line) }} />); i++; continue; }
+
+    // Bullet lists (- or *)
+    if (line.startsWith("- ") || line.startsWith("* ")) {
+      const text = line.startsWith("- ") ? line.slice(2) : line.slice(2);
+      out.push(<p key={key++} className={`ms-4 mb-1 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: "• " + markdownBoldToSafeHtml(text) }} />);
+      i++; continue;
+    }
+
+    // Blockquotes (not GFM alerts — those are caught above)
+    if (line.startsWith("> ")) { out.push(<blockquote key={key++} className={`border-s-4 border-[#C8A762] ps-4 my-1 text-sm italic ${isDark ? "text-gray-300" : "text-gray-600"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line.slice(2)) }} />); i++; continue; }
+
+    // Empty lines
     if (line.trim() === "") { out.push(<br key={key++} />); i++; continue; }
+
+    // Default paragraph
     out.push(<p key={key++} className={`text-sm leading-relaxed mb-2 ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line) }} />);
     i++;
   }
