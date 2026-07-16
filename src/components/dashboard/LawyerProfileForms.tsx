@@ -232,10 +232,10 @@ export function ShareModal({
               }`}
             >
               <span className={`text-[11px] flex-1 font-mono truncate ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                nezamy.online/share/lawyer/xK9mP3q
+                nezamy.sa/share/lawyer/xK9mP3q
               </span>
               <button
-                onClick={() => navigator.clipboard?.writeText("https://nezamy.online/share/lawyer/xK9mP3q")}
+                onClick={() => navigator.clipboard?.writeText("https://nezamy.sa/share/lawyer/xK9mP3q")}
                 className={`flex items-center gap-1 text-[11px] font-semibold flex-shrink-0 ${
                   isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"
                 }`}

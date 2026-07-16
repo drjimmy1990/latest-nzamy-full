@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-const BASE_URL = "https://nezamy.online";
+const BASE_URL = "https://nezamy.sa";
 const SITE_NAME = "نظامي | Nzamy";
 const DEFAULT_OG = `${BASE_URL}/og-image.png`;
 

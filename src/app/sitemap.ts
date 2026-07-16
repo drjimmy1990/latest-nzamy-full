@@ -1,7 +1,7 @@
 import { MetadataRoute } from "next";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 
-const BASE_URL = "https://nezamy.online";
+const BASE_URL = "https://nezamy.sa";
 
 type SitemapRoute = {
   url: string;

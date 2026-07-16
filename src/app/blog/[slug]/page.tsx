@@ -5,12 +5,12 @@
 
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { ArticleJsonLd } from "@/components/ArticleJsonLd";
 import ArticleView, { formatDate } from "./ArticleView";
 import type { PlatformBlogArticle } from "@/constants/platformContent";
 
-const BASE_URL = "https://nezamy.online";
+const BASE_URL = "https://nezamy.sa";
 const SITE_NAME = "نظامي | Nzamy";
 
 interface AeoPair { question: string; answer: string; }
@@ -91,7 +91,7 @@ function rowToDetail(row: BlogRow): PlatformBlogArticle {
 }
 
 async function getArticle(slug: string): Promise<BlogRow | null> {
-  const supabase = await createServiceClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("articles")
     .select("*")
@@ -103,7 +103,7 @@ async function getArticle(slug: string): Promise<BlogRow | null> {
 }
 
 async function getRelated(article: BlogRow): Promise<PlatformBlogArticle[]> {
-  const supabase = await createServiceClient();
+  const supabase = await createClient();
   const slugs = Array.isArray(article.related_articles) ? article.related_articles.filter(Boolean) : [];
   if (slugs.length) {
     const { data } = await supabase

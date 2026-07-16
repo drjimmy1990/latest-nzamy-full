@@ -138,7 +138,7 @@ function InviteModal({ onClose, isDark, userType }: { onClose: () => void; isDar
             <p className={`font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>تم إرسال الدعوة!</p>
             <p className={`text-sm mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>سيتلقى {name || email} رابط تفعيل الحساب</p>
             <div className={`mt-3 mx-auto w-fit flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] ${isDark ? "border-white/[0.06] bg-zinc-800 text-zinc-400" : "border-zinc-200 bg-zinc-50 text-zinc-500"}`}>
-              <span className="font-mono font-bold select-all">https://nezamy.online/invite/x7k2m9p</span>
+              <span className="font-mono font-bold select-all">https://nezamy.sa/invite/x7k2m9p</span>
             </div>
             <button onClick={onClose} className="mt-4 text-[13px] text-[#C8A762] hover:underline">إغلاق</button>
           </div>

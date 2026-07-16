@@ -276,7 +276,7 @@ export default function QuizPage() {
       : `${selectedCategories.length} أقسام قانونية`;
     
     const text = `حققت ${pct}% في تحدي "${catLabel}" على أكاديمية نظامي! ⚖️✨\nهل يمكنك التغلب على نتيجتي؟ اختبر معلوماتك القانونية الآن:`;
-    const url = "https://nezamy.online/academy/quiz";
+    const url = "https://nezamy.sa/academy/quiz";
     
     if (platform === "twitter") {
       window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`);

@@ -132,7 +132,7 @@ export default function Footer() {
               <Scales weight="bold" size={16} />
             </div>
             <span className="font-brand text-sm font-bold text-royal">{isAr ? "نظامي" : "Nezamy"}</span>
-            <span className="text-xs text-ink-faint">nezamy.online</span>
+            <span className="text-xs text-ink-faint">nezamy.sa</span>
           </div>
           <p className="text-xs text-ink-faint">
             {isAr

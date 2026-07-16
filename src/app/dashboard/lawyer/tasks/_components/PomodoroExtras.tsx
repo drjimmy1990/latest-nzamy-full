@@ -240,7 +240,7 @@ export function ShareButton({
       "",
       ...fields.filter(f => !f.hidden).map(f => `${f.label}: ${f.value}`),
       "",
-      "nezamy.online",
+      "nezamy.sa",
     ];
     navigator.clipboard?.writeText(lines.join("\n"));
   }

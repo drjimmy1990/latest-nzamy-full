@@ -25,13 +25,13 @@ export const metadata: Metadata = {
     title: "نظامي - المنصة القانونية الذكية في السعودية",
     description:
       "استشارات قانونية فورية، صياغة عقود بالذكاء الاصطناعي، وتمثيل قضائي في منصة واحدة.",
-    url: "https://nezamy.online",
+    url: "https://nezamy.sa",
     siteName: "نظامي",
     locale: "ar_SA",
     type: "website",
     images: [
       {
-        url: "https://nezamy.online/og-image.png",
+        url: "https://nezamy.sa/og-image.png",
         width: 1200,
         height: 630,
         alt: "نظامي - المنصة القانونية الذكية في السعودية",

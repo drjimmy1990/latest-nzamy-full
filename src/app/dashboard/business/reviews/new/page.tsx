@@ -370,7 +370,7 @@ export default function NewReviewPage() {
                 )}
                 <div className={`rounded-xl p-4 mx-auto max-w-sm ${isDark ? "bg-white/[0.03] border border-white/[0.06]" : "bg-zinc-50 border border-zinc-200"}`}>
                   <p className={`text-[10px] mb-1 ${ts}`}>رابط المراجعة</p>
-                  <p className="text-[12px] font-mono text-royal font-bold truncate">https://nezamy.online/review/a7b3c9d1</p>
+                  <p className="text-[12px] font-mono text-royal font-bold truncate">https://nezamy.sa/review/a7b3c9d1</p>
                   <p className={`text-[10px] mt-2 ${ts}`}>رمز الدخول</p>
                   <p className="text-[18px] font-mono font-bold tracking-[0.3em] text-[#C8A762]">٧٢٤٩١٣</p>
                 </div>

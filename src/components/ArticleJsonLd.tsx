@@ -23,7 +23,7 @@ export interface ArticleLdData {
   canonical_url?: string | null;
 }
 
-const BASE_URL = "https://nezamy.online";
+const BASE_URL = "https://nezamy.sa";
 
 export function ArticleJsonLd({ article }: { article: ArticleLdData }) {
   const url = article.canonical_url || `${BASE_URL}/blog/${article.slug}`;

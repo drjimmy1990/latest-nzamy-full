@@ -19,13 +19,13 @@ export const metadata: Metadata = {
     "محكمة", "ديوان المظالم", "المملكة العربية السعودية", "نظامي", "nezamy"
   ],
   alternates: {
-    canonical: "https://nezamy.online",
+    canonical: "https://nezamy.sa",
   },
   openGraph: {
     title: "نظامي | منصة الخدمات القانونية الذكية في السعودية",
     description: "استشارات قانونية فورية، صياغة عقود بالذكاء الاصطناعي، وتمثيل قضائي — كل ما تحتاجه في منصة واحدة.",
-    url: "https://nezamy.online",
-    images: [{ url: "https://nezamy.online/og-image.png", width: 1200, height: 630, alt: "نظامي - المنصة القانونية الذكية" }],
+    url: "https://nezamy.sa",
+    images: [{ url: "https://nezamy.sa/og-image.png", width: 1200, height: 630, alt: "نظامي - المنصة القانونية الذكية" }],
   },
 };
 
