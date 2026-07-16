@@ -1,7 +1,7 @@
 # NZAMY — Master Priority List
 *Synthesized 2026-07-16 from: owner July-2026 test guide (42 cases: 18 pass / 17 fail / 7 notes), `comprehensive_review_09072026.md` + `project_review_report.md` (14 static-analysis findings), `nzamy-audit-fix-status.md` (16-finding fix ledger), `PRODUCT_COMPLETENESS_BACKLOG.md` (104 unbuilt items, 5-wave order), `PROJECT_STATUS_REVIEW_2026-07-06.md`, `IMPLEMENTATION_STATUS.md`, `NEXT_STEPS.md`, and the `modifications/` folder.*
 
-> **Last updated:** 2026-07-16 17:30 (after commit `bfb3a5f`)
+> **Last updated:** 2026-07-16 21:00 (after commit 9fe1949 - Library & Blog CMS Sprints)
 > **Build:** `next build` ✅ GREEN | `tsc --noEmit` ✅ ZERO ERRORS
 
 ## The #1 insight — deploy / migration gap
@@ -84,12 +84,12 @@ Target: `/dashboard/admin/subscriptions`.
 - [ ] Fix mobile menu overlap on `/laws` (duplicated links, icon crowding).
 - [ ] Real NZAMY logo (replace placeholder "ن" green circle).
 - [ ] Remove legal-library from client sidebar; fix settings sidebar duplication.
-- [ ] Fix dark-mode subtext contrast; link activity-log cards to cases/clients; hide `LegalMail` for solo lawyers; auto-refresh dashboard after adds; make tracker cards clickable; wrap research-collector in `DashboardLayout`; trim contract-review grid to 4–5 + Other + Show more; build merged "Smart Audio" tool; DB-driven subscription tab; gate time-tracker billing to hourly cases; case finance-structure fields; hide lawyer personal contact from public profile; persist smart folders/drafts/notes to Supabase (not localStorage).
+- [ ] Fix dark-mode subtext contrast; link activity-log cards to cases/clients; hide `LegalMail` for solo lawyers; auto-refresh dashboard after adds; make tracker cards clickable; wrap research-collector in `DashboardLayout`; trim contract-review grid to 4–5 + Other + Show more; build merged "Smart Audio" tool; DB-driven subscription tab; gate time-tracker billing to hourly cases; case finance-structure fields; hide lawyer personal contact from public profile; ~~persist smart folders~~ ✅ DONE (2026-07-16) /drafts/notes to Supabase (not localStorage).
 - [ ] June-round UX: contract-drafting return nav, contract-review party-side field, letter "Other" recipient + sender capacity, distinguish preliminary-eval vs risk-analysis, carry dashboard question text into AI chat.
 
 ## P6 — Static-analysis latent / SEO / perf (from the July-9 reviews)
 - [x] ✅ **A2 — Library fallback table-name map wrong** — FIXED: All 6 references corrected (2 tableMap dicts + join alias + `fetchBookBySlug` + `fetchDecreeById` + nested joins `feqh_chapters/sections/blocks`). *(commit bfb3a5f)*
-- [ ] **A3 — In-memory search bypass** (`/laws/page.tsx:211-227,524-590`): loads first 100 rows via `/api/library/init` then JS `.filter()`; never calls `/api/library/search`. Users can't find rows beyond 100.
+- [x] ✅ DONE (2026-07-16) A3 — In-memory search bypass — Server-side search + pagination now implemented via POST /api/library/search. /laws/page.tsx queries DB directly instead of loading 100 rows + JS .filter().
 - [x] ✅ **A4 — RLS recursion risk** in `entitlement_requests` policies — FIXED: Rewritten to use `public.is_admin()` in `20260716_security_hardening.sql`. *(commit bfb3a5f)*
 - [x] ✅ **P2 — Missing FK indexes** — FIXED: 3 indexes added in `20260716_missing_fk_indexes.sql` (`idx_articles_author_id`, `idx_support_tickets_user_id`, `idx_support_tickets_assignee_id`). *(commit bfb3a5f)*
 - [ ] **Q1 — Remaining bare `.catch(()=>{})` sites** across ~12 client/lawyer pages (masks backend failures). Partial fix: `casesService` + `adminService` catch blocks now log errors + return `[]` instead of mock. `chatService`, `documentService`, `groupService` still pending.
@@ -110,16 +110,16 @@ Target: `/dashboard/admin/subscriptions`.
 - [ ] **In-app notifications table** — verify entitlements-build inserts are live (P0); add any missing event sources.
 
 *Wave 2 — Wire "schema built, client never wired":*
-- [ ] Migrate localStorage → existing tables: Community (verify after P0), Smart Folders (`library.smart_folder_items`), Research Collector (`research_sessions`/`research_items`), Client Groups, Draft Cart (verify after P0), sticky notes/canvas.
+- [ ] Migrate localStorage → existing tables: Community (verify after P0), ~~Smart Folders~~ ✅ DONE (2026-07-16), Research Collector (`research_sessions`/`research_items`), Client Groups, Draft Cart (verify after P0), sticky notes/canvas.
 - [ ] Contact form real submission + shared document review real token/passcode/approve writes (verify after P0).
 - [ ] Client documents storage (enable bucket) + wallet/referral/finance table population + payout wiring.
 - [ ] E-signature flow on contracts — real capture/provider + audit trail.
 
 *Wave 3 — Content system:*
-- [ ] Blog CMS — verify entitlements-build `articles` table is live (P0); add categories/analytics/tracking (P5).
+- [x] ✅ DONE (2026-07-16) Blog CMS — DB-driven articles schema (31 fields), storage bucket covers, server JSON-LD + metadata, GFM-alert renderer, and blog-toolkit CLI. (Note: analytics and Meta Pixel/GA4 integrations remain in P5).
 - [ ] Academy LMS — `courses`/`sections`/`lessons`/`enrollments`/`lesson_progress`/`quiz_attempts`/`certificates` + real media hosting. **Largest single effort.**
 - [ ] Media library table + asset hosting + subscription entitlement wired to payments.
-- [ ] Library corpus seeding — populate `library` schema; convert `DEMO_*` listing pages + hardcoded law/feqh pages to API-driven; drop demo-slug fallbacks. Add POST to `/api/v1/admin/library` + wire "إضافة سجل جديد" form.
+- [x] ✅ DONE (2026-07-16) Library corpus seeding — `library-toolkit/` created (6 CLI commands: parse, seed, clear, verify, status, reseed). `DEMO_*` listing pages + hardcoded law/feqh pages converted to API-driven with fallbacks. `supabaseLibrary.ts` table-name mismatches fixed. Paywall enforced (was bypassed with `free:true`). Admin POST `/api/v1/admin/library` + "إضافة سجل جديد" form still deferred.
 
 *Wave 4 — Admin console persistence:*
 - [ ] Admin financial ops (escrow/disputes/payouts/revenue), content, tickets (verify P0), team/RBAC, audit log (verify P0), AI-usage.
@@ -132,7 +132,7 @@ Target: `/dashboard/admin/subscriptions`.
 ## Open questions / unverified (owner-flagged)
 - Library advanced search + Arabic normalization deferred (P1 #11) — tied to P6/N1.
 - `/precedents/judgment/[slug]` may be mock — needs real API route or "coming soon".
-- `seed-library.ts --clean` may be a no-op — don't rely on it to wipe.
+- ~~`seed-library.ts --clean` may be a no-op~~ ✅ RESOLVED (2026-07-16): `library-toolkit/library-clear.mjs` now provides a dedicated clear command that reliably wipes all library tables.
 - `parse-feqh.ts` may return constant `volume:1` for fiqh books.
 - Appendices tab (coded 2026-07-02 in `laws/data.ts` + `[slug]/page.tsx` + `md_to_platform_json.py`) — no law seeded with real `appendices` data; untested.
 - `law_metadata` table still absent (584-line `law-metadata-map.ts` remains).

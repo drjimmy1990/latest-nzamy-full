@@ -663,26 +663,21 @@ export async function fetchLawBySlug(slug: string): Promise<LawDetail | null> {
         total_articles,
         status,
         metadata,
-        chapters:law_chapters (
+        chapters (
           id,
           title,
           num,
           sort_order,
-          articles:law_articles (
+          articles (
             id,
             num,
             title,
             status,
             text,
+            executive_reg_text,
+            executive_reg_ref,
             sort_order,
-            executive_reg:law_executive_regs (
-              id,
-              article_id,
-              text,
-              issuer,
-              date
-            ),
-            amendments:law_amendments (
+            article_amendments (
               id,
               date,
               date_hijri,
@@ -738,16 +733,15 @@ export async function fetchLawBySlug(slug: string): Promise<LawDetail | null> {
               title: art.title ?? '',
               status: art.status ?? 'active',
               text: art.text ?? '',
-              executiveReg: art.executive_reg?.[0]
+              executiveReg: art.executive_reg_text
                 ? {
-                    id: art.executive_reg[0].id,
-                    articleId: art.executive_reg[0].article_id,
-                    text: art.executive_reg[0].text,
-                    issuer: art.executive_reg[0].issuer ?? undefined,
-                    date: art.executive_reg[0].date ?? undefined,
+                    id: art.id,
+                    articleId: art.id,
+                    text: art.executive_reg_text,
+                    issuer: art.executive_reg_ref ?? undefined,
                   }
                 : undefined,
-              amendments: (art.amendments ?? []).map(
+              amendments: (art.article_amendments ?? []).map(
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (am: any) => ({
                   id: am.id,

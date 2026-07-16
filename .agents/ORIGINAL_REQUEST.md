@@ -167,3 +167,79 @@ All fixes must preserve: dark/light theme switching, AR/EN language toggle, RTL/
 - [ ] Toggle between AR/EN and dark/light on mobile to confirm no regressions
 - [ ] Test the hamburger menu navigation at 1024px, 1100px, and 1200px viewport widths to confirm the breakpoint dead zone is resolved
 
+
+## Follow-up — 2026-07-16T18:57:48Z
+
+Organize, clean, and update all Markdown files in the root directory of the `nzamy-website` repository. Create a folder named `OLD`, move historical/obsolete docs there, keep active files in the root, and update them to reflect the latest library and blog development milestones.
+
+Working directory: d:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website
+Integrity mode: development
+
+## Requirements
+
+### R1. Root Directory Cleanup
+- Create a directory named `OLD` (keep it separate from the existing lowercase `old` directory).
+- Move the following historical/obsolete files from the root to `OLD/`:
+  * `ORIGINAL_REQUEST.md`
+  * `PRODUCTION_FIX_IMPLEMENTATION.md`
+  * `PRODUCTION_FIX_PLAN.md`
+  * `PRODUCT_COMPLETENESS_BACKLOG.md`
+  * `TEST_REVIEW_FIX_PLAN.md`
+  * `TEST_REVIEW_RECONCILIATION.md`
+  * `blog-system-newblog-migration.md`
+  * `client_dashboard_audit.md` (obsolete audit)
+  * `client_lawyer_functional_audit.md` (obsolete audit)
+  * `client_lawyer_testing_arabic (1).md` (obsolete test guide)
+  * `comprehensive_review_09072026.md` (obsolete audit)
+  * `library_testing_arabic.md` (obsolete test guide)
+  * `manual_seeding_guide.md` (obsolete seeding guide)
+  * `master_checklist.md` (obsolete checklist)
+  * `master_checklist2.md` (obsolete checklist)
+  * `n8n_BUILD_LOG_AND_TEST_GUIDE.md` (obsolete n8n log)
+  * `n8n_FINAL_MASTER_PLAN.md` (obsolete n8n plan)
+  * `n8n_workflows.md` (obsolete n8n info)
+  * `n8n_workflows_list.md` (obsolete n8n list)
+  * `nzamy-audit-fix-status.md` (obsolete status)
+  * `payments-gateway-admin-gate.md` (obsolete payments info)
+  * `production_readiness_audit.md` (obsolete audit)
+  * `project_reference.md` (obsolete status)
+  * `search_implementation_guide.md` (obsolete search guide)
+  * `workflows_roadmap.md` (obsolete roadmap)
+  * `ENTITLEMENTS_AND_WIRING_BUILD_LOG.md` (obsolete build log)
+  * `legal_library_guide.md` (obsolete library guide)
+  * `project_guide.md` (obsolete project guide)
+  * `old/BLOG_SEEDING_GUIDE.md` (move to `OLD/`)
+- Keep the following active files in the root:
+  * `AGENTS.md` (Agent instructions)
+  * `CLAUDE.md` (Claude instructions)
+  * `ARCHITECTURE.md` (System architecture)
+  * `DEPLOY_AND_SMOKETEST_RUNBOOK.md` (Active deploy runbook)
+  * `deployment_guide.md` (Active deployment reference)
+  * `دليل_اختبار_الجولة_الثالثة_يوليو_2026.md` (Arabic test guide)
+  * `دليل_اختبار_المالك.md` (Arabic owner test guide)
+  * `DOCUMENTATION_INDEX.md` (Documentation map)
+  * `MASTER_PRIORITY_LIST_2026-07-16.md` (Active status/checklist)
+  * `REMAINING_WORK.md` (Active remaining work list)
+  * `IMPLEMENTATION_STATUS.md` (Active implementation status)
+  * `PROJECT.md` (Active project milestones)
+  * `n8n_master_guide_latest.md` (Canonical n8n guide)
+  * `project_review_report.md` (Canonical audit report)
+  * `PROJECT_STATUS_REVIEW_2026-07-06.md` (Canonical review report)
+  * `BLOG_GUIDE.md` (Recently made blog guide)
+
+### R2. Documentation Index Update
+- Update `DOCUMENTATION_INDEX.md` to reflect the new paths (`OLD/` prefix) for all moved files.
+- Ensure the document status legend is preserved and updated accurately for each document.
+
+### R3. Status & Roadmap Updates
+- Update `MASTER_PRIORITY_LIST_2026-07-16.md`, `REMAINING_WORK.md`, and `IMPLEMENTATION_STATUS.md` with the latest developments from the 2026-07-16 Library Sprint and recent blog CMS commits.
+- Clearly document what has been completed, what is in progress, and what remains pending.
+
+## Acceptance Criteria
+
+### Verification and Checks
+- [ ] No historical markdown files remain in the root directory except the specified active ones.
+- [ ] All moved files are located in `OLD/` directory.
+- [ ] `DOCUMENTATION_INDEX.md` is updated with no broken relative file links.
+- [ ] The priority list, remaining work, and status files are updated accurately to reflect the completed library sprint and blog CMS work.
+

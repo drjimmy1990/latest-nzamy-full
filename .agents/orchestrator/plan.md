@@ -1,61 +1,41 @@
-# NZAMY Responsive & Structural Layout Fixes Plan
+# Comprehensive Review Plan - NZAMY Website
 
-This plan details the steps to fix mobile responsive views, broken/missing navigation elements, and structural HTML/layout bugs across the NZAMY website.
+This plan details the steps to conduct a comprehensive review of the `nzamy-website` project focusing on code quality, security, UI/UX, SEO, performance, and general architecture, resulting in `comprehensive_review.md` at the project's root.
 
 ## Milestones and Verification Strategy
 
-### Milestone 1: Fix Structural HTML & Viewport Issues
-- **Goal**: Resolve layout issues and HTML validation warnings.
-  - Remove `maximumScale: 1` in the viewport config of `src/app/layout.tsx` to permit pinch-to-zoom (WCAG accessibility rule).
-  - Remove duplicate `<FloatingButtons />` rendering from individual pages and keep it only in the global `layout.tsx` (or dashboard layouts if appropriate).
-  - Fix nested `<main>` landmarks by replacing nested `<main>` tags with `div` or React fragments.
-  - Adjust Hero grain overlay z-index in `src/components/Hero.tsx` so it does not overlap the Navbar.
-- **Verification Method**: Validate DOM tree using inspection or layout analyzer. Confirm only one `FloatingButtons` and one `<main>` landmark exists on pages.
+### Milestone 1: Static Code Exploration & Issue Identification
+- **Goal**: Analyze the codebase statically across the six target domains: Code Quality, Security, UI/UX, SEO, Performance, and Architecture. Locate at least two specific findings per section, tied to actual files and code patterns.
+- **Verification Method**: Check Explorer reports for specific file references, lines, and patterns. [Status: Completed]
 
-### Milestone 2: Fix Navbar & Breakpoint Dead Zone
-- **Goal**: Align breakpoints in `src/components/Navbar.tsx` so there are no dead zones.
-  - Fix the mismatch between desktop menu links (`xl:flex` -> 1280px+), hamburger visibility (`xl:hidden` -> <1280px), and the mobile menu panel (`lg:hidden` -> <1024px). Align them to a unified breakpoint (e.g., `xl`).
-  - Ensure all controls (Login, Sign Up/Dashboard, theme toggle, language toggle, region badge) are present and fully functional in the mobile version (either in a sub-header or the mobile hamburger menu drawer).
-- **Verification Method**: Test navigation at 768px, 1024px, 1100px, 1200px, and 1440px viewports to verify consistent rendering and menu opening.
+### Milestone 2: Draft and Generate the Comprehensive Review Report
+- **Goal**: Write the `comprehensive_review.md` in the project root containing distinct sections, clear findings, and actionable recommendations.
+- **Verification Method**: Verify the file exists at the root and conforms to requirements. [Status: Completed]
 
-### Milestone 3: Homepage Mobile Responsiveness
-- **Goal**: Adjust all homepage components for perfect mobile rendering (320px-768px) in both English and Arabic (RTL/LTR), light and dark themes.
-  - Trust badges text sizing on small viewports (<360px) in `Hero.tsx`.
-  - Prevent cards overflow in `ServicesBento.tsx`.
-  - Fix touch interaction for `ContractAnalysisShowcase.tsx`.
-  - Fix `SocialProof.tsx` marquee and stats.
-  - Make `CommunityHighlights.tsx` tabs tap-friendly and readable.
-  - Ensure `FAQ.tsx` and `Footer.tsx` render cleanly.
-- **Verification Method**: Emulate views on mobile devices in Chrome DevTools. Check for horizontal overflow (no horizontal scrollbar at 320px, 375px, 414px, 768px).
+### Milestone 3: Review & Refinement
+- **Goal**: Peer-review the review report to ensure findings are accurate, actionable, and cover the required domains.
+- **Verification Method**: Spawns independent Reviewer subagents to verify completeness and clarity. [Status: Completed]
 
-### Milestone 4: Full-Site Responsiveness Audit & Fixes
-- **Goal**: Fix responsive layout issues on other public-facing pages: About, Blog, Pricing, Contact, FAQ, Services, Cases, Laws, Login, Register, and Community pages.
-- **Verification Method**: Open pages on mobile, check for overflow, overlapping text, or cut-off elements.
-
-### Milestone 5: Verification & Integrity Auditing
-- **Goal**: Run clean build verification and complete forensic auditing.
-- **Verification Method**: Run `npm run build` successfully. Verify Forensic Auditor reports a CLEAN verdict.
+### Milestone 4: Final Validation and Handoff
+- **Goal**: Run static checks/audits and report completion to the Sentinel.
+- **Verification Method**: Ensure all milestones are completed and marked Done. [Status: Completed]
 
 ---
 
 ## Plan Checklist
 
-- [ ] **Step 1: Planning and Setup**
+- [x] **Step 1: Planning and Setup**
   - [x] Gather context & review requirements from ORIGINAL_REQUEST.md
   - [x] Create project plan, briefing, and progress templates
-- [ ] **Step 2: Structural HTML & Viewport Fixes**
-  - [ ] Spawn worker to fix viewport metadata in `layout.tsx` (remove `maximumScale: 1`)
-  - [ ] Spawn worker to remove duplicate `FloatingButtons` and nested `<main>` tags from `page.tsx` and all public/dashboard pages
-  - [ ] Spawn worker to adjust Hero grain overlay z-index in `Hero.tsx`
-- [ ] **Step 3: Navbar & Breakpoint Alignment**
-  - [ ] Spawn worker to align Navbar responsive breakpoints to `xl` and fix the 1024px-1280px dead zone
-  - [ ] Add mobile equivalents for login, signup/dashboard, theme, language, and region controls
-- [ ] **Step 4: Homepage Sections Mobile Overhaul**
-  - [ ] Spawn worker to optimize trust badges, Bento cards, showcases, social proof, highlights, FAQ, and footer on mobile
-- [ ] **Step 5: Public Pages Audit & Responsiveness Fixes**
-  - [ ] Spawn worker to audit and fix About, Blog, Pricing, Contact, FAQ, Services, Cases, Laws, Login, Register, and Community pages for mobile overflow and styling
-- [ ] **Step 6: Quality Assurance and Audit**
-  - [ ] Run build validation to ensure zero build errors
-  - [ ] Run forensic audit verification
-- [ ] **Step 7: Completion and Reporting**
-  - [ ] Write `handoff.md` and report victory to the user
+- [x] **Step 2: Static Code Exploration**
+  - [x] Index the repository with GitNexus (completed)
+  - [x] Spawn Explorer subagents to review target files/modules and compile findings for:
+    - Code Quality & Architecture
+    - Security & Performance
+    - UI/UX & SEO
+- [x] **Step 3: Draft Report**
+  - [x] Spawn Worker subagent to combine findings into `comprehensive_review.md` in the project root
+- [x] **Step 4: Report Review**
+  - [x] Spawn Reviewer subagent to review the `comprehensive_review.md`
+- [x] **Step 5: Completion & Victory Claim**
+  - [x] Write `handoff.md` and report completion to Sentinel

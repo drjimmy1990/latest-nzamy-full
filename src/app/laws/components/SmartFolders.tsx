@@ -15,11 +15,59 @@ import type { LawRef, SmartFolder, LibraryDoc } from "./SmartFolderTypes";
 import { FOLDER_COLORS, DEFAULT_LAWS, DEMO_FOLDERS, ALL_LIBRARY_DOCS } from "./SmartFolderTypes";
 import FolderCard, { FolderIcon, ColorPicker } from "./FolderCard";
 import CreateFolderInline from "./CreateFolderInline";
+import { useUser } from "@/hooks/useUser";
 
 // Re-export for project compatibility
 export type { LawRef, SmartFolder, LibraryDoc };
 export { FOLDER_COLORS, DEFAULT_LAWS, DEMO_FOLDERS, ALL_LIBRARY_DOCS };
 export { FolderIcon, ColorPicker, FolderCard, CreateFolderInline };
+
+// ─── API ↔ SmartFolder mapping helpers ──────────────────────────────────────────
+
+/** Convert a DB folder row (from GET /api/library/folders) to the frontend SmartFolder shape */
+function mapApiFolderToSmartFolder(apiFolder: any): SmartFolder {
+  return {
+    id: apiFolder.id,
+    name: apiFolder.name,
+    nameEn: apiFolder.name, // DB only stores one name; use it for both
+    color: apiFolder.color || "#C8A762",
+    icon: apiFolder.icon === "📁" ? "default" : (apiFolder.icon || "default"),
+    isDefault: false,
+    isPinned: apiFolder.is_pinned ?? false,
+    laws: (apiFolder.smart_folder_items || []).map((item: any) => ({
+      slug: item.entity_id,
+      title: item.title || item.entity_id,
+      titleEn: item.title_en || item.entity_id,
+      catId: item.cat_id || "",
+      type: item.entity_type || "law",
+      // Preserve the DB item id for deletion
+      _itemDbId: item.id,
+    })),
+    lastModified: apiFolder.updated_at
+      ? new Date(apiFolder.updated_at).getTime()
+      : apiFolder.created_at
+        ? new Date(apiFolder.created_at).getTime()
+        : Date.now(),
+  };
+}
+
+// ─── localStorage helpers (same as before, extracted for reuse) ──────────────
+
+function loadFoldersFromLocalStorage(): SmartFolder[] | null {
+  try {
+    const saved = localStorage.getItem("nzamy_smart_folders");
+    if (saved) return JSON.parse(saved);
+  } catch { /* ignore parse errors */ }
+  return null;
+}
+
+function saveFoldersToLocalStorage(folders: SmartFolder[]) {
+  localStorage.setItem("nzamy_smart_folders", JSON.stringify(folders));
+}
+
+function dispatchFoldersChanged(folders: SmartFolder[]) {
+  window.dispatchEvent(new CustomEvent("nzamy_smart_folders_changed", { detail: folders }));
+}
 
 // ─── Main Component ─────────────────────────────────────────────────────────────
 export default function SmartFolders({
@@ -28,42 +76,73 @@ export default function SmartFolders({
   isDark: boolean;
   isRTL: boolean;
 }) {
+  const user = useUser();
+  const isAuthenticated = user.isLoggedIn;
+
   const [folders, setFolders] = useState<SmartFolder[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [isExpandedView, setIsExpandedView] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Folder content management state
   const [managingFolder, setManagingFolder] = useState<SmartFolder | null>(null);
   const [modalQuery, setModalQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "law" | "book" | "order" | "precedent">("all");
 
-  useEffect(() => {
-    // In production, do NOT seed fabricated demo folders — users start with an
-    // empty set unless the demo fallback flag is on (dev/preview). Folders the
-    // user creates still persist to localStorage (API wiring is a follow-up).
-    const seedFolders: SmartFolder[] =
-      process.env.NEXT_PUBLIC_LIB_DEMO_FALLBACK === "1" ||
-      process.env.NODE_ENV !== "production"
-        ? DEMO_FOLDERS
-        : [];
-    const saved = localStorage.getItem("nzamy_smart_folders");
-    if (saved) {
+  // ─── Load folders (API for auth users, localStorage for guests) ────────────
+
+  const loadFolders = useCallback(async () => {
+    if (isAuthenticated) {
+      // Authenticated: fetch from API
+      setIsLoading(true);
       try {
-        setFolders(JSON.parse(saved));
-      } catch {
-        setFolders(seedFolders);
+        const res = await fetch("/api/library/folders");
+        if (res.ok) {
+          const data = await res.json();
+          const mapped = (data.folders || []).map(mapApiFolderToSmartFolder);
+          setFolders(mapped);
+          // Also sync to localStorage for offline / cross-component compat
+          saveFoldersToLocalStorage(mapped);
+          dispatchFoldersChanged(mapped);
+        } else {
+          // API failed — fall back to localStorage
+          console.warn("[SmartFolders] API fetch failed, falling back to localStorage");
+          const local = loadFoldersFromLocalStorage();
+          if (local) setFolders(local);
+        }
+      } catch (err) {
+        console.warn("[SmartFolders] API error, falling back to localStorage:", err);
+        const local = loadFoldersFromLocalStorage();
+        if (local) setFolders(local);
+      } finally {
+        setIsLoading(false);
       }
     } else {
-      setFolders(seedFolders);
-      if (seedFolders.length > 0) {
-        localStorage.setItem("nzamy_smart_folders", JSON.stringify(seedFolders));
+      // Guest: use localStorage (original behavior)
+      const seedFolders: SmartFolder[] =
+        process.env.NEXT_PUBLIC_LIB_DEMO_FALLBACK === "1" ||
+        process.env.NODE_ENV !== "production"
+          ? DEMO_FOLDERS
+          : [];
+      const saved = loadFoldersFromLocalStorage();
+      if (saved) {
+        setFolders(saved);
+      } else {
+        setFolders(seedFolders);
+        if (seedFolders.length > 0) {
+          saveFoldersToLocalStorage(seedFolders);
+        }
       }
     }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    loadFolders();
     setExpandedId("default-daily");
     setIsMounted(true);
-  }, []);
+  }, [loadFolders]);
 
   // Listen to external folder state changes to sync dynamically
   useEffect(() => {
@@ -80,44 +159,144 @@ export default function SmartFolders({
     setExpandedId(prev => prev === id ? null : id);
   }, []);
 
-  const handleDelete = useCallback((id: string) => {
+  // ─── DELETE folder ─────────────────────────────────────────────────────────
+
+  const handleDelete = useCallback(async (id: string) => {
+    // Optimistic update
     setFolders(prev => {
       const next = prev.filter(f => f.id !== id);
-      localStorage.setItem("nzamy_smart_folders", JSON.stringify(next));
-      window.dispatchEvent(new CustomEvent("nzamy_smart_folders_changed", { detail: next }));
+      saveFoldersToLocalStorage(next);
+      dispatchFoldersChanged(next);
       return next;
     });
     setExpandedId(prev => prev === id ? null : prev);
-  }, []);
 
-  const handleRename = useCallback((id: string, name: string) => {
+    if (isAuthenticated) {
+      try {
+        const res = await fetch(`/api/library/folders?folderId=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          console.error("[SmartFolders] Failed to delete folder via API");
+          // Reload from API to restore correct state
+          loadFolders();
+        }
+      } catch (err) {
+        console.error("[SmartFolders] API error deleting folder:", err);
+        loadFolders();
+      }
+    }
+  }, [isAuthenticated, loadFolders]);
+
+  // ─── RENAME folder ─────────────────────────────────────────────────────────
+
+  const handleRename = useCallback(async (id: string, name: string) => {
+    // Optimistic update
     setFolders(prev => {
       const next = prev.map(f => f.id === id ? { ...f, name, nameEn: name, lastModified: Date.now() } : f);
-      localStorage.setItem("nzamy_smart_folders", JSON.stringify(next));
-      window.dispatchEvent(new CustomEvent("nzamy_smart_folders_changed", { detail: next }));
+      saveFoldersToLocalStorage(next);
+      dispatchFoldersChanged(next);
       return next;
     });
-  }, []);
 
-  const handleColorChange = useCallback((id: string, color: string) => {
+    if (isAuthenticated) {
+      try {
+        const res = await fetch("/api/library/folders", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folderId: id, name }),
+        });
+        if (!res.ok) {
+          console.error("[SmartFolders] Failed to rename folder via API");
+          loadFolders();
+        }
+      } catch (err) {
+        console.error("[SmartFolders] API error renaming folder:", err);
+        loadFolders();
+      }
+    }
+  }, [isAuthenticated, loadFolders]);
+
+  // ─── CHANGE color ──────────────────────────────────────────────────────────
+
+  const handleColorChange = useCallback(async (id: string, color: string) => {
+    // Optimistic update
     setFolders(prev => {
       const next = prev.map(f => f.id === id ? { ...f, color, lastModified: Date.now() } : f);
-      localStorage.setItem("nzamy_smart_folders", JSON.stringify(next));
-      window.dispatchEvent(new CustomEvent("nzamy_smart_folders_changed", { detail: next }));
+      saveFoldersToLocalStorage(next);
+      dispatchFoldersChanged(next);
       return next;
     });
-  }, []);
+
+    if (isAuthenticated) {
+      try {
+        const res = await fetch("/api/library/folders", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folderId: id, color }),
+        });
+        if (!res.ok) {
+          console.error("[SmartFolders] Failed to update color via API");
+          loadFolders();
+        }
+      } catch (err) {
+        console.error("[SmartFolders] API error updating color:", err);
+        loadFolders();
+      }
+    }
+  }, [isAuthenticated, loadFolders]);
+
+  // ─── TOGGLE pin ────────────────────────────────────────────────────────────
 
   const handleTogglePin = useCallback((id: string) => {
+    // Pin is a local-only feature (no DB column for is_pinned currently).
+    // Keep it in localStorage for both auth and guest users.
     setFolders(prev => {
       const next = prev.map(f => f.id === id ? { ...f, isPinned: !f.isPinned, lastModified: Date.now() } : f);
-      localStorage.setItem("nzamy_smart_folders", JSON.stringify(next));
-      window.dispatchEvent(new CustomEvent("nzamy_smart_folders_changed", { detail: next }));
+      saveFoldersToLocalStorage(next);
+      dispatchFoldersChanged(next);
       return next;
     });
   }, []);
 
-  const handleCreate = useCallback((name: string, color: string) => {
+  // ─── CREATE folder ─────────────────────────────────────────────────────────
+
+  const handleCreate = useCallback(async (name: string, color: string) => {
+    if (isAuthenticated) {
+      // Create via API, then refresh
+      try {
+        const res = await fetch("/api/library/folders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, color, icon: "📁" }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const newFolder = mapApiFolderToSmartFolder(data.folder);
+          setFolders(prev => {
+            const next = [...prev, newFolder];
+            saveFoldersToLocalStorage(next);
+            dispatchFoldersChanged(next);
+            return next;
+          });
+          setIsCreating(false);
+          setExpandedId(newFolder.id);
+        } else {
+          console.error("[SmartFolders] Failed to create folder via API");
+          // Fallback: create locally
+          createFolderLocally(name, color);
+        }
+      } catch (err) {
+        console.error("[SmartFolders] API error creating folder:", err);
+        createFolderLocally(name, color);
+      }
+    } else {
+      createFolderLocally(name, color);
+    }
+  }, [isAuthenticated]);
+
+  /** Guest / fallback: create folder in localStorage only */
+  const createFolderLocally = useCallback((name: string, color: string) => {
     const newFolderId = `folder-${Date.now()}`;
     setFolders(prev => {
       const newFolder: SmartFolder = {
@@ -131,16 +310,26 @@ export default function SmartFolders({
         lastModified: Date.now(),
       };
       const next = [...prev, newFolder];
-      localStorage.setItem("nzamy_smart_folders", JSON.stringify(next));
-      window.dispatchEvent(new CustomEvent("nzamy_smart_folders_changed", { detail: next }));
+      saveFoldersToLocalStorage(next);
+      dispatchFoldersChanged(next);
       return next;
     });
     setIsCreating(false);
     setExpandedId(newFolderId);
   }, []);
 
-  // Remove individual item from a folder
-  const handleRemoveItem = useCallback((folderId: string, itemSlug: string, itemType: string) => {
+  // ─── REMOVE item from folder ──────────────────────────────────────────────
+
+  const handleRemoveItem = useCallback(async (folderId: string, itemSlug: string, itemType: string) => {
+    // Find the DB item id if available (for authenticated delete)
+    let dbItemId: string | undefined;
+    const folder = folders.find(f => f.id === folderId);
+    if (folder) {
+      const item = folder.laws.find(l => l.slug === itemSlug && (l.type || "law") === itemType);
+      dbItemId = (item as any)?._itemDbId;
+    }
+
+    // Optimistic update
     setFolders(prev => {
       const next = prev.map(f => {
         if (f.id === folderId) {
@@ -152,31 +341,139 @@ export default function SmartFolders({
         }
         return f;
       });
-      localStorage.setItem("nzamy_smart_folders", JSON.stringify(next));
-      window.dispatchEvent(new CustomEvent("nzamy_smart_folders_changed", { detail: next }));
+      saveFoldersToLocalStorage(next);
+      dispatchFoldersChanged(next);
       return next;
     });
-  }, []);
 
-  // Toggle item in a folder from the modal
-  const handleToggleItemInModal = (doc: LibraryDoc) => {
+    if (isAuthenticated && dbItemId) {
+      try {
+        const res = await fetch(`/api/library/folders?itemId=${encodeURIComponent(dbItemId)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          console.error("[SmartFolders] Failed to remove item via API");
+          loadFolders();
+        }
+      } catch (err) {
+        console.error("[SmartFolders] API error removing item:", err);
+        loadFolders();
+      }
+    }
+  }, [isAuthenticated, folders, loadFolders]);
+
+  // ─── TOGGLE item in modal ─────────────────────────────────────────────────
+
+  const handleToggleItemInModal = async (doc: LibraryDoc) => {
+    if (!managingFolder) return;
+
+    const exists = managingFolder.laws.some(item => item.slug === doc.slug && (item.type || "law") === doc.type);
+
+    if (exists) {
+      // Remove item
+      const item = managingFolder.laws.find(l => l.slug === doc.slug && (l.type || "law") === doc.type);
+      const dbItemId = (item as any)?._itemDbId;
+
+      setFolders(prev => {
+        const next = prev.map(f => {
+          if (f.id === managingFolder.id) {
+            const newLaws = f.laws.filter(item => !(item.slug === doc.slug && (item.type || "law") === doc.type));
+            const updatedFolder = { ...f, laws: newLaws, lastModified: Date.now() };
+            setManagingFolder(updatedFolder);
+            return updatedFolder;
+          }
+          return f;
+        });
+        saveFoldersToLocalStorage(next);
+        dispatchFoldersChanged(next);
+        return next;
+      });
+
+      if (isAuthenticated && dbItemId) {
+        try {
+          const res = await fetch(`/api/library/folders?itemId=${encodeURIComponent(dbItemId)}`, {
+            method: "DELETE",
+          });
+          if (!res.ok) {
+            console.error("[SmartFolders] Failed to remove item via API");
+            loadFolders();
+          }
+        } catch (err) {
+          console.error("[SmartFolders] API error removing item:", err);
+          loadFolders();
+        }
+      }
+    } else {
+      // Add item
+      if (isAuthenticated) {
+        try {
+          const res = await fetch("/api/library/folders/items", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              folderId: managingFolder.id,
+              entityType: doc.type || "law",
+              entityId: doc.slug,
+              title: doc.title,
+              titleEn: doc.titleEn,
+              catId: doc.catId,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const newItem: LawRef = {
+              slug: doc.slug,
+              title: doc.title,
+              titleEn: doc.titleEn,
+              catId: doc.catId,
+              type: doc.type,
+            };
+            // Attach DB item id for future deletion
+            (newItem as any)._itemDbId = data.item?.id;
+
+            setFolders(prev => {
+              const next = prev.map(f => {
+                if (f.id === managingFolder.id) {
+                  const updatedFolder = { ...f, laws: [...f.laws, newItem], lastModified: Date.now() };
+                  setManagingFolder(updatedFolder);
+                  return updatedFolder;
+                }
+                return f;
+              });
+              saveFoldersToLocalStorage(next);
+              dispatchFoldersChanged(next);
+              return next;
+            });
+          } else {
+            console.error("[SmartFolders] Failed to add item via API");
+            // Fallback: add locally
+            addItemLocally(doc);
+          }
+        } catch (err) {
+          console.error("[SmartFolders] API error adding item:", err);
+          addItemLocally(doc);
+        }
+      } else {
+        addItemLocally(doc);
+      }
+    }
+  };
+
+  /** Guest / fallback: add item to folder locally */
+  const addItemLocally = (doc: LibraryDoc) => {
     if (!managingFolder) return;
     setFolders(prev => {
       const next = prev.map(f => {
         if (f.id === managingFolder.id) {
-          const exists = f.laws.some(item => item.slug === doc.slug && (item.type || "law") === doc.type);
-          const newLaws = exists
-            ? f.laws.filter(item => !(item.slug === doc.slug && (item.type || "law") === doc.type))
-            : [...f.laws, { slug: doc.slug, title: doc.title, titleEn: doc.titleEn, catId: doc.catId, type: doc.type }];
-          
+          const newLaws = [...f.laws, { slug: doc.slug, title: doc.title, titleEn: doc.titleEn, catId: doc.catId, type: doc.type }];
           const updatedFolder = { ...f, laws: newLaws, lastModified: Date.now() };
-          setManagingFolder(updatedFolder); // update active modal state
+          setManagingFolder(updatedFolder);
           return updatedFolder;
         }
         return f;
       });
-      localStorage.setItem("nzamy_smart_folders", JSON.stringify(next));
-      window.dispatchEvent(new CustomEvent("nzamy_smart_folders_changed", { detail: next }));
+      saveFoldersToLocalStorage(next);
+      dispatchFoldersChanged(next);
       return next;
     });
   };
@@ -246,9 +543,11 @@ export default function SmartFolders({
                 {isRTL ? "مجلداتي" : "My Folders"}
               </h3>
               <p className={`text-[11px] ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                {isRTL
-                  ? `${folders.length} مجلد · ${folders.reduce((acc, f) => acc + f.laws.length, 0)} مادة`
-                  : `${folders.length} folders · ${folders.reduce((acc, f) => acc + f.laws.length, 0)} items`}
+                {isLoading
+                  ? (isRTL ? "جاري التحميل..." : "Loading...")
+                  : isRTL
+                    ? `${folders.length} مجلد · ${folders.reduce((acc, f) => acc + f.laws.length, 0)} مادة`
+                    : `${folders.length} folders · ${folders.reduce((acc, f) => acc + f.laws.length, 0)} items`}
               </p>
             </div>
           </div>
@@ -269,6 +568,20 @@ export default function SmartFolders({
         {/* Folder List */}
         <div className={`px-5 pb-5 space-y-2 border-t ${isDark ? "border-[#2d3748]" : "border-gray-100"}`}>
           <div className={`pt-4 space-y-2 transition-all duration-300 ${isExpandedView ? "" : "max-h-[225px] overflow-y-auto pr-1 custom-scrollbar"}`}>
+            {/* Loading skeleton */}
+            {isLoading && folders.length === 0 && (
+              <div className="space-y-2">
+                {[1, 2, 3].map(i => (
+                  <div
+                    key={i}
+                    className={`h-14 rounded-xl animate-pulse ${
+                      isDark ? "bg-white/[0.04]" : "bg-gray-100"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+
             <AnimatePresence mode="popLayout">
               {sortedFolders.map(folder => (
                 <FolderCard
@@ -301,7 +614,7 @@ export default function SmartFolders({
             </AnimatePresence>
 
             {/* Empty state */}
-            {folders.length === 0 && !isCreating && (
+            {folders.length === 0 && !isCreating && !isLoading && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

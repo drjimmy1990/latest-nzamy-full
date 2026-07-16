@@ -68,6 +68,22 @@ export default function LegalLibraryPage() {
   const [dbCollections, setDbCollections] = useState<any[]>([]);
   const [dbLoading, setDbLoading] = useState(true);
 
+  // --- Pagination state per section ---
+  const INIT_PAGE_SIZE = 50;
+  const [pagination, setPagination] = useState<Record<string, { page: number; hasMore: boolean; total: number; loadingMore: boolean }>>({
+    laws:        { page: 1, hasMore: false, total: 0, loadingMore: false },
+    decrees:     { page: 1, hasMore: false, total: 0, loadingMore: false },
+    principles:  { page: 1, hasMore: false, total: 0, loadingMore: false },
+    books:       { page: 1, hasMore: false, total: 0, loadingMore: false },
+    collections: { page: 1, hasMore: false, total: 0, loadingMore: false },
+  });
+
+  // --- Server-side search results (override filtered* when search is active) ---
+  const [searchResults, setSearchResults] = useState<Record<string, any[]> | null>(null);
+  const [searchCounts, setSearchCounts] = useState<Record<string, number>>({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // — Core filters —
   const [search,         setSearch]         = useState("");
   const [showSuggest,    setShowSuggest]    = useState(false);
@@ -76,6 +92,21 @@ export default function LegalLibraryPage() {
   const [selectedHashtag, setSelectedHashtag] = useState<string | null>(null);
   const [otherMenuOpen,  setOtherMenuOpen]  = useState(false);
   const [showPaywall,    setShowPaywall]    = useState(false);
+
+  // — Feqh filters —
+  const [feqhType,    setFeqhType]    = useState<FeqhType>("all");
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [feqhMadhab,  setFeqhMadhab]  = useState<FeqhMadhab>("all"); // reserved — Madhab filter UI coming soon
+  const [feqhSubCat,  setFeqhSubCat]  = useState<string>("all");
+
+  // — Precedents dual-filter —
+  const [precMode,       setPrecMode]       = useState<PrecMode>("all");
+  const [precSource,     setPrecSource]     = useState<PrincipleSourceId>("all");
+  const [precTrack,      setPrecTrack]      = useState<"all" | "ordinary" | "admin" | "semi">("all");
+  const [orderIssuer,    setOrderIssuer]    = useState<string>("all");
+
+  const [precPage,       setPrecPage]       = useState(1);
+  const [precSort,       setPrecSort]       = useState<"relevance" | "year-desc" | "year-asc" | "date-desc">("relevance");
   const [showAdvSearch,  setShowAdvSearch]  = useState(false);
   const [mounted,        setMounted]        = useState(false);
   const [layoutMode,     setLayoutMode]     = useState<"grid" | "list">("grid");
@@ -114,31 +145,67 @@ export default function LegalLibraryPage() {
     }
   }, [isRTL]);
 
-  // Trigger autocomplete with 300ms debounce
+  // Debounced server-side search
+  const fetchSearchResults = useCallback(async (q: string, type: ContentType, cat: string) => {
+    if (q.trim().length < 2) {
+      setSearchResults(null);
+      setSearchCounts({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      // Map activeType to search section
+      const section = type === 'all' ? 'all' : type;
+      const filters: Record<string, string> = {};
+      if (cat !== 'all') filters.category = cat;
+      if (precTrack !== 'all') filters.track = precTrack;
+      if (precSource !== 'all') filters.source = precSource;
+      if (orderIssuer !== 'all') filters.issuer = orderIssuer;
+
+      const res = await fetch('/api/library/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q.trim(), section, filters, limit: 50 }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Group results by section if 'all', otherwise use flat results
+        if (section === 'all') {
+          const grouped: Record<string, any[]> = { laws: [], precedents: [], orders: [], feqh: [] };
+          (data.results || []).forEach((r: any) => {
+            if (grouped[r.section]) grouped[r.section].push(r);
+          });
+          setSearchResults(grouped);
+        } else {
+          setSearchResults({ [section]: data.results || [] });
+        }
+        setSearchCounts(data.counts || { laws: 0, precedents: 0, orders: 0, feqh: 0 });
+      }
+    } catch (e) {
+      console.error('[Search] API error:', e);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [precTrack, precSource, orderIssuer]);
+
+  // Trigger autocomplete + search with 300ms debounce
   useEffect(() => {
     if (autocompleteTimerRef.current) clearTimeout(autocompleteTimerRef.current);
     autocompleteTimerRef.current = setTimeout(() => {
       fetchAutocomplete(search);
     }, 300);
+
+    // Debounced server-side search
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      fetchSearchResults(search, activeType, activeCat);
+    }, 300);
+
     return () => {
       if (autocompleteTimerRef.current) clearTimeout(autocompleteTimerRef.current);
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
-  }, [search, fetchAutocomplete]);
-
-  // — Feqh filters —
-  const [feqhType,    setFeqhType]    = useState<FeqhType>("all");
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [feqhMadhab,  setFeqhMadhab]  = useState<FeqhMadhab>("all"); // reserved — Madhab filter UI coming soon
-  const [feqhSubCat,  setFeqhSubCat]  = useState<string>("all");
-
-  // — Precedents dual-filter —
-  const [precMode,       setPrecMode]       = useState<PrecMode>("all");
-  const [precSource,     setPrecSource]     = useState<PrincipleSourceId>("all");
-  const [precTrack,      setPrecTrack]      = useState<"all" | "ordinary" | "admin" | "semi">("all");
-  const [orderIssuer,    setOrderIssuer]    = useState<string>("all");
-
-  const [precPage,       setPrecPage]       = useState(1);
-  const [precSort,       setPrecSort]       = useState<"relevance" | "year-desc" | "year-asc" | "date-desc">("relevance");
+  }, [search, activeType, activeCat, fetchAutocomplete, fetchSearchResults]);
 
   const isLoadedRef = useRef(false);
 
@@ -208,17 +275,26 @@ export default function LegalLibraryPage() {
 
       isLoadedRef.current = true;
     }
-    fetch("/api/library/init")
+    fetch(`/api/library/init?limit=${INIT_PAGE_SIZE}&page=1`)
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load library data");
         return r.json();
       })
       .then((data) => {
-        setDbLaws(data.laws || []);
-        setDbDecrees(data.decrees || []);
-        setDbPrinciples(data.principles || []);
-        setDbBooks(data.books || []);
-        setDbCollections(data.collections || []);
+        // New paginated response shape: { data: [...], total, hasMore }
+        setDbLaws(data.laws?.data || data.laws || []);
+        setDbDecrees(data.decrees?.data || data.decrees || []);
+        setDbPrinciples(data.principles?.data || data.principles || []);
+        setDbBooks(data.books?.data || data.books || []);
+        setDbCollections(data.collections?.data || data.collections || []);
+        // Update pagination metadata
+        setPagination({
+          laws:        { page: 1, hasMore: data.laws?.hasMore ?? false, total: data.laws?.total ?? 0, loadingMore: false },
+          decrees:     { page: 1, hasMore: data.decrees?.hasMore ?? false, total: data.decrees?.total ?? 0, loadingMore: false },
+          principles:  { page: 1, hasMore: data.principles?.hasMore ?? false, total: data.principles?.total ?? 0, loadingMore: false },
+          books:       { page: 1, hasMore: data.books?.hasMore ?? false, total: data.books?.total ?? 0, loadingMore: false },
+          collections: { page: 1, hasMore: data.collections?.hasMore ?? false, total: data.collections?.total ?? 0, loadingMore: false },
+        });
         setDbLoading(false);
       })
       .catch((e) => {
@@ -262,6 +338,57 @@ export default function LegalLibraryPage() {
     showSidebars
   ]);
   if (!mounted) return null;
+
+  // ─── Load More function for pagination ──────────────────────────────────────
+  const isSearchActive = search.trim().length >= 2 && searchResults !== null;
+  const loadMore = async (sectionKey: string) => {
+    const sectionMap: Record<string, { setter: (fn: (prev: any[]) => any[]) => void; dbKey: string }> = {
+      laws:        { setter: setDbLaws, dbKey: 'laws' },
+      decrees:     { setter: setDbDecrees, dbKey: 'decrees' },
+      principles:  { setter: setDbPrinciples, dbKey: 'principles' },
+      books:       { setter: setDbBooks, dbKey: 'books' },
+      collections: { setter: setDbCollections, dbKey: 'collections' },
+    };
+    const sec = sectionMap[sectionKey];
+    if (!sec || !pagination[sectionKey]?.hasMore || pagination[sectionKey]?.loadingMore) return;
+
+    const nextPage = pagination[sectionKey].page + 1;
+    setPagination(prev => ({
+      ...prev,
+      [sectionKey]: { ...prev[sectionKey], loadingMore: true },
+    }));
+
+    try {
+      const res = await fetch(`/api/library/init?limit=${INIT_PAGE_SIZE}&page=${nextPage}&section=${sectionKey}`);
+      if (res.ok) {
+        const data = await res.json();
+        const sectionData = data[sectionKey];
+        if (sectionData?.data) {
+          sec.setter((prev: any[]) => [...prev, ...sectionData.data]);
+          setPagination(prev => ({
+            ...prev,
+            [sectionKey]: {
+              page: nextPage,
+              hasMore: sectionData.hasMore ?? false,
+              total: sectionData.total ?? prev[sectionKey].total,
+              loadingMore: false,
+            },
+          }));
+        } else {
+          setPagination(prev => ({
+            ...prev,
+            [sectionKey]: { ...prev[sectionKey], loadingMore: false, hasMore: false },
+          }));
+        }
+      }
+    } catch (e) {
+      console.error(`[LoadMore] ${sectionKey} error:`, e);
+      setPagination(prev => ({
+        ...prev,
+        [sectionKey]: { ...prev[sectionKey], loadingMore: false },
+      }));
+    }
+  };
 
   const muted       = isDark ? "text-gray-400" : "text-gray-500";
   const isOtherActive = OTHER_CATEGORIES.some(c => c.id === activeCat);
@@ -521,29 +648,65 @@ export default function LegalLibraryPage() {
   };
 
   // ─── Filter: Laws ─────────────────────────────────────────────────────────────
-  const filteredLaws = lawsList.filter(s => {
-    const inCat  = activeCat === "all" || s.cat === activeCat;
-    const inQ   = !nq || normalizeArabic(s.title).includes(nq) || normalizeArabic(s.desc).includes(nq);
-    return inCat && inQ;
-  });
+  // When search is active, use server-side results; otherwise filter locally
+  const filteredLaws = isSearchActive && searchResults?.laws
+    ? searchResults.laws.map((r: any) => ({
+        id: r.meta?.lawSlug || r.id,
+        slug: r.meta?.lawSlug || r.id,
+        title: r.title,
+        titleEn: '',
+        desc: r.snippet || '',
+        descEn: '',
+        free: true,
+        progress: 100,
+        articlesCount: 0,
+        chaptersCount: 0,
+        lastUpdated: '—',
+        cat: r.meta?.sectionCode || 'SA-00',
+        type: 'laws',
+        subType: 'basic',
+        _isSearchResult: true,
+      }))
+    : lawsList.filter(s => {
+        const inCat  = activeCat === "all" || s.cat === activeCat;
+        // When no search query, show all; local filter only for category browsing
+        const inQ   = !nq || normalizeArabic(s.title).includes(nq) || normalizeArabic(s.desc).includes(nq);
+        return inCat && inQ;
+      });
 
   // ─── Filter: Principles ───────────────────────────────────────────────────────
-  const filteredPrinciples = principlesList.filter(p => {
-    const inCat    = activeCat === "all" || p.cat === activeCat;
-    const inTrack  = matchesPrecTrack(p.sourceId, precTrack);
-    const inSrc    = precSource  === "all" || p.sourceId === precSource;
-    const inQ      = !nq || normalizeArabic(p.text).includes(nq) || normalizeArabic(p.source).includes(nq) || normalizeArabic(p.ref).includes(nq);
-    return inCat && inTrack && inSrc && inQ;
-  });
+  const filteredPrinciples = isSearchActive && searchResults?.precedents
+    ? searchResults.precedents.map((r: any) => ({
+        id: String(r.id),
+        sourceId: r.meta?.collectionSlug || 'supreme',
+        source: r.meta?.court || 'المحكمة العليا',
+        srcAbbr: 'م ع',
+        text: r.snippet || r.title || '',
+        ref: r.meta?.decisionNumber || '—',
+        year: String(r.meta?.year || 1445),
+        subject: 'civil' as any,
+        cat: 'SA-03',
+        _isSearchResult: true,
+      }))
+    : principlesList.filter(p => {
+        const inCat    = activeCat === "all" || p.cat === activeCat;
+        const inTrack  = matchesPrecTrack(p.sourceId, precTrack);
+        const inSrc    = precSource  === "all" || p.sourceId === precSource;
+        const inQ      = !nq || normalizeArabic(p.text).includes(nq) || normalizeArabic(p.source).includes(nq) || normalizeArabic(p.ref).includes(nq);
+        return inCat && inTrack && inSrc && inQ;
+      });
 
   // ─── Filter: Precedents ───────────────────────────────────────────────────────
-  const filteredPrecedents = precedentsList.filter(pr => {
-    const inCat  = activeCat === "all" || pr.cat === activeCat;
-    const inTrack = matchesPrecedentTrack(pr.court, precTrack);
-    const inQ    = !nq || normalizeArabic(pr.summary).includes(nq) || normalizeArabic(pr.court).includes(nq) || normalizeArabic(pr.relevance).includes(nq);
-    const inHashtag = !selectedHashtag || pr.hashtags?.includes(selectedHashtag);
-    return inCat && inTrack && inQ && inHashtag;
-  });
+  // When search is active, precedents are merged into filteredPrinciples above
+  const filteredPrecedents = isSearchActive
+    ? [] as any[]
+    : precedentsList.filter(pr => {
+        const inCat  = activeCat === "all" || pr.cat === activeCat;
+        const inTrack = matchesPrecedentTrack(pr.court, precTrack);
+        const inQ    = !nq || normalizeArabic(pr.summary).includes(nq) || normalizeArabic(pr.court).includes(nq) || normalizeArabic(pr.relevance).includes(nq);
+        const inHashtag = !selectedHashtag || pr.hashtags?.includes(selectedHashtag);
+        return inCat && inTrack && inQ && inHashtag;
+      });
 
   // ─── Collections: prefer DB data, fallback to demo ──────────────────────────
   const collectionsList = (dbCollections.length > 0
@@ -569,36 +732,66 @@ export default function LegalLibraryPage() {
   });
 
   // ─── Filter: Orders ───────────────────────────────────────────────────────────
-  const filteredOrders = ordersList.filter(o => {
-    const inCat = activeCat === "all" || o.cat === activeCat;
-    const inQ   = !nq || normalizeArabic(o.title).includes(nq) || (o.summary && normalizeArabic(o.summary).includes(nq)) || normalizeArabic(o.ref).includes(nq);
-    const inIssuer = orderIssuer === "all" || o.issuer === orderIssuer || o.issuer === ISSUER_MAP[orderIssuer]?.ar;
-    const inHashtag = !selectedHashtag || o.hashtags?.includes(selectedHashtag);
-    return inCat && inQ && inIssuer && inHashtag;
-  });
+  const filteredOrders = isSearchActive && searchResults?.orders
+    ? searchResults.orders.map((r: any) => ({
+        id: String(r.id),
+        title: r.title,
+        type: r.meta?.type || 'circular',
+        issuer: r.meta?.issuer || '—',
+        ref: r.meta?.ref || '—',
+        date: r.meta?.date || '—',
+        summary: r.snippet || r.title || '',
+        summary_brief: r.snippet || '',
+        cat: 'SA-04',
+        hashtags: r.meta?.hashtags || [],
+        _isSearchResult: true,
+      }))
+    : ordersList.filter(o => {
+        const inCat = activeCat === "all" || o.cat === activeCat;
+        const inQ   = !nq || normalizeArabic(o.title).includes(nq) || (o.summary && normalizeArabic(o.summary).includes(nq)) || normalizeArabic(o.ref).includes(nq);
+        const inIssuer = orderIssuer === "all" || o.issuer === orderIssuer || o.issuer === ISSUER_MAP[orderIssuer]?.ar;
+        const inHashtag = !selectedHashtag || o.hashtags?.includes(selectedHashtag);
+        return inCat && inQ && inIssuer && inHashtag;
+      });
 
   // ─── Filter: Feqh Books ──────────────────────────────────────────────────────
-  const filteredFeqhBooks = booksList.filter(book => {
-    const matchesCatTab = activeCat === "all" || matchesFeqhCategory(book, activeCat);
-    if (activeType === "feqh") {
-      const matchesType = feqhType === "all" || book.type === feqhType;
-      let matchesSub = true;
-      if (feqhSubCat !== "all") {
-        matchesSub = book.category === feqhSubCat;
-      }
-      const matchesQuery = !nq || 
-        normalizeArabic(book.title).includes(nq) || 
-        normalizeArabic(book.author).includes(nq) || 
-        (book.desc && normalizeArabic(book.desc).includes(nq));
-      return matchesType && matchesSub && matchesQuery && matchesCatTab;
-    } else {
-      const matchesQuery = !nq || 
-        normalizeArabic(book.title).includes(nq) || 
-        normalizeArabic(book.author).includes(nq) || 
-        (book.desc && normalizeArabic(book.desc).includes(nq));
-      return matchesQuery && matchesCatTab;
-    }
-  });
+  const filteredFeqhBooks = isSearchActive && searchResults?.feqh
+    ? searchResults.feqh.map((r: any) => ({
+        id: String(r.id),
+        slug: r.meta?.bookSlug || r.id,
+        title: r.title,
+        author: '—',
+        type: 'sharia',
+        category: 'sharuh',
+        categoryLabel: '',
+        desc: r.snippet || '',
+        free: true,
+        progress: 100,
+        volCount: 1,
+        lastUpdated: '—',
+        _isSearchResult: true,
+      }))
+    : booksList.filter(book => {
+        const matchesCatTab = activeCat === "all" || matchesFeqhCategory(book, activeCat);
+        if (activeType === "feqh") {
+          const matchesType = feqhType === "all" || book.type === feqhType;
+          let matchesSub = true;
+          if (feqhSubCat !== "all") {
+            matchesSub = book.category === feqhSubCat;
+          }
+          const matchesQuery = !nq || 
+            normalizeArabic(book.title).includes(nq) || 
+            normalizeArabic(book.author).includes(nq) || 
+            (book.desc && normalizeArabic(book.desc).includes(nq));
+          return matchesType && matchesSub && matchesQuery && matchesCatTab;
+        } else {
+          const matchesQuery = !nq || 
+            normalizeArabic(book.title).includes(nq) || 
+            normalizeArabic(book.author).includes(nq) || 
+            (book.desc && normalizeArabic(book.desc).includes(nq));
+          return matchesQuery && matchesCatTab;
+        }
+      });
 
   const hasResults = (type: ContentType) => {
     if (type === "laws")       return filteredLaws.length > 0;
@@ -948,91 +1141,228 @@ export default function LegalLibraryPage() {
                   </motion.div>
                 ) : (
                   <>
+                    {/* Search loading indicator */}
+                    {searchLoading && (
+                      <div className={`flex items-center justify-center gap-2 py-3 px-4 mb-4 rounded-xl border text-sm font-medium ${
+                        isDark ? "bg-[#161b22] border-[#2d3748] text-gray-300" : "bg-white border-gray-200 text-gray-600"
+                      }`}>
+                        <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-[#0B3D2E] dark:border-[#C8A762]"></div>
+                        {isRTL ? "جاري البحث..." : "Searching..."}
+                      </div>
+                    )}
+
+                    {/* Search results banner */}
+                    {isSearchActive && !searchLoading && (
+                      <div className={`flex items-center justify-between py-3 px-4 mb-4 rounded-xl border text-sm ${
+                        isDark ? "bg-[#0B3D2E]/10 border-[#0B3D2E]/30 text-[#C8A762]" : "bg-[#0B3D2E]/5 border-[#0B3D2E]/20 text-[#0B3D2E]"
+                      }`}>
+                        <div className="flex items-center gap-2 font-bold">
+                          <PhosphorIcons.MagnifyingGlass size={16} weight="bold" />
+                          {isRTL
+                            ? `نتائج البحث عن "${search}" — ${searchCounts.laws + searchCounts.precedents + searchCounts.orders + searchCounts.feqh} نتيجة`
+                            : `Search results for "${search}" — ${searchCounts.laws + searchCounts.precedents + searchCounts.orders + searchCounts.feqh} results`
+                          }
+                        </div>
+                        <button
+                          onClick={() => { setSearch(''); setSearchResults(null); }}
+                          className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
+                            isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-[#0B3D2E]/10 hover:bg-[#0B3D2E]/20 text-[#0B3D2E]"
+                          }`}
+                        >
+                          {isRTL ? "مسح البحث" : "Clear Search"}
+                        </button>
+                      </div>
+                    )}
+
                     {activeType === "precedents" && (
-                      <PrecedentsTabContent
-                        isDark={isDark}
-                        isRTL={isRTL}
-                        muted={muted}
-                        precMode={precMode}
-                        setPrecMode={(mode) => setPrecMode(mode as any)}
-                        precTrack={precTrack}
-                        setPrecTrack={setPrecTrack}
-                        precSource={precSource}
-                        setPrecSource={(src) => setPrecSource(src as any)}
-                        filteredCollections={filteredCollections}
-                        filteredPrinciples={filteredPrinciples}
-                        filteredPrecedents={filteredPrecedents}
-                        layoutMode={layoutMode}
-                        isLoggedIn={isLoggedIn}
-                        setShowPaywall={setShowPaywall}
-                        activeCat={activeCat}
-                        q={q}
-                        setSelectedHashtag={setSelectedHashtag}
-                        precPage={precPage}
-                        setPrecPage={setPrecPage}
-                        precSort={precSort}
-                        setPrecSort={setPrecSort}
-                      />
+                      <>
+                        <PrecedentsTabContent
+                          isDark={isDark}
+                          isRTL={isRTL}
+                          muted={muted}
+                          precMode={precMode}
+                          setPrecMode={(mode) => setPrecMode(mode as any)}
+                          precTrack={precTrack}
+                          setPrecTrack={setPrecTrack}
+                          precSource={precSource}
+                          setPrecSource={(src) => setPrecSource(src as any)}
+                          filteredCollections={filteredCollections}
+                          filteredPrinciples={filteredPrinciples}
+                          filteredPrecedents={filteredPrecedents}
+                          layoutMode={layoutMode}
+                          isLoggedIn={isLoggedIn}
+                          setShowPaywall={setShowPaywall}
+                          activeCat={activeCat}
+                          q={q}
+                          setSelectedHashtag={setSelectedHashtag}
+                          precPage={precPage}
+                          setPrecPage={setPrecPage}
+                          precSort={precSort}
+                          setPrecSort={setPrecSort}
+                        />
+                        {/* Load More for Principles */}
+                        {!isSearchActive && pagination.principles?.hasMore && (
+                          <div className="flex justify-center mt-6">
+                            <button
+                              onClick={() => loadMore('principles')}
+                              disabled={pagination.principles.loadingMore}
+                              className={`flex items-center gap-2 px-6 py-3 rounded-2xl border text-sm font-bold transition-all ${
+                                isDark
+                                  ? "bg-[#161b22] border-[#2d3748] text-white hover:bg-white/10"
+                                  : "bg-white border-gray-200 text-[#0B3D2E] hover:bg-gray-50 shadow-sm"
+                              } disabled:opacity-50`}
+                            >
+                              {pagination.principles.loadingMore ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-current"></div>
+                              ) : (
+                                <PhosphorIcons.ArrowDown size={16} weight="bold" />
+                              )}
+                              {isRTL
+                                ? `تحميل المزيد (${dbPrinciples.length} من ${pagination.principles.total})`
+                                : `Load More (${dbPrinciples.length} of ${pagination.principles.total})`
+                              }
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     {activeType === "orders" && (
-                      <OrdersTabContent
-                        isDark={isDark}
-                        isRTL={isRTL}
-                        muted={muted}
-                        orderIssuer={orderIssuer}
-                        setOrderIssuer={setOrderIssuer}
-                        filteredOrders={filteredOrders}
-                        ORDER_ISSUERS={ORDER_ISSUERS}
-                        layoutMode={layoutMode}
-                        activeCat={activeCat}
-                        catHasContent={catHasContent}
-                        q={q}
-                        setSelectedHashtag={setSelectedHashtag}
-                      />
+                      <>
+                        <OrdersTabContent
+                          isDark={isDark}
+                          isRTL={isRTL}
+                          muted={muted}
+                          orderIssuer={orderIssuer}
+                          setOrderIssuer={setOrderIssuer}
+                          filteredOrders={filteredOrders}
+                          ORDER_ISSUERS={ORDER_ISSUERS}
+                          layoutMode={layoutMode}
+                          activeCat={activeCat}
+                          catHasContent={catHasContent}
+                          q={q}
+                          setSelectedHashtag={setSelectedHashtag}
+                        />
+                        {/* Load More for Orders/Decrees */}
+                        {!isSearchActive && pagination.decrees?.hasMore && (
+                          <div className="flex justify-center mt-6">
+                            <button
+                              onClick={() => loadMore('decrees')}
+                              disabled={pagination.decrees.loadingMore}
+                              className={`flex items-center gap-2 px-6 py-3 rounded-2xl border text-sm font-bold transition-all ${
+                                isDark
+                                  ? "bg-[#161b22] border-[#2d3748] text-white hover:bg-white/10"
+                                  : "bg-white border-gray-200 text-[#0B3D2E] hover:bg-gray-50 shadow-sm"
+                              } disabled:opacity-50`}
+                            >
+                              {pagination.decrees.loadingMore ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-current"></div>
+                              ) : (
+                                <PhosphorIcons.ArrowDown size={16} weight="bold" />
+                              )}
+                              {isRTL
+                                ? `تحميل المزيد (${dbDecrees.length} من ${pagination.decrees.total})`
+                                : `Load More (${dbDecrees.length} of ${pagination.decrees.total})`
+                              }
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     {(activeType === "laws" || activeType === "all") && (
-                      <LawsTabContent
-                        isDark={isDark}
-                        isRTL={isRTL}
-                        muted={muted}
-                        activeType={activeType}
-                        setActiveType={setActiveType}
-                        layoutMode={layoutMode}
-                        isLoggedIn={isLoggedIn}
-                        q={q}
-                        filteredLaws={filteredLaws}
-                        filteredFeqhBooks={filteredFeqhBooks}
-                        filteredCollections={filteredCollections}
-                        filteredPrinciples={filteredPrinciples}
-                        filteredPrecedents={filteredPrecedents}
-                        filteredOrders={filteredOrders}
-                        setShowPaywall={setShowPaywall}
-                        setPrecMode={(mode) => setPrecMode(mode as any)}
-                        setSelectedHashtag={setSelectedHashtag}
-                        catHasContent={catHasContent}
-                        activeCat={activeCat}
-                        hasResults={hasResults}
-                      />
+                      <>
+                        <LawsTabContent
+                          isDark={isDark}
+                          isRTL={isRTL}
+                          muted={muted}
+                          activeType={activeType}
+                          setActiveType={setActiveType}
+                          layoutMode={layoutMode}
+                          isLoggedIn={isLoggedIn}
+                          q={q}
+                          filteredLaws={filteredLaws}
+                          filteredFeqhBooks={filteredFeqhBooks}
+                          filteredCollections={filteredCollections}
+                          filteredPrinciples={filteredPrinciples}
+                          filteredPrecedents={filteredPrecedents}
+                          filteredOrders={filteredOrders}
+                          setShowPaywall={setShowPaywall}
+                          setPrecMode={(mode) => setPrecMode(mode as any)}
+                          setSelectedHashtag={setSelectedHashtag}
+                          catHasContent={catHasContent}
+                          activeCat={activeCat}
+                          hasResults={hasResults}
+                        />
+                        {/* Load More for Laws */}
+                        {!isSearchActive && pagination.laws?.hasMore && activeType === "laws" && (
+                          <div className="flex justify-center mt-6">
+                            <button
+                              onClick={() => loadMore('laws')}
+                              disabled={pagination.laws.loadingMore}
+                              className={`flex items-center gap-2 px-6 py-3 rounded-2xl border text-sm font-bold transition-all ${
+                                isDark
+                                  ? "bg-[#161b22] border-[#2d3748] text-white hover:bg-white/10"
+                                  : "bg-white border-gray-200 text-[#0B3D2E] hover:bg-gray-50 shadow-sm"
+                              } disabled:opacity-50`}
+                            >
+                              {pagination.laws.loadingMore ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-current"></div>
+                              ) : (
+                                <PhosphorIcons.ArrowDown size={16} weight="bold" />
+                              )}
+                              {isRTL
+                                ? `تحميل المزيد (${dbLaws.length} من ${pagination.laws.total})`
+                                : `Load More (${dbLaws.length} of ${pagination.laws.total})`
+                              }
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     {activeType === "feqh" && (
-                      <FeqhTabContent
-                        isDark={isDark}
-                        isRTL={isRTL}
-                        muted={muted}
-                        feqhType={feqhType}
-                        setFeqhType={setFeqhType}
-                        feqhSubCat={feqhSubCat}
-                        setFeqhSubCat={setFeqhSubCat}
-                        filteredFeqhBooks={filteredFeqhBooks}
-                        layoutMode={layoutMode}
-                        isLoggedIn={isLoggedIn}
-                        setShowPaywall={setShowPaywall}
-                        activeCat={activeCat}
-                        q={q}
-                      />
+                      <>
+                        <FeqhTabContent
+                          isDark={isDark}
+                          isRTL={isRTL}
+                          muted={muted}
+                          feqhType={feqhType}
+                          setFeqhType={setFeqhType}
+                          feqhSubCat={feqhSubCat}
+                          setFeqhSubCat={setFeqhSubCat}
+                          filteredFeqhBooks={filteredFeqhBooks}
+                          layoutMode={layoutMode}
+                          isLoggedIn={isLoggedIn}
+                          setShowPaywall={setShowPaywall}
+                          activeCat={activeCat}
+                          q={q}
+                        />
+                        {/* Load More for Feqh Books */}
+                        {!isSearchActive && pagination.books?.hasMore && (
+                          <div className="flex justify-center mt-6">
+                            <button
+                              onClick={() => loadMore('books')}
+                              disabled={pagination.books.loadingMore}
+                              className={`flex items-center gap-2 px-6 py-3 rounded-2xl border text-sm font-bold transition-all ${
+                                isDark
+                                  ? "bg-[#161b22] border-[#2d3748] text-white hover:bg-white/10"
+                                  : "bg-white border-gray-200 text-[#0B3D2E] hover:bg-gray-50 shadow-sm"
+                              } disabled:opacity-50`}
+                            >
+                              {pagination.books.loadingMore ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-current"></div>
+                              ) : (
+                                <PhosphorIcons.ArrowDown size={16} weight="bold" />
+                              )}
+                              {isRTL
+                                ? `تحميل المزيد (${dbBooks.length} من ${pagination.books.total})`
+                                : `Load More (${dbBooks.length} of ${pagination.books.total})`
+                              }
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </>
                 )}

@@ -136,6 +136,76 @@ const DEMO_BOOK: FeqhBook = {
 export default function FeqhPreviewPage() {
   const { isDark, isRTL } = useTheme();
 
+  // ── DB-backed book state (falls back to DEMO_BOOK) ──────────────────────
+  const [book, setBook] = useState<FeqhBook>(DEMO_BOOK);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadBook() {
+      try {
+        // Step 1: Fetch available books from /api/library/init
+        const initRes = await fetch("/api/library/init");
+        if (!initRes.ok) throw new Error("init failed");
+        const initData = await initRes.json();
+        const books = initData.books as { id: string; title: string; author: string; school: string; investigator?: string; publisher?: string }[];
+        if (!books || books.length === 0) throw new Error("no books");
+
+        // Step 2: Fetch full content for the first book
+        const firstBook = books[0];
+        const bookRes = await fetch(`/api/library/books/${encodeURIComponent(firstBook.id)}`);
+        if (!bookRes.ok) throw new Error("book fetch failed");
+        const data = await bookRes.json();
+
+        if (cancelled) return;
+
+        // Transform API response to match FeqhBook interface
+        const apiBook: FeqhBook = {
+          id: data.id,
+          title: data.title,
+          author: data.author || "",
+          school: data.school || "",
+          investigator: data.investigator || "",
+          publisher: "",
+          chapters: (data.chapters || []).map((ch: { title: string; id: string }) => ({
+            title: ch.title,
+            blocks: (data.blocks || [])
+              .filter((b: { sectionId?: string }) => {
+                // If the book has sections, map blocks to chapters via sections
+                // Otherwise include all blocks in the first chapter
+                return true;
+              })
+              .map((b: { id: string; topic: string; vol: number; page: number; matn: string; sharh: string; hashiyah: string[] | null }) => ({
+                id: b.id,
+                topic: b.topic || "",
+                vol: b.vol || 1,
+                page: b.page || 1,
+                matn: b.matn || "",
+                sharh: b.sharh || "",
+                hashiyah: Array.isArray(b.hashiyah) ? b.hashiyah : [],
+                relatedLawArticles: [],
+                hadithVerification: [],
+              })),
+          })),
+        };
+
+        // Only use API data if we got meaningful content
+        if (apiBook.chapters.length > 0 && apiBook.chapters.some(ch => ch.blocks.length > 0)) {
+          setBook(apiBook);
+          // Set active block to first available
+          const firstBlock = apiBook.chapters[0]?.blocks[0];
+          if (firstBlock) setActiveBlockId(firstBlock.id);
+        }
+      } catch {
+        // Silently fall back to DEMO_BOOK (already set as default)
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    loadBook();
+    return () => { cancelled = true; };
+  }, []);
+
   // Active items
   const [activeBlockId, setActiveBlockId] = useState<string>("fb-1");
   const [viewLayer, setViewLayer] = useState<"all" | "matn-only" | "sharh-only">("all");
@@ -148,11 +218,12 @@ export default function FeqhPreviewPage() {
   const [aiLoading, setAiLoading] = useState(false);
 
   // Active block details
-  const activeChapter = DEMO_BOOK.chapters[0];
-  const activeBlock = activeChapter.blocks.find(b => b.id === activeBlockId) || activeChapter.blocks[0];
+  const activeChapter = book.chapters[0];
+  const activeBlock = activeChapter?.blocks.find(b => b.id === activeBlockId) || activeChapter?.blocks[0];
 
   const handleCopyBlock = () => {
-    const text = `[${DEMO_BOOK.title} - ج ${activeBlock.vol}، ص ${activeBlock.page}]\n\nالمتن:\n${activeBlock.matn}\n\nالشرح:\n${activeBlock.sharh}\n\nالحواشي:\n${activeBlock.hashiyah.map((h, i) => `${i+1}- ${h}`).join("\n")}`;
+    if (!activeBlock) return;
+    const text = `[${book.title} - ج ${activeBlock.vol}، ص ${activeBlock.page}]\n\nالمتن:\n${activeBlock.matn}\n\nالشرح:\n${activeBlock.sharh}\n\nالحواشي:\n${activeBlock.hashiyah.map((h, i) => `${i+1}- ${h}`).join("\n")}`;
     navigator.clipboard.writeText(text);
     setCopiedText(true);
     setTimeout(() => setCopiedText(false), 2000);
@@ -164,10 +235,10 @@ export default function FeqhPreviewPage() {
     setTimeout(() => {
       setAiResponse(
         isRTL
-          ? `بناءً على المذهب الحنبلي في "${DEMO_BOOK.title}" (ج ${activeBlock.vol}، ص ${activeBlock.page})، فإن الشرط يختلف عن الركن في أن الشرط يسبق العبادة ويستمر معها (كالوضوء واستقبال القبلة)، بينما الركن يقع في صلب العبادة (كالركوع والسجود). 
+          ? `بناءً على المذهب الحنبلي في "${book.title}" (ج ${activeBlock?.vol}، ص ${activeBlock?.page})، فإن الشرط يختلف عن الركن في أن الشرط يسبق العبادة ويستمر معها (كالوضوء واستقبال القبلة)، بينما الركن يقع في صلب العبادة (كالركوع والسجود). 
 
 وهذا يتناغم مع المفاهيم القانونية المعاصرة في نظام المعاملات المدنية السعودي (مثل المادة 48 و 244)، حيث يتم التمييز بين شروط نفاذ العقد (التي تماثل الشروط الفقهية في كونها خارجية عن التزامات العقد) وأركان العقد الأساسية كالرضا والمحل والسبب.`
-          : `Based on the Hanbali school in "${DEMO_BOOK.title}" (Vol ${activeBlock.vol}, Page ${activeBlock.page}), a condition (Shart) differs from a pillar (Rukn) in that a condition precedes and accompanies the worship (like Wudu), while a pillar is an integral part of it (like Ruku).
+          : `Based on the Hanbali school in "${book.title}" (Vol ${activeBlock?.vol}, Page ${activeBlock?.page}), a condition (Shart) differs from a pillar (Rukn) in that a condition precedes and accompanies the worship (like Wudu), while a pillar is an integral part of it (like Ruku).
 
 This maps closely to the concepts of legal capacity (Article 48) and contract validity in the Saudi Civil Transactions Law.`
       );
@@ -186,9 +257,22 @@ This maps closely to the concepts of legal capacity (Article 48) and contract va
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <div className="flex-1 max-w-[1440px] mx-auto w-full px-4 py-8 mt-12">
+        <div className="flex-1 max-w-[1440px] mx-auto w-full px-4 py-8 mt-12">
         <div className="h-6" />
 
+        {/* Loading State */}
+        {isLoading && (
+          <div className={`flex items-center justify-center py-20 rounded-2xl border mb-6 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+            <div className="text-center space-y-3">
+              <div className={`w-8 h-8 border-2 border-t-transparent rounded-full animate-spin mx-auto ${isDark ? "border-[#C8A762]" : "border-[#0B3D2E]"}`} />
+              <p className={`text-sm font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                {isRTL ? "جاري تحميل الكتاب..." : "Loading book..."}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!isLoading && activeChapter && activeBlock && (<>
         {/* Header Block */}
         <div className={`rounded-2xl border p-6 mb-6 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -197,9 +281,9 @@ This maps closely to the concepts of legal capacity (Article 48) and contract va
                 <Sparkle size={12} weight="fill" />
                 {isRTL ? "معاينة تجربة الكتب الفقهية" : "Feqh Books Reader Preview"}
               </div>
-              <h1 className="text-2xl font-black">{DEMO_BOOK.title}</h1>
+              <h1 className="text-2xl font-black">{book.title}</h1>
               <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
-                {isRTL ? "تأليف: " : "Author: "} {DEMO_BOOK.author} | {DEMO_BOOK.school} | {isRTL ? "بتحشية: " : "Footnotes by: "} {DEMO_BOOK.investigator}
+                {isRTL ? "تأليف: " : "Author: "} {book.author} | {book.school} | {isRTL ? "بتحشية: " : "Footnotes by: "} {book.investigator}
               </p>
             </div>
             <div className="flex gap-2">
@@ -503,6 +587,7 @@ This maps closely to the concepts of legal capacity (Article 48) and contract va
           </aside>
 
         </div>
+        </>)}
       </div>
 
       <Footer />

@@ -1,9 +1,21 @@
 # NZAMY — Implementation Status (QA-review remediation, round 2)
 
-> **Date:** 2026-07-05 · **Branch:** `main` — **committed + pushed + deployed** (commits `c7b0867` = §4.1/§4.4/§4.3/§4.9 + plans, `5e23b6c` = §4.2; live via PM2 reload 2026-07-05 18:43 on port 3055) · **Plan:** [`TEST_REVIEW_FIX_PLAN.md`](./TEST_REVIEW_FIX_PLAN.md) · **Reconciliation:** [`TEST_REVIEW_RECONCILIATION.md`](./TEST_REVIEW_RECONCILIATION.md)
+> **Date:** 2026-07-16 · **Branch:** `main` — **committed + pushed + deployed** (sprint commit `9fe1949` - Library & Blog CMS Sprints) · **Plan:** [`TEST_REVIEW_FIX_PLAN.md`](./OLD/TEST_REVIEW_FIX_PLAN.md) · **Reconciliation:** [`TEST_REVIEW_RECONCILIATION.md`](./OLD/TEST_REVIEW_RECONCILIATION.md)
 > **This round** executed the QA-review fixes that do **not** depend on the real seeded library data, per the instruction to "fix all we can, document what's done vs not, and go." The genuinely data-dependent library work (search corpus, book content) is deferred with reasons below.
 > **Gates:** `tsc --noEmit` = 0 errors · `eslint .` = 0 errors (warnings only) · `next build` = exit 0.
 > **⚠️ Deploy dependency:** this round's code is live, but the lawyer directory (`/api/v1/lawyers`) now `SELECT`s `show_contact` — **apply `supabase/migrations/20260705_lawyer_show_contact.sql`** (plus the 3 other pending migrations after `20260629`) or that route 500s. Confirm with `supabase/migrations/_verify.sql`. Full pending-migration list at the bottom of [`NEXT_STEPS.md`](./NEXT_STEPS.md).
+
+---
+
+## ✅ Round 4 (2026-07-16) — Library Sprint & Blog CMS Sprint
+
+A major dual-sprint build focused on the Legal Library corpus and the Blog CMS system (commit `9fe1949`).
+- **Library CLI Toolkit:** Created `library-toolkit/` CLI containing 6 commands: `parse` (Markdown to JSON), `seed` (JSON to Supabase), `clear` (wipe library tables), `verify` (integrity check), `status` (check status/counts), and `reseed` (clear and seed in one step).
+- **DB-driven Library & Search:** Connected all secular and Islamic (fiqh) library pages directly to the database via `supabaseLibrary.ts` (resolving table name mismatches). Implemented server-side search and pagination (`POST /api/library/search`) on `/laws` to replace in-memory JS filtering.
+- **Library Paywall Enforcement:** Gated locked library items by ensuring the `free: true` bypass is removed and correctly checking `free: !isLocked` relative to subscription status.
+- **Smart Folders API:** Wired `SmartFolders` component to persist folders in the `library_folders` table in Supabase (with dual-mode fallback to localStorage for guests).
+- **Blog CMS System:** Designed and implemented a DB-driven blog articles schema (31 fields), storage bucket covers, server-side JSON-LD and SEO metadata, GitHub-Flavored Markdown (GFM) alert block renderer, and a command-line `blog-toolkit` for importing and publishing articles.
+- **⚠️ Migrations to apply:** `20260716_security_hardening.sql`, `20260716_missing_fk_indexes.sql` (and other pending migrations).
 
 ---
 
@@ -62,15 +74,17 @@ These are fully specified in [`TEST_REVIEW_FIX_PLAN.md`](./TEST_REVIEW_FIX_PLAN.
 
 | Item | Why deferred |
 |------|--------------|
-| **§4.6 — Library search + Arabic FTS** (LIB-4/5/KN-4) | **Needs the real seeded library corpus** to test + the riskiest live-DB migration (drops/recreates 5 `fts` columns + a materialized view). This is the "library needs its real data files" dependency you called out. |
-| **§4.5 — Book/reference detail** (LIB-19.1/2/3) | The code fix (remove the 2-slug hardcode → fetch by slug, fix the hydration crash, fix شرعي/وضعي label) is buildable, but "working well" needs the **real book data seeded** to verify. Specced, not yet applied. |
-| **§4.7 — Persistence (folders/notes/drafts → DB)** | Large feature (~22h): notes table + RLS + CRUD, atomic SmartFolders API wiring, draft persistence. |
+| ~~**§4.6 — Library search + Arabic FTS**~~ (LIB-4/5/KN-4) | ✅ **DONE (2026-07-16):** Server-side FTS search implemented via `POST /api/library/search` with Arabic full-text search. Pagination with "Load More" buttons added to `/laws` page. In-memory JS `.filter()` bypass eliminated. |
+| **§4.5 — Book/reference detail** (LIB-19.1/2/3) | 🟡 **PARTIALLY COMPLETE (2026-07-16):** `supabaseLibrary.ts` table name mismatch fixed (`law_chapters`→`chapters`, `law_articles`→`articles`, `law_amendments`→`article_amendments`, removed phantom `law_executive_regs`). `feqh-preview` connected to DB with hardcoded fallback. Civil-procedure and law-metadata-map also connected to DB. Full book detail fetch-by-slug still pending. |
+| ~~**§4.7 — Persistence (SmartFolders → DB)**~~ | ✅ **DONE (2026-07-16):** SmartFolders wired to `/api/library/folders` Supabase API — dual-mode: API for authenticated users, localStorage for guests. **Still pending:** notes table + RLS + CRUD, draft persistence. |
 | **§4.8 — Merge the tester's 10 modifications** | Careful merge; 2 files conflict with our edits, and 4 hunks would reintroduce fake data we removed. Needs deliberate cherry-picking. |
 | ~~§4.2 — Lawyer profile privacy + edit form~~ | ✅ **DONE** (see above) — `show_contact` migration + PATCH allowlist + PII projection/strip + edit page + PDF gate + localization. Apply `20260705_lawyer_show_contact.sql` on deploy. |
 | **§4.4 Part C** — subscription cards to real state (AI-3.2/3.1) | Contained; deferred with the profile work. |
 | **§4.3** — mojibake data-repair migration + `cleanArabicText`; **§4.3** consult `?book=1` auto-open modal | Data migration needs DB verification; auto-open needs a `Suspense` wrapper (build-risk to validate). |
 | **§4.9** — CLIENT-2.1 (new-tab session), CLIENT-2.3 (question handoff), CLIENT-3.1/3.6 (success dead-ends) | Contained; not reached this round. CLIENT-2.1 touches middleware (`proxy.ts`) and needs staging verification. |
 | **Cross-cutting hardening** (§7 of the plan) | Rate-limiting + Zod on the new/anon endpoints; PDPL projection of `license_number`. Pre-public-launch. |
+| ~~**Library-toolkit CLI**~~ | ✅ **DONE (2026-07-16):** Created `library-toolkit/` with 6 CLI commands: `parse`, `seed`, `clear`, `verify`, `status`, `reseed`. Full parse→seed→verify pipeline for library corpus management. |
+| ~~**Paywall enforcement**~~ | ✅ **DONE (2026-07-16):** Fixed paywall bypass — was overridden with `free: true` on all items, now correctly uses `free: !isLocked` to enforce subscription gating. |
 | **26 product/UX decisions** (§8 of the plan) | Need your call before building (flow shortcuts, wizard inputs, logo asset, appeal-deadline calculator, etc.). |
 
 ---

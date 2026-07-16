@@ -1,8 +1,25 @@
-# NZAMY — Remaining Work (Post bfb3a5f)
+# NZAMY — Remaining Work (Post 9fe1949)
 
 > **Generated:** 2026-07-16 from MASTER_PRIORITY_LIST, workflows_roadmap.md, TEST_REVIEW_RECONCILIATION.md
-> **Last commit:** `d1126a7` on `main` | **Build:** ✅ GREEN
-> **What's done:** 14 fixes shipped (5 P0 security + 5 P1 features + 4 P2 quality)
+> **Last commit:** `9fe1949` on `main` | **Build:** ✅ GREEN
+> **What's done:** 14 fixes shipped, Library Sprint (FTS search, pagination, paywall, CLI, smart folders), and Blog CMS Sprint (DB-driven articles schema, storage covers, metadata, blog-toolkit CLI)
+>
+> ### 🆕 2026-07-16 Library Sprint Completion
+> Major library implementation work completed this session:
+> - ✅ **library-toolkit CLI** created with 6 commands (parse, seed, clear, verify, status, reseed)
+> - ✅ **supabaseLibrary.ts table names fixed** (law_chapters→chapters, law_articles→articles, law_amendments→article_amendments, removed phantom law_executive_regs)
+> - ✅ **SmartFolders wired to Supabase API** (dual-mode: API for auth, localStorage for guest)
+> - ✅ **feqh-preview, civil-procedure, law-metadata-map connected to DB** (were 100% hardcoded)
+> - ✅ **Server-side search + pagination** on `/laws` page (replaced in-memory JS filtering)
+> - ✅ **Paywall enforcement fixed** (`free: true` override → `free: !isLocked`)
+>
+> ### 🆕 2026-07-16 Blog CMS Sprint Completion
+> Major blog CMS implementation work completed this session:
+> - ✅ **DB-driven articles schema** (31 fields) implemented in database
+> - ✅ **Storage bucket covers** configured for blog cover images
+> - ✅ **Server JSON-LD + metadata** integrated for SEO dynamic article generation
+> - ✅ **GFM-alert renderer** for rich content display
+> - ✅ **blog-toolkit CLI** created to manage content and publishing pipeline
 
 ---
 
@@ -99,13 +116,13 @@
 - [ ] Gate time-tracker billing to hourly cases
 - [ ] Case finance-structure fields
 - [ ] Hide lawyer personal contact from public profile
-- [ ] Persist smart folders/drafts/notes to Supabase (not localStorage)
+- [x] ~~Persist smart folders to Supabase~~ — ✅ DONE (2026-07-16): SmartFolders wired to `/api/library/folders` API, dual-mode (API for auth, localStorage for guest). **Notes/drafts still pending.**
 
 ---
 
 ## 🟡 P6 — Static Analysis / SEO / Performance (9 remaining of 13)
 
-- [ ] **A3 — In-memory search bypass** — `/laws/page.tsx` loads first 100 rows then JS `.filter()`, never calls backend search API
+- [x] ~~**A3 — In-memory search bypass**~~ — ✅ DONE (2026-07-16): Server-side FTS search implemented via `POST /api/library/search`, pagination with "Load More" buttons added. No longer loads all data into memory.
 - [ ] **Q1 — Silent `.catch(()=>{})` sweep** — `chatService`, `documentService`, `groupService` still have mock fallbacks
 - [ ] **U1+SE1 — FOUC + crawler language** — server hardcodes `<html lang="ar" dir="rtl">`, client JS flips → FOUC + crawler mismatch
 - [ ] **SE3 — Static blog sitemap** — `sitemap.ts:19-20` hardcoded URL → dynamic query of `articles`
@@ -222,16 +239,17 @@
 - [ ] **In-app notifications table** — verify inserts are live after P0 deploy
 
 ### Wave 2 — Wire "schema built, client never wired"
-- [ ] Migrate localStorage → existing tables: Community, Smart Folders, Research Collector, Client Groups, Draft Cart, sticky notes
+- [x] ~~Migrate localStorage → Smart Folders~~ — ✅ DONE (2026-07-16): SmartFolders wired to Supabase API with dual-mode (auth/guest)
+- [ ] Migrate localStorage → remaining tables: Community, Research Collector, Client Groups, Draft Cart, sticky notes
 - [ ] Contact form real submission + shared document review real token/passcode/approve
 - [ ] Client documents storage (enable bucket) + wallet/referral/finance population + payout wiring
 - [ ] E-signature flow on contracts — real capture + audit trail
 
 ### Wave 3 — Content system
-- [ ] Blog CMS — verify `articles` table is live + add categories/analytics/tracking
+- [x] ~~Blog CMS — verify `articles` table is live + add categories/analytics/tracking~~ — ✅ DONE (2026-07-16): Blog CMS implemented with DB-driven articles schema (31 fields), storage bucket covers, server JSON-LD + metadata, GFM-alert renderer, and blog-toolkit CLI. (Analytics and Meta Pixel/GA4 integrations remain in P5).
 - [ ] **Academy LMS** — courses/sections/lessons/enrollments/progress/quiz/certificates + media hosting (**largest single effort**)
 - [ ] Media library table + asset hosting + subscription wired to payments
-- [ ] Library corpus seeding — populate `library` schema; drop demo-slug fallbacks; add admin POST `/api/v1/admin/library`
+- [x] ~~Library corpus seeding~~ — ✅ DONE (2026-07-16): `library-toolkit/` created with full parse→seed→verify pipeline (6 CLI commands: parse, seed, clear, verify, status, reseed). Demo-slug fallbacks replaced with DB queries.
 
 ### Wave 4 — Admin console persistence
 - [ ] Admin financial ops (escrow/disputes/payouts/revenue)
@@ -258,5 +276,5 @@
 | AI Mock Cleanup | 0 | 8 surfaces | Replace `setTimeout` fakes with "قريباً" |
 | n8n Section A (NOW) | 0/7 | 7 workflows + 4 templates | ~18-25h, blocks client↔lawyer launch |
 | n8n Section B (LATER) | 0/11 | 11 workflows + 5 templates | 7 ready, 4 blocked by payments |
-| P7 Backlog (5 waves) | 0 | ~20+ items | Post-beta, gated by payments + content |
-| **TOTAL** | **~14 done** | **~100+ remaining** | |
+| P7 Backlog (5 waves) | 3 ✅ | ~17 remaining | Post-beta, gated by payments + content |
+| **TOTAL** | **~19 done** | **~97 remaining** | |

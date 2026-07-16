@@ -119,18 +119,31 @@ From `production_readiness_audit.md` §2. These block real DB-mode operation end
 
 From `nzamy-audit-fix-status.md` + `legal_library_guide.md`. Library works but has cleanup + scale issues.
 
+> ### 🆕 2026-07-16 Library Sprint — Major Progress
+> Most Phase 3 work is now **COMPLETE**. Created `library-toolkit/` CLI, fixed DB table names, wired SmartFolders + search + paywall. Only cleanup items remain (~0.5–1 day).
+
 - [x] **#15 Dev-flag the demo-data fallbacks.** ✅ Done (2026-06-29) via new `src/app/laws/demo-data-access.ts` — re-exports the demo arrays but returns `[]` in prod unless `NEXT_PUBLIC_LIB_DEMO_FALLBACK=1`; types/taxonomy constants re-exported unconditionally. Import sites repointed (`laws/page.tsx`, `orders/[slug]`, `components/*`, `_sidebar`). `law-metadata-map.ts` left as-is (lookup, not fake content).
 - [ ] **#15 `law_metadata` table** — ⬜ still deferred; `law-metadata-map.ts` (584 lines) remains. Replace with a `law_metadata` table + migration (future).
 - [x] **#16 Library init pagination** — ✅ Done: `/api/library/init` now reads `?limit` (1-200, default 100) + `?page` and uses `.range()` on all 5 tables instead of unbounded `select('*')`.
 - [x] **#16 FTS/GIN indexes** — ✅ Done (route side): `search` + `autocomplete` routes switched from `.ilike` to `.textSearch('fts', ..., {config:'library.arabic', type:'plain'})` → `fts @@ plainto_tsquery`. The `fts` generated columns + GIN indexes already exist in `20260626_legal_library_schema.sql`; they were dead weight before, now used.
 - [x] **#16 `seed-library.ts --clean`** — ✅ Done: `clean` param wired to `seedLaws`/`seedDecrees`/`seedPrecedents`/`seedFeqh`; delete-before-insert (children-first) when `clean && !dryRun`.
 - [x] **#16 `smart_folder_items` DELETE ownership** — ✅ Done: item DELETE now verifies parent `smart_folders.user_id = auth.uid()` (404 if missing, 403 if not owner) before deleting.
+- [x] **SmartFolders → Supabase API** — ✅ DONE (2026-07-16): Wired to `/api/library/folders` API with dual-mode (API for authenticated users, localStorage fallback for guests).
+- [x] **Server-side search + pagination** — ✅ DONE (2026-07-16): `POST /api/library/search` with Arabic FTS, "Load More" pagination on `/laws` page. Eliminated in-memory JS `.filter()` bypass.
+- [x] **supabaseLibrary.ts table name fix** — ✅ DONE (2026-07-16): Fixed `law_chapters`→`chapters`, `law_articles`→`articles`, `law_amendments`→`article_amendments`, removed phantom `law_executive_regs` reference.
+- [x] **Paywall enforcement** — ✅ DONE (2026-07-16): Fixed bypass where `free: true` was hardcoded on all items → now correctly uses `free: !isLocked` to enforce subscription gating.
+- [x] **feqh-preview / civil-procedure / law-metadata-map DB connection** — ✅ DONE (2026-07-16): These were 100% hardcoded; now connected to DB with fallback to hardcoded data.
+- [x] **library-toolkit CLI** — ✅ DONE (2026-07-16): Created `library-toolkit/` with 6 CLI commands: `parse`, `seed`, `clear`, `verify`, `status`, `reseed`. Full parse→seed→verify pipeline.
 - [ ] **#16 `parse-feqh.ts:357`** — ⬜ Not fixed (honest TODO): `volume: 1` kept as placeholder with an explicit TODO comment; no real volume detection implemented.
 - [ ] **#16 Per-type whitelist keys** — ⬜ still deferred; `checkLibraryAccess` whitelist still law-slug-keyed.
+- [ ] **Type normalization** — ⬜ deferred; content type values not normalized across DB and UI.
+- [ ] **Container unbundling** — ⬜ deferred; large compound containers not yet split.
 - [x] **#16 `precedents/judgment/[slug]/page.tsx`** — ✅ Gated (not built): replaced `DEMO_PRECEDENTS.find()` mock with `DashboardComingSoon` ("تفاصيل صك الحكم", back to `/laws`). No `/api/library/judgment` route or `library.judgments` table exists, so gated honestly قريباً rather than fabricating.
 - [x] **#16 AI stubs gate** — ✅ Done: `LibraryAI` now calls real `/api/ai/library-chat` (fallback قريباً); `ArticleExplainModal` + `CommunityQuestionModal` gated قريباً (no more `setTimeout` fakes); `POST /api/community/questions` TODO resolved by gating honestly (no localStorage fake-success).
 
-**Acceptance:** library init paginated ✅; indexed (FTS used) ✅; prod shows empty state on seed failure ✅; `--clean` actually truncates ✅. ⚠️ **REGRESSION on Arabic normalization:** search of `الإثبات` matching stored `الاثبات` (and `١٤٤٤`↔`1444`) may NO LONGER work — the FTS rewrite uses `library.arabic` (`copy=simple`, no normalization) with the raw query, and `normalizeSearch` is no longer applied for matching. Fix options: (A) re-add `normalizeSearch`+`.ilike` as an OR fallback alongside FTS, or (B) add a SQL normalize function and rebuild `fts` as `to_tsvector('library.arabic', normalize_arabic_text(...))`. Tracked in `library_testing_arabic.md` note #4.
+**Acceptance:** library init paginated ✅; indexed (FTS used) ✅; prod shows empty state on seed failure ✅; `--clean` actually truncates ✅; SmartFolders API ✅; server-side search ✅; paywall enforced ✅; library-toolkit CLI ✅. ⚠️ **REGRESSION on Arabic normalization:** search of `الإثبات` matching stored `الاثبات` (and `١٤٤٤`↔`1444`) may NO LONGER work — the FTS rewrite uses `library.arabic` (`copy=simple`, no normalization) with the raw query, and `normalizeSearch` is no longer applied for matching. Fix options: (A) re-add `normalizeSearch`+`.ilike` as an OR fallback alongside FTS, or (B) add a SQL normalize function and rebuild `fts` as `to_tsvector('library.arabic', normalize_arabic_text(...))`. Tracked in `library_testing_arabic.md` note #4.
+
+**Remaining Phase 3 items** (~0.5–1 day): `law_metadata` table migration, `parse-feqh` volume detection, per-type whitelist keys, type normalization, container unbundling.
 
 ---
 
@@ -272,7 +285,7 @@ Phase 8  (deploy hardening + SEO + CI)  ← prod launch readiness
 | 0 — Migrations | 2 migrations + deploy.sh | 0.5 day |
 | 1 — Audit deferrals | detail pages, error sweep, mock remnants | 2–3 days |
 | 2 — DB/RLS blockers | 7 SQL/API fixes | 1–2 days |
-| 3 — Library finishing | dev-flag, FTS, pagination, parser fixes | 2–3 days |
+| 3 — Library finishing | ~~dev-flag, FTS, pagination~~, parser fixes, cleanup | ~~2–3 days~~ → **0.5–1 day remaining** (most done 2026-07-16) |
 | 4 — Payments | full gateway integration | 5–8 days (gated on decision) |
 | 5 — n8n | Section A (launch) + Section B | 18–25h (A) + 15–20h (B) |
 | 6 — Sector dashboards | 6 sectors, ~50 items | 8–12 days |

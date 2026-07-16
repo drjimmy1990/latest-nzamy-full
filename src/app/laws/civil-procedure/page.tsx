@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText, ArrowLeft, ArrowRight, Star,
@@ -208,6 +208,58 @@ export default function CivilProcedureLawPage() {
   const muted = isDark ? "text-gray-400" : "text-slate-500";
   const border = isDark ? "border-white/[0.06]" : "border-slate-200";
 
+  // ── DB-backed articles state (falls back to hardcoded ARTICLES) ────────
+  const [articles, setArticles] = useState<ArticleData[]>(ARTICLES);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadLaw() {
+      try {
+        const res = await fetch("/api/library/laws/civil-procedure-law");
+        if (!res.ok) throw new Error("fetch failed");
+        const data = await res.json();
+
+        if (cancelled) return;
+
+        // Transform API chapters → flat ArticleData[]
+        const apiArticles: ArticleData[] = [];
+        let idCounter = 1;
+        for (const ch of (data.chapters || [])) {
+          for (const a of (ch.articles || [])) {
+            apiArticles.push({
+              id: idCounter++,
+              numTitle: a.num || `المادة ${idCounter - 1}`,
+              currentText: a.text || "",
+              executiveRegulations: a.executiveReg
+                ? [{ num: a.executiveReg.ref || "", text: a.executiveReg.text || "" }]
+                : [],
+              amendment: a.amendments && a.amendments.length > 0
+                ? {
+                    source: a.amendments[0].source || "",
+                    date: a.amendments[0].date || "",
+                    originalText: a.amendments[0].fullText || "",
+                    description: a.amendments[0].summary || "",
+                  }
+                : undefined,
+            });
+          }
+        }
+
+        // Only use API data if we got meaningful articles
+        if (apiArticles.length > 0) {
+          setArticles(apiArticles);
+        }
+      } catch {
+        // Silently fall back to hardcoded ARTICLES (already set as default)
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    loadLaw();
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div className={`min-h-screen ${isDark ? "bg-dark-bg" : "bg-[#f8f9fa]"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
@@ -268,17 +320,33 @@ export default function CivilProcedureLawPage() {
               </h2>
             </div>
 
-            <div className="space-y-6">
-              {ARTICLES.map(article => (
-                <ArticleCard key={article.id} article={article} isDark={isDark} isRTL={isRTL} />
-              ))}
-            </div>
+            {/* Loading State */}
+            {isLoading && (
+              <div className={`flex items-center justify-center py-16 rounded-2xl border mb-6 ${isDark ? "bg-dark-card border-white/[0.06]" : "bg-white border-slate-200 shadow-sm"}`}>
+                <div className="text-center space-y-3">
+                  <div className={`w-8 h-8 border-2 border-t-transparent rounded-full animate-spin mx-auto ${isDark ? "border-[#C8A762]" : "border-[#0B3D2E]"}`} />
+                  <p className={`text-sm font-bold ${muted}`}>
+                    {isRTL ? "جاري تحميل مواد النظام..." : "Loading law articles..."}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!isLoading && (
+              <div className="space-y-6">
+                {articles.map(article => (
+                  <ArticleCard key={article.id} article={article} isDark={isDark} isRTL={isRTL} />
+                ))}
+              </div>
+            )}
 
             {/* Note about continuation */}
+            {!isLoading && (
             <div className={`mt-8 text-center p-8 rounded-2xl border border-dashed ${isDark ? "border-white/20 text-gray-500" : "border-slate-300 text-slate-500"}`}>
               <p className="text-sm">هذا العرض يشمل المواد الأولية كنموذج (بناءً على النصوص المزودة).</p>
               <p className="text-xs mt-2">يمكنك تصفح باقي المواد (حتى المادة ٧١ وما بعدها) من خلال محرك البحث المخصص للمكتبة.</p>
             </div>
+            )}
           </div>
 
         </div>

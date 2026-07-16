@@ -4,8 +4,8 @@
  * Mapping ثابت يربط slug كل وثيقة قانونية بميتاداتا البطاقة التعريفية.
  * يُدمج هذا مع بيانات الـ JSON أثناء تحميل الصفحة لتجنب تعديل 100+ ملف.
  *
- * TODO (Backend): استبدل هذا بجدول قاعدة بيانات `law_metadata` في Supabase
- * يُستدعى عبر: SELECT * FROM law_metadata WHERE slug = $1
+ * NOTE: fetchLawMetadata(slug) now queries the DB first, falling back
+ *       to this static map if the API returns nothing.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -135,6 +135,61 @@ export function getLawMeta(slug: string): LawMetaEntry {
   }
 
   return {};
+}
+
+/**
+ * fetchLawMetadata(slug)
+ * ──────────────────────────────────────────────────────────────────────
+ * Async version that queries the DB first (via /api/library/laws/[slug]),
+ * mapping DB columns to LawMetaEntry fields. Falls back to the static
+ * LAW_METADATA_MAP if the API returns nothing or fails.
+ *
+ * Usage (client component):
+ *   const meta = await fetchLawMetadata("civil-procedure-law");
+ * ──────────────────────────────────────────────────────────────────────
+ */
+export async function fetchLawMetadata(slug: string): Promise<LawMetaEntry> {
+  // Normalize slug the same way getLawMeta does
+  let normSlug = slug;
+  if (slug === "civil-transactions") normSlug = "civil-transactions-law";
+  else if (slug === "civil-procedure") normSlug = "civil-procedure-law";
+  else if (slug === "evidence") normSlug = "evidence-law";
+
+  try {
+    const res = await fetch(`/api/library/laws/${encodeURIComponent(normSlug)}`);
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    const data = await res.json();
+
+    // Map API response fields to LawMetaEntry
+    const dbMeta: LawMetaEntry = {};
+
+    if (data.issuanceDecree) dbMeta.issuanceDecree = data.issuanceDecree;
+    if (data.issuanceDate)   dbMeta.issuanceDate = data.issuanceDate;
+    if (data.source)         dbMeta.boe_url = data.source;
+
+    // Count total articles from the chapters structure
+    if (data.chapters && Array.isArray(data.chapters)) {
+      let totalArticles = 0;
+      let hasExecReg = false;
+      for (const ch of data.chapters) {
+        if (ch.articles) {
+          totalArticles += ch.articles.length;
+          for (const a of ch.articles) {
+            if (a.executiveReg) hasExecReg = true;
+          }
+        }
+      }
+      if (totalArticles > 0) dbMeta.total_articles = totalArticles;
+      dbMeta.has_executive_reg = hasExecReg;
+    }
+
+    // Merge: DB data overrides static map, but static map fills gaps
+    const staticMeta = getLawMeta(slug);
+    return { ...staticMeta, ...dbMeta };
+  } catch {
+    // Silently fall back to static map
+    return getLawMeta(slug);
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────

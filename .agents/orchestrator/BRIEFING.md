@@ -1,7 +1,8 @@
 # BRIEFING — 2026-07-09T00:26:29+03:00
 
 ## Mission
-Fix mobile responsive views, broken/missing navigation elements, and layout bugs across the existing NZAMY (نظامي) legal services website.
+Conduct a comprehensive review of the `nzamy-website` project focusing on code quality, security, UI/UX, SEO, performance, and general architecture, producing a `comprehensive_review.md` file in the project's root folder.
+
 
 ## 🔒 My Identity
 - Archetype: teamwork_preview_orchestrator
@@ -31,13 +32,12 @@ Fix mobile responsive views, broken/missing navigation elements, and layout bugs
    - Escalate: report to parent (sub-orchestrators only, last resort)
 4. **Succession**: At 16 spawns, write handoff.md, spawn successor.
 - **Work items**:
-  1. Fix Structural HTML & Viewport Issues [pending]
-  2. Fix Navbar & Breakpoint Dead Zone [pending]
-  3. Fix Homepage Mobile Responsiveness [pending]
-  4. Full-Site Mobile Audit & Fix [pending]
-  5. Run build and verify [pending]
+  1. Explore codebase and identify issues in Code Quality, Security, UI/UX, SEO, Performance, and Architecture [pending]
+  2. Synthesize findings and write comprehensive_review.md [pending]
+  3. Review and verify the review report [pending]
 - **Current phase**: 1
-- **Current focus**: Planning, update scope and dispatch explorer for initial codebase review
+- **Current focus**: Planning and updating scope, preparing to dispatch Explorer subagents.
+
 
 ## 🔒 Key Constraints
 - NEVER write, modify, or create source code or document files outside .agents/ folder directly.
@@ -49,42 +49,27 @@ Fix mobile responsive views, broken/missing navigation elements, and layout bugs
 - Updated: 2026-07-09T00:26:29+03:00
 
 ## Key Decisions Made
-- Decomposed layout, responsive design, and navigation fixes into five milestones.
-- Ran GitNexus analyzer (drop-embeddings) to sync index with latest repository state.
+- Transitioned to static analysis-based project review focusing on 6 core domains.
+- Started a new review phase and dispatched the static analyzer subagent.
 
 ## Team Roster
-### Previous Phase (Admin Panel Integration)
+### Current Phase (Comprehensive Review)
 | Agent | Type | Work Item | Status | Conv ID |
 |-------|------|-----------|--------|---------|
-| worker_doc | teamwork_preview_worker | Create PROJECT.md at root | completed | ab7ba2ef-1071-474b-829f-4b003351ad02 |
-| worker_api | teamwork_preview_worker | Implement secure admin API endpoints | completed | 25817de1-6c56-4ee4-8a64-252493432451 |
-| worker_ui | teamwork_preview_worker | Wire admin dashboard frontend tabs | completed | 60e7524c-8c31-4e9a-b733-e6aeecfbd9d5 |
-| auditor | teamwork_preview_auditor | Verify build & run forensic audit | failed | d1e8f061-e61d-43f5-bcb7-1739cc587c1a |
-| worker_corp | teamwork_preview_worker | Wire Corporate Tab to database | completed | bd5d53f6-0c67-4187-9c84-2cf90b924359 |
-| auditor_final | teamwork_preview_auditor | Verify build & run forensic audit (recheck) | completed | 7d820eb1-3550-48f3-aca1-d229c85219f5 |
+| explorer_review | teamwork_preview_explorer | Perform static code analysis and collect findings | completed | a099b512-5c84-4315-9149-53bbaac1f490 |
+| worker_review | teamwork_preview_worker | Write comprehensive_review.md at root | completed | c29822ec-785c-4866-8f3a-24c6d59eb5f6 |
+| reviewer_review | teamwork_preview_reviewer | Peer-review the comprehensive_review.md report | completed | 2da1fe22-a841-45bf-bba7-03a66eac2319 |
 
-### Current Phase (Responsive Overhaul)
-| Agent | Type | Work Item | Status | Conv ID |
-| worker_doc_resp | teamwork_preview_worker | Update PROJECT.md at root | completed | 62cf1695-8143-447d-8719-b7e01445336c |
-| explorer_m1_m2 | teamwork_preview_explorer | Analyze HTML/Navbar layout | completed | 5669de76-05d8-4788-a259-f70ccefe224c |
-| explorer_m3 | teamwork_preview_explorer | Analyze homepage responsiveness | completed | 1bcd9075-4860-48d9-a236-35da1cdf65d0 |
-| explorer_m4 | teamwork_preview_explorer | Analyze site-wide responsiveness | completed | 719b44db-c7a6-4e10-90fa-6c948557af84 |
-| worker_resp_fixes | teamwork_preview_worker | Implement responsive/layout fixes | completed | ceee86fb-9447-468c-a6e3-f0b689b4b729 |
-| reviewer_1 | teamwork_preview_reviewer | Review responsive fixes | completed | 60bfe45b-7516-429a-965f-41e7e77918d0 |
-| reviewer_2 | teamwork_preview_reviewer | Review HTML/Navbar layout | completed | a08861de-1a79-422e-8858-b3b412618d8f |
-| challenger_1 | teamwork_preview_challenger | Validate homepage layout | in-progress | 2d2e7dda-bd0e-423e-aa9a-c6b1aaf6045c |
-| challenger_2 | teamwork_preview_challenger | Validate site-wide layout | failed (report delivered) | f20bc409-8308-431b-95a4-412efb7652cf |
-| auditor_resp | teamwork_preview_auditor | Forensic integrity check | completed | 58d7261d-d396-4fbd-bd3d-593b5f7acb4a |
 
 ## Succession Status
-- Succession required: yes
-- Spawn count: 16 / 16
+- Succession required: no
+- Spawn count: 3 / 16
 - Pending subagents: none
 - Predecessor: none
 - Successor: not yet spawned
 
 ## Active Timers
-- Heartbeat cron: a38039ee-c228-44d5-872f-89d05818f652/task-25
+- Heartbeat cron: none
 - Safety timer: none
 
 ## Artifact Index

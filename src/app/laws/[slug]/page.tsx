@@ -14,7 +14,8 @@ import { useUser } from "@/hooks/useUser";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 import { COMPANIES_LAW } from "../data";
 import type { LawArticle, LawSystem } from "../data";
-import { getLawMeta, SECTION_COLORS } from "../law-metadata-map";
+import { getLawMeta, fetchLawMetadata, SECTION_COLORS } from "../law-metadata-map";
+import type { LawMetaEntry } from "../law-metadata-map";
 import { PaywallModal } from "../components/PaywallModal";
 import { useDraftCart } from "@/hooks/useDraftCart";
 import {
@@ -50,6 +51,17 @@ export default function LawSystemPage() {
   const isScrolling = useRef(false);                 // منع تعارض scroll و click
   const [isReadingMode, setIsReadingMode] = useState(false);
   const [viewMode, setViewMode] = useState<"all" | "law" | "regulation">("all");
+
+  // ── Law metadata: sync initial → async upgrade from DB ──────────────────
+  const [lawMeta, setLawMeta] = useState<LawMetaEntry>(() => getLawMeta(slug));
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLawMetadata(slug).then(meta => {
+      if (!cancelled) setLawMeta(meta);
+    });
+    return () => { cancelled = true; };
+  }, [slug]);
 
   // Cart: global, backed by localStorage via useDraftCart
   const { cart, setCart } = useDraftCart();
@@ -124,7 +136,7 @@ export default function LawSystemPage() {
   useEffect(() => {
     if (!slug || !law?.title) return;
     try {
-      const meta = getLawMeta(slug);
+      const meta = lawMeta;
       const raw = localStorage.getItem("nzamy_recent_sessions");
       const sessions = raw ? JSON.parse(raw) : [];
       const filtered = sessions.filter((s: any) => !(s.slug === slug && s.type === "law"));
@@ -150,22 +162,20 @@ export default function LawSystemPage() {
 
   // Current Document Meta for folder auto-add
   const currentDoc = useMemo(() => {
-    const meta = getLawMeta(slug);
     return {
       slug,
       title: law.title,
       titleEn: law.titleEn || law.title,
-      catId: meta.section_code ? `SA-${meta.section_code}` : "SA-00",
+      catId: lawMeta.section_code ? `SA-${lawMeta.section_code}` : "SA-00",
       type: "law" as const
     };
-  }, [slug, law]);
+  }, [slug, law, lawMeta]);
 
   const regulationTabLabel = useMemo(() => {
-    const meta = getLawMeta(slug);
-    if (meta.executive_label_override) {
+    if (lawMeta.executive_label_override) {
       return isRTL 
-        ? `${meta.executive_label_override} فقط` 
-        : `${meta.executive_label_override} Only`;
+        ? `${lawMeta.executive_label_override} فقط` 
+        : `${lawMeta.executive_label_override} Only`;
     }
     let foundLabel = "";
     if (law?.chapters) {
@@ -190,7 +200,7 @@ export default function LawSystemPage() {
     }
     if (foundLabel) return foundLabel;
     return isRTL ? "اللائحة فقط" : "Regulation Only";
-  }, [slug, law, isRTL]);
+  }, [slug, law, isRTL, lawMeta]);
 
   // ــ Intersection Observer: تحديث activeId عند السكرول تلقائياً ــــــــــــــــــ
   useEffect(() => {
@@ -211,8 +221,7 @@ export default function LawSystemPage() {
     });
     return () => observers.forEach(o => o?.disconnect());
   }, [law]);
-
-  const lawMeta = getLawMeta(slug);
+   // (lawMeta is now state-driven, no need for re-derivation)
   const sectionColors = SECTION_COLORS[lawMeta.section_code ?? "00"];
 
   const allArticles  = law.chapters.flatMap(ch => ch.articles);

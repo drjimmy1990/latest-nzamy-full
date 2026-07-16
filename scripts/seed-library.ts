@@ -204,16 +204,16 @@ async function seedLaws(
     if (lawId.includes("EXTRACTION_REPORT")) continue;
 
     lawRows.push({
-      slug: lawId,
+      slug: lawId.substring(0, 200),
       title: law.title,
       title_en: law.title_en || "",
       type: (law.type || "نظام").substring(0, 50),
       description: law.description || law.title || "",
-      section_code: law.section_code || "",
-      section_name: law.section_name || "",
-      issuing_body: law.issuing_body || "",
-      issuing_instrument: law.issuance_decree || "",
-      issue_date_hijri: law.issuance_date || "",
+      section_code: String(law.section_code || "").substring(0, 20),
+      section_name: String(law.section_name || "").substring(0, 200),
+      issuing_body: String(law.issuing_body || "").substring(0, 200),
+      issuing_instrument: String(law.issuance_decree || "").substring(0, 200),
+      issue_date_hijri: String(law.issuance_date || "").substring(0, 20),
       total_articles: law.total_articles || 0,
       preamble: law.preamble || "",
       has_merged_regulation: law.has_executive_reg || false,

@@ -79,3 +79,9 @@ supabase/.branches/
 blog_final/
 blog-toolkit/blog_final/
 blog-toolkit/_blog-seed-rejects.log
+
+# ─── Test / source content (owner data — too large for git) ───────────────
+test/
+
+# ─── Library toolkit parsed output (regenerated via `npm run library:parse`) ──
+library-toolkit/output/

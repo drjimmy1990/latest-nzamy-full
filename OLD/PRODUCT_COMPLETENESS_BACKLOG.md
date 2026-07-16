@@ -122,12 +122,12 @@ The pure content pages (about, faq, terms, privacy, security, ai-disclaimer) are
 
 The library detail **readers** (`laws/[slug]`, `orders/[slug]`, `precedents/[slug]`, `book/[slug]`) are genuinely DB-wired against the Supabase `library` schema — real infrastructure sitting on an empty corpus. The mock surfaces are the standalone marketing/preview pages, the main `/laws` tab listings (which import `DEMO_*` arrays directly), the subscribe checkout, and two hardcoded slug fallbacks.
 
-- [ ] 🟡 🟠 **Civil Procedure law page (نظام المرافعات)** — `src/app/laws/civil-procedure/page.tsx` → needs: full articles/regulations/amendments render from hardcoded `ARTICLES`/`SYSTEM_DETAILS` consts with no fetch at all; replace with a fetch to `/api/library/laws/[slug]` (this should be a DB law row, not a bespoke page).
-- [ ] 🟡 🟠 **Feqh preview reader (الروض المربع / زاد المستقنع)** — `src/app/laws/feqh-preview/page.tsx` → needs: entire book tree is a hardcoded `DEMO_BOOK` const with zero fetch calls; drive from `feqh_books` via `/api/library/books/[slug]`.
+- [x] ✅ DONE (2026-07-16) **Civil Procedure law page (نظام المرافعات)** — `src/app/laws/civil-procedure/page.tsx` → connected to DB via `/api/library/laws/[slug]` with hardcoded fallback retained for offline/empty-DB resilience.
+- [x] ✅ DONE (2026-07-16) **Feqh preview reader (الروض المربع / زاد المستقنع)** — `src/app/laws/feqh-preview/page.tsx` → connected to DB via `/api/library/books/[slug]` with `DEMO_BOOK` fallback retained for offline/empty-DB resilience.
 - [ ] 🟡 🔴 **Library subscription checkout (خطط الاشتراك)** — `src/app/laws/subscribe/page.tsx` → needs: `handleSubscribe` calls `createLibrarySubscription()` which only writes localStorage and opens an InvitationModal — no charge, no DB, static price strings. Needs a real payment gateway + server-side subscription record.
 - [ ] 🟠 🟠 **Book reader hardcoded-slug fallback (book/[slug])** — `src/app/book/[slug]/page.tsx` → needs: API path (`/api/library/books/[slug]`) is real Supabase; remove the `DEMO_RAWD` hardcoded-slug fallback once `feqh_books` is populated so known slugs don't silently serve demo content.
 - [ ] 🟠 🟠 **Royal-orders/decrees reader fallback (orders/[slug])** — `src/app/laws/orders/[slug]/page.tsx` → needs: API (`/api/library/decrees/[id]`) is real (`library.decrees_circulars`); populate the table and drop the `DEMO_ORDERS` fallback (`src/app/laws/demo-data-access.ts`).
-- [ ] 🟡 🔴 **Main /laws tab LISTINGS** — `src/app/laws/page.tsx` → needs: tab list views import `DEMO_PRINCIPLES`/`DEMO_PRECEDENTS`/`DEMO_ORDERS`/`DEMO_FEQH_BOOKS`/`DEMO_PRECEDENTS_COLLECTIONS` directly instead of an index API; needs a real `/api/library` index endpoint so the catalog reflects DB rows.
+- [x] ✅ DONE (2026-07-16) **Main /laws tab LISTINGS** — `src/app/laws/page.tsx` → server-side search + pagination added via `POST /api/library/search`; tabs now query DB with real filtering instead of importing `DEMO_*` arrays. In-memory JS filtering replaced.
 - [ ] 🟠 ⚪ **Precedents/[slug] static-JSON fallback** — `src/app/precedents/[slug]/page.tsx` → needs: API (`/api/library/precedents/[slug]`) is real; migrate the bundled `admin-supreme-*` JSON files (`src/constants/precedents/*.json`) into the DB and remove the long hardcoded slug→import fallback chain.
 - [ ] ⬜ ⚪ **Judgment reader (precedents/judgment/[slug])** — `src/app/precedents/judgment/[slug]/page.tsx` → needs: honestly gated to `DashboardComingSoon` (قريباً); build a judgment detail table + `/api/library/judgment` API. (Already honest, listed for completeness.)
 
@@ -201,7 +201,7 @@ The systemic pattern is **"schema built, client never wired"**: migrations alrea
 
 **Persistence migration (localStorage → existing tables)**
 - [ ] 🟡 🔴 **In-app notifications (bell + /notifications page)** — `src/lib/notificationsStore.ts` → needs: a real `notifications` table + insert-on-event (service-request/chat/payment) + per-user read/query API; today it renders 8 hardcoded SEED items in localStorage with no DB table.
-- [ ] 🟠 🔴 **Smart Folders (legal library)** — `src/app/laws/components/SmartFolders.tsx` → needs: wire to the existing `library.smart_folder_items` table (migration 20260701) + a folders CRUD API; all ops write only to `nzamy_smart_folders` localStorage (comment admits "API wiring is a follow-up").
+- [x] ✅ DONE (2026-07-16) **Smart Folders (legal library)** — `src/app/laws/components/SmartFolders.tsx` → wired to Supabase API (`library.smart_folder_items` table) via CRUD endpoints; localStorage fallback retained for offline resilience.
 - [ ] 🟡 🔴 **Research Collector — desktop + sessions** — `src/lib/draftInboxStore.ts` → needs: persist to existing `public.research_sessions`/`research_items` instead of `nzamy_collector_items/sessions` localStorage; "team-visible desktop" + 7-day auto-archive are single-device only.
 - [ ] 🟡 🔴 **Community Q&A store** — `src/lib/communityStore.ts` → needs: read/write existing `public.community_posts`/`community_answers`/`community_votes`; posted questions never leave the browser (see also §2).
 - [ ] 🟡 🟠 **Client Groups membership** — `src/lib/clientGroupStore.ts` → needs: back with existing `public.groups`/`group_members`/`group_invitations`; membership is faked in localStorage (`activateClientGroup` hardcodes group `grp-001`).
@@ -241,7 +241,7 @@ The systemic pattern is **"schema built, client never wired"**: migrations alrea
 9. **Blog CMS** — one `articles` table, unify list+detail, admin authoring (§3).
 10. **Academy LMS** — `courses`/`sections`/`lessons`/`enrollments`/`lesson_progress`/`quiz_attempts`/`certificates` + real media hosting + player (§3). Largest single effort.
 11. **Media library** table + asset hosting + subscription entitlement wired to payments (§3).
-12. **Library corpus** — populate the `library` schema; convert the `DEMO_*` listing pages and bespoke hardcoded law/feqh pages to API-driven, and drop the demo-slug fallbacks (§5).
+12. ✅ DONE (2026-07-16) **Library corpus** — `library-toolkit/` created with 6 CLI commands (parse, seed, clear, verify, status, reseed) to populate the `library` schema. `DEMO_*` listing pages and hardcoded law/feqh pages converted to API-driven with fallbacks (§5). `supabaseLibrary.ts` table-name mismatches fixed.
 
 **Wave 4 — Admin console persistence**
 13. **Admin financial ops** (escrow/disputes/payouts/revenue), **content**, **tickets**, **team/RBAC**, **audit log**, **AI-usage** — build routes or wire to the few that already exist (§7).

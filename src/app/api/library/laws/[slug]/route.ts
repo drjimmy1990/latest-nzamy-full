@@ -146,7 +146,7 @@ function formatArticleWithPaywall(
     num: article.number_text || `المادة ${article.number}`,
     title: article.title || '',
     status: article.status || 'active',
-    free: article.free ?? true,
+    free: !isLocked,
     locked: isLocked,
   };
 

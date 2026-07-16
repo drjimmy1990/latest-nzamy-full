@@ -198,7 +198,10 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   const variant = detectVariant(body, meta);
 
   const fileBaseName = path.basename(filePath, ".md");
-  const slug = (meta.slug as string) || fileBaseName;
+  const rawSlug = (meta.slug as string) || fileBaseName;
+  // Normalize slugs: if slug contains spaces or Arabic chars, run it through slugifyArabic
+  // to produce a URL-safe slug. PostgREST breaks with spaces in PK values.
+  const slug = /[\s\u0600-\u06FF]/.test(rawSlug) ? slugifyArabic(rawSlug) : rawSlug;
   const title = (meta.title as string) || fileBaseName;
 
   console.log(`  📜 Parsing law: ${title} (${variant} variant)`);
