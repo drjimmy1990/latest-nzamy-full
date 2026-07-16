@@ -7,11 +7,19 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { ArticleJsonLd } from "@/components/ArticleJsonLd";
-import ArticleView, { formatDate } from "./ArticleView";
+import ArticleView from "./ArticleView";
 import type { PlatformBlogArticle } from "@/constants/platformContent";
 
 const BASE_URL = "https://nezamy.sa";
 const SITE_NAME = "نظامي | Nzamy";
+
+/** Format an ISO date string for display. */
+function formatDate(iso?: string | null, en = false): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(en ? "en-US" : "ar-SA", { year: "numeric", month: "short", day: "numeric" });
+}
 
 interface AeoPair { question: string; answer: string; }
 
