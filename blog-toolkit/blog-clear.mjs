@@ -77,8 +77,11 @@ async function main() {
     return;
   }
 
+  // Supabase-js refuses a DELETE with no WHERE clause (safety guard). Add a
+  // filter: `id IS NOT NULL` matches every row (id is the NOT-NULL primary key).
   let del = supabase.from("articles").delete();
   if (KEEP.length) del = del.not("slug", "in", `(${KEEP.map((s) => `"${s}"`).join(",")})`);
+  else del = del.not("id", "is", null);
   const { error } = await del;
   if (error) {
     console.error("✗ delete failed:", error.message);
