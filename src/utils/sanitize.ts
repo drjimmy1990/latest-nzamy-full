@@ -8,13 +8,13 @@ export function sanitizeHtml(html: string): string {
     .replace(/<\s*(\/?)\s*(strong|em)\b[^>]*>/gi, "<$1$2>")
     .replace(/<\s*br\b[^>]*\/?\s*>/gi, "<br>")
     .replace(/<\s*\/\s*br\s*>/gi, "")
-    // Allow <a href="..."> with safe hrefs only (# anchors and https)
+    // Allow <a href="..."> with safe hrefs only (# anchors and https) + brand styling
     .replace(/<\s*a\b([^>]*)\s*>/gi, (_match, attrs: string) => {
       const hrefMatch = attrs.match(/\shref=["']([^"']+)["']/i);
       if (!hrefMatch) return "<a>";
       const href = hrefMatch[1];
       if (href.startsWith("#") || href.startsWith("https://") || href.startsWith("/")) {
-        return `<a href="${href}">`;
+        return `<a href="${href}" style="color:#C8A762;text-decoration:underline">`;
       }
       return "<a>";
     })
@@ -55,7 +55,7 @@ export function markdownBoldToSafeHtml(text: string): string {
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   // Italic: *text* (but not ** which is bold)
   html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
-  // Links: [text](url)
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  // Links: [text](url) — styled inline so they're visible in dark mode
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:#C8A762;text-decoration:underline">$1</a>');
   return sanitizeHtml(html);
 }
