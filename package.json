@@ -14,7 +14,13 @@
     "blog:images": "node blog-toolkit/seed-blog-images.mjs",
     "blog:seed": "node blog-toolkit/seed-blog.mjs",
     "blog:reseed": "node blog-toolkit/blog-clear.mjs && node blog-toolkit/seed-blog-images.mjs && node blog-toolkit/seed-blog.mjs",
-    "seed:blog": "node blog-toolkit/seed-blog.mjs"
+    "seed:blog": "node blog-toolkit/seed-blog.mjs",
+    "library:clear": "node library-toolkit/library-clear.mjs",
+    "library:parse": "node library-toolkit/library-parse.mjs",
+    "library:seed": "node library-toolkit/library-seed.mjs",
+    "library:verify": "node library-toolkit/library-verify.mjs",
+    "library:status": "node library-toolkit/library-status.mjs",
+    "library:reseed": "node library-toolkit/library-clear.mjs && node library-toolkit/library-seed.mjs && node library-toolkit/library-verify.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.7",
