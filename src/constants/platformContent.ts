@@ -17,6 +17,7 @@ export interface PlatformBlogArticle {
   titleEn: string;
   excerpt: string;
   excerptEn: string;
+  cover?: string | null;
   author: {
     name: string;
     nameEn: string;
@@ -25,6 +26,8 @@ export interface PlatformBlogArticle {
     specialtyEn: string;
     rating: number;
     reviewCount: number;
+    url?: string | null;
+    credentials?: string | null;
   };
   date: string;
   dateEn: string;
@@ -38,6 +41,30 @@ export interface PlatformBlogArticle {
   seoScore: number;
   source: PlatformContentSource;
   content: string;
+  // New 31-field schema (nullable; absent on legacy/static-mock rows)
+  schema_type?: string | null;
+  author_credentials?: string | null;
+  author_url?: string | null;
+  reviewer?: string | null;
+  date_modified?: string | null;
+  primary_keyword?: string | null;
+  secondary_keywords?: string[] | null;
+  long_tail_keywords?: string[] | null;
+  seo_keywords?: string | null;
+  aeo_pairs?: { question: string; answer: string }[] | null;
+  geo_coverage?: string | null;
+  geo_tier1?: string | null;
+  geo_tier2?: string | null;
+  related_laws?: string | null;
+  original_sources?: string | null;
+  pillar_page?: string | null;
+  related_articles?: string[] | null;
+  target_persona?: string | null;
+  writing_track?: string | null;
+  content_scope?: string | null;
+  brand?: string | null;
+  canonical_url?: string | null;
+  category_code?: string | null;
 }
 
 export const PLATFORM_BLOG_CATEGORIES: PlatformBlogCategory[] = [

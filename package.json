@@ -10,7 +10,11 @@
     "test": "node scripts/smoke-routes.mjs",
     "test:smoke": "node scripts/smoke-routes.mjs",
     "type-check": "tsc --noEmit",
-    "seed:blog": "node scripts/seed-blog.mjs"
+    "blog:clear": "node blog-toolkit/blog-clear.mjs",
+    "blog:images": "node blog-toolkit/seed-blog-images.mjs",
+    "blog:seed": "node blog-toolkit/seed-blog.mjs",
+    "blog:reseed": "node blog-toolkit/blog-clear.mjs && node blog-toolkit/seed-blog-images.mjs && node blog-toolkit/seed-blog.mjs",
+    "seed:blog": "node blog-toolkit/seed-blog.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.7",

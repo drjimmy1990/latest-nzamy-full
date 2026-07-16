@@ -10,6 +10,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
+import Image from "next/image";
 
 // ─── Data ──────────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -99,7 +100,27 @@ const ARTICLES = [
 const PAGE_SIZE = 24;
 
 // ─── DB row → card item mapping ──────────────────────────────────────────────
-type Article = typeof ARTICLES[0];
+interface Article {
+  id: number | string;
+  slug: string;
+  category: string;
+  tag: string;
+  tagEn: string;
+  title: string;
+  titleEn: string;
+  excerpt: string;
+  excerptEn: string;
+  cover?: string | null;
+  author: string;
+  authorSlug: string;
+  authorEn: string;
+  date: string;
+  dateEn: string;
+  readTime: string;
+  readTimeEn: string;
+  views: number;
+  featured: boolean;
+}
 
 interface BlogRow {
   id?: string;
@@ -117,9 +138,21 @@ interface BlogRow {
   published_at?: string | null;
 }
 
+function formatPublished(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  try {
+    return d.toLocaleDateString("ar-SA", { year: "numeric", month: "short" });
+  } catch {
+    return "";
+  }
+}
+
 function rowToArticle(row: BlogRow, index: number): Article {
   const author = row.author_name || (index % 2 === 0 ? "أ. أحمد الغامدي" : "أ. سارة العتيبي");
   const cat = (row.category || "").trim();
+  const dateStr = formatPublished(row.published_at);
   return {
     id: (index + 1) as Article["id"],
     slug: row.slug,
@@ -130,11 +163,12 @@ function rowToArticle(row: BlogRow, index: number): Article {
     titleEn: row.title_en || row.title,
     excerpt: row.excerpt || "",
     excerptEn: row.excerpt_en || row.excerpt || "",
+    cover: row.cover || null,
     author,
     authorSlug: "",
     authorEn: row.author_name || author,
-    date: "",
-    dateEn: "",
+    date: dateStr,
+    dateEn: dateStr,
     readTime: row.read_time || "٥ دقائق",
     readTimeEn: row.read_time || "5 min",
     views: row.views ?? 0,
@@ -226,10 +260,20 @@ export default function BlogPage() {
 
   const ArticleCard = ({ article, big = false }: { article: Article; big?: boolean }) => (
     <Link href={`/blog/${article.slug}`} className={`group ${card} flex flex-col hover:border-[#0B3D2E]/30 transition-colors`}>
-      {/* Image placeholder */}
-      <div className={`w-full ${big ? "h-52" : "h-36"} bg-gradient-to-br from-[#0B3D2E]/10 via-[#C8A762]/10 to-[#0B3D2E]/5 flex items-center justify-center relative`}>
-        <Newspaper size={big ? 40 : 28} color="#C8A762" weight="duotone" className="opacity-40" />
-        <div className="absolute top-3 start-3">
+      {/* Cover image (Supabase Storage) with gradient fallback */}
+      <div className={`w-full ${big ? "h-52" : "h-36"} flex items-center justify-center relative ${article.cover ? "bg-[#0B3D2E]" : "bg-gradient-to-br from-[#0B3D2E]/10 via-[#C8A762]/10 to-[#0B3D2E]/5"}`}>
+        {article.cover ? (
+          <Image
+            src={article.cover}
+            alt={isRTL ? article.title : article.titleEn}
+            fill
+            sizes="(max-width: 768px) 100vw, 400px"
+            className="object-cover"
+          />
+        ) : (
+          <Newspaper size={big ? 40 : 28} color="#C8A762" weight="duotone" className="opacity-40" />
+        )}
+        <div className="absolute top-3 start-3 z-10">
           <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white"}`}>
             {isRTL ? article.tag : article.tagEn}
           </span>

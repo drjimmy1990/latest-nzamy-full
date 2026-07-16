@@ -75,5 +75,7 @@ supabase/.branches/
 .cache/
 .turbo/
 
-# ─── Blog content source (seed via scripts/seed-blog.mjs; not shipped in git) ──
+# ─── Blog content (owner drops into blog-toolkit/blog_final/; not shipped in git) ──
 blog_final/
+blog-toolkit/blog_final/
+blog-toolkit/_blog-seed-rejects.log
