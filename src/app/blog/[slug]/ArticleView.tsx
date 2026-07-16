@@ -23,6 +23,16 @@ const ALERT_TYPES: Record<string, { label: string; cls: string }> = {
   CAUTION: { label: "احذر", cls: "border-orange-400/40 bg-orange-400/10 text-orange-700 dark:text-orange-300" },
 };
 
+/** Convert heading text to a URL-safe anchor ID (works with Arabic text). */
+function slugify(text: string): string {
+  return text
+    .trim()
+    .replace(/[()（）\[\]「」『』【】،,.:;؛!?؟"'`~@#$%^&*+=<>{}|\\\/]/g, "") // strip punctuation
+    .replace(/\s+/g, "-") // spaces → hyphens
+    .replace(/-{2,}/g, "-") // collapse multiple hyphens
+    .replace(/^-|-$/g, ""); // trim leading/trailing hyphens
+}
+
 function RenderContent({ md, isDark }: { md: string; isDark: boolean }) {
   const lines = md.trim().split("\n");
   const out: React.ReactNode[] = [];
@@ -55,10 +65,25 @@ function RenderContent({ md, isDark }: { md: string; isDark: boolean }) {
     // Horizontal rule
     if (/^-{3,}$/.test(line.trim())) { out.push(<hr key={key++} className={`my-6 border-t ${isDark ? "border-white/10" : "border-gray-200"}`} />); i++; continue; }
 
-    // Headings (h1, h2, h3)
-    if (line.startsWith("# ") && !line.startsWith("## ")) { out.push(<h1 key={key++} className={`text-xl font-bold mt-10 mb-4 ${isDark ? "text-white" : "text-gray-900"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line.slice(2)) }} />); i++; continue; }
-    if (line.startsWith("## ")) { out.push(<h2 key={key++} className={`text-lg font-bold mt-8 mb-3 ${isDark ? "text-white" : "text-gray-900"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line.slice(3)) }} />); i++; continue; }
-    if (line.startsWith("### ")) { out.push(<h3 key={key++} className={`text-base font-bold mt-6 mb-2 ${isDark ? "text-gray-100" : "text-gray-800"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line.slice(4)) }} />); i++; continue; }
+    // Headings (h1, h2, h3) — with id for anchor navigation
+    if (line.startsWith("# ") && !line.startsWith("## ")) {
+      const text = line.slice(2);
+      const id = slugify(text);
+      out.push(<h1 key={key++} id={id} className={`text-xl font-bold mt-10 mb-4 scroll-mt-24 ${isDark ? "text-white" : "text-gray-900"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(text) }} />);
+      i++; continue;
+    }
+    if (line.startsWith("## ")) {
+      const text = line.slice(3);
+      const id = slugify(text);
+      out.push(<h2 key={key++} id={id} className={`text-lg font-bold mt-8 mb-3 scroll-mt-24 ${isDark ? "text-white" : "text-gray-900"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(text) }} />);
+      i++; continue;
+    }
+    if (line.startsWith("### ")) {
+      const text = line.slice(4);
+      const id = slugify(text);
+      out.push(<h3 key={key++} id={id} className={`text-base font-bold mt-6 mb-2 scroll-mt-24 ${isDark ? "text-gray-100" : "text-gray-800"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(text) }} />);
+      i++; continue;
+    }
 
     // Numbered lists
     if (line.match(/^\d+\. /)) { out.push(<p key={key++} className={`ms-4 mb-1 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line) }} />); i++; continue; }
