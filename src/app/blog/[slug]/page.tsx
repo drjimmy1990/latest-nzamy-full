@@ -5,7 +5,7 @@
 
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { ArticleJsonLd } from "@/components/ArticleJsonLd";
 import ArticleView, { formatDate } from "./ArticleView";
 import type { PlatformBlogArticle } from "@/constants/platformContent";
@@ -90,40 +90,61 @@ function rowToDetail(row: BlogRow): PlatformBlogArticle {
   };
 }
 
+/** Get a Supabase client that can read published articles without auth issues. */
+async function getBlogClient() {
+  // Prefer service client (no cookie dependency, bypasses RLS) for public reads.
+  // Fall back to cookie-based client if service role key is missing.
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return createServiceClient();
+  }
+  return createClient();
+}
+
 async function getArticle(slug: string): Promise<BlogRow | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("articles")
-    .select("*")
-    .eq("slug", slug)
-    .eq("status", "published")
-    .maybeSingle();
-  if (error || !data) return null;
-  return data as BlogRow;
+  try {
+    const supabase = await getBlogClient();
+    const { data, error } = await supabase
+      .from("articles")
+      .select("*")
+      .eq("slug", slug)
+      .eq("status", "published")
+      .maybeSingle();
+    if (error) { console.error("[blog] getArticle error:", error.message); return null; }
+    if (!data) return null;
+    return data as BlogRow;
+  } catch (err) {
+    console.error("[blog] getArticle crash:", err);
+    return null;
+  }
 }
 
 async function getRelated(article: BlogRow): Promise<PlatformBlogArticle[]> {
-  const supabase = await createClient();
-  const slugs = Array.isArray(article.related_articles) ? article.related_articles.filter(Boolean) : [];
-  if (slugs.length) {
+  try {
+    const supabase = await getBlogClient();
+    const slugs = Array.isArray(article.related_articles) ? article.related_articles.filter(Boolean) : [];
+    if (slugs.length) {
+      const { data } = await supabase
+        .from("articles")
+        .select("*")
+        .in("slug", slugs)
+        .eq("status", "published")
+        .limit(3);
+      if (data && data.length) return (data as BlogRow[]).map(rowToDetail);
+    }
+    // Fallback: same category, exclude self.
     const { data } = await supabase
       .from("articles")
       .select("*")
-      .in("slug", slugs)
       .eq("status", "published")
+      .eq("category", article.category || "")
+      .neq("slug", article.slug)
+      .order("published_at", { ascending: false, nullsFirst: false })
       .limit(3);
-    if (data && data.length) return (data as BlogRow[]).map(rowToDetail);
+    return ((data as BlogRow[] | null) || []).map(rowToDetail);
+  } catch (err) {
+    console.error("[blog] getRelated crash:", err);
+    return [];
   }
-  // Fallback: same category, exclude self.
-  const { data } = await supabase
-    .from("articles")
-    .select("*")
-    .eq("status", "published")
-    .eq("category", article.category || "")
-    .neq("slug", article.slug)
-    .order("published_at", { ascending: false, nullsFirst: false })
-    .limit(3);
-  return ((data as BlogRow[] | null) || []).map(rowToDetail);
 }
 
 export async function generateMetadata({
