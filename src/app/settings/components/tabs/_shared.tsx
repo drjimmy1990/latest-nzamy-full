@@ -2,6 +2,10 @@
 
 import { CheckCircle, WarningCircle } from "@phosphor-icons/react";
 
+// Use the build-time env directly — Next.js inlines NEXT_PUBLIC_* at build,
+// so this is consistent between server and client (no hydration mismatch).
+const IS_PRODUCTION = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND === "supabase";
+
 export function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
     <button
@@ -34,6 +38,9 @@ export function BackendReadyNotice({
 }: {
   children?: React.ReactNode;
 }) {
+  // Hide in production — this is a development-only notice
+  if (IS_PRODUCTION) return null;
+
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">
       <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-300" />

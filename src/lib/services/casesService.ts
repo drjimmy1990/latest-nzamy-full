@@ -57,8 +57,9 @@ export async function getCases(opts?: {
       offset: opts?.offset,
     });
     return response.data;
-  } catch {
-    return SHARED_CASES;
+  } catch (error) {
+    console.error('[Nzamy] getCases API failed:', error);
+    return [];
   }
 }
 
@@ -72,8 +73,9 @@ export async function getCaseDetail(id: string): Promise<SharedCase | null> {
   try {
     const response = await apiGet<{ data: SharedCase }>(`/api/v1/cases/${id}`);
     return response.data ?? null;
-  } catch {
-    return SHARED_CASES.find(c => c.id === id) || null;
+  } catch (error) {
+    console.error('[Nzamy] getCaseDetail API failed:', error);
+    return null;
   }
 }
 

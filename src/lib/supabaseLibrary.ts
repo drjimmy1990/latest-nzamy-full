@@ -437,9 +437,9 @@ async function fallbackSearch(params: SearchParams): Promise<SearchResponse> {
 
     const tableMap: Record<string, string> = {
       laws: 'laws',
-      precedents: 'judicial_principles',
-      orders: 'decrees',
-      feqh: 'books',
+      precedents: 'principles',
+      orders: 'decrees_circulars',
+      feqh: 'feqh_books',
     };
 
     const countPromises = (['laws', 'precedents', 'orders', 'feqh'] as const).map(
@@ -574,9 +574,9 @@ export async function autocompleteLibrary(
 
     const tableMap: Record<string, string> = {
       laws: 'laws',
-      precedents: 'judicial_principles',
-      orders: 'decrees',
-      feqh: 'books',
+      precedents: 'principles',
+      orders: 'decrees_circulars',
+      feqh: 'feqh_books',
     };
 
     // Parallel: counts + top matches from each section
@@ -797,7 +797,7 @@ export async function fetchCollectionBySlug(
         volume_number,
         total_principles,
         metadata,
-        principles:judicial_principles (
+        principles (
           id,
           number,
           issuing_body,
@@ -872,7 +872,7 @@ export async function fetchBookBySlug(
 
     const { data, error } = await supabase
       .schema('library')
-      .from('books')
+      .from('feqh_books')
       .select(`
         id,
         slug,
@@ -883,16 +883,16 @@ export async function fetchBookBySlug(
         publish_year,
         total_pages,
         metadata,
-        chapters:book_chapters (
+        chapters:feqh_chapters (
           id,
           title,
           num,
           sort_order,
-          sections:book_sections (
+          sections:feqh_sections (
             id,
             title,
             sort_order,
-            blocks:book_blocks (
+            blocks:feqh_blocks (
               id,
               topic,
               matn,
@@ -975,7 +975,7 @@ export async function fetchDecreeById(
 
     const { data, error } = await supabase
       .schema('library')
-      .from('decrees')
+      .from('decrees_circulars')
       .select(`
         id,
         title,

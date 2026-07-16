@@ -9,13 +9,14 @@ import {
 } from "@phosphor-icons/react";
 import { Image as ImageIcon } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
-import WhatsAppWidget from "./floating/WhatsAppWidget";
+import dynamic from "next/dynamic";
+const WhatsAppWidget = dynamic(() => import("./floating/WhatsAppWidget"), { ssr: false });
 import type { UserCategory } from "./floating/types";
 import { useUser } from "@/hooks/useUser";
 import { submitIssueReport, type IssueReport, type AttachedFile } from "@/lib/invitationStore";
 import { usePathname } from "next/navigation";
 import { useDraftCart } from "@/hooks/useDraftCart";
-import { DraftDrawer } from "@/components/laws/DraftDrawer";
+const DraftDrawer = dynamic(() => import("@/components/laws/DraftDrawer").then(m => ({ default: m.DraftDrawer })), { ssr: false });
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 

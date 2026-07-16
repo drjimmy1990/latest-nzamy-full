@@ -118,8 +118,8 @@ export async function getVerificationRequests(
     );
     return response.verifications;
   } catch (error) {
-    console.warn("[Nzamy] Admin verifications API failed, falling back to mock:", error);
-    return [...MOCK_REQUESTS];
+    console.error("[Nzamy] Admin verifications API failed:", error);
+    return [];
   }
 }
 

@@ -16,6 +16,8 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 
+import { isSupabaseMode } from "@/lib/services/api";
+
 type NotificationType = "system" | "cases" | "payments" | "appointments" | "completed";
 type FilterType = "all" | "unread" | "cases" | "payments" | "system";
 
@@ -29,7 +31,9 @@ interface Notification {
   isRead: boolean;
 }
 
-const initialNotifications: Notification[] = [
+// Demo-only seed data — NEVER shown in production (supabase) mode.
+// When the notifications table is created, this page will fetch real data.
+const DEMO_NOTIFICATIONS: Notification[] = [
   {
     id: "n1",
     type: "appointments",
@@ -209,7 +213,7 @@ const filterTabs: { id: FilterType; label: string; count: number }[] = [
 export default function NotificationsPage() {
   const { isRTL, isDark } = useTheme();
   const [filter, setFilter] = useState<FilterType>("all");
-  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
+  const [notifications, setNotifications] = useState<Notification[]>(isSupabaseMode ? [] : DEMO_NOTIFICATIONS);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;

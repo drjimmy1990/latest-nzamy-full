@@ -145,7 +145,12 @@ export default async function proxy(req: NextRequest) {
       const rule = ROUTE_ACCESS.find((r) => pathname.startsWith(r.prefix));
       if (rule && !rule.allowedTypes.includes(userType)) {
         const url = req.nextUrl.clone();
-        url.pathname = `/dashboard/${userType === "individual" ? "client" : userType}`;
+        // Map userType → dashboard directory (some don't match 1:1)
+        const dashDir: Record<string, string> = {
+          individual: "client",
+          corporate: "business",
+        };
+        url.pathname = `/dashboard/${dashDir[userType] ?? userType}`;
         return NextResponse.redirect(url);
       }
     }

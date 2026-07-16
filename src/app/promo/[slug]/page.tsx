@@ -130,7 +130,7 @@ export default function PromoLandingPage() {
         </div>
 
         <div className="space-y-4">
-          <Link href="/auth/login?promo=true" className="flex items-center justify-center gap-2 w-full py-4 rounded-xl bg-indigo-500 text-white font-black text-lg hover:bg-indigo-600 transition shadow-lg shadow-indigo-500/25">
+          <Link href="/login?from=/pricing&promo=true" className="flex items-center justify-center gap-2 w-full py-4 rounded-xl bg-indigo-500 text-white font-black text-lg hover:bg-indigo-600 transition shadow-lg shadow-indigo-500/25">
             استفد من العرض الآن
             <ArrowLeft size={20} weight="bold" />
           </Link>

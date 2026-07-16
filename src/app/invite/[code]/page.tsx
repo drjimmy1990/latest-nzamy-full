@@ -137,11 +137,11 @@ export default function InvitePage() {
                 : "This link is invalid or expired. Please contact the person who sent you the invitation."}
             </p>
             <Link
-              href="/laws"
+              href="/pricing"
               className="inline-flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-[#0B3D2E] text-white text-sm font-bold"
             >
               <BookOpen size={16} weight="fill" />
-              {isRTL ? "تصفح المكتبة مجاناً" : "Browse Library for Free"}
+              {isRTL ? "تعرّف على الباقات المتاحة" : "View Available Plans"}
             </Link>
           </div>
         </div>
@@ -234,10 +234,10 @@ export default function InvitePage() {
                     <Arrow size={16} />
                   </Link>
                   <Link
-                    href="/laws"
+                    href="/pricing"
                     className={`block text-center text-[12px] font-medium transition-colors ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"}`}
                   >
-                    {isRTL ? "تصفح المكتبة أولاً →" : "Browse the library first →"}
+                    {isRTL ? "تعرّف على الباقات أولاً →" : "View plans first →"}
                   </Link>
                 </motion.div>
               ) : (
