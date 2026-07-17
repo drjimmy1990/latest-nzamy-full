@@ -202,8 +202,10 @@ export default function JudicialPrinciplesPage() {
     async function loadCollectionData() {
       setLoading(true);
       try {
-        // Try API first
-        const res = await fetch(`/api/library/precedents/${encodeURIComponent(slug)}`);
+        // Try API first. useParams() returns the decoded (raw Arabic) slug; use
+        // encodeURI (not encodeURIComponent) so a pre-encoded slug isn't double-
+        // encoded into %25…, which would 404 the /api/library/precedents/[id] lookup.
+        const res = await fetch(`/api/library/precedents/${encodeURI(slug)}`);
         if (res.ok) {
           const apiData = await res.json();
           setCollection(apiData as JudicialPrinciplesSystem);

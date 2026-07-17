@@ -13,7 +13,9 @@ export async function GET() {
   } = await supabase.auth.getUser();
 
   if (authError || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Anonymous users have no server cart — return an empty 200 instead of 401
+    // so the public /laws page (DraftDrawer) doesn't spam 401s on every mount.
+    return NextResponse.json({ data: { user_id: null, items: [] } });
   }
 
   const { data, error } = await supabase

@@ -203,8 +203,9 @@ export default function FeqhBookPage() {
     async function loadBookData() {
       setLoading(true);
       try {
-        // Try API first
-        const res = await fetch(`/api/library/books/${encodeURIComponent(slug)}`);
+        // Try API first. encodeURI (not encodeURIComponent) avoids double-encoding
+        // a pre-encoded slug into %25… which would 404 the /api/library/books/[id] lookup.
+        const res = await fetch(`/api/library/books/${encodeURI(slug)}`);
         if (res.ok) {
           const apiData = await res.json();
           setBook(apiData as FeqhBookSystem);

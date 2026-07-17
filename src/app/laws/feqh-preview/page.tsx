@@ -153,7 +153,7 @@ export default function FeqhPreviewPage() {
 
         // Step 2: Fetch full content for the first book
         const firstBook = books[0];
-        const bookRes = await fetch(`/api/library/books/${encodeURIComponent(firstBook.id)}`);
+        const bookRes = await fetch(`/api/library/books/${encodeURI(firstBook.id)}`);
         if (!bookRes.ok) throw new Error("book fetch failed");
         const data = await bookRes.json();
 

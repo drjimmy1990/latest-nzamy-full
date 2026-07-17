@@ -139,7 +139,7 @@ export default function OrderReaderPage() {
     async function loadOrder() {
       // Try API first
       try {
-        const res = await fetch(`/api/library/decrees/${encodeURIComponent(slug)}`);
+        const res = await fetch(`/api/library/decrees/${encodeURI(slug)}`);
         if (res.ok) {
           const data = await res.json();
           setOrder(data as DemoOrder);
