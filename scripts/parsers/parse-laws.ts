@@ -23,6 +23,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { normalizeType, validateEnum, nullIfForbidden, canonicalizeKey, isInternalField } from "./manifest";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -81,6 +82,14 @@ export interface ParsedLaw {
   law_status: string;
   source: string;
   boe_url: string;
+  // New (manifest v1.2) fields — emitted via alias resolution below.
+  issue_date_hijri: string;
+  issue_date_gregorian: string;
+  boe_source_url: string;
+  official_source_url: string;
+  has_merged_regulation: boolean;
+  article_status_summary: string;
+  law_guid: string;
   variant: "boe" | "qadha";
   chapters: ParsedChapter[];
   metadata: Record<string, unknown>;
@@ -136,30 +145,43 @@ export function slugifyArabic(text: string): string {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function parseYamlFrontmatter(raw: string): { meta: Record<string, unknown>; body: string } {
-  const match = raw.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n/);
+  // Strip BOM (seeder_hazards[0]).
+  let src = raw.replace(/^﻿/, "");
+  // Normalize malformed YAML (seeder_hazards[0]): a closing fence glued to the
+  // last line (e.g. `total_articles: 0---` with no newline) or single-line
+  // frontmatter (`---\nkey: val\n---` collapsed). Insert a newline before a
+  // trailing `---` that isn't already on its own line.
+  src = src.replace(/^(---\s*\r?\n[\s\S]*?\S)[ \t]*---\s*(\r?\n|$)/m, "$1\n---\n");
+
+  const match = src.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
   if (!match) return { meta: {}, body: raw };
 
   const yamlStr = match[1];
-  const body = raw.slice(match[0].length);
+  const body = src.slice(match[0].length);
   const meta: Record<string, unknown> = {};
 
   for (const line of yamlStr.split(/\r?\n/)) {
-    const m = line.match(/^(\w[\w_]*)\s*:\s*(.*)/);
-    if (m) {
-      let value: unknown = m[2].trim();
-      // Strip surrounding quotes
-      if (typeof value === "string" && /^["'].*["']$/.test(value)) {
-        value = (value as string).slice(1, -1);
-      }
-      // Detect numbers
-      if (typeof value === "string" && /^\d+$/.test(value)) {
-        value = parseInt(value, 10);
-      }
-      // Detect booleans
-      if (value === "true") value = true;
-      if (value === "false") value = false;
-      meta[m[1]] = value;
+    // Unicode-aware key match so Arabic keys (e.g. إجمالي_المبادئ) are not dropped.
+    const m = line.match(/^([\p{L}\w][\p{L}\w_]*)\s*:\s*(.*)/u);
+    if (!m) continue;
+    const rawKey = m[1];
+    if (isInternalField(rawKey)) continue;
+    const key = canonicalizeKey(rawKey);
+    let value: unknown = m[2].trim();
+    // Strip surrounding quotes
+    if (typeof value === "string" && /^["'].*["']$/.test(value)) {
+      value = (value as string).slice(1, -1);
     }
+    // Detect numbers
+    if (typeof value === "string" && /^\d+$/.test(value)) {
+      value = parseInt(value, 10);
+    }
+    // Detect booleans
+    if (value === "true") value = true;
+    if (value === "false") value = false;
+    // YAML null literal → null (so nullIfForbidden/alias resolution treats it as empty)
+    if (value === "null" || value === "~") value = null;
+    meta[key] = value;
   }
   return { meta, body };
 }
@@ -257,25 +279,54 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
 
   console.log(`    ✓ ${chapters.length} chapters, ${totalArticles} articles`);
 
+  // ── Field resolution (manifest v1.2 keys with legacy aliases) ────────────
+  // The new content uses issue_date_hijri / boe_source_url / has_merged_regulation
+  // / status; older files used issuance_date / boe_url / has_executive_reg / law_status.
+  // Resolve both; enforce enums + type_normalization_map from the manifest.
+  const issue_date_hijri = nullIfForbidden(meta.issue_date_hijri ?? meta.issuance_date) || "";
+  const issue_date_gregorian = nullIfForbidden(meta.issue_date_gregorian) || "";
+  const boe_source_url = nullIfForbidden(meta.boe_source_url ?? meta.boe_url) || "";
+  const official_source_url = nullIfForbidden(meta.official_source_url) || "";
+  const has_merged_regulation = Boolean(meta.has_merged_regulation ?? meta.has_executive_reg ?? (variant === "qadha"));
+  const article_status_summary = nullIfForbidden(meta.article_status_summary) || "";
+  const law_guid = nullIfForbidden(meta.law_guid ?? meta.id) || "";
+  const statusRaw = nullIfForbidden(meta.status ?? meta.law_status) || "active";
+  const typeCanonical = normalizeType(meta.type);
+  // section_code in files is "00".."30" / "97".."99" (zero-padded). An unquoted
+  // YAML `00` becomes int 0 → normalize back to a 2-digit string before validating.
+  const scRaw = meta.section_code == null ? "" : String(meta.section_code).trim();
+  const sectionCode = validateEnum(
+    "section_code",
+    /^\d+$/.test(scRaw) ? scRaw.padStart(2, "0") : scRaw,
+    "غير_مصنف"
+  );
+
   return {
-    id: (meta.id as string) || slug,
+    id: law_guid || slug,
     slug,
     title,
     title_en: (meta.title_en as string) || "",
-    type: (meta.type as string) || "نظام",
-    section_code: (meta.section_code as string) || "",
+    type: validateEnum("type", typeCanonical, "نظام"),
+    section_code: sectionCode,
     section_name: (meta.section_name as string) || "",
     issuing_body: (meta.issuing_body as string) || "",
     issuance_decree: (meta.issuance_decree as string) || "",
-    issuance_date: (meta.issuance_date as string) || "",
+    issuance_date: issue_date_hijri, // seeder maps this → issue_date_hijri column
     total_articles: totalArticles,
-    has_executive_reg: variant === "qadha" || Boolean(meta.has_executive_reg),
+    has_executive_reg: has_merged_regulation, // legacy alias kept for the seeder
     regulation_decree: (meta.regulation_decree as string) || "",
     preamble: preambleText,
     regulation_preamble: regulationPreamble,
-    law_status: (meta.law_status as string) || "active",
+    law_status: validateEnum("status", statusRaw, "active"), // seeder maps → status column
     source: (meta.source as string) || "",
-    boe_url: (meta.boe_url as string) || "",
+    boe_url: boe_source_url, // legacy alias kept for the seeder
+    issue_date_hijri,
+    issue_date_gregorian,
+    boe_source_url,
+    official_source_url,
+    has_merged_regulation,
+    article_status_summary,
+    law_guid,
     variant,
     chapters,
     metadata: meta,

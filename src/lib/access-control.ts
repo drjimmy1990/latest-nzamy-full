@@ -223,6 +223,45 @@ export async function checkLibraryAccess(
   };
 }
 
+// ─── getLibraryAccessForUser — one-shot library access context ────────────────
+// For list/search routes that are NOT per-article-index (where checkLibraryAccess
+// is the right call). Returns the user's tier + whether they have full library
+// access (pro+) + the whitelisted slugs and per-type free items so the route can
+// mark rows free/locked. Guests (userId null) get tier "free".
+
+export interface LibraryUserAccess {
+  tier: ServerTier;
+  hasFullAccess: boolean; // tier >= pro
+  whitelistedSlugs: string[]; // library_whitelisted_laws.slugs (law-slug-keyed)
+  freeItemsByType: Record<string, string[]>; // library_free_items, keyed by content type
+}
+
+export async function getLibraryAccessForUser(
+  userId: string | null,
+): Promise<LibraryUserAccess> {
+  const adminClient = await createServiceClient();
+
+  const tier: ServerTier = userId ? await getUserTier(userId) : "free";
+  const hasFullAccess = (TIER_RANK[tier] ?? 0) >= TIER_RANK.pro;
+
+  const { data: settings } = await adminClient
+    .from("platform_settings")
+    .select("key, value")
+    .in("key", ["library_whitelisted_laws", "library_free_items"]);
+
+  const settingsMap: Record<string, unknown> = {};
+  settings?.forEach((s: { key: string; value: unknown }) => {
+    settingsMap[s.key] = s.value;
+  });
+
+  const whitelistedSlugs: string[] =
+    (settingsMap.library_whitelisted_laws as { slugs?: string[] })?.slugs ?? [];
+  const freeItemsByType =
+    (settingsMap.library_free_items as Record<string, string[]>) ?? {};
+
+  return { tier, hasFullAccess, whitelistedSlugs, freeItemsByType };
+}
+
 // ─── checkCreditBalance — AI credit check ─────────────────────────────────────
 
 export async function checkCreditBalance(

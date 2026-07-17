@@ -24,6 +24,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { nullIfForbidden, canonicalizeKey, isInternalField } from "./manifest";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -135,21 +136,28 @@ function slugifyArabic(text: string): string {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function parseYamlFrontmatter(raw: string): { meta: Record<string, unknown>; body: string } {
-  const match = raw.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n/);
+  // Strip BOM + normalize malformed YAML (seeder_hazards[0]): a closing fence
+  // glued to the last line (`total_articles: 0---`) or single-line frontmatter.
+  let src = raw.replace(/^﻿/, "");
+  src = src.replace(/^(---\s*\r?\n[\s\S]*?\S)[ \t]*---\s*(\r?\n|$)/m, "$1\n---\n");
+
+  const match = src.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
   if (!match) return { meta: {}, body: raw };
   const yamlStr = match[1];
-  const body = raw.slice(match[0].length);
+  const body = src.slice(match[0].length);
   const meta: Record<string, unknown> = {};
   for (const line of yamlStr.split(/\r?\n/)) {
-    const m = line.match(/^(\w[\w_]*)\s*:\s*(.*)/);
-    if (m) {
-      let value: unknown = m[2].trim();
-      if (typeof value === "string" && /^["'].*["']$/.test(value)) value = (value as string).slice(1, -1);
-      if (typeof value === "string" && /^\d+$/.test(value)) value = parseInt(value, 10);
-      if (value === "true") value = true;
-      if (value === "false") value = false;
-      meta[m[1]] = value;
-    }
+    // Unicode-aware key match so Arabic keys are not dropped.
+    const m = line.match(/^([\p{L}\w][\p{L}\w_]*)\s*:\s*(.*)/u);
+    if (!m) continue;
+    if (isInternalField(m[1])) continue;
+    const key = canonicalizeKey(m[1]);
+    let value: unknown = m[2].trim();
+    if (typeof value === "string" && /^["'].*["']$/.test(value)) value = (value as string).slice(1, -1);
+    if (typeof value === "string" && /^\d+$/.test(value)) value = parseInt(value, 10);
+    if (value === "true") value = true;
+    if (value === "false") value = false;
+    meta[key] = value;
   }
   return { meta, body };
 }
@@ -394,6 +402,90 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Parse "مجموعة سوابق قضائية" container files (97/1- ministry volumes)
+// ─────────────────────────────────────────────────────────────────────────────
+// Per schema_manifest.multi_file_works.container_unbundling.seed_instruction:
+// a container file is NOT seeded as one row. Each ARTICLE_START...ARTICLE_END
+// block inside it is a complete `سابقة قضائية` and is emitted as its own
+// principle row, inheriting the container's issuing_body/source/section_code/
+// collection_id/collection_title/part_label. The container itself becomes a
+// judicial_collections row (no extra per-file row → no duplication).
+
+function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | null {
+  const raw = fs.readFileSync(filePath, "utf-8");
+  const { meta, body } = parseYamlFrontmatter(raw);
+
+  const fileId = path.basename(filePath, ".md");
+  const hasArticleStart = /<!--\s*ARTICLE_START\s/.test(body);
+  const hasPrincipleStart = body.includes("PRINCIPLE_START");
+  const isCourtPrecedent = Boolean(meta.court_type || meta.ruling_number || meta.case_number);
+  const typeStr = String(meta.type || "").trim();
+
+  // Detect container: explicit type, OR (ARTICLE_START anchors with no
+  // PRINCIPLE_START and no court-precedent frontmatter).
+  const isContainer =
+    typeStr.includes("مجموعة") || typeStr.includes("مدونة") ||
+    (hasArticleStart && !hasPrincipleStart && !isCourtPrecedent);
+
+  if (!isContainer || !hasArticleStart) return null;
+
+  const title = String(meta.collection_title || meta.title || fileId);
+  console.log(`  📚 Parsing precedent container (unbundling): ${title}`);
+
+  const inherited = {
+    issuing_body: String(meta.issuing_body || ""),
+    source: String(meta.source || ""),
+    section_code: String(meta.section_code || ""),
+    collection_id: String(meta.collection_id || meta.slug || fileId),
+    collection_title: String(meta.collection_title || meta.title || fileId),
+    part_label: String(meta.part_label || meta.part || ""),
+  };
+
+  const principles: ParsedPrinciple[] = [];
+  const articleRe = /<!--\s*ARTICLE_START\s+(.*?)\s*-->([\s\S]*?)<!--\s*ARTICLE_END\s*-->/g;
+  let match: RegExpExecArray | null;
+  let idx = 0;
+
+  while ((match = articleRe.exec(body)) !== null) {
+    const aMeta = safeJsonParse(match[1], `container article in ${fileId}`);
+    if (!aMeta) { idx++; continue; }
+    const artBody = match[2].replace(/^>\s*/gm, "").trim();
+    const number = Number(aMeta.number || ++idx);
+    principles.push({
+      number,
+      issuing_body: String(aMeta.court_type || inherited.issuing_body || ""),
+      issuing_body_abbr: "",
+      session_date: String(aMeta.date || aMeta.appeal_ruling_date_hijri || ""),
+      case_number: String(aMeta.case_number || ""),
+      decision_number: String(aMeta.appeal_ruling_number || ""),
+      source_type: "سابقة قضائية",
+      reference: String(aMeta.number || ""),
+      text: String(aMeta.summary || artBody || ""),
+      classification_keywords: [],
+      sub_principles: [],
+      details: { facts: "", reasons: "", ruling: String(aMeta.summary || ""), ruling_basis: "" },
+      free: aMeta.free !== false,
+    });
+  }
+
+  console.log(`    ✓ ${principles.length} rulings un-bundled from container`);
+
+  return {
+    id: inherited.collection_id,
+    slug: inherited.collection_id,
+    title: inherited.collection_title,
+    court: inherited.issuing_body,
+    court_type: String(meta.court_type || meta.track || "ordinary"),
+    year_hijri: Number(meta.year_hijri || 0),
+    part: Number(meta.part || 1),
+    source_id: String(meta.source_id || inherited.source || ""),
+    total_principles: principles.length,
+    principles,
+    metadata: { ...meta, _container: true, _inherited: inherited },
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Public API
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -421,7 +513,15 @@ export function parsePrecedents(inputPath: string): PrecedentsParserOutput {
 
   for (const file of files) {
     try {
-      // Try as principle collection first
+      // Try as a "مجموعة سوابق قضائية" container FIRST (97/1- ministry volumes):
+      // un-bundles each ARTICLE_START into its own principle row.
+      const container = parsePrecedentContainer(file);
+      if (container && container.principles.length > 0) {
+        collections.push(container);
+        continue;
+      }
+
+      // Then try as principle collection
       const collection = parsePrincipleCollection(file);
       if (collection && collection.principles.length > 0) {
         collections.push(collection);

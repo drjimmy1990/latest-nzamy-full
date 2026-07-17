@@ -105,6 +105,12 @@ function createSupabaseClient(url: string, key: string) {
       for (const [key, value] of Object.entries(filter)) {
         params.append(key, value);
       }
+      // PostgREST refuses an unfiltered DELETE (400). When no filter is given,
+      // use `id=not.is.null` which matches every row (all library tables have an
+      // `id` PK) so --clean actually clears the table instead of silently no-op'ing.
+      if (params.toString() === "") {
+        params.append("id", "not.is.null");
+      }
 
       try {
         const resp = await fetch(`${url}/rest/v1/${table}?${params.toString()}`, {
@@ -214,15 +220,20 @@ async function seedLaws(
       issuing_body: String(law.issuing_body || "").substring(0, 200),
       issuing_instrument: String(law.issuance_decree || "").substring(0, 200),
       issue_date_hijri: String(law.issuance_date || "").substring(0, 20),
+      issue_date_gregorian: String(law.issue_date_gregorian || "").substring(0, 20),
       total_articles: law.total_articles || 0,
       preamble: law.preamble || "",
       has_merged_regulation: law.has_executive_reg || false,
       status: (law.law_status || "active").substring(0, 30),
+      boe_source_url: String(law.boe_source_url || law.boe_url || "").substring(0, 500),
+      official_source_url: String(law.official_source_url || "").substring(0, 500),
+      article_status_summary: String(law.article_status_summary || "").substring(0, 500),
+      law_guid: String(law.law_guid || law.law_guid || "").substring(0, 100),
     });
 
     const chapters = (law.chapters || []) as any[];
     for (const ch of chapters) {
-      const chapterId = crypto.randomUUID();
+      const chapterId = `${lawId}__ch-${ch.number ?? chapters.indexOf(ch)}`.substring(0, 150);
       chapterRows.push({
         id: chapterId,
         law_slug: lawId.substring(0, 200),
@@ -233,7 +244,7 @@ async function seedLaws(
 
       const articles = (ch.articles || []) as any[];
       for (const art of articles) {
-        const artId = `${lawId}__art-${art.number || crypto.randomUUID().substring(0, 8)}`.substring(0, 150);
+        const artId = `${lawId}__art-${art.number ?? `i${articles.indexOf(art)}`}`.substring(0, 150);
 
         const regs = (art.regulations || []) as any[];
         const amends = (art.amendments || []) as any[];
@@ -256,7 +267,7 @@ async function seedLaws(
 
         for (let ai = 0; ai < amends.length; ai++) {
           amendmentRows.push({
-            id: crypto.randomUUID(),
+            id: `${artId}__amd-${ai}`.substring(0, 150),
             article_id: artId,
             date: (amends[ai].date || "").substring(0, 30),
             source: amends[ai].decree || "",
@@ -362,9 +373,10 @@ async function seedDecrees(
 
     const arts = (dec.articles || []) as any[];
 
-    for (const art of arts) {
+    for (let pi = 0; pi < arts.length; pi++) {
+      const art = arts[pi];
       pageRows.push({
-        id: crypto.randomUUID(),
+        id: `${decId}__pg-${art.number ?? pi}`.substring(0, 150),
         decree_id: decId,
         page_number: art.number || 0,
         content: art.text || "",
@@ -454,8 +466,9 @@ async function seedPrecedents(
     });
 
     const principles = (coll.principles || []) as any[];
-    for (const pr of principles) {
-      const prId = `${collId}__pr-${pr.number || crypto.randomUUID().substring(0, 8)}`.substring(0, 150);
+    for (let pri = 0; pri < principles.length; pri++) {
+      const pr = principles[pri];
+      const prId = `${collId}__pr-${pr.number ?? pri}`.substring(0, 150);
 
       principleRows.push({
         id: prId,
@@ -478,7 +491,7 @@ async function seedPrecedents(
 
       for (let si = 0; si < subs.length; si++) {
         paragraphRows.push({
-          id: crypto.randomUUID(),
+          id: `${prId}__sub-${si}`.substring(0, 150),
           principle_id: prId,
           letter: subs[si].letter || "",
           text: subs[si].text || "",
@@ -585,7 +598,7 @@ async function seedFeqh(
     const chapters = (book.chapters || []) as any[];
     for (let ci = 0; ci < chapters.length; ci++) {
       const ch = chapters[ci];
-      const chId = crypto.randomUUID();
+      const chId = `${bookId}__fc-${ci}`.substring(0, 150);
 
       chapterRows.push({
         id: chId,
@@ -598,7 +611,7 @@ async function seedFeqh(
       // Direct pages under chapter
       const directPages = (ch.pages || []) as any[];
       if (directPages.length > 0) {
-        const dummySecId = crypto.randomUUID();
+        const dummySecId = `${chId}__fs-general`.substring(0, 150);
         sectionRows.push({
           id: dummySecId,
           chapter_id: chId,
@@ -609,7 +622,7 @@ async function seedFeqh(
         for (let pi = 0; pi < directPages.length; pi++) {
           const pg = directPages[pi];
           blockRows.push({
-            id: `${bookId}__block-${crypto.randomUUID().substring(0, 8)}`.substring(0, 150),
+            id: `${dummySecId}__blk-${pi}`.substring(0, 150),
             section_id: dummySecId,
             topic: ch.title || "",
             volume_number: pg.volume || 1,
@@ -626,7 +639,7 @@ async function seedFeqh(
       const sections = (ch.sections || []) as any[];
       for (let si = 0; si < sections.length; si++) {
         const sec = sections[si];
-        const secId = crypto.randomUUID();
+        const secId = `${chId}__fs-${si}`.substring(0, 150);
 
         sectionRows.push({
           id: secId,
@@ -639,7 +652,7 @@ async function seedFeqh(
         for (let pi = 0; pi < secPages.length; pi++) {
           const pg = secPages[pi];
           blockRows.push({
-            id: `${bookId}__block-${crypto.randomUUID().substring(0, 8)}`.substring(0, 150),
+            id: `${secId}__blk-${pi}`.substring(0, 150),
             section_id: secId,
             topic: sec.title || "",
             volume_number: pg.volume || 1,

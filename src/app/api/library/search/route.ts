@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getLibraryAccessForUser } from '@/lib/access-control';
 import { parseSearchQuery, normalizeSearch } from '@/utils/normalizeArabic';
 
 /**
@@ -45,6 +46,21 @@ export async function POST(request: Request) {
     const supabase = await createClient();
     const parsed = parseSearchQuery(query);
     const offset = (page - 1) * limit;
+
+    // ── Paywall: read optional session + library access (guests → free tier).
+    // Free users get a 100-char snippet (parity with /api/library/laws/[slug]'s
+    // locked snippet); pro+ and whitelisted/free items get the full 200 chars.
+    // Every result carries a `locked` flag so the client can show a lock icon.
+    let userId: string | null = null;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      userId = user?.id ?? null;
+    } catch {
+      userId = null;
+    }
+    const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
+    const freeItems = (type: string): string[] => (freeItemsByType[type] as string[]) ?? [];
+    const snippetLen = (isFree: boolean) => (isFree ? 200 : 100);
 
     // Full-text search uses the generated `fts` tsvector columns (GIN-indexed)
     // defined in 20260626_legal_library_schema.sql, built with
@@ -93,18 +109,23 @@ export async function POST(request: Request) {
 
         const { data: lawResults, count: lawCount, error: lawError } = await lawQuery;
         if (!lawError && lawResults) {
-          results.laws = lawResults.map((r: Record<string, unknown>) => ({
-            id: r.id,
-            section: 'laws',
-            title: `${(r.laws as Record<string, unknown>)?.title} — ${r.number_text || `المادة ${r.number}`}`,
-            snippet: truncateWithHighlight(r.text as string, parsed.plainTerms, 200),
-            meta: {
-              lawTitle: (r.laws as Record<string, unknown>)?.title,
-              articleNumber: r.number,
-              status: r.status,
-              lawSlug: r.law_slug,
-            },
-          }));
+          results.laws = lawResults.map((r: Record<string, unknown>) => {
+            const lawSlug = r.law_slug as string;
+            const isFree = hasFullAccess || whitelistedSlugs.includes(lawSlug) || freeItems('laws').includes(lawSlug);
+            return {
+              id: r.id,
+              section: 'laws',
+              title: `${(r.laws as Record<string, unknown>)?.title} — ${r.number_text || `المادة ${r.number}`}`,
+              snippet: truncateWithHighlight(r.text as string, parsed.plainTerms, snippetLen(isFree)),
+              locked: !isFree,
+              meta: {
+                lawTitle: (r.laws as Record<string, unknown>)?.title,
+                articleNumber: r.number,
+                status: r.status,
+                lawSlug: r.law_slug,
+              },
+            };
+          });
           counts.laws = lawCount || 0;
         }
       } catch (e) {
@@ -146,19 +167,23 @@ export async function POST(request: Request) {
 
         const { data: precResults, count: precCount, error: precError } = await precQuery;
         if (!precError && precResults) {
-          results.precedents = precResults.map((r: Record<string, unknown>) => ({
-            id: r.id,
-            section: 'precedents',
-            title: `مبدأ رقم ${r.principle_number} — ${r.issuing_body}`,
-            snippet: truncateWithHighlight(r.text as string, parsed.plainTerms, 200),
-            meta: {
-              court: (r.judicial_collections as Record<string, unknown>)?.court,
-              sessionDate: r.session_date,
-              decisionNumber: r.decision_number,
-              collectionSlug: (r.judicial_collections as Record<string, unknown>)?.id,
-              year: r.year_hijri,
-            },
-          }));
+          results.precedents = precResults.map((r: Record<string, unknown>) => {
+            const isFree = hasFullAccess || freeItems('precedents').includes(r.id as string);
+            return {
+              id: r.id,
+              section: 'precedents',
+              title: `مبدأ رقم ${r.principle_number} — ${r.issuing_body}`,
+              snippet: truncateWithHighlight(r.text as string, parsed.plainTerms, snippetLen(isFree)),
+              locked: !isFree,
+              meta: {
+                court: (r.judicial_collections as Record<string, unknown>)?.court,
+                sessionDate: r.session_date,
+                decisionNumber: r.decision_number,
+                collectionSlug: (r.judicial_collections as Record<string, unknown>)?.id,
+                year: r.year_hijri,
+              },
+            };
+          });
           counts.precedents = precCount || 0;
         }
       } catch (e) {
@@ -193,19 +218,24 @@ export async function POST(request: Request) {
 
         const { data: orderResults, count: orderCount, error: orderError } = await orderQuery;
         if (!orderError && orderResults) {
-          results.orders = orderResults.map((r: Record<string, unknown>) => ({
-            id: r.id,
-            section: 'orders',
-            title: r.title,
-            snippet: r.summary_brief || '',
-            meta: {
-              type: r.type,
-              issuer: r.issuer,
-              ref: r.ref,
-              date: r.date,
-              hashtags: r.hashtags,
-            },
-          }));
+          results.orders = orderResults.map((r: Record<string, unknown>) => {
+            const isFree = hasFullAccess || freeItems('orders').includes(r.id as string);
+            const brief = r.summary_brief as string || '';
+            return {
+              id: r.id,
+              section: 'orders',
+              title: r.title,
+              snippet: isFree ? brief : brief.slice(0, 100) + (brief.length > 100 ? '...' : ''),
+              locked: !isFree,
+              meta: {
+                type: r.type,
+                issuer: r.issuer,
+                ref: r.ref,
+                date: r.date,
+                hashtags: r.hashtags,
+              },
+            };
+          });
           counts.orders = orderCount || 0;
         }
       } catch (e) {
@@ -243,11 +273,13 @@ export async function POST(request: Request) {
             const section = r.feqh_sections as Record<string, unknown>;
             const chapter = section?.feqh_chapters as Record<string, unknown>;
             const book = chapter?.feqh_books as Record<string, unknown>;
+            const isFree = hasFullAccess || freeItems('feqh').includes(r.id as string);
             return {
               id: r.id,
               section: 'feqh',
               title: `${book?.title} — ${r.topic}`,
-              snippet: truncateWithHighlight((r.sharh || r.matn) as string, parsed.plainTerms, 200),
+              snippet: truncateWithHighlight((r.sharh || r.matn) as string, parsed.plainTerms, snippetLen(isFree)),
+              locked: !isFree,
               meta: {
                 bookTitle: book?.title,
                 bookSlug: book?.id,

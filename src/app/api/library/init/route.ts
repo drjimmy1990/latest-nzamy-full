@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getLibraryAccessForUser } from "@/lib/access-control";
 
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -14,6 +15,26 @@ export async function GET(request: Request) {
   const section = searchParams.get("section"); // optional: load only one section
   const from = (page - 1) * limit;
   const to = from + limit - 1;
+
+  // ── Paywall: read optional session + library access (guests → free tier).
+  // Free users get metadata + a `locked` flag (body fields stripped); pro+ and
+  // whitelisted/free items get the full row. The list page reads `free`/`locked`
+  // per card to show lock icons.
+  let userId: string | null = null;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    userId = user?.id ?? null;
+  } catch {
+    userId = null;
+  }
+  const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
+  const freeItems = (type: string): string[] => (freeItemsByType[type] as string[]) ?? [];
+
+  // Strip large body fields from a locked row so the list never leaks paid text.
+  const stripFields = (row: Record<string, unknown>, fields: string[]) => {
+    for (const f of fields) if (f in row) row[f] = null;
+    return row;
+  };
 
   try {
     // Helper: fetch a section with count
@@ -70,6 +91,32 @@ export async function GET(request: Request) {
         ? fetchSection("judicial_collections", "*", "collections")
         : Promise.resolve(emptySection),
     ]);
+
+    // ── Apply paywall per row (add free/locked; strip body fields for locked) ──
+    const lawsRows = laws.data as unknown as Record<string, unknown>[];
+    laws.data = lawsRows.map((row) => {
+      const slug = row.slug as string;
+      const isFree = hasFullAccess || whitelistedSlugs.includes(slug) || freeItems("laws").includes(slug);
+      return { ...(isFree ? row : stripFields({ ...row }, ["preamble", "description", "article_status_summary"])), free: isFree, locked: !isFree };
+    }) as any;
+
+    const decreesRows = decrees.data as unknown as Record<string, unknown>[];
+    decrees.data = decreesRows.map((row) => {
+      const isFree = hasFullAccess || freeItems("decrees").includes(row.id as string);
+      return { ...(isFree ? row : stripFields({ ...row }, ["summary_brief", "content", "text"])), free: isFree, locked: !isFree };
+    }) as any;
+
+    const principlesRows = principles.data as unknown as Record<string, unknown>[];
+    principles.data = principlesRows.map((row) => {
+      const isFree = hasFullAccess || freeItems("precedents").includes(row.id as string);
+      const out = isFree ? { ...row } : stripFields({ ...row }, ["text"]);
+      return { ...out, free: isFree, locked: !isFree };
+    }) as any;
+
+    // Books + collections are metadata (table-of-contents level); the gated
+    // content is in feqh_blocks / principles, so the list is free to browse.
+    books.data = (books.data as unknown as Record<string, unknown>[]).map((row) => ({ ...row, free: true, locked: false })) as any;
+    collections.data = (collections.data as unknown as Record<string, unknown>[]).map((row) => ({ ...row, free: true, locked: false })) as any;
 
     return NextResponse.json({
       laws,

@@ -26,6 +26,7 @@ import {
   type DemoOrder,
   type PrincipleSourceId,
 } from "./demo-data-access";
+import { isSupabaseMode } from "@/lib/services/api";
 import RecentSessions from "./components/RecentSessions";
 import SmartFolders from "./components/SmartFolders";
 import { MyNotesSection } from "./components/MyNotesSection";
@@ -402,22 +403,12 @@ export default function LegalLibraryPage() {
       return autocompleteMatches.slice(0, 6);
     }
     
-    // Fallback: scan local demo data for basic matching
+    // Fallback (demo mode only): scan local demo data for basic matching.
+    // In supabase mode the API autocomplete above is authoritative — no mock.
+    if (isSupabaseMode) return [];
     const results: { label: string; type: string; typeLabel: string; id?: string }[] = [];
     PhosphorIcons; // reference to prevent unused warning if any
 
-    // Scan systems
-    const FULL_LAWS_SYSTEMS_LOCAL = [
-      { id: "sys-1", slug: "civil-transactions", title: "نظام المعاملات المدنية", desc: "القانون المدني السعودي الشامل", free: true },
-      { id: "sys-2", slug: "commercial-courts", title: "نظام المحاكم التجارية", desc: "تنظيم اختصاصات المحاكم التجارية", free: true },
-      { id: "sys-3", slug: "labor-law", title: "نظام العمل السعودي", desc: "تنظيم العلاقة التعاقدية", free: false },
-      { id: "sys-4", slug: "companies-law", title: "نظام الشركات الجديد", desc: "تنظيم شركات المساهمة والمحدودة", free: false }
-    ];
-
-    FULL_LAWS_SYSTEMS_LOCAL.forEach(s => {
-      if (normalizeArabic(s.title).includes(nq) && (activeType === "all" || activeType === "laws"))
-        results.push({ label: s.title, type: "laws", typeLabel: isRTL ? "نظام" : "Law", id: s.slug });
-    });
     DEMO_PRINCIPLES.forEach(p => {
       if ((normalizeArabic(p.text).includes(nq) || normalizeArabic(p.source).includes(nq)) && (activeType === "all" || activeType === "precedents"))
         results.push({ label: p.text.substring(0, 60) + "...", type: "precedents", typeLabel: isRTL ? "مبدأ" : "Principle" });
@@ -512,7 +503,8 @@ export default function LegalLibraryPage() {
         titleEn: law.title_en || "",
         desc: law.description || "",
         descEn: law.description_en || "",
-        free: true, // All laws are free for now
+        free: law.free ?? true,
+        locked: law.locked ?? false,
         progress: 100,
         articlesCount: law.total_articles || 0,
         chaptersCount: 0,
@@ -536,7 +528,7 @@ export default function LegalLibraryPage() {
         cat: d.category || "SA-04",
         hashtags: d.hashtags || []
       }))
-    : DEMO_ORDERS) as any[];
+    : (isSupabaseMode ? [] : DEMO_ORDERS)) as any[];
 
   const principlesList = (dbPrinciples.length > 0
     ? dbPrinciples.map((p: any) => ({
@@ -550,13 +542,13 @@ export default function LegalLibraryPage() {
         subject: "civil" as any,
         cat: p.judicial_collections?.category || "SA-03"
       }))
-    : DEMO_PRINCIPLES) as any[];
+    : (isSupabaseMode ? [] : DEMO_PRINCIPLES)) as any[];
 
   // NOTE: precedentsList is unified with principlesList to avoid duplication.
   // We use the DEMO_PRECEDENTS only when DB has no data at all.
   const precedentsList = (dbPrinciples.length > 0
     ? [] as any[] // DB principles are already shown in principlesList — no duplication
-    : DEMO_PRECEDENTS) as any[];
+    : (isSupabaseMode ? [] : DEMO_PRECEDENTS)) as any[];
 
   const booksList = (dbBooks.length > 0
     ? dbBooks.map((b: any) => {
@@ -620,7 +612,7 @@ export default function LegalLibraryPage() {
           lastUpdated: "—"
         };
       })
-    : DEMO_FEQH_BOOKS) as any[];
+    : (isSupabaseMode ? [] : DEMO_FEQH_BOOKS)) as any[];
 
   const getCatTotalCount = (catId: string, type: string) => {
     let lawsCount = 0;
@@ -723,7 +715,7 @@ export default function LegalLibraryPage() {
         rulingCount: col.ruling_count || 0,
         part: col.part ? `المجلد ${col.part}` : undefined,
       }))
-    : DEMO_PRECEDENTS_COLLECTIONS) as any[];
+    : (isSupabaseMode ? [] : DEMO_PRECEDENTS_COLLECTIONS)) as any[];
 
   const filteredCollections = collectionsList.filter((col: any) => {
     const inTrack = precTrack === "all" || col.track === precTrack;

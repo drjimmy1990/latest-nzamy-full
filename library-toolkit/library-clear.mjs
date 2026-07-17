@@ -6,11 +6,15 @@
  * (children before parents) so foreign-key constraints are never violated.
  *
  * USAGE  (from project root)
- *   npm run library:clear -- --dry              # report row counts, no deletes
- *   npm run library:clear                       # live DELETE all library tables
+ *   npm run library:clear                       # DRY RUN (default — reports counts, no deletes)
+ *   npm run library:clear -- --live             # live DELETE (requires --force-prod on prod)
+ *   npm run library:clear -- --live --force-prod  # live DELETE on production
  *   npm run library:clear -- --type laws        # clear only the laws group
  *   npm run library:clear -- --type user        # clear only user-facing tables
- *   node library-toolkit/library-clear.mjs --dry
+ *
+ * Safety: dry by default. Live delete requires --live; against a production
+ * Supabase URL it ALSO requires --force-prod (or ALLOW_PROD_CLEAR=1) + a yes/no
+ * confirmation, so a bare `npm run library:clear` never wipes prod.
  *
  * Supported --type values: laws | decrees | precedents | feqh | user
  *
@@ -24,7 +28,10 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const DRY = process.argv.includes("--dry");
+// Safe by default: dry unless --live is passed.
+const LIVE = process.argv.includes("--live");
+const FORCE_PROD = process.argv.includes("--force-prod");
+const DRY = !LIVE;
 
 // ── Parse --type flag ──────────────────────────────────────────────────────
 const typeArg = process.argv.find((a) => a.startsWith("--type"));
@@ -87,6 +94,31 @@ async function main() {
   console.log(`  Library Clear ${DRY ? "(DRY RUN)" : "(LIVE)"}`);
   console.log(`${"═".repeat(60)}`);
 
+  // ── Prod guard: live delete against a production URL requires --force-prod
+  // (or ALLOW_PROD_CLEAR=1) + a typed yes confirmation.───────────────────────
+  if (LIVE) {
+    const looksLikeProd = !/localhost|127\.0\.0\.1|staging/i.test(url);
+    if (looksLikeProd && !FORCE_PROD && process.env.ALLOW_PROD_CLEAR !== "1") {
+      console.error("\n✗ Refusing to LIVE-delete a production database without --force-prod.");
+      console.error("  Re-run with: npm run library:clear -- --live --force-prod");
+      process.exit(1);
+    }
+    if (!process.stdout.isTTY) {
+      console.error("\n✗ LIVE delete requires an interactive TTY for confirmation (pipe blocked).");
+      process.exit(1);
+    }
+    process.stdout.write("\n⚠  This will DELETE all library rows. Type 'yes' to confirm: ");
+    const answer = await new Promise<string>((resolve) => {
+      process.stdin.resume();
+      process.stdin.setEncoding("utf8");
+      process.stdin.once("data", (d) => { process.stdin.pause(); resolve(String(d).trim()); });
+    });
+    if (answer !== "yes") {
+      console.log("Aborted — no rows deleted.");
+      process.exit(0);
+    }
+  }
+
   let totalDeleted = 0;
 
   for (const [group, tables] of Object.entries(groups)) {
@@ -109,12 +141,14 @@ async function main() {
 
       if (DRY || n === 0) continue;
 
-      // Delete all rows — Supabase requires a filter for delete
+      // Delete all rows. Supabase requires a filter for DELETE; `id IS NOT NULL`
+      // matches every row and works for any table with an `id` PK (all library
+      // tables have one) — avoids the `created_at`-column assumption.
       const { error } = await supabase
         .schema("library")
         .from(table)
         .delete()
-        .gte("created_at", "1970-01-01");
+        .not("id", "is", null);
 
       if (error) {
         console.error(`  ✗ delete(${table}) failed: ${error.message}`);
@@ -127,7 +161,7 @@ async function main() {
 
   console.log(`\n${"─".repeat(60)}`);
   if (DRY) {
-    console.log("--dry: no database writes. Remove --dry to delete.");
+    console.log("--dry: no database writes. Pass --live to delete (and --force-prod on prod).");
   } else {
     console.log(`✔ Total deleted: ${totalDeleted} rows`);
   }

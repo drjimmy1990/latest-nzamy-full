@@ -60,6 +60,19 @@ const ARABIC_DIRS = {
   feqh: "فقه ومراجع",
 };
 
+// The 4 Arabic category folders may sit directly under --input OR nested under
+// "نماذج هيكل الأقسام الرئيسية/" (the 2026-07-15 layout). Resolve to the
+// category folder if found at either level; else fall back to inputRoot so the
+// recursive parser still runs (rather than silently mixing categories).
+const NESTED_TIER = "نماذج هيكل الأقسام الرئيسية";
+function resolveCategoryRoot(inputRoot, type) {
+  const direct = path.join(inputRoot, ARABIC_DIRS[type]);
+  if (fs.existsSync(direct)) return direct;
+  const nested = path.join(inputRoot, NESTED_TIER, ARABIC_DIRS[type]);
+  if (fs.existsSync(nested)) return nested;
+  return inputRoot;
+}
+
 function main() {
   const inputRoot = path.resolve(ROOT, INPUT);
   if (!fs.existsSync(inputRoot)) {
@@ -87,9 +100,9 @@ function main() {
   for (const type of types) {
     console.log(`\n── ${type.toUpperCase()} ──`);
 
-    // Check if the Arabic subdir exists under input path
-    const arabicDir = path.join(inputRoot, ARABIC_DIRS[type]);
-    const parserInput = fs.existsSync(arabicDir) ? arabicDir : inputRoot;
+    // Resolve the category folder (direct child or nested under the
+    // "نماذج هيكل الأقسام الرئيسية/" tier) so --input test/library-last works.
+    const parserInput = resolveCategoryRoot(inputRoot, type);
     console.log(`  Input path: ${parserInput}`);
 
     const parserScript = path.join(ROOT, "scripts", "parsers", `parse-${type}.ts`);
