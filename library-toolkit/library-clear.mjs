@@ -108,7 +108,9 @@ async function main() {
       process.exit(1);
     }
     process.stdout.write("\n⚠  This will DELETE all library rows. Type 'yes' to confirm: ");
-    const answer = await new Promise<string>((resolve) => {
+    // .mjs is plain JS — no TypeScript generics (new Promise<string>(...) would be
+    // parsed as a comparison and the executor would never be passed).
+    const answer = await new Promise((resolve) => {
       process.stdin.resume();
       process.stdin.setEncoding("utf8");
       process.stdin.once("data", (d) => { process.stdin.pause(); resolve(String(d).trim()); });
