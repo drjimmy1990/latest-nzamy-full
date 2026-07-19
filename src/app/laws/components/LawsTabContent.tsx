@@ -85,6 +85,8 @@ export function LawsTabContent({
 }: LawsTabContentProps) {
   const router = useRouter();
   const [expandedDesc, setExpandedDesc] = useState<Record<string, boolean>>({});
+  const { can } = useSubscription();
+  const hasLibraryAccess = can("library-full-access");
 
   return (
     <motion.div
@@ -146,9 +148,6 @@ export function LawsTabContent({
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-8" : "flex flex-col gap-4 mb-8"}>
             <AnimatePresence mode="popLayout">
               {filteredLaws.map((sys, idx) => {
-                // اشتراك المكتبة يلغي قفل المحتوى — كل نظام متاح
-                const { can } = useSubscription();
-                const hasLibraryAccess = can("library-full-access");
                 const isUnlocked = sys.free || hasLibraryAccess;
                 return (
                 <motion.div
