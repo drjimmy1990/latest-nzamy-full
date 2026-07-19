@@ -250,7 +250,7 @@ async function seedLaws(
           free: art.free !== false,
           executive_reg_text: regs.map(r => r.text || "").join("\n\n") || null,
           executive_reg_ref: regs.map(r => r.ref || "").join(", ") || null,
-          instrument: regs[0]?.instrument || null,
+          instrument: art.instrument || regs[0]?.instrument || null,
           order_index: parseInt(art.number) || 0,
         });
 
