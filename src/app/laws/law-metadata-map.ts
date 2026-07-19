@@ -4,8 +4,8 @@
  * Mapping ثابت يربط slug كل وثيقة قانونية بميتاداتا البطاقة التعريفية.
  * يُدمج هذا مع بيانات الـ JSON أثناء تحميل الصفحة لتجنب تعديل 100+ ملف.
  *
- * NOTE: fetchLawMetadata(slug) now queries the DB first, falling back
- *       to this static map if the API returns nothing.
+ * TODO (Backend): استبدل هذا بجدول قاعدة بيانات `law_metadata` في Supabase
+ * يُستدعى عبر: SELECT * FROM law_metadata WHERE slug = $1
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -42,16 +42,80 @@ export interface LawMetaEntry {
  * استدعاء: getLawMeta(slug) → يعيد الميتاداتا أو كائن فارغ
  */
 export function getLawMeta(slug: string): LawMetaEntry {
-  let normSlug = slug;
-  if (slug === "civil-transactions") normSlug = "civil-transactions-law";
-  else if (slug === "civil-procedure") normSlug = "civil-procedure-law";
-  else if (slug === "evidence") normSlug = "evidence-law";
-  
-  const existing = LAW_METADATA_MAP[normSlug];
-  if (existing) return existing;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // خريطة الـ slugs الشاملة — تحوّل أي slug (عربي أو إنجليزي) إلى مفتاح الـ MAP
+  // مطابقة لـ SLUG_MAP في page.tsx
+  // ══════════════════════════════════════════════════════════════════════════
+  const SLUG_RESOLUTION: Record<string, string> = {
+    // ── Arabic URL slugs → MAP keys ──────────────────────────────────────
+    "نظام-الإثبات":                     "evidence-law",
+    "نظام-الإجراءات-الجزائية":           "law-criminal-procedures",
+    "نظام-المنافسات-والمشتريات-الحكومية": "law-procurement-scope",
+    "نطاق-تطبيق-نظام-المنافسات-والمشتريات-الحكومية-ولائحته-التنفيذية": "law-procurement-scope",
+    "نظام-الأحوال-الشخصية":             "law-personal-status",
+    "نظام-الشركات":                      "companies-law",
+    "نظام-العلامات-التجارية":            "law-trademarks",
+    "نظام-العمل":                        "labor-law",
+    "نظام-الوساطة-العقارية":             "law-real-estate-brokerage",
+    "نظام-مراقبة-البنوك":               "law-banking-control",
+    "نظام-مراقبة-البنوك-وقواعده-التنفيذية": "law-banking-control",
+    "نظام-ضريبة-القيمة-المضافة":          "law-vat",
+    "نظام-ضريبة-القيمة-المضافة-ولائحته-التنفيذية": "law-vat",
+    "نظام-الضمان-الصحي-التعاوني":        "law-health-insurance",
+    "نظام-المياه":                        "law-water",
+    "نظام-حماية-البيانات-الشخصية":       "law-personal-data-protection",
+    "نظام-الطيران-المدني":               "law-civil-aviation",
+    "اللائحة-التنفيذية-لنظام-الكهرباء-الخاصة-بمهام-وزارة-الطاقة": "reg-electricity-energy-ministry",
+    "نظام-الاعلام-المرئي-والمسموع":       "law-audiovisual-media",
+    "النظام-الاساسي-للحكم":             "law-basic-governance",
+    "نظام-الاعلاف":                      "law-fodder",
+    "نظام-الاستثمار":                    "law-investment",
+    "تنظيم-المركز-الوطني-للتعليم-الالكتروني": "reg-national-elearning-center",
+    "النظام-الاساسي-لمركز-التحكيم-الرياضي-السعودي": "law-sports-arbitration",
+    "نظام-نقابة-السيارات-لعام-1372هـ":   "law-car-syndicate-1372",
+    "نظام-خدمة-الضباط":                  "law-officers-service",
+    "نظام-مكافحة-المخدرات":               "anti-narcotics-law",
+    "نظام-مكافحة-المخدرات-والمؤثرات-العقلية": "anti-narcotics-law",
+    "anti-narcotics":                    "anti-narcotics-law",
+    "anti-narcotics-law":                "anti-narcotics-law",
+    "لائحة-اللائحة-التنفيذية-لنظام-الجمعيات-والمؤسسات-الاهلية-نهائية": "reg-civil-associations",
+    "نظام-السياحة":                      "law-tourism",
+    "نظام-البلديات-والقرى":             "law-municipalities",
+    "نظام-الآثار-والمتاحف-والتراث-العمراني": "law-antiquities-museums",
+    "نظام-التحكيم":                      "law-arbitration",
+    "نظام-الجمارك-الموحد-ولائحته-التنفيذية": "law-customs",
+    "نظام-المرافعات-الشرعية":            "civil-procedure-law",
+    "نظام-المرافعات-الشرعية-جمعية-قضاء":  "civil-procedure-law",
+    "امر-سامي-رقم-9437-وتاريخ-1439-02-26هـ-بالتاكيد-على-الجهات-الحكومية-بالتقيد-بما-استقر-عليه-قضاء-ديوان-المظالم-في-الموضوعات-المتماثلة": "order-royal-9437",
+    // ── JSON file slugs (old style) → MAP keys ───────────────────────────
+    "law-evidence":               "evidence-law",
+    "law-companies":              "companies-law",
+    "law-labor":                  "labor-law",
+    // ── Short URL aliases ─────────────────────────────────────────────────
+    "civil-transactions":         "civil-transactions-law",
+    "civil-procedure":            "civil-procedure-law",
+    "evidence":                   "evidence-law",
+    "companies-law":              "companies-law",
+    "labor-law":                  "labor-law",
+    "companies":                  "companies-law",
+    "labor":                      "labor-law",
+    "product-safety-law-1446":    "product-safety-law-1446",
+  };
+
+  // 1. حاول الحل عبر خريطة الـ slugs الشاملة
+  const resolved = SLUG_RESOLUTION[slug];
+  if (resolved) {
+    const fromMap = LAW_METADATA_MAP[resolved];
+    if (fromMap) return fromMap;
+  }
+
+  // 2. مطابقة مباشرة (للمداخل التي مفتاحها = slug بالضبط)
+  const directMatch = LAW_METADATA_MAP[slug];
+  if (directMatch) return directMatch;
 
   // Fallback map for precedent collections and specific judgments
-  if (normSlug === "tamyeez") {
+  if (slug === "tamyeez") {
     return {
       related_systems: [
         { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" },
@@ -60,14 +124,14 @@ export function getLawMeta(slug: string): LawMetaEntry {
       ]
     };
   }
-  if (normSlug.startsWith("labor-principles") || normSlug === "prec-03") {
+  if (slug.startsWith("labor-principles") || slug === "prec-03") {
     return {
       related_systems: [
         { title: "نظام العمل", slug: "labor-law", type: "law" }
       ]
     };
   }
-  if (normSlug.startsWith("zakat-tax") || normSlug === "zakat-2024" || normSlug === "tax-2024") {
+  if (slug.startsWith("zakat-tax") || slug === "zakat-2024" || slug === "tax-2024") {
     return {
       related_systems: [
         { title: "نظام ضريبة الدخل", slug: "income-tax-law", type: "law" },
@@ -75,14 +139,14 @@ export function getLawMeta(slug: string): LawMetaEntry {
       ]
     };
   }
-  if (normSlug.startsWith("customs-")) {
+  if (slug.startsWith("customs-")) {
     return {
       related_systems: [
         { title: "نظام الجمارك الموحد لدول مجلس التعاون", slug: "customs-law", type: "law" }
       ]
     };
   }
-  if (normSlug === "banking-1443" || normSlug === "banking-1408-1427") {
+  if (slug === "banking-1443" || slug === "banking-1408-1427") {
     return {
       related_systems: [
         { title: "نظام مراقبة البنوك", slug: "banking-control-law", type: "law" },
@@ -90,21 +154,21 @@ export function getLawMeta(slug: string): LawMetaEntry {
       ]
     };
   }
-  if (normSlug === "commercial-papers" || normSlug === "prec-02") {
+  if (slug === "commercial-papers" || slug === "prec-02") {
     return {
       related_systems: [
         { title: "نظام الأوراق التجارية", slug: "commercial-papers-law", type: "law" }
       ]
     };
   }
-  if (normSlug === "insurance-1438" || normSlug === "insurance-principles") {
+  if (slug === "insurance-1438" || slug === "insurance-principles") {
     return {
       related_systems: [
         { title: "نظام مراقبة شركات التأمين التعاوني", slug: "cooperative-insurance-law", type: "law" }
       ]
     };
   }
-  if (normSlug.startsWith("admin-supreme") || normSlug === "prec-05") {
+  if (slug.startsWith("admin-supreme") || slug === "prec-05") {
     return {
       related_systems: [
         { title: "نظام ديوان المظالم", slug: "court-of-grievances-law", type: "law" },
@@ -112,21 +176,21 @@ export function getLawMeta(slug: string): LawMetaEntry {
       ]
     };
   }
-  if (normSlug === "supreme-judicial-council") {
+  if (slug === "supreme-judicial-council") {
     return {
       related_systems: [
         { title: "نظام القضاء", slug: "judiciary-law", type: "law" }
       ]
     };
   }
-  if (normSlug === "prec-04") {
+  if (slug === "prec-04") {
     return {
       related_systems: [
         { title: "نظام الإجراءات الجزائية", slug: "procedures-law", type: "law" }
       ]
     };
   }
-  if (normSlug === "prec-06") {
+  if (slug === "prec-06") {
     return {
       related_systems: [
         { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" }
@@ -143,13 +207,8 @@ export function getLawMeta(slug: string): LawMetaEntry {
  * Async version that queries the DB first (via /api/library/laws/[slug]),
  * mapping DB columns to LawMetaEntry fields. Falls back to the static
  * LAW_METADATA_MAP if the API returns nothing or fails.
- *
- * Usage (client component):
- *   const meta = await fetchLawMetadata("civil-procedure-law");
- * ──────────────────────────────────────────────────────────────────────
  */
 export async function fetchLawMetadata(slug: string): Promise<LawMetaEntry> {
-  // Normalize slug the same way getLawMeta does
   let normSlug = slug;
   if (slug === "civil-transactions") normSlug = "civil-transactions-law";
   else if (slug === "civil-procedure") normSlug = "civil-procedure-law";
@@ -160,14 +219,12 @@ export async function fetchLawMetadata(slug: string): Promise<LawMetaEntry> {
     if (!res.ok) throw new Error(`API ${res.status}`);
     const data = await res.json();
 
-    // Map API response fields to LawMetaEntry
     const dbMeta: LawMetaEntry = {};
 
     if (data.issuanceDecree) dbMeta.issuanceDecree = data.issuanceDecree;
     if (data.issuanceDate)   dbMeta.issuanceDate = data.issuanceDate;
     if (data.source)         dbMeta.boe_url = data.source;
 
-    // Count total articles from the chapters structure
     if (data.chapters && Array.isArray(data.chapters)) {
       let totalArticles = 0;
       let hasExecReg = false;
@@ -183,11 +240,9 @@ export async function fetchLawMetadata(slug: string): Promise<LawMetaEntry> {
       dbMeta.has_executive_reg = hasExecReg;
     }
 
-    // Merge: DB data overrides static map, but static map fills gaps
     const staticMeta = getLawMeta(slug);
     return { ...staticMeta, ...dbMeta };
   } catch {
-    // Silently fall back to static map
     return getLawMeta(slug);
   }
 }
@@ -221,7 +276,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     section_code: "00",
     section_name: "القسم الإجرائي والقضائي",
     issuing_authority: "مجلس الوزراء",
-    has_executive_reg: false,
+    has_executive_reg: true,
+    total_articles: 314,
     law_status: "active",
     related_systems: [
       { title: "نظام الإثبات", slug: "evidence-law", type: "law" },
@@ -300,12 +356,12 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     law_status: "active",
   } as LawMetaEntry,
 
-  "مكافحة-المخدرات-والمؤثرات-العقلية": {
+  "anti-narcotics-law": {
     document_type: "نظام",
     section_code: "01",
     section_name: "القسم الجنائي والعقوبات",
     issuing_authority: "مجلس الوزراء",
-    has_executive_reg: false,
+    has_executive_reg: true,
     law_status: "active",
   } as LawMetaEntry,
 
@@ -601,6 +657,342 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     related_systems: [
       { title: "نظام العمل", slug: "labor-law", type: "law" }
     ]
+  } as LawMetaEntry,
+
+  // ━━━ الأنظمة الغائبة — مضافة بالكامل ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  "law-banking-control": {
+    document_type: "نظام_ولائحة",
+    section_code: "08",
+    section_name: "المالي والمصرفي",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/5) وتاريخ 1386/2/22هـ",
+    has_executive_reg: true,
+    executive_label_override: "القواعد التنفيذية",
+    total_articles: 26,
+    law_status: "active",
+    related_systems: [
+      { title: "نظام مؤسسة النقد العربي السعودي", slug: "sama-law", type: "law" }
+    ],
+  } as LawMetaEntry,
+
+  "law-vat": {
+    document_type: "نظام_ولائحة",
+    section_code: "09",
+    section_name: "الضريبي والزكوي والجمركي",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/113) وتاريخ 1438/11/2هـ",
+    has_executive_reg: true,
+    total_articles: 53,
+    law_status: "active",
+    related_systems: [
+      { title: "نظام الشركات", slug: "companies-law", type: "law" }
+    ],
+  } as LawMetaEntry,
+
+  "law-trademarks": {
+    document_type: "نظام_ولائحة",
+    section_code: "05",
+    section_name: "الملكية الفكرية والتقنية",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/21) وتاريخ 1423/8/28هـ",
+    has_executive_reg: true,
+    total_articles: 58,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-civil-aviation": {
+    document_type: "نظام_ولائحة",
+    section_code: "10",
+    section_name: "النقل والمواصلات",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/44) وتاريخ 1426/10/29هـ",
+    has_executive_reg: true,
+    total_articles: 180,
+    law_status: "active",
+    related_systems: [
+      { title: "نظام الطيران المدني", slug: "law-civil-aviation", type: "law" }
+    ],
+  } as LawMetaEntry,
+
+  "law-personal-data-protection": {
+    document_type: "نظام_ولائحة",
+    section_code: "05",
+    section_name: "الملكية الفكرية والتقنية",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/19) وتاريخ 1443/2/9هـ",
+    has_executive_reg: true,
+    total_articles: 53,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-personal-status": {
+    document_type: "نظام",
+    section_code: "03",
+    section_name: "المدني والأحوال الشخصية",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/73) وتاريخ 1443/8/6هـ",
+    has_executive_reg: false,
+    total_articles: 252,
+    law_status: "active",
+    related_systems: [
+      { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" }
+    ],
+  } as LawMetaEntry,
+
+  "law-antiquities-museums": {
+    document_type: "نظام_ولائحة",
+    section_code: "18",
+    section_name: "الثقافة والرياضة والشباب",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/26) وتاريخ 1394/6/23هـ",
+    has_executive_reg: true,
+    total_articles: 94,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-arbitration": {
+    document_type: "نظام_ولائحة",
+    section_code: "00",
+    section_name: "القسم الإجرائي والقضائي",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/34) وتاريخ 1433/6/24هـ",
+    has_executive_reg: true,
+    total_articles: 58,
+    law_status: "active",
+    related_systems: [
+      { title: "نظام المرافعات الشرعية", slug: "civil-procedure-law", type: "law" }
+    ],
+  } as LawMetaEntry,
+
+  "law-audiovisual-media": {
+    document_type: "نظام_ولائحة",
+    section_code: "19",
+    section_name: "الإعلام والاتصالات",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/40) وتاريخ 1440/3/7هـ",
+    has_executive_reg: true,
+    total_articles: 25,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-basic-governance": {
+    document_type: "نظام",
+    section_code: "02",
+    section_name: "الإداري والخدمة المدنية",
+    issuing_authority: "الملك",
+    issuanceDecree: "المرسوم الملكي رقم (أ/90) وتاريخ 1412/8/27هـ",
+    has_executive_reg: false,
+    total_articles: 83,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-car-syndicate-1372": {
+    document_type: "نظام",
+    section_code: "10",
+    section_name: "النقل والمواصلات",
+    issuing_authority: "مجلس الوزراء",
+    has_executive_reg: false,
+    total_articles: 64,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-criminal-procedures": {
+    document_type: "نظام",
+    section_code: "01",
+    section_name: "القسم الجنائي والعقوبات",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/39) وتاريخ 1422/7/28هـ",
+    has_executive_reg: false,
+    total_articles: 222,
+    law_status: "active",
+    related_systems: [
+      { title: "نظام الإثبات", slug: "evidence-law", type: "law" }
+    ],
+  } as LawMetaEntry,
+
+  "law-customs": {
+    document_type: "نظام_ولائحة",
+    section_code: "09",
+    section_name: "الضريبي والزكوي والجمركي",
+    issuing_authority: "مجلس التعاون الخليجي",
+    issuanceDecree: "قرار المجلس الأعلى الثالث والعشرون",
+    has_executive_reg: true,
+    total_articles: 188,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-fodder": {
+    document_type: "نظام_ولائحة",
+    section_code: "14",
+    section_name: "الزراعة والبيئة والموارد الطبيعية",
+    issuing_authority: "مجلس الوزراء",
+    has_executive_reg: true,
+    total_articles: 39,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-health-insurance": {
+    document_type: "نظام_ولائحة",
+    section_code: "16",
+    section_name: "الصحة والدواء",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/10) وتاريخ 1420/8/1هـ",
+    has_executive_reg: true,
+    total_articles: 19,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-investment": {
+    document_type: "نظام_ولائحة",
+    section_code: "04",
+    section_name: "التجاري والشركات",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/50) وتاريخ 1445/8/1هـ",
+    has_executive_reg: true,
+    total_articles: 16,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-municipalities": {
+    document_type: "نظام_ولائحة",
+    section_code: "02",
+    section_name: "الإداري والخدمة المدنية",
+    issuing_authority: "مجلس الوزراء",
+    has_executive_reg: true,
+    total_articles: 49,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-officers-service": {
+    document_type: "نظام",
+    section_code: "02",
+    section_name: "الإداري والخدمة المدنية",
+    issuing_authority: "مجلس الوزراء",
+    has_executive_reg: false,
+    total_articles: 162,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-procurement-scope": {
+    document_type: "نظام_ولائحة",
+    section_code: "02",
+    section_name: "الإداري والخدمة المدنية",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/128) وتاريخ 1440/11/13هـ",
+    has_executive_reg: true,
+    total_articles: 99,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-product-safety": {
+    document_type: "نظام_ولائحة",
+    section_code: "04",
+    section_name: "التجاري والشركات",
+    issuing_authority: "مجلس الوزراء",
+    has_executive_reg: true,
+    total_articles: 37,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "product-safety-law-1446": {
+    document_type: "نظام_ولائحة",
+    section_code: "04",
+    section_name: "التجاري والشركات",
+    issuing_authority: "مجلس الوزراء",
+    has_executive_reg: true,
+    total_articles: 37,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-real-estate-brokerage": {
+    document_type: "نظام_ولائحة",
+    section_code: "07",
+    section_name: "العقاري والبناء",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/22) وتاريخ 1440/6/17هـ",
+    has_executive_reg: true,
+    total_articles: 24,
+    law_status: "active",
+    related_systems: [
+      { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" }
+    ],
+  } as LawMetaEntry,
+
+  "law-sports-arbitration": {
+    document_type: "نظام",
+    section_code: "18",
+    section_name: "الثقافة والرياضة والشباب",
+    issuing_authority: "الهيئة العامة للرياضة",
+    has_executive_reg: false,
+    total_articles: 47,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-tourism": {
+    document_type: "نظام_ولائحة",
+    section_code: "12",
+    section_name: "السياحة والضيافة",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/8) وتاريخ 1441/2/28هـ",
+    has_executive_reg: true,
+    total_articles: 19,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "law-water": {
+    document_type: "نظام_ولائحة",
+    section_code: "14",
+    section_name: "الزراعة والبيئة والموارد الطبيعية",
+    issuing_authority: "مجلس الوزراء",
+    issuanceDecree: "مرسوم ملكي رقم (م/6) وتاريخ 1441/2/28هـ",
+    has_executive_reg: true,
+    total_articles: 77,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "order-royal-9437": {
+    document_type: "أمر سامي",
+    section_code: "00",
+    section_name: "القسم الإجرائي والقضائي",
+    issuing_authority: "الديوان الملكي",
+    issuanceDecree: "أمر سامي رقم (9437) وتاريخ 1439/2/26هـ",
+    has_executive_reg: false,
+    total_articles: 1,
+    law_status: "active",
+    related_systems: [
+      { title: "نظام ديوان المظالم", slug: "administrative-procedures-law", type: "law" }
+    ],
+  } as LawMetaEntry,
+
+  "reg-civil-associations": {
+    document_type: "لائحة",
+    section_code: "02",
+    section_name: "الإداري والخدمة المدنية",
+    issuing_authority: "وزارة الموارد البشرية والتنمية الاجتماعية",
+    has_executive_reg: false,
+    total_articles: 56,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "reg-electricity-energy-ministry": {
+    document_type: "لائحة",
+    section_code: "13",
+    section_name: "الطاقة والمياه والبيئة",
+    issuing_authority: "وزارة الطاقة",
+    has_executive_reg: false,
+    total_articles: 35,
+    law_status: "active",
+  } as LawMetaEntry,
+
+  "reg-national-elearning-center": {
+    document_type: "لائحة",
+    section_code: "17",
+    section_name: "التعليم والتدريب",
+    issuing_authority: "وزارة التعليم",
+    has_executive_reg: false,
+    total_articles: 12,
+    law_status: "active",
   } as LawMetaEntry,
 
 } as const;

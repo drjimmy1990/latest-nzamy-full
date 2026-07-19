@@ -202,6 +202,7 @@ export const ORDER_ISSUERS = [
   { id: "diwan", ar: "الديوان الملكي", en: "Royal Court" },
   { id: "cabinet", ar: "مجلس الوزراء", en: "Council of Ministers" },
   { id: "sama", ar: "البنك المركزي السعودي (ساما)", en: "SAMA" },
+  { id: "moj", ar: "وزارة العدل", en: "Ministry of Justice" },
   { id: "ncnp", ar: "المركز الوطني لتنمية القطاع غير الربحي", en: "NCNP" },
   { id: "mol", ar: "وزارة الموارد البشرية", en: "Ministry of HRSD" },
   { id: "rega", ar: "الهيئة العامة للعقار", en: "REGA" },
