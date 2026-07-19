@@ -641,12 +641,12 @@ export default function LegalLibraryPage() {
     let feqhCount = 0;
 
     if (catId === "all") {
-      lawsCount = lawsList.length;
+      lawsCount = lawsList.filter(s => docSubType === "all" || s.doc_type === docSubType || (s.sub_types && s.sub_types.includes(docSubType))).length;
       precedentsCount = precedentsList.length;
       ordersCount = ordersList.length;
       feqhCount = booksList.length;
     } else {
-      lawsCount = lawsList.filter(s => s.cat === catId).length;
+      lawsCount = lawsList.filter(s => s.cat === catId && (docSubType === "all" || s.doc_type === docSubType || (s.sub_types && s.sub_types.includes(docSubType)))).length;
       precedentsCount = precedentsList.filter(s => s.cat === catId).length;
       ordersCount = ordersList.filter(s => s.cat === catId).length;
       feqhCount = booksList.filter(b => matchesFeqhCategory(b as any, catId)).length;
@@ -681,9 +681,10 @@ export default function LegalLibraryPage() {
       }))
     : lawsList.filter(s => {
         const inCat  = activeCat === "all" || s.cat === activeCat;
-        // When no search query, show all; local filter only for category browsing
+        const inDoc  = docSubType === "all" || s.doc_type === docSubType ||
+                       (s.sub_types && s.sub_types.includes(docSubType));
         const inQ   = !nq || normalizeArabic(s.title).includes(nq) || normalizeArabic(s.desc).includes(nq);
-        return inCat && inQ;
+        return inCat && inDoc && inQ;
       });
 
   // ─── Filter: Principles ───────────────────────────────────────────────────────
@@ -1063,6 +1064,38 @@ export default function LegalLibraryPage() {
               );
             })}
           </div>
+
+          {/* ROW 1.5: Sub-type selector (Only for Laws) */}
+          {activeType === "laws" && (
+            <div className="flex flex-wrap items-center gap-1.5 mb-4 p-2 rounded-2xl border bg-white/5 border-white/5">
+              {LAW_DOC_TYPES.map((st) => {
+                const isActive = docSubType === st.id;
+                let label = isRTL ? st.label : st.labelEn;
+                if (st.id === "all") {
+                  label = isRTL ? "نظام وتفصيلات فرعية" : "Law & Sub-Legislations";
+                } else if (st.id === "نظام") {
+                  label = isRTL ? "نظام فقط" : "Law Only";
+                }
+                return (
+                  <button
+                    key={st.id}
+                    onClick={() => setDocSubType(st.id)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 ${
+                      isActive
+                        ? isDark
+                          ? "bg-[#C8A762]/10 border border-[#C8A762]/30 text-[#C8A762]"
+                          : "bg-[#0B3D2E] text-white border border-[#0B3D2E] shadow-sm"
+                        : isDark
+                        ? "border border-white/5 bg-white/5 text-gray-400 hover:text-white hover:bg-white/10"
+                        : "border border-gray-200 bg-white text-gray-500 hover:bg-slate-50 hover:text-gray-800"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* ROW 2: Category section tabs */}
           <div className="mb-8 overflow-x-auto scrollbar-none w-full">
