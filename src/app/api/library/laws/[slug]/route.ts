@@ -88,6 +88,15 @@ export async function GET(
       }
     });
 
+    // Extract combined regulation preamble if present
+    let preamble = law.preamble || '';
+    let regulationPreamble = '';
+    if (preamble.includes('\n***\n')) {
+      const parts = preamble.split('\n***\n');
+      preamble = parts[0].trim();
+      regulationPreamble = parts[1].trim();
+    }
+
     // Build the response in the LawSystem format the frontend expects
     const lawSystem = {
       id: law.slug,
@@ -97,7 +106,8 @@ export async function GET(
       issuanceDecree: law.issuing_instrument || '',
       issuanceDate: law.issue_date_hijri || '',
       source: law.boe_source_url || '',
-      preamble: law.preamble || '',
+      preamble: preamble,
+      regulationPreamble: regulationPreamble,
       // Paywall metadata for frontend
       paywall: {
         isWhitelisted,

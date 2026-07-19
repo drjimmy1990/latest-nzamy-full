@@ -215,7 +215,7 @@ async function seedLaws(
       issuing_instrument: String(law.issuance_decree || "").substring(0, 200),
       issue_date_hijri: String(law.issuance_date || "").substring(0, 20),
       total_articles: law.total_articles || 0,
-      preamble: law.preamble || "",
+      preamble: (law.preamble || "") + (law.regulation_preamble ? `\n***\n${law.regulation_preamble}` : ""),
       has_merged_regulation: law.has_executive_reg || false,
       status: (law.law_status || "active").substring(0, 30),
     });

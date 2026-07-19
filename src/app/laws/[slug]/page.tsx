@@ -142,6 +142,9 @@ function LawSystemPageContent() {
             })),
           })),
           summary: data.summary || '',
+          metadata_card: data.metadata_card || null,
+          appendices: data.appendices || null,
+          regulationPreamble: data.regulationPreamble || '',
         } as LawSystem);
       } catch (err) {
         console.error('[LawReader] Failed to load law:', err);
