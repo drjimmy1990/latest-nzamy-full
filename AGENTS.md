@@ -42,3 +42,85 @@ This project is indexed by GitNexus as **latest-nzamy-full** (9388 symbols, 1823
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+<!-- owner-rules:start -->
+# Owner Workflow Rules — نظامي Project
+
+The project owner works exclusively on the `owner-edits` branch. You MUST enforce these rules in every session.
+
+## Branch Rules — Always Do
+
+- **MUST verify the active branch before any edit or commit.** Run `git branch` and confirm the `*` is on `owner-edits`. If not, switch: `git checkout owner-edits`.
+- **MUST only commit to `owner-edits`** — never to `main` or any other branch.
+- **MUST pull before starting a new session**: `git pull origin owner-edits`.
+- **MUST use this exact push command**: `git push origin owner-edits`.
+- When the owner says "save" or "upload changes", run:
+  ```bash
+  git add .
+  git commit -m "<descriptive Arabic or English message>"
+  git push origin owner-edits
+  ```
+
+## Branch Rules — Never Do
+
+- NEVER commit or push to `main`.
+- NEVER create new branches — the owner always works on `owner-edits`.
+- NEVER run `library:clear` or `blog:clear` without an explicit, confirmed request — these wipe shared Supabase data for everyone.
+- NEVER commit `.env.local` — it is git-ignored and must stay local.
+
+## What the Owner Can Edit (Safe Zone)
+
+| ✅ Owner may edit | ❌ Leave to developer |
+|---|---|
+| CSS / colors / fonts / layout | Database table additions |
+| Page text and headings | API routes and server actions |
+| Component order and structure | RLS policies and Supabase security |
+| Blog content (`.md` files) | Payment and subscription setup |
+| Images and icons | n8n automation config |
+
+## Key File Map
+
+| What to change | Path |
+|---|---|
+| Homepage | `src/app/page.tsx` |
+| Blog pages | `src/app/blog/` |
+| Legal library | `src/app/laws/` |
+| Dashboard | `src/app/dashboard/` |
+| Navbar | `src/components/Navbar.tsx` |
+| Footer | `src/components/Footer.tsx` |
+| Floating buttons | `src/components/FloatingButtons.tsx` |
+| Global styles / colors | `src/app/globals.css` |
+| Blog article content | `blog-toolkit/blog_final/` |
+
+## Dev Server
+
+```bash
+npm run dev        # starts at http://localhost:3000 (or next available port)
+# Ctrl+C           # stop the server
+```
+
+## Data Seeding Commands (safe to repeat — idempotent)
+
+```bash
+npm run library:status   # check how many library records exist
+npm run library:seed     # seed the legal library
+npm run blog:images      # upload blog images first
+npm run blog:seed        # seed blog articles
+```
+
+## Collaboration Model
+
+```
+GitHub Repository
+┌──────────────────────────────────────┐
+│  main (developer) ──────► live site  │
+│    ↑                                 │
+│    │  developer merges when ready    │
+│    │                                 │
+│  owner-edits (owner) ◄── your edits  │
+└──────────────────────────────────────┘
+```
+
+Owner edits → pushes to `owner-edits` → developer reviews → merges to `main` → goes live.
+
+<!-- owner-rules:end -->

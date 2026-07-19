@@ -48,6 +48,7 @@ import {
 } from "@/constants/lawsLibraryData";
 
 import { LibraryHero } from "./components/LibraryHero";
+import { AiTabContent } from "./components/AiTabContent";
 import { PrecedentsTabContent } from "./components/PrecedentsTabContent";
 import { OrdersTabContent } from "./components/OrdersTabContent";
 import { LawsTabContent } from "./components/LawsTabContent";
@@ -111,6 +112,7 @@ export default function LegalLibraryPage() {
   const [mounted,        setMounted]        = useState(false);
   const [layoutMode,     setLayoutMode]     = useState<"grid" | "list">("grid");
   const [showSidebars,   setShowSidebars]   = useState(true);
+  const [libraryMode,    setLibraryMode]    = useState<"library" | "ai">("library");
 
   // Arabic Normalization Helper (shared utility)
   const { normalizeArabic } = require("@/utils/normalizeArabic");
@@ -817,12 +819,62 @@ export default function LegalLibraryPage() {
         <InvitationBanner />
       </div>
 
-      {/* ── Library Hero ── */}
-      <LibraryHero isDark={isDark} isRTL={isRTL} muted={muted} />
+      {/* ── Library Hero + Mode Switcher ── */}
+      <div>
+        <LibraryHero isDark={isDark} isRTL={isRTL} muted={muted} />
+        {/* Mode Switcher — Library / AI */}
+        <div className="flex justify-center pb-6">
+          <div className={`flex items-center gap-1 p-1 rounded-2xl border shadow-lg backdrop-blur-md ${
+            isDark
+              ? "bg-[#0e1a14]/90 border-white/[0.08] shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)]"
+              : "bg-white/90 border-slate-200/80 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.15)]"
+          }`}>
+            <button
+              onClick={() => setLibraryMode("library")}
+              className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
+                libraryMode === "library"
+                  ? "bg-[#0B3D2E] text-white shadow-md"
+                  : isDark ? "text-white/40 hover:text-white/70" : "text-slate-400 hover:text-slate-600"
+              }`}
+            >
+              <PhosphorIcons.Books size={16} weight={libraryMode === "library" ? "fill" : "regular"} />
+              {isRTL ? "المكتبة القانونية" : "Legal Library"}
+            </button>
+            <button
+              onClick={() => setLibraryMode("ai")}
+              className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
+                libraryMode === "ai"
+                  ? "text-white shadow-md"
+                  : isDark ? "text-white/40 hover:text-white/70" : "text-slate-400 hover:text-slate-600"
+              }`}
+              style={libraryMode === "ai" ? { background: "linear-gradient(135deg, #0B3D2E, #1a6b50)" } : undefined}
+            >
+              <PhosphorIcons.Robot size={16} weight={libraryMode === "ai" ? "duotone" : "regular"} />
+              {isRTL ? "نظامي AI" : "Nezamy AI"}
+              {libraryMode !== "ai" && (
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-[#C8A762]/20 text-[#C8A762]">
+                  {isRTL ? "جديد" : "NEW"}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
 
       {/* ── Main Layout ─────────────────────────────────────────────────────── */}
       <section className="pb-32 px-4 flex-1">
         <div className="mx-auto max-w-[1200px]">
+
+          {/* ── AI Mode — Full-Width Chat Interface ────────────────────────── */}
+          {libraryMode === "ai" && (
+            <div className="mt-6">
+              <AiTabContent isDark={isDark} isRTL={isRTL} />
+            </div>
+          )}
+
+          {/* ── Library Mode — all existing content below ─────────────────── */}
+          {libraryMode === "library" && (<>
 
           {/* Search Bar */}
           <div className="mb-6 flex flex-col md:flex-row gap-3">
@@ -1378,6 +1430,10 @@ export default function LegalLibraryPage() {
             )}
 
           </div>
+
+          {/* Close library mode conditional */}
+          </>)}
+
         </div>
       </section>
 
