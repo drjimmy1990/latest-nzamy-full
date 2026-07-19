@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { useParams } from "next/navigation";
+import { useState, useCallback, useEffect, useRef, useMemo, Suspense } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowRight, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer
+  ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
@@ -25,13 +26,14 @@ import {
   DraftDrawer,
   LibraryAI,
   PreambleBlock,
+  MD,
   type CartEntry,
 } from "./_components";
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import SidebarPanel from "./_sidebar";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 
-export default function LawSystemPage() {
+function LawSystemPageContent() {
   const { isDark, isRTL }  = useTheme();
   const { userType, isLoggedIn } = useUser();
 
@@ -39,20 +41,6 @@ export default function LawSystemPage() {
   const params = useParams();
   const slug = (params?.slug as string) ?? "companies-law";
 
-  const [showPaywall, setShowPaywall] = useState(false);
-  const [showCart,    setShowCart]    = useState(false);
-  const [activeId,    setActiveId]    = useState<string>("art-1");
-  const [explainArticle, setExplainArticle] = useState<LawArticle | null>(null);
-  const [law, setLaw] = useState<LawSystem>(COMPANIES_LAW);
-  const [loadError, setLoadError] = useState(false);
-  const [jumpQuery,  setJumpQuery]  = useState("");  // بحث سريع للمواد
-  const [fontSize,        setFontSize]        = useState<"normal"|"large"|"xlarge">("normal"); // حجم الخط
-  const [showCommunity,   setShowCommunity]   = useState(false); // popup اسأل المجتمع
-  const isScrolling = useRef(false);                 // منع تعارض scroll و click
-  const [isReadingMode, setIsReadingMode] = useState(false);
-  const [viewMode, setViewMode] = useState<"all" | "law" | "regulation">("all");
-
-  // ── Law metadata: sync initial → async upgrade from DB ──────────────────
   const [lawMeta, setLawMeta] = useState<LawMetaEntry>(() => getLawMeta(slug));
 
   useEffect(() => {
@@ -63,21 +51,70 @@ export default function LawSystemPage() {
     return () => { cancelled = true; };
   }, [slug]);
 
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [showCart,    setShowCart]    = useState(false);
+  const [activeId,    setActiveId]    = useState<string>("art-1");
+  const [explainArticle, setExplainArticle] = useState<LawArticle | null>(null);
+  const [law, setLaw] = useState<LawSystem>(COMPANIES_LAW);
+  const [loadError, setLoadError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [jumpQuery,  setJumpQuery]  = useState("");  // بحث سريع للمواد
+  const [fontSize,        setFontSize]        = useState<"normal"|"large"|"xlarge">("normal"); // حجم الخط
+  const [showCommunity,   setShowCommunity]   = useState(false); // popup اسأل المجتمع
+  const isScrolling = useRef(false);                 // منع تعارض scroll و click
+  const [isReadingMode, setIsReadingMode] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false); // زر العودة لأعلى
+
+  // ── Scroll-to-Top observer ──
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+  
+  const searchParams = useSearchParams();
+  const initialViewMode = (searchParams?.get("viewMode") as "all" | "law" | "regulation" | "appendix") || "all";
+  const [viewMode, setViewMode] = useState<"all" | "law" | "regulation" | "appendix">(initialViewMode);
+  const [selectedRegName, setSelectedRegName] = useState<string | null>(null); // فلتر اللائحة المختارة عند تعددها
+
+  useEffect(() => {
+    const mode = searchParams?.get("viewMode");
+    if (mode === "all" || mode === "law" || mode === "regulation" || mode === "appendix") {
+      setViewMode(mode);
+    }
+  }, [searchParams]);
+
   // Cart: global, backed by localStorage via useDraftCart
   const { cart, setCart } = useDraftCart();
 
-  // ── Dynamic slug loading (API-backed) ──────────────────────────────────
+    // ── Dynamic slug loading (API-backed) ──────────────────────────────────
   useEffect(() => {
     async function loadLaw() {
       // Keep static fallback for companies-law (backward compat)
-      if (slug === "companies-law") { setLaw(COMPANIES_LAW); return; }
+      if (slug === "companies-law") {
+        setLaw(COMPANIES_LAW);
+        setLoading(false);
+        return;
+      }
       try {
         setLoadError(false);
+        setLoading(true);
         const res = await fetch(`/api/library/laws/${encodeURIComponent(slug)}`);
         if (!res.ok) {
           console.warn(`[LawReader] Law "${slug}" not found in API (${res.status}), using fallback`);
-          setLoadError(true);
-          return;
+          // Fallback to local json import if possible (for robustness)
+          try {
+            const data = await import(`@/constants/laws/${slug}.json`);
+            setLaw(data.default);
+            setLoading(false);
+            return;
+          } catch {
+            setLoadError(true);
+            setLoading(false);
+            return;
+          }
         }
         const data = await res.json();
         // Transform API response to match LawSystem interface
@@ -101,6 +138,7 @@ export default function LawSystemPage() {
               text: a.text || '',
               executiveReg: a.executiveReg,
               amendments: a.amendments,
+              instrument: a.instrument,
             })),
           })),
           summary: data.summary || '',
@@ -108,6 +146,8 @@ export default function LawSystemPage() {
       } catch (err) {
         console.error('[LawReader] Failed to load law:', err);
         setLoadError(true);
+      } finally {
+        setLoading(false);
       }
     }
     loadLaw();
@@ -148,6 +188,45 @@ export default function LawSystemPage() {
         type: "law"
       });
       localStorage.setItem("nzamy_recent_sessions", JSON.stringify(filtered.slice(0, 10)));
+    } catch {}
+  }, [slug, law?.title, lawMeta]);
+
+
+  // ── Persist law name + track activity ────────────────────────────────────
+  useEffect(() => {
+    if (slug && law?.title) {
+      localStorage.setItem(`nzamy_law_title_${slug}`, law.title);
+      try {
+        const raw = localStorage.getItem("nzamy_activity");
+        const data = raw ? JSON.parse(raw) : {};
+        const now = Date.now();
+        const weekMs  = 7  * 24 * 60 * 60 * 1000;
+        const monthMs = 30 * 24 * 60 * 60 * 1000;
+        if (!data.lastWeekReset  || now - data.lastWeekReset  > weekMs)  { data.lawsThisWeek  = 0; data.lastWeekReset  = now; }
+        if (!data.lastMonthReset || now - data.lastMonthReset > monthMs) { data.lawsThisMonth = 0; data.lastMonthReset = now; }
+        data.lawsThisWeek  = (data.lawsThisWeek  || 0) + 1;
+        data.lawsThisMonth = (data.lawsThisMonth || 0) + 1;
+        localStorage.setItem("nzamy_activity", JSON.stringify(data));
+      } catch {}
+    }
+  }, [slug, law?.title]);
+
+  // Track this law in recent sessions
+  useEffect(() => {
+    if (!slug || !law?.title) return;
+    try {
+      const meta = getLawMeta(slug);
+      const raw = localStorage.getItem("nzamy_recent_sessions");
+      const sessions = raw ? JSON.parse(raw) : [];
+      const filtered = sessions.filter((s: any) => !(s.slug === slug && s.type === "law"));
+      filtered.unshift({
+        slug,
+        title: law.title,
+        titleEn: law.titleEn || law.title,
+        catId: meta.section_code ? `SA-${meta.section_code}` : "SA-00",
+        type: "law"
+      });
+      localStorage.setItem("nzamy_recent_sessions", JSON.stringify(filtered.slice(0, 10)));
     } catch (e) {
       console.error(e);
     }
@@ -162,45 +241,109 @@ export default function LawSystemPage() {
 
   // Current Document Meta for folder auto-add
   const currentDoc = useMemo(() => {
+    const meta = getLawMeta(slug);
+    const sectionCode = meta.section_code || (law as any).section_code;
     return {
       slug,
       title: law.title,
       titleEn: law.titleEn || law.title,
-      catId: lawMeta.section_code ? `SA-${lawMeta.section_code}` : "SA-00",
+      catId: sectionCode ? `SA-${sectionCode}` : "SA-00",
       type: "law" as const
     };
-  }, [slug, law, lawMeta]);
+  }, [slug, law]);
 
-  const regulationTabLabel = useMemo(() => {
-    if (lawMeta.executive_label_override) {
-      return isRTL 
-        ? `${lawMeta.executive_label_override} فقط` 
-        : `${lawMeta.executive_label_override} Only`;
+  // ── كشف أسماء اللوائح المتعددة في النظام الواحد ──────────────────────────
+  // ── كشف الأسماء الكاملة للتشريعات الفرعية (لوائح/قواعد/ضوابط/تعليمات) ──
+  const extractRegFullName = (art: any): string => {
+    // 1) إذا كانت المادة مدمجة ولها executiveReg
+    if (art.executiveReg) {
+      const ref = (art.executiveReg.ref || "").trim();
+      const text = (art.executiveReg.text || "").trim();
+
+      // محاولة استخراج الاسم من أول خط عريض في متن نص اللائحة (وهي الطريقة الأدق والأسلم للوائح المدمجة)
+      const boldMatch = text.match(/^\s*\*\*(.+?):\*\*/) || text.match(/^\s*\*\*(.+?)\*\*/);
+      if (boldMatch) {
+        const candidate = boldMatch[1].trim();
+        // نتأكد أن الاسم المستخرج هو اسم اللائحة وليس مجرد كلمة المادة
+        if (candidate.length > 5 && 
+            !candidate.match(/^المادة\s+/) && 
+            (candidate.includes("اللائحة") || candidate.includes("الائحة") || candidate.includes("قواعد") || candidate.includes("ضوابط") || candidate.includes("تعليمات") || candidate.includes("ملحق"))) {
+          return candidate;
+        }
+      }
+
+      if (ref) {
+        const cleaned = ref
+          .replace(/^من\s+/, "")
+          .replace(/^المادة\s+المقابلة\s+(في|من)\s+/, "")
+          .replace(/^المواد\s+المقابلة\s+(في|من)\s+/, "")
+          .trim();
+        // نتأكد أن الاسم النظيف ليس مجرد رقم مادة
+        if (cleaned.length > 20) return cleaned;
+        if (cleaned.length > 5 && 
+            !cleaned.match(/^اللائحة\s*التنفيذية\s*$/) && 
+            !cleaned.match(/^المادة\s+/) && 
+            !cleaned.match(/^(الأولى|الثانية|الثالثة|الرابعة|الخامسة|السادسة|السابعة|الثامنة|التاسعة|العاشرة)/)) {
+          return cleaned;
+        }
+      }
+      
+      // Fallback للنوع من ref+text
+      const combined = ref + " " + text;
+      if (combined.includes("قواعد التطبيق")) return "قواعد التطبيق";
+      if (combined.includes("القواعد التنفيذية")) return "القواعد التنفيذية";
+      if (combined.includes("ضوابط التطبيق")) return "ضوابط التطبيق";
+      if (combined.includes("الضوابط")) return "الضوابط";
+      if (combined.includes("تعليمات التطبيق")) return "تعليمات التطبيق";
+      if (combined.includes("التعليمات")) return "التعليمات";
+      if (combined.includes("اللائحة التنفيذية")) return "اللائحة التنفيذية";
+      if (combined.includes("اللائحة")) return "اللائحة";
+      return ref.substring(0, 40).trim() || "التشريع الفرعي";
     }
-    let foundLabel = "";
-    if (law?.chapters) {
-      for (const ch of law.chapters) {
-        for (const art of ch.articles) {
-          if (art.executiveReg?.ref) {
-            const refText = art.executiveReg.ref.toLowerCase();
-            if (refText.includes("قواعد") || refText.includes("القواعد")) {
-              foundLabel = isRTL ? "القواعد فقط" : "Rules Only";
-              break;
-            } else if (refText.includes("ضوابط") || refText.includes("الضوابط")) {
-              foundLabel = isRTL ? "الضوابط فقط" : "Controls Only";
-              break;
-            } else if (refText.includes("تعليمات") || refText.includes("التعليمات")) {
-              foundLabel = isRTL ? "التعليمات فقط" : "Instructions Only";
-              break;
-            }
+
+    // 2) إذا كانت المادة مستقلة (instrument: لائحة أو ملحق)
+    if (art.instrument === "لائحة" || art.instrument === "ملحق") {
+      const text = art.text || "";
+      // محاولة استخراج الاسم من أول bold label في النص (مثال: > **لائحة الوثائق القضائية:**)
+      const boldMatch = text.match(/^\s*>\s*\*\*(.+?):\*\*/m) || text.match(/>\s*\*\*(.+?)\*\*/m);
+      if (boldMatch) {
+        return boldMatch[1].trim();
+      }
+      return art.instrument === "لائحة" ? "لائحة مستقلة" : "ملحق مستقل";
+    }
+
+    return "النظام الأساسي";
+  };
+
+  const availableRegNames = useMemo(() => {
+    const names = new Set<string>();
+    if (!law?.chapters) return [];
+    for (const ch of law.chapters) {
+      for (const art of ch.articles) {
+        if (art.executiveReg || art.instrument === "لائحة" || art.instrument === "ملحق") {
+          const regName = extractRegFullName(art);
+          if (regName && regName !== "النظام الأساسي") {
+            names.add(regName);
           }
         }
-        if (foundLabel) break;
       }
     }
-    if (foundLabel) return foundLabel;
-    return isRTL ? "اللائحة فقط" : "Regulation Only";
-  }, [slug, law, isRTL, lawMeta]);
+    return Array.from(names);
+  }, [law]);
+
+
+  const regulationTabLabel = useMemo(() => {
+    // إذا كان هناك نوع واحد فقط → نسميه باسمه (مثل "اللائحة التنفيذية فقط" أو "الضوابط فقط")
+    // إذا كان هناك أكثر من نوع → "التشريعات الفرعية" (شامل)
+    if (availableRegNames.length === 1) {
+      const name = availableRegNames[0];
+      // اسم قصير → نضيف "فقط"
+      if (name.length <= 25) return isRTL ? `${name} فقط` : "Sub-legislation Only";
+      // اسم طويل → نختصره
+      return isRTL ? "التشريعات الفرعية" : "Sub-legislation";
+    }
+    return isRTL ? "التشريعات الفرعية" : "Sub-legislation";
+  }, [availableRegNames, isRTL]);
 
   // ــ Intersection Observer: تحديث activeId عند السكرول تلقائياً ــــــــــــــــــ
   useEffect(() => {
@@ -221,7 +364,7 @@ export default function LawSystemPage() {
     });
     return () => observers.forEach(o => o?.disconnect());
   }, [law]);
-   // (lawMeta is now state-driven, no need for re-derivation)
+
   const sectionColors = SECTION_COLORS[lawMeta.section_code ?? "00"];
 
   const allArticles  = law.chapters.flatMap(ch => ch.articles);
@@ -333,11 +476,51 @@ export default function LawSystemPage() {
 
   const layoutClass = "flex-row";
 
+  if (loading) {
+    return (
+      <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
+        <Navbar />
+        <main className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="w-12 h-12 rounded-full border-4 border-t-[#0B3D2E] border-slate-200 dark:border-white/10 animate-spin" />
+            <p className={`text-sm font-bold ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+              {isRTL ? "جاري تحميل تفاصيل التشريع..." : "Loading law details..."}
+            </p>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
+        <Navbar />
+        <main className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4 text-center max-w-md p-6 rounded-2xl border border-red-500/20 bg-red-500/5">
+            <Scales size={48} className="text-red-500" />
+            <h2 className="text-lg font-black">{isRTL ? "عذراً، لم نتمكن من العثور على هذا التشريع" : "Law Not Found"}</h2>
+            <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+              {isRTL 
+                ? "قد يكون الرابط غير صحيح، أو أن الوثيقة لم ترفع بعد. يمكنك العودة إلى الفهرس الرئيسي والبحث من جديد." 
+                : "The requested document might not be available or the link is incorrect."}
+            </p>
+            <Link href="/laws" className="px-4 py-2 rounded-xl text-xs font-bold bg-[#0B3D2E] text-white hover:opacity-90 transition">
+              {isRTL ? "العودة إلى المكتبة القانونية" : "Back to Legal Library"}
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <div className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24">
+      <main className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24">
 
         <div className="h-6" />
 
@@ -439,7 +622,7 @@ export default function LawSystemPage() {
 
           {/* RIGHT COLUMN: Identity Panel AND Index Panel */}
           {!isReadingMode && (
-            <aside className="hidden lg:block lg:col-span-3 sticky top-6 z-40 space-y-3 print:hidden">
+            <aside className="hidden lg:block lg:col-span-3 sticky top-6 z-40 space-y-3 print:hidden max-h-[calc(100vh-2rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
               {/* Identity Card */}
               <SidebarPanel
                 isDark={isDark}
@@ -458,7 +641,7 @@ export default function LawSystemPage() {
                 setShowPaywall={setShowPaywall}
                 userType={userType}
                 mode="identity"
-                viewMode={viewMode}
+                viewMode={viewMode as any}
               />
               {/* Index Panel */}
               <SidebarPanel
@@ -478,7 +661,7 @@ export default function LawSystemPage() {
                 setShowPaywall={setShowPaywall}
                 userType={userType}
                 mode="index"
-                viewMode={viewMode}
+                viewMode={viewMode as any}
               />
             </aside>
           )}
@@ -508,7 +691,7 @@ export default function LawSystemPage() {
                 >
                   {isRTL ? "النظام فقط" : "Law Only"}
                 </button>
-                {(lawMeta.document_type === "نظام_ولائحة" || law.chapters.some(ch => ch.articles.some(a => a.executiveReg))) && (
+                {law.chapters.some(ch => ch.articles.some(a => a.executiveReg)) && (
                   <button
                     onClick={() => setViewMode("regulation")}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -520,6 +703,18 @@ export default function LawSystemPage() {
                     {regulationTabLabel}
                   </button>
                 )}
+                {law.appendices && law.appendices.length > 0 && (
+                  <button
+                    onClick={() => setViewMode("appendix")}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      viewMode === "appendix"
+                        ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white shadow-sm"
+                        : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {isRTL ? "الجداول والملاحق فقط" : "Tables & Appendices Only"}
+                  </button>
+                )}
               </div>
             )}
 
@@ -527,17 +722,191 @@ export default function LawSystemPage() {
             <PreambleBlock
               text={law.preamble}
               regulationPreamble={(law as any).regulationPreamble}
-              isDark={isDark}
+            isDark={isDark}
               isRTL={isRTL}
-              viewMode={viewMode}
+              viewMode={viewMode as any}
             />
 
-            {viewMode === "regulation" ? (
+            {viewMode === "appendix" ? (
               <div className="space-y-4">
+                {(law.appendices ?? []).map(app => (
+                  <div key={app.id} className={`${card} ${border} p-5`}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-[#C8A762]/15 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>
+                        {app.type === "جدول" ? (isRTL ? "📊 جدول" : "📊 Table") : (isRTL ? "📁 ملحق" : "📁 Appendix")}
+                      </span>
+                      <h3 className={`font-bold text-sm ${isDark ? "text-white" : "text-zinc-900"}`}>{app.title}</h3>
+                    </div>
+                    <div className="leading-relaxed">
+                      <MD text={app.content} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : viewMode === "regulation" ? (
+              <div className="space-y-4">
+                {/* ── اختيار اللائحة عند تعدد اللوائح ── */}
+                {availableRegNames.length > 1 && (
+                  <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+                    <button
+                      onClick={() => setSelectedRegName(null)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        selectedRegName === null
+                          ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white shadow-sm"
+                          : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      {isRTL ? "الكل" : "All"}
+                    </button>
+                    {availableRegNames.map((name) => (
+                      <button
+                        key={name}
+                        onClick={() => setSelectedRegName(name)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          selectedRegName === name
+                            ? isDark ? "bg-[#C8A762] text-[#0B3D2E]" : "bg-amber-100 text-amber-800 border border-amber-300"
+                            : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {(() => {
+                  // ── تحويل الأعداد الترتيبية العربية اللفظية إلى أرقام تسلسلية للترتيب ──
+                  const parseArabicNumeral = (numStr: string): number => {
+                    const clean = numStr.replace(/^المادة\s+/, "").trim();
+                    const units: Record<string, number> = {
+                      "الأولى": 1, "الأول": 1, "الواحدة": 1, "واحد": 1,
+                      "الثانية": 2, "الثاني": 2, "اثنان": 2,
+                      "الثالثة": 3, "الثالث": 3, "ثلاثة": 3,
+                      "الرابعة": 4, "الرابع": 4, "أربعة": 4,
+                      "الخامسة": 5, "الخامس": 5, "خمسة": 5,
+                      "السادسة": 6, "السادس": 6, "ستة": 6,
+                      "السابعة": 7, "السابع": 7, "سبعة": 7,
+                      "الثامنة": 8, "الثامن": 8, "ثمانية": 8,
+                      "التاسعة": 9, "التاسع": 9, "تسعة": 9,
+                      "العاشرة": 10, "العاشر": 10, "عشرة": 10,
+                      "الحادية عشرة": 11, "الحادي عشر": 11,
+                      "الثانية عشرة": 12, "الثاني عشر": 12,
+                      "الثالثة عشرة": 13, "الثالث عشر": 13,
+                      "الرابعة عشرة": 14, "الرابع عشر": 14,
+                      "الخامسة عشرة": 15, "الخامس عشر": 15,
+                      "السادسة عشرة": 16, "السادس عشر": 16,
+                      "السابعة عشرة": 17, "السابع عشر": 17,
+                      "الثامنة عشرة": 18, "الثامن عشر": 18,
+                      "التاسعة عشرة": 19, "التاسع عشر": 19
+                    };
+
+                    const tens: Record<string, number> = {
+                      "العشرون": 20, "العشرين": 20,
+                      "الثلاثون": 30, "الثلاثين": 30,
+                      "الأربعون": 40, "الأربعين": 40,
+                      "الخمسون": 50, "الخمسين": 50,
+                      "الستون": 60, "الستين": 60,
+                      "السبعون": 70, "السبعين": 70,
+                      "الثمانون": 80, "الثمانين": 80,
+                      "التسعون": 90, "التسعين": 90
+                    };
+
+                    const hundreds: Record<string, number> = {
+                      "المائة": 100, "المئة": 100,
+                      "المائتين": 200, "المئتين": 200,
+                      "الثلاثمائة": 300,
+                      "الأربعمائة": 400
+                    };
+
+                    if (units[clean]) return units[clean];
+                    if (tens[clean]) return tens[clean];
+                    if (hundreds[clean]) return hundreds[clean];
+
+                    // تركيبية مثل: الحادية والعشرون...
+                    const waSplit = clean.split(/\s+و\s+/);
+                    if (waSplit.length === 2) {
+                      const unitPart = waSplit[0];
+                      const tenPart = waSplit[1];
+                      if (units[unitPart] && tens[tenPart]) {
+                        return units[unitPart] + tens[tenPart];
+                      }
+                    }
+
+                    // تركيبية مع مئات مثل: الأولى بعد المائة
+                    const afterSplit = clean.split(/\s+بعد\s+/);
+                    if (afterSplit.length === 2) {
+                      const unitPart = afterSplit[0];
+                      const hundredPart = afterSplit[1];
+                      let unitVal = 0;
+                      if (units[unitPart]) unitVal = units[unitPart];
+                      else {
+                        const subWa = unitPart.split(/\s+و\s+/);
+                        if (subWa.length === 2 && units[subWa[0]] && tens[subWa[1]]) {
+                          unitVal = units[subWa[0]] + tens[subWa[1]];
+                        }
+                      }
+                      if (hundreds[hundredPart]) {
+                        return unitVal + hundreds[hundredPart];
+                      }
+                    }
+
+                    const numMatch = clean.match(/\d+/);
+                    if (numMatch) return parseInt(numMatch[0], 10);
+
+                    return 9_999;
+                  };
+
+                  // ── استخراج رقم مادة اللائحة من حقل text أو من الترقيم اللفظي المباشر ──
+                  const extractRegNum = (art: any): number => {
+                    if (art.executiveReg) {
+                      const text = art.executiveReg.text || "";
+                      const ref  = art.executiveReg.ref  || "";
+                      // أولاً: نمط (X/Y) في التكست — مثل المادة (1/3) → أولوية X*1000+Y
+                      const slashMatch = text.match(/#*\s*\u0627\u0644\u0645\u0627\u062f\u0629\s*\((\d+)\/(\d+)\)/);
+                      if (slashMatch) return parseInt(slashMatch[1], 10) * 1000 + parseInt(slashMatch[2], 10);
+                      // ثانياً: رقم بسيط داخل قوسين في التكست — مثل (3)
+                      const parenText = text.match(/\u0627\u0644\u0645\u0627\u062f\u0629\s*\((\d+)\)/);
+                      if (parenText) return parseInt(parenText[1], 10) * 1000;
+                      // ثالثاً: رقم داخل قوسين في ref
+                      const parenRef = ref.match(/\((\d+)\)/);
+                      if (parenRef) return parseInt(parenRef[1], 10) * 1000;
+                      // رابعاً: أرقام عربية كلامية في ref
+                      const arabicNums: Record<string, number> = {
+                        "\u0627\u0644\u0623\u0648\u0644\u0649": 1, "\u0627\u0644\u0623\u0648\u0644": 1,
+                        "\u0627\u0644\u062b\u0627\u0646\u064a\u0629": 2, "\u0627\u0644\u062b\u0627\u0646\u064a": 2,
+                        "\u0627\u0644\u062b\u0627\u0644\u062b\u0629": 3, "\u0627\u0644\u062b\u0627\u0644\u062b": 3,
+                        "\u0627\u0644\u0631\u0627\u0628\u0639\u0629": 4, "\u0627\u0644\u0631\u0627\u0628\u0639": 4,
+                        "\u0627\u0644\u062e\u0627\u0645\u0633\u0629": 5, "\u0627\u0644\u062e\u0627\u0645\u0633": 5,
+                        "\u0627\u0644\u0633\u0627\u062f\u0633\u0629": 6, "\u0627\u0644\u0633\u0627\u062f\u0633": 6,
+                        "\u0627\u0644\u0633\u0627\u0628\u0639\u0629": 7, "\u0627\u0644\u0633\u0627\u0628\u0639": 7,
+                        "\u0627\u0644\u062b\u0627\u0645\u0646\u0629": 8, "\u0627\u0644\u062b\u0627\u0645\u0646": 8,
+                        "\u0627\u0644\u062a\u0627\u0633\u0639\u0629": 9, "\u0627\u0644\u062a\u0627\u0633\u0639": 9,
+                        "\u0627\u0644\u0639\u0627\u0634\u0631\u0629": 10, "\u0627\u0644\u0639\u0627\u0634\u0631": 10,
+                      };
+                      for (const [word, num] of Object.entries(arabicNums)) {
+                        if (ref.includes(word)) return num * 1000;
+                      }
+                      return 9_999_000;
+                    }
+
+                    // إذا كانت مادة مستقلة، نستخرج رقمها اللفظي من num
+                    return parseArabicNumeral(art.num || "") * 1000;
+                  };
+
+                  // ── مساعد: كشف اسم اللائحة من المادة ──
+                  const getRegName = extractRegFullName;
+
                   const regArticles = law.chapters
                     .flatMap(ch => ch.articles)
-                    .filter(a => a.executiveReg);
+                    .filter(a => a.executiveReg || a.instrument === "لائحة" || a.instrument === "ملحق")
+                    // ── فلترة اللائحة المختارة
+                    .filter(a => {
+                      if (!selectedRegName) return true;
+                      return getRegName(a) === selectedRegName;
+                    })
+                    // ── ترتيب تسلسلي
+                    .sort((a, b) => extractRegNum(a) - extractRegNum(b));
+
                   const visibleRegArts = filteredArticles
                     ? regArticles.filter(a => filteredArticles.some(f => f.id === a.id))
                     : regArticles;
@@ -612,7 +981,7 @@ export default function LawSystemPage() {
 
           {/* LEFT COLUMN: AI Tools and related documents */}
           {!isReadingMode && (
-            <aside className="hidden lg:block lg:col-span-3 sticky top-6 z-40 space-y-3 print:hidden">
+            <aside className="hidden lg:block lg:col-span-3 sticky top-6 z-40 space-y-3 print:hidden max-h-[calc(100vh-2rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
               <button
                 onClick={() => setShowCommunity(true)}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold transition ${
@@ -690,11 +1059,16 @@ export default function LawSystemPage() {
           )}
 
         </div>
-      </div>
+      </main>
 
       <Footer />
 
-      
+      <FloatingButtons
+        reportConfig={{ pageSlug: slug, pageType: "law" }}
+        cartCount={cart.length}
+        onCartClick={() => setShowCart(true)}
+      />
+
       <AnimatePresence>
         {showCart && (
           <>
@@ -734,6 +1108,35 @@ export default function LawSystemPage() {
         currentDoc={currentDoc}
       />
       <PrintWatermark isRTL={isRTL} />
+
+      {/* ── Scroll-to-Top Button ── */}
+      <AnimatePresence>
+        {showScrollTop && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 20 }}
+            transition={{ type: "spring", stiffness: 400, damping: 25 }}
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            className={`fixed z-[9999] bottom-20 ${isRTL ? "left-4" : "right-4"} w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-colors print:hidden ${
+              isDark
+                ? "bg-zinc-800 border-white/10 text-zinc-300 hover:bg-zinc-700 hover:text-white"
+                : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-[#0B3D2E] shadow-md"
+            }`}
+            title={isRTL ? "العودة لأعلى الصفحة" : "Scroll to top"}
+          >
+            <ArrowUp size={18} weight="bold" />
+          </motion.button>
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+export default function LawSystemPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-zinc-950 text-zinc-400">جاري التحميل...</div>}>
+      <LawSystemPageContent />
+    </Suspense>
   );
 }

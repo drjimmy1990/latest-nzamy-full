@@ -148,6 +148,7 @@ function formatArticleWithPaywall(
     status: article.status || 'active',
     free: !isLocked,
     locked: isLocked,
+    instrument: article.instrument || '',
   };
 
   if (isLocked) {

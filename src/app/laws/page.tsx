@@ -38,6 +38,7 @@ import {
   type FeqhType,
   type FeqhMadhab,
   type PrecMode,
+  type DocSubType,
   CONTENT_TYPES,
   PLACEHOLDERS,
   PLACEHOLDERS_EN,
@@ -45,6 +46,7 @@ import {
   MAIN_CATEGORIES,
   OTHER_CATEGORIES,
   matchesFeqhCategory,
+  LAW_DOC_TYPES,
 } from "@/constants/lawsLibraryData";
 
 import { LibraryHero } from "./components/LibraryHero";
@@ -108,6 +110,7 @@ export default function LegalLibraryPage() {
 
   const [precPage,       setPrecPage]       = useState(1);
   const [precSort,       setPrecSort]       = useState<"relevance" | "year-desc" | "year-asc" | "date-desc">("relevance");
+  const [docSubType,     setDocSubType]     = useState<DocSubType>("all");
   const [showAdvSearch,  setShowAdvSearch]  = useState(false);
   const [mounted,        setMounted]        = useState(false);
   const [layoutMode,     setLayoutMode]     = useState<"grid" | "list">("grid");
@@ -216,7 +219,7 @@ export default function LegalLibraryPage() {
     if (isLoadedRef.current) {
       setPrecPage(1);
     }
-  }, [search, activeType, activeCat, precSource, precTrack, precSort]);
+  }, [search, activeType, activeCat, precSource, precTrack, precSort, docSubType]);
 
   // — Rotating placeholder —
   const [phIdx, setPhIdx] = useState(0);
@@ -272,6 +275,9 @@ export default function LegalLibraryPage() {
       const savedPrecSort = sessionStorage.getItem("nzamy_search_precSort");
       if (savedPrecSort !== null) setPrecSort(savedPrecSort as any);
 
+      const savedDocSubType = sessionStorage.getItem("nzamy_search_docSubType");
+      if (savedDocSubType !== null) setDocSubType(savedDocSubType as any);
+
       const savedShowSidebars = sessionStorage.getItem("nzamy_search_showSidebars");
       if (savedShowSidebars !== null) setShowSidebars(savedShowSidebars === "true");
 
@@ -321,6 +327,7 @@ export default function LegalLibraryPage() {
       sessionStorage.setItem("nzamy_search_orderIssuer", orderIssuer);
       sessionStorage.setItem("nzamy_search_precPage", precPage.toString());
       sessionStorage.setItem("nzamy_search_precSort", precSort);
+      sessionStorage.setItem("nzamy_search_docSubType", docSubType);
       sessionStorage.setItem("nzamy_search_showSidebars", showSidebars.toString());
     }
   }, [
@@ -337,6 +344,7 @@ export default function LegalLibraryPage() {
     orderIssuer,
     precPage,
     precSort,
+    docSubType,
     showSidebars
   ]);
   if (!mounted) return null;
@@ -521,7 +529,9 @@ export default function LegalLibraryPage() {
         lastUpdated: law.issue_date_hijri || "—",
         cat: classifyLawCategory(law),
         type: "laws",
-        subType: "basic"
+        subType: "basic",
+        sub_types: law.has_merged_regulation ? ["لائحة تنفيذية"] : [],
+        doc_type: "نظام"
       }))
     : []) as any[]; // honest empty state — no fabricated laws in prod (mirrors the gated DEMO_* lists)
 
@@ -1345,6 +1355,10 @@ export default function LegalLibraryPage() {
                           catHasContent={catHasContent}
                           activeCat={activeCat}
                           hasResults={hasResults}
+                          precSort={precSort}
+                          setPrecSort={setPrecSort}
+                          docSubType={docSubType}
+                          setDocSubType={setDocSubType}
                         />
                         {/* Load More for Laws */}
                         {!isSearchActive && pagination.laws?.hasMore && activeType === "laws" && (

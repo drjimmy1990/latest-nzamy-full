@@ -9,21 +9,260 @@ import {
   Gavel, Sparkle, Highlighter, NotePencil, FloppyDisk, PushPin
 } from "@phosphor-icons/react";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
-import { useSubscription } from "@/hooks/useSubscription";
 import type { LawArticle, JudicialPrinciple, JudicialPrecedent } from "../data";
+import { useSubscription } from "@/hooks/useSubscription";
+
+interface ParseBlock {
+  type: "paragraph" | "details" | "heading" | "blockquote" | "separator" | "list-item" | "num-list-item";
+  text?: string;
+  summary?: string;
+  content?: string;
+  level?: number; // للعناوين: 2=##, 3=###, 4=####
+}
+
+function parseMarkdownContent(text: string): ParseBlock[] {
+  const blocks: ParseBlock[] = [];
+  const lines = text.split("\n");
+  
+  let inDetails = false;
+  let currentSummary = "";
+  let currentContentLines: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    
+    if (trimmed.includes("<details>") || trimmed.includes("<details ")) {
+      inDetails = true;
+      currentSummary = "";
+      currentContentLines = [];
+      continue;
+    }
+    
+    if (inDetails) {
+      if (trimmed.includes("</details>")) {
+        inDetails = false;
+        blocks.push({
+          type: "details",
+          summary: currentSummary || "الإصدارات السابقة",
+          content: currentContentLines.join("\n")
+        });
+        continue;
+      }
+      
+      if (trimmed.startsWith("<summary>") && trimmed.includes("</summary>")) {
+        currentSummary = trimmed.replace("<summary>", "").replace("</summary>", "");
+        continue;
+      } else if (trimmed.startsWith("<summary>")) {
+        currentSummary = trimmed.replace("<summary>", "");
+        continue;
+      }
+      
+      let contentLine = line;
+      if (trimmed.startsWith(">")) {
+        const postGt = line.substring(line.indexOf(">") + 1);
+        contentLine = postGt.startsWith(" ") ? postGt.substring(1) : postGt;
+      }
+      currentContentLines.push(contentLine);
+    } else {
+      // ─── فحص الجداول (Table detection) ───
+      if (trimmed.startsWith("|") && i + 1 < lines.length && lines[i+1].trim().startsWith("|") && lines[i+1].includes("-")) {
+        const tableLines: string[] = [];
+        while (i < lines.length && lines[i].trim().startsWith("|")) {
+          tableLines.push(lines[i].trim());
+          i++;
+        }
+        i--; // العودة خطوة للخلف
+        blocks.push({
+          type: "table" as any,
+          content: tableLines.join("\n")
+        });
+        continue;
+      }
+
+      // ─── Headings: ###, ##, ####
+      const headingMatch = trimmed.match(/^(#{2,4})\s+(.+)$/);
+      if (headingMatch) {
+        blocks.push({ type: "heading", text: headingMatch[2], level: headingMatch[1].length });
+        continue;
+      }
+
+      // ─── Horizontal separator: --- or *** or * * *
+      if (/^(\*\*\*|---|\* \* \*)$/.test(trimmed)) {
+        blocks.push({ type: "separator" });
+        continue;
+      }
+
+      // ─── Blockquote: > text (used for regulation articles)
+      if (trimmed.startsWith("> ") || trimmed === ">") {
+        const bqText = trimmed.replace(/^>\s?/, "");
+        blocks.push({ type: "blockquote", text: bqText });
+        continue;
+      }
+
+      // ─── Unordered list items: - text or • text
+      if (/^[-•]\s+/.test(trimmed)) {
+        blocks.push({ type: "list-item", text: trimmed.replace(/^[-•]\s+/, "") });
+        continue;
+      }
+
+      // ─── Ordered (numbered) list items: 1. text or ١. text
+      if (/^\d+\.\s+/.test(trimmed) || /^[١-٩]\.\s+/.test(trimmed)) {
+        blocks.push({ type: "num-list-item", text: trimmed.replace(/^\d+\.\s+|^[١-٩]\.\s+/, "") });
+        continue;
+      }
+
+      // ─── Regular paragraph
+      blocks.push({
+        type: "paragraph",
+        text: line
+      });
+    }
+  }
+  
+  return blocks;
+}
+
+function renderMarkdownTableToHtml(tableMd: string): string {
+  const lines = tableMd.split("\n");
+  if (lines.length < 2) return "";
+  
+  const parseRow = (rowStr: string): string[] => {
+    const clean = rowStr.replace(/^\|/, "").replace(/\|$/, "").trim();
+    return clean.split("|").map(cell => cell.trim());
+  };
+
+  const headers = parseRow(lines[0]);
+  const rows = lines.slice(2).map(parseRow);
+
+  let html = "<thead class='bg-slate-50 dark:bg-zinc-900/60'>";
+  html += "<tr>";
+  headers.forEach(h => {
+    html += `<th class='px-4 py-3 text-right font-black tracking-wider text-[11px] opacity-90'>${markdownBoldToSafeHtml(h)}</th>`;
+  });
+  html += "</tr></thead>";
+
+  html += "<tbody class='divide-y divide-slate-100 dark:divide-zinc-800 bg-white dark:bg-zinc-950/20'>";
+  rows.forEach((row) => {
+    html += `<tr class='hover:bg-slate-50/50 dark:hover:bg-zinc-900/30 transition-colors'>`;
+    row.forEach(cell => {
+      html += `<td class='px-4 py-2.5 leading-relaxed whitespace-pre-wrap break-words'>${markdownBoldToSafeHtml(cell)}</td>`;
+    });
+    html += "</tr>";
+  });
+  html += "</tbody>";
+
+  return html;
+}
 
 export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { text: string; isDark: boolean; isRTL?: boolean; fontClass?: string }) {
   const muted = isDark ? "text-zinc-300" : "text-zinc-700";
   const listIndent = isRTL ? "pr-4" : "pl-4";
+  
+  const blocks = useMemo(() => parseMarkdownContent(text), [text]);
+  
   return (
-    <div className="space-y-1.5">
-      {text.trim().split("\n").map((line, i) => {
+    <div className="space-y-1.5 w-full">
+      {blocks.map((block, index) => {
+        if (block.type === "details") {
+          return (
+            <details
+              key={index}
+              className={`my-3 rounded-xl border transition-all ${
+                isDark
+                  ? "border-amber-900/35 bg-amber-950/10 text-amber-200"
+                  : "border-amber-100 bg-amber-50/50 text-amber-900"
+              }`}
+            >
+              <summary className="px-4 py-2.5 font-black cursor-pointer hover:underline text-[12px] flex items-center gap-1.5 select-none">
+                <ClockCounterClockwise size={12} className={isDark ? "text-amber-400" : "text-amber-600"} />
+                <span>{block.summary}</span>
+              </summary>
+              <div className="px-4 pb-3 pt-1.5 border-t border-dashed border-amber-200/20 text-[12px] leading-relaxed">
+                <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+              </div>
+            </details>
+          );
+         }
+
+        // ─── Table
+        if (block.type === ("table" as any)) {
+          const tableHtml = renderMarkdownTableToHtml(block.content || "");
+          return (
+            <div key={index} className="overflow-x-auto my-4 rounded-xl border border-slate-200/60 dark:border-zinc-800 shadow-sm max-w-full">
+              <table 
+                className={`min-w-full divide-y ${isDark ? "divide-zinc-800 text-zinc-300" : "divide-slate-200 text-slate-700"} text-xs text-right`}
+                dangerouslySetInnerHTML={{ __html: tableHtml }}
+              />
+            </div>
+          );
+        }
+
+        // ─── Heading
+        if (block.type === "heading") {
+          const headingStyles: Record<number, string> = {
+            2: "text-[15px] font-black mt-4 mb-2",
+            3: "text-[13px] font-black mt-3 mb-1",
+            4: "text-[12px] font-bold mt-2 mb-1",
+          };
+          const cls = headingStyles[block.level ?? 3] ?? "text-[13px] font-bold";
+          const html = markdownBoldToSafeHtml(block.text || "");
+          return (
+            <p key={index} className={`${cls} ${isDark ? "text-zinc-100" : "text-zinc-800"}`}
+               dangerouslySetInnerHTML={{ __html: html }} />
+          );
+        }
+
+        // ─── Separator
+        if (block.type === "separator") {
+          return (
+            <div key={index} className={`my-2 border-t ${isDark ? "border-white/[0.08]" : "border-slate-200"}`} />
+          );
+        }
+
+        // ─── Blockquote (مواد اللائحة في وضع "عرض الكل")
+        if (block.type === "blockquote") {
+          if (!block.text) return <div key={index} className="h-1" />;
+          const html = markdownBoldToSafeHtml(block.text);
+          return (
+            <p key={index}
+               className={`${fontClass} leading-relaxed ${listIndent} border-r-2 pr-3 border-[#C8A762]/40 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}
+               dangerouslySetInnerHTML={{ __html: html }} />
+          );
+        }
+
+        // ─── Unordered list item
+        if (block.type === "list-item") {
+          const html = markdownBoldToSafeHtml(block.text || "");
+          return (
+            <div key={index} className={`flex gap-2 ${listIndent}`}>
+              <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${isDark ? "bg-zinc-500" : "bg-slate-400"}`} />
+              <p className={`${fontClass} leading-relaxed ${muted}`} dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
+          );
+        }
+
+        // ─── Ordered list item
+        if (block.type === "num-list-item") {
+          const html = markdownBoldToSafeHtml(block.text || "");
+          return (
+            <div key={index} className={`flex gap-2 ${listIndent}`}>
+              <p className={`${fontClass} leading-relaxed ${muted}`} dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
+          );
+        }
+        
+        const line = block.text || "";
         const html = markdownBoldToSafeHtml(line);
+        
         if (line.startsWith("أ-") || line.startsWith("ب-") || line.startsWith("ج-") ||
-            line.startsWith("د-") || line.startsWith("هـ-"))
-          return <p key={i} className={`${fontClass} leading-relaxed ${listIndent} ${muted}`} dangerouslySetInnerHTML={{ __html: html }} />;
-        if (line.trim() === "") return <div key={i} className="h-1" />;
-        return <p key={i} className={`${fontClass} leading-relaxed ${muted}`} dangerouslySetInnerHTML={{ __html: html }} />;
+            line.startsWith("د-") || line.startsWith("هـ-")) {
+          return <p key={index} className={`${fontClass} leading-relaxed ${listIndent} ${muted}`} dangerouslySetInnerHTML={{ __html: html }} />;
+        }
+        
+        if (line.trim() === "") return <div key={index} className="h-1" />;
+        
+        return <p key={index} className={`${fontClass} leading-relaxed ${muted}`} dangerouslySetInnerHTML={{ __html: html }} />;
       })}
     </div>
   );
@@ -31,16 +270,23 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
 
 import { type CartEntry } from "@/components/laws/DraftDrawer";
 
-function getSelectedTextWithin(containerId: string): string {
+function getSelectedTextWithin(containerId: string, fallbackText?: string): string {
   if (typeof window === "undefined") return "";
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return "";
   const selectedText = selection.toString().trim();
   if (!selectedText) return "";
+  if (fallbackText && fallbackText.replace(/\s+/g, "").includes(selectedText.replace(/\s+/g, ""))) {
+    return selectedText;
+  }
   const container = document.getElementById(containerId);
   if (!container) return "";
   const range = selection.getRangeAt(0);
-  if (container.contains(range.commonAncestorContainer)) {
+  if (
+    container.contains(range.commonAncestorContainer) ||
+    container.contains(range.startContainer) ||
+    container.contains(range.endContainer)
+  ) {
     return selectedText;
   }
   return "";
@@ -241,11 +487,12 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
 }) {
   const [showAmendments, setShowAmendments] = useState(false);
   const [showRepealed,   setShowRepealed]   = useState(false);
+  const [showExecReg,    setShowExecReg]    = useState(false);
   const [copied, setCopied]                 = useState(false);
   const [copiedReg, setCopiedReg]           = useState(false);
   const isRepealed  = article.status === "repealed";
   const isAmended   = article.status === "amended";
-  const { can }     = useSubscription();
+    const { can }     = useSubscription();
   const hasLibraryAccess = can("library-full-access");
   const isLocked    = !article.free && !hasLibraryAccess;
   const inCart      = !!entry && entry.isArticleAdded;
@@ -253,7 +500,7 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
 
   const handleCopy = useCallback(() => {
     if (isLocked) { showPaywall(); return; }
-    const selectedText = getSelectedTextWithin(article.id);
+    const selectedText = getSelectedTextWithin(article.id, article.text);
     const base  = lawName.replace(/\s*ولوائحه التنفيذية.*/, "").trim();
     
     let plainText = "";
@@ -280,7 +527,7 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
   const handleCopyReg = useCallback(() => {
     if (isLocked) { showPaywall(); return; }
     if (!article.executiveReg) return;
-    const selectedText = getSelectedTextWithin(`exec-reg-${article.id}`);
+    const selectedText = getSelectedTextWithin(`exec-reg-${article.id}`, article.executiveReg.text);
     const base = lawName.replace(/\s*ولوائحه التنفيذية.*/, "").trim();
     
     let plainText = "";
@@ -307,9 +554,26 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
 
 
   const mainBadgeText = viewMode === "regulation" && article.executiveReg ? article.executiveReg.ref : article.num;
-  const mainBadgeStyle = viewMode === "regulation"
+
+  // ── لون Badge حسب الحالة ──────────────────────────────────────────────────
+  const mainBadgeStyle = viewMode === "regulation" && article.executiveReg
     ? "bg-[#C8A762] text-[#0B3D2E] font-black"
-    : isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white";
+    : isRepealed
+      ? isDark
+        ? "bg-red-900/40 text-red-400 border border-red-700/40 line-through"
+        : "bg-red-50 text-red-600 border border-red-200 line-through"
+      : isAmended
+        ? isDark
+          ? "bg-amber-900/40 text-amber-300 border border-amber-700/40"
+          : "bg-amber-50 text-amber-700 border border-amber-300"
+        : isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white";
+
+  // ── لون Header الكارد حسب الحالة ─────────────────────────────────────────
+  const cardHeaderBg = isRepealed
+    ? isDark ? "border-white/[0.04] bg-red-950/30" : "border-red-100 bg-red-50/60"
+    : isAmended
+      ? isDark ? "border-white/[0.04] bg-amber-950/20" : "border-amber-100 bg-amber-50/40"
+      : isDark ? "border-white/[0.05] bg-zinc-800/50" : "border-slate-100 bg-slate-50/80";
 
   const showExplainBtn = !isRepealed && (viewMode !== "regulation" || !!article.executiveReg);
   const mainInCart = viewMode === "regulation" ? regInCart : inCart;
@@ -324,26 +588,41 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
   const mainCopied = viewMode === "regulation" ? copiedReg : copied;
 
   const mainCartBorder = viewMode === "regulation" ? regInCart : inCart;
+  // ── حدود الكارد الكاملة حسب الحالة + الـ active + الـ cart ────────────────
   const cardBorder = isActive
     ? isDark ? "border-[#C8A762]/50" : "border-amber-400"
-    : mainCartBorder
-    ? isDark ? "border-[#C8A762]/25" : "border-amber-200"
-    : isDark ? "border-white/[0.07]" : "border-slate-200";
+    : isRepealed
+      ? isDark ? "border-red-900/40" : "border-red-200"
+      : isAmended
+        ? isDark ? "border-amber-900/40" : "border-amber-200"
+        : mainCartBorder
+          ? isDark ? "border-[#C8A762]/25" : "border-amber-200"
+          : isDark ? "border-white/[0.07]" : "border-slate-200";
 
   return (
     <motion.div
       layout id={article.id}
       onClick={() => onActive(article.id)}
-      className={`nzamy-reader-block rounded-2xl border shadow-sm overflow-hidden cursor-pointer transition-colors ${isDark ? "bg-zinc-900" : "bg-white"} ${cardBorder}`}
+      className={`nzamy-reader-block rounded-2xl border shadow-sm overflow-hidden cursor-pointer transition-colors
+        ${isDark ? "bg-zinc-900" : "bg-white"}
+        ${isRepealed ? (isDark ? "border-r-2 border-r-red-800" : "border-r-2 border-r-red-400") : ""}
+        ${isAmended  ? (isDark ? "border-r-2 border-r-amber-700" : "border-r-2 border-r-amber-400") : ""}
+        ${cardBorder}`}
     >
       {/* Header */}
-      <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-2.5 border-b ${isDark ? "border-white/[0.05] bg-zinc-800/50" : "border-slate-100 bg-slate-50/80"}`}
+      <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${cardHeaderBg}`}
            onClick={e => e.stopPropagation()}>
 
         <span className={`text-[11px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${mainBadgeStyle}`}>
           {mainBadgeText}
         </span>
-        <p className={`flex-1 text-[12px] font-bold truncate ${isRepealed ? "line-through text-red-400" : isDark ? "text-zinc-200" : "text-zinc-700"}`}>
+        <p className={`flex-1 text-[12px] font-bold truncate ${
+          isRepealed
+            ? "line-through text-red-500 dark:text-red-400"
+            : isAmended
+              ? isDark ? "text-amber-200" : "text-amber-800"
+              : isDark ? "text-zinc-200" : "text-zinc-700"
+        }`}>
           {article.title}
         </p>
 
@@ -357,8 +636,16 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
           </span>
         )}
 
-        {isRepealed && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 flex-shrink-0">{isRTL ? "ملغاة" : "Repealed"}</span>}
-        {isAmended  && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 border border-amber-400/20 flex-shrink-0">{isRTL ? "معدَّلة" : "Amended"}</span>}
+        {isRepealed && (
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-500 border border-red-500/25 flex-shrink-0">
+            🚫 {isRTL ? "ملغاة" : "Repealed"}
+          </span>
+        )}
+        {isAmended && (
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 border border-amber-400/25 flex-shrink-0">
+            ✏️ {isRTL ? "معدَّلة" : "Amended"}
+          </span>
+        )}
         {isLocked   && <Lock size={12} className={`flex-shrink-0 ${isDark ? "text-zinc-600" : "text-slate-400"}`} />}
 
         {!isReadingMode && (
@@ -441,36 +728,67 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
                 <MD text={article.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
               )
             )}
+
+            {/* Amendments toggle (collapsible <details> block, matches the layout/style of parsed details blocks) */}
+            {viewMode !== "regulation" && isAmended && article.amendments && article.amendments.length > 0 && (
+              <details
+                className={`my-3 rounded-xl border transition-all ${
+                  isDark
+                    ? "border-amber-900/35 bg-amber-950/10 text-amber-200"
+                    : "border-amber-100 bg-amber-50/50 text-amber-900"
+                }`}
+              >
+                <summary className="px-4 py-2.5 font-black cursor-pointer hover:underline text-[12px] flex items-center gap-1.5 select-none">
+                  <ClockCounterClockwise size={12} className={isDark ? "text-amber-400" : "text-amber-600"} />
+                  <span>{isRTL ? `الإصدارات السابقة (${article.amendments.length})` : `Previous versions (${article.amendments.length})`}</span>
+                </summary>
+                <div className="px-4 pb-3 pt-2 border-t border-dashed border-amber-200/20 text-[12px] leading-relaxed space-y-2">
+                  {article.amendments.map((amend, i) => (
+                    <div key={i} className={`p-3 rounded-xl border ${isDark ? "border-amber-700/10 bg-amber-900/5" : "border-amber-200 bg-amber-50/60"}`}>
+                      <div className="flex gap-2 mb-1">
+                        <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>{amend.source}</span>
+                        <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{amend.date}</span>
+                      </div>
+                      <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{amend.summary}</p>
+                      <p className={`text-[12px] leading-relaxed pt-2 border-t ${isDark ? "border-amber-700/15 text-zinc-400" : "border-amber-200 text-zinc-600"}`}>{amend.fullText}</p>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
             
-            {/* Executive Reg — always visible */}
+            {/* Executive Reg — Statically displayed as a shaded box (NOT COLLAPSIBLE) */}
             {viewMode !== "law" && article.executiveReg && (
-              <div className={`p-3 rounded-xl ${isRTL ? "border-r-2" : "border-l-2"} border-[#C8A762] ${isDark ? "bg-[#C8A762]/5" : "bg-amber-50/60"}`}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <FileText size={12} className={isDark ? "text-[#C8A762]" : "text-amber-700"} weight="duotone" />
-                    <p className={`text-[11px] font-bold ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}>{article.executiveReg.ref}</p>
-                  </div>
-                  {/* Copy + Add buttons — hidden in reading mode */}
+              <div className={`rounded-xl border ${isRTL ? "border-r-4" : "border-l-4"} border-[#C8A762]/60 ${isDark ? "bg-[#C8A762]/5 border-r-[#C8A762]/70" : "bg-slate-50 border-r-[#0B3D2E]/40 border-l-slate-200 border-y-slate-200"} p-4 mt-3 space-y-2`}>
+                <div className="flex items-center gap-1.5 pb-2 border-b border-dashed border-zinc-200/20">
+                  <FileText size={14} className={isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"} weight="duotone" />
+                  <span className={`text-[12px] font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                    {article.executiveReg.ref}
+                  </span>
                   {!isReadingMode && (
-                    <div className="flex items-center gap-1 print:hidden">
-                      <button onClick={handleCopyReg} title={isRTL ? "نسخ اللائحة" : "Copy regulation"} className={`p-1.5 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-zinc-500 hover:text-zinc-300" : "hover:bg-amber-100 text-amber-600"}`}>
-                        {copiedReg ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                    <div className="flex gap-1.5 ms-auto print:hidden">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleCopyReg(); }}
+                        title={isRTL ? "نسخ اللائحة" : "Copy regulation"}
+                        className={`p-1 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-500" : "hover:bg-slate-200 text-slate-600"}`}
+                      >
+                        {copiedReg ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
                       </button>
                       <button
-                        onClick={() => regInCart ? onRemoveExecReg(article.id) : (isLocked ? showPaywall() : onAddExecReg(article))}
-                        title={regInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة اللائحة للمسودة" : "Add regulation to draft")}
-                        className={`p-1.5 rounded-lg transition flex-shrink-0 ${
+                        onClick={(e) => { e.stopPropagation(); regInCart ? onRemoveExecReg(article.id) : (isLocked ? showPaywall() : onAddExecReg(article)); }}
+                        title={regInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة للمسودة" : "Add to draft")}
+                        className={`p-1 rounded-lg transition ${
                           regInCart
                             ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500"
-                            : isDark ? "bg-[#C8A762]/15 text-[#C8A762] hover:bg-[#C8A762]/25" : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                            : isDark ? "bg-[#C8A762]/15 text-[#C8A762]" : "bg-amber-50 text-amber-700"
                         }`}
                       >
-                        {regInCart ? <Minus size={12} /> : <Plus size={12} />}
+                        {regInCart ? <Minus size={11} /> : <Plus size={11} />}
                       </button>
                     </div>
                   )}
                 </div>
-                <div id={`exec-reg-${article.id}`} className="nzamy-reader-block">
+                <div id={`exec-reg-${article.id}`} className="nzamy-reader-block pt-1">
                   <MD text={article.executiveReg.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
                 </div>
               </div>
@@ -494,35 +812,6 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
                 ))}
               </div>
             )}
-
-            {/* Amendments toggle */}
-            {viewMode !== "regulation" && isAmended && article.amendments && article.amendments.length > 0 && (
-              <div>
-                <button onClick={() => setShowAmendments(!showAmendments)} className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg ${isDark ? "bg-amber-900/20 text-amber-400" : "bg-amber-50 text-amber-700"}`}>
-                  <ClockCounterClockwise size={11} />
-                  {showAmendments ? (isRTL ? "إخفاء الإصدارات السابقة" : "Hide previous versions") : (isRTL ? `الإصدارات السابقة (${article.amendments.length})` : `Previous versions (${article.amendments.length})`)}
-                  {showAmendments ? <CaretUp size={10} /> : <CaretDown size={10} />}
-                </button>
-                <AnimatePresence>
-                  {showAmendments && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                      <div className="mt-2 space-y-2">
-                        {article.amendments.map((amend, i) => (
-                          <div key={i} className={`p-3 rounded-xl border ${isDark ? "border-amber-700/20 bg-amber-900/10" : "border-amber-200 bg-amber-50/60"}`}>
-                            <div className="flex gap-2 mb-1">
-                              <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>{amend.source}</span>
-                              <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{amend.date}</span>
-                            </div>
-                            <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{amend.summary}</p>
-                            <p className={`text-[12px] leading-relaxed pt-2 border-t ${isDark ? "border-amber-700/20 text-zinc-400" : "border-amber-200 text-zinc-600"}`}>{amend.fullText}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            )}
           </>
         )}
       </div>
@@ -533,6 +822,17 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
 // DraftDrawer is now imported from @/components/laws/DraftDrawer
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
+
+function isPreambleEmpty(txt?: string): boolean {
+  if (!txt) return true;
+  const clean = txt
+    .replace(/<details>[\s\S]*?<\/summary>/gi, "")
+    .replace(/<\/details>/gi, "")
+    .replace(/لم تتوفر ديباجة/gi, "")
+    .replace(/لا توجد ديباجة/gi, "")
+    .trim();
+  return clean.length === 0;
+}
 
 export function PreambleBlock({
   text,
@@ -550,23 +850,12 @@ export function PreambleBlock({
   const [open, setOpen] = useState(false);
   const textStart = isRTL ? "text-right" : "text-left";
 
-  const hasText = viewMode !== "regulation" && text;
-  const hasReg = viewMode !== "law" && regulationPreamble;
+  const hasText = viewMode !== "regulation" && text && !isPreambleEmpty(text);
+  const hasReg = viewMode !== "law" && regulationPreamble && !isPreambleEmpty(regulationPreamble);
 
   if (!hasText && !hasReg) return null;
 
-  // عنوان مرن حسب ما هو متوفر
-  const label = isRTL
-    ? hasText && hasReg
-      ? "ديباجة النظام واللائحة التنفيذية"
-      : hasText
-      ? "ديباجة النظام والمرسوم الملكي"
-      : "ديباجة اللائحة التنفيذية"
-    : hasText && hasReg
-    ? "Law & Regulation Preamble"
-    : hasText
-    ? "Law Preamble & Royal Decree"
-    : "Regulation Preamble";
+  const label = isRTL ? "الديباجة" : "Preamble";
 
   return (
     <div className={`rounded-2xl border overflow-hidden print:hidden ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>

@@ -15,6 +15,62 @@ export type PrecMode = "all" | "principles" | "precedents";
 export type FeqhType = "all" | "sharia" | "wadi" | "comparative";
 export type FeqhMadhab = "all" | "hanafi" | "maliki" | "shafi" | "hanbali" | "muqaran";
 
+// أنواع الوثائق المعتمدة (v3.0)
+export type DocSubType =
+  | "all"
+  | "نظام"
+  | "لائحة تنفيذية"
+  | "لائحة"
+  | "ضوابط"
+  | "قواعد"
+  | "دليل إرشادي"
+  | "دليل"
+  | "سياسة"
+  | "جداول"
+  | "تعليمات"
+  | "ملحق"
+  | "ضوابط التنفيذ";
+
+export type OrderDocType =
+  | "all"
+  | "مرسوم ملكي"
+  | "أمر ملكي"
+  | "قرار مجلس الوزراء"
+  | "قرار وزاري"
+  | "تعميم"
+  | "اتفاقية";
+
+// فلاتر أنواع الوثائق داخل «أنظمة ولوائح»
+export const LAW_DOC_TYPES: { id: DocSubType; label: string; labelEn: string; anchorPrefix: string | null; isSecondary: boolean }[] = [
+  { id: "all",            label: "الكل",            labelEn: "All",                   anchorPrefix: null,          isSecondary: false },
+  { id: "نظام",          label: "نظام",          labelEn: "Law",                   anchorPrefix: null,          isSecondary: false },
+  { id: "لائحة تنفيذية", label: "لائحة تنفيذية", labelEn: "Executive Regulation",  anchorPrefix: "REGULATION",  isSecondary: true  },
+  { id: "لائحة",         label: "لائحة",         labelEn: "Regulation",            anchorPrefix: "REGULATION",  isSecondary: true  },
+  { id: "ضوابط",         label: "ضوابط",         labelEn: "Controls",              anchorPrefix: "CONTROLS",    isSecondary: true  },
+  { id: "قواعد",         label: "قواعد",         labelEn: "Rules",                 anchorPrefix: "RULES",       isSecondary: true  },
+  { id: "دليل إرشادي",   label: "دليل إرشادي",   labelEn: "Guideline",             anchorPrefix: "GUIDELINE",   isSecondary: true  },
+  { id: "دليل",          label: "دليل",          labelEn: "Guideline",             anchorPrefix: "GUIDELINE",   isSecondary: true  },
+  { id: "سياسة",         label: "سياسة",         labelEn: "Policy",                anchorPrefix: "POLICY",      isSecondary: true  },
+  { id: "جداول",         label: "جداول",         labelEn: "Schedules",             anchorPrefix: "APPENDIX",    isSecondary: true  },
+  { id: "تعليمات",       label: "تعليمات",       labelEn: "Instructions",          anchorPrefix: "INSTRUCTIONS",isSecondary: true  },
+  { id: "ملحق",          label: "ملحق",          labelEn: "Appendix",              anchorPrefix: "APPENDIX",    isSecondary: true  },
+  { id: "ضوابط التنفيذ", label: "ضوابط التنفيذ", labelEn: "Implementing Controls", anchorPrefix: "CONTROLS",    isSecondary: true  },
+];
+
+export function getDocAnchorPrefix(docType: DocSubType): string | null {
+  return LAW_DOC_TYPES.find(t => t.id === docType)?.anchorPrefix ?? null;
+}
+
+export const ORDER_DOC_TYPES: { id: OrderDocType; label: string; labelEn: string }[] = [
+  { id: "all",                  label: "الكل",                  labelEn: "All" },
+  { id: "مرسوم ملكي",          label: "مرسوم ملكي",          labelEn: "Royal Decree" },
+  { id: "أمر ملكي",            label: "أمر ملكي",            labelEn: "Royal Order" },
+  { id: "قرار مجلس الوزراء",  label: "قرار مجلس الوزراء",  labelEn: "Cabinet Resolution" },
+  { id: "قرار وزاري",          label: "قرار وزاري",          labelEn: "Ministerial Decision" },
+  { id: "تعميم",              label: "تعميم",              labelEn: "Circular" },
+  { id: "اتفاقية",            label: "اتفاقية دولية",      labelEn: "International Agreement" },
+];
+
 // ─── Content-type selector ──────────────────────────────────────────────────────
 export const CONTENT_TYPES: { id: ContentType; label: string; labelEn: string; icon: typeof BookOpen }[] = [
   { id: "all",        label: "الكل",                  labelEn: "All",                    icon: PhosphorIcons.Books },

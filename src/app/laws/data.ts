@@ -43,6 +43,7 @@ export interface LawArticle {
   originalText?: string;
   principles?: JudicialPrinciple[];
   precedents?: JudicialPrecedent[];
+  instrument?: string;
 }
 
 export interface LawChapter {
@@ -87,6 +88,8 @@ export interface LawSystem {
   regulation_decree?: string;               // رقم أداة اللائحة التنفيذية
   boe_url?: string;                         // رابط هيئة الخبراء
   law_status?: LawStatus;                   // حالة النظام (مختلف عن ArticleStatus)
+  appendices?: any[];
+  metadata_card?: { main: any[]; more: any[] };
 }
 
 // ─── Feqh Book & Principles Types ──────────────────────────────────────────────
