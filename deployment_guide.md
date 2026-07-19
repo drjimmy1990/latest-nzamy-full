@@ -709,3 +709,19 @@ npm run build
 
 pm2 reload nzamy
 rm -rf /www/server/nginx/proxy_cache_dir/*
+
+
+
+
+cd /www/wwwroot/nzamy/latest-nzamy-full && git pull origin main
+
+
+npm run build
+
+pm2 reload nzamy
+rm -rf /www/server/nginx/proxy_cache_dir/*
+
+
+
+cd /www/wwwroot/nzamy/latest-nzamy-full && git pull origin main && NODE_OPTIONS="--max-old-space-size=4096" npm run build && pm2 reload nzamy
+rm -rf /www/server/nginx/proxy_cache_dir/*

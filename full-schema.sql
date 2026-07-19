@@ -5104,9 +5104,7 @@ ADD COLUMN IF NOT EXISTS city TEXT;
 -- ────────────────────────────────────────────────────────────
 
 -- 2a. attachments: make request_id nullable for general doc uploads
-ALTER TABLE public.attachments
-ALTER COLUMN request_id
-DROP NOT NULL;
+ALTER TABLE public.attachments ALTER COLUMN request_id DROP NOT NULL;
 
 -- 2b. service_requests: add 'pending' to status constraint
 --     (non-breaking: keeps all existing values + adds 'pending')
@@ -5629,6 +5627,7 @@ create table if not exists library.laws (
   has_merged_regulation  boolean       not null default false,
 
 -- FTS column — auto-populated by trigger
+
 fts                    tsvector      generated always as (
                            to_tsvector('library.arabic', coalesce(title, '') || ' ' || coalesce(description, ''))
                          ) stored,
@@ -5685,6 +5684,7 @@ create table if not exists library.articles (
   order_index         int           not null default 0,
 
 -- FTS column — indexes article body + executive regulation text
+
 fts                 tsvector      generated always as (
                         to_tsvector('library.arabic',
                           coalesce(title, '') || ' ' ||
@@ -5750,6 +5750,7 @@ create table if not exists library.decrees_circulars (
   official_url  text,
 
 -- FTS column
+
 fts           tsvector      generated always as (
                   to_tsvector('library.arabic',
                     coalesce(title, '') || ' ' ||
@@ -5841,6 +5842,7 @@ create table if not exists library.principles (
   order_index     int           not null default 0,
 
 -- FTS column
+
 fts             tsvector      generated always as (
                     to_tsvector('library.arabic',
                       coalesce(text, '')         || ' ' ||
@@ -5979,6 +5981,7 @@ create table if not exists library.feqh_blocks (
   order_index   int           not null default 0,
 
 -- FTS column — indexes topic, matn (core text), and sharh (commentary)
+
 fts           tsvector      generated always as (
                   to_tsvector('library.arabic',
                     coalesce(topic, '') || ' ' ||
@@ -6563,9 +6566,7 @@ WHERE email = 'admin@nezamy.sa';
 -- bucket insert uses `on conflict do nothing`).
 begin;
 
-alter table public.attachments
-alter column request_id
-drop not null;
+alter table public.attachments alter column request_id drop not null;
 
 -- Storage bucket for user-uploaded documents. 100 MB per-object limit, private
 -- (signed URLs used for download/preview so RLS controls access).
@@ -6779,4 +6780,1148 @@ commit;
 
 -- ============================================================
 -- Execute this file in Supabase SQL Editor.
+-- ============================================================
+
+-- 20260701_client_workflow_rls_assert.sql
+-- ---------------------------------------------------------------------------
+-- Defensive assertion migration.
+--
+-- The /api/client-workflow/* routes (service-role, client-supplied
+-- requesterUserId = horizontal IDOR) were DELETED and the client repository was
+-- repointed to the authed, RLS-scoped /api/v1/service-requests endpoints.
+-- Correctness of that repoint depends entirely on the row-level security +
+-- ownership policies on service_requests / request_events (first created in
+-- 20260518_client_workflow_backend_ready.sql) remaining in force.
+--
+-- This migration inserts nothing and changes no data — it simply FAILS the
+-- deploy if those guardrails are ever missing, so a future migration cannot
+-- silently drop them and re-open the hole. Idempotent (assertions only).
+-- ---------------------------------------------------------------------------
+begin;
+
+do $$
+begin
+  if not (select relrowsecurity from pg_class where oid = 'public.service_requests'::regclass) then
+    raise exception 'RLS not enabled on public.service_requests (client-workflow repoint would leak)';
+  end if;
+
+  if not (select relrowsecurity from pg_class where oid = 'public.request_events'::regclass) then
+    raise exception 'RLS not enabled on public.request_events';
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'service_requests' and cmd = 'SELECT'
+  ) then
+    raise exception 'service_requests SELECT policy missing';
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'service_requests' and cmd = 'INSERT'
+  ) then
+    raise exception 'service_requests INSERT policy missing';
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'service_requests' and cmd = 'UPDATE'
+  ) then
+    raise exception 'service_requests UPDATE policy missing';
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'request_events' and cmd = 'INSERT'
+  ) then
+    raise exception 'request_events INSERT policy missing';
+  end if;
+end
+$$;
+
+commit;
+
+-- 20260701_smart_folder_items_display_cols.sql
+-- Adds display metadata to library.smart_folder_items so a saved item can render
+-- its title/category without a second lookup (the client LawRef model needs
+-- {slug, title, titleEn, catId}). RLS already governs the table
+-- (20260626_legal_library_schema.sql §6d). Additive + idempotent.
+begin;
+
+alter table library.smart_folder_items
+add column if not exists title text,
+add column if not exists title_en text,
+add column if not exists cat_id varchar(30);
+
+-- Prevent duplicate saves of the same entity into the same folder (also lets the
+-- item-add endpoint upsert on this constraint).
+create unique index if not exists uq_smart_folder_items_folder_entity on library.smart_folder_items (
+    folder_id,
+    entity_type,
+    entity_id
+);
+
+comment on column library.smart_folder_items.title is 'Denormalized Arabic display title (rendered in the folder UI).';
+
+comment on column library.smart_folder_items.title_en is 'Denormalized English display title.';
+
+comment on column library.smart_folder_items.cat_id is 'Denormalized taxonomy category id (e.g. SA-04).';
+
+commit;
+
+-- ============================================================
+-- Migration: 20260705_lawyer_show_contact.sql
+-- Purpose:  LAWYER-6.1 — per-lawyer contact-info privacy flag.
+--           The public directory (/api/v1/lawyers) must NOT expose
+--           license_number (regulated credential PII) unless the
+--           lawyer opts in. Default false = private (opt-in disclosure).
+-- Idempotent (ADD COLUMN IF NOT EXISTS), mirrors 20260616_production_readiness_fixes.sql.
+-- ============================================================
+begin;
+
+alter table public.lawyer_profiles
+add column if not exists show_contact boolean not null default false;
+
+comment on column public.lawyer_profiles.show_contact is 'When true, the public marketplace may expose the lawyer''s license/contact PII. Default false (private).';
+
+commit;
+
+-- 20260706_entitlement_requests.sql
+-- User-initiated entitlement requests (plan / credits / wallet / library / media)
+-- with an admin approve/reject queue. The GRANT itself is applied by
+-- src/lib/entitlements.ts (grantEntitlement) which writes to subscriptions /
+-- credit_transactions / wallet_transactions via the service-role client.
+-- This table only records the *ask* and the admin decision.
+
+create table if not exists public.entitlement_requests (
+    id uuid primary key default gen_random_uuid (),
+    user_id uuid not null references auth.users (id) on delete cascade,
+    kind text not null check (
+        kind in (
+            'plan',
+            'credits',
+            'wallet',
+            'library',
+            'media'
+        )
+    ),
+    requested_ref text, -- plan name / "library" / "media" / free label
+    amount numeric, -- for credits / wallet asks
+    note text, -- user's message
+    status text not null default 'pending' check (
+        status in (
+            'pending',
+            'approved',
+            'rejected'
+        )
+    ),
+    decided_by uuid references auth.users (id),
+    decided_at timestamptz,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists entitlement_requests_status_created_idx on public.entitlement_requests (status, created_at desc);
+
+create index if not exists entitlement_requests_user_idx on public.entitlement_requests (user_id);
+
+alter table public.entitlement_requests enable row level security;
+
+-- Users create + read only their own requests. They cannot set status/decided_*
+-- (no update policy for users) — only the admin PATCH (service-role) decides.
+create policy "entitlement_requests_insert_own" on public.entitlement_requests for
+insert
+with
+    check (user_id = auth.uid ());
+
+create policy "entitlement_requests_select_own" on public.entitlement_requests for
+select using (user_id = auth.uid ());
+
+-- Admins read + update every request.
+create policy "entitlement_requests_admin_select" on public.entitlement_requests for
+select using (
+        exists (
+            select 1
+            from public.profiles p
+            where
+                p.id = auth.uid ()
+                and p.user_type = 'admin'
+        )
+    );
+
+create policy "entitlement_requests_admin_update" on public.entitlement_requests for
+update using (
+    exists (
+        select 1
+        from public.profiles p
+        where
+            p.id = auth.uid ()
+            and p.user_type = 'admin'
+    )
+);
+
+-- 20260706_draft_cart_payload.sql
+-- law_draft_carts previously stored only (law_slug, article_number,
+-- article_title), which is lossy for the rich client CartEntry (article text,
+-- principles, precedents, exec-reg). Add a jsonb payload column so the draft
+-- cart round-trips losslessly once persisted server-side (useDraftCart
+-- dual-mode). Older rows have payload = null and are reconstructed minimally.
+alter table public.law_draft_carts
+add column if not exists payload jsonb;
+
+-- 20260706_content_and_ops.sql
+-- Tables backing the content system (Blog CMS) + admin-ops surfaces that were
+-- previously mock-only (support tickets, broadcasts) + content-page writes
+-- (contact messages, invitations, document shares).
+-- coupons / promo_links / admin_audit_events already exist in earlier
+-- migrations and are NOT recreated here.
+--
+-- RLS conventions (match existing migrations):
+--   user-own   : using (user_id = auth.uid())
+--   admin-all  : exists (select 1 from public.profiles p
+--                        where p.id = auth.uid() and p.user_type = 'admin')
+
+-- ─── Blog CMS ──────────────────────────────────────────────────────────────────
+create table if not exists public.articles (
+    id uuid primary key default gen_random_uuid (),
+    slug text unique not null,
+    title text not null,
+    title_en text,
+    excerpt text,
+    excerpt_en text,
+    body text, -- markdown
+    category text,
+    author_id uuid references auth.users (id) on delete set null,
+    author_name text,
+    cover text,
+    status text not null default 'draft' check (
+        status in (
+            'draft',
+            'published',
+            'archived'
+        )
+    ),
+    featured boolean not null default false,
+    views integer not null default 0,
+    read_time text,
+    published_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists articles_status_published_idx on public.articles (status, published_at desc);
+
+create index if not exists articles_slug_idx on public.articles (slug);
+
+alter table public.articles enable row level security;
+
+create policy "articles_public_read_published" on public.articles for
+select using (status = 'published');
+
+create policy "articles_admin_read_all" on public.articles for
+select using (
+        exists (
+            select 1
+            from public.profiles p
+            where
+                p.id = auth.uid ()
+                and p.user_type = 'admin'
+        )
+    );
+
+create policy "articles_admin_write" on public.articles for all using (
+    exists (
+        select 1
+        from public.profiles p
+        where
+            p.id = auth.uid ()
+            and p.user_type = 'admin'
+    )
+)
+with
+    check (
+        exists (
+            select 1
+            from public.profiles p
+            where
+                p.id = auth.uid ()
+                and p.user_type = 'admin'
+        )
+    );
+
+-- ─── Contact / partner messages ────────────────────────────────────────────────
+create table if not exists public.contact_messages (
+    id uuid primary key default gen_random_uuid (),
+    name text,
+    email text,
+    phone text,
+    subject text,
+    message text,
+    kind text not null default 'contact' check (
+        kind in ('contact', 'partner')
+    ),
+    status text not null default 'new' check (
+        status in ('new', 'read', 'archived')
+    ),
+    metadata jsonb,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists contact_messages_status_idx on public.contact_messages (status, created_at desc);
+
+alter table public.contact_messages enable row level security;
+-- Anyone (incl. anonymous) may submit; admin reads/updates. Server route uses
+-- service-role, but this policy also lets the anon key insert directly.
+create policy "contact_insert_any" on public.contact_messages for
+insert
+with
+    check (true);
+
+create policy "contact_admin_read" on public.contact_messages for
+select using (
+        exists (
+            select 1
+            from public.profiles p
+            where
+                p.id = auth.uid ()
+                and p.user_type = 'admin'
+        )
+    );
+
+create policy "contact_admin_update" on public.contact_messages for
+update using (
+    exists (
+        select 1
+        from public.profiles p
+        where
+            p.id = auth.uid ()
+            and p.user_type = 'admin'
+    )
+);
+
+-- ─── Support tickets ───────────────────────────────────────────────────────────
+create table if not exists public.support_tickets (
+    id uuid primary key default gen_random_uuid (),
+    user_id uuid references auth.users (id) on delete set null,
+    subject text not null,
+    body text,
+    category text,
+    priority text not null default 'normal' check (
+        priority in (
+            'low',
+            'normal',
+            'high',
+            'urgent'
+        )
+    ),
+    status text not null default 'open' check (
+        status in (
+            'open',
+            'pending',
+            'resolved',
+            'closed'
+        )
+    ),
+    assignee_id uuid references auth.users (id) on delete set null,
+    metadata jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists support_tickets_status_idx on public.support_tickets (status, created_at desc);
+
+alter table public.support_tickets enable row level security;
+
+create policy "tickets_insert_own" on public.support_tickets for
+insert
+with
+    check (user_id = auth.uid ());
+
+create policy "tickets_select_own" on public.support_tickets for
+select using (user_id = auth.uid ());
+
+create policy "tickets_admin_all" on public.support_tickets for all using (
+    exists (
+        select 1
+        from public.profiles p
+        where
+            p.id = auth.uid ()
+            and p.user_type = 'admin'
+    )
+)
+with
+    check (
+        exists (
+            select 1
+            from public.profiles p
+            where
+                p.id = auth.uid ()
+                and p.user_type = 'admin'
+        )
+    );
+
+-- ─── Broadcasts / announcements ────────────────────────────────────────────────
+create table if not exists public.broadcasts (
+    id uuid primary key default gen_random_uuid (),
+    title text not null,
+    body text,
+    audience text not null default 'all',
+    status text not null default 'draft' check (
+        status in ('draft', 'scheduled', 'sent')
+    ),
+    scheduled_at timestamptz,
+    sent_at timestamptz,
+    created_by uuid references auth.users (id) on delete set null,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists broadcasts_status_idx on public.broadcasts (status, created_at desc);
+
+alter table public.broadcasts enable row level security;
+
+create policy "broadcasts_admin_all" on public.broadcasts for all using (
+    exists (
+        select 1
+        from public.profiles p
+        where
+            p.id = auth.uid ()
+            and p.user_type = 'admin'
+    )
+)
+with
+    check (
+        exists (
+            select 1
+            from public.profiles p
+            where
+                p.id = auth.uid ()
+                and p.user_type = 'admin'
+        )
+    );
+
+-- ─── Invitations (colleague / trial invites) ───────────────────────────────────
+create table if not exists public.invitations (
+    id uuid primary key default gen_random_uuid (),
+    code text unique not null,
+    inviter_id uuid references auth.users (id) on delete set null,
+    invitee_email text,
+    invitee_phone text,
+    trial_days integer not null default 14,
+    tier text,
+    status text not null default 'pending' check (
+        status in (
+            'pending',
+            'accepted',
+            'expired',
+            'revoked'
+        )
+    ),
+    accepted_by uuid references auth.users (id) on delete set null,
+    accepted_at timestamptz,
+    expires_at timestamptz,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists invitations_code_idx on public.invitations (code);
+
+alter table public.invitations enable row level security;
+-- Validation/accept happens server-side (service-role). Inviter reads own,
+-- admin reads all. No public select (codes are looked up via the server route).
+create policy "invitations_select_own" on public.invitations for
+select using (inviter_id = auth.uid ());
+
+create policy "invitations_admin_all" on public.invitations for all using (
+    exists (
+        select 1
+        from public.profiles p
+        where
+            p.id = auth.uid ()
+            and p.user_type = 'admin'
+    )
+)
+with
+    check (
+        exists (
+            select 1
+            from public.profiles p
+            where
+                p.id = auth.uid ()
+                and p.user_type = 'admin'
+        )
+    );
+
+-- ─── Document shares (secure share/[token] links) ──────────────────────────────
+create table if not exists public.document_shares (
+    id uuid primary key default gen_random_uuid (),
+    token text unique not null,
+    owner_id uuid references auth.users (id) on delete cascade,
+    document_id text,
+    title text,
+    passcode text, -- verified server-side (service-role)
+    expires_at timestamptz,
+    metadata jsonb,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists document_shares_token_idx on public.document_shares (token);
+
+alter table public.document_shares enable row level security;
+-- No public select (passcode verification is done by the server route via
+-- service-role). Owner reads own; admin reads all.
+create policy "document_shares_select_own" on public.document_shares for
+select using (owner_id = auth.uid ());
+
+create policy "document_shares_owner_write" on public.document_shares for all using (owner_id = auth.uid ())
+with
+    check (owner_id = auth.uid ());
+
+create policy "document_shares_admin_all" on public.document_shares for all using (
+    exists (
+        select 1
+        from public.profiles p
+        where
+            p.id = auth.uid ()
+            and p.user_type = 'admin'
+    )
+)
+with
+    check (
+        exists (
+            select 1
+            from public.profiles p
+            where
+                p.id = auth.uid ()
+                and p.user_type = 'admin'
+        )
+    );
+
+-- 20260706_articles_seed.sql
+-- Seed public.articles with the existing static blog content so the current
+-- blog survives the DB cutover. Source of truth:
+--   src/constants/platformContent.ts  (PLATFORM_BLOG_ARTICLES — full markdown body)
+--   src/app/blog/page.tsx             (ARTICLES — same 6 slugs)
+-- Mapping: slug, title, title_en, excerpt, excerpt_en, category, cover,
+--   body (= content markdown), status='published', featured, published_at,
+--   read_time, author_name.
+-- ON CONFLICT (slug) DO NOTHING so re-running is safe and admin edits are never
+-- clobbered. `articles` table is created in 20260706_content_and_ops.sql.
+
+insert into
+    public.articles (
+        slug,
+        title,
+        title_en,
+        excerpt,
+        excerpt_en,
+        category,
+        cover,
+        body,
+        status,
+        featured,
+        published_at,
+        read_time,
+        author_name
+    )
+values (
+        'wrongful-termination-rights',
+        'حقوق العمال في حالة الفصل التعسفي - دليلك الشامل',
+        'Workers'' Rights in Wrongful Termination - Complete Guide',
+        'استعراض مبسط لما يكفله نظام العمل السعودي عند الفصل التعسفي، وكيف يبدأ العامل في حفظ حقوقه وإثبات الضرر.',
+        'A practical overview of Saudi labor protections in wrongful termination cases and the first steps to preserve rights.',
+        'labor',
+        null,
+        E '\n## ما هو الفصل التعسفي؟\n\nالفصل التعسفي هو إنهاء عقد العمل دون سبب مشروع كاف، أو دون اتباع الإجراءات النظامية المقررة. في هذه الحالة لا تنحصر حقوق العامل في الراتب المتأخر فقط، بل تمتد إلى التعويض ومكافأة نهاية الخدمة وما يرتبط بفترة الإشعار.\n\n## ما الحقوق الأساسية؟\n\n1. **مكافأة نهاية الخدمة** بحسب مدة العلاقة ونوع العقد.\n2. **تعويض عادل** عند ثبوت عدم مشروعية الإنهاء.\n3. **أجر فترة الإشعار** إذا لم يلتزم صاحب العمل بها.\n4. **توثيق المخاطبات** ورسائل البريد والقرارات الداخلية لإثبات التسلسل الزمني.\n\n## ماذا تفعل أولاً؟\n\nابدأ بطلب نسخة مكتوبة من قرار الإنهاء وسبب الفصل، ثم راجع عقدك ومسير الرواتب والمخاطبات. إذا لم يتم الحل ودياً، فالمسار الطبيعي يبدأ بتسوية عمالية ثم دعوى أمام المحكمة العمالية عند الحاجة.\n',
+        'published',
+        true,
+        '2026-02-15T00:00:00Z',
+        '٧ دقائق',
+        'أ. أحمد محمد الغامدي'
+    ),
+    (
+        'commercial-disputes',
+        'كيف تحمي شركتك من النزاعات التجارية قبل فوات الأوان؟',
+        'How to Protect Your Business from Commercial Disputes Before It Is Too Late',
+        'إجراءات وقائية في العقود والمراسلات وإدارة المخاطر تقلل تكلفة النزاع قبل أن يتحول إلى مطالبة قضائية.',
+        'Preventive steps in contracts, correspondence, and risk management before disputes become litigation.',
+        'commercial',
+        null,
+        E '\n## الوقاية تبدأ قبل التوقيع\n\nأغلب النزاعات التجارية تبدأ من بند غامض أو مراسلة غير موثقة. لذلك يجب أن يكون نطاق العمل، آلية التسليم، الجزاءات، الاختصاص، وحالات القوة القاهرة مكتوبة بوضوح.\n\n## إدارة المراسلات\n\nاجعل كل تعديل جوهري في العقد موثقاً كتابة، وتجنب الاعتماد على الاتفاقات الشفهية. البريد الرسمي وسجل المحاضر الداخلية قد يحسمان النزاع قبل المحكمة.\n\n## متى تستشير محامياً؟\n\nاستشر مبكراً عند ظهور تأخير متكرر أو رفض دفع أو تغيير نطاق العمل. التدخل المبكر غالباً أقل تكلفة من معالجة نزاع مكتمل.\n',
+        'published',
+        true,
+        '2026-01-20T00:00:00Z',
+        '٩ دقائق',
+        'أ. خالد المطيري'
+    ),
+    (
+        'lease-contracts-guide',
+        'دليلك الكامل لعقود الإيجار في السعودية ٢٠٢٦',
+        'Complete Guide to Lease Contracts in KSA 2026',
+        'أهم البنود التي يجب مراجعتها في عقد الإيجار قبل التوقيع، من مدة العقد إلى الصيانة والإخلاء والتعويض.',
+        'Key lease clauses to review before signing, from term and maintenance to eviction and compensation.',
+        'civil',
+        null,
+        E '\n## عقد الإيجار ليس نموذجاً واحداً\n\nتختلف المخاطر بحسب نوع العين المؤجرة والغرض من الانتفاع. راجع مدة العقد، التمديد، الصيانة، الالتزامات المالية، وحالات الإخلاء قبل التوقيع.\n\n## نقطة عملية\n\nلا تترك بند الصيانة عاماً. حدد من يتحمل الصيانة الدورية، ومن يتحمل الإصلاحات الجوهرية، وكيف يتم الإخطار والمهلة.\n',
+        'published',
+        false,
+        '2025-12-12T00:00:00Z',
+        '٦ دقائق',
+        'أ. سارة العتيبي'
+    ),
+    (
+        'end-of-service-calculator',
+        'كيف تحسب مكافأة نهاية الخدمة بدقة؟',
+        'How to Calculate End-of-Service Accurately',
+        'شرح مبسط لعوامل حساب مكافأة نهاية الخدمة، وما الذي يغير النتيجة بين الاستقالة والإنهاء.',
+        'A clear explanation of end-of-service calculation factors and what changes between resignation and termination.',
+        'labor',
+        null,
+        E '\n## عوامل الحساب\n\nيعتمد الحساب على الأجر الأخير، مدة الخدمة، سبب انتهاء العلاقة، ونوع العقد. لذلك لا يصح حساب المكافأة بمعزل عن ملف العلاقة العمالية كاملاً.\n',
+        'published',
+        false,
+        '2025-11-18T00:00:00Z',
+        '٥ دقائق',
+        'أ. أحمد محمد الغامدي'
+    ),
+    (
+        'custody-procedures',
+        'إجراءات الحضانة في المملكة - ما تحتاج معرفته',
+        'Custody Procedures in Saudi Arabia - What You Need to Know',
+        'نظرة عملية على معايير الحضانة، ومتى تكون مصلحة المحضون هي محور القرار.',
+        'A practical look at custody standards and how the child''s best interest guides the decision.',
+        'family',
+        null,
+        E '\n## معيار المصلحة\n\nقضايا الحضانة لا تدور حول رغبة أحد الطرفين فقط، بل حول مصلحة المحضون واستقرار رعايته وسلامته.\n',
+        'published',
+        false,
+        '2025-10-22T00:00:00Z',
+        '٨ دقائق',
+        'أ. سارة العتيبي'
+    ),
+    (
+        'company-data-protection',
+        'حماية البيانات للشركات في ضوء الأنظمة السعودية',
+        'Data Protection for Companies Under Saudi Regulations',
+        'التزامات عملية على الشركات عند جمع البيانات الشخصية ومعالجتها ومشاركتها.',
+        'Operational duties for companies collecting, processing, and sharing personal data.',
+        'commercial',
+        null,
+        E '\n## الامتثال ليس سياسة ورقية\n\nحماية البيانات تبدأ من تحديد الأساس النظامي للمعالجة، ثم تنظيم الموافقات، الحفظ، صلاحيات الوصول، وآلية الاستجابة للطلبات.\n',
+        'published',
+        false,
+        '2025-09-09T00:00:00Z',
+        '١٠ دقائق',
+        'أ. خالد المطيري'
+    ) on conflict (slug) do nothing;
+
+-- WF 4.2 consultation reminders (n8n "NZAMY · Communication").
+-- Idempotency flags so a reminder is not re-sent on every 30-min cron tick.
+-- n8n's "4.2 Mark sent" step sets reminder_sent = true after delivery.
+-- Idempotent: safe to re-run.
+
+alter table public.consultations
+add column if not exists reminder_sent boolean not null default false;
+
+alter table public.consultations
+add column if not exists reminder_1h_sent boolean not null default false;
+
+-- Note: WF 4.3 (hearing reminders) is intentionally NOT backed here. Hearings
+-- currently live inside service_requests.metadata.hearings (JSONB), not a
+-- first-class table/column, so a reminder-flag column has nothing to attach to.
+-- Add a hearings table (or a top-level hearing_at column) before building 4.3.
+
+-- 20260716_security_hardening.sql  (v2 — preserves 20260630 sector provisioning)
+-- Fixes three critical privilege escalation vulnerabilities:
+-- 1. Remove 'admin' from the signup metadata whitelist (P0-2)
+-- 2. Add a trigger to prevent users from changing their own user_type (P0-3)
+-- 3. Fix RLS recursion risk in entitlement_requests by using is_admin() (P0-5)
+--
+-- IMPORTANT: This migration does NOT replace the full handle_new_user() body.
+-- Instead, it only patches the v_user_type validation guard inside the existing
+-- sector-aware function from 20260630_handle_new_user_sectors.sql.
+
+BEGIN;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- FIX 1: Remove 'admin' from signup whitelist (P0-2)
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- Replaces handle_new_user() preserving ALL sector provisioning from 20260630.
+-- The ONLY change is: 'admin' removed from the v_user_type validation guard.
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+DECLARE
+  v_user_type TEXT;
+BEGIN
+  v_user_type := COALESCE(new.raw_user_meta_data->>'user_type', 'individual');
+
+  -- ╔═══════════════════════════════════════════════════════════════════════╗
+  -- ║  SECURITY FIX: 'admin' is INTENTIONALLY EXCLUDED from self-signup.  ║
+  -- ║  Admin accounts must be created via the database or by an admin.    ║
+  -- ╚═══════════════════════════════════════════════════════════════════════╝
+  IF v_user_type NOT IN (
+    'individual', 'lawyer', 'firm', 'corporate',
+    'micro', 'provider', 'government', 'ngo'
+  ) THEN
+    v_user_type := 'individual';
+  END IF;
+
+  -- Create base profile (preserved from 20260630)
+  INSERT INTO public.profiles (id, display_name, email, user_type)
+  VALUES (
+    new.id,
+    COALESCE(new.raw_user_meta_data->>'full_name', 'مستخدم جديد'),
+    new.email,
+    v_user_type
+  )
+  ON CONFLICT (id) DO NOTHING;
+
+  -- Provision role-specific profiles (preserved from 20260630)
+  IF v_user_type = 'lawyer' THEN
+    INSERT INTO public.lawyer_profiles (user_id, is_accepting_clients)
+    VALUES (new.id, true)
+    ON CONFLICT (user_id) DO NOTHING;
+
+  ELSIF v_user_type = 'provider' THEN
+    INSERT INTO public.provider_profiles (user_id)
+    VALUES (new.id)
+    ON CONFLICT (user_id) DO NOTHING;
+
+  ELSIF v_user_type = 'firm' THEN
+    INSERT INTO public.firm_profiles (owner_user_id, name_ar, name_en)
+    VALUES (
+      new.id,
+      COALESCE(new.raw_user_meta_data->>'company_name', 'جهة جديدة'),
+      COALESCE(new.raw_user_meta_data->>'company_name_en', 'New Entity')
+    )
+    ON CONFLICT DO NOTHING;
+
+  ELSIF v_user_type = 'corporate' THEN
+    INSERT INTO public.business_profiles (owner_user_id, company_name_ar, company_name_en)
+    VALUES (
+      new.id,
+      COALESCE(new.raw_user_meta_data->>'company_name', 'شركة جديدة'),
+      COALESCE(new.raw_user_meta_data->>'company_name_en', 'New Company')
+    )
+    ON CONFLICT DO NOTHING;
+
+  ELSIF v_user_type = 'government' THEN
+    INSERT INTO public.government_profiles (owner_user_id, entity_name_ar, entity_type)
+    VALUES (
+      new.id,
+      COALESCE(new.raw_user_meta_data->>'entity_name', 'جهة حكومية جديدة'),
+      COALESCE(new.raw_user_meta_data->>'entity_type', 'other')
+    )
+    ON CONFLICT DO NOTHING;
+
+  ELSIF v_user_type = 'ngo' THEN
+    INSERT INTO public.ngo_profiles (owner_user_id, org_name_ar, org_type)
+    VALUES (
+      new.id,
+      COALESCE(new.raw_user_meta_data->>'org_name', 'منظمة جديدة'),
+      COALESCE(new.raw_user_meta_data->>'org_type', 'other')
+    )
+    ON CONFLICT DO NOTHING;
+
+  ELSIF v_user_type = 'micro' THEN
+    INSERT INTO public.micro_profiles (user_id, business_name)
+    VALUES (
+      new.id,
+      COALESCE(new.raw_user_meta_data->>'business_name', 'نشاط تجاري جديد')
+    )
+    ON CONFLICT (user_id) DO NOTHING;
+  END IF;
+
+  -- Create default user settings (preserved from 20260630)
+  INSERT INTO public.user_settings (user_id)
+  VALUES (new.id)
+  ON CONFLICT (user_id) DO NOTHING;
+
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+COMMENT ON FUNCTION public.handle_new_user () IS 'Creates profiles + sector rows on signup. Admin type excluded from self-registration.';
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- FIX 2: Lock user_type column against self-escalation (P0-3)
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- Prevents any non-admin user from changing their own user_type via profile update.
+-- Service-role calls (auth.uid() IS NULL) are allowed through so backend admin
+-- operations are not blocked.
+
+CREATE OR REPLACE FUNCTION public.check_user_type_lock()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  -- Allow service-role operations (backend admin console, migrations, etc.)
+  -- Service-role calls have auth.uid() = NULL.
+  IF auth.uid() IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- If user_type is being changed...
+  IF OLD.user_type IS DISTINCT FROM NEW.user_type THEN
+    -- Allow only if the caller is an admin (uses the existing is_admin() helper)
+    IF NOT public.is_admin() THEN
+      RAISE EXCEPTION 'Permission denied: user_type cannot be self-modified'
+        USING ERRCODE = '42501'; -- insufficient_privilege
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+COMMENT ON FUNCTION public.check_user_type_lock () IS 'Prevents non-admin users from escalating their own user_type. Service-role bypasses.';
+
+-- Attach the trigger (drop first for idempotency)
+DROP TRIGGER IF EXISTS trg_lock_user_type ON public.profiles;
+
+CREATE TRIGGER trg_lock_user_type
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.check_user_type_lock();
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- FIX 3: Fix RLS recursion risk in entitlement_requests (P0-5)
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- Replace the admin policies that directly query public.profiles (which has its
+-- own RLS policies, creating a recursion risk) with the safe is_admin() helper
+-- that was created in 20260625_fix_rls_recursion.sql.
+
+-- Drop the old policies
+DROP POLICY IF EXISTS "entitlement_requests_admin_select" ON public.entitlement_requests;
+
+DROP POLICY IF EXISTS "entitlement_requests_admin_update" ON public.entitlement_requests;
+
+-- Recreate with safe is_admin() calls
+CREATE POLICY "entitlement_requests_admin_select" ON public.entitlement_requests FOR
+SELECT USING (public.is_admin ());
+
+CREATE POLICY "entitlement_requests_admin_update" ON public.entitlement_requests FOR
+UPDATE USING (public.is_admin ());
+
+COMMIT;
+
+-- 20260716_missing_fk_indexes.sql
+-- Add missing foreign key indexes to improve join performance.
+-- Without these, Postgres must do full sequential scans on FK lookups.
+
+-- articles.author_id → used for author profile joins
+CREATE INDEX IF NOT EXISTS idx_articles_author_id ON public.articles (author_id);
+
+-- support_tickets.user_id → used for user-scoped ticket lists
+CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id ON public.support_tickets (user_id);
+
+-- support_tickets.assignee_id → used for admin assignment filtering
+CREATE INDEX IF NOT EXISTS idx_support_tickets_assignee_id ON public.support_tickets (assignee_id);
+
+-- 20260716_blog_seo_aeo_geo.sql
+-- Extend the Blog CMS for the new 31-field article frontmatter (SEO/AEO/GEO/E-E-A-T)
+-- from test/newblog/blog_final, plus a sections taxonomy and a public cover-image
+-- storage bucket.
+--
+-- All new articles columns are NULLABLE so the admin write endpoints (which use
+-- fixed field allowlists in src/app/api/v1/admin/articles/route.ts and [id]/route.ts)
+-- keep working without referencing them — the seeder is the write path for the new
+-- fields. The admin UI will ignore them until extended.
+--
+-- Idempotent: every statement uses IF NOT EXISTS / ON CONFLICT DO NOTHING.
+
+begin;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 1. articles: 23 new columns
+-- ═══════════════════════════════════════════════════════════════════════════════
+alter table public.articles
+  add column if not exists schema_type text,              -- Article | FAQPage | HowTo
+  add column if not exists author_credentials text,       -- E-E-A-T / Person schema credential string
+  add column if not exists author_url text,               -- https://nezamy.sa/team/...
+  add column if not exists reviewer text,                 -- reviewer body (e.g. فريق نظامي القانوني)
+  add column if not exists date_modified date,            -- last significant revision (YYYY-MM-DD)
+  add column if not exists primary_keyword text,
+  add column if not exists secondary_keywords text[],     -- YAML list
+  add column if not exists long_tail_keywords text[],     -- YAML list
+  add column if not exists seo_keywords text,             -- comma-separated meta string
+  add column if not exists aeo_pairs jsonb,               -- [{question, answer}, ...] -> FAQPage schema
+  add column if not exists geo_coverage text,             -- fixed 20-city list
+  add column if not exists geo_tier1 text,                -- fixed 10-city tier-1 list
+  add column if not exists geo_tier2 text,                -- fixed 10-city tier-2 list
+  add column if not exists related_laws text,             -- Saudi law names + exact article numbers
+  add column if not exists original_sources text,         -- issuing authority (MOJ, Najez, Bureau of Experts)
+  add column if not exists pillar_page text,              -- category/pillar name
+  add column if not exists related_articles text[],       -- slugs -> internal links
+  add column if not exists target_persona text,           -- أبو فهد | أ. خالد | أ. عبدالعزيز
+  add column if not exists writing_track text,            -- B2C | B2B
+  add column if not exists content_scope text,            -- ضيق | قياسي | شامل
+  add column if not exists brand text,                    -- 'نظامي'
+  add column if not exists canonical_url text,
+  add column if not exists category_code text;
+-- sec_XX_name (maps to blog_sections.code)
+
+create index if not exists articles_category_code_idx on public.articles (category_code);
+
+create index if not exists articles_status_modified_idx on public.articles (status, date_modified desc);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 2. blog_sections: category taxonomy (31 rows)
+--    Source of truth for code + Arabic label: scripts/seed-blog.mjs CATEGORY_AR.
+--    library_code mirrors the legal-library subject folders (00-29); two sections
+--    intentionally share a library source for SEO/persona value:
+--      sec_03_execution   -> library 00 (procedural)
+--      sec_17_construction-> library 07 (real estate)
+-- ═══════════════════════════════════════════════════════════════════════════════
+create table if not exists public.blog_sections (
+    code text primary key, -- sec_04_civil
+    ar_label text not null, -- القانون المدني
+    library_code text, -- 04
+    default_track text, -- B2C | B2B  (nullable; set per-article too)
+    default_persona text, -- nullable
+    sort_order int not null default 0
+);
+
+insert into
+    public.blog_sections (
+        code,
+        ar_label,
+        library_code,
+        sort_order
+    )
+values (
+        'sec_00_procedural',
+        'الإجراءات والمرافعات',
+        '00',
+        0
+    ),
+    (
+        'sec_01_criminal',
+        'القانون الجنائي',
+        '01',
+        1
+    ),
+    (
+        'sec_02_admin',
+        'القضاء الإداري',
+        '02',
+        2
+    ),
+    (
+        'sec_03_execution',
+        'التنفيذ',
+        '00',
+        3
+    ),
+    (
+        'sec_04_civil',
+        'القانون المدني',
+        '04',
+        4
+    ),
+    (
+        'sec_05_commercial',
+        'القانون التجاري',
+        '05',
+        5
+    ),
+    (
+        'sec_06_ip',
+        'الملكية الفكرية',
+        '06',
+        6
+    ),
+    (
+        'sec_07_labor',
+        'قانون العمل',
+        '07',
+        7
+    ),
+    (
+        'sec_08_real_estate',
+        'العقار والإيجار',
+        '08',
+        8
+    ),
+    (
+        'sec_09_financial',
+        'القانون المالي والمصرفي',
+        '09',
+        9
+    ),
+    (
+        'sec_10_tax',
+        'الضرائب والزكاة',
+        '10',
+        10
+    ),
+    (
+        'sec_11_health',
+        'القانون الصحي',
+        '11',
+        11
+    ),
+    (
+        'sec_12_environment',
+        'البيئة',
+        '12',
+        12
+    ),
+    (
+        'sec_13_tech',
+        'التقنية والبيانات',
+        '13',
+        13
+    ),
+    (
+        'sec_14_transport',
+        'النقل',
+        '14',
+        14
+    ),
+    (
+        'sec_15_energy',
+        'الطاقة',
+        '15',
+        15
+    ),
+    (
+        'sec_16_media',
+        'الإعلام',
+        '16',
+        16
+    ),
+    (
+        'sec_17_construction',
+        'المقاولات والتشييد',
+        '07',
+        17
+    ),
+    (
+        'sec_18_investment',
+        'الاستثمار',
+        '18',
+        18
+    ),
+    (
+        'sec_19_education',
+        'التعليم',
+        '19',
+        19
+    ),
+    (
+        'sec_20_sports',
+        'الرياضة',
+        '20',
+        20
+    ),
+    (
+        'sec_21_hajj',
+        'الحج والعمرة',
+        '21',
+        21
+    ),
+    (
+        'sec_22_defense',
+        'الدفاع والأمن',
+        '22',
+        22
+    ),
+    (
+        'sec_23_social',
+        'الأحوال الاجتماعية',
+        '23',
+        23
+    ),
+    (
+        'sec_24_tourism',
+        'السياحة',
+        '24',
+        24
+    ),
+    (
+        'sec_25_municipal',
+        'الشؤون البلدية',
+        '25',
+        25
+    ),
+    (
+        'sec_26_arbitration',
+        'التحكيم',
+        '26',
+        26
+    ),
+    (
+        'sec_27_international',
+        'القانون الدولي',
+        '27',
+        27
+    ),
+    (
+        'sec_28_industry',
+        'الصناعة',
+        '28',
+        28
+    ),
+    (
+        'sec_29_constitutional',
+        'القانون الدستوري',
+        '29',
+        29
+    ),
+    (
+        'sec_30_culture',
+        'الثقافة',
+        '30',
+        30
+    ) on conflict (code) do nothing;
+
+alter table public.blog_sections enable row level security;
+
+drop policy if exists "blog_sections_public_read" on public.blog_sections;
+
+create policy "blog_sections_public_read" on public.blog_sections for
+select using (true);
+
+drop policy if exists "blog_sections_admin_write" on public.blog_sections;
+
+create policy "blog_sections_admin_write" on public.blog_sections for all using (
+    exists (
+        select 1
+        from public.profiles p
+        where
+            p.id = auth.uid ()
+            and p.user_type = 'admin'
+    )
+)
+with
+    check (
+        exists (
+            select 1
+            from public.profiles p
+            where
+                p.id = auth.uid ()
+                and p.user_type = 'admin'
+        )
+    );
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 3. Public storage bucket for blog cover images
+--    public = true -> anon reads work via the bucket's public flag.
+--    NOTE: storage.objects RLS policies can't always be applied by the migration
+--    role (owner is supabase_storage_admin; see 20260628_documents_upload.sql).
+--    For a public bucket Supabase auto-grants anon read, so no extra policy is
+--    needed here. If public reads 403 after apply, add a SELECT policy via
+--    Dashboard -> Storage -> Policies (bucket 'blog-covers').
+-- ═══════════════════════════════════════════════════════════════════════════════
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'blog-covers', 'blog-covers', true, 10485760,
+  array['image/webp','image/avif','image/png','image/jpeg']
+)
+on conflict (id) do nothing;
+
+commit;
+
+-- ============================================================
+-- Execute in Supabase SQL Editor or: npx supabase db execute --file <this>
 -- ============================================================
