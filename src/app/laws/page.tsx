@@ -1051,7 +1051,7 @@ export default function LegalLibraryPage() {
               const isActive = activeType === ct.id;
               return (
                 <button key={ct.id}
-                  onClick={() => { setActiveType(ct.id); setPrecMode("all"); setPrecSource("all"); setFeqhType("all"); setFeqhMadhab("all"); setOrderIssuer("all"); }}
+                  onClick={() => { setActiveType(ct.id); setActiveCat("all"); setPrecMode("all"); setPrecSource("all"); setFeqhType("all"); setFeqhMadhab("all"); setOrderIssuer("all"); }}
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl border text-sm font-semibold transition-all duration-200 ${
                     isActive
                       ? isDark ? "bg-[#0B3D2E] text-white border-[#0B3D2E]" : "bg-[#0B3D2E] text-white border-[#0B3D2E] shadow-sm"
@@ -1098,85 +1098,87 @@ export default function LegalLibraryPage() {
           )}
 
           {/* ROW 2: Category section tabs */}
-          <div className="mb-8 overflow-x-auto scrollbar-none w-full">
-            <div className={`inline-flex items-center p-1.5 rounded-2xl border whitespace-nowrap ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
-              {MAIN_CATEGORIES.map(cat => {
-                const isActive = activeCat === cat.id;
-                const Icon     = cat.icon;
-                const count    = cat.id === "all" ? null : getCatTotalCount(cat.id, activeType);
-                return (
-                  <button key={cat.id} onClick={() => setActiveCat(cat.id)}
-                    className={`relative flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                      isActive
-                        ? isDark ? "text-white" : "text-white bg-[#0B3D2E]"
+          {activeType === "laws" && (
+            <div className="mb-8 overflow-x-auto scrollbar-none w-full">
+              <div className={`inline-flex items-center p-1.5 rounded-2xl border whitespace-nowrap ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
+                {MAIN_CATEGORIES.map(cat => {
+                  const isActive = activeCat === cat.id;
+                  const Icon     = cat.icon;
+                  const count    = cat.id === "all" ? null : getCatTotalCount(cat.id, activeType);
+                  return (
+                    <button key={cat.id} onClick={() => setActiveCat(cat.id)}
+                      className={`relative flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                        isActive
+                          ? isDark ? "text-white" : "text-white bg-[#0B3D2E]"
+                          : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                      }`}
+                    >
+                      {isActive && isDark && <motion.div layoutId="cat-active" className="absolute inset-0 bg-white/10 rounded-xl" />}
+                      <Icon size={16} weight={isActive ? "fill" : "duotone"} className="relative z-10 hidden sm:block" />
+                      <span className="relative z-10">{isRTL ? cat.label : cat.labelEn}</span>
+                      {count !== null && count > 0 && (
+                        <span className={`relative z-10 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                          isActive ? "bg-white/20 text-white" : isDark ? "bg-white/5 text-gray-500" : "bg-gray-100 text-gray-500"
+                        }`}>{count}</span>
+                      )}
+                      {count !== null && count === 0 && (
+                        <span className={`relative z-10 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                          isDark ? "bg-white/5 text-gray-600" : "bg-gray-100 text-gray-400"
+                        }`}>{isRTL ? "قريباً" : "Soon"}</span>
+                      )}
+                    </button>
+                  );
+                })}
+
+                {/* Other dropdown */}
+                <div className="relative">
+                  <button onClick={() => setOtherMenuOpen(!otherMenuOpen)}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                      isOtherActive
+                        ? isDark ? "bg-white/10 text-white" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
                         : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
                     }`}
                   >
-                    {isActive && isDark && <motion.div layoutId="cat-active" className="absolute inset-0 bg-white/10 rounded-xl" />}
-                    <Icon size={16} weight={isActive ? "fill" : "duotone"} className="relative z-10 hidden sm:block" />
-                    <span className="relative z-10">{isRTL ? cat.label : cat.labelEn}</span>
-                    {count !== null && count > 0 && (
-                      <span className={`relative z-10 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                        isActive ? "bg-white/20 text-white" : isDark ? "bg-white/5 text-gray-500" : "bg-gray-100 text-gray-500"
-                      }`}>{count}</span>
-                    )}
-                    {count !== null && count === 0 && (
-                      <span className={`relative z-10 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                        isDark ? "bg-white/5 text-gray-600" : "bg-gray-100 text-gray-400"
-                      }`}>{isRTL ? "قريباً" : "Soon"}</span>
-                    )}
+                    <span>{isRTL ? "أخرى" : "Other"}</span>
+                    <CaretDown size={14} weight="bold" className={`transition-transform duration-200 ${otherMenuOpen ? "rotate-180" : ""}`} />
                   </button>
-                );
-              })}
-
-              {/* Other dropdown */}
-              <div className="relative">
-                <button onClick={() => setOtherMenuOpen(!otherMenuOpen)}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                    isOtherActive
-                      ? isDark ? "bg-white/10 text-white" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
-                      : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-                  }`}
-                >
-                  <span>{isRTL ? "أخرى" : "Other"}</span>
-                  <CaretDown size={14} weight="bold" className={`transition-transform duration-200 ${otherMenuOpen ? "rotate-180" : ""}`} />
-                </button>
-                <AnimatePresence>
-                  {otherMenuOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }} transition={{ duration: 0.15 }}
-                      className={`absolute top-full mt-2 w-56 rounded-2xl border shadow-xl z-30 p-2 ${isRTL ? "right-0" : "left-0"} ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}
-                    >
-                      {OTHER_CATEGORIES.map(cat => {
-                        const isSelect = activeCat === cat.id;
-                        const count    = getCatTotalCount(cat.id, activeType);
-                        return (
-                          <button key={cat.id}
-                            onClick={() => { setActiveCat(cat.id); setOtherMenuOpen(false); }}
-                            className={`w-full flex items-center justify-between px-3 py-2.5 text-sm rounded-xl transition ${
-                              isSelect
-                                ? isDark ? "bg-white/10 text-white font-bold" : "bg-gray-100 text-gray-900 font-bold"
-                                : isDark ? "text-gray-400 hover:bg-white/5 hover:text-white" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                            }`}
-                          >
-                            <span>{isRTL ? cat.label : cat.labelEn}</span>
-                            <div className="flex items-center gap-1.5">
-                              {count > 0
-                                ? <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>{count}</span>
-                                : <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-600" : "bg-gray-100 text-gray-400"}`}>{isRTL ? "قريباً" : "Soon"}</span>
-                              }
-                              {isSelect && <Check size={14} weight="bold" />}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                  <AnimatePresence>
+                    {otherMenuOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }} transition={{ duration: 0.15 }}
+                        className={`absolute top-full mt-2 w-56 rounded-2xl border shadow-xl z-30 p-2 ${isRTL ? "right-0" : "left-0"} ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}
+                      >
+                        {OTHER_CATEGORIES.map(cat => {
+                          const isSelect = activeCat === cat.id;
+                          const count    = getCatTotalCount(cat.id, activeType);
+                          return (
+                            <button key={cat.id}
+                              onClick={() => { setActiveCat(cat.id); setOtherMenuOpen(false); }}
+                              className={`w-full flex items-center justify-between px-3 py-2.5 text-sm rounded-xl transition ${
+                                isSelect
+                                  ? isDark ? "bg-white/10 text-white font-bold" : "bg-gray-100 text-gray-900 font-bold"
+                                  : isDark ? "text-gray-400 hover:bg-white/5 hover:text-white" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                              }`}
+                            >
+                              <span>{isRTL ? cat.label : cat.labelEn}</span>
+                              <div className="flex items-center gap-1.5">
+                                {count > 0
+                                  ? <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>{count}</span>
+                                  : <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-600" : "bg-gray-100 text-gray-400"}`}>{isRTL ? "قريباً" : "Soon"}</span>
+                                }
+                                {isSelect && <Check size={14} weight="bold" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Active Hashtag Filter Banner */}
           {selectedHashtag && (
