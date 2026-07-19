@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { normalizeArabic } from "@/utils/normalizeArabic";
 import {
   MagnifyingGlass, Faders, CaretDown, Check,
 } from "@phosphor-icons/react";
@@ -117,8 +118,7 @@ export default function LegalLibraryPage() {
   const [showSidebars,   setShowSidebars]   = useState(true);
   const [libraryMode,    setLibraryMode]    = useState<"library" | "ai">("library");
 
-  // Arabic Normalization Helper (shared utility)
-  const { normalizeArabic } = require("@/utils/normalizeArabic");
+
 
   // — API-backed autocomplete state —
   const [autocompleteCounts, setAutocompleteCounts] = useState<{ laws: number; precedents: number; orders: number; feqh: number }>({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
