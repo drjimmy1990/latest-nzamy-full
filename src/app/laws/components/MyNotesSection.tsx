@@ -195,9 +195,17 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
 
     return (
       <div key={e.pageId} className="mb-2 last:mb-0">
-        <button
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => setExpanded(ex => ex === e.pageId ? null : e.pageId)}
-          className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl transition ${rowStyle}`}
+          onKeyDown={ev => {
+            if (ev.key === "Enter" || ev.key === " ") {
+              ev.preventDefault();
+              setExpanded(ex => ex === e.pageId ? null : e.pageId);
+            }
+          }}
+          className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl transition cursor-pointer select-none ${rowStyle}`}
         >
           <div className={`p-1.5 rounded-lg ${iconBg} ${iconClass} shrink-0`}>
             {isHighlightOnly ? <Highlighter size={13} weight="duotone" /> : 
@@ -228,7 +236,7 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
             </button>
             {expanded === e.pageId ? <CaretUp size={11} className={muted}/> : <CaretDown size={11} className={muted}/>}
           </div>
-        </button>
+        </div>
 
         <AnimatePresence>
           {expanded === e.pageId && e.text && (
