@@ -246,8 +246,11 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
   }
 
   const principles: ParsedPrinciple[] = [];
+  // Source files (2026-07 card-v2 campaign, section 97) have PRINCIPLE_START with
+  // zero, one, or two spaces before the JSON depending on extraction vintage — `\s*`
+  // (not `\s+`) so all variants match instead of silently dropping ~125 principles.
   const principleRe =
-    /<!--\s*PRINCIPLE_START\s+(.*?)\s*-->([\s\S]*?)<!--\s*PRINCIPLE_END\s*-->/g;
+    /<!--\s*PRINCIPLE_START\s*(.*?)\s*-->([\s\S]*?)<!--\s*PRINCIPLE_END\s*-->/g;
   let match: RegExpExecArray | null;
 
   while ((match = principleRe.exec(body)) !== null) {
@@ -256,9 +259,13 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
 
     const principleBody = match[2];
 
-    // Clean text: remove block-quote markers, details blocks, etc.
+    // Clean text: remove block-quote markers, details blocks, the "#### الحكم رقم"
+    // heading (redundant with `number`), and the injected card-v2 identity table
+    // (2026-07 campaign) — none of these are part of the actual principle text.
     let cleanText = principleBody;
     cleanText = cleanText.replace(/<details>[\s\S]*?<\/details>/g, "");
+    cleanText = cleanText.replace(/^####\s*الحكم رقم\s*\(\d+\)\s*$/gm, "");
+    cleanText = cleanText.replace(/^\|\s*الحقل\s*\|\s*القيمة\s*\|\n\|[\s:-]*\|[\s:-]*\|\n(?:\|.*\|\n?)*/gm, "");
     cleanText = cleanText.replace(/^>\s*/gm, "").trim();
 
     // Extract sub-principles
@@ -275,15 +282,27 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
       keywords.push(kwMatch[1].trim());
     }
 
+    // `reference`/`ref` are rarely present in PRINCIPLE_START JSON (2026-07 card-v2
+    // campaign, section 97 — ديوان المظالم); synthesize a citation string from
+    // case_number/appeal_number/session_date instead of dropping them silently.
+    let reference = String(pMeta.reference || pMeta.ref || "");
+    if (!reference) {
+      const parts: string[] = [];
+      if (pMeta.case_number) parts.push(`رقم القضية ${pMeta.case_number}`);
+      if (pMeta.appeal_number) parts.push(`رقم الاستئناف ${pMeta.appeal_number}`);
+      if (pMeta.session_date) parts.push(`تاريخ الجلسة ${pMeta.session_date}`);
+      reference = parts.join(" - ");
+    }
+
     principles.push({
       number: Number(pMeta.number || principles.length + 1),
       issuing_body: String(pMeta.issuing_body || ""),
       issuing_body_abbr: String(pMeta.issuing_body_abbr || ""),
-      session_date: String(pMeta.session_date || ""),
+      session_date: String(pMeta.session_date || pMeta.date || ""),
       case_number: String(pMeta.case_number || ""),
-      decision_number: String(pMeta.decision_number || ""),
+      decision_number: String(pMeta.decision_number || pMeta.number || ""),
       source_type: String(pMeta.source_type || ""),
-      reference: String(pMeta.reference || pMeta.ref || ""),
+      reference,
       text: cleanText,
       classification_keywords: keywords,
       sub_principles: subPrinciples,
@@ -298,10 +317,10 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
     id: fileId,
     slug: (meta.slug as string) || slugifyArabic(title) || fileId,
     title,
-    court: String(meta.court || ""),
+    court: String(meta.court || meta.issuing_body || ""),
     court_type: String(meta.court_type || meta.track || "ordinary"),
-    year_hijri: Number(meta.year_hijri || 0),
-    part: Number(meta.part || 1),
+    year_hijri: Number(meta.year_hijri || meta.hijri_year || 0),
+    part: Number(meta.part || meta.volume || 1),
     source_id: String(meta.source_id || ""),
     total_principles: principles.length,
     principles,
@@ -349,6 +368,25 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
     if (rulingMatch) ruling = rulingMatch[1].trim();
   }
 
+  // Fallback: many precedent files (2026-07 card-v2 campaign, section 97) store the
+  // full ruling text as raw prose between ARTICLE_START/ARTICLE_END markers, with no
+  // <details> wrapper and no ## sub-headings. Without this fallback the actual ruling
+  // text is silently dropped (facts/reasons/ruling all stay empty while the identity
+  // card/metadata seeds fine) — concatenate every ARTICLE_START..ARTICLE_END block and
+  // use it as `ruling` when the structured extraction above found nothing at all.
+  if (!facts && !reasons && !ruling) {
+    const articleBlocks: string[] = [];
+    const articleRe = /<!--\s*ARTICLE_START\s+.*?-->([\s\S]*?)<!--\s*ARTICLE_END\s*-->/g;
+    let articleMatch: RegExpExecArray | null;
+    while ((articleMatch = articleRe.exec(body)) !== null) {
+      const text = articleMatch[1].replace(/^>\s*/gm, "").trim();
+      if (text) articleBlocks.push(text);
+    }
+    if (articleBlocks.length > 0) {
+      ruling = articleBlocks.join("\n\n");
+    }
+  }
+
   // Extract hashtags from metadata or body
   let hashtags: string[] = [];
   if (Array.isArray(meta.hashtags)) {
@@ -369,17 +407,28 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
     preamble = body.slice(0, firstHeading).trim();
   }
 
+  // has_appeal / appeal_ruling_number / appeal_ruling_date_hijri (2026-07 card-v2
+  // campaign, section 97) have no dedicated column in ParsedCourtPrecedent yet — fold
+  // them into `subject` (otherwise unused by this file family) so the information
+  // survives the seed instead of being silently dropped. A proper `appeal_*` column
+  // is a schema/migration change, out of scope for this parser fix.
+  let subject = String(meta.subject || meta.topic || "");
+  if (!subject && meta.has_appeal === true && meta.appeal_ruling_number) {
+    const appealDate = meta.appeal_ruling_date_hijri ? ` بتاريخ ${meta.appeal_ruling_date_hijri}` : "";
+    subject = `استئناف رقم ${meta.appeal_ruling_number}${appealDate}`;
+  }
+
   return {
     id: fileId,
     slug: (meta.slug as string) || slugifyArabic(title) || fileId,
     title,
-    court: String(meta.court || ""),
+    court: String(meta.court || meta.court_type || ""),
     court_type: String(meta.court_type || "ordinary"),
     ruling_number: String(meta.ruling_number || ""),
     case_number: String(meta.case_number || ""),
-    year: String(meta.year || meta.year_hijri || ""),
-    date: String(meta.date || ""),
-    subject: String(meta.subject || ""),
+    year: String(meta.year || meta.year_hijri || meta.case_year_hijri || ""),
+    date: String(meta.date || meta.ruling_date_hijri || ""),
+    subject,
     cat: String(meta.cat || meta.section_code || ""),
     summary: String(meta.summary || ""),
     summary_brief: String(meta.summary_brief || ""),
@@ -391,6 +440,99 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
     is_redacted: Boolean(meta.is_redacted || meta.isRedacted),
     metadata: meta,
   };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Parse ARTICLE_START-based ruling collections (2026-07 card-v2 campaign,
+// section 97 — وزارة العدل: a container file whose top-level frontmatter is
+// collection-level metadata (no court_type/ruling_number/case_number there), but
+// whose body embeds dozens of individually-tagged rulings via
+// <!-- ARTICLE_START {court_type, date, case_number, ...} --> ... <!-- ARTICLE_END -->,
+// each with its own "### الوقائع"/"### الأسباب"/"### المنطوق" (H3, not H2) sections.
+// Neither parsePrincipleCollection (needs PRINCIPLE_START) nor parseCourtPrecedent
+// (needs court_type/ruling_number/case_number in the FILE's own frontmatter) can see
+// this shape — without this function all ~44 files (1,000+ embedded rulings) are
+// silently dropped. Each embedded ruling becomes its own ParsedCourtPrecedent record.
+// ══════════════════════════════════════════════════════════════════════════════
+
+function parseArticleBasedCollection(filePath: string): ParsedCourtPrecedent[] {
+  const raw = fs.readFileSync(filePath, "utf-8");
+  const { meta, body } = parseYamlFrontmatter(raw);
+
+  if (!body.includes("ARTICLE_START")) return [];
+  // Not this shape if the file itself is already a single-ruling precedent file.
+  if (meta.court_type || meta.ruling_number || meta.case_number) return [];
+
+  const fileId = path.basename(filePath, ".md");
+  const collectionTitle = String(meta.title || meta.collection_title || fileId);
+
+  console.log(`  📚 Parsing article-based ruling collection: ${collectionTitle}`);
+
+  const results: ParsedCourtPrecedent[] = [];
+  const articleRe = /<!--\s*ARTICLE_START\s*(\{.*?\})\s*-->([\s\S]*?)<!--\s*ARTICLE_END\s*-->/g;
+  let match: RegExpExecArray | null;
+  let idx = 0;
+
+  while ((match = articleRe.exec(body)) !== null) {
+    idx++;
+    const aMeta = safeJsonParse(match[1], `article in ${fileId}`);
+    if (!aMeta) continue;
+    // Only treat as an embedded ruling if it actually carries ruling identity —
+    // some ARTICLE_START blocks in these files are non-ruling front matter (e.g. a
+    // "تقديم"/intro page) and must not be mistaken for a court precedent.
+    if (!aMeta.court_type && !aMeta.case_number) continue;
+
+    const articleBody = match[2];
+
+    // H3-level (not H2) structured sections in this file family.
+    let facts = "", reasons = "", ruling = "";
+    const factsMatch = articleBody.match(/#{2,4}\s*(?:وقائع|الوقائع)\s*\n([\s\S]*?)(?=\n#{2,4}\s|<!--\s*ARTICLE_END|$)/);
+    if (factsMatch) facts = factsMatch[1].trim();
+    const reasonsMatch = articleBody.match(/#{2,4}\s*(?:أسباب|التسبيب|الأسباب)\s*\n([\s\S]*?)(?=\n#{2,4}\s|<!--\s*ARTICLE_END|$)/);
+    if (reasonsMatch) reasons = reasonsMatch[1].trim();
+    const rulingMatch = articleBody.match(/#{2,4}\s*(?:المنطوق|الحكم|منطوق)\s*\n([\s\S]*?)(?=\n#{2,4}\s|<!--\s*ARTICLE_END|$)/);
+    if (rulingMatch) ruling = rulingMatch[1].trim();
+
+    if (!facts && !reasons && !ruling) {
+      const cleaned = articleBody.replace(/^>\s*/gm, "").trim();
+      if (cleaned) ruling = cleaned;
+    }
+
+    const rulingNumber = String(aMeta.number || "");
+    const title = `سابقة قضائية رقم ${rulingNumber} - ${aMeta.court_type || ""} - ${aMeta.city || ""}`.trim();
+
+    let subject = "";
+    if (aMeta.has_appeal === true && aMeta.appeal_ruling_number) {
+      const appealDate = aMeta.appeal_ruling_date_hijri ? ` بتاريخ ${aMeta.appeal_ruling_date_hijri}` : "";
+      subject = `استئناف رقم ${aMeta.appeal_ruling_number}${appealDate}`;
+    }
+
+    results.push({
+      id: `${fileId}__article-${rulingNumber || idx}`,
+      slug: slugifyArabic(`${fileId}-${rulingNumber || idx}`),
+      title,
+      court: String(aMeta.court_type || ""),
+      court_type: String(aMeta.court_type || "ordinary"),
+      ruling_number: rulingNumber,
+      case_number: String(aMeta.case_number || ""),
+      year: String(aMeta.case_year_hijri || ""),
+      date: String(aMeta.date || ""),
+      subject,
+      cat: String(meta.section_code || ""),
+      summary: String(aMeta.summary || ""),
+      summary_brief: "",
+      facts,
+      reasons,
+      ruling,
+      preamble: "",
+      hashtags: [],
+      is_redacted: false,
+      metadata: aMeta,
+    });
+  }
+
+  console.log(`    ✓ ${results.length} embedded rulings extracted`);
+  return results;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -432,6 +574,13 @@ export function parsePrecedents(inputPath: string): PrecedentsParserOutput {
       const precedent = parseCourtPrecedent(file);
       if (precedent) {
         courtPrecedents.push(precedent);
+        continue;
+      }
+
+      // Then try as an ARTICLE_START-based ruling collection (e.g. وزارة العدل)
+      const embedded = parseArticleBasedCollection(file);
+      if (embedded.length > 0) {
+        courtPrecedents.push(...embedded);
       }
     } catch (err) {
       console.error(`  ✗ Failed to parse ${file}: ${(err as Error).message}`);
