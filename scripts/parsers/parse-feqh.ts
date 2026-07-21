@@ -133,6 +133,26 @@ function parsePageHeader(line: string): PageHeaderInfo | null {
   };
 }
 
+/**
+ * Parse card-v2 campaign (2026-07) page anchor:
+ * <!-- PAGE_START {"vol": 1, "page": 5} -->
+ * Distinct source family from the Shamela page header above — no title/author/source
+ * embedded (that lives in frontmatter instead), just volume + page number.
+ */
+function parseJsonPageAnchor(line: string): { page: number; volume: number } | null {
+  const match = line.match(/^<!--\s*PAGE_START\s*(\{.*?\})\s*-->/);
+  if (!match) return null;
+  try {
+    const obj = JSON.parse(match[1]);
+    return {
+      page: Number(obj.page || 0),
+      volume: Number(obj.vol || obj.volume || 1),
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Extract Quranic verses and hadiths
 // ══════════════════════════════════════════════════════════════════════════════
@@ -226,11 +246,15 @@ function extractToc(body: string): { toc: string[]; bodyAfterToc: string } {
 // Detect heading level (chapter / bab / fasl)
 // ══════════════════════════════════════════════════════════════════════════════
 
-type HeadingLevel = "kitab" | "bab" | "fasl" | "masala" | null;
+type HeadingLevel = "kitab" | "bab" | "fasl" | "masala" | "skip" | null;
 
 function detectHeadingLevel(line: string): { level: HeadingLevel; title: string } | null {
   // Markdown heading: ### كتاب الطهارة
-  const mdMatch = line.match(/^(#{2,5})\s+(.*)/);
+  // `#{1,5}` (not `{2,5}`) — card-v2 campaign (2026-07) books use bare `#` for their
+  // top-level headings (e.g. "# مقدمة", "# ١ - الحق الشخصي..."), which the original
+  // `{2,5}` pattern silently ignored entirely (heading never detected, its whole
+  // section's text fell into whatever chapter/section preceded it instead).
+  const mdMatch = line.match(/^(#{1,5})\s+(.*)/);
   if (!mdMatch) {
     // Bracket notation: [كتاب الطهارة]
     const bracketMatch = line.match(/^\[(.+)\]$/);
@@ -247,6 +271,13 @@ function detectHeadingLevel(line: string): { level: HeadingLevel; title: string 
 
   const hashes = mdMatch[1].length;
   const title = mdMatch[2].trim();
+
+  // Card-v2 campaign (2026-07) identity-card heading (e.g. "### 📊 بطاقة تعريف
+  // الكتاب") — metadata for a human reader, not book content; skip its heading AND
+  // the table/text under it rather than letting it become a bogus first "chapter".
+  if (title.includes("بطاقة تعريف") || title.includes("فهرس المحتويات")) {
+    return { level: "skip", title };
+  }
 
   // Detect by keyword first
   if (title.startsWith("كتاب")) return { level: "kitab", title };
@@ -298,7 +329,11 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
   let bookSource = "المكتبة الشاملة";
   let maxVolume = 1;
 
-  const lines = bodyAfterToc.split(/\r?\n/);
+  // Strip <details>...</details> blocks (card-v2 campaign identity card, wrapped
+  // variant) before line-splitting — it's metadata for a human reader, not book
+  // content, and would otherwise become a bogus first chapter full of table markup.
+  const cleanedBody = bodyAfterToc.replace(/<details>[\s\S]*?<\/details>/g, "");
+  const lines = cleanedBody.split(/\r?\n/);
 
   // Scan for first page header to extract book info
   for (const line of lines) {
@@ -322,32 +357,68 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
   let totalPages = 0;
 
   function flushPage() {
-    if (currentPage && pageBuffer.length > 0) {
+    // BUG (fixed 2026-07-20): this used to require `currentPage` to already be set
+    // (only true right after a Shamela-style `#### صفحة N - ...` header matched).
+    // Card-v2 campaign books (2026-07) either use a different page-anchor format
+    // (`parseJsonPageAnchor`, handled below) or no page anchors at all — for those,
+    // `currentPage` stayed null for the ENTIRE file, so this guard silently discarded
+    // every accumulated `pageBuffer`, no matter how much real text it held. Now a
+    // page is synthesized on demand so text is never dropped just because no
+    // Shamela-style header happened to precede it.
+    if (pageBuffer.length > 0) {
       const text = pageBuffer.join("\n").trim();
-      currentPage.text = text;
-      currentPage.verses = extractVerses(text);
+      if (text) {
+        const page: FeqhPage = currentPage || {
+          page_number: totalPages + 1,
+          volume: maxVolume,
+          text: "",
+          verses: [],
+        };
+        page.text = text;
+        page.verses = extractVerses(text);
 
-      if (currentPage.volume > maxVolume) maxVolume = currentPage.volume;
+        if (page.volume > maxVolume) maxVolume = page.volume;
 
-      // Attach page to current section or chapter
-      if (currentSection) {
-        currentSection.pages.push(currentPage);
-      } else if (currentChapter) {
-        currentChapter.pages.push(currentPage);
-      } else {
-        // Orphan page — create a default chapter
-        currentChapter = { title: "مقدمة", sections: [], pages: [] };
-        chapters.push(currentChapter);
-        currentChapter.pages.push(currentPage);
+        // Attach page to current section or chapter
+        if (currentSection) {
+          currentSection.pages.push(page);
+        } else if (currentChapter) {
+          currentChapter.pages.push(page);
+        } else {
+          // Orphan page — create a default chapter
+          currentChapter = { title: "مقدمة", sections: [], pages: [] };
+          chapters.push(currentChapter);
+          currentChapter.pages.push(page);
+        }
+        totalPages++;
       }
-      totalPages++;
     }
     pageBuffer = [];
     currentPage = null;
   }
 
+  // True while inside a "skip" heading's span (e.g. the identity card block) — its
+  // own text (a metadata table, not book content) must not become a page or chapter.
+  let skipping = false;
+
   for (const line of lines) {
-    // ── Page header ──
+    // ── Structural comment-only markers (card-v2 campaign) — strip, keep content ──
+    // <!-- SHARH_START/END --> and <!-- MATN_START/END --> wrap real prose (they're
+    // not paired with a text-bearing line themselves), so just drop the marker line
+    // and let the surrounding text flow through untouched.
+    if (/^<!--\s*(SHARH_START|SHARH_END|MATN_START|MATN_END)\s*-->$/.test(line.trim())) {
+      continue;
+    }
+
+    // ── JSON-style page anchor (card-v2 campaign) ──
+    const jsonPage = parseJsonPageAnchor(line);
+    if (jsonPage) {
+      flushPage();
+      currentPage = { page_number: jsonPage.page, volume: jsonPage.volume, text: "", verses: [] };
+      continue;
+    }
+
+    // ── Page header (Shamela format) ──
     const header = parsePageHeader(line);
     if (header) {
       flushPage();
@@ -369,7 +440,22 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
     // ── Chapter / Section heading ──
     const heading = detectHeadingLevel(line);
     if (heading) {
-      flushPage();
+      if (heading.level === "skip") {
+        // Save whatever real content preceded the card block, then discard the
+        // block's own text (the identity table) instead of flushing it as a page.
+        flushPage();
+        skipping = true;
+        continue;
+      }
+      if (skipping) {
+        // This heading ends the skipped block — discard its buffered table text
+        // (never flush it) rather than treating it as this new heading's content.
+        pageBuffer = [];
+        currentPage = null;
+        skipping = false;
+      } else {
+        flushPage();
+      }
 
       if (heading.level === "kitab") {
         // New chapter
@@ -393,7 +479,9 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
     }
 
     // ── Regular content line ──
-    pageBuffer.push(line);
+    if (!skipping) {
+      pageBuffer.push(line);
+    }
   }
 
   // Flush the last page

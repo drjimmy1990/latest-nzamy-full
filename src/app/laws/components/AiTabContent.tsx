@@ -9,7 +9,7 @@
  */
 
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
-import { useState, useRef, useEffect, useCallback, memo } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, memo } from "react";
 import {
   PaperPlaneTilt,
   Robot,
@@ -34,6 +34,7 @@ import {
   ChatCircleDots,
   SidebarSimple,
   ArrowRight,
+  List,
 } from "@phosphor-icons/react";
 
 // ─── Brand Design Tokens ──────────────────────────────────────────────────────
@@ -148,6 +149,50 @@ function mockAI(q: string): { text: string; sources: string[] } {
   };
 }
 
+// ─── Lightweight Markdown (bold + bullet lists — no external dependency) ─────
+function renderInlineBold(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") && part.length > 4
+      ? <strong key={i} className="font-bold">{part.slice(2, -2)}</strong>
+      : <span key={i}>{part}</span>
+  );
+}
+
+export const LiteMarkdown = memo(function LiteMarkdown({ text }: { text: string }) {
+  const blocks = text.split(/\n\n+/).filter(Boolean);
+  return (
+    <div className="space-y-2.5">
+      {blocks.map((block, bi) => {
+        const lines = block.split("\n").filter(l => l.trim().length > 0);
+        const isList = lines.length > 0 && lines.every(l => /^[•\-]\s+/.test(l.trim()));
+        if (isList) {
+          return (
+            <ul key={bi} className="space-y-1.5">
+              {lines.map((l, li) => (
+                <li key={li} className="flex items-start gap-2">
+                  <span className="mt-[9px] h-1 w-1 rounded-full bg-current opacity-40 flex-shrink-0" />
+                  <span className="flex-1">{renderInlineBold(l.trim().replace(/^[•\-]\s+/, ""))}</span>
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p key={bi}>
+            {lines.map((l, li) => (
+              <span key={li}>
+                {renderInlineBold(l)}
+                {li < lines.length - 1 && <br />}
+              </span>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
+});
+
 // ─── Streaming Text (Isolated) ────────────────────────────────────────────────
 const StreamingText = memo(function StreamingText({ text }: { text: string }) {
   const [shown, setShown] = useState("");
@@ -160,7 +205,7 @@ const StreamingText = memo(function StreamingText({ text }: { text: string }) {
     }, 14);
     return () => clearInterval(iv);
   }, [text]);
-  return <span className="whitespace-pre-wrap leading-[1.8]">{shown}</span>;
+  return <LiteMarkdown text={shown} />;
 });
 
 // ─── Thinking Indicator (Isolated) ───────────────────────────────────────────
@@ -248,10 +293,10 @@ const MsgBubble = memo(function MsgBubble({
           dir="rtl"
         >
           {isUser
-            ? msg.text
+            ? <span className="whitespace-pre-wrap">{msg.text}</span>
             : isLatest
               ? <StreamingText text={msg.text} />
-              : <span className="whitespace-pre-wrap leading-[1.8]">{msg.text}</span>
+              : <LiteMarkdown text={msg.text} />
           }
         </div>
 
@@ -301,14 +346,10 @@ const MsgBubble = memo(function MsgBubble({
 const ConvItem = memo(function ConvItem({
   conv, isActive, onSelect, onDelete, isDark,
 }: { conv: Conv; isActive: boolean; onSelect: () => void; onDelete: () => void; isDark: boolean }) {
-  const [hovered, setHovered] = useState(false);
-
   return (
     <motion.div
       layout
       whileTap={{ scale: 0.98 }}
-      onHoverStart={() => setHovered(true)}
-      onHoverEnd={() => setHovered(false)}
       onClick={onSelect}
       className={`relative group flex items-center gap-2.5 rounded-xl px-3 py-2.5 cursor-pointer transition-all duration-200 ${
         isActive
@@ -336,17 +377,13 @@ const ConvItem = memo(function ConvItem({
       }`}>
         {conv.title}
       </span>
-      <AnimatePresence>
-        {hovered && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
-            onClick={e => { e.stopPropagation(); onDelete(); }}
-            className={`flex-shrink-0 p-1 rounded-md transition-colors ${isDark ? "hover:bg-white/[0.08] text-white/30 hover:text-rose-400" : "hover:bg-rose-50 text-slate-300 hover:text-rose-400"}`}
-          >
-            <Trash size={10} />
-          </motion.button>
-        )}
-      </AnimatePresence>
+      <button
+        onClick={e => { e.stopPropagation(); onDelete(); }}
+        aria-label="حذف المحادثة"
+        className={`flex-shrink-0 p-2 rounded-md transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 ${isDark ? "hover:bg-white/[0.08] text-white/30 hover:text-rose-400" : "hover:bg-rose-50 text-slate-300 hover:text-rose-400"}`}
+      >
+        <Trash size={11} />
+      </button>
     </motion.div>
   );
 });
@@ -465,13 +502,10 @@ const WelcomeScreen = memo(function WelcomeScreen({
                   </p>
                 </div>
 
-                {/* Arrow (appears on hover) */}
-                <motion.div
-                  initial={{ opacity: 0, x: 4 }} whileHover={{ opacity: 1, x: 0 }}
-                  className="absolute left-3 top-1/2 -translate-y-1/2"
-                >
+                {/* Arrow — always faintly visible on touch, brightens on hover */}
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 opacity-30 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
                   <ArrowRight size={12} style={{ color: action.accent }} className="rotate-180" />
-                </motion.div>
+                </div>
               </motion.button>
             );
           })}
@@ -511,83 +545,92 @@ function ConvSidebar({
   ].filter(g => g.items.length > 0);
 
   return (
-    <motion.div
-      animate={{ width: open ? 210 : 52 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className={`relative flex-shrink-0 flex flex-col h-full overflow-hidden border-e ${
-        isDark ? "bg-[#0e1a14] border-white/[0.05]" : "bg-[#eef7f2] border-slate-200/60"
-      }`}
-      dir="rtl"
-    >
-      {/* Header */}
-      <div className={`flex-shrink-0 flex items-center h-12 px-3 border-b ${
-        isDark ? "border-white/[0.05]" : "border-slate-200/60"
-      }`}>
+    <>
+      {/* Mobile backdrop — tapping it closes the drawer */}
+      <AnimatePresence>
         {open && (
-          <motion.span
+          <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className={`flex-1 text-[11px] font-bold tracking-wide ${isDark ? "text-white/40" : "text-slate-400"}`}
-          >
-            المحادثات
-          </motion.span>
+            onClick={onToggle}
+            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          />
         )}
-        <button
-          onClick={onToggle}
-          className={`flex-shrink-0 p-1.5 rounded-lg transition-colors ${
-            isDark ? "text-white/30 hover:text-white/60 hover:bg-white/[0.06]" : "text-slate-400 hover:text-slate-600 hover:bg-slate-200/60"
-          }`}
-        >
-          <SidebarSimple size={14} weight={open ? "fill" : "regular"} />
-        </button>
-      </div>
+      </AnimatePresence>
 
-      {/* New Chat Button */}
-      <div className={`flex-shrink-0 p-2 border-b ${isDark ? "border-white/[0.05]" : "border-slate-200/60"}`}>
-        <motion.button
-          whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-          onClick={onNew}
-          className={`w-full flex items-center rounded-xl transition-all duration-200 ${
-            open ? "gap-2.5 px-3 py-2" : "justify-center px-2 py-2"
-          } ${
-            isDark
-              ? "bg-white/[0.05] hover:bg-white/[0.09] text-white/60 hover:text-white"
-              : "bg-white hover:bg-royal hover:text-white text-slate-600 border border-slate-200 hover:border-royal shadow-sm"
-          }`}
-          style={{}}
-        >
-          <Plus size={13} weight="bold" />
-          {open && <span className="text-[11.5px] font-semibold">محادثة جديدة</span>}
-        </motion.button>
-      </div>
-
-      {/* Conversation List */}
-      {open && (
-        <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-          {convs.length === 0 ? (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              className={`text-center py-8 text-[10.5px] ${isDark ? "text-white/20" : "text-slate-300"}`}>
-              لا توجد محادثات
-            </motion.div>
-          ) : (
-            groups.map(group => (
-              <div key={group.label} className="mb-2">
-                <p className={`text-[9px] font-bold uppercase tracking-widest px-3 mb-1 ${isDark ? "text-white/20" : "text-slate-300"}`}>
-                  {group.label}
-                </p>
-                <AnimatePresence>
-                  {group.items.map(c => (
-                    <ConvItem key={c.id} conv={c} isActive={c.id === activeId}
-                      onSelect={() => onSelect(c.id)}
-                      onDelete={() => onDelete(c.id)}
-                      isDark={isDark} />
-                  ))}
-                </AnimatePresence>
-              </div>
-            ))
+      <div
+        className={`fixed md:static inset-y-0 right-0 md:inset-auto z-50 md:z-auto
+          flex-shrink-0 flex flex-col overflow-hidden border-e h-full
+          w-[78%] max-w-[300px] ${open ? "md:w-[210px]" : "md:w-[52px]"}
+          ${open ? "translate-x-0" : "translate-x-full"} md:translate-x-0
+          transition-[width,transform] duration-300 ease-out
+          ${isDark ? "bg-[#0e1a14] border-white/[0.05]" : "bg-[#eef7f2] border-slate-200/60"}`}
+        dir="rtl"
+      >
+        {/* Header */}
+        <div className={`flex-shrink-0 flex items-center h-12 px-3 border-b ${
+          isDark ? "border-white/[0.05]" : "border-slate-200/60"
+        }`}>
+          {open && (
+            <span className={`flex-1 text-[11px] font-bold tracking-wide ${isDark ? "text-white/40" : "text-slate-400"}`}>
+              المحادثات
+            </span>
           )}
+          <button
+            onClick={onToggle}
+            className={`flex-shrink-0 p-2 rounded-lg transition-colors ${
+              isDark ? "text-white/30 hover:text-white/60 hover:bg-white/[0.06]" : "text-slate-400 hover:text-slate-600 hover:bg-slate-200/60"
+            }`}
+          >
+            <SidebarSimple size={14} weight={open ? "fill" : "regular"} />
+          </button>
         </div>
-      )}
-    </motion.div>
+
+        {/* New Chat Button */}
+        <div className={`flex-shrink-0 p-2 border-b ${isDark ? "border-white/[0.05]" : "border-slate-200/60"}`}>
+          <motion.button
+            whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+            onClick={onNew}
+            className={`w-full flex items-center rounded-xl transition-all duration-200 ${
+              open ? "gap-2.5 px-3 py-2.5" : "justify-center px-2 py-2.5"
+            } ${
+              isDark
+                ? "bg-white/[0.05] hover:bg-white/[0.09] text-white/60 hover:text-white"
+                : "bg-white hover:bg-royal hover:text-white text-slate-600 border border-slate-200 hover:border-royal shadow-sm"
+            }`}
+          >
+            <Plus size={13} weight="bold" />
+            {open && <span className="text-[11.5px] font-semibold">محادثة جديدة</span>}
+          </motion.button>
+        </div>
+
+        {/* Conversation List */}
+        {open && (
+          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+            {convs.length === 0 ? (
+              <div className={`text-center py-8 text-[10.5px] ${isDark ? "text-white/20" : "text-slate-300"}`}>
+                لا توجد محادثات
+              </div>
+            ) : (
+              groups.map(group => (
+                <div key={group.label} className="mb-2">
+                  <p className={`text-[9px] font-bold uppercase tracking-widest px-3 mb-1 ${isDark ? "text-white/20" : "text-slate-300"}`}>
+                    {group.label}
+                  </p>
+                  <AnimatePresence>
+                    {group.items.map(c => (
+                      <ConvItem key={c.id} conv={c} isActive={c.id === activeId}
+                        onSelect={() => onSelect(c.id)}
+                        onDelete={() => onDelete(c.id)}
+                        isDark={isDark} />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -648,7 +691,7 @@ function InputBar({
         <motion.button whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }}
           onClick={() => fileRef.current?.click()}
           title="رفع مستند"
-          className={`flex-shrink-0 p-1 rounded-lg transition-colors ${isDark ? "text-white/25 hover:text-gold" : "text-slate-300 hover:text-royal"}`}>
+          className={`flex-shrink-0 p-2 rounded-lg transition-colors ${isDark ? "text-white/25 hover:text-gold" : "text-slate-300 hover:text-royal"}`}>
           <Paperclip size={15} />
         </motion.button>
 
@@ -658,7 +701,7 @@ function InputBar({
             whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }}
             onClick={() => setShowQuick(p => !p)}
             title="أوامر سريعة"
-            className={`p-1 rounded-lg transition-colors ${
+            className={`p-2 rounded-lg transition-colors ${
               showQuick ? "text-gold" : isDark ? "text-white/25 hover:text-gold" : "text-slate-300 hover:text-royal"
             }`}
           >
@@ -735,7 +778,7 @@ function InputBar({
           whileTap={canSend ? { scale: 0.93 } : {}}
           onClick={onSend}
           disabled={!canSend}
-          className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-xl transition-all duration-200"
+          className="flex-shrink-0 flex h-9 w-9 items-center justify-center rounded-xl transition-all duration-200"
           style={{
             background: canSend ? `linear-gradient(135deg, ${ROYAL}, #1a6b50)` : isDark ? "rgba(255,255,255,0.05)" : "#f1f5f9",
             boxShadow: canSend ? `0 4px 14px -4px ${ROYAL}70` : "none",
@@ -769,7 +812,22 @@ export function AiTabContent({ isDark }: AiTabContentProps) {
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    setIsMobile(window.innerWidth < 768);
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    setSidebarOpen(!isMobile);
+  }, [isMobile]);
 
   const activeConv = convs.find(c => c.id === activeId);
   const msgs = activeConv?.msgs ?? [];
@@ -834,19 +892,18 @@ export function AiTabContent({ isDark }: AiTabContentProps) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 200, damping: 26 }}
-      className={`flex rounded-2xl overflow-hidden border ${
+      className={`relative flex rounded-2xl overflow-hidden border h-[92dvh] md:h-[82vh] md:min-h-[640px] ${
         isDark
           ? "border-white/[0.06] bg-dark-bg shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_20px_60px_-20px_rgba(0,0,0,0.6)]"
           : "border-slate-200/80 bg-slate-50 shadow-[0_8px_40px_-12px_rgba(11,61,46,0.12),inset_0_1px_0_rgba(255,255,255,0.8)]"
       }`}
-      style={{ height: "72vh", minHeight: 520 }}
       dir="rtl"
     >
       {/* ── Conversation Sidebar ──────────────────────────────────────────── */}
       <ConvSidebar
         convs={convs} activeId={activeId}
-        onSelect={id => setActiveId(id)}
-        onNew={() => setActiveId(null)}
+        onSelect={id => { setActiveId(id); if (isMobile) setSidebarOpen(false); }}
+        onNew={() => { setActiveId(null); if (isMobile) setSidebarOpen(false); }}
         onDelete={deleteConv}
         isDark={isDark} open={sidebarOpen}
         onToggle={() => setSidebarOpen(p => !p)}
@@ -860,6 +917,15 @@ export function AiTabContent({ isDark }: AiTabContentProps) {
           isDark ? "border-white/[0.05]" : "border-slate-200/60"
         }`}>
           <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              aria-label="فتح المحادثات"
+              className={`md:hidden flex-shrink-0 p-2 -ms-1 rounded-xl transition-colors ${
+                isDark ? "text-white/40 hover:text-white/70 hover:bg-white/[0.06]" : "text-slate-400 hover:text-royal hover:bg-slate-100"
+              }`}
+            >
+              <List size={16} />
+            </button>
             <div className="h-7 w-7 rounded-xl flex items-center justify-center"
               style={{ background: `linear-gradient(135deg, ${ROYAL}, #1a6b50)` }}>
               <Robot size={13} weight="duotone" style={{ color: GOLD }} />

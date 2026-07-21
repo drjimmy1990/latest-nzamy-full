@@ -118,7 +118,12 @@ export default function LegalLibraryPage() {
   const [showSidebars,   setShowSidebars]   = useState(true);
   const [libraryMode,    setLibraryMode]    = useState<"library" | "ai">("library");
 
-
+  // Tell the global floating buttons (WhatsApp/report/draft FABs from the
+  // root layout) to hide themselves while the AI tab fills the screen.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("nzamy-ai-mode", { detail: { active: libraryMode === "ai" } }));
+    return () => { window.dispatchEvent(new CustomEvent("nzamy-ai-mode", { detail: { active: false } })); };
+  }, [libraryMode]);
 
   // — API-backed autocomplete state —
   const [autocompleteCounts, setAutocompleteCounts] = useState<{ laws: number; precedents: number; orders: number; feqh: number }>({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
@@ -834,15 +839,15 @@ export default function LegalLibraryPage() {
       <div>
         <LibraryHero isDark={isDark} isRTL={isRTL} muted={muted} />
         {/* Mode Switcher — Library / AI */}
-        <div className="flex justify-center pb-6">
-          <div className={`flex items-center gap-1 p-1 rounded-2xl border shadow-lg backdrop-blur-md ${
+        <div className="flex justify-center pb-6 px-4">
+          <div className={`flex flex-wrap items-center justify-center gap-1 p-1 rounded-2xl border shadow-lg backdrop-blur-md ${
             isDark
               ? "bg-[#0e1a14]/90 border-white/[0.08] shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)]"
               : "bg-white/90 border-slate-200/80 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.15)]"
           }`}>
             <button
               onClick={() => setLibraryMode("library")}
-              className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
+              className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
                 libraryMode === "library"
                   ? "bg-[#0B3D2E] text-white shadow-md"
                   : isDark ? "text-white/40 hover:text-white/70" : "text-slate-400 hover:text-slate-600"
@@ -853,7 +858,7 @@ export default function LegalLibraryPage() {
             </button>
             <button
               onClick={() => setLibraryMode("ai")}
-              className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
+              className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
                 libraryMode === "ai"
                   ? "text-white shadow-md"
                   : isDark ? "text-white/40 hover:text-white/70" : "text-slate-400 hover:text-slate-600"
@@ -1000,7 +1005,7 @@ export default function LegalLibraryPage() {
                 <button
                   type="button"
                   onClick={() => setLayoutMode("grid")}
-                  className={`p-2 rounded-xl transition-all duration-200 flex items-center justify-center ${
+                  className={`p-2.5 rounded-xl transition-all duration-200 flex items-center justify-center ${
                     layoutMode === "grid"
                       ? "bg-[#0B3D2E] text-white shadow-sm"
                       : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
@@ -1012,7 +1017,7 @@ export default function LegalLibraryPage() {
                 <button
                   type="button"
                   onClick={() => setLayoutMode("list")}
-                  className={`p-2 rounded-xl transition-all duration-200 flex items-center justify-center ${
+                  className={`p-2.5 rounded-xl transition-all duration-200 flex items-center justify-center ${
                     layoutMode === "list"
                       ? "bg-[#0B3D2E] text-white shadow-sm"
                       : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"

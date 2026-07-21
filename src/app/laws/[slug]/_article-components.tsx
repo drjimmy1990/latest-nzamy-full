@@ -270,24 +270,45 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
 
 import { type CartEntry } from "@/components/laws/DraftDrawer";
 
+// Mobile Safari/Chrome collapse the native text selection on touchstart as
+// soon as the user taps something outside the selected range — i.e. right
+// before the copy button's onClick fires. We keep a short-lived cache of the
+// last non-empty selection (updated on every `selectionchange`, never
+// cleared on collapse) so the tap that triggers the copy still sees it.
+let lastSelectionCache: { text: string; node: Node; at: number } | null = null;
+const LAST_SELECTION_TTL_MS = 15000;
+
+if (typeof document !== "undefined") {
+  document.addEventListener("selectionchange", () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const text = selection.toString().trim();
+    if (!text) return; // a collapse — leave the previous cache intact
+    lastSelectionCache = { text, node: selection.getRangeAt(0).commonAncestorContainer, at: Date.now() };
+  });
+}
+
 function getSelectedTextWithin(containerId: string, fallbackText?: string): string {
   if (typeof window === "undefined") return "";
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) return "";
-  const selectedText = selection.toString().trim();
-  if (!selectedText) return "";
-  if (fallbackText && fallbackText.replace(/\s+/g, "").includes(selectedText.replace(/\s+/g, ""))) {
-    return selectedText;
-  }
   const container = document.getElementById(containerId);
   if (!container) return "";
-  const range = selection.getRangeAt(0);
-  if (
-    container.contains(range.commonAncestorContainer) ||
-    container.contains(range.startContainer) ||
-    container.contains(range.endContainer)
-  ) {
-    return selectedText;
+
+  const liveSelection = window.getSelection();
+  const liveText = liveSelection && liveSelection.rangeCount > 0 ? liveSelection.toString().trim() : "";
+
+  const candidate = liveText
+    ? { text: liveText, node: liveSelection!.getRangeAt(0).commonAncestorContainer }
+    : lastSelectionCache && Date.now() - lastSelectionCache.at < LAST_SELECTION_TTL_MS
+      ? lastSelectionCache
+      : null;
+
+  if (!candidate || !candidate.text) return "";
+
+  if (fallbackText && fallbackText.replace(/\s+/g, "").includes(candidate.text.replace(/\s+/g, ""))) {
+    return candidate.text;
+  }
+  if (container.contains(candidate.node)) {
+    return candidate.text;
   }
   return "";
 }
@@ -343,10 +364,10 @@ function PrincipleCard({ p, isDark, inCart, onToggle, locked, onLock, isRTL = tr
           <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{p.ref}</p>
         </div>
         <div className="flex gap-1">
-          <button onClick={handleCopy} className={`p-1 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-600" : "hover:bg-slate-200 text-slate-400"}`}>
+          <button onClick={handleCopy} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-600" : "hover:bg-slate-200 text-slate-400"}`}>
             {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
           </button>
-          <button onClick={locked ? onLock : onToggle} className={`p-1 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
+          <button onClick={locked ? onLock : onToggle} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
             {inCart ? <Minus size={11} /> : <Plus size={11} />}
           </button>
         </div>
@@ -376,10 +397,10 @@ function PrecedentCard({ pr, isDark, inCart, onToggle, locked, onLock, isRTL = t
           <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{pr.caseNum} · {pr.year}</p>
         </div>
         <div className="flex gap-1">
-          <button onClick={handleCopy} className={`p-1 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-600" : "hover:bg-slate-200 text-slate-400"}`}>
+          <button onClick={handleCopy} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-600" : "hover:bg-slate-200 text-slate-400"}`}>
             {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
           </button>
-          <button onClick={locked ? onLock : onToggle} className={`p-1 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
+          <button onClick={locked ? onLock : onToggle} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
             {inCart ? <Minus size={11} /> : <Plus size={11} />}
           </button>
         </div>
@@ -657,13 +678,13 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
               </button>
             )}
 
-            <button onClick={mainOnCopy} className={`p-1.5 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-zinc-500" : "hover:bg-slate-100 text-slate-400"}`}>
+            <button onClick={mainOnCopy} className={`p-2 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-zinc-500" : "hover:bg-slate-100 text-slate-400"}`}>
               {mainCopied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
             </button>
             
             <button
               onClick={mainOnToggleCart}
-              className={`p-1.5 rounded-lg transition flex-shrink-0 ${mainInCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}
+              className={`p-2 rounded-lg transition flex-shrink-0 ${mainInCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}
             >
               {mainInCart ? <Minus size={12} /> : <Plus size={12} />}
             </button>
@@ -770,14 +791,14 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
                       <button
                         onClick={(e) => { e.stopPropagation(); handleCopyReg(); }}
                         title={isRTL ? "نسخ اللائحة" : "Copy regulation"}
-                        className={`p-1 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-500" : "hover:bg-slate-200 text-slate-600"}`}
+                        className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-500" : "hover:bg-slate-200 text-slate-600"}`}
                       >
                         {copiedReg ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); regInCart ? onRemoveExecReg(article.id) : (isLocked ? showPaywall() : onAddExecReg(article)); }}
                         title={regInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة للمسودة" : "Add to draft")}
-                        className={`p-1 rounded-lg transition ${
+                        className={`p-2 rounded-lg transition ${
                           regInCart
                             ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500"
                             : isDark ? "bg-[#C8A762]/15 text-[#C8A762]" : "bg-amber-50 text-amber-700"
