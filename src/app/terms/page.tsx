@@ -107,7 +107,7 @@ const sections = {
       title: "١٠. القانون الحاكم والاختصاص القضائي",
       content: [
         "تخضع هذه الشروط لأحكام نظام التجارة الإلكترونية السعودي ونظام حماية المستهلك وسائر الأنظمة ذات الصلة.",
-        "تختص المحاكم السعودية بالنظر في أي نزاع ينشأ عن هذه الشروط، وتكون الرياض هي دار القضاء المختصة.",
+        "تختص المحاكم السعودية بالنظر في أي نزاع ينشأ عن هذه الشروط، وتكون مكة المكرمة هي دار القضاء المختصة.",
         "يُشجع على حل النزاعات وداً أو عبر نظام التحكيم الإلكتروني المتاح في المنصة قبل اللجوء للقضاء.",
       ],
     },
@@ -124,7 +124,7 @@ const sections = {
       title: "١٢. التواصل",
       content: [
         "لأي استفسارات قانونية أو شكاوى تتعلق بهذه الشروط، يُرجى التواصل عبر: legal@nezamy.sa",
-        "العنوان: شركة نظامي للتقنية القانونية، الرياض — حي العليا، المملكة العربية السعودية.",
+        "العنوان: شركة نظامي للمحاماة، مكة المكرمة — بطحاء قريش، المملكة العربية السعودية.",
       ],
     },
   ],
@@ -223,7 +223,7 @@ const sections = {
       title: "10. Governing Law and Jurisdiction",
       content: [
         "These terms are governed by Saudi e-commerce law, consumer protection regulations, and other relevant laws.",
-        "Saudi courts have jurisdiction over any dispute arising from these terms, with Riyadh as the competent court location.",
+        "Saudi courts have jurisdiction over any dispute arising from these terms, with Makkah as the competent court location.",
         "Amicable resolution or the platform's electronic arbitration system is encouraged before resorting to litigation.",
       ],
     },
@@ -240,7 +240,7 @@ const sections = {
       title: "12. Contact",
       content: [
         "For any legal inquiries or complaints related to these terms, please contact: legal@nezamy.sa",
-        "Address: Nezamy Legal Technology Company, Riyadh — Al Olaya District, Kingdom of Saudi Arabia.",
+        "Address: Nezamy Law Firm Company, Makkah — Batha Quraish, Kingdom of Saudi Arabia.",
       ],
     },
   ],
@@ -343,6 +343,9 @@ export default function TermsPage() {
             </Link>
             <Link href="/privacy" className={`rounded-xl border px-6 py-2.5 text-sm font-semibold transition ${isDark ? "border-white/10 text-gray-300 hover:bg-white/5" : "border-slate-200 text-slate-700 hover:bg-slate-100"}`}>
               {isRTL ? "سياسة الخصوصية" : "Privacy Policy"}
+            </Link>
+            <Link href="/refund-policy" className={`rounded-xl border px-6 py-2.5 text-sm font-semibold transition ${isDark ? "border-white/10 text-gray-300 hover:bg-white/5" : "border-slate-200 text-slate-700 hover:bg-slate-100"}`}>
+              {isRTL ? "سياسة الاسترجاع" : "Refund Policy"}
             </Link>
           </div>
         </div>
