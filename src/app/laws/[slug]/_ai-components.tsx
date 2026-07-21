@@ -6,6 +6,7 @@ import {
   CaretDown, CaretUp, Microphone, PaperPlaneTilt, Sparkle, X,
 } from "@phosphor-icons/react";
 import type { LawArticle } from "../data";
+import { LiteMarkdown } from "../components/AiTabContent";
 
 
 const QUICK_PROMPTS = [
@@ -181,7 +182,7 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
                         {m.role === "ai" && (
                           <p className={`text-[10px] font-bold mb-1 ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}>{isRTL ? "✦ نظامي AI" : "✦ Nezamy AI"}</p>
                         )}
-                        <p className="whitespace-pre-wrap">{m.text}</p>
+                        {m.role === "ai" ? <LiteMarkdown text={m.text} /> : <p className="whitespace-pre-wrap">{m.text}</p>}
                       </div>
                     </div>
                   ))}
@@ -291,23 +292,23 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true }: 
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
       <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-[500px] overflow-hidden rounded-2xl border shadow-2xl flex flex-col ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200"}`} dir={isRTL ? "rtl" : "ltr"}>
+        className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[92%] max-w-[500px] max-h-[85dvh] overflow-hidden rounded-2xl border shadow-2xl flex flex-col ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200"}`} dir={isRTL ? "rtl" : "ltr"}>
         {/* Header */}
-        <div className={`flex items-start gap-3 p-4 border-b ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
+        <div className={`flex-shrink-0 flex items-start gap-3 p-4 border-b ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
             <Sparkle size={20} weight="duotone" className="text-[#C8A762]" />
           </div>
-          <div className="flex-1 mt-0.5">
+          <div className="flex-1 mt-0.5 min-w-0">
             <p className={`text-[14px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>{isRTL ? "اشرح لي" : "Explain"} — {article.num}</p>
             <p className={`text-[11px] mt-0.5 line-clamp-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{article.title}</p>
           </div>
-          <button onClick={onClose} className={`p-2 rounded-xl transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
+          <button onClick={onClose} className={`flex-shrink-0 p-2 rounded-xl transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
             <X size={16} />
           </button>
         </div>
 
         {/* Chat */}
-        <div className={`h-[400px] overflow-y-auto p-4 space-y-3 ${isDark ? "bg-black/20" : "bg-slate-50/50"}`}>
+        <div className={`flex-1 min-h-0 overflow-y-auto p-4 space-y-3 ${isDark ? "bg-black/20" : "bg-slate-50/50"}`}>
           <div className={`p-3 rounded-xl border text-[11px] leading-relaxed mb-4 ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5 text-[#C8A762]/80" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
             <p className="font-bold mb-1 opacity-80 border-b border-current pb-1 inline-block">{isRTL ? "نص المادة للاختصار:" : "Article text excerpt:"}</p>
             <p className="line-clamp-3 mt-1.5">{article.text}</p>
@@ -323,7 +324,7 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true }: 
                 {m.role === "ai" && (
                   <p className={`text-[10px] font-bold mb-1.5 flex items-center gap-1 ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}><Sparkle size={10} weight="fill" /> {isRTL ? "مساعد الفهم" : "Explanation assistant"}</p>
                 )}
-                <p className="whitespace-pre-wrap">{m.text}</p>
+                {m.role === "ai" ? <LiteMarkdown text={m.text} /> : <p className="whitespace-pre-wrap">{m.text}</p>}
               </div>
             </div>
           ))}
@@ -338,7 +339,7 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true }: 
         </div>
 
         {/* Input */}
-        <div className={`p-3 border-t ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
+        <div className={`flex-shrink-0 p-3 border-t ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
           <div className={`flex items-center gap-2 p-1.5 pl-3 pr-1.5 rounded-2xl border transition-colors ${
             input.trim() ? (isDark ? "border-[#C8A762]/50 bg-zinc-800/80" : "border-amber-400 bg-white") : (isDark ? "border-white/[0.08] bg-zinc-800/50" : "border-slate-200 bg-slate-50")
           }`}>

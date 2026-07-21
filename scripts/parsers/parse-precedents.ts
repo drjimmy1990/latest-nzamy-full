@@ -254,8 +254,11 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
   }
 
   const principles: ParsedPrinciple[] = [];
+  // Source files (2026-07 card-v2 campaign, section 97) have PRINCIPLE_START with
+  // zero, one, or two spaces before the JSON depending on extraction vintage — `\s*`
+  // (not `\s+`) so all variants match instead of silently dropping ~125 principles.
   const principleRe =
-    /<!--\s*PRINCIPLE_START\s+(.*?)\s*-->([\s\S]*?)<!--\s*PRINCIPLE_END\s*-->/g;
+    /<!--\s*PRINCIPLE_START\s*(.*?)\s*-->([\s\S]*?)<!--\s*PRINCIPLE_END\s*-->/g;
   let match: RegExpExecArray | null;
 
   while ((match = principleRe.exec(body)) !== null) {
@@ -264,9 +267,13 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
 
     const principleBody = match[2];
 
-    // Clean text: remove block-quote markers, details blocks, etc.
+    // Clean text: remove block-quote markers, details blocks, the "#### الحكم رقم"
+    // heading (redundant with `number`), and the injected card-v2 identity table
+    // (2026-07 campaign) — none of these are part of the actual principle text.
     let cleanText = principleBody;
     cleanText = cleanText.replace(/<details>[\s\S]*?<\/details>/g, "");
+    cleanText = cleanText.replace(/^####\s*الحكم رقم\s*\(\d+\)\s*$/gm, "");
+    cleanText = cleanText.replace(/^\|\s*الحقل\s*\|\s*القيمة\s*\|\n\|[\s:-]*\|[\s:-]*\|\n(?:\|.*\|\n?)*/gm, "");
     cleanText = cleanText.replace(/^>\s*/gm, "").trim();
 
     // Extract sub-principles
@@ -283,15 +290,27 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
       keywords.push(kwMatch[1].trim());
     }
 
+    // `reference`/`ref` are rarely present in PRINCIPLE_START JSON (2026-07 card-v2
+    // campaign, section 97 — ديوان المظالم); synthesize a citation string from
+    // case_number/appeal_number/session_date instead of dropping them silently.
+    let reference = String(pMeta.reference || pMeta.ref || "");
+    if (!reference) {
+      const parts: string[] = [];
+      if (pMeta.case_number) parts.push(`رقم القضية ${pMeta.case_number}`);
+      if (pMeta.appeal_number) parts.push(`رقم الاستئناف ${pMeta.appeal_number}`);
+      if (pMeta.session_date) parts.push(`تاريخ الجلسة ${pMeta.session_date}`);
+      reference = parts.join(" - ");
+    }
+
     principles.push({
       number: Number(pMeta.number || principles.length + 1),
       issuing_body: String(pMeta.issuing_body || ""),
       issuing_body_abbr: String(pMeta.issuing_body_abbr || ""),
-      session_date: String(pMeta.session_date || ""),
+      session_date: String(pMeta.session_date || pMeta.date || ""),
       case_number: String(pMeta.case_number || ""),
-      decision_number: String(pMeta.decision_number || ""),
+      decision_number: String(pMeta.decision_number || pMeta.number || ""),
       source_type: String(pMeta.source_type || ""),
-      reference: String(pMeta.reference || pMeta.ref || ""),
+      reference,
       text: cleanText,
       classification_keywords: keywords,
       sub_principles: subPrinciples,
@@ -306,10 +325,10 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
     id: fileId,
     slug: (meta.slug as string) || slugifyArabic(title) || fileId,
     title,
-    court: String(meta.court || ""),
+    court: String(meta.court || meta.issuing_body || ""),
     court_type: String(meta.court_type || meta.track || "ordinary"),
-    year_hijri: Number(meta.year_hijri || 0),
-    part: Number(meta.part || 1),
+    year_hijri: Number(meta.year_hijri || meta.hijri_year || 0),
+    part: Number(meta.part || meta.volume || 1),
     source_id: String(meta.source_id || ""),
     total_principles: principles.length,
     principles,
@@ -357,6 +376,25 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
     if (rulingMatch) ruling = rulingMatch[1].trim();
   }
 
+  // Fallback: many precedent files (2026-07 card-v2 campaign, section 97) store the
+  // full ruling text as raw prose between ARTICLE_START/ARTICLE_END markers, with no
+  // <details> wrapper and no ## sub-headings. Without this fallback the actual ruling
+  // text is silently dropped (facts/reasons/ruling all stay empty while the identity
+  // card/metadata seeds fine) — concatenate every ARTICLE_START..ARTICLE_END block and
+  // use it as `ruling` when the structured extraction above found nothing at all.
+  if (!facts && !reasons && !ruling) {
+    const articleBlocks: string[] = [];
+    const articleRe = /<!--\s*ARTICLE_START\s+.*?-->([\s\S]*?)<!--\s*ARTICLE_END\s*-->/g;
+    let articleMatch: RegExpExecArray | null;
+    while ((articleMatch = articleRe.exec(body)) !== null) {
+      const text = articleMatch[1].replace(/^>\s*/gm, "").trim();
+      if (text) articleBlocks.push(text);
+    }
+    if (articleBlocks.length > 0) {
+      ruling = articleBlocks.join("\n\n");
+    }
+  }
+
   // Extract hashtags from metadata or body
   let hashtags: string[] = [];
   if (Array.isArray(meta.hashtags)) {
@@ -377,17 +415,28 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
     preamble = body.slice(0, firstHeading).trim();
   }
 
+  // has_appeal / appeal_ruling_number / appeal_ruling_date_hijri (2026-07 card-v2
+  // campaign, section 97) have no dedicated column in ParsedCourtPrecedent yet — fold
+  // them into `subject` (otherwise unused by this file family) so the information
+  // survives the seed instead of being silently dropped. A proper `appeal_*` column
+  // is a schema/migration change, out of scope for this parser fix.
+  let subject = String(meta.subject || meta.topic || "");
+  if (!subject && meta.has_appeal === true && meta.appeal_ruling_number) {
+    const appealDate = meta.appeal_ruling_date_hijri ? ` بتاريخ ${meta.appeal_ruling_date_hijri}` : "";
+    subject = `استئناف رقم ${meta.appeal_ruling_number}${appealDate}`;
+  }
+
   return {
     id: fileId,
     slug: (meta.slug as string) || slugifyArabic(title) || fileId,
     title,
-    court: String(meta.court || ""),
+    court: String(meta.court || meta.court_type || ""),
     court_type: String(meta.court_type || "ordinary"),
     ruling_number: String(meta.ruling_number || ""),
     case_number: String(meta.case_number || ""),
-    year: String(meta.year || meta.year_hijri || ""),
-    date: String(meta.date || ""),
-    subject: String(meta.subject || ""),
+    year: String(meta.year || meta.year_hijri || meta.case_year_hijri || ""),
+    date: String(meta.date || meta.ruling_date_hijri || ""),
+    subject,
     cat: String(meta.cat || meta.section_code || ""),
     summary: String(meta.summary || ""),
     summary_brief: String(meta.summary_brief || ""),
@@ -532,6 +581,7 @@ export function parsePrecedents(inputPath: string): PrecedentsParserOutput {
       const precedent = parseCourtPrecedent(file);
       if (precedent) {
         courtPrecedents.push(precedent);
+        continue;
       }
     } catch (err) {
       console.error(`  ✗ Failed to parse ${file}: ${(err as Error).message}`);

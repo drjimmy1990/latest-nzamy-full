@@ -55,6 +55,7 @@ export interface ParsedArticle {
   regulations: ExecutiveRegulation[];
   amendments: AmendmentEntry[];
   free: boolean;
+  instrument?: string;
 }
 
 export interface ParsedChapter {
@@ -408,6 +409,7 @@ function parseArticlesInBlock(
       regulations,
       amendments,
       free: artMeta.free !== false,
+      instrument: artMeta.instrument ? String(artMeta.instrument) : undefined,
     });
   }
 

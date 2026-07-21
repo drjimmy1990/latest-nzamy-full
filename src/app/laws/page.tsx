@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { normalizeArabic } from "@/utils/normalizeArabic";
 import {
   MagnifyingGlass, Faders, CaretDown, Check,
 } from "@phosphor-icons/react";
@@ -39,6 +40,7 @@ import {
   type FeqhType,
   type FeqhMadhab,
   type PrecMode,
+  type DocSubType,
   CONTENT_TYPES,
   PLACEHOLDERS,
   PLACEHOLDERS_EN,
@@ -46,9 +48,11 @@ import {
   MAIN_CATEGORIES,
   OTHER_CATEGORIES,
   matchesFeqhCategory,
+  LAW_DOC_TYPES,
 } from "@/constants/lawsLibraryData";
 
 import { LibraryHero } from "./components/LibraryHero";
+import { AiTabContent } from "./components/AiTabContent";
 import { PrecedentsTabContent } from "./components/PrecedentsTabContent";
 import { OrdersTabContent } from "./components/OrdersTabContent";
 import { LawsTabContent } from "./components/LawsTabContent";
@@ -108,13 +112,19 @@ export default function LegalLibraryPage() {
 
   const [precPage,       setPrecPage]       = useState(1);
   const [precSort,       setPrecSort]       = useState<"relevance" | "year-desc" | "year-asc" | "date-desc">("relevance");
+  const [docSubType,     setDocSubType]     = useState<DocSubType>("all");
   const [showAdvSearch,  setShowAdvSearch]  = useState(false);
   const [mounted,        setMounted]        = useState(false);
   const [layoutMode,     setLayoutMode]     = useState<"grid" | "list">("grid");
   const [showSidebars,   setShowSidebars]   = useState(true);
+  const [libraryMode,    setLibraryMode]    = useState<"library" | "ai">("library");
 
-  // Arabic Normalization Helper (shared utility)
-  const { normalizeArabic } = require("@/utils/normalizeArabic");
+  // Tell the global floating buttons (WhatsApp/report/draft FABs from the
+  // root layout) to hide themselves while the AI tab fills the screen.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("nzamy-ai-mode", { detail: { active: libraryMode === "ai" } }));
+    return () => { window.dispatchEvent(new CustomEvent("nzamy-ai-mode", { detail: { active: false } })); };
+  }, [libraryMode]);
 
   // — API-backed autocomplete state —
   const [autocompleteCounts, setAutocompleteCounts] = useState<{ laws: number; precedents: number; orders: number; feqh: number }>({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
@@ -215,7 +225,7 @@ export default function LegalLibraryPage() {
     if (isLoadedRef.current) {
       setPrecPage(1);
     }
-  }, [search, activeType, activeCat, precSource, precTrack, precSort]);
+  }, [search, activeType, activeCat, precSource, precTrack, precSort, docSubType]);
 
   // — Rotating placeholder —
   const [phIdx, setPhIdx] = useState(0);
@@ -271,6 +281,9 @@ export default function LegalLibraryPage() {
       const savedPrecSort = sessionStorage.getItem("nzamy_search_precSort");
       if (savedPrecSort !== null) setPrecSort(savedPrecSort as any);
 
+      const savedDocSubType = sessionStorage.getItem("nzamy_search_docSubType");
+      if (savedDocSubType !== null) setDocSubType(savedDocSubType as any);
+
       const savedShowSidebars = sessionStorage.getItem("nzamy_search_showSidebars");
       if (savedShowSidebars !== null) setShowSidebars(savedShowSidebars === "true");
 
@@ -320,6 +333,7 @@ export default function LegalLibraryPage() {
       sessionStorage.setItem("nzamy_search_orderIssuer", orderIssuer);
       sessionStorage.setItem("nzamy_search_precPage", precPage.toString());
       sessionStorage.setItem("nzamy_search_precSort", precSort);
+      sessionStorage.setItem("nzamy_search_docSubType", docSubType);
       sessionStorage.setItem("nzamy_search_showSidebars", showSidebars.toString());
     }
   }, [
@@ -336,6 +350,7 @@ export default function LegalLibraryPage() {
     orderIssuer,
     precPage,
     precSort,
+    docSubType,
     showSidebars
   ]);
   if (!mounted) return null;
@@ -511,7 +526,9 @@ export default function LegalLibraryPage() {
         lastUpdated: law.issue_date_hijri || "—",
         cat: classifyLawCategory(law),
         type: "laws",
-        subType: "basic"
+        subType: "basic",
+        sub_types: law.has_merged_regulation ? ["لائحة تنفيذية"] : [],
+        doc_type: "نظام"
       }))
     : []) as any[]; // honest empty state — no fabricated laws in prod (mirrors the gated DEMO_* lists)
 
@@ -621,12 +638,12 @@ export default function LegalLibraryPage() {
     let feqhCount = 0;
 
     if (catId === "all") {
-      lawsCount = lawsList.length;
+      lawsCount = lawsList.filter(s => docSubType === "all" || s.doc_type === docSubType || (s.sub_types && s.sub_types.includes(docSubType))).length;
       precedentsCount = precedentsList.length;
       ordersCount = ordersList.length;
       feqhCount = booksList.length;
     } else {
-      lawsCount = lawsList.filter(s => s.cat === catId).length;
+      lawsCount = lawsList.filter(s => s.cat === catId && (docSubType === "all" || s.doc_type === docSubType || (s.sub_types && s.sub_types.includes(docSubType)))).length;
       precedentsCount = precedentsList.filter(s => s.cat === catId).length;
       ordersCount = ordersList.filter(s => s.cat === catId).length;
       feqhCount = booksList.filter(b => matchesFeqhCategory(b as any, catId)).length;
@@ -661,9 +678,10 @@ export default function LegalLibraryPage() {
       }))
     : lawsList.filter(s => {
         const inCat  = activeCat === "all" || s.cat === activeCat;
-        // When no search query, show all; local filter only for category browsing
+        const inDoc  = docSubType === "all" || s.doc_type === docSubType ||
+                       (s.sub_types && s.sub_types.includes(docSubType));
         const inQ   = !nq || normalizeArabic(s.title).includes(nq) || normalizeArabic(s.desc).includes(nq);
-        return inCat && inQ;
+        return inCat && inDoc && inQ;
       });
 
   // ─── Filter: Principles ───────────────────────────────────────────────────────
@@ -809,12 +827,62 @@ export default function LegalLibraryPage() {
         <InvitationBanner />
       </div>
 
-      {/* ── Library Hero ── */}
-      <LibraryHero isDark={isDark} isRTL={isRTL} muted={muted} />
+      {/* ── Library Hero + Mode Switcher ── */}
+      <div>
+        <LibraryHero isDark={isDark} isRTL={isRTL} muted={muted} />
+        {/* Mode Switcher — Library / AI */}
+        <div className="flex justify-center pb-6 px-4">
+          <div className={`flex flex-wrap items-center justify-center gap-1 p-1 rounded-2xl border shadow-lg backdrop-blur-md ${
+            isDark
+              ? "bg-[#0e1a14]/90 border-white/[0.08] shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)]"
+              : "bg-white/90 border-slate-200/80 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.15)]"
+          }`}>
+            <button
+              onClick={() => setLibraryMode("library")}
+              className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
+                libraryMode === "library"
+                  ? "bg-[#0B3D2E] text-white shadow-md"
+                  : isDark ? "text-white/40 hover:text-white/70" : "text-slate-400 hover:text-slate-600"
+              }`}
+            >
+              <PhosphorIcons.Books size={16} weight={libraryMode === "library" ? "fill" : "regular"} />
+              {isRTL ? "المكتبة القانونية" : "Legal Library"}
+            </button>
+            <button
+              onClick={() => setLibraryMode("ai")}
+              className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
+                libraryMode === "ai"
+                  ? "text-white shadow-md"
+                  : isDark ? "text-white/40 hover:text-white/70" : "text-slate-400 hover:text-slate-600"
+              }`}
+              style={libraryMode === "ai" ? { background: "linear-gradient(135deg, #0B3D2E, #1a6b50)" } : undefined}
+            >
+              <PhosphorIcons.Robot size={16} weight={libraryMode === "ai" ? "duotone" : "regular"} />
+              {isRTL ? "نظامي AI" : "Nezamy AI"}
+              {libraryMode !== "ai" && (
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-[#C8A762]/20 text-[#C8A762]">
+                  {isRTL ? "جديد" : "NEW"}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
 
       {/* ── Main Layout ─────────────────────────────────────────────────────── */}
       <section className="pb-32 px-4 flex-1">
         <div className="mx-auto max-w-[1200px]">
+
+          {/* ── AI Mode — Full-Width Chat Interface ────────────────────────── */}
+          {libraryMode === "ai" && (
+            <div className="mt-6">
+              <AiTabContent isDark={isDark} isRTL={isRTL} />
+            </div>
+          )}
+
+          {/* ── Library Mode — all existing content below ─────────────────── */}
+          {libraryMode === "library" && (<>
 
           {/* Search Bar */}
           <div className="mb-6 flex flex-col md:flex-row gap-3">
@@ -929,7 +997,7 @@ export default function LegalLibraryPage() {
                 <button
                   type="button"
                   onClick={() => setLayoutMode("grid")}
-                  className={`p-2 rounded-xl transition-all duration-200 flex items-center justify-center ${
+                  className={`p-2.5 rounded-xl transition-all duration-200 flex items-center justify-center ${
                     layoutMode === "grid"
                       ? "bg-[#0B3D2E] text-white shadow-sm"
                       : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
@@ -941,7 +1009,7 @@ export default function LegalLibraryPage() {
                 <button
                   type="button"
                   onClick={() => setLayoutMode("list")}
-                  className={`p-2 rounded-xl transition-all duration-200 flex items-center justify-center ${
+                  className={`p-2.5 rounded-xl transition-all duration-200 flex items-center justify-center ${
                     layoutMode === "list"
                       ? "bg-[#0B3D2E] text-white shadow-sm"
                       : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
@@ -980,7 +1048,7 @@ export default function LegalLibraryPage() {
               const isActive = activeType === ct.id;
               return (
                 <button key={ct.id}
-                  onClick={() => { setActiveType(ct.id); setPrecMode("all"); setPrecSource("all"); setFeqhType("all"); setFeqhMadhab("all"); setOrderIssuer("all"); }}
+                  onClick={() => { setActiveType(ct.id); setActiveCat("all"); setPrecMode("all"); setPrecSource("all"); setFeqhType("all"); setFeqhMadhab("all"); setOrderIssuer("all"); }}
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl border text-sm font-semibold transition-all duration-200 ${
                     isActive
                       ? isDark ? "bg-[#0B3D2E] text-white border-[#0B3D2E]" : "bg-[#0B3D2E] text-white border-[#0B3D2E] shadow-sm"
@@ -994,86 +1062,120 @@ export default function LegalLibraryPage() {
             })}
           </div>
 
-          {/* ROW 2: Category section tabs */}
-          <div className="mb-8 overflow-x-auto scrollbar-none w-full">
-            <div className={`inline-flex items-center p-1.5 rounded-2xl border whitespace-nowrap ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
-              {MAIN_CATEGORIES.map(cat => {
-                const isActive = activeCat === cat.id;
-                const Icon     = cat.icon;
-                const count    = cat.id === "all" ? null : getCatTotalCount(cat.id, activeType);
+          {/* ROW 1.5: Sub-type selector (Only for Laws) */}
+          {activeType === "laws" && (
+            <div className="flex flex-wrap items-center gap-1.5 mb-4 p-2 rounded-2xl border bg-white/5 border-white/5">
+              {LAW_DOC_TYPES.map((st) => {
+                const isActive = docSubType === st.id;
+                let label = isRTL ? st.label : st.labelEn;
+                if (st.id === "all") {
+                  label = isRTL ? "نظام وتفصيلات فرعية" : "Law & Sub-Legislations";
+                } else if (st.id === "نظام") {
+                  label = isRTL ? "نظام فقط" : "Law Only";
+                }
                 return (
-                  <button key={cat.id} onClick={() => setActiveCat(cat.id)}
-                    className={`relative flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                  <button
+                    key={st.id}
+                    onClick={() => setDocSubType(st.id)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 ${
                       isActive
-                        ? isDark ? "text-white" : "text-white bg-[#0B3D2E]"
-                        : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                        ? isDark
+                          ? "bg-[#C8A762]/10 border border-[#C8A762]/30 text-[#C8A762]"
+                          : "bg-[#0B3D2E] text-white border border-[#0B3D2E] shadow-sm"
+                        : isDark
+                        ? "border border-white/5 bg-white/5 text-gray-400 hover:text-white hover:bg-white/10"
+                        : "border border-gray-200 bg-white text-gray-500 hover:bg-slate-50 hover:text-gray-800"
                     }`}
                   >
-                    {isActive && isDark && <motion.div layoutId="cat-active" className="absolute inset-0 bg-white/10 rounded-xl" />}
-                    <Icon size={16} weight={isActive ? "fill" : "duotone"} className="relative z-10 hidden sm:block" />
-                    <span className="relative z-10">{isRTL ? cat.label : cat.labelEn}</span>
-                    {count !== null && count > 0 && (
-                      <span className={`relative z-10 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                        isActive ? "bg-white/20 text-white" : isDark ? "bg-white/5 text-gray-500" : "bg-gray-100 text-gray-500"
-                      }`}>{count}</span>
-                    )}
-                    {count !== null && count === 0 && (
-                      <span className={`relative z-10 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                        isDark ? "bg-white/5 text-gray-600" : "bg-gray-100 text-gray-400"
-                      }`}>{isRTL ? "قريباً" : "Soon"}</span>
-                    )}
+                    {label}
                   </button>
                 );
               })}
+            </div>
+          )}
 
-              {/* Other dropdown */}
-              <div className="relative">
-                <button onClick={() => setOtherMenuOpen(!otherMenuOpen)}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                    isOtherActive
-                      ? isDark ? "bg-white/10 text-white" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
-                      : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-                  }`}
-                >
-                  <span>{isRTL ? "أخرى" : "Other"}</span>
-                  <CaretDown size={14} weight="bold" className={`transition-transform duration-200 ${otherMenuOpen ? "rotate-180" : ""}`} />
-                </button>
-                <AnimatePresence>
-                  {otherMenuOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }} transition={{ duration: 0.15 }}
-                      className={`absolute top-full mt-2 w-56 rounded-2xl border shadow-xl z-30 p-2 ${isRTL ? "right-0" : "left-0"} ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}
+          {/* ROW 2: Category section tabs */}
+          {activeType === "laws" && (
+            <div className="mb-8 overflow-x-auto scrollbar-none w-full">
+              <div className={`inline-flex items-center p-1.5 rounded-2xl border whitespace-nowrap ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
+                {MAIN_CATEGORIES.map(cat => {
+                  const isActive = activeCat === cat.id;
+                  const Icon     = cat.icon;
+                  const count    = cat.id === "all" ? null : getCatTotalCount(cat.id, activeType);
+                  return (
+                    <button key={cat.id} onClick={() => setActiveCat(cat.id)}
+                      className={`relative flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                        isActive
+                          ? isDark ? "text-white" : "text-white bg-[#0B3D2E]"
+                          : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                      }`}
                     >
-                      {OTHER_CATEGORIES.map(cat => {
-                        const isSelect = activeCat === cat.id;
-                        const count    = getCatTotalCount(cat.id, activeType);
-                        return (
-                          <button key={cat.id}
-                            onClick={() => { setActiveCat(cat.id); setOtherMenuOpen(false); }}
-                            className={`w-full flex items-center justify-between px-3 py-2.5 text-sm rounded-xl transition ${
-                              isSelect
-                                ? isDark ? "bg-white/10 text-white font-bold" : "bg-gray-100 text-gray-900 font-bold"
-                                : isDark ? "text-gray-400 hover:bg-white/5 hover:text-white" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                            }`}
-                          >
-                            <span>{isRTL ? cat.label : cat.labelEn}</span>
-                            <div className="flex items-center gap-1.5">
-                              {count > 0
-                                ? <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>{count}</span>
-                                : <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-600" : "bg-gray-100 text-gray-400"}`}>{isRTL ? "قريباً" : "Soon"}</span>
-                              }
-                              {isSelect && <Check size={14} weight="bold" />}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                      {isActive && isDark && <motion.div layoutId="cat-active" className="absolute inset-0 bg-white/10 rounded-xl" />}
+                      <Icon size={16} weight={isActive ? "fill" : "duotone"} className="relative z-10 hidden sm:block" />
+                      <span className="relative z-10">{isRTL ? cat.label : cat.labelEn}</span>
+                      {count !== null && count > 0 && (
+                        <span className={`relative z-10 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                          isActive ? "bg-white/20 text-white" : isDark ? "bg-white/5 text-gray-500" : "bg-gray-100 text-gray-500"
+                        }`}>{count}</span>
+                      )}
+                      {count !== null && count === 0 && (
+                        <span className={`relative z-10 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                          isDark ? "bg-white/5 text-gray-600" : "bg-gray-100 text-gray-400"
+                        }`}>{isRTL ? "قريباً" : "Soon"}</span>
+                      )}
+                    </button>
+                  );
+                })}
+
+                {/* Other dropdown */}
+                <div className="relative">
+                  <button onClick={() => setOtherMenuOpen(!otherMenuOpen)}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                      isOtherActive
+                        ? isDark ? "bg-white/10 text-white" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
+                        : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                    }`}
+                  >
+                    <span>{isRTL ? "أخرى" : "Other"}</span>
+                    <CaretDown size={14} weight="bold" className={`transition-transform duration-200 ${otherMenuOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  <AnimatePresence>
+                    {otherMenuOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }} transition={{ duration: 0.15 }}
+                        className={`absolute top-full mt-2 w-56 rounded-2xl border shadow-xl z-30 p-2 ${isRTL ? "right-0" : "left-0"} ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}
+                      >
+                        {OTHER_CATEGORIES.map(cat => {
+                          const isSelect = activeCat === cat.id;
+                          const count    = getCatTotalCount(cat.id, activeType);
+                          return (
+                            <button key={cat.id}
+                              onClick={() => { setActiveCat(cat.id); setOtherMenuOpen(false); }}
+                              className={`w-full flex items-center justify-between px-3 py-2.5 text-sm rounded-xl transition ${
+                                isSelect
+                                  ? isDark ? "bg-white/10 text-white font-bold" : "bg-gray-100 text-gray-900 font-bold"
+                                  : isDark ? "text-gray-400 hover:bg-white/5 hover:text-white" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                              }`}
+                            >
+                              <span>{isRTL ? cat.label : cat.labelEn}</span>
+                              <div className="flex items-center gap-1.5">
+                                {count > 0
+                                  ? <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>{count}</span>
+                                  : <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-600" : "bg-gray-100 text-gray-400"}`}>{isRTL ? "قريباً" : "Soon"}</span>
+                                }
+                                {isSelect && <Check size={14} weight="bold" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Active Hashtag Filter Banner */}
           {selectedHashtag && (
@@ -1285,6 +1387,10 @@ export default function LegalLibraryPage() {
                           catHasContent={catHasContent}
                           activeCat={activeCat}
                           hasResults={hasResults}
+                          precSort={precSort}
+                          setPrecSort={setPrecSort}
+                          docSubType={docSubType}
+                          setDocSubType={setDocSubType}
                         />
                         {/* Load More for Laws */}
                         {!isSearchActive && pagination.laws?.hasMore && activeType === "laws" && (
@@ -1370,6 +1476,10 @@ export default function LegalLibraryPage() {
             )}
 
           </div>
+
+          {/* Close library mode conditional */}
+          </>)}
+
         </div>
       </section>
 

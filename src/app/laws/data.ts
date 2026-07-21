@@ -36,6 +36,7 @@ export interface LawArticle {
   status: ArticleStatus;
   free: boolean;
   text: string;
+  instrument?: string;
   executiveReg?: ExecutiveRegulation;
   amendments?: AmendmentEntry[];
   repealedBy?: string;
@@ -50,14 +51,30 @@ export interface LawChapter {
   articles: LawArticle[];
 }
 
+export interface LawAppendix {
+  id: string;
+  type: "جدول" | "ملحق";
+  title: string;
+  content: string;
+}
+
 export type LawDocumentType =
   | "نظام"
   | "لائحة"
+  | "لائحة تنفيذية"
   | "نظام_ولائحة"
   | "قرار"
   | "تعميم"
   | "قواعد"
-  | "ضوابط";
+  | "ضوابط"
+  | "أمر سامي"
+  | "دليل"
+  | "دليل إرشادي"
+  | "سياسة"
+  | "جداول"
+  | "تعليمات"
+  | "ملحق"
+  | "ضوابط التنفيذ";
 
 export type LawStatus = "active" | "repealed" | "suspended" | "partially_amended";
 
@@ -73,6 +90,7 @@ export interface LawSystem {
   preamble: string;              // نص الديباجة
   chapters: LawChapter[];
   regulationPreamble?: string;   // نص ديباجة اللائحة
+  appendices?: LawAppendix[];    // جداول/ملاحق مستوى الوثيقة (اختياري — أنظمة قليلة فقط)
 
   // ── حقول البطاقة التعريفية — كلها اختيارية ──
   document_type?: LawDocumentType;          // نوع الوثيقة
@@ -87,6 +105,10 @@ export interface LawSystem {
   regulation_decree?: string;               // رقم أداة اللائحة التنفيذية
   boe_url?: string;                         // رابط هيئة الخبراء
   law_status?: LawStatus;                   // حالة النظام (مختلف عن ArticleStatus)
+  metadata_card?: {
+    main: { key: string; value: string }[];
+    more: { key: string; value: string }[];
+  };
 }
 
 // ─── Feqh Book & Principles Types ──────────────────────────────────────────────
@@ -110,6 +132,11 @@ export interface FeqhChapter {
   sections: FeqhSection[];
 }
 
+export interface FeqhBookVolume {
+  number: number | string;
+  title: string;
+}
+
 export interface FeqhBookSystem {
   id: string;
   title: string;
@@ -119,6 +146,7 @@ export interface FeqhBookSystem {
   publisher: string;
   totalVolumes: number;
   chapters: FeqhChapter[];
+  volumes?: FeqhBookVolume[];
 }
 
 export interface PrincipleDetail {
@@ -148,14 +176,23 @@ export interface JudicialPrincipleItem {
   details: PrincipleDetail;
 }
 
+export interface JudicialPrinciplesVolume {
+  number: number | string;
+  title: string;
+  total_pages?: number;
+  total_principles?: number;
+  principles: JudicialPrincipleItem[];
+}
+
 export interface JudicialPrinciplesSystem {
   id: string;
   title: string;
   court: string;
   yearHijri: number;
-  part: number;
+  part?: number;
   sourceId: string;
   principles: JudicialPrincipleItem[];
+  volumes?: JudicialPrinciplesVolume[];
 }
 
 // ─── نظام الشركات ─────────────────────────────────────────────────────────────

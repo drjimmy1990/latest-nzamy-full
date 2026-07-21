@@ -355,7 +355,7 @@ export default function PartnersPage() {
               </p>
               <div className="flex flex-wrap justify-center gap-4">
                 <motion.a
-                  href="mailto:partners@nezamy.com"
+                  href="mailto:partners@nezamy.sa"
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
                   className="inline-flex items-center gap-2.5 rounded-2xl bg-gold px-8 py-4 text-sm font-bold text-royal shadow-[0_8px_24px_-6px_rgba(200,167,98,0.5)] hover:bg-gold-light transition-all"

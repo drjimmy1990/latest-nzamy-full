@@ -132,10 +132,10 @@ export default function FolderCard({
                   isDark ? "bg-[#0c0f12] border-[#2d3748] text-white" : "bg-gray-50 border-gray-200 text-gray-900"
                 }`}
               />
-              <button onClick={handleSave} className="p-1 rounded-lg text-emerald-500 hover:bg-emerald-500/10">
+              <button onClick={handleSave} className="p-2 rounded-lg text-emerald-500 hover:bg-emerald-500/10">
                 <Check size={14} weight="bold" />
               </button>
-              <button onClick={() => setIsEditing(false)} className="p-1 rounded-lg text-gray-400 hover:bg-gray-100">
+              <button onClick={() => setIsEditing(false)} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100">
                 <X size={14} weight="bold" />
               </button>
             </div>
@@ -169,7 +169,7 @@ export default function FolderCard({
             <div className="relative flex items-center">
               <button
                 onClick={() => { setShowMenu(!showMenu); setShowColors(false); }}
-                className={`p-1.5 rounded-lg transition-all ${
+                className={`p-2 rounded-lg transition-all ${
                   isDark ? "hover:bg-white/5 text-gray-400 hover:text-white" : "hover:bg-gray-100 text-gray-500 hover:text-gray-800"
                 }`}
                 title={isRTL ? "خيارات المجلد" : "Folder options"}
@@ -253,7 +253,7 @@ export default function FolderCard({
           )}
           <button
             onClick={() => onToggle()}
-            className={`p-1.5 text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+            className={`p-2 text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
           >
             <CaretDown size={14} />
           </button>
@@ -318,7 +318,7 @@ export default function FolderCard({
                     </Link>
                     <button
                       onClick={() => onRemoveItem(law.slug, t)}
-                      className={`p-1 rounded-md text-red-400 hover:bg-red-500/10 transition-all`}
+                      className={`p-2 rounded-md text-red-400 hover:bg-red-500/10 transition-all`}
                     >
                       <Trash size={12} />
                     </button>

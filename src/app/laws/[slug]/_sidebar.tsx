@@ -50,161 +50,293 @@ export default function SidebarPanel({
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
   const textStart = isRTL ? "text-right" : "text-left";
 
-  const renderIdentity = () => (
-    <div className={`${card} ${border} p-3`}>
-      {/* نوع الوثيقة + القسم */}
-      <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
-        {lawMeta.document_type && (
-          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${
-            sectionColors?.bg ?? "bg-slate-500/10"
-          } ${sectionColors?.text ?? "text-slate-500"} ${sectionColors?.border ?? "border-slate-500/20"}`}>
-            {lawMeta.document_type === "نظام_ولائحة" ? "نظام + لائحة" : lawMeta.document_type}
-          </span>
-        )}
-        {lawMeta.section_name && (
-          <span className={`text-[9px] px-2 py-0.5 rounded-full border ${
-            isDark ? "border-white/10 text-zinc-500" : "border-slate-200 text-slate-500"
-          }`}>
-            {lawMeta.section_name}
-          </span>
-        )}
-      </div>
+  const renderValue = (val: string) => {
+    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    
+    while ((match = linkRegex.exec(val)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(val.substring(lastIndex, match.index));
+      }
+      const text = match[1];
+      const url = match[2];
+      parts.push(
+        <a
+          key={match.index}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#C8A762] hover:underline font-bold"
+        >
+          {text}
+        </a>
+      );
+      lastIndex = linkRegex.lastIndex;
+    }
+    
+    if (lastIndex < val.length) {
+      parts.push(val.substring(lastIndex));
+    }
+    
+    return parts.length > 0 ? parts : val;
+  };
 
-      {/* حقول البطاقة */}
-      <div className="space-y-2">
-        {lawMeta.document_type === "نظام_ولائحة" ? (
-          <>
-            {/* قسم النظام */}
-            <div className="space-y-1.5 pb-2 border-b border-dashed border-slate-100 dark:border-white/[0.05]">
-              <div className="flex items-center gap-1 mb-1">
-                <Stack size={11} className="text-[#C8A762]" weight="fill" />
-                <span className="text-[9px] font-black text-[#C8A762]">{isRTL ? "تفاصيل النظام" : "Law Details"}</span>
+  const getFieldIcon = (key: string) => {
+    if (key.includes("نوع") || key.includes("تصنيف") || key.includes("التصنيف")) return <Tag size={10} className={muted} />;
+    if (key.includes("حالة") || key.includes("سريان") || key.includes("نفاذ")) return <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1 flex-shrink-0" />;
+    if (key.includes("أداة") || key.includes("مرسوم") || key.includes("قرار") || key.includes("أمر")) return <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
+    if (key.includes("تاريخ") || key.includes("نشر") || key.includes("إصدار")) return <CalendarBlank size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
+    if (key.includes("مصدر") || key.includes("بوابة") || key.includes("رابط")) return <BookOpen size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
+    if (key.includes("جهة") || key.includes("وزارة") || key.includes("مجلس")) return <Buildings size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
+    if (key.includes("لائحة") || key.includes("لوائح")) return <Stack size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
+    return <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
+  };
+
+  const renderIdentity = () => {
+    if (law.metadata_card) {
+      return (
+        <div className={`${card} ${border} p-3`}>
+          {/* نوع الوثيقة + القسم */}
+          <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
+            <span className="text-[9px] font-black px-2 py-0.5 rounded-full border border-[#C8A762]/20 text-[#C8A762] bg-[#C8A762]/5">
+              {law.metadata_card.main.find(f => f.key === "نوع التشريع")?.value || (isRTL ? "نظام" : "Law")}
+            </span>
+            {(lawMeta.section_name || law.metadata_card.more.find(f => f.key === "التصنيف")?.value) && (
+              <span className={`text-[9px] px-2 py-0.5 rounded-full border ${isDark ? "border-white/10 text-zinc-500" : "border-slate-200 text-slate-500"}`}>
+                {lawMeta.section_name || law.metadata_card.more.find(f => f.key === "التصنيف")?.value}
+              </span>
+            )}
+          </div>
+
+          {/* حقول البطاقة */}
+          <div className="space-y-2">
+            {law.metadata_card.main.map((item, idx) => {
+              const val = (item.value || "").trim();
+              if (!val || val === "لا يوجد" || val === "غير متوفر" || val === "غير محدد" || val === "لا يتوفر" || val === "غير متوفرة" || val === "غير مبينة") {
+                return null;
+              }
+              return (
+                <div key={idx} className="flex gap-1.5 items-start">
+                  {getFieldIcon(item.key)}
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{item.key}</p>
+                    <p className={`text-[10px] font-semibold leading-tight break-words ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
+                      {renderValue(item.value)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* المزيد من بيانات التشريع */}
+            {law.metadata_card.more && law.metadata_card.more.length > 0 && (() => {
+              const visibleMore = law.metadata_card.more.filter(item => {
+                const val = (item.value || "").trim();
+                return val && val !== "لا يوجد" && val !== "غير متوفر" && val !== "غير محدد" && val !== "لا يتوفر" && val !== "غير متوفرة" && val !== "غير مبينة";
+              });
+              if (visibleMore.length === 0) return null;
+              return (
+                <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">
+                  <details className="group">
+                    <summary className="list-none flex items-center justify-between text-[10px] font-black text-[#C8A762] cursor-pointer hover:underline focus:outline-none">
+                      <span>{isRTL ? "➕ المزيد من بيانات التشريع" : "➕ More Details"}</span>
+                      <span className="transition-transform duration-200 group-open:rotate-180 text-[8px]">▼</span>
+                    </summary>
+                    <div className="mt-2.5 space-y-2 pl-0.5">
+                      {visibleMore.map((item, idx) => (
+                        <div key={idx} className="flex gap-1.5 items-start">
+                          {getFieldIcon(item.key)}
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{item.key}</p>
+                            <p className={`text-[10px] font-semibold leading-tight break-words ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
+                              {renderValue(item.value)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+              );
+            })()}
+
+            {/* زر حفظ في مجلداتي */}
+            <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">
+              <button
+                onClick={() => setShowFolderModal(true)}
+                className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold border transition ${
+                  isDark
+                    ? "border-[#C8A762]/30 text-[#C8A762] bg-[#C8A762]/5 hover:bg-[#C8A762]/10"
+                    : "border-[#0B3D2E]/20 text-[#0B3D2E] bg-[#0B3D2E]/5 hover:bg-[#0B3D2E]/10"
+                }`}
+              >
+                <FolderSimple size={14} weight="bold" />
+                <span>{isRTL ? "حفظ في مجلداتي" : "Save to Folders"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={`${card} ${border} p-3`}>
+        {/* نوع الوثيقة + القسم */}
+        <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
+          {lawMeta.document_type && (
+            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${
+              sectionColors?.bg ?? "bg-slate-500/10"
+            } ${sectionColors?.text ?? "text-slate-500"} ${sectionColors?.border ?? "border-slate-500/20"}`}>
+              {lawMeta.document_type === "نظام_ولائحة" ? "نظام + لائحة" : lawMeta.document_type}
+            </span>
+          )}
+          {lawMeta.section_name && (
+            <span className={`text-[9px] px-2 py-0.5 rounded-full border ${
+              isDark ? "border-white/10 text-zinc-500" : "border-slate-200 text-slate-500"
+            }`}>
+              {lawMeta.section_name}
+            </span>
+          )}
+        </div>
+
+        {/* حقول البطاقة */}
+        <div className="space-y-2">
+          {lawMeta.document_type === "نظام_ولائحة" ? (
+            <>
+              {/* قسم النظام */}
+              <div className="space-y-1.5 pb-2 border-b border-dashed border-slate-100 dark:border-white/[0.05]">
+                <div className="flex items-center gap-1 mb-1">
+                  <Stack size={11} className="text-[#C8A762]" weight="fill" />
+                  <span className="text-[9px] font-black text-[#C8A762]">{isRTL ? "تفاصيل النظام" : "Law Details"}</span>
+                </div>
+                
+                {(law.issuanceDecree || lawMeta.issuanceDecree) && (
+                  <div className="flex gap-1.5 items-start">
+                    <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+                    <div>
+                      <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "أداة الإصدار" : "Issuance"}</p>
+                      <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{law.issuanceDecree || lawMeta.issuanceDecree}</p>
+                    </div>
+                  </div>
+                )}
+                
+                {(lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length) && (
+                  <div className="flex items-center justify-between text-[9px] mt-1">
+                    <span className={muted}>{isRTL ? "عدد مواد النظام" : "Law Articles"}</span>
+                    <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length}</span>
+                  </div>
+                )}
               </div>
-              
-              {law.issuanceDecree && (
+
+              {/* قسم اللائحة التنفيذية */}
+              <div className="space-y-1.5 pb-2 border-b border-dashed border-slate-100 dark:border-white/[0.05]">
+                <div className="flex items-center gap-1 mb-1">
+                  <BookOpen size={11} className="text-[#C8A762]" weight="fill" />
+                  <span className="text-[9px] font-black text-[#C8A762]">{isRTL ? "تفاصيل اللائحة التنفيذية" : "Regulation Details"}</span>
+                </div>
+                
+                {lawMeta.regulation_decree && (
+                  <div className="flex gap-1.5 items-start">
+                    <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+                    <div>
+                      <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "أداة إصدار اللائحة" : "Regulation Instrument"}</p>
+                      <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.regulation_decree}</p>
+                    </div>
+                  </div>
+                )}
+                
+                {lawMeta.regulation_articles && (
+                  <div className="flex items-center justify-between text-[9px] mt-1">
+                    <span className={muted}>{isRTL ? "عدد مواد اللائحة" : "Reg Articles"}</span>
+                    <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.regulation_articles}</span>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {(law.issuanceDecree || lawMeta.issuanceDecree) && (
                 <div className="flex gap-1.5 items-start">
                   <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
                   <div>
                     <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "أداة الإصدار" : "Issuance"}</p>
-                    <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{law.issuanceDecree}</p>
+                    <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{law.issuanceDecree || lawMeta.issuanceDecree}</p>
                   </div>
                 </div>
               )}
-              
-              {lawMeta.total_articles && (
-                <div className="flex items-center justify-between text-[9px] mt-1">
-                  <span className={muted}>{isRTL ? "عدد مواد النظام" : "Law Articles"}</span>
-                  <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.total_articles}</span>
+              {(lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length) && (
+                <div className="flex items-center justify-between text-[9px]">
+                  <span className={muted}>{isRTL ? "عدد المواد" : "Articles"}</span>
+                  <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length}</span>
                 </div>
               )}
-            </div>
+            </>
+          )}
 
-            {/* قسم اللائحة التنفيذية */}
-            <div className="space-y-1.5 pb-2 border-b border-dashed border-slate-100 dark:border-white/[0.05]">
-              <div className="flex items-center gap-1 mb-1">
-                <BookOpen size={11} className="text-[#C8A762]" weight="fill" />
-                <span className="text-[9px] font-black text-[#C8A762]">{isRTL ? "تفاصيل اللائحة التنفيذية" : "Regulation Details"}</span>
+          {/* الحقول العامة المشتركة */}
+          {lawMeta.latestAmendmentDecree && (
+            <div className="flex gap-1.5 items-start">
+              <CalendarBlank size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+              <div>
+                <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "آخر تعديل" : "Last Amendment"}</p>
+                <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.latestAmendmentDecree}</p>
               </div>
-              
-              {lawMeta.regulation_decree && (
-                <div className="flex gap-1.5 items-start">
-                  <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
-                  <div>
-                    <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "أداة إصدار اللائحة" : "Regulation Instrument"}</p>
-                    <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.regulation_decree}</p>
-                  </div>
-                </div>
-              )}
-              
-              {lawMeta.regulation_articles && (
-                <div className="flex items-center justify-between text-[9px] mt-1">
-                  <span className={muted}>{isRTL ? "عدد مواد اللائحة" : "Reg Articles"}</span>
-                  <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.regulation_articles}</span>
-                </div>
-              )}
             </div>
-          </>
-        ) : (
-          <>
-            {law.issuanceDecree && (
-              <div className="flex gap-1.5 items-start">
-                <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
-                <div>
-                  <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "أداة الإصدار" : "Issuance"}</p>
-                  <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{law.issuanceDecree}</p>
-                </div>
+          )}
+          {lawMeta.issuing_authority && (
+            <div className="flex gap-1.5 items-start">
+              <Buildings size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+              <div>
+                <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "الجهة المصدرة" : "Authority"}</p>
+                <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.issuing_authority}</p>
               </div>
-            )}
-            {lawMeta.total_articles && (
-              <div className="flex items-center justify-between text-[9px]">
-                <span className={muted}>{isRTL ? "عدد المواد" : "Articles"}</span>
-                <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.total_articles}</span>
+            </div>
+          )}
+          {law.source && (
+            <div className="flex gap-1.5 items-start">
+              <Tag size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+              <div>
+                <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "المصدر" : "Source"}</p>
+                <p className={`text-[10px] leading-tight ${muted}`}>{law.source}</p>
               </div>
-            )}
-          </>
-        )}
-
-        {/* الحقول العامة المشتركة */}
-        {lawMeta.latestAmendmentDecree && (
-          <div className="flex gap-1.5 items-start">
-            <CalendarBlank size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
-            <div>
-              <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "آخر تعديل" : "Last Amendment"}</p>
-              <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.latestAmendmentDecree}</p>
             </div>
-          </div>
-        )}
-        {lawMeta.issuing_authority && (
-          <div className="flex gap-1.5 items-start">
-            <Buildings size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
-            <div>
-              <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "الجهة المصدرة" : "Authority"}</p>
-              <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.issuing_authority}</p>
-            </div>
-          </div>
-        )}
-        {law.source && (
-          <div className="flex gap-1.5 items-start">
-            <Tag size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
-            <div>
-              <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "المصدر" : "Source"}</p>
-              <p className={`text-[10px] leading-tight ${muted}`}>{law.source}</p>
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* حالة النظام */}
-        <div className="flex items-center gap-1.5 pt-1">
-          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-            (lawMeta.law_status ?? "active") === "active" ? "bg-emerald-500" :
-            lawMeta.law_status === "repealed" ? "bg-red-500" : "bg-amber-500"
-          }`} />
-          <span className={`text-[9px] font-bold ${
-            (lawMeta.law_status ?? "active") === "active" ? (isDark ? "text-emerald-400" : "text-emerald-600") :
-            lawMeta.law_status === "repealed" ? "text-red-500" : "text-amber-500"
-          }`}>
-            {(lawMeta.law_status ?? "active") === "active" ? (isRTL ? "ساري" : "Active") :
-             lawMeta.law_status === "repealed" ? (isRTL ? "ملغى" : "Repealed") :
-             (isRTL ? "معلّق" : "Suspended")}
-          </span>
-        </div>
+          {/* حالة النظام */}
+          <div className="flex items-center gap-1.5 pt-1">
+            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+              (lawMeta.law_status ?? "active") === "active" ? "bg-emerald-500" :
+              lawMeta.law_status === "repealed" ? "bg-red-500" : "bg-amber-500"
+            }`} />
+            <span className={`text-[9px] font-bold ${
+              (lawMeta.law_status ?? "active") === "active" ? (isDark ? "text-emerald-400" : "text-emerald-600") :
+              lawMeta.law_status === "repealed" ? "text-red-500" : "text-amber-500"
+            }`}>
+              {(lawMeta.law_status ?? "active") === "active" ? (isRTL ? "ساري" : "Active") :
+               lawMeta.law_status === "repealed" ? (isRTL ? "ملغى" : "Repealed") :
+               (isRTL ? "معلّق" : "Suspended")}
+            </span>
+          </div>
 
-        <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">
-          <button
-            onClick={() => setShowFolderModal(true)}
-            className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold border transition ${
-              isDark
-                ? "border-[#C8A762]/30 text-[#C8A762] bg-[#C8A762]/5 hover:bg-[#C8A762]/10"
-                : "border-[#0B3D2E]/20 text-[#0B3D2E] bg-[#0B3D2E]/5 hover:bg-[#0B3D2E]/10"
-            }`}
-          >
-            <FolderSimple size={14} weight="bold" />
-            <span>{isRTL ? "حفظ في مجلداتي" : "Save to Folders"}</span>
-          </button>
+          <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">
+            <button
+              onClick={() => setShowFolderModal(true)}
+              className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold border transition ${
+                isDark
+                  ? "border-[#C8A762]/30 text-[#C8A762] bg-[#C8A762]/5 hover:bg-[#C8A762]/10"
+                  : "border-[#0B3D2E]/20 text-[#0B3D2E] bg-[#0B3D2E]/5 hover:bg-[#0B3D2E]/10"
+              }`}
+            >
+              <FolderSimple size={14} weight="bold" />
+              <span>{isRTL ? "حفظ في مجلداتي" : "Save to Folders"}</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderIndex = () => (
     <div className="space-y-3">
@@ -239,7 +371,7 @@ export default function SidebarPanel({
         </div>
 
         {/* النتائج */}
-        <div className="space-y-0.5 max-h-[50vh] overflow-y-auto">
+        <div className="space-y-0.5">
           {viewMode === "regulation" ? (
             /* وضع اللائحة فقط — قائمة مسطحة من مواد اللائحة */
             (() => {

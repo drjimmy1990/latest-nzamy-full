@@ -470,6 +470,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   const [isPrimaryInstance, setIsPrimaryInstance] = useState(true);
   const [waOpen,     setWaOpen]     = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [aiModeActive, setAiModeActive] = useState(false);
   const [userCategory, setUserCategory] = useState<UserCategory>(null);
   const effectiveUserCategory = userCategory ?? autoCategory;
 
@@ -481,6 +482,15 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
     window.addEventListener("nzamy-open-cart", handler);
     return () => window.removeEventListener("nzamy-open-cart", handler);
   }, []);
+
+  // Hidden while a page (e.g. the /laws AI tab) signals it's in full-screen
+  // AI mode. Reset on route change so it never stays stuck hidden.
+  useEffect(() => {
+    const handler = (e: Event) => setAiModeActive(!!(e as CustomEvent<{ active: boolean }>).detail?.active);
+    window.addEventListener("nzamy-ai-mode", handler);
+    return () => window.removeEventListener("nzamy-ai-mode", handler);
+  }, []);
+  useEffect(() => { setAiModeActive(false); }, [pathname]);
 
   useEffect(() => {
     const refreshPrimaryInstance = () => {
@@ -508,7 +518,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   const reportTooltip = isRTL ? "أبلغ عن مشكلة" : "Report an issue";
 
   return (
-    <div ref={rootRef} data-nzamy-floating-root="true" className={`${isPrimaryInstance ? "" : "hidden"} print:hidden`}>
+    <div ref={rootRef} data-nzamy-floating-root="true" className={`${isPrimaryInstance && !aiModeActive ? "" : "hidden"} print:hidden`}>
       {/* WhatsApp Panel */}
       <WhatsAppWidget
         open={waOpen} onClose={closeWa}

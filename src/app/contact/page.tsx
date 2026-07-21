@@ -133,10 +133,10 @@ export default function ContactPage() {
                 {
                   icon: Envelope,
                   title: isRTL ? "البريد الإلكتروني" : "Email",
-                  value: "info@nezamy.com",
+                  value: "info@nezamy.sa",
                   sub: isRTL ? "رد خلال ٢٤ ساعة" : "Reply within 24 hours",
                   color: "bg-royal/10 text-royal",
-                  href: "mailto:info@nezamy.com",
+                  href: "mailto:info@nezamy.sa",
                 },
                 {
                   icon: MapPin,

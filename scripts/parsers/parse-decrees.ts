@@ -230,16 +230,20 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
     slug: slugifyArabic(title) || fileId,
     title,
     type: detectDecreeType(String(meta.type || "circular")),
-    issuer: String(meta.issuer || meta.issuing_body || ""),
-    ref: String(meta.ref || meta.reference || ""),
-    date: String(meta.date || ""),
+    // Section 30 مراسيم/قرارات (2026-06 extraction round) use `issuing_authority`
+    // rather than `issuer`/`issuing_body`.
+    issuer: String(meta.issuer || meta.issuing_body || meta.issuing_authority || ""),
+    // Section 30 circulars (2026-07 card-v2 campaign) use `tameem_number`/`decree_number`
+    // rather than `ref`/`reference`; مراسيم use `decree_date`, circulars `issue_date_hijri`.
+    ref: String(meta.ref || meta.reference || meta.tameem_number || meta.decree_number || ""),
+    date: String(meta.date || meta.issue_date_hijri || meta.decree_date || ""),
     summary: String(meta.summary || ""),
     summary_brief: String(meta.summary_brief || ""),
     preamble,
     cat: String(meta.cat || meta.section_code || ""),
     articles,
     hashtags: ((meta.hashtags as string[]) || []),
-    official_url: String(meta.official_url || ""),
+    official_url: String(meta.official_url || meta.source || ""),
     raw_pages: [],
     metadata: meta,
   };

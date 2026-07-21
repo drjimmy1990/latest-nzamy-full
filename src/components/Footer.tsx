@@ -16,6 +16,7 @@ const footerLinksAr = {
     { label: "الأسئلة الشائعة", href: "/faq" },
     { label: "الشروط والأحكام", href: "/terms" },
     { label: "سياسة الخصوصية", href: "/privacy" },
+    { label: "سياسة الاسترجاع والاستبدال", href: "/refund-policy" },
     { label: "إخلاء مسؤولية AI", href: "/ai-disclaimer" },
   ],
   "خدمات المنصة": [
@@ -46,6 +47,7 @@ const footerLinksEn = {
     { label: "FAQ", href: "/faq" },
     { label: "Terms & Conditions", href: "/terms" },
     { label: "Privacy Policy", href: "/privacy" },
+    { label: "Refund & Exchange Policy", href: "/refund-policy" },
     { label: "AI Disclaimer", href: "/ai-disclaimer" },
   ],
   "Platform Services": [
@@ -136,8 +138,8 @@ export default function Footer() {
           </div>
           <p className="text-xs text-ink-faint">
             {isAr
-              ? `جميع الحقوق محفوظة لشركة نظامي للتقنية القانونية ${new Date().getFullYear()}`
-              : `All rights reserved. Nezamy Legal Tech ${new Date().getFullYear()}`}
+              ? `جميع الحقوق محفوظة لشركة نظامي للمحاماة ${new Date().getFullYear()}`
+              : `All rights reserved. Nezamy Law Firm ${new Date().getFullYear()}`}
           </p>
         </div>
       </div>

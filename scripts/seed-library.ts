@@ -222,7 +222,7 @@ async function seedLaws(
       issue_date_hijri: String(law.issuance_date || "").substring(0, 20),
       issue_date_gregorian: String(law.issue_date_gregorian || "").substring(0, 20),
       total_articles: law.total_articles || 0,
-      preamble: law.preamble || "",
+      preamble: (law.preamble || "") + (law.regulation_preamble ? `\n***\n${law.regulation_preamble}` : ""),
       has_merged_regulation: law.has_executive_reg || false,
       status: (law.law_status || "active").substring(0, 30),
       boe_source_url: String(law.boe_source_url || law.boe_url || "").substring(0, 500),
@@ -261,7 +261,7 @@ async function seedLaws(
           free: art.free !== false,
           executive_reg_text: regs.map(r => r.text || "").join("\n\n") || null,
           executive_reg_ref: regs.map(r => r.ref || "").join(", ") || null,
-          instrument: regs[0]?.instrument || null,
+          instrument: art.instrument || regs[0]?.instrument || null,
           order_index: parseInt(art.number) || 0,
         });
 
