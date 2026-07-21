@@ -460,6 +460,18 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
 // collection_id/collection_title/part_label. The container itself becomes a
 // judicial_collections row (no extra per-file row → no duplication).
 
+// Extract an Arabic H2–H4 section (الوقائع / الأسباب / المنطوق) out of a ruling
+// body. Handles BOTH newline-delimited headings and the inline
+// "... ### الوقائع ..." flow used by the 97/1- ministry container files: the
+// section runs from the heading to the next H2–H4 marker or end-of-body.
+// Returns "" when the heading is absent.
+function extractRulingSection(body: string, synonyms: string[]): string {
+  const alt = synonyms.join("|");
+  const re = new RegExp(`#{2,4}\\s*(?:${alt})\\s([\\s\\S]*?)(?=#{2,4}\\s|$)`, "u");
+  const m = body.match(re);
+  return m ? m[1].trim() : "";
+}
+
 function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | null {
   const raw = fs.readFileSync(filePath, "utf-8");
   const { meta, body } = parseYamlFrontmatter(raw);
@@ -500,6 +512,15 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
     if (!aMeta) { idx++; continue; }
     const artBody = match[2].replace(/^>\s*/gm, "").trim();
     const number = Number(aMeta.number || ++idx);
+    // Graft (2026-07): these 97/1- ministry container files embed each ruling's
+    // الوقائع / الأسباب / المنطوق as inline H2–H4 sections inside the ARTICLE body
+    // (not <details> blocks). Extract them so the precedent detail page shows the
+    // full facts/reasons/ruling breakdown instead of the summary alone; fall back
+    // to the summary for the ruling headline when no المنطوق section is present.
+    const facts = extractRulingSection(artBody, ["الوقائع", "وقائع"]);
+    const reasons = extractRulingSection(artBody, ["الأسباب", "التسبيب", "أسباب"]);
+    const ruling =
+      extractRulingSection(artBody, ["المنطوق", "منطوق", "الحكم"]) || String(aMeta.summary || "");
     principles.push({
       number,
       issuing_body: String(aMeta.court_type || inherited.issuing_body || ""),
@@ -512,7 +533,7 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
       text: String(aMeta.summary || artBody || ""),
       classification_keywords: [],
       sub_principles: [],
-      details: { facts: "", reasons: "", ruling: String(aMeta.summary || ""), ruling_basis: "" },
+      details: { facts, reasons, ruling, ruling_basis: "" },
       free: aMeta.free !== false,
     });
   }
