@@ -138,11 +138,11 @@ npm run library:status
 
 ### الخطوة ٢ — امسح البيانات القديمة
 ```bash
-# أولاً: شوف ماذا سيُحذف (بدون حذف فعلي)
-npm run library:clear -- --dry
-
-# إذا كل شيء صحيح، امسح فعلياً
+# أولاً: شوف ماذا سيُحذف (المعاينة هي الوضع الافتراضي — بدون حذف)
 npm run library:clear
+
+# إذا كل شيء صحيح، امسح فعلياً (وعلى الإنتاج أضف --force-prod)
+npm run library:clear -- --live
 ```
 
 ### الخطوة ٣ — حلّل ملفات المحتوى
@@ -173,11 +173,11 @@ npm run library:verify
 ## 4. أمر واحد يفعل كل شيء (Reseed)
 
 ```bash
-# ① حلّل المحتوى
-npm run library:parse -- --input "D:/المسار/إلى/المكتبة_القانونية"
+# أعد البذرة كاملة: parse → زرع → تحقق (يمرّر --input تلقائياً إلى خطوة parse)
+npm run library:reseed -- --input "D:/المسار/إلى/المكتبة_القانونية"
 
-# ② أعد البذرة كاملة (مسح + زرع + تحقق)
-npm run library:reseed
+# نسخة مع مسح حي أولاً (مدمِّرة — على الإنتاج أضف --force-prod)
+npm run library:reseed:wipe -- --input "D:/المسار/إلى/المكتبة_القانونية"
 ```
 
 ---
@@ -186,7 +186,7 @@ npm run library:reseed
 
 ```bash
 # مثال: تحديث الأنظمة فقط
-npm run library:clear -- --type laws
+npm run library:clear -- --live --type laws
 npm run library:parse -- --input "D:/المسار" --type laws
 npm run library:seed -- --type laws
 ```
@@ -200,15 +200,15 @@ npm run library:seed -- --type laws
 | الأمر | ماذا يفعل | متى تستخدمه |
 |-------|-----------|-------------|
 | `npm run library:status` | عدد الصفوف | تحقق سريع |
-| `npm run library:clear` | مسح الكل | قبل إعادة البذرة |
-| `npm run library:clear -- --dry` | عرض بدون مسح | فحص قبل المسح |
-| `npm run library:clear -- --type laws` | مسح قسم واحد | تحديث جزئي |
+| `npm run library:clear` | معاينة المسح (DRY افتراضياً) | فحص قبل المسح |
+| `npm run library:clear -- --live` | مسح الكل فعلياً | قبل إعادة البذرة |
+| `npm run library:clear -- --live --type laws` | مسح قسم واحد فعلياً | تحديث جزئي |
 | `npm run library:parse -- --input "مسار"` | تحليل → JSON | بعد تعديل المحتوى |
 | `npm run library:parse -- --input "مسار" --type feqh` | تحليل قسم واحد | تحديث جزئي |
 | `npm run library:seed` | زرع في DB | بعد التحليل |
 | `npm run library:seed -- --dry-run` | زرع تجريبي | فحص قبل الزرع |
 | `npm run library:verify` | فحص صحة | بعد الزرع |
-| `npm run library:reseed` | مسح + زرع + فحص | إعادة كاملة |
+| `npm run library:reseed -- --input "مسار"` | parse + زرع + فحص | إعادة كاملة |
 
 ---
 

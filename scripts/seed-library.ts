@@ -228,7 +228,7 @@ async function seedLaws(
       boe_source_url: String(law.boe_source_url || law.boe_url || "").substring(0, 500),
       official_source_url: String(law.official_source_url || "").substring(0, 500),
       article_status_summary: String(law.article_status_summary || "").substring(0, 500),
-      law_guid: String(law.law_guid || law.law_guid || "").substring(0, 100),
+      law_guid: String(law.law_guid || "").substring(0, 100),
     });
 
     const chapters = (law.chapters || []) as any[];
@@ -338,16 +338,22 @@ async function seedDecrees(
   const pageRows: Record<string, unknown>[] = [];
 
   const uuidMap = new Map<string, string>();
+  // Deterministic UUID from a stable source id (NOT random) so re-seeding UPSERTs
+  // the same decrees_circulars/decree_pages rows instead of accumulating duplicates
+  // on every run. UUIDv5-style: sha1(id) → first 16 bytes with version/variant bits.
   const getUuid = (id: string): string => {
     if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
       return id.toLowerCase();
     }
-    if (uuidMap.has(id)) {
-      return uuidMap.get(id)!;
-    }
-    const newUuid = crypto.randomUUID();
-    uuidMap.set(id, newUuid);
-    return newUuid;
+    const cached = uuidMap.get(id);
+    if (cached) return cached;
+    const h = crypto.createHash("sha1").update(id).digest();
+    h[6] = (h[6] & 0x0f) | 0x50; // version 5
+    h[8] = (h[8] & 0x3f) | 0x80; // RFC-4122 variant
+    const hex = h.subarray(0, 16).toString("hex");
+    const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+    uuidMap.set(id, uuid);
+    return uuid;
   };
 
   for (const dec of decrees) {

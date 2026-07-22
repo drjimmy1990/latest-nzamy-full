@@ -340,23 +340,26 @@ npm run library:seed -- --clean --type feqh
 
 ### 4.4 `library:clear` — مسح البيانات (Clear Database)
 
-**ماذا يفعل:** يحذف جميع الصفوف من جداول المكتبة. يمسح بترتيب آمن (الأبناء أولاً) لتجنب أخطاء المفاتيح الأجنبية.
+**ماذا يفعل:** يحذف صفوف جداول المكتبة بترتيب آمن (الأبناء أولاً) لتجنب أخطاء المفاتيح الأجنبية. **الوضع الافتراضي معاينة (DRY)** — لا يحذف شيئاً ما لم تُمرّر `--live`.
 
-**هل يكتب في قاعدة البيانات:** ✅ نعم — يحذف (ما لم تستخدم `--dry`)
+**هل يكتب في قاعدة البيانات:** فقط مع `--live` (وعلى رابط إنتاج يتطلب أيضاً `--force-prod` + كتابة "yes" في طرفية تفاعلية). بدون `--live` = معاينة آمنة. ⚠️ العلم `--dry` القديم لم يعد له أثر (المعاينة هي الافتراضي).
 
 ```bash
-# معاينة (يعرض عدد الصفوف فقط — لا يحذف شيئاً)
-npm run library:clear -- --dry
-
-# مسح جميع جداول المكتبة
+# معاينة (الوضع الافتراضي — يعرض عدد الصفوف فقط، لا يحذف)
 npm run library:clear
 
-# مسح مجموعة واحدة فقط
-npm run library:clear -- --type laws
-npm run library:clear -- --type decrees
-npm run library:clear -- --type precedents
-npm run library:clear -- --type feqh
-npm run library:clear -- --type user
+# مسح فعلي لجميع جداول المكتبة
+npm run library:clear -- --live
+
+# مسح فعلي على الإنتاج
+npm run library:clear -- --live --force-prod
+
+# مسح فعلي لمجموعة واحدة فقط (أضف --live)
+npm run library:clear -- --live --type laws
+npm run library:clear -- --live --type decrees
+npm run library:clear -- --live --type precedents
+npm run library:clear -- --live --type feqh
+npm run library:clear -- --live --type user
 ```
 
 **الأعلام (Flags):**
@@ -441,28 +444,32 @@ node library-toolkit/library-verify.mjs
 
 ### 4.6 `library:reseed` — إعادة الزرع الكاملة (Full Reseed Pipeline)
 
-**ماذا يفعل:** ينفذ ثلاث خطوات متتالية:
-1. `library:clear` — مسح جميع البيانات
-2. `library:seed` — زرع البيانات من `output/`
-3. `library:verify` — التحقق من النتائج
+**ماذا يفعل:** ينفذ السلسلة الكاملة عبر `library-reseed.mjs`: **parse → seed → verify** (بدون مسح — آمن وقابل للتكرار). يتطلب `--input`.
 
-**هل يكتب في قاعدة البيانات:** ✅ نعم — يمسح ويزرع
+**هل يكتب في قاعدة البيانات:** ✅ نعم — يزرع (UPSERT). لا يمسح إلا في نسخة `:wipe`.
 
 ```bash
-npm run library:reseed
+# إعادة زرع آمنة (لا مسح) — يمرر --input إلى خطوة parse
+npm run library:reseed -- --input ./content/library
+
+# نوع واحد فقط
+npm run library:reseed -- --input ./content/library --type laws
+
+# مع مسح حي أولاً (مدمِّر) — على الإنتاج أضف --force-prod
+npm run library:reseed:wipe -- --input ./content/library
 ```
 
-> ⚠️ **ملاحظة:** هذا الأمر لا يُنفذ `parse`. تأكد أنك نفذت `library:parse` أولاً وأن ملفات JSON في `output/` محدثة.
+> ⚠️ **مهم:** يجب تمرير `--input`. الأمر القديم كان يشغّل `parse` بلا `--input` فيفشل فوراً — تم إصلاحه بمنسّق `library-reseed.mjs`.
 
 **ما يعادله يدوياً:**
 
 ```bash
-npm run library:clear && npm run library:seed && npm run library:verify
+npm run library:parse -- --input ./content/library && npm run library:seed && npm run library:verify
 ```
 
 **متى تستخدمه:**
 - ✅ بعد تحديث المحتوى وتحليله
-- ✅ لإعادة تعبئة قاعدة البيانات بالكامل
+- ✅ لإعادة تعبئة قاعدة البيانات بالكامل (استخدم `:wipe` فقط عند الحاجة لمسح مسبق)
 
 ---
 
@@ -497,11 +504,12 @@ SUPABASE_URL=https://... SUPABASE_SERVICE_ROLE_KEY=... node library-toolkit/libr
 | `npm run library:seed` | **زرع جميع الأنواع** | ✅ نعم |
 | `npm run library:seed -- --type laws` | زرع نوع واحد | ✅ نعم |
 | `npm run library:seed -- --clean` | مسح + زرع | ✅ نعم |
-| `npm run library:clear -- --dry` | معاينة المسح | ❌ لا |
-| `npm run library:clear` | **مسح جميع الجداول** | ✅ نعم |
-| `npm run library:clear -- --type laws` | مسح مجموعة واحدة | ✅ نعم |
+| `npm run library:clear` | معاينة المسح (DRY افتراضياً) | ❌ لا |
+| `npm run library:clear -- --live` | **مسح فعلي لجميع الجداول** | ✅ نعم |
+| `npm run library:clear -- --live --type laws` | مسح فعلي لمجموعة واحدة | ✅ نعم |
 | `npm run library:verify` | فحوصات التحقق | ❌ لا |
-| `npm run library:reseed` | **مسح → زرع → تحقق** | ✅ نعم |
+| `npm run library:reseed -- --input <path>` | **parse → زرع → تحقق** (بلا مسح) | ✅ نعم |
+| `npm run library:reseed:wipe -- --input <path>` | **مسح → parse → زرع → تحقق** | ✅ نعم |
 
 ---
 

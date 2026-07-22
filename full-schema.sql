@@ -5625,6 +5625,8 @@ create table if not exists library.laws (
   article_status_summary jsonb         default '{}'::jsonb,
   latest_update          jsonb,
   has_merged_regulation  boolean       not null default false,
+  issue_date_gregorian   varchar(20),
+  law_guid               varchar(100),
 
 -- FTS column — auto-populated by trigger
 

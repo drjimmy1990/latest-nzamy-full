@@ -77,14 +77,14 @@ npm run library:status
 
 ### ② امسح البيانات القديمة (إن وجدت)
 
-**أولاً — فحص جاف (بدون حذف فعلي):**
-```powershell
-npm run library:clear -- --dry
-```
-
-**ثانياً — مسح فعلي:**
+**أولاً — فحص جاف (المعاينة هي الوضع الافتراضي — بدون حذف):**
 ```powershell
 npm run library:clear
+```
+
+**ثانياً — مسح فعلي (يتطلب `--live`؛ وعلى الإنتاج أيضاً `--force-prod`):**
+```powershell
+npm run library:clear -- --live
 ```
 
 > ✅ هذا يمسح كل الجداول الـ 17 بترتيب آمن (الجداول الفرعية أولاً ثم الرئيسية).
@@ -166,8 +166,8 @@ cd "D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website"
 # ① شوف الوضع
 npm run library:status
 
-# ② امسح القديم
-npm run library:clear
+# ② امسح القديم (معاينة افتراضياً — أضف --live للمسح الفعلي)
+npm run library:clear -- --live
 
 # ③ حلّل المحتوى
 npm run library:parse -- --input "D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\test\library-last\نماذج هيكل الأقسام الرئيسية"
@@ -183,13 +183,14 @@ npm run library:status
 
 ## أو: أمر واحد بعد التحليل
 
-إذا حللت المحتوى (الخطوة ③) وتريد مسح + زرع + تحقق بأمر واحد:
+إذا أردت parse + زرع + تحقق بأمر واحد (بدون مسح — آمن وقابل للتكرار):
 
 ```powershell
-npm run library:reseed
+npm run library:reseed -- --input "D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\test\library-last\نماذج هيكل الأقسام الرئيسية"
 ```
 
-> هذا يساوي: `library:clear` + `library:seed` + `library:verify`
+> هذا يساوي: `library:parse -- --input …` + `library:seed` + `library:verify`.
+> للمسح المسبق استخدم `npm run library:reseed:wipe -- --input …` (مدمِّر).
 
 ---
 

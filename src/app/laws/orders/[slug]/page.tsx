@@ -17,6 +17,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import { DEMO_ORDERS, type DemoOrder } from "../../demo-data-access";
+import { isSupabaseMode } from "@/lib/services/api";
 import { ISSUER_MAP } from "../../components/ListItems";
 import { useDraftCart } from "@/hooks/useDraftCart";
 import { SmartFolder } from "../../components/SmartFolders";
@@ -149,7 +150,10 @@ export default function OrderReaderPage() {
       } catch (e) {
         console.warn('[OrderReader] API fetch failed, using demo fallback:', e);
       }
-      // Fallback to demo data
+      // Fallback to demo data — demo mode ONLY. In supabase/production mode the
+      // decrees API is authoritative; never render fabricated demo decree content
+      // (a missing/404 slug must show not-found, not a dummy order).
+      if (isSupabaseMode) return;
       const found = DEMO_ORDERS.find(o => o.id === slug);
       if (found) {
         setOrder(found);
