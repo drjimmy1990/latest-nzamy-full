@@ -106,10 +106,11 @@ function createSupabaseClient(url: string, key: string) {
         params.append(key, value);
       }
       // PostgREST refuses an unfiltered DELETE (400). When no filter is given,
-      // use `id=not.is.null` which matches every row (all library tables have an
-      // `id` PK) so --clean actually clears the table instead of silently no-op'ing.
+      // match every row via a "<pk> not null" predicate so --clean actually clears
+      // the table. `laws` has no `id` column (its PK is `slug`); every other library
+      // table has `id`. Using the wrong column 400s ("column ... does not exist").
       if (params.toString() === "") {
-        params.append("id", "not.is.null");
+        params.append(table === "laws" ? "slug" : "id", "not.is.null");
       }
 
       try {
@@ -135,6 +136,21 @@ function createSupabaseClient(url: string, key: string) {
 
 const BATCH_SIZE = 100;
 
+// Postgres `text`/`jsonb` cannot store NUL (U+0000); PostgREST rejects it with
+// 22P05 "unsupported Unicode escape sequence". Scanned/HTML/PDF-extracted source
+// (decrees, feqh) contains stray NULs — strip them from every string value,
+// recursing into arrays/objects, before upserting.
+function stripNul<T>(value: T): T {
+  if (typeof value === "string") return value.split(String.fromCharCode(0)).join("") as unknown as T;
+  if (Array.isArray(value)) return value.map(stripNul) as unknown as T;
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = stripNul(v);
+    return out as unknown as T;
+  }
+  return value;
+}
+
 async function batchUpsert(
   client: NonNullable<typeof supabaseClient>,
   table: string,
@@ -151,25 +167,64 @@ async function batchUpsert(
     return;
   }
 
+  // Upsert a slice; on failure, split-and-retry down to a single row. This both
+  // shrinks the payload past a Postgres statement timeout (57014) AND isolates a
+  // single offending row so one bad row no longer fails its whole 100-row batch.
+  async function upsertSlice(slice: Record<string, unknown>[]): Promise<void> {
+    if (slice.length === 0) return;
+    const { error } = await client.upsert(table, slice.map(stripNul));
+    if (!error) {
+      stats.inserted += slice.length;
+      return;
+    }
+    if (slice.length > 1) {
+      const mid = Math.floor(slice.length / 2);
+      await upsertSlice(slice.slice(0, mid));
+      await upsertSlice(slice.slice(mid));
+      return;
+    }
+    // Single row still failing → record and move on (don't abort the whole seed).
+    console.error(`\n    ✗ Row failed in ${table}: ${error}`);
+    errors.push(`${table} row: ${error}`);
+    stats.errors += 1;
+  }
+
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE);
     const progress = Math.min(i + BATCH_SIZE, rows.length);
-
-    process.stdout.write(
-      `    → ${table}: ${progress}/${rows.length} rows\r`
-    );
-
-    const { error } = await client.upsert(table, batch);
-    if (error) {
-      console.error(`\n    ✗ Error inserting batch into ${table}: ${error}`);
-      errors.push(`${table} batch ${i}-${progress}: ${error}`);
-      stats.errors += batch.length;
-    } else {
-      stats.inserted += batch.length;
-    }
+    process.stdout.write(`    → ${table}: ${progress}/${rows.length} rows\r`);
+    await upsertSlice(batch);
   }
 
-  console.log(`    ✓ ${table}: ${stats.inserted} rows inserted`);
+  console.log(`    ✓ ${table}: ${stats.inserted} inserted, ${stats.errors} errors`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Deterministic UUID (UUIDv5-style) for child rows whose PK/FK columns are `uuid`
+// on the live schema (chapters.id, articles.chapter_id, article_amendments.id,
+// decree_pages.id, principle_paragraphs.id, feqh_chapters.id, feqh_sections.id +
+// chapter_id, feqh_blocks.section_id). Derived string keys like `${lawId}__ch-N`
+// are NOT valid uuids; hashing them to a stable uuid keeps parent↔child FKs
+// consistent AND is idempotent across re-seeds. Passthrough if already a uuid.
+// ══════════════════════════════════════════════════════════════════════════════
+function toUuid(key: string): string {
+  if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(key)) {
+    return key.toLowerCase();
+  }
+  const h = crypto.createHash("sha1").update(key).digest();
+  h[6] = (h[6] & 0x0f) | 0x50; // version 5
+  h[8] = (h[8] & 0x3f) | 0x80; // RFC-4122 variant
+  const hex = h.subarray(0, 16).toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+// Clamp to the PostgreSQL int4 range. Source data sometimes puts a case/ruling
+// number (17+ digits) into an integer column (year_hijri/order_index) → 22003
+// "out of range for type integer". Out-of-range/NaN → fallback instead of a crash.
+const INT4_MAX = 2147483647;
+function safeInt(v: unknown, fallback: number | null): number | null {
+  const n = typeof v === "number" ? v : parseInt(String(v ?? ""), 10);
+  return Number.isFinite(n) && n >= -2147483648 && n <= INT4_MAX ? n : fallback;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -233,7 +288,8 @@ async function seedLaws(
 
     const chapters = (law.chapters || []) as any[];
     for (const ch of chapters) {
-      const chapterId = `${lawId}__ch-${ch.number ?? chapters.indexOf(ch)}`.substring(0, 150);
+      // chapters.id is `uuid` on the live schema → hash the derived key.
+      const chapterId = toUuid(`${lawId}__ch-${ch.number ?? chapters.indexOf(ch)}`);
       chapterRows.push({
         id: chapterId,
         law_slug: lawId.substring(0, 200),
@@ -267,7 +323,8 @@ async function seedLaws(
 
         for (let ai = 0; ai < amends.length; ai++) {
           amendmentRows.push({
-            id: `${artId}__amd-${ai}`.substring(0, 150),
+            // article_amendments.id is `uuid`; article_id (→ articles.id, text) stays.
+            id: toUuid(`${artId}__amd-${ai}`),
             article_id: artId,
             date: (amends[ai].date || "").substring(0, 30),
             source: amends[ai].decree || "",
@@ -337,35 +394,24 @@ async function seedDecrees(
   const decreeRows: Record<string, unknown>[] = [];
   const pageRows: Record<string, unknown>[] = [];
 
-  const uuidMap = new Map<string, string>();
-  // Deterministic UUID from a stable source id (NOT random) so re-seeding UPSERTs
-  // the same decrees_circulars/decree_pages rows instead of accumulating duplicates
-  // on every run. UUIDv5-style: sha1(id) → first 16 bytes with version/variant bits.
-  const getUuid = (id: string): string => {
-    if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
-      return id.toLowerCase();
-    }
-    const cached = uuidMap.get(id);
-    if (cached) return cached;
-    const h = crypto.createHash("sha1").update(id).digest();
-    h[6] = (h[6] & 0x0f) | 0x50; // version 5
-    h[8] = (h[8] & 0x3f) | 0x80; // RFC-4122 variant
-    const hex = h.subarray(0, 16).toString("hex");
-    const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-    uuidMap.set(id, uuid);
-    return uuid;
-  };
-
   for (const dec of decrees) {
     const rawId = String(dec.id || dec.slug);
     if (rawId.includes("EXTRACTION_REPORT")) continue;
 
-    const decId = getUuid(rawId);
+    // decrees_circulars.id is `uuid` and decree source ids are Arabic strings →
+    // deterministic uuid (also makes re-seeds idempotent instead of duplicating).
+    const decId = toUuid(rawId);
 
+    // decrees_circulars.type has a CHECK allowing only royal|cabinet|circular.
+    // Clamp anything else (e.g. the ~15 "ministerial" rows) to circular so the
+    // insert is not rejected (23514).
+    const decType = ["royal", "cabinet", "circular"].includes(String(dec.type))
+      ? String(dec.type)
+      : "circular";
     decreeRows.push({
       id: decId,
       title: dec.title || "",
-      type: (dec.type || "cabinet").substring(0, 30),
+      type: decType,
       issuer: dec.issuer || "",
       ref: dec.ref || "",
       date: dec.date || "",
@@ -382,7 +428,7 @@ async function seedDecrees(
     for (let pi = 0; pi < arts.length; pi++) {
       const art = arts[pi];
       pageRows.push({
-        id: `${decId}__pg-${art.number ?? pi}`.substring(0, 150),
+        id: toUuid(`${decId}__pg-${art.number ?? pi}`), // decree_pages.id is `uuid`
         decree_id: decId,
         page_number: art.number || 0,
         content: art.text || "",
@@ -461,7 +507,7 @@ async function seedPrecedents(
       id: collId,
       title: coll.title || "",
       court: coll.court || "",
-      year_hijri: coll.year_hijri || null,
+      year_hijri: safeInt(coll.year_hijri, null),
       part: coll.part || 1,
       source_id: coll.source_id || "",
       track: (coll.track || "").substring(0, 50),
@@ -489,15 +535,16 @@ async function seedPrecedents(
         facts: pr.details?.facts || "",
         reasons: pr.details?.reasons || "",
         ruling: pr.details?.ruling || "",
-        year_hijri: pr.year_hijri || null,
-        order_index: pr.number || 0,
+        year_hijri: safeInt(pr.year_hijri, null),
+        order_index: safeInt(pr.number, 0),
       });
 
       const subs = (pr.sub_principles || []) as any[];
 
       for (let si = 0; si < subs.length; si++) {
         paragraphRows.push({
-          id: `${prId}__sub-${si}`.substring(0, 150),
+          // principle_paragraphs.id is `uuid`; principle_id (→ principles.id, text) stays.
+          id: toUuid(`${prId}__sub-${si}`),
           principle_id: prId,
           letter: subs[si].letter || "",
           text: subs[si].text || "",
@@ -525,7 +572,7 @@ async function seedPrecedents(
       facts: prec.facts || "",
       reasons: prec.reasons || "",
       ruling: prec.ruling || "",
-      year_hijri: parseInt(String(prec.year)) || null,
+      year_hijri: safeInt(prec.year, null),
       order_index: pi,
     });
   }
@@ -604,20 +651,20 @@ async function seedFeqh(
     const chapters = (book.chapters || []) as any[];
     for (let ci = 0; ci < chapters.length; ci++) {
       const ch = chapters[ci];
-      const chId = `${bookId}__fc-${ci}`.substring(0, 150);
+      const chId = toUuid(`${bookId}__fc-${ci}`); // feqh_chapters.id is `uuid`
 
       chapterRows.push({
         id: chId,
         book_id: bookId,
         title: ch.title || "",
-        volume_number: ch.pages?.[0]?.volume || ch.sections?.[0]?.pages?.[0]?.volume || 1,
+        volume_number: safeInt(ch.pages?.[0]?.volume ?? ch.sections?.[0]?.pages?.[0]?.volume, 1),
         order_index: ci,
       });
 
       // Direct pages under chapter
       const directPages = (ch.pages || []) as any[];
       if (directPages.length > 0) {
-        const dummySecId = `${chId}__fs-general`.substring(0, 150);
+        const dummySecId = toUuid(`${chId}__fs-general`); // feqh_sections.id is `uuid`
         sectionRows.push({
           id: dummySecId,
           chapter_id: chId,
@@ -631,8 +678,8 @@ async function seedFeqh(
             id: `${dummySecId}__blk-${pi}`.substring(0, 150),
             section_id: dummySecId,
             topic: ch.title || "",
-            volume_number: pg.volume || 1,
-            page_number: pg.page_number || 0,
+            volume_number: safeInt(pg.volume, 1),
+            page_number: safeInt(pg.page_number, 0),
             matn: pg.text || "",
             sharh: null,
             hashiyah: {},
@@ -645,7 +692,7 @@ async function seedFeqh(
       const sections = (ch.sections || []) as any[];
       for (let si = 0; si < sections.length; si++) {
         const sec = sections[si];
-        const secId = `${chId}__fs-${si}`.substring(0, 150);
+        const secId = toUuid(`${chId}__fs-${si}`); // feqh_sections.id is `uuid`
 
         sectionRows.push({
           id: secId,
@@ -661,8 +708,8 @@ async function seedFeqh(
             id: `${secId}__blk-${pi}`.substring(0, 150),
             section_id: secId,
             topic: sec.title || "",
-            volume_number: pg.volume || 1,
-            page_number: pg.page_number || 0,
+            volume_number: safeInt(pg.volume, 1),
+            page_number: safeInt(pg.page_number, 0),
             matn: pg.text || "",
             sharh: null,
             hashiyah: {},
