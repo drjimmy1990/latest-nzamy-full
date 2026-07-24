@@ -1048,7 +1048,20 @@ export default function LegalLibraryPage() {
               const isActive = activeType === ct.id;
               return (
                 <button key={ct.id}
-                  onClick={() => { setActiveType(ct.id); setActiveCat("all"); setPrecMode("all"); setPrecSource("all"); setFeqhType("all"); setFeqhMadhab("all"); setOrderIssuer("all"); }}
+                  onClick={() => {
+                    setActiveType(ct.id);
+                    setActiveCat("all");
+                    setDocSubType("all");
+                    setPrecMode("all");
+                    setPrecSource("all");
+                    setPrecTrack("all");
+                    setOrderIssuer("all");
+                    setFeqhType("all");
+                    setFeqhMadhab("all");
+                    setFeqhSubCat("all");
+                    setSelectedHashtag(null);
+                    setPrecPage(1);
+                  }}
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl border text-sm font-semibold transition-all duration-200 ${
                     isActive
                       ? isDark ? "bg-[#0B3D2E] text-white border-[#0B3D2E]" : "bg-[#0B3D2E] text-white border-[#0B3D2E] shadow-sm"
@@ -1103,7 +1116,12 @@ export default function LegalLibraryPage() {
                   const Icon     = cat.icon;
                   const count    = cat.id === "all" ? null : getCatTotalCount(cat.id, activeType);
                   return (
-                    <button key={cat.id} onClick={() => setActiveCat(cat.id)}
+                    <button key={cat.id} onClick={() => {
+                      setActiveCat(cat.id);
+                      if (cat.id === "all") {
+                        setDocSubType("all");
+                      }
+                    }}
                       className={`relative flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
                         isActive
                           ? isDark ? "text-white" : "text-white bg-[#0B3D2E]"

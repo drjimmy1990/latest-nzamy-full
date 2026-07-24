@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -24,7 +24,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { authenticateTest, TEST_ACCOUNTS, TEST_PASSWORD } from "@/lib/test-credentials";
-import { setDemoSession } from "@/hooks/useUser";
+import { setDemoSession, useUser } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isDemoUiEnabled } from "@/lib/runtimeMode";
@@ -142,6 +142,7 @@ export default function LoginPage() {
   const dir = isAr ? "rtl" : "ltr";
 
   const router = useRouter();
+  const user = useUser();
   const [inputMode, setInputMode] = useState<"email" | "phone">("email");
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
@@ -150,6 +151,13 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Redirect if user is already logged in
+  useEffect(() => {
+    if (!user.loading && user.isLoggedIn) {
+      const dest = getDashboardRoute(user.userType);
+      router.replace(dest);
+    }
+  }, [user.loading, user.isLoggedIn, user.userType, router]);
 
   async function handleLogin() {
     setError("");
@@ -159,20 +167,19 @@ export default function LoginPage() {
     }
     setLoading(true);
 
-    // ── Supabase Mode: Real authentication ──────────────────────────────────
-    if (BACKEND_MODE === "supabase") {
-      try {
+    try {
+      // ── Supabase Mode: Real authentication ──────────────────────────────────
+      if (BACKEND_MODE === "supabase") {
         const supabase = createClient();
         const { data, error: authError } = await supabase.auth.signInWithPassword({
           ...(inputMode === "email"
-            ? { email: identifier }
-            : { phone: identifier }),
-          password,
+            ? { email: identifier.trim() }
+            : { phone: identifier.trim() }),
+          password: password.trim(),
         });
 
         if (authError || !data.user) {
           setError(isAr ? "بيانات الدخول غير صحيحة" : "Invalid credentials");
-          setLoading(false);
           return;
         }
 
@@ -186,24 +193,24 @@ export default function LoginPage() {
         const userType = profile?.user_type ?? data.user.user_metadata?.user_type ?? "individual";
         const dest = getDashboardRoute(userType);
         router.push(dest);
-      } catch {
-        setError(isAr ? "حدث خطأ في الاتصال" : "Connection error");
-        setLoading(false);
+        return;
       }
-      return;
-    }
 
-    // ── Demo Mode: Test credentials ─────────────────────────────────────────
-    await new Promise((r) => setTimeout(r, 600));
-    const session = authenticateTest(identifier, password);
-    if (!session) {
-      setError(isAr ? "بيانات الدخول غير صحيحة" : "Invalid credentials");
+      // ── Demo Mode: Test credentials ─────────────────────────────────────────
+      await new Promise((r) => setTimeout(r, 400));
+      const session = authenticateTest(identifier.trim(), password.trim());
+      if (!session) {
+        setError(isAr ? "بيانات الدخول غير صحيحة" : "Invalid credentials");
+        return;
+      }
+      setDemoSession(session);
+      const dest = getDashboardRoute(session.userType);
+      router.push(dest);
+    } catch {
+      setError(isAr ? "حدث خطأ في الاتصال" : "Connection error");
+    } finally {
       setLoading(false);
-      return;
     }
-    setDemoSession(session);
-    const dest = getDashboardRoute(session.userType);
-    router.push(dest);
   }
 
   async function handleGoogleSignIn() {
@@ -222,7 +229,6 @@ export default function LoginPage() {
   }
 
   const containerVariants = {
-    hidden: { opacity: 0 },
     visible: {
       opacity: 1,
       transition: { staggerChildren: 0.08, delayChildren: 0.1 },
@@ -230,7 +236,6 @@ export default function LoginPage() {
   };
 
   const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
     visible: {
       opacity: 1,
       y: 0,
@@ -425,177 +430,183 @@ export default function LoginPage() {
 
           {/* Centered form */}
           <div className="flex flex-1 items-center justify-center px-5 py-10 md:py-8">
-            <motion.div
-              variants={containerVariants}
-              initial="hidden"
-              animate="visible"
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleLogin();
+              }}
               className="w-full max-w-[420px]"
             >
-              {/* Heading */}
-              <motion.div variants={itemVariants} className="mb-8">
-                <h2 className="font-heading text-3xl font-bold text-ink dark:text-gray-100 mb-2">
-                  {txt.welcome}
-                </h2>
-                <p className="text-ink-muted dark:text-gray-400 text-sm">
-                  {txt.subtitle}
-                </p>
-              </motion.div>
+              <motion.div
+                variants={containerVariants}
+                initial={false}
+                animate="visible"
+              >
+                {/* Heading */}
+                <motion.div variants={itemVariants} className="mb-8">
+                  <h2 className="font-heading text-3xl font-bold text-ink dark:text-gray-100 mb-2">
+                    {txt.welcome}
+                  </h2>
+                  <p className="text-ink-muted dark:text-gray-400 text-sm">
+                    {txt.subtitle}
+                  </p>
+                </motion.div>
 
-              {/* Input mode toggle */}
-              <motion.div variants={itemVariants} className="mb-6">
-                <div className="flex rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-card p-1">
-                  {(["email", "phone"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => {
-                        setInputMode(mode);
-                        setIdentifier("");
-                      }}
-                      className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-all duration-200 ${
-                        inputMode === mode
-                          ? "bg-white dark:bg-dark-bg shadow-sm text-royal dark:text-gold border border-slate-200/50 dark:border-dark-border"
-                          : "text-ink-muted dark:text-gray-500 hover:text-ink dark:hover:text-gray-300"
-                      }`}
-                    >
-                      {mode === "email" ? (
-                        <EnvelopeSimple size={16} weight={inputMode === mode ? "fill" : "regular"} />
-                      ) : (
-                        <Phone size={16} weight={inputMode === mode ? "fill" : "regular"} />
-                      )}
-                      <span>
-                        {mode === "email"
-                          ? isAr ? "البريد" : "Email"
-                          : isAr ? "الجوال" : "Phone"}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </motion.div>
-
-              {/* Identifier field */}
-              <motion.div variants={itemVariants} className="mb-4">
-                <label className="block text-sm font-medium text-ink dark:text-gray-300 mb-1.5">
-                  {inputMode === "email" ? txt.emailLabel : txt.phoneLabel}
-                </label>
-                <div className="relative">
-                  <div className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`}>
-                    <AnimatePresence mode="wait">
-                      <motion.span
-                        key={inputMode}
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        transition={{ duration: 0.15 }}
+                {/* Input mode toggle */}
+                <motion.div variants={itemVariants} className="mb-6">
+                  <div className="flex rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-card p-1">
+                    {(["email", "phone"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          setInputMode(mode);
+                          setIdentifier("");
+                        }}
+                        className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-all duration-200 ${
+                          inputMode === mode
+                            ? "bg-white dark:bg-dark-bg shadow-sm text-royal dark:text-gold border border-slate-200/50 dark:border-dark-border"
+                            : "text-ink-muted dark:text-gray-500 hover:text-ink dark:hover:text-gray-300"
+                        }`}
                       >
-                        {inputMode === "email" ? (
-                          <EnvelopeSimple size={18} weight="duotone" />
+                        {mode === "email" ? (
+                          <EnvelopeSimple size={16} weight={inputMode === mode ? "fill" : "regular"} />
                         ) : (
-                          <Phone size={18} weight="duotone" />
+                          <Phone size={16} weight={inputMode === mode ? "fill" : "regular"} />
                         )}
-                      </motion.span>
-                    </AnimatePresence>
+                        <span>
+                          {mode === "email"
+                            ? isAr ? "البريد" : "Email"
+                            : isAr ? "الجوال" : "Phone"}
+                        </span>
+                      </button>
+                    ))}
                   </div>
-                  <input
-                    type={inputMode === "email" ? "email" : "tel"}
-                    value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder={inputMode === "email" ? txt.emailPlaceholder : txt.phonePlaceholder}
-                    dir={inputMode === "phone" ? "ltr" : dir}
-                    className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink dark:text-gray-200 placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
-                  />
-                </div>
-              </motion.div>
+                </motion.div>
 
-              {/* Password field */}
-              <motion.div variants={itemVariants} className="mb-5">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-sm font-medium text-ink dark:text-gray-300">
-                    {txt.passwordLabel}
+                {/* Identifier field */}
+                <motion.div variants={itemVariants} className="mb-4">
+                  <label className="block text-sm font-medium text-ink dark:text-gray-300 mb-1.5">
+                    {inputMode === "email" ? txt.emailLabel : txt.phoneLabel}
                   </label>
-                  <a
-                    href="/forgot-password"
-                    className="text-xs text-royal dark:text-gold hover:underline font-medium transition-colors"
-                  >
-                    {txt.forgot}
-                  </a>
-                </div>
-                <div className="relative">
-                  <div className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`}>
-                    <Lock size={18} weight="duotone" />
+                  <div className="relative">
+                    <div className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`}>
+                      <AnimatePresence mode="wait">
+                        <motion.span
+                          key={inputMode}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          transition={{ duration: 0.15 }}
+                        >
+                          {inputMode === "email" ? (
+                            <EnvelopeSimple size={18} weight="duotone" />
+                          ) : (
+                            <Phone size={18} weight="duotone" />
+                          )}
+                        </motion.span>
+                      </AnimatePresence>
+                    </div>
+                    <input
+                      type={inputMode === "email" ? "email" : "tel"}
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      placeholder={inputMode === "email" ? txt.emailPlaceholder : txt.phonePlaceholder}
+                      dir={inputMode === "phone" ? "ltr" : dir}
+                      className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink dark:text-gray-200 placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
+                    />
                   </div>
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={txt.passwordPlaceholder}
-                    className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink dark:text-gray-200 placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-10" : "pl-10 pr-10"}`}
-                  />
+                </motion.div>
+
+                {/* Password field */}
+                <motion.div variants={itemVariants} className="mb-5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-sm font-medium text-ink dark:text-gray-300">
+                      {txt.passwordLabel}
+                    </label>
+                    <a
+                      href="/forgot-password"
+                      className="text-xs text-royal dark:text-gold hover:underline font-medium transition-colors"
+                    >
+                      {txt.forgot}
+                    </a>
+                  </div>
+                  <div className="relative">
+                    <div className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`}>
+                      <Lock size={18} weight="duotone" />
+                    </div>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={txt.passwordPlaceholder}
+                      className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink dark:text-gray-200 placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-10" : "pl-10 pr-10"}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className={`absolute top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink-muted dark:text-gray-500 dark:hover:text-gray-300 transition-colors ${isAr ? "left-3.5" : "right-3.5"}`}
+                    >
+                      {showPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </motion.div>
+
+                {/* Remember me */}
+                <motion.div variants={itemVariants} className="mb-6">
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className={`absolute top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink-muted dark:text-gray-500 dark:hover:text-gray-300 transition-colors ${isAr ? "left-3.5" : "right-3.5"}`}
+                    onClick={() => setRemember(!remember)}
+                    className="flex items-center gap-2.5 group"
                   >
-                    {showPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </motion.div>
-
-              {/* Remember me */}
-              <motion.div variants={itemVariants} className="mb-6">
-                <button
-                  type="button"
-                  onClick={() => setRemember(!remember)}
-                  className="flex items-center gap-2.5 group"
-                >
-                  <motion.span
-                    animate={{ scale: remember ? [1, 1.2, 1] : 1 }}
-                    transition={{ duration: 0.2 }}
-                    className={`text-lg transition-colors ${remember ? "text-royal dark:text-gold" : "text-ink-faint dark:text-gray-600"}`}
-                  >
-                    {remember ? <CheckSquare weight="fill" size={20} /> : <Square size={20} />}
-                  </motion.span>
-                  <span className="text-sm text-ink-muted dark:text-gray-400 group-hover:text-ink dark:group-hover:text-gray-300 transition-colors select-none">
-                    {txt.remember}
-                  </span>
-                </button>
-              </motion.div>
-
-              {/* Error message */}
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-[13px] font-medium text-red-600 dark:text-red-400"
-                >
-                  <Warning size={16} weight="fill" className="flex-shrink-0" />
-                  {error}
-                </motion.div>
-              )}
-
-              {/* Sign in button */}
-              <motion.div variants={itemVariants} className="mb-4">
-                <motion.button
-                  whileHover={{ scale: 1.015 }}
-                  whileTap={{ scale: 0.985 }}
-                  type="button"
-                  onClick={handleLogin}
-                  disabled={loading}
-                  className={`w-full rounded-xl bg-royal py-3.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] hover:bg-royal-light hover:shadow-[0_8px_24px_-4px_rgba(11,61,46,0.5)] transition-all duration-200 ${loading ? "opacity-70 cursor-wait" : ""}`}
-                >
-                  {loading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <motion.span
-                        animate={{ rotate: 360 }}
-                        transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
-                        className="inline-block h-4 w-4 rounded-full border-2 border-white/30 border-t-white"
-                      />
-                      {isAr ? "جارٍ الدخول..." : "Signing in..."}
+                    <motion.span
+                      animate={{ scale: remember ? [1, 1.2, 1] : 1 }}
+                      transition={{ duration: 0.2 }}
+                      className={`text-lg transition-colors ${remember ? "text-royal dark:text-gold" : "text-ink-faint dark:text-gray-600"}`}
+                    >
+                      {remember ? <CheckSquare weight="fill" size={20} /> : <Square size={20} />}
+                    </motion.span>
+                    <span className="text-sm text-ink-muted dark:text-gray-400 group-hover:text-ink dark:group-hover:text-gray-300 transition-colors select-none">
+                      {txt.remember}
                     </span>
-                  ) : (
-                    txt.signIn
-                  )}
-                </motion.button>
-              </motion.div>
+                  </button>
+                </motion.div>
+
+                {/* Error message */}
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-[13px] font-medium text-red-600 dark:text-red-400"
+                  >
+                    <Warning size={16} weight="fill" className="flex-shrink-0" />
+                    {error}
+                  </motion.div>
+                )}
+
+                {/* Sign in button */}
+                <motion.div variants={itemVariants} className="mb-4">
+                  <motion.button
+                    whileHover={{ scale: 1.015 }}
+                    whileTap={{ scale: 0.985 }}
+                    type="submit"
+                    disabled={loading}
+                    className={`w-full rounded-xl bg-royal py-3.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] hover:bg-royal-light hover:shadow-[0_8px_24px_-4px_rgba(11,61,46,0.5)] transition-all duration-200 ${loading ? "opacity-70 cursor-wait" : ""}`}
+                  >
+                    {loading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <motion.span
+                          animate={{ rotate: 360 }}
+                          transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+                          className="inline-block h-4 w-4 rounded-full border-2 border-white/30 border-t-white"
+                        />
+                        {isAr ? "جارٍ الدخول..." : "Signing in..."}
+                      </span>
+                    ) : (
+                      txt.signIn
+                    )}
+                  </motion.button>
+                </motion.div>
 
               {/* OR divider */}
               <motion.div variants={itemVariants} className="mb-4">
@@ -649,9 +660,10 @@ export default function LoginPage() {
               </motion.div>
               )}
             </motion.div>
-          </div>
+          </form>
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }

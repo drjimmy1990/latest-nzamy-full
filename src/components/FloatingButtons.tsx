@@ -427,6 +427,42 @@ function ReportDrawer({
   );
 }
 
+// Helper to detect if current route is a specific detailed legal item (law, order, precedent, feqh book)
+function isLegalItemDetailPage(pathname: string | null): boolean {
+  if (!pathname) return false;
+
+  // 1. Royal order / circular detail: /laws/orders/[slug]
+  if (pathname.startsWith("/laws/orders/")) {
+    const slug = pathname.substring("/laws/orders/".length);
+    return Boolean(slug && slug.trim() !== "");
+  }
+
+  // 2. Legislation / Law detail: /laws/[slug] (exclude /laws index, subscribe, feqh-preview)
+  if (pathname.startsWith("/laws/")) {
+    const slug = pathname.substring("/laws/".length);
+    if (!slug || slug === "subscribe" || slug === "feqh-preview") {
+      return false;
+    }
+    return true;
+  }
+
+  // 3. Precedent / Judicial principle detail: /precedents/[slug] or /precedents/judgment/[slug]
+  if (pathname.startsWith("/precedents/")) {
+    const slug = pathname.substring("/precedents/".length);
+    if (!slug) return false;
+    return true;
+  }
+
+  // 4. Feqh Book detail: /book/[slug] (exclude /book index or consultation)
+  if (pathname.startsWith("/book/")) {
+    const slug = pathname.substring("/book/".length);
+    if (!slug || slug === "consultation") return false;
+    return true;
+  }
+
+  return false;
+}
+
 // ─── Floating Buttons ────────────────────────────────────────────────────────
 // Single WhatsApp FAB + optional Report mini-FAB stacked above it.
 // Pass reportConfig to show the orange Report button (library pages only).
@@ -436,23 +472,34 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   const { cart, setCart } = useDraftCart();
   const [showCart, setShowCart] = useState(false);
 
-  // Dynamically calculate reportConfig based on pathname
-  let reportConfig: ReportConfig | undefined = undefined;
-  if (pathname === "/laws") {
-    reportConfig = { pageSlug: "laws-index", pageType: "law" };
-  } else if (pathname.startsWith("/laws/orders/")) {
-    const slug = pathname.substring("/laws/orders/".length);
-    reportConfig = { pageSlug: "order-" + slug, pageType: "order" };
-  } else if (pathname.startsWith("/laws/")) {
-    const slug = pathname.substring("/laws/".length);
-    reportConfig = { pageSlug: slug, pageType: "law" };
-  } else if (pathname.startsWith("/precedents/")) {
-    const slug = pathname.substring("/precedents/".length);
-    reportConfig = { pageSlug: slug, pageType: "precedent" };
+  // Check if current page is a specific detailed legal item
+  const isItemDetail = isLegalItemDetailPage(pathname);
+
+  // Dynamically calculate reportConfig based on pathname ONLY when inside a specific legal item page
+  let reportConfig: ReportConfig | undefined = propReportConfig;
+  if (!reportConfig && isItemDetail) {
+    if (pathname.startsWith("/laws/orders/")) {
+      const slug = pathname.substring("/laws/orders/".length);
+      if (slug) reportConfig = { pageSlug: "order-" + slug, pageType: "order" };
+    } else if (pathname.startsWith("/laws/")) {
+      const slug = pathname.substring("/laws/".length);
+      if (slug) reportConfig = { pageSlug: slug, pageType: "law" };
+    } else if (pathname.startsWith("/precedents/judgment/")) {
+      const slug = pathname.substring("/precedents/judgment/".length);
+      if (slug) reportConfig = { pageSlug: "judgment-" + slug, pageType: "precedent" };
+    } else if (pathname.startsWith("/precedents/")) {
+      const slug = pathname.substring("/precedents/".length);
+      if (slug) reportConfig = { pageSlug: slug, pageType: "precedent" };
+    } else if (pathname.startsWith("/book/")) {
+      const slug = pathname.substring("/book/".length);
+      if (slug) reportConfig = { pageSlug: "book-" + slug, pageType: "book" as any };
+    }
   }
 
   // Use props if provided, otherwise use internal draft cart
   const cartCount = propCartCount !== undefined ? propCartCount : cart.length;
+  // Floating Draft Cart FAB is strictly restricted to legal item detail pages
+  const showDraftFab = cartCount > 0 && isItemDetail;
   const removeArticle = (id: string) => {
     setCart(prev => prev.filter(item => item.articleId !== id));
   };
@@ -609,8 +656,8 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
       </div>
 
-      {/* ── Floating Draft Cart FAB ── */}
-      {cartCount > 0 && (
+      {/* ── Floating Draft Cart FAB (Restricted to legal item detail pages) ── */}
+      {showDraftFab && (
         <div className={`fixed bottom-20 md:bottom-6 ${isRTL ? "left-[88px]" : "right-[88px]"} z-[9999] print:hidden`}>
           <div className="relative group">
             {/* Tooltip */}

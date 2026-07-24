@@ -1112,7 +1112,7 @@ function LawSystemPageContent() {
       />
       <PrintWatermark isRTL={isRTL} />
 
-      {/* ── Scroll-to-Top Button ── */}
+      {/* ── Scroll-to-Top Button (Positioned on the RIGHT in RTL to prevent collision) ── */}
       <AnimatePresence>
         {showScrollTop && (
           <motion.button
@@ -1120,15 +1120,18 @@ function LawSystemPageContent() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 20 }}
             transition={{ type: "spring", stiffness: 400, damping: 25 }}
+            whileHover={{ scale: 1.1, y: -2 }}
+            whileTap={{ scale: 0.92 }}
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-            className={`fixed z-[9999] bottom-20 ${isRTL ? "left-4" : "right-4"} w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-colors print:hidden ${
+            className={`fixed z-[9999] bottom-20 md:bottom-6 ${isRTL ? "right-6" : "left-6"} w-12 h-12 rounded-full flex items-center justify-center border transition-all duration-300 print:hidden ${
               isDark
-                ? "bg-zinc-800 border-white/10 text-zinc-300 hover:bg-zinc-700 hover:text-white"
-                : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-[#0B3D2E] shadow-md"
+                ? "bg-[#0B3D2E] border-[#C8A762]/60 text-[#C8A762] hover:bg-[#082d22] hover:border-[#C8A762] shadow-[0_8px_20px_rgba(200,167,98,0.25)]"
+                : "bg-[#0B3D2E] border-[#C8A762] text-[#C8A762] hover:bg-[#082d22] shadow-[0_8px_20px_rgba(11,61,46,0.35)]"
             }`}
             title={isRTL ? "العودة لأعلى الصفحة" : "Scroll to top"}
+            aria-label={isRTL ? "العودة لأعلى الصفحة" : "Scroll to top"}
           >
-            <ArrowUp size={18} weight="bold" />
+            <ArrowUp size={20} weight="bold" />
           </motion.button>
         )}
       </AnimatePresence>
