@@ -14,8 +14,8 @@ summary (`LIBRARY_PIPELINE_FIX_STATUS.md`) is produced at Phase 8 from this file
 
 | # | Phase | Status | Notes |
 |---|---|---|---|
-| **0** | Tooling truth & safety net | 🔄 | Code done. **Backup (0.5) blocked — needs owner.** |
-| **1** | Kill switch (open/close library) | ⬜ | |
+| **0** | Tooling truth & safety net | 🔄 | Code done + committed `d5aca3f`. **Backup (0.5) blocked — needs owner.** |
+| **1** | Kill switch (open/close library) | ✅ | Built + verified end-to-end. **Not yet deployed to VPS.** |
 | **2** | Parser foundations | ⬜ | |
 | **3** | Content correctness (4 tracks) | ⬜ | |
 | **4** | Build `library_next` | ⬜ | |
@@ -170,22 +170,106 @@ hand. Snapshot committed as `library-toolkit/baseline-2026-07-29.json`.
 
 ---
 
-## PHASE 1 — Kill switch ⬜
+## PHASE 1 — Kill switch ✅ (built & verified — deploy pending)
 
 **Goal:** the owner can close/open the library from admin with no redeploy. Insurance for Phase 7.
 
-- [ ] 1.1 Migration `20260729_library_status.sql` (default `'open'` — must be a no-op)
-- [ ] 1.2 `library_status` in `ALLOWED_SETTINGS_KEYS` + value validator (reject typos)
-- [ ] 1.3 `getLibraryStatus()` in `access-control.ts`, mirroring `getPaymentGatewayStatus()`
-- [ ] 1.4 `/api/v1/library/status` route + `useLibraryStatus` hook
-- [ ] 1.5 Gate **8** API routes (7 content + `api/ai/library-chat`)
-- [ ] 1.6 Gate **all 5** client-side bundled-content bypasses
-- [ ] 1.7 `LibraryClosedNotice` on 9 pages (spinner while loading — never flash real text)
-- [ ] 1.8 Admin toggle with confirm step
-- [ ] 1.9 Deploy to VPS
-- [ ] Exit criteria: 8 routes → 503 logged out; DOM checks on 5 client pages; flip open → identical
+- [x] 1.1 Migration `20260729_library_status.sql` (seeds `'open'` — verified a no-op)
+- [x] 1.2 `library_status` in `ALLOWED_SETTINGS_KEYS` + **value validator**
+- [x] 1.3 `getLibraryStatus()` in `access-control.ts`, mirroring `getPaymentGatewayStatus()`
+- [x] 1.4 `/api/v1/library/status` route + `useLibraryStatus` hook
+- [x] 1.5 Gate **9** API routes — one more than planned (see below)
+- [x] 1.6 Gate client-side bundled-content bypasses — via **layout-level** guard
+- [x] 1.7 `LibraryClosedNotice` + loading spinner (never flashes real text)
+- [x] 1.8 Admin toggle with two-step confirm
+- [ ] 1.9 **Deploy to VPS — not done yet**
 
-**What was done:** _(pending)_
+### What was done
+
+**Storage & read path.** `platform_settings.library_status` holds
+`{status: "open"|"closed", message: string|null}`, mirroring the existing
+`payments_gateway` flag exactly. `getLibraryStatus()` **fails open and logs
+loudly** — a settings outage must not black out the library, and it cannot leak
+paid content either because the tier paywall is a separate check that already
+degrades toward *more* locking.
+
+**Typo safety, both directions.** The reader treats anything that isn't exactly
+`"closed"` as open, so a bad value can't take the library down by accident. The
+inverse risk — the owner *means* to close it, typos `"closd"`, and it silently
+stays **open** — is caught at the write path by a new per-key validator in
+`api/v1/admin/settings`, which rejects any status other than `open`/`closed`.
+
+**Enforcement is at the API, not the UI.** `libraryGate()` is the first
+statement of every content route and returns `503` with
+`Cache-Control: no-store` (so no intermediary can pin the closure after
+reopening) and `Retry-After: 3600`. Admins bypass it. Cost is one settings
+lookup on the open path — the admin check only runs once already closed.
+
+**Found a 9th leak path the plan missed.** `api/ai/explain-article` returns
+`relatedArticles: [{num, text}]` — real statutory text — despite living under
+`/api/ai/`. Gated it too. Routes gated: `init`, `laws/[slug]`, `books/[slug]`,
+`decrees/[id]`, `precedents/[slug]`, `search`, `autocomplete`,
+`ai/library-chat`, `ai/explain-article`. Deliberately **not** gated:
+`folders`, `folders/items`, `reports` — user data, not library content.
+
+**Layout-level client guard instead of 9 per-page edits.** `LibraryGuard` wraps
+`laws/layout.tsx`, `precedents/layout.tsx` and a new `book/[slug]/layout.tsx`.
+Chosen over per-page early-returns because an early return inside an existing
+page would skip that page's remaining hooks and break the rules of hooks. It
+also covers future routes automatically and never mounts children while closed,
+so no content fetches fire. `/book/[slug]` is scoped to the dynamic segment so
+`/book/consultation` (a lawyer booking flow) is untouched. `/laws/subscribe`
+stays reachable via an allowlist — it sells library access but renders no
+statutory text, and blocking it would strand users arriving from a pricing link.
+
+### Verification — end to end against a real dev server
+
+Applied the setting, flipped **closed**, measured, flipped back **open**.
+
+| Check | Closed | Open |
+|---|---|---|
+| `/api/v1/library/status` | `effectiveStatus: "closed"` | `"open"` |
+| All **9** content routes | **503**, no body leak | **200** |
+| `/laws/companies-law` (bundled `COMPANIES_LAW`) | notice, **159 chars**, no text | full content |
+| `/laws/civil-procedure` (bundled `ARTICLES`) | notice, **159 chars** | full content |
+| `/laws/feqh-preview` (bundled `DEMO_BOOK`) | notice, **145 chars** | full content |
+| `/book/rawd-al-murbi` (bundled `DEMO_RAWD`) | notice, **159 chars** | full content |
+| `/laws/subscribe` (must stay open) | **renders pricing** ✔ | renders pricing |
+| `/laws` body length | notice only | **2072 — byte-identical to pre-test** |
+
+The bundled-content pages are the important result: those render statutory text
+straight from the JS bundle without ever calling the API, so the server gate
+alone would not have stopped them.
+
+`npx tsc --noEmit` → exit 0. `npm run build` → compiled, **394/394 pages**.
+
+**Left in `open`.** Final DB state confirmed `{"status":"open","message":null}`.
+
+### Not verified
+
+- The admin PATCH validator was not exercised over HTTP (needs an admin
+  session). Logic is unit-obvious but untested end to end — worth one manual
+  click after deploy: set an invalid status and confirm a 400.
+- Screenshots unavailable in this environment (browser pane not composited);
+  all UI checks were done via DOM text extraction, which is stricter anyway.
+
+### Files changed in Phase 1
+
+| File | Change |
+|---|---|
+| `supabase/migrations/20260729_library_status.sql` | **new** — seeds `open` |
+| `src/lib/access-control.ts` | `getLibraryStatus()` + types + default message |
+| `src/lib/library-gate.ts` | **new** — the 503 gate |
+| `src/hooks/useLibraryStatus.ts` | **new** — client hook |
+| `src/app/api/v1/library/status/route.ts` | **new** — public status endpoint |
+| `src/components/library/LibraryGuard.tsx` | **new** — layout-level guard |
+| `src/components/library/LibraryClosedNotice.tsx` | **new** — closure UI |
+| `src/app/api/v1/admin/settings/route.ts` | allowlist + value validator |
+| 9 API routes | `libraryGate()` as first statement |
+| `src/app/laws/layout.tsx`, `precedents/layout.tsx` | wrapped in guard |
+| `src/app/book/[slug]/layout.tsx` | **new** — scoped guard |
+| `src/app/dashboard/admin/settings/page.tsx` | Section 4: open/close + message + confirm |
+| `.claude/launch.json` | `autoPort` (port 3000 was occupied) |
 
 ---
 
@@ -295,4 +379,5 @@ Full list in §8 of the plan. Blocking right now:
 | 2026-07-29 | Audited owner's `last_owner/` handoff against live code (3 audits). Built 9-phase plan via 15-agent design→verify→sequence workflow. |
 | 2026-07-29 | Verified the `library-clear.mjs` laws bug directly against the live schema — confirmed real and still armed. |
 | 2026-07-29 | Captured production baseline (319,235 rows + 8 data-quality metrics). Found 3 plan claims that don't reproduce on current prod data — recorded above. |
-| 2026-07-29 | **Phase 0 code complete** (0.1–0.4, 0.6). `tsc` clean, dry-run verified, row counts unchanged. 0.5 backup blocked on owner. |
+| 2026-07-29 | **Phase 0 code complete** (0.1–0.4, 0.6). `tsc` clean, dry-run verified, row counts unchanged. 0.5 backup blocked on owner. Committed `d5aca3f`. |
+| 2026-07-29 | **Phase 1 complete and verified end to end** — closed/open flipped against a live dev server, all 9 routes 503, all 4 bundled-content pages sealed, `/laws/subscribe` stays open, restoration byte-identical. Found and gated a 9th leak path (`ai/explain-article`) the plan missed. **Deploy to VPS still pending.** |

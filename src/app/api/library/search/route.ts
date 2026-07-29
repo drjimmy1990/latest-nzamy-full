@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getLibraryAccessForUser } from '@/lib/access-control';
 import { parseSearchQuery, normalizeSearch } from '@/utils/normalizeArabic';
+import { libraryGate } from '@/lib/library-gate';
 
 /**
  * POST /api/library/search
@@ -32,6 +33,9 @@ interface SearchRequest {
 }
 
 export async function POST(request: Request) {
+  const gate = await libraryGate();
+  if (gate) return gate;
+
   try {
     const body: SearchRequest = await request.json();
     const { query, section = 'all', filters = {}, sort = 'relevance', page = 1, limit = 10 } = body;

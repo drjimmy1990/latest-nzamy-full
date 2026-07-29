@@ -344,6 +344,61 @@ export async function getPaymentGatewayStatus(): Promise<PaymentGatewayState> {
   };
 }
 
+// ─── Legal library open/close switch ──────────────────────────────────────────
+// Admin-controlled global gate (platform_settings.library_status). Lets the whole
+// library be taken offline in one click — no redeploy — during a content rebuild
+// or if bad data ships. Independent of the per-tier paywall in
+// checkLibraryAccess, which continues to apply normally while status is "open".
+
+export type LibraryStatus = "open" | "closed";
+
+export interface LibraryStatusState {
+  status: LibraryStatus;
+  /** Optional owner-authored notice shown to visitors while closed. */
+  message: string | null;
+  /** True when the library is closed to the public. */
+  closed: boolean;
+}
+
+/** Shown when the owner has not written a custom closure message. */
+export const LIBRARY_CLOSED_DEFAULT_MESSAGE =
+  "المكتبة القانونية مغلقة مؤقتاً — نعمل على تحديث المحتوى وسنعيد فتحها قريباً.";
+
+export async function getLibraryStatus(): Promise<LibraryStatusState> {
+  try {
+    const adminClient = await createServiceClient();
+    const { data: setting, error } = await adminClient
+      .from("platform_settings")
+      .select("value")
+      .eq("key", "library_status")
+      .maybeSingle();
+
+    // Fail OPEN, loudly. A settings-lookup outage must not black out the whole
+    // library: the tier paywall is a separate check that already degrades toward
+    // MORE locking on failure, so an unreadable flag cannot leak paid content.
+    if (error) {
+      console.error("[library-status] settings lookup failed, failing open:", error.message);
+      return { status: "open", message: null, closed: false };
+    }
+
+    const value = (setting?.value as { status?: string; message?: string | null }) ?? {};
+    // Anything that is not exactly "closed" is treated as open, so a typo can
+    // never take the library offline by accident. The reverse (a typo silently
+    // leaving it OPEN when the owner meant to close it) is prevented at the
+    // write path — see ALLOWED_SETTINGS_VALUES in api/v1/admin/settings.
+    const status: LibraryStatus = value.status === "closed" ? "closed" : "open";
+
+    return {
+      status,
+      message: value.message ?? null,
+      closed: status === "closed",
+    };
+  } catch (err) {
+    console.error("[library-status] unexpected error, failing open:", err);
+    return { status: "open", message: null, closed: false };
+  }
+}
+
 // ─── checkTierLimit — Generic tier limit check (cases, contracts) ──────────────
 
 export async function checkTierLimit(

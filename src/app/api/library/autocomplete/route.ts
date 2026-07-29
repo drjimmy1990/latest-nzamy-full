@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { libraryGate } from '@/lib/library-gate';
 
 /**
  * GET /api/library/autocomplete?q=بطلان
@@ -7,6 +8,9 @@ import { createClient } from '@/lib/supabase/server';
  * Returns section counts + top 6 matching items.
  */
 export async function GET(request: Request) {
+  const gate = await libraryGate();
+  if (gate) return gate;
+
   try {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q')?.trim();

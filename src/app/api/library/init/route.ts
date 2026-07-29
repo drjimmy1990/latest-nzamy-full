@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getLibraryAccessForUser } from "@/lib/access-control";
+import { libraryGate } from "@/lib/library-gate";
 
 export async function GET(request: Request) {
+  const gate = await libraryGate();
+  if (gate) return gate;
+
   const supabase = await createClient();
 
   // Bounded reads: the front-end mounts this once on load, so cap each table
