@@ -23,13 +23,28 @@ export interface ExclusionRule {
 /** Normalize Windows separators so rules can be written with "/". */
 const norm = (p: string) => p.replace(/\\/g, "/");
 
+/**
+ * Does any PATH SEGMENT contain `needle`?
+ *
+ * Folder-name rules must be written with this, never with
+ * `path.includes("/name/")`. The maintainers prefix and suffix these folder
+ * names freely — the same archive appears as `deleted_backups_archive` in one
+ * section and `_deleted_backups_archive` in another, and the empty-content
+ * folder as both `ملفات_بلا_محتوى_حقيقي_97` and `ف106_ملفات_بلا_محتوى_حقيقي`.
+ * A `/name/` test silently fails on every prefixed variant, which is precisely
+ * how 232 backup snapshots stayed inside the parser corpus and inflated every
+ * count derived from it.
+ */
+const hasSegmentContaining = (p: string, needle: string): boolean =>
+  norm(p).split("/").some((seg) => seg.includes(needle));
+
 export const EXCLUSION_RULES: ExclusionRule[] = [
   {
     id: "deleted_backups_archive",
     reason:
       "Maintainers' own backup snapshots (.backup_*/.bak_*) from dated audit runs — " +
       "the live version of each file exists elsewhere in the tree.",
-    test: (p) => norm(p).includes("/deleted_backups_archive/"),
+    test: (p) => hasSegmentContaining(p, "deleted_backups_archive"),
   },
   {
     id: "extraction_report",
@@ -65,21 +80,21 @@ export const EXCLUSION_RULES: ExclusionRule[] = [
     reason:
       "Folder is named 'ملفات_قوالب_فارغة' (empty template files) — the maintainers " +
       "marked these as empty stubs; the files are named crsd_stub_*.",
-    test: (p) => norm(p).includes("/ملفات_قوالب_فارغة"),
+    test: (p) => hasSegmentContaining(p, "ملفات_قوالب_فارغة"),
   },
   {
     id: "no_real_content_folder",
     reason:
       "Folder is named 'ملفات_بلا_محتوى_حقيقي' — literally 'files with no real " +
       "content', as marked by the maintainers.",
-    test: (p) => norm(p).includes("/ملفات_بلا_محتوى_حقيقي"),
+    test: (p) => hasSegmentContaining(p, "ملفات_بلا_محتوى_حقيقي"),
   },
   {
     id: "non_legislative",
     reason:
       "Folder is explicitly named '_غير_تشريعي_مؤكد_لا_يُصنف' — confirmed non-legislative, " +
       "do not classify. Mostly agency application forms and inspection checklists.",
-    test: (p) => norm(p).includes("/_غير_تشريعي_مؤكد_لا_يُصنف/"),
+    test: (p) => hasSegmentContaining(p, "غير_تشريعي_مؤكد_لا_يُصنف"),
   },
 ];
 
