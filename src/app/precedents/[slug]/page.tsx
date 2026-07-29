@@ -47,6 +47,7 @@ function stripMd(s: string): string {
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 import { JudicialPrinciplesSystem, JudicialPrincipleItem } from "@/app/laws/data";
+import { apiSlug } from '@/utils/apiSlug';
 
 export default function JudicialPrinciplesPage() {
   const params = useParams();
@@ -96,6 +97,13 @@ export default function JudicialPrinciplesPage() {
     if (collection?.court && collection.court !== "جهة غير محددة") return collection.court;
     return isRTL ? "جهة غير محددة" : "Unspecified Authority";
   };
+
+  /** True when a real issuing body was found, rather than the fallback label. */
+  const isCourtKnown = (p: JudicialPrincipleItem | null) =>
+    Boolean(
+      (p?.issuing_body && p.issuing_body !== "جهة غير محددة") ||
+        (collection?.court && collection.court !== "جهة غير محددة"),
+    );
 
   const isReferenceText = (txt: string) => txt.includes("الجهة:") || txt.includes("المرجع:") || txt.startsWith("**الجهة:**");
 
@@ -159,7 +167,9 @@ export default function JudicialPrinciplesPage() {
       articleNum: `${isRTL ? "مبدأ رقم" : "Principle #"} ${p.number}`,
       articleTitle: p.classification_keywords.slice(0, 3).join(" / ") || (mainText.slice(0, 45) + (mainText.length > 45 ? "..." : "")),
       articleText: refText ? `${mainText}\n\nالمرجع: ${refText}` : mainText,
-      lawName: collection?.court ?? "",
+      // The per-record issuing body, not the collection's — a principle carried
+      // into the draft cart must cite the court that actually issued it.
+      lawName: getCourtOrIssuer(p),
       lawSlug: collection?.id ?? slug,
       isArticleAdded: true,
       isExecRegAdded: false,
@@ -217,7 +227,7 @@ export default function JudicialPrinciplesPage() {
         // Try API first. useParams() returns the decoded (raw Arabic) slug; use
         // encodeURI (not encodeURIComponent) so a pre-encoded slug isn't double-
         // encoded into %25…, which would 404 the /api/library/precedents/[id] lookup.
-        const res = await fetch(`/api/library/precedents/${encodeURI(slug)}`);
+        const res = await fetch(`/api/library/precedents/${apiSlug(slug)}`);
         if (res.ok) {
           const apiData = await res.json();
           setCollection(apiData as JudicialPrinciplesSystem);
@@ -472,10 +482,10 @@ export default function JudicialPrinciplesPage() {
         <div className={`${card} p-6 mb-6`}>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              {collection.court && collection.court !== "جهة غير محددة" && (
+              {isCourtKnown(null) && (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C8A762]/10 border border-[#C8A762]/20 text-[#C8A762] text-xs font-bold mb-2">
                   <Scales size={12} weight="fill" />
-                  {collection.court}
+                  {getCourtOrIssuer(null)}
                 </div>
               )}
               <h1 className="text-2xl font-black">{collection.title}</h1>
@@ -569,6 +579,8 @@ export default function JudicialPrinciplesPage() {
                   isDark={isDark}
                   isRTL={isRTL}
                   collection={collection}
+                  courtLabel={getCourtOrIssuer(null)}
+                  courtKnown={isCourtKnown(null)}
                   setShowFolderModal={setShowFolderModal}
                 />
               )}

@@ -2,6 +2,7 @@
 
 import { FolderSimple, TextT, NotePencil } from "@phosphor-icons/react";
 import { type DemoOrder } from "../../demo-data-access";
+import { orderTypeStyle, orderTypeLabelEn } from "../../components/ListItems";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 
 interface SidebarPanelProps {
@@ -44,9 +45,8 @@ export default function SidebarPanel({
           <div className="flex justify-between">
             <span className={isDark ? "text-gray-500" : "text-gray-400"}>{isRTL ? "نوع المستند:" : "Doc Type:"}</span>
             <span className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-              {order.type === "royal" ? (isRTL ? "أمر ملكي" : "Royal Decree") : 
-               order.type === "cabinet" ? (isRTL ? "قرار مجلس الوزراء" : "Cabinet Order") : 
-               (isRTL ? "تعميم إداري" : "Administrative Circular")}
+              {/* Shared map — the old ternary called every unknown type a تعميم. */}
+              {isRTL ? orderTypeStyle(order.type).label : orderTypeLabelEn(order.type)}
             </span>
           </div>
           <div className="flex justify-between">

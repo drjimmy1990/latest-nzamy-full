@@ -49,4 +49,30 @@ alter table library.feqh_blocks alter column page_number   drop not null;
 create index if not exists idx_feqh_blocks_order
   on library.feqh_blocks (section_id, order_index);
 
+-- ── book_id: the reader's page query, without a 3-level join ─────────────────
+-- api/library/books/[slug] needs "the Nth page of blocks in this BOOK, in
+-- reading order". feqh_blocks only reaches a book through
+-- section → chapter → book, so the route used to collect every section id and
+-- pass them to `section_id=in.(…)`. Books carry hundreds to thousands of
+-- sections and each id is a 36-char UUID, so the URL blew past its length limit
+-- and PostgREST answered 400 — and because nothing checked the error, the book
+-- rendered as EMPTY. Measured on production: 138 of 144 fiqh books were
+-- affected; the worst carries 2,069 sections (a ~36 KB URL).
+--
+-- Filtering through the join instead works and is what the route falls back to,
+-- but it has to sort without a usable index: measured 3.2s for a 954-block book,
+-- against the 3s statement timeout the anon role runs under. Denormalising
+-- book_id turns the whole thing into one indexed scan.
+--
+-- Nullable, so this migration stays additive; the route only takes the fast path
+-- when the column is present and populated, and falls back otherwise.
+alter table library.feqh_blocks
+  add column if not exists book_id varchar(200);
+
+comment on column library.feqh_blocks.book_id is
+  'Denormalised owning book (= feqh_books.id), written by scripts/seed-library.ts. Exists so the reader can page through a book in order_index order with a single indexed scan instead of a section→chapter→book join or a multi-kilobyte section_id IN list.';
+
+create index if not exists idx_feqh_blocks_book_order
+  on library.feqh_blocks (book_id, order_index);
+
 commit;

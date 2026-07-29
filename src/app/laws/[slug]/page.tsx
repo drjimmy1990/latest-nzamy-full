@@ -32,6 +32,7 @@ import {
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import SidebarPanel from "./_sidebar";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
+import { apiSlug } from '@/utils/apiSlug';
 
 function LawSystemPageContent() {
   const { isDark, isRTL }  = useTheme();
@@ -101,7 +102,7 @@ function LawSystemPageContent() {
       try {
         setLoadError(false);
         setLoading(true);
-        const res = await fetch(`/api/library/laws/${encodeURIComponent(slug)}`);
+        const res = await fetch(`/api/library/laws/${apiSlug(slug)}`);
         if (!res.ok) {
           console.warn(`[LawReader] Law "${slug}" not found in API (${res.status}), using fallback`);
           // Fallback to local json import if possible (for robustness)
@@ -123,6 +124,7 @@ function LawSystemPageContent() {
           slug: data.slug,
           title: data.title,
           titleEn: data.titleEn || '',
+          documentType: data.documentType || '',
           issuanceDecree: data.issuanceDecree || '',
           issuanceDate: data.issuanceDate || '',
           source: data.source || '',
@@ -132,10 +134,21 @@ function LawSystemPageContent() {
             articles: (ch.articles || []).map((a: LawArticle) => ({
               id: a.id,
               num: a.num,
+              // Raw locator parts — the citation builder uses these instead of
+              // regex-stripping the display label.
+              number: a.number,
+              numberText: a.numberText,
               title: a.title || '',
               status: a.status || 'active',
               free: a.free ?? true,
               text: a.text || '',
+              // This mapping is a whitelist: anything omitted here is silently
+              // discarded before the renderer ever sees it. originalText was
+              // omitted, so the article's superseded wording never arrived —
+              // and for a repealed article that IS the article (1,613 of 1,862
+              // have an empty `text` and their whole substance in originalText).
+              originalText: a.originalText,
+              historicRegulationText: a.historicRegulationText,
               executiveReg: a.executiveReg,
               amendments: a.amendments,
               instrument: a.instrument,
@@ -919,6 +932,7 @@ function LawSystemPageContent() {
                       key={article.id}
                       article={article}
                       lawName={lawTitle}
+                      lawType={law.documentType}
                       isDark={isDark}
                       entry={cartMap.get(article.id)}
                       onAddArticle={addArticle}
@@ -960,6 +974,7 @@ function LawSystemPageContent() {
                         key={article.id}
                         article={article}
                         lawName={lawTitle}
+                        lawType={law.documentType}
                         isDark={isDark}
                         entry={cartMap.get(article.id)}
                         onAddArticle={addArticle}

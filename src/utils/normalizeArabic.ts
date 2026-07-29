@@ -204,3 +204,31 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
     plainTerms,
   };
 }
+
+/**
+ * Text-search configuration name to pass to PostgREST / supabase-js
+ * `.textSearch(..., { config })`.
+ *
+ * ⚠️ It must NOT be the schema-qualified `library.arabic`, even though that is
+ * the config the stored `fts` columns are generated with. PostgREST's filter
+ * grammar treats the dot in `plfts(library.arabic).<query>` as the operator
+ * separator and rejects the whole request:
+ *
+ *     PGRST100  failed to parse filter (plfts(library.arabic).العمل)
+ *               (line 1, column 14)
+ *
+ * Both library search routes swallowed that error and reported zero results, so
+ * the entire legal-library search returned nothing while looking healthy — the
+ * "library search dead" production blocker. Measured against production:
+ *
+ *     config 'library.arabic'  →  PGRST100, 0 rows
+ *     config 'simple'          →  1,448 rows
+ *     config 'arabic'          →    892 rows   ← WRONG, see below
+ *
+ * `simple` is the correct substitute, not `arabic`. The migration creates
+ * `library.arabic` as `(copy = simple)`, so `simple` yields byte-identical
+ * lexemes to the ones stored in the index. Bare `arabic` resolves instead to
+ * Postgres's built-in Arabic snowball config, which stems the query terms while
+ * the indexed lexemes are unstemmed — it returns rows, but the wrong ones.
+ */
+export const LIBRARY_FTS_CONFIG = 'simple';

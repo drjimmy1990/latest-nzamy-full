@@ -9,6 +9,15 @@ interface IdentityPanelProps {
   isDark: boolean;
   isRTL: boolean;
   collection: JudicialPrinciplesSystem;
+  /**
+   * Issuing body already resolved by the page's `getCourtOrIssuer`, which
+   * prefers the per-record `issuing_body` over the collection's. Reading
+   * `collection.court` here instead was how 6,602 administrative rulings ended
+   * up attributed to whichever court titled their collection.
+   */
+  courtLabel: string;
+  /** False when neither the record nor the collection names an issuing body. */
+  courtKnown: boolean;
   setShowFolderModal: (show: boolean) => void;
 }
 
@@ -16,6 +25,8 @@ export default function IdentityPanel({
   isDark,
   isRTL,
   collection,
+  courtLabel,
+  courtKnown,
   setShowFolderModal
 }: IdentityPanelProps) {
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`;
@@ -29,23 +40,27 @@ export default function IdentityPanel({
           <span className="text-[9px] font-black px-2 py-0.5 rounded-full border border-[#C8A762]/20 text-[#C8A762] bg-[#C8A762]/5">
             {isRTL ? "مجموعة مبادئ قضائية" : "Judicial Principles"}
           </span>
-          {collection.court && collection.court !== "جهة غير محددة" && (
+          {courtKnown && (
             <span className={`text-[9px] px-2 py-0.5 rounded-full border ${isDark ? "border-white/10 text-zinc-500" : "border-slate-200 text-slate-500"}`}>
-              {collection.court}
+              {courtLabel}
             </span>
           )}
         </div>
-        
+
         <div className="space-y-1.5">
-          {collection.court && collection.court !== "جهة غير محددة" && (
+          {/*
+            Always rendered, including when unknown. Which court issued a ruling
+            is load-bearing for whether it binds; silently omitting the row let a
+            reader assume the collection's title named the court. "جهة غير محددة"
+            is the honest answer when the source does not say.
+          */}
           <div className="flex gap-1.5 items-start">
             <Scales size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
             <div>
               <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "جهة الإصدار" : "Issuing Body"}</p>
-              <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{collection.court}</p>
+              <p className={`text-[10px] font-semibold leading-tight ${courtKnown ? (isDark ? "text-zinc-200" : "text-zinc-700") : muted}`}>{courtLabel}</p>
             </div>
           </div>
-          )}
           
           {collection.yearHijri && collection.yearHijri !== 0 && (
           <div className="flex gap-1.5 items-start">

@@ -338,6 +338,16 @@ async function seedLaws(
           executive_reg_ref: regs.map(r => r.ref || "").join(", ") || null,
           instrument: art.instrument || regs[0]?.instrument || null,
           order_index: parseInt(art.number) || 0,
+          // Recovered history. Until these columns existed the parser extracted
+          // this text and the seeder dropped it on the floor — and for the 1,613
+          // repealed articles whose `text` is legitimately empty, that is the
+          // whole article. NULL (not "") so "the source has none" stays
+          // distinguishable from "the source has an empty one".
+          original_text: art.original_text || null,
+          historic_regulation_text: art.historic_regulation_text || null,
+          // Quarantine only: excluded from the fts index by the migration and
+          // never returned by any API route.
+          unparsed_details: art.unparsed_details || null,
         });
 
         for (let ai = 0; ai < amends.length; ai++) {
@@ -767,6 +777,12 @@ async function seedFeqh(
             sharh: null,
             hashiyah: {},
             order_index: bookBlockOrder++,
+            // Denormalised owning book, so the reader can page a book in
+            // reading order with one indexed scan. Without it the route must
+            // reach the book through section -> chapter -> book; the old
+            // section_id IN(...) form built a URL so long that 138 of 144
+            // books returned 400 and rendered completely empty.
+            book_id: bookId,
           });
         }
       }
@@ -802,6 +818,12 @@ async function seedFeqh(
             sharh: null,
             hashiyah: {},
             order_index: bookBlockOrder++,
+            // Denormalised owning book, so the reader can page a book in
+            // reading order with one indexed scan. Without it the route must
+            // reach the book through section -> chapter -> book; the old
+            // section_id IN(...) form built a URL so long that 138 of 144
+            // books returned 400 and rendered completely empty.
+            book_id: bookId,
           });
         }
       }

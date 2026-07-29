@@ -35,7 +35,6 @@ export {
   PRINCIPLE_SOURCES,
   PRINCIPLE_SOURCE_GROUPS,
   ORDER_ISSUERS,
-  ORDER_TYPE_LABELS_EN,
 } from "./demo-data";
 
 // ─── Demo arrays — gated ───

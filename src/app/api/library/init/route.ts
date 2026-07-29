@@ -84,7 +84,7 @@ export async function GET(request: Request) {
         ? fetchSection(
             "principles",
             `id, principle_number, issuing_body, text, session_date, decision_number, year_hijri,
-             judicial_collections ( id, title, court, track, source_id, category )`,
+             judicial_collections ( id, title, court, track, source_id )`,
             "principles"
           )
         : Promise.resolve(emptySection),

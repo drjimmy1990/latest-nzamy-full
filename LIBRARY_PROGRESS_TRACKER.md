@@ -20,7 +20,7 @@ summary (`LIBRARY_PIPELINE_FIX_STATUS.md`) is produced at Phase 8 from this file
 | **3** | Content correctness (4 tracks) | ✅ | **All four tracks done** (3d redone from a fresh survey after the delegated spec failed verification). |
 | ~~4~~ | ~~Build `library_next`~~ | ❌ | **DROPPED** — see below |
 | ~~5~~ | ~~Shadow seed~~ → **plain wipe + reseed** | ⬜ | |
-| **6** | App consumes new data | ⬜ | |
+| **6** | App consumes new data | ✅ | Found 3 live prod outages while verifying — see below |
 | ~~7~~ | ~~Cutover~~ | ❌ | **DROPPED** — see below |
 | **8** | SEO, cleanup, owner deliverable | ⬜ | |
 
@@ -791,16 +791,212 @@ new ones.
 
 ---
 
-## PHASE 6 — App consumes new data ⬜
+## PHASE 6 — App consumes new data ✅
 
-- [ ] Decrees: `ORDER_TYPE_STYLES` fallback (**crash risk** — must ship before data)
-- [ ] Laws: `originalText` / `repealedBy` / repealed render gated by `isLocked`
-- [ ] Precedents: `getCourtOrIssuer` priority inverted
-- [ ] Feqh: `page_label` / `volume_label` null-guards
-- [ ] Citation module with corrected `LOCATOR_NOUNS` (**no** `الصفحة`)
-- [ ] Deploy to prod on OLD data → must render identically
+- [x] Decrees: `ORDER_TYPE_STYLES` fallback + the two remaining ternaries
+- [x] Laws: `originalText` end-to-end; repealed render gated by `isLocked`
+- [x] Precedents: every court read routed through `getCourtOrIssuer`
+- [x] Feqh: `page_label` / `volume_label` null-guards via `_locator.ts`
+- [x] Citation module — `LOCATOR_NOUNS` excludes `الصفحة`
+- [ ] Deploy — **not done** (see the deploy note at the end of this section)
 
-**What was done:** _(pending)_
+Verified against the live database and a running dev server, not just by reading.
+That is how the three outages below were found; all three predate Phase 6.
+
+### 🔴 Three live production outages, found while verifying
+
+**1. The whole legal-library search returned nothing.**
+Both search routes passed `config: 'library.arabic'` to `.textSearch()`. PostgREST
+reads the dot in `plfts(library.arabic).<query>` as its operator separator and
+rejects the request outright:
+
+```
+PGRST100  failed to parse filter (plfts(library.arabic).العمل)  (line 1, column 14)
+```
+
+Every section then hit `if (!error)` and silently contributed zero rows, so the
+endpoint answered **200 with 0 results** and looked healthy. This is the
+"library search dead" prod blocker — now root-caused, not just observed.
+
+| config | result |
+|---|---|
+| `library.arabic` (what shipped) | PGRST100, **0 rows** |
+| `simple` (the fix) | **1,448 rows** |
+| `arabic` | 892 rows — *wrong*, see below |
+
+`simple` is correct and `arabic` is not: the migration creates `library.arabic`
+as `(copy = simple)`, so `simple` yields byte-identical lexemes to the ones in
+the index, while bare `arabic` resolves to Postgres's built-in Arabic snowball
+config — it stems the query while the stored lexemes are unstemmed, so it
+returns rows, just not the right ones. Now a single `LIBRARY_FTS_CONFIG`
+constant, with the measurements recorded next to it.
+
+After the fix: laws **1,448**, precedents **2,526**, orders **36**, feqh
+**2,611** — from 0 across the board. Autocomplete recovered with it.
+
+**2. All 144 fiqh book pages 404'd.**
+`useParams()` returns the raw, still-percent-encoded segment, and the pages built
+their API URL with `encodeURI(slug)`. `encodeURI` escapes `%` too:
+
+```
+encodeURI('%D9%85')          === '%25D9%2585'   ← 404
+encodeURIComponent('%D9%85') === '%25D9%2585'   ← same trap
+```
+
+Fiqh books are keyed by their Arabic title, so every book page requested a
+`%25…` URL and rendered «عفواً، الكتاب غير موجود». Laws, decrees and precedents
+use ASCII transliterated slugs, so the identical call was harmless there — which
+is why it stayed hidden. New `src/utils/apiSlug.ts` decodes then encodes once,
+which is correct for both shapes; applied at all 5 call sites. Verified: the API
+request went from 404 to **200**.
+
+**3. 138 of 144 fiqh books returned no blocks.**
+The route collected every section id for the book and passed them to
+`.in('section_id', […])`. Books carry hundreds to thousands of sections and each
+id is a 36-char UUID, so the URL blew past its limit and PostgREST answered 400 —
+and the call site never destructured `error`, so the book just came back empty.
+Binary-searched against production: **396 ids (~15 KB URL) is the ceiling**; the
+worst book has **2,069 sections** (~36 KB).
+
+Replaced with a denormalised `feqh_blocks.book_id` + `idx_feqh_blocks_book_order`
+(one indexed scan), falling back to a section→chapter→book join and finally to
+the old `.in()` list while it still fits. The last step is kept deliberately: it
+is what works today for the 6 small books, so this change cannot regress any book
+that currently renders. Measured after the fix: الأسس العامة **0 → 954 blocks**,
+مصادر الحق unchanged at 272.
+
+### Laws — the recovered text now has somewhere to go
+
+Phase 3a taught the parser to recover superseded wording, but nothing downstream
+could receive it. Three independent gaps, each of which alone would have lost it:
+
+1. **No column.** `library.articles` had no `original_text`. New migration
+   `20260729_article_history_columns.sql` adds `original_text`,
+   `historic_regulation_text` and a non-indexed `unparsed_details` quarantine.
+   The `fts` column is a *generated* column, so it cannot be altered in place —
+   and the materialized view `library.cross_section_search` selects it, so both
+   are dropped and rebuilt. That dependency was not in the plan.
+2. **The seeder didn't write it** — now does.
+3. **The reader threw it away.** `laws/[slug]/page.tsx` re-maps every article
+   through an explicit field whitelist that omitted `originalText`. Even a
+   correct API would have had it discarded before the renderer saw it. Also not
+   in the plan.
+
+Why it matters: **1,613 of 1,862 repealed articles have an empty `text` and their
+entire substance in `original_text`** (only 9 have neither). Seeding the corrected
+parser output without this would have rendered them blank *and* dropped them from
+the search index — worse than the bug Phase 3a fixed. `original_text` is included
+in the rebuilt `fts` for exactly that reason.
+
+### ⚠️ `repealedBy` / `repealedDate` are NOT populated — the plan invented them
+
+`src/app/laws/data.ts` declares them and `_article-components.tsx` renders them,
+so the plan called for filling them. All **41,845 `ARTICLE_START` anchors** were
+surveyed (1,862 of them repealed) and **no repeal-provenance field exists on any
+of them**. The only candidate, `instrument`, holds the document *kind* (`نظام`
+337, `قرار` 64, `لائحة` 59 …), and the recovered `<summary>` is the generic
+«📜 التعديلات والإلغاءات» on all 1,613. Filling them would mean inventing a legal
+citation — rule ق-2. They stay absent; the reader already guards on that.
+
+### Paywall — audited field by field, and one hole closed
+
+`originalText` goes through **exactly the same** truncation as `text`, via one
+shared `preview()` helper so the two cannot drift. For a repealed article that
+is the difference between a 100-char teaser and handing over the whole article.
+
+Verified against a live locked article — the response carries only:
+`id, num, number, numberText, title, status, free, locked, instrument, text
+(103 chars), lockedMessage`. No `originalText`, no `executiveReg`, no
+`amendments`, no `historicRegulationText`, and `unparsed_details` is never
+emitted at all.
+
+**Hole closed:** `title` was emitted uncapped. `library.articles.title` is
+unbounded `text` and part of the corpus writes statutory text into it — of 9,213
+titled articles, 56 exceed 120 chars, 6 exceed 300, longest **531**. It now caps
+at 120 when locked, which leaves all 9,157 genuine headings untouched.
+
+### Repealed articles could never show their executive regulation
+
+`_article-components.tsx` made the repealed case a sibling of the whole
+`else` fragment, so a repealed article could not reach the amendments block, the
+executive-regulation box, or the draft-cart list — **87 repealed articles carry
+executive-regulation text that was unreachable**. Only the *body* varies by
+status now; everything after it is shared.
+
+The repealed body was also ungated by `isLocked` and rendered as bare JSX (so
+markdown showed as literal asterisks). Both fixed. The amendments block stays
+gated on `isAmended` on purpose: the parser pushes every recovered entry into
+`amendments` *and* promotes one to `originalText`, and all 1,613 would otherwise
+print the same superseded text twice.
+
+### Citation — it cited pages as articles and called everything a نظام
+
+New pure `src/app/laws/[slug]/_citation.ts` (13 tests). The old inline template
+was wrong twice, both measured over 41,462 articles / 1,532 documents:
+
+- **6,566 articles (15.8%)** have a page marker as their `number_text`, so it
+  emitted «المادة (الصفحة 3) من نظام (…)» — citing a page as an article.
+  `LOCATOR_NOUNS` excludes `الصفحة`/`صفحة`/`ص` for this reason; do not add them.
+- **Only 526 of 1,532 documents are a نظام.** 811 are لائحة تنفيذية, 165 دليل
+  إرشادي, plus تعميم / قرار مجلس الوزراء / مرسوم ملكي / نموذج / أمر ملكي. The
+  hardcoded noun mislabelled 66% of the library. An unknown kind now omits the
+  noun rather than guessing.
+
+Repealed articles say «الملغاة … ونصه قبل الإلغاء:». **Open decision #11 stands:**
+the owner should confirm that exact wording.
+
+### Decrees, precedents, feqh consumers
+
+- **Decrees:** both remaining ternaries (`laws/orders/[slug]/page.tsx:270`,
+  `_sidebar.tsx:47`) fell through to «تعميم» for any unrecognised type — with the
+  new taxonomy that would have mislabelled **265 supreme orders, 118 sets of
+  rules, 64 royal orders and 34 ministerial decisions as circulars**. A false
+  legal characterisation is worse than a crash. `|| "circular"` → `"unknown"`
+  (the plan said 2 sites; there is exactly **1**). The stale 3-key
+  `ORDER_TYPE_LABELS_EN` duplicate and its two re-exports are deleted.
+- **Precedents:** `getCourtOrIssuer` was already correct, but the identity panel
+  and header banner read `collection.court` directly, and the draft cart recorded
+  it — all now routed through it. The issuing-body row always renders, including
+  «جهة غير محددة»: which court issued a ruling decides whether it binds, and
+  hiding the row let a reader assume the collection title named the court.
+  `init/route.ts` no longer selects the phantom `category` column.
+- **Feqh:** new `_locator.ts` (13 tests) — a NULL volume renders as nothing, not
+  `"null"`, and a non-numeric token («مقدمة», «7-1» — 887 of them) shows as
+  written. Quick-jump no longer defaults the volume to 1, which would have hidden
+  every match outside volume 1 now that 116,828 blocks carry a real volume.
+
+### Corrections to the survey
+
+A 35-agent verification pass ran over the plan's Phase 6 claims. Corrected by
+first-hand measurement: `repealedBy`/`repealedDate`/`numberLabel` have no source
+(plan invented them); there is **1** `|| "circular"`, not 2; the order-type
+ternaries live in `laws/orders/[slug]/`, not the paths the plan gave; no
+materialized view is involved in search; and none of the 21 instrument types is
+missing from `ORDER_TYPE_STYLES`.
+
+### ⚠️ Deploy note — migrations are not optional for this deploy
+
+Both routes retry on any error and degrade instead of breaking, so deploying
+code-first is safe. But two things only work once the migrations are applied:
+
+1. `20260729_article_history_columns.sql` — without it `original_text` does not
+   exist, the search route logs a warning and retries without it, and repealed
+   articles keep rendering blank.
+2. `20260729_feqh_locator_labels.sql` — without `book_id` and its index, the
+   ordered per-book read has no usable index. Measured 3.2–4.3s against the **3s
+   statement timeout the anon role runs under**, so large books intermittently
+   return 57014 and render empty. Books above 396 sections have no working
+   fallback at all until this is applied.
+
+Verified: `tsc` clean · `npm run build` 394/394 · 47 unit tests pass across
+`_citation`, `_locator`, `apiSlug`, exclusions and slug equivalence.
+
+**What was done:** migration + seeder + API + reader for recovered article
+history; paywall audited field-by-field and one uncapped-title hole closed;
+citation and feqh-locator modules extracted and unit-tested; decree/precedent/
+feqh consumers updated. Plus three pre-existing production outages found by
+verifying against the live database: library search returning nothing, all 144
+fiqh book pages 404ing, and 138 of 144 books returning no blocks.
 
 ---
 

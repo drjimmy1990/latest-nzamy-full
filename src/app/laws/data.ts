@@ -32,6 +32,10 @@ export interface JudicialPrecedent {
 export interface LawArticle {
   id: string;
   num: string;
+  /** Numeric article number as the source states it. */
+  number?: number | string | null;
+  /** The source's own written locator, e.g. "السادسة والأربعون". */
+  numberText?: string;
   title: string;
   status: ArticleStatus;
   free: boolean;
@@ -39,9 +43,21 @@ export interface LawArticle {
   instrument?: string;
   executiveReg?: ExecutiveRegulation;
   amendments?: AmendmentEntry[];
+  /**
+   * ⚠️ Never populated. The corpus has no repeal-provenance field: all 41,845
+   * ARTICLE_START anchors were surveyed and none carries one, so filling these
+   * would mean inventing a legal citation (rule ق-2). Kept because the reader
+   * already guards on their absence and may get a real source later.
+   */
   repealedBy?: string;
   repealedDate?: string;
+  /**
+   * Superseded wording recovered from the source. For a repealed article this
+   * is the article's entire substance — `text` is legitimately empty.
+   */
   originalText?: string;
+  /** Historic executive-regulation text found in the article's history block. */
+  historicRegulationText?: string;
   principles?: JudicialPrinciple[];
   precedents?: JudicialPrecedent[];
 }
@@ -92,6 +108,14 @@ export interface LawSystem {
   regulationPreamble?: string;   // نص ديباجة اللائحة
   appendices?: LawAppendix[];    // جداول/ملاحق مستوى الوثيقة (اختياري — أنظمة قليلة فقط)
 
+  /**
+   * The document's kind exactly as the source states it, straight from
+   * `library.laws.type`. Kept separate from the curated `document_type` union
+   * below, which comes from law-metadata-map.ts and covers only a handful of
+   * hand-listed laws.
+   */
+  documentType?: string;
+
   // ── حقول البطاقة التعريفية — كلها اختيارية ──
   document_type?: LawDocumentType;          // نوع الوثيقة
   section_code?: string;                    // "06" (رمز القسم)
@@ -115,8 +139,17 @@ export interface LawSystem {
 export interface FeqhBlock {
   id: string;
   topic: string;
-  vol: number;
-  page: number;
+  /**
+   * NULL when the source states no volume. It used to be hardcoded to 1 by the
+   * parser for every book; 116,828 blocks now carry a real volume. Render via
+   * `formatLocator` in book/[slug]/_locator.ts — interpolating this directly
+   * prints the literal string "null".
+   */
+  vol: number | null;
+  page: number | null;
+  /** Verbatim source tokens — not always numeric ("مقدمة", "7-1"). */
+  volLabel?: string | null;
+  pageLabel?: string | null;
   matn: string;
   sharh: string;
   hashiyah: string[];

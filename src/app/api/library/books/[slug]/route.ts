@@ -60,35 +60,121 @@ export async function GET(
       .order('order_index', { ascending: true });
 
     // Fetch blocks (paginated, optionally filtered by section)
-    let blocksQuery = supabase
-      .schema('library')
-      .from('feqh_blocks')
-      .select(`
-        id, topic, volume_number, page_number, matn, sharh, hashiyah, order_index,
-        section_id
-      `, { count: 'exact' });
-
-    if (sectionId) {
-      blocksQuery = blocksQuery.eq('section_id', sectionId);
-    } else {
-      // Get all blocks for this book via section → chapter → book join
-      const sectionIds = (chapters || []).flatMap(
-        (ch: Record<string, unknown>) => {
-          const sections = ch.feqh_sections as Record<string, unknown>[];
-          return (sections || []).map((s) => s.id as string);
-        }
-      );
-      if (sectionIds.length > 0) {
-        blocksQuery = blocksQuery.in('section_id', sectionIds);
-      }
-    }
-
+    //
+    // page_label / volume_label arrive with migration
+    // 20260729_feqh_locator_labels.sql. PostgREST rejects the WHOLE query when a
+    // selected column is missing, and this call site did not even destructure
+    // `error` — so against a database without the migration every book would
+    // have rendered as EMPTY, silently. Every variant below is therefore retried
+    // rather than made a hard deploy-ordering dependency.
+    //
+    // ── How a book's blocks are selected ────────────────────────────────────
+    // This used to collect EVERY section id for the book and pass them to
+    // .in('section_id', [...]). Books hold hundreds to thousands of sections and
+    // each id is a 36-char UUID, so the request URL blew past the length limit
+    // and PostgREST answered 400. Nothing checked `error`, so the book simply
+    // rendered as empty. Measured against production: 138 of 144 fiqh books were
+    // affected — only 6 were small enough to work. Worst case is 2,069 sections
+    // (الوسيط_ج2_الإثبات_آثار_الالتزام) → a ~36 KB URL.
+    //
+    // Three ways to scope to a book, tried in order:
+    //   byBook   — feqh_blocks.book_id + idx_feqh_blocks_book_order. One indexed
+    //              scan, no join. Needs migration 20260729_feqh_locator_labels.
+    //   join     — filter through section → chapter → book. Needs no migration
+    //              and keeps the URL at ~450 bytes, but it sorts with no usable
+    //              index: measured 3.2s for a 954-block book against the 3s
+    //              statement timeout the anon role runs under, so it succeeds
+    //              for some books and returns 57014 for others.
+    //   legacyIn — the original `section_id=in.(…)`, kept ONLY as a last resort
+    //              and only while the id list still fits in a URL. It is what
+    //              works today for the 6 small books, so keeping it guarantees
+    //              this change cannot regress any book that currently renders.
     const offset = (page - 1) * limit;
-    blocksQuery = blocksQuery
-      .order('order_index', { ascending: true })
-      .range(offset, offset + limit - 1);
 
-    const { data: blocks, count: totalBlocks } = await blocksQuery;
+    type BlocksResult = {
+      data: Record<string, unknown>[] | null;
+      count: number | null;
+      error: { code?: string; message?: string } | null;
+    };
+
+    /** Section ids for this book — already in hand from the TOC query above. */
+    const sectionIds = (chapters || []).flatMap((ch: Record<string, unknown>) => {
+      const sections = ch.feqh_sections as Record<string, unknown>[];
+      return (sections || []).map((s) => s.id as string);
+    });
+    // Binary-searched against production: 396 ids (~15 KB URL) is the largest
+    // `section_id=in.(…)` that still succeeds; 397 is rejected. 350 leaves margin
+    // for the rest of the query string and any proxy with a tighter limit.
+    // This ceiling is the whole reason legacyIn is a last resort: books run to
+    // 2,054 sections (المغني - الجزء 13), which no URL can carry.
+    const LEGACY_IN_MAX_IDS = 350;
+
+    type Scope = 'byBook' | 'join' | 'legacyIn';
+
+    const runBlocksQuery = async (withLabels: boolean, scope: Scope): Promise<BlocksResult> => {
+      const needsJoin = !sectionId && scope === 'join';
+
+      let q = supabase
+        .schema('library')
+        .from('feqh_blocks')
+        .select(`
+          id, topic, volume_number, page_number,${withLabels ? ' page_label, volume_label,' : ''}
+          matn, sharh, hashiyah, order_index, section_id
+          ${needsJoin ? ', feqh_sections!inner ( feqh_chapters!inner ( book_id ) )' : ''}
+        `, { count: 'exact' });
+
+      if (sectionId) q = q.eq('section_id', sectionId);
+      else if (scope === 'byBook') q = q.eq('book_id', slug);
+      else if (scope === 'join') q = q.eq('feqh_sections.feqh_chapters.book_id', slug);
+      else q = q.in('section_id', sectionIds);
+
+      const res = await q
+        .order('order_index', { ascending: true })
+        .range(offset, offset + limit - 1);
+      return res as unknown as BlocksResult;
+    };
+
+    // Each step retries on ANY error, not just code 42703: the same
+    // missing-column rejection sometimes arrives as `{ message: 'Bad Request' }`
+    // with no `code` at all, so matching on the code silently skipped the retry
+    // and returned an empty book. Every fallback selects the same rows by a
+    // different route, so retrying is always safe.
+    const STRATEGIES: Array<{ labels: boolean; scope: Scope; note: string }> = sectionId
+      ? [
+          { labels: true,  scope: 'join', note: 'section' },
+          { labels: false, scope: 'join', note: 'section, no labels' },
+        ]
+      : [
+          { labels: true,  scope: 'byBook',   note: 'book_id + labels' },
+          { labels: false, scope: 'byBook',   note: 'book_id, no labels' },
+          { labels: true,  scope: 'join',     note: 'section join + labels' },
+          { labels: false, scope: 'join',     note: 'section join, no labels' },
+          ...(sectionIds.length > 0 && sectionIds.length <= LEGACY_IN_MAX_IDS
+            ? [{ labels: false, scope: 'legacyIn' as Scope, note: 'legacy section_id IN list' }]
+            : []),
+        ];
+
+    let blocks: Record<string, unknown>[] | null = null;
+    let totalBlocks: number | null = null;
+    let blocksError: { code?: string; message?: string } | null = null;
+
+    for (const s of STRATEGIES) {
+      const res = await runBlocksQuery(s.labels, s.scope);
+      blocksError = res.error;
+      if (!res.error) {
+        blocks = res.data;
+        totalBlocks = res.count;
+        break;
+      }
+      console.warn(`[Books] blocks strategy "${s.note}" failed — falling back. Apply migration 20260729_feqh_locator_labels.sql for the single-scan fast path. Cause:`, res.error);
+    }
+    if (blocksError) {
+      console.error(
+        `[Books] every blocks strategy failed for "${slug}" (${sectionIds.length} sections). ` +
+        `Apply migration 20260729_feqh_locator_labels.sql — without book_id the ordered read has no usable index. Last error:`,
+        blocksError,
+      );
+    }
 
     // Format response matching frontend interface
     const response = {
@@ -127,8 +213,15 @@ export async function GET(
         return {
           id: b.id,
           topic: b.topic,
-          vol: b.volume_number,
-          page: b.page_number,
+          // vol/page are now nullable: NULL means the source states no volume,
+          // rather than the fabricated 1 the old parser wrote for every book.
+          // The *Label fields carry the source's verbatim token, which is not
+          // always a number — 887 volume tokens and 18 page tokens in the
+          // corpus are things like "مقدمة" or "7-1".
+          vol: b.volume_number ?? null,
+          page: b.page_number ?? null,
+          volLabel: b.volume_label ?? null,
+          pageLabel: b.page_label ?? null,
           matn: isLocked ? (typeof b.matn === 'string' ? b.matn.substring(0, 100) + (b.matn.length > 100 ? '...' : '') : b.matn) : b.matn,
           sharh: isLocked ? (typeof b.sharh === 'string' ? b.sharh.substring(0, 100) + (b.sharh.length > 100 ? '...' : '') : b.sharh) : b.sharh,
           hashiyah: isLocked ? null : b.hashiyah,

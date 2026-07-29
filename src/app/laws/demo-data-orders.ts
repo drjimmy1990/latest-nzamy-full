@@ -208,8 +208,9 @@ export const ORDER_ISSUERS = [
   { id: "rega", ar: "الهيئة العامة للعقار", en: "REGA" },
 ];
 
-export const ORDER_TYPE_LABELS_EN: Record<string, string> = {
-  royal: "Royal Order",
-  cabinet: "Cabinet Resolution",
-  circular: "Circular",
-};
+// ORDER_TYPE_LABELS_EN used to live here as a stale 3-key map, re-exported by
+// demo-data.ts and demo-data-access.ts. It had zero consumers but was a live
+// trap: an `import { ORDER_TYPE_LABELS_EN } from "./demo-data-access"` would
+// silently pick up 3 of the 21 instrument types and label the rest undefined.
+// The single source is now orderTypeLabelEn() in components/ListItems.tsx,
+// which falls back to "Unspecified" instead of returning undefined.

@@ -162,4 +162,4 @@ export const PRINCIPLE_SOURCE_GROUPS: { id: string; label: string }[] = [
 export { DEMO_PRINCIPLES } from "./demo-data-principles";
 export { DEMO_PRECEDENTS, DEMO_PRECEDENTS_COLLECTIONS } from "./demo-data-precedents";
 export { DEMO_FEQH_BOOKS, DEMO_RAWD } from "./demo-data-books";
-export { DEMO_ORDERS, ORDER_ISSUERS, ORDER_TYPE_LABELS_EN } from "./demo-data-orders";
+export { DEMO_ORDERS, ORDER_ISSUERS } from "./demo-data-orders";
