@@ -85,3 +85,7 @@ test/
 
 # ─── Library toolkit parsed output (regenerated via `npm run library:parse`) ──
 library-toolkit/output/
+
+# ─── Library source files (owner data — too large for git) ────────────────
+library_last/
+last_owner/

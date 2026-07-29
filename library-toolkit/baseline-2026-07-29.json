@@ -1,0 +1,47 @@
+{
+  "capturedAt": "2026-07-29T00:04:26.727Z",
+  "schema": "library",
+  "supabaseUrl": "https://gdqfqfcxnwrwgaphtfhu.supabase.co",
+  "rowCounts": {
+    "laws": 386,
+    "chapters": 774,
+    "articles": 13436,
+    "article_amendments": 349,
+    "decrees_circulars": 2078,
+    "decree_pages": 2950,
+    "judicial_collections": 95,
+    "principles": 17940,
+    "principle_paragraphs": 1385,
+    "feqh_books": 144,
+    "feqh_chapters": 27474,
+    "feqh_sections": 132832,
+    "feqh_blocks": 119392,
+    "smart_folders": 0,
+    "smart_folder_items": 0,
+    "issue_reports": 0,
+    "invitations": 0
+  },
+  "userDataRowCounts": {
+    "smart_folders": 0,
+    "smart_folder_items": 0,
+    "issue_reports": 0,
+    "invitations": 0
+  },
+  "grandTotal": 319235,
+  "metrics": {
+    "decreeTypes": {
+      "royal": 421,
+      "cabinet": 783,
+      "circular": 874
+    },
+    "articlesWithDetailsMarkup": 1294,
+    "articlesWithHtmlComment": 182,
+    "articlesNumberZero": 345,
+    "articlesIdNaN": 0,
+    "amendmentsWithFullText": 0,
+    "lawsWithEmptySectionCode": 0,
+    "collectionsTrackEmpty": 94,
+    "collectionsCommercialCourt": 1,
+    "feqhBlocksOrderZero": 119353
+  }
+}

@@ -12,6 +12,8 @@
  * ENV (process.env, else auto-loaded from .env.local / .env / .env.vps)
  *   SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)
  *   SUPABASE_SERVICE_ROLE_KEY
+ *   LIBRARY_SCHEMA  — target schema, default "library" (set to library_next to
+ *                     inspect the shadow build instead of the live schema)
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -19,6 +21,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
+const SCHEMA = process.env.LIBRARY_SCHEMA || "library";
 
 // ── All library tables grouped by domain ───────────────────────────────────
 const TABLE_GROUPS = {
@@ -60,7 +63,7 @@ async function main() {
   const supabase = createClient(url, key, { auth: { persistSession: false } });
 
   console.log(`\n${"═".repeat(60)}`);
-  console.log("  Library Status — Row Counts");
+  console.log(`  Library Status — Row Counts  ·  schema "${SCHEMA}"`);
   console.log(`${"═".repeat(60)}`);
 
   let grandTotal = 0;
@@ -71,7 +74,7 @@ async function main() {
 
     for (const table of tables) {
       const { count, error } = await supabase
-        .schema("library")
+        .schema(SCHEMA)
         .from(table)
         .select("*", { count: "exact", head: true });
 

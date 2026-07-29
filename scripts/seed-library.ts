@@ -55,13 +55,17 @@ interface SeedResult {
 
 let supabaseClient: ReturnType<typeof createSupabaseClient> | null = null;
 
+// Target schema. Defaults to the live schema; set LIBRARY_SCHEMA=library_next to
+// seed a shadow build that production is not yet reading from.
+const LIBRARY_SCHEMA = process.env.LIBRARY_SCHEMA || "library";
+
 function createSupabaseClient(url: string, key: string) {
   const headers = {
     apikey: key,
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
-    "Content-Profile": "library",
-    "Accept-Profile": "library",
+    "Content-Profile": LIBRARY_SCHEMA,
+    "Accept-Profile": LIBRARY_SCHEMA,
   };
 
   return {

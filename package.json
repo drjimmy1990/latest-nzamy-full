@@ -20,6 +20,7 @@
     "library:seed": "node library-toolkit/library-seed.mjs",
     "library:verify": "node library-toolkit/library-verify.mjs",
     "library:status": "node library-toolkit/library-status.mjs",
+    "library:baseline": "node library-toolkit/library-baseline.mjs",
     "library:reseed": "node library-toolkit/library-reseed.mjs",
     "library:reseed:wipe": "node library-toolkit/library-reseed.mjs --wipe"
   },
