@@ -18,11 +18,38 @@ summary (`LIBRARY_PIPELINE_FIX_STATUS.md`) is produced at Phase 8 from this file
 | **1** | Kill switch (open/close library) | ✅ | Built + verified end-to-end. **Not yet deployed to VPS.** |
 | **2** | Parser foundations | 🔄 | Laws track done. **Found 232 documents that would be silently lost.** Blocked on owner decisions 4 & 5. |
 | **3** | Content correctness (4 tracks) | ✅ | **All four tracks done** (3d redone from a fresh survey after the delegated spec failed verification). |
-| **4** | Build `library_next` | ⬜ | |
-| **5** | Shadow seed & integrity | ⬜ | |
-| **6** | App consumes new data | ⬜ | Must deploy **before** Phase 7 |
-| **7** | Cutover | ⬜ | |
+| ~~4~~ | ~~Build `library_next`~~ | ❌ | **DROPPED** — see below |
+| ~~5~~ | ~~Shadow seed~~ → **plain wipe + reseed** | ⬜ | |
+| **6** | App consumes new data | ⬜ | |
+| ~~7~~ | ~~Cutover~~ | ❌ | **DROPPED** — see below |
 | **8** | SEO, cleanup, owner deliverable | ⬜ | |
+
+---
+
+## ⚠️ 2026-07-29 — STRATEGY CHANGE: the database is disposable
+
+The owner confirmed the current Supabase database is **throwaway** — a fresh one
+will be built once the content is finalised. Everything downstream simplifies:
+
+| Was | Now | Why |
+|---|---|---|
+| Phase 0.5 production backup | **not needed** | nothing in it is worth keeping |
+| Phase 4 build `library_next` | **dropped** | the shadow schema existed only to protect live data |
+| Phase 5 shadow seed | **plain wipe + reseed** | no cutover window to protect |
+| Phase 7 transactional cutover | **dropped** | there is nothing to cut over from |
+
+This removes roughly a week of work and the single riskiest step in the plan.
+
+**What still applies, unchanged:**
+- The migrations are still required — a new database needs the schema, including
+  `20260729_decree_instrument_taxonomy.sql` and `20260729_feqh_locator_labels.sql`.
+- The owner's 175 source fixes are still required. A disposable database does not
+  make a slug collision harmless: the documents still vanish silently at seed
+  time, into the new database exactly as they would have into the old one.
+- Every parser guard still applies. They exist to stop bad data being written at
+  all, which matters more when there is no backup to fall back on.
+
+---
 
 ---
 
