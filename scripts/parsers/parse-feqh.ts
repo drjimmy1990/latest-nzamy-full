@@ -27,6 +27,7 @@ import { slugifyArabic as sharedSlugify } from "./lib/slug";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { writeParseReport, printCapped } from "./lib/report";
+import { parseLocator } from "./lib/feqh-locator";
 import { filterMeta } from "./manifest";
 
 /** Collected per run so YAML problems are reported, never swallowed. */
@@ -44,6 +45,10 @@ export interface FeqhVerse {
 export interface FeqhPage {
   page_number: number;
   volume: number;
+  /** Verbatim page token from the source (e.g. "3", "None"). */
+  page_label?: string | null;
+  /** Verbatim volume token from the source (e.g. "10", "مقدمة", "7-1"). */
+  volume_label?: string | null;
   text: string;
   verses: FeqhVerse[];
 }
@@ -344,10 +349,13 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
   let currentChapter: FeqhChapter | null = null;
   let currentSection: FeqhSection | null = null;
   let currentPage: FeqhPage | null = null;
+  /** Locators recognised in this file — reported so 0 is visible, not silent. */
+  let locatorsSeen = 0;
   let pageBuffer: string[] = [];
   let totalPages = 0;
 
   function flushPage() {
+    let emitted = false;
     // BUG (fixed 2026-07-20): this used to require `currentPage` to already be set
     // (only true right after a Shamela-style `#### صفحة N - ...` header matched).
     // Card-v2 campaign books (2026-07) either use a different page-anchor format
@@ -382,10 +390,14 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
           currentChapter.pages.push(page);
         }
         totalPages++;
+        emitted = true;
       }
     }
     pageBuffer = [];
-    currentPage = null;
+    // Only clear the pending locator if it was actually consumed. A locator is
+    // frequently followed immediately by a redundant heading; unconditionally
+    // nulling here threw away the real vol/page captured one line earlier.
+    if (emitted) currentPage = null;
   }
 
   // True while inside a "skip" heading's span (e.g. the identity card block) — its
@@ -401,30 +413,26 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
       continue;
     }
 
-    // ── JSON-style page anchor (card-v2 campaign) ──
-    const jsonPage = parseJsonPageAnchor(line);
-    if (jsonPage) {
-      flushPage();
-      currentPage = { page_number: jsonPage.page, volume: jsonPage.volume, text: "", verses: [] };
-      continue;
-    }
-
-    // ── Page header (Shamela format) ──
-    const header = parsePageHeader(line);
-    if (header) {
+    // ── Page/volume locator ──
+    // One parser for every shape measured in the corpus. Production recognised
+    // only a 4-part Shamela header (10 lines, 1 book) plus a column-0-anchored
+    // PAGE_START; the dominant `الجزء N - صفحة M` shape (57,975 lines, 117
+    // books) was invisible, so real volume/page numbers were discarded and a
+    // sequential counter with volume=1 was synthesised in their place.
+    const loc = parseLocator(line);
+    if (loc) {
       flushPage();
       currentPage = {
-        page_number: header.page,
-        // TODO: volume detection is not implemented — parsePageHeader() does not
-        // extract a volume from the `#### صفحة N - Title - Author - Source` header
-        // format, and no other path sets currentPage.volume. Hardcoded to 1 until a
-        // reliable detector (e.g. a volume field in page metadata or a prefix in the
-        // page number) is available.
-        volume: 1,
+        // Fall back to the running counter ONLY when the source gives no number.
+        page_number: loc.page ?? totalPages + 1,
+        // Volume is no longer hardcoded to 1. null means the source states none.
+        volume: loc.volume ?? 0,
+        page_label: loc.pageLabel,
+        volume_label: loc.volumeLabel,
         text: "",
         verses: [],
       };
-
+      locatorsSeen++;
       continue;
     }
 

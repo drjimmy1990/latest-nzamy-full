@@ -17,7 +17,7 @@ summary (`LIBRARY_PIPELINE_FIX_STATUS.md`) is produced at Phase 8 from this file
 | **0** | Tooling truth & safety net | 🔄 | Code done + committed `d5aca3f`. **Backup (0.5) blocked — needs owner.** |
 | **1** | Kill switch (open/close library) | ✅ | Built + verified end-to-end. **Not yet deployed to VPS.** |
 | **2** | Parser foundations | 🔄 | Laws track done. **Found 232 documents that would be silently lost.** Blocked on owner decisions 4 & 5. |
-| **3** | Content correctness (4 tracks) | 🔄 | **3a + 3b + 3c done**. 3d (feqh) spec rejected by verification — needs rework. |
+| **3** | Content correctness (4 tracks) | ✅ | **All four tracks done** (3d redone from a fresh survey after the delegated spec failed verification). |
 | **4** | Build `library_next` | ⬜ | |
 | **5** | Shadow seed & integrity | ⬜ | |
 | **6** | App consumes new data | ⬜ | Must deploy **before** Phase 7 |
@@ -492,7 +492,7 @@ The collision guard now blocks seeding — by design. Unblocking needs decisions
 - [x] **3a Laws** — ✅ **DONE** — see below
 - [x] **3b Decrees** — ✅ **DONE** — see below
 - [x] **3c Precedents** — ✅ **DONE** — see below
-- [ ] **3d Feqh** — remove `\b` from Arabic regexes · locator formats · flushPage reset · order_index
+- [x] **3d Feqh** — ✅ **DONE** — see below
 
 ### 3a — Laws: amended/repealed article text ✅
 
@@ -686,29 +686,61 @@ to remove.
 fallback — the first widened value would have thrown and taken down the Orders
 tab. All lookups now route through `orderTypeStyle()` / `orderTypeLabelEn()`.
 
-### 3d — Feqh: spec rejected by verification ⏸️
+### 3d — Feqh: page locators + the paywall bypass ✅
 
-Not implemented. The adversarial pass found the survey's design would fail:
+Redone from a fresh survey. The delegated spec was **rejected in verification**
+(it designed against 16,879 PAGE_START anchors when the true count is 17,687, and
+wrote a `page_order` column that exists nowhere), so none of it was carried over.
 
-- It writes a **`page_order` column that exists nowhere** in the repo or in any
-  proposed migration — it would fail at the PostgREST layer.
-- **810 PAGE_START anchors are invisible to both production and the proposed
-  fix** (796 share a line with a preceding `<!-- PAGE_END -->`). True anchor
-  count is 17,687, not the 16,879 it designed against.
-- The `order_index` impact claim is **wrong by ~88×** (12 affected blocks, not
-  ~1,053), making its before/after verification unusable.
-- Several pinned acceptance numbers do not reproduce.
-- The reseed would leave **~119k orphaned blocks** unless the shadow-schema
-  cutover is used, and stales the `cross_section_search` matview — never mentioned.
+**The parser recognised a format that barely exists.** `parsePageHeader` matched
+only a 4-part Shamela header — which occurs on **10 lines, in 1 book**. The
+dominant shape, `#### الجزء 10 - صفحة 3 - title - author`, occurs on **57,975
+lines across 117 of 144 books** and was not recognised at all.
 
-The underlying defects are real and I confirmed them independently: **119,353 of
-119,392 blocks have `order_index = 0`**, and
-[route.ts:126](src/app/api/library/books/[slug]/route.ts:126) gates on
-`order_index >= freeLimit` — so every paid feqh book is fully readable right now.
-But the fix is not safe to implement as written; 3d needs a fresh survey against
-the corrected anchor population.
+| | Before | After |
+|---|---:|---:|
+| Locators recognised | 16,887 in **26** books | **88,257** in **all 144** |
+| Pages carrying a real volume | 0 | **116,828** |
+| Pages claiming volume 1 | **all of them** | 12,819 (the genuine ones) |
 
-**What was done:** 3a, 3b, 3c complete. 3d deferred pending a sound spec.
+Also fixed: **810 of 17,687 PAGE_START anchors were invisible** because the regex
+was pinned to column 0 while those lines start with whitespace (798) or a literal
+`\n` (12).
+
+For almost every book, real page/volume numbers were discarded and replaced by a
+synthesised counter with volume hardcoded to 1 — there was an explicit TODO in
+the parser admitting it. A citation to "page 5" of a book whose source says
+الجزء 3 صفحة 47 is simply wrong.
+
+`lib/feqh-locator.ts` handles every measured shape and **always keeps the
+verbatim token**: 887 volume tokens and 18 page tokens are not plain numbers
+("مقدمة", "7-1", "None"). Volume is no longer defaulted — null means the source
+states none. `flushPage` no longer discards a pending locator (it nulled
+`currentPage` even when nothing had been buffered, losing the vol/page captured
+one line earlier).
+
+### 💰 Every paid feqh book was fully readable
+
+`feqh_blocks.order_index` was the page index **within a section** (`pi`), and
+almost every section holds one page — so **119,353 of 119,392 blocks were 0**.
+The paywall gates on `order_index >= freeLimit` at
+[route.ts:126](src/app/api/library/books/[slug]/route.ts:126), and `0 >= 5` is
+never true, so **no block was ever locked**. Verified against production before
+changing anything: the API logic is correct, the data was wrong.
+
+Replaced with a book-global counter. I checked it is declared **inside** the
+per-book loop — had it been outside, every book after the first would have been
+entirely locked instead, which is the opposite failure.
+
+Migration `20260729_feqh_locator_labels.sql` is additive only (adds
+`page_label`/`volume_label`, relaxes `volume_number`/`page_number` to allow
+NULL). No existing row changes value.
+
+**Still required:** the reseed must go through the shadow-schema cutover —
+re-keying sections would otherwise leave the old blocks orphaned alongside the
+new ones.
+
+**What was done:** Phase 3 complete — 3a, 3b, 3c, 3d.
 
 ---
 

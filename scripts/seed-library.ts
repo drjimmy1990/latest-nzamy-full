@@ -700,6 +700,17 @@ async function seedFeqh(
 
   for (const book of books) {
     const bookId = String(book.id || book.slug).substring(0, 100);
+    // Book-global reading position for the paywall.
+    //
+    // order_index was the page index WITHIN a section (`pi`). Almost every
+    // section holds a single page, so 119,353 of 119,392 blocks were 0 — and
+    // the paywall test in api/library/books/[slug]/route.ts is
+    // `order_index >= freeLimit`, which `0 >= 5` never satisfies. Every paid
+    // feqh book was therefore fully readable by anonymous visitors.
+    //
+    // One counter across the whole book makes the index mean "how far into the
+    // book is this block", which is what the paywall assumes.
+    let bookBlockOrder = 0;
     if (bookId.includes("EXTRACTION_REPORT")) continue;
 
     bookRows.push({
@@ -745,12 +756,17 @@ async function seedFeqh(
             id: `${dummySecId}__blk-${pi}`.substring(0, 150),
             section_id: dummySecId,
             topic: ch.title || "",
-            volume_number: safeInt(pg.volume, 1),
-            page_number: safeInt(pg.page_number, 0),
+            // null volume means the source states none — do not invent 1.
+            volume_number: safeInt(pg.volume, null),
+            page_number: safeInt(pg.page_number, null),
+            // Verbatim locator tokens, so a non-numeric one ("مقدمة", "7-1",
+            // "None") is shown as the source wrote it, not coerced to a number.
+            page_label: pg.page_label ?? null,
+            volume_label: pg.volume_label ?? null,
             matn: pg.text || "",
             sharh: null,
             hashiyah: {},
-            order_index: pi,
+            order_index: bookBlockOrder++,
           });
         }
       }
@@ -775,12 +791,17 @@ async function seedFeqh(
             id: `${secId}__blk-${pi}`.substring(0, 150),
             section_id: secId,
             topic: sec.title || "",
-            volume_number: safeInt(pg.volume, 1),
-            page_number: safeInt(pg.page_number, 0),
+            // null volume means the source states none — do not invent 1.
+            volume_number: safeInt(pg.volume, null),
+            page_number: safeInt(pg.page_number, null),
+            // Verbatim locator tokens, so a non-numeric one ("مقدمة", "7-1",
+            // "None") is shown as the source wrote it, not coerced to a number.
+            page_label: pg.page_label ?? null,
+            volume_label: pg.volume_label ?? null,
             matn: pg.text || "",
             sharh: null,
             hashiyah: {},
-            order_index: pi,
+            order_index: bookBlockOrder++,
           });
         }
       }
