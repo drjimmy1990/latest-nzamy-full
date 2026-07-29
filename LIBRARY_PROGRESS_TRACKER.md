@@ -17,7 +17,7 @@ summary (`LIBRARY_PIPELINE_FIX_STATUS.md`) is produced at Phase 8 from this file
 | **0** | Tooling truth & safety net | 🔄 | Code done + committed `d5aca3f`. **Backup (0.5) blocked — needs owner.** |
 | **1** | Kill switch (open/close library) | ✅ | Built + verified end-to-end. **Not yet deployed to VPS.** |
 | **2** | Parser foundations | 🔄 | Laws track done. **Found 232 documents that would be silently lost.** Blocked on owner decisions 4 & 5. |
-| **3** | Content correctness (4 tracks) | ⬜ | |
+| **3** | Content correctness (4 tracks) | 🔄 | **3a done** — the article-text corruption fix. 3b/3c/3d open. |
 | **4** | Build `library_next` | ⬜ | |
 | **5** | Shadow seed & integrity | ⬜ | |
 | **6** | App consumes new data | ⬜ | Must deploy **before** Phase 7 |
@@ -489,12 +489,101 @@ The collision guard now blocks seeding — by design. Unblocking needs decisions
 
 ## PHASE 3 — Content correctness ⬜
 
-- [ ] **3a Laws** — CRLF normalize · `<details>` extraction (8 heading variants) · quarantine · hard fail on emptied body
+- [x] **3a Laws** — ✅ **DONE** — see below
 - [ ] **3b Decrees** (canary) — exact-match taxonomy · unknown bucket · archive exclusion · duplicate basename
 - [ ] **3c Precedents** — track/court classification · per-court collections · no-else guard · container ids
 - [ ] **3d Feqh** — remove `\b` from Arabic regexes · locator formats · flushPage reset · order_index
 
-**What was done:** _(pending)_
+### 3a — Laws: amended/repealed article text ✅
+
+The highest-severity defect in the project. Two failures in opposite directions:
+superseded text leaked **into** the live article text, and the article's real
+history was **never captured at all**.
+
+| Metric | Before | After |
+|---|---:|---:|
+| Markup leaked into live `text` | **3,005 articles** | **0** |
+| Articles with `original_text` | 0 | **2,817** |
+| Amendments carrying historical text | 0 | **2,878** |
+| Files failing to parse | — | **0** |
+| Articles parsed | 41,462 | 41,462 (none lost) |
+
+**Concrete proof** — `general-authority-for-competition-regulation` article 1,
+the same row I pulled from production earlier:
+
+*Before (live in prod today):* the superseded definition `المحافظ: محافظ الهيئة.`
+sits inside the article's live text, wrapped in raw `<details>`/`<summary>` markup.
+*After:* live text ends cleanly at `اللجنة: لجنة الفصل في مخالفات النظام.`, and
+`original_text` holds `المحافظ: محافظ الهيئة.` on its own.
+
+**New module `lib/article-history.ts`** — designed from a survey of the real
+corpus, not from the spec's list. The survey found the single most common label
+(`النص قبل الإلغاء (نص صفحة هيئة الخبراء)`, 831 uses) was **missing from the
+plan's list entirely**.
+
+- Labels split into **before-text** (what follows IS the superseded law) vs
+  **reference** (what follows is a decree citation). Treating a reference as
+  text would store "amended by decree X" as if it were the article's wording.
+- Matching is **prefix-based and diacritic-folded**. Both mattered: labels carry
+  qualifiers like `(بصيغتها المعدَّلة عام 1423هـ)`, and `أُضيفت` vs `أضيفت`
+  differ only by a combining damma. Exact matching missed 7 files; diacritics
+  accounted for most of the initially-unclassified blocks.
+- Three evidence-based fallbacks for unlabelled blocks, then **verbatim
+  quarantine** — 3,005 blocks in, **96 quarantined (97.4% classified)**.
+- `<details>` containing a `REGULATION` anchor is historic regulation text, not
+  article history — separated rather than misfiled (16 blocks).
+
+### Two claims I tested rather than trusted
+
+**CRLF (plan said true — it is).** My own reasoning said the heading regex would
+still fire on CRLF; testing proved otherwise. `.` does not match `\r` (it is a
+line terminator), so `/^###?\s+.*\n/m` fails on **1,331 of 1,533 files** — every
+one of those articles had its heading embedded in its text. Fixed by normalising
+at read time.
+
+**The heading-strip hazard (plan said ~4,800 — it is 6,700).** A large part of
+the corpus writes the article's whole text on the heading line:
+
+```
+### المادة السادسة والأربعون: لا يجوز حسم أي مبلغ من راتب الموظف …
+```
+
+A naive "delete the heading line" empties **6,700 articles**. `stripArticleHeading`
+removes only the matched label, driven by the anchor's own `number_text`, and
+leaves the line untouched if the label cannot be matched. **5,254 articles
+protected.**
+
+### On the hard-fail: I made it precise rather than loud
+
+The spec called for throwing when cleaning empties an article. Implemented that,
+and it failed 7 files — of which 5 were a bug in my own extractor and 2 were
+articles genuinely empty in the source (a bare `### الصفحة 2` page marker).
+
+Since `stripArticleHeading` only removes a matched prefix, it *structurally
+cannot* delete following text, so "cleaning ate the text" is not the real risk.
+The guard was replaced with two precise ones:
+
+1. **An invariant that throws** if the heading strip ever removes a non-heading
+   line — this is what actually protects statutory text, and it fails loudly if
+   a future edit loosens the regex.
+2. **A counted warning** for articles with neither live text nor history (10
+   corpus-wide) — a fact about the source, reported in the parse report, not a
+   reason to block 1,500 good files.
+
+Also widened `ArticleStatus` to include `added` (45) and `merged` (1), which
+occur in the corpus but were absent from the union and silently cast; unknown
+statuses now throw rather than defaulting to `active` — publishing an article as
+current law on a guess is exactly what rule ق-2 forbids.
+
+### Verification
+
+`npx tsx scripts/parsers/lib/article-history.corpus-check.ts` — a committed
+corpus-coverage harness (re-run after any change to the extractor; the only
+meaningful test of a heuristic over free-form Arabic legal prose is what it does
+to the real corpus). `tsc` clean. Full parse: **0 failed files**, 41,462 articles,
+0 markup leaked. Only remaining failure is the 14 slug collisions — the owner's.
+
+**What was done:** 3a complete. 3b/3c/3d still open.
 
 ---
 

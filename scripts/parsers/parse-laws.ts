@@ -33,16 +33,32 @@ import {
 import { parseFrontmatter } from "./lib/frontmatter";
 import { slugifyArabic as sharedSlugify, findSlugCollisions } from "./lib/slug";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
+import { extractArticleHistory, stripDetails, stripArticleHeading } from "./lib/article-history";
 import { writeParseReport, printCapped } from "./lib/report";
 
 /** Collected across a whole run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
+/** Articles that carry neither live text nor recovered historical text. */
+const emptyArticles: string[] = [];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
 // ══════════════════════════════════════════════════════════════════════════════
 
-export type ArticleStatus = "active" | "amended" | "repealed" | "suspended";
+// "added" (45 articles) and "merged" (1) occur in the delivered corpus but were
+// absent from this union, so they were silently cast to a value the rest of the
+// pipeline treats as meaningful. Both are real lifecycle states.
+export type ArticleStatus =
+  | "active"
+  | "amended"
+  | "repealed"
+  | "suspended"
+  | "added"
+  | "merged";
+
+const KNOWN_ARTICLE_STATUSES: readonly string[] = [
+  "active", "amended", "repealed", "suspended", "added", "merged",
+];
 
 export interface AmendmentEntry {
   date: string;
@@ -63,6 +79,21 @@ export interface ParsedArticle {
   title: string;
   status: ArticleStatus;
   text: string;
+  /**
+   * The article's superseded wording, recovered from its `<details>` block.
+   * For a REPEALED article this is usually the entire substantive content —
+   * `text` is legitimately empty because the live article no longer exists.
+   * Null means the source carries no prior wording; never synthesised.
+   */
+  original_text?: string;
+  /**
+   * `<details>` blocks the extractor could not classify, preserved VERBATIM.
+   * Never seeded into any visible column and never indexed — it exists so that
+   * unrecognised content is quarantined for human review instead of dropped.
+   */
+  unparsed_details?: string;
+  /** Historic executive-regulation text found inside the article's details. */
+  historic_regulation_text?: string;
   chapter_title: string;
   chapter_number?: number;
   regulations: ExecutiveRegulation[];
@@ -174,7 +205,11 @@ function extractPreamble(body: string): string {
 }
 
 function parseSingleLaw(filePath: string): ParsedLaw | null {
-  const raw = fs.readFileSync(filePath, "utf-8");
+  // Normalise line endings at read time. 1,331 of 1,533 delivered files use
+  // CRLF, and JS regex treats \r as a line terminator that `.` will not match —
+  // so `/^###?\s+.*\n/m` never fired on them and the article's heading was left
+  // embedded in its text. Normalising once here fixes every downstream pattern.
+  const raw = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
   const { meta, body } = parseYamlFrontmatter(raw, filePath);
   const variant = detectVariant(body, meta);
 
@@ -197,7 +232,7 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   chapterRe.lastIndex = 0;
 
   if (!hasChapters) {
-    const articles = parseArticlesInBlock(body, "", 0);
+    const articles = parseArticlesInBlock(body, "", 0, path.basename(filePath));
     chapters.push({ number: 0, title: "", articles });
   } else {
     while ((chapterMatch = chapterRe.exec(body)) !== null) {
@@ -206,7 +241,7 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
       const chapterNum = Number(chapterMeta?.number || chapters.length + 1);
       const chapterTitle = String(chapterMeta?.title || `الباب ${chapterNum}`);
 
-      const articles = parseArticlesInBlock(chapterBody, chapterTitle, chapterNum);
+      const articles = parseArticlesInBlock(chapterBody, chapterTitle, chapterNum, path.basename(filePath));
       chapters.push({ number: chapterNum, title: chapterTitle, articles });
     }
   }
@@ -295,7 +330,9 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
 function parseArticlesInBlock(
   block: string,
   chapterTitle: string,
-  chapterNumber: number
+  chapterNumber: number,
+  /** Source file, used only to make diagnostics actionable. */
+  sourceLabel = "<unknown>"
 ): ParsedArticle[] {
   const articles: ParsedArticle[] = [];
   const articleRe =
@@ -340,21 +377,86 @@ function parseArticlesInBlock(
       }
     }
 
-    // ── Clean article text ──────────────────────────────────────────────
-    let cleanText = articleBody;
-    // Remove regulation blocks
-    cleanText = cleanText.replace(/<!--\s*REGULATION[\s\S]*?(?=<!--|$)/g, "");
-    // Remove amendment markers
-    cleanText = cleanText.replace(/<!--\s*AMENDMENT\s+.*?-->/g, "");
-    // Remove markdown heading
-    cleanText = cleanText.replace(/^###?\s+.*\n/m, "");
-    // Strip block-quote markers and clean
-    cleanText = cleanText.replace(/^>\s*/gm, "").trim();
-
     const number = Number(artMeta.number || 0);
     const numberText = String(artMeta.number_text || artMeta.number || "");
     const artTitle = String(artMeta.title || "");
-    const status = (artMeta.status as ArticleStatus) || "active";
+
+    const rawStatus = String(artMeta.status || "active");
+    if (!KNOWN_ARTICLE_STATUSES.includes(rawStatus)) {
+      // Defaulting an unknown lifecycle state to "active" would publish an
+      // article as current law on nothing but a guess.
+      throw new Error(
+        `unknown article status "${rawStatus}" (article ${numberText || number}). ` +
+          `Known: ${KNOWN_ARTICLE_STATUSES.join(", ")}`,
+      );
+    }
+    const status = rawStatus as ArticleStatus;
+
+    // ── Recover historical text BEFORE anything is stripped ───────────────
+    // The superseded wording lives inside <details>. It must be pulled out
+    // first, then removed from the live text — previously it was never read and
+    // never stripped, so it ended up concatenated into `text`.
+    const history = extractArticleHistory(articleBody);
+    for (const h of history.entries) {
+      amendments.push({
+        date: "",
+        decree: "",
+        summary: h.source_summary,
+        original_text: h.original_text,
+      });
+    }
+    // The primary prior wording: prefer a repeal over an amendment, since for a
+    // repealed article it IS the article's substantive content.
+    const primaryHistory =
+      history.entries.find((h) => h.kind === "repealed")?.original_text ??
+      history.entries[0]?.original_text;
+
+    // ── Clean article text ──────────────────────────────────────────────
+    let cleanText = articleBody;
+    // 1. Regulation blocks (already captured above).
+    cleanText = cleanText.replace(/<!--\s*REGULATION[\s\S]*?(?=<!--|$)/g, "");
+    // 2. <details> — the superseded text, now safely extracted.
+    cleanText = stripDetails(cleanText);
+    // 3. ALL HTML comments. The old pattern required whitespace after the word
+    //    AMENDMENT, so it matched neither `<!-- AMENDMENTS -->` (135 in the
+    //    corpus) nor `<!-- END_AMENDMENT -->` (190), leaving both as literal
+    //    text in the article.
+    cleanText = cleanText.replace(/<!--[\s\S]*?-->/g, "");
+    // 4. Heading LABEL only — never the whole line. A large part of the corpus
+    //    writes the article's entire text on the heading line, and deleting the
+    //    line would delete the law (measured: 6,700 articles).
+    const cleanTextBeforeHeadingStrip = cleanText.replace(/^>\s*/gm, "").trim();
+    cleanText = stripArticleHeading(cleanText, numberText);
+    // 5. Block-quote markers.
+    cleanText = cleanText.replace(/^>\s*/gm, "").trim();
+
+    // ── Invariant: the heading strip must only ever remove the LABEL ────────
+    // This is the check that actually protects statutory text. A naive "delete
+    // the heading line" empties 6,700 articles in this corpus because so many
+    // carry their whole text on that line. stripArticleHeading removes a matched
+    // label prefix and nothing else; assert that, so a future edit loosening it
+    // fails loudly here instead of quietly deleting law.
+    const preHeading = cleanTextBeforeHeadingStrip
+      .split("\n")
+      .filter((l) => l.trim() && !/^\s*#{1,6}\s/.test(l)).length;
+    const postHeading = cleanText.split("\n").filter((l) => l.trim()).length;
+    if (postHeading < preHeading) {
+      throw new Error(
+        `heading strip removed ${preHeading - postHeading} non-heading line(s) from article ` +
+          `${numberText || number} — it must only remove the label. This is a parser bug.`,
+      );
+    }
+
+    // An article with neither live text nor recovered history is a real
+    // observation about the SOURCE (e.g. a bare page marker), not a cleaning
+    // failure — the invariant above already rules that out. Counted and
+    // reported rather than fatal, so one thin article cannot block 1,500 good
+    // files, but it can never pass unnoticed either.
+    if (!cleanText && !primaryHistory && history.unparsed.length === 0) {
+      emptyArticles.push(
+        `${sourceLabel} :: article ${numberText || number} (status "${status}")`,
+      );
+    }
 
     articles.push({
       number,
@@ -362,6 +464,11 @@ function parseArticlesInBlock(
       title: artTitle,
       status,
       text: cleanText,
+      original_text: primaryHistory,
+      unparsed_details: history.unparsed.length ? history.unparsed.join("\n\n") : undefined,
+      historic_regulation_text: history.regulationBlocks.length
+        ? history.regulationBlocks.join("\n\n")
+        : undefined,
       chapter_title: String(artMeta.chapter || chapterTitle),
       chapter_number: chapterNumber >= 0 ? chapterNumber : undefined,
       regulations,
@@ -458,6 +565,10 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
 
   // ── Frontmatter warnings ────────────────────────────────────────────────────
   printCapped("⚠️  frontmatter warning(s)", frontmatterWarnings);
+  printCapped(
+    "⚠️  article(s) with neither live text nor recovered history",
+    emptyArticles,
+  );
 
   if (failed.length > 0) {
     console.error(`\n🛑 ${failed.length} file(s) failed to parse and are MISSING from the output.`);
@@ -476,9 +587,11 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         frontmatterWarnings: frontmatterWarnings.length,
         slugCollisions: collisions.length,
         failed: failed.length,
+        emptyArticles: emptyArticles.length,
       },
       excluded: excludedList,
       frontmatterWarnings,
+      notes: { emptyArticles },
       identityCollisions: collisions.map((c) => ({ key: c.slug, members: c.sources })),
       failed: failed.map((f) => `${f.file}: ${f.error}`),
     });
