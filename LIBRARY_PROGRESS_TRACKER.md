@@ -17,7 +17,7 @@ summary (`LIBRARY_PIPELINE_FIX_STATUS.md`) is produced at Phase 8 from this file
 | **0** | Tooling truth & safety net | 🔄 | Code done + committed `d5aca3f`. **Backup (0.5) blocked — needs owner.** |
 | **1** | Kill switch (open/close library) | ✅ | Built + verified end-to-end. **Not yet deployed to VPS.** |
 | **2** | Parser foundations | 🔄 | Laws track done. **Found 232 documents that would be silently lost.** Blocked on owner decisions 4 & 5. |
-| **3** | Content correctness (4 tracks) | 🔄 | **3a + 3c done** — article-text corruption and court attribution. 3b/3d open. |
+| **3** | Content correctness (4 tracks) | 🔄 | **3a + 3b + 3c done**. 3d (feqh) spec rejected by verification — needs rework. |
 | **4** | Build `library_next` | ⬜ | |
 | **5** | Shadow seed & integrity | ⬜ | |
 | **6** | App consumes new data | ⬜ | Must deploy **before** Phase 7 |
@@ -490,7 +490,7 @@ The collision guard now blocks seeding — by design. Unblocking needs decisions
 ## PHASE 3 — Content correctness ⬜
 
 - [x] **3a Laws** — ✅ **DONE** — see below
-- [ ] **3b Decrees** (canary) — exact-match taxonomy · unknown bucket · archive exclusion · duplicate basename
+- [x] **3b Decrees** — ✅ **DONE** — see below
 - [x] **3c Precedents** — ✅ **DONE** — see below
 - [ ] **3d Feqh** — remove `\b` from Arabic regexes · locator formats · flushPage reset · order_index
 
@@ -644,8 +644,71 @@ a guess.
 
 `tsc` clean; build 394/394.
 
-**What was done:** 3a and 3c complete. 3b (decree taxonomy) and 3d (feqh
-pagination) still open.
+### 3b — Decrees: instrument taxonomy ✅
+
+**707 of 2,077 typed documents (34%) were stored under a wrong or
+under-specified instrument.** The DB CHECK allowed only three values, so the
+seeder clamped everything else.
+
+| Instrument | Now | Previously stored as |
+|---|---:|---|
+| circular (تعميم) | 873 | circular ✓ |
+| cabinet_decision (قرار مجلس الوزراء) | 292 | cabinet ✓ |
+| royal_decree (مرسوم ملكي) | 287 | royal ✓ |
+| **supreme_order (أمر سامي)** | **265** | **royal** — a distinct instrument |
+| **rules (قواعد)** | **118** | **cabinet** — fabricated |
+| decision (قرار, issuer unstated) | 69 | cabinet |
+| **royal_order (أمر ملكي)** | **64** | **royal** — conflated with مرسوم ملكي |
+| **ministerial_decision (قرار وزاري)** | **34** | **circular** — clamped |
+| principles / regulation / standards / guide / … | 25 / 15 / 14 / 10 / … | all cabinet |
+| **unknown** | **0** | — |
+
+**New `lib/instrument.ts`** — exact-match on the real frontmatter strings, no
+substring guessing. `type: "قرار"` (362 files) names a *form*, not an authority;
+`issuing_instrument` resolves 75% of them (160 أمر سامي, 75 مجلس الوزراء, 38 أمر
+ملكي, 19 وزاري). A cross-check against the title found 187 agreements and **zero
+contradictions**, which is what justifies trusting that field. The rest stay the
+generic `decision` — coarse but accurate, rather than precise and wrong.
+
+Removed `detectDecreeType`'s catch-all `return "cabinet"`, which asserted 207
+unrecognised documents were Cabinet Decisions.
+
+**Migration `20260729_decree_instrument_taxonomy.sql`** widens the CHECK to 21
+types **and retains the three legacy values**, so it cannot fail on the ~2,078
+existing rows and needs no backfill — applying it alone is a behavioural no-op
+until a reseed writes precise types. Adds `instrument_ar` for the verbatim name.
+
+**Seeder clamp replaced with a loud assertion.** Silently rewriting a legal
+instrument type to satisfy a constraint is the exact failure this program exists
+to remove.
+
+**Frontend crash guard (plan D8).** `ORDER_TYPE_STYLES[o.type].label` had no
+fallback — the first widened value would have thrown and taken down the Orders
+tab. All lookups now route through `orderTypeStyle()` / `orderTypeLabelEn()`.
+
+### 3d — Feqh: spec rejected by verification ⏸️
+
+Not implemented. The adversarial pass found the survey's design would fail:
+
+- It writes a **`page_order` column that exists nowhere** in the repo or in any
+  proposed migration — it would fail at the PostgREST layer.
+- **810 PAGE_START anchors are invisible to both production and the proposed
+  fix** (796 share a line with a preceding `<!-- PAGE_END -->`). True anchor
+  count is 17,687, not the 16,879 it designed against.
+- The `order_index` impact claim is **wrong by ~88×** (12 affected blocks, not
+  ~1,053), making its before/after verification unusable.
+- Several pinned acceptance numbers do not reproduce.
+- The reseed would leave **~119k orphaned blocks** unless the shadow-schema
+  cutover is used, and stales the `cross_section_search` matview — never mentioned.
+
+The underlying defects are real and I confirmed them independently: **119,353 of
+119,392 blocks have `order_index = 0`**, and
+[route.ts:126](src/app/api/library/books/[slug]/route.ts:126) gates on
+`order_index >= freeLimit` — so every paid feqh book is fully readable right now.
+But the fix is not safe to implement as written; 3d needs a fresh survey against
+the corrected anchor population.
+
+**What was done:** 3a, 3b, 3c complete. 3d deferred pending a sound spec.
 
 ---
 

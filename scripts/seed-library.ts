@@ -226,6 +226,21 @@ function toUuid(key: string): string {
 // number (17+ digits) into an integer column (year_hijri/order_index) → 22003
 // "out of range for type integer". Out-of-range/NaN → fallback instead of a crash.
 const INT4_MAX = 2147483647;
+
+/**
+ * Instrument types the decrees_circulars CHECK constraint accepts. MUST stay in
+ * sync with supabase/migrations/20260729_decree_instrument_taxonomy.sql. The
+ * three legacy values are included because existing rows still carry them.
+ */
+const ALLOWED_DECREE_TYPES = new Set([
+  "royal", "cabinet", "circular",
+  "royal_decree", "royal_order", "supreme_order", "supreme_directive", "decree",
+  "cabinet_decision", "ministerial_decision", "economic_council_decision",
+  "administrative_decision", "decision",
+  "rules", "principles", "regulation", "standards", "guide", "policy",
+  "instructions", "organization", "interpretation", "law",
+  "unknown",
+]);
 function safeInt(v: unknown, fallback: number | null): number | null {
   const n = typeof v === "number" ? v : parseInt(String(v ?? ""), 10);
   return Number.isFinite(n) && n >= -2147483648 && n <= INT4_MAX ? n : fallback;
@@ -407,15 +422,28 @@ async function seedDecrees(
     const decId = toUuid(rawId);
 
     // decrees_circulars.type has a CHECK allowing only royal|cabinet|circular.
-    // Clamp anything else (e.g. the ~15 "ministerial" rows) to circular so the
-    // insert is not rejected (23514).
-    const decType = ["royal", "cabinet", "circular"].includes(String(dec.type))
-      ? String(dec.type)
-      : "circular";
+    // Instrument type. The parser (lib/instrument.ts) now emits a precise value;
+    // this asserts it is one the DB accepts rather than silently coercing.
+    //
+    // The old code clamped anything outside ('royal','cabinet','circular') to
+    // "circular" — which is how every قرار وزاري (Ministerial Decision) ended up
+    // stored as a mere circular. Silently rewriting a legal instrument type is
+    // exactly the failure this program exists to remove, so an unexpected value
+    // now fails loudly instead.
+    const decType = String(dec.type || "unknown");
+    if (!ALLOWED_DECREE_TYPES.has(decType)) {
+      throw new Error(
+        `decree "${dec.id}" has instrument type "${decType}", which the ` +
+          `decrees_circulars CHECK constraint does not allow. Apply migration ` +
+          `20260729_decree_instrument_taxonomy.sql, or add the value there — ` +
+          `do NOT coerce it to another instrument.`,
+      );
+    }
     decreeRows.push({
       id: decId,
       title: dec.title || "",
       type: decType,
+      instrument_ar: dec.instrument_ar || null,
       issuer: dec.issuer || "",
       ref: dec.ref || "",
       date: dec.date || "",

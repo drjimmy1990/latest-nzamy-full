@@ -23,6 +23,10 @@ import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { filterMeta } from "./manifest";
 import { writeParseReport, printCapped } from "./lib/report";
+import { classifyInstrument, type InstrumentType } from "./lib/instrument";
+
+/** Documents whose instrument could not be determined — counted, never guessed. */
+const unknownInstruments: string[] = [];
 
 /** Collected per run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
@@ -31,7 +35,8 @@ const frontmatterWarnings: string[] = [];
 // Types
 // ══════════════════════════════════════════════════════════════════════════════
 
-export type DecreeType = "royal" | "cabinet" | "circular" | "ministerial";
+/** Superseded by InstrumentType in ./lib/instrument.ts. */
+export type DecreeType = InstrumentType;
 
 export interface DecreeArticle {
   number: number;
@@ -43,6 +48,8 @@ export interface ParsedDecree {
   slug: string;
   title: string;
   type: DecreeType;
+  /** Verbatim Arabic instrument name from the source. */
+  instrument_ar: string;
   issuer: string;
   ref: string;
   date: string;
@@ -126,7 +133,7 @@ function parseUnifiedIndex(filePath: string): ParsedDecree[] {
       }
     }
 
-    const decreeType = detectDecreeType(String(entry.type || ""));
+    const decreeType = classifyInstrument(entry as Record<string, unknown>).type;
     const slug = String(entry.id || uuid);
 
     decrees.push({
@@ -134,6 +141,7 @@ function parseUnifiedIndex(filePath: string): ParsedDecree[] {
       slug,
       title,
       type: decreeType,
+      instrument_ar: String(entry.type || ""),
       issuer: String(entry.issuer || ""),
       ref: String(entry.ref || ""),
       date: String(entry.date || ""),
@@ -153,17 +161,10 @@ function parseUnifiedIndex(filePath: string): ParsedDecree[] {
   return decrees;
 }
 
-function detectDecreeType(typeStr: string): DecreeType {
-  const lower = typeStr.toLowerCase();
-  if (lower.includes("royal") || lower.includes("ملكي")) return "royal";
-  if (lower.includes("cabinet") || lower.includes("مجلس الوزراء") || lower.includes("وزراء")) return "cabinet";
-  if (lower.includes("circular") || lower.includes("تعميم")) return "circular";
-  if (lower.includes("ministerial") || lower.includes("وزاري")) return "ministerial";
-  // Default based on Arabic text
-  if (typeStr.includes("أمر")) return "royal";
-  if (typeStr.includes("قرار")) return "cabinet";
-  return "cabinet";
-}
+// detectDecreeType() removed. It was a chain of loose substring tests ending in
+// `return "cabinet"`, which asserted 207 unrecognised documents were Cabinet
+// Decisions and conflated أمر سامي with مرسوم ملكي. Replaced by the exact-match
+// table in ./lib/instrument.ts, which returns "unknown" rather than guessing.
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Parse circular markdown files
@@ -176,6 +177,16 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
 
   const fileId = path.basename(filePath, ".md");
   const title = String(meta.title || fileId);
+
+  // Real Saudi instrument type: exact-match on the frontmatter value, with the
+  // ambiguous "قرار" bucket refined by issuing_instrument. Never guessed —
+  // unrecognised values become "unknown" and are reported below.
+  const instrument = classifyInstrument(meta);
+  if (instrument.type === "unknown") {
+    unknownInstruments.push(
+      `${path.basename(filePath)} :: type=${JSON.stringify(instrument.instrumentAr)}`,
+    );
+  }
 
   // Extract articles using ARTICLE_START/END markers
   const articles: DecreeArticle[] = [];
@@ -212,7 +223,8 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
     id: fileId,
     slug: slugifyArabic(title) || fileId,
     title,
-    type: detectDecreeType(String(meta.type || "circular")),
+    type: instrument.type,
+    instrument_ar: instrument.instrumentAr,
     // Section 30 مراسيم/قرارات (2026-06 extraction round) use `issuing_authority`
     // rather than `issuer`/`issuing_body`.
     issuer: String(meta.issuer || meta.issuing_body || meta.issuing_authority || ""),
@@ -301,11 +313,15 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
   console.log(`\n📜 Decree Parser Summary`);
   console.log(`  Total decrees: ${allDecrees.length}`);
   console.log(`  Total articles: ${totalArticles}`);
-  console.log(
-    `  By type: royal=${allDecrees.filter(d => d.type === "royal").length}, ` +
-    `cabinet=${allDecrees.filter(d => d.type === "cabinet").length}, ` +
-    `circular=${allDecrees.filter(d => d.type === "circular").length}\n`
-  );
+  // Full histogram, not three hardcoded buckets — the taxonomy now has ~21
+  // instrument types and a fixed three-way count would hide the rest.
+  const typeHistogram = new Map<string, number>();
+  for (const d of allDecrees) typeHistogram.set(d.type, (typeHistogram.get(d.type) || 0) + 1);
+  console.log(`  By instrument type:`);
+  for (const [t, n] of [...typeHistogram.entries()].sort((a, b) => b[1] - a[1])) {
+    console.log(`     ${String(n).padStart(6)}  ${t}`);
+  }
+  console.log(``);
 
   // ── Identity guard ──────────────────────────────────────────────────────────
   // seed-library.ts derives decrees_circulars.id from this `id` via toUuid(), so
