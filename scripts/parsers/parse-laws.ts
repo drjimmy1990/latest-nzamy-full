@@ -33,6 +33,7 @@ import {
 import { parseFrontmatter } from "./lib/frontmatter";
 import { slugifyArabic as sharedSlugify, findSlugCollisions } from "./lib/slug";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
+import { writeParseReport, printCapped } from "./lib/report";
 
 /** Collected across a whole run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
@@ -377,7 +378,7 @@ function parseArticlesInBlock(
 // Public API
 // ══════════════════════════════════════════════════════════════════════════════
 
-export function parseLaws(inputPath: string): LawsParserOutput {
+export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutput {
   // Load and validate the seed contract ONCE, before any file is touched and
   // OUTSIDE the per-file try/catch below. Previously getManifest() threw lazily
   // inside the loop, the catch swallowed it per file, and the run printed
@@ -401,7 +402,7 @@ export function parseLaws(inputPath: string): LawsParserOutput {
 
   // Drop non-content artefacts (maintainer backups, extraction reports, the
   // explicitly non-legislative folder) before parsing. Reported, never silent.
-  const { kept: contentFiles, countsByRule } = applyExclusions(files);
+  const { kept: contentFiles, countsByRule, excluded: excludedList } = applyExclusions(files);
   const excludedCount = files.length - contentFiles.length;
 
   console.log(`\n🏛️  Law Parser — ${files.length} file(s) found\n`);
@@ -456,16 +457,32 @@ export function parseLaws(inputPath: string): LawsParserOutput {
   }
 
   // ── Frontmatter warnings ────────────────────────────────────────────────────
-  if (frontmatterWarnings.length > 0) {
-    console.warn(`\n⚠️  ${frontmatterWarnings.length} frontmatter warning(s):`);
-    for (const w of frontmatterWarnings.slice(0, 25)) console.warn(`   • ${w}`);
-    if (frontmatterWarnings.length > 25) {
-      console.warn(`   … and ${frontmatterWarnings.length - 25} more`);
-    }
-  }
+  printCapped("⚠️  frontmatter warning(s)", frontmatterWarnings);
 
   if (failed.length > 0) {
     console.error(`\n🛑 ${failed.length} file(s) failed to parse and are MISSING from the output.`);
+  }
+
+  // Complete, uncapped record — the console preview above is truncated on purpose.
+  if (reportDir) {
+    const p = writeParseReport(reportDir, {
+      type: "laws",
+      generated_at: new Date().toISOString(),
+      input: inputPath,
+      counts: {
+        laws: laws.length,
+        articles: totalArticles,
+        excluded: excludedCount,
+        frontmatterWarnings: frontmatterWarnings.length,
+        slugCollisions: collisions.length,
+        failed: failed.length,
+      },
+      excluded: excludedList,
+      frontmatterWarnings,
+      identityCollisions: collisions.map((c) => ({ key: c.slug, members: c.sources })),
+      failed: failed.map((f) => `${f.file}: ${f.error}`),
+    });
+    if (p) console.log(`\n📄 Full parse report: ${p}`);
   }
 
   // Rule ق-3: a run that lost documents or would corrupt identity must not exit 0.
@@ -504,7 +521,7 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  const result = parseLaws(path.resolve(inputPath));
+  const result = parseLaws(path.resolve(inputPath), outputDir);
 
   // Write output
   fs.mkdirSync(path.resolve(outputDir), { recursive: true });

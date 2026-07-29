@@ -23,6 +23,14 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { slugifyArabic as sharedSlugify } from "./lib/slug";
+import { parseFrontmatter } from "./lib/frontmatter";
+import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
+import { writeParseReport, printCapped } from "./lib/report";
+import { filterMeta } from "./manifest";
+
+/** Collected per run so YAML problems are reported, never swallowed. */
+const frontmatterWarnings: string[] = [];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -83,26 +91,9 @@ export interface FeqhParserOutput {
 // Arabic → ASCII slug
 // ══════════════════════════════════════════════════════════════════════════════
 
-const AR_TRANSLIT: Record<string, string> = {
-  "ا": "a", "أ": "a", "إ": "e", "آ": "aa", "ب": "b", "ت": "t", "ث": "th",
-  "ج": "j", "ح": "h", "خ": "kh", "د": "d", "ذ": "dh", "ر": "r", "ز": "z",
-  "س": "s", "ش": "sh", "ص": "s", "ض": "d", "ط": "t", "ظ": "dh", "ع": "a",
-  "غ": "gh", "ف": "f", "ق": "q", "ك": "k", "ل": "l", "م": "m", "ن": "n",
-  "ه": "h", "و": "w", "ي": "y", "ى": "a", "ة": "h", "ئ": "e", "ؤ": "w",
-  "ء": "", "ﻻ": "la", "ﻷ": "la",
-};
-
-function slugifyArabic(text: string): string {
-  let slug = text.replace(/[\u064B-\u065F\u0670]/g, "");
-  slug = slug.replace(/\bال/g, "al-");
-  let result = "";
-  for (const ch of slug) {
-    if (AR_TRANSLIT[ch] !== undefined) result += AR_TRANSLIT[ch];
-    else if (/[a-zA-Z0-9]/.test(ch)) result += ch.toLowerCase();
-    else if (/[\s\-_]/.test(ch)) result += "-";
-  }
-  return result.replace(/-{2,}/g, "-").replace(/^-|-$/g, "").substring(0, 120);
-}
+// Transliteration table + slug function moved to ./lib/slug.ts (was duplicated
+// verbatim in all four parsers). Aliased so existing call-sites are unchanged.
+const slugifyArabic = sharedSlugify;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Book metadata extraction from page headers
@@ -544,7 +535,7 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
 // Public API
 // ══════════════════════════════════════════════════════════════════════════════
 
-export function parseFeqh(inputPath: string): FeqhParserOutput {
+export function parseFeqh(inputPath: string, reportDir?: string): FeqhParserOutput {
   const resolvedPath = path.resolve(inputPath);
   const stats = fs.statSync(resolvedPath);
   const files: string[] = [];
@@ -561,12 +552,24 @@ export function parseFeqh(inputPath: string): FeqhParserOutput {
     files.push(resolvedPath);
   }
 
+  // Drop non-content artefacts before parsing. Reported, never silent. This also
+  // replaces the `bookId.includes("EXTRACTION_REPORT")` skip that seed-library.ts
+  // was doing at seed time — filtering belongs here, where it can be counted.
+  const { kept: contentFiles, countsByRule, excluded: excludedList } = applyExclusions(files);
+  const excludedCount = files.length - contentFiles.length;
+
   console.log(`\n📖 Feqh Parser — ${files.length} file(s) found\n`);
+  if (excludedCount > 0) {
+    console.log(`   ⊘ ${excludedCount} non-content file(s) excluded:`);
+    for (const line of formatExclusionSummary(countsByRule)) console.log(`      • ${line}`);
+    console.log(`   → ${contentFiles.length} book file(s) to parse\n`);
+  }
 
   const books: ParsedFeqhBook[] = [];
+  const failedFiles: string[] = [];
   let totalPages = 0;
 
-  for (const file of files) {
+  for (const file of contentFiles) {
     try {
       const book = parseSingleBook(file);
       if (book) {
@@ -575,6 +578,7 @@ export function parseFeqh(inputPath: string): FeqhParserOutput {
       }
     } catch (err) {
       console.error(`  ✗ Failed to parse ${file}: ${(err as Error).message}`);
+      failedFiles.push(file);
     }
   }
 
@@ -582,6 +586,74 @@ export function parseFeqh(inputPath: string): FeqhParserOutput {
   console.log(`  Books: ${books.length}`);
   console.log(`  Total pages: ${totalPages}`);
   console.log(`  Schools: ${[...new Set(books.map(b => b.school))].join(", ")}\n`);
+
+  // ── Identity guard ──────────────────────────────────────────────────────────
+  // seed-library.ts keys feqh_books by `book.id || book.slug`, so a duplicate
+  // collapses two books into one row on upsert.
+  const byId = new Map<string, string[]>();
+  for (const b of books) {
+    const key = String(b.id || b.slug);
+    const list = byId.get(key);
+    if (list) list.push(b.title);
+    else byId.set(key, [b.title]);
+  }
+  const idCollisions = [...byId.entries()].filter(([, v]) => v.length > 1);
+  if (idCollisions.length > 0) {
+    console.error(`\n🛑 ${idCollisions.length} BOOK ID COLLISION(S) — distinct books sharing one key:`);
+    for (const [id, titles] of idCollisions.slice(0, 20)) {
+      console.error(`   "${id}"`);
+      for (const t of titles) console.error(`      ← ${t}`);
+    }
+    if (idCollisions.length > 20) console.error(`   … and ${idCollisions.length - 20} more`);
+  }
+
+  // A book that seeds with zero pages contributes a title and author but no
+  // readable text — it looks present on the site and is empty when opened.
+  const emptyBooks = books.filter((b) => b.total_pages === 0);
+  if (emptyBooks.length > 0) {
+    console.warn(`\n⚠️  ${emptyBooks.length} book(s) parsed with ZERO pages (would seed with no text):`);
+    for (const b of emptyBooks.slice(0, 20)) console.warn(`   • ${b.title}`);
+    if (emptyBooks.length > 20) console.warn(`   … and ${emptyBooks.length - 20} more`);
+  }
+
+  printCapped("⚠️  frontmatter warning(s)", frontmatterWarnings);
+
+  if (failedFiles.length > 0) {
+    console.error(`\n🛑 ${failedFiles.length} file(s) failed to parse and are MISSING from the output.`);
+  }
+
+  // Complete, uncapped record — the console preview above is truncated on purpose.
+  if (reportDir) {
+    const p = writeParseReport(reportDir, {
+      type: "feqh",
+      generated_at: new Date().toISOString(),
+      input: resolvedPath,
+      counts: {
+        books: books.length,
+        pages: totalPages,
+        excluded: excludedCount,
+        frontmatterWarnings: frontmatterWarnings.length,
+        bookIdCollisions: idCollisions.length,
+        emptyBooks: emptyBooks.length,
+        failed: failedFiles.length,
+      },
+      excluded: excludedList,
+      frontmatterWarnings,
+      identityCollisions: idCollisions.map(([key, members]) => ({ key, members })),
+      failed: failedFiles,
+      notes: { emptyBooks: emptyBooks.map((b) => b.title) },
+    });
+    if (p) console.log(`\n📄 Full parse report: ${p}`);
+  }
+
+  // Rule ق-3: losing documents or corrupting identity must not exit 0.
+  if (idCollisions.length > 0 || failedFiles.length > 0) {
+    console.error(
+      `\n✗ Parse completed with unrecoverable problems ` +
+        `(${idCollisions.length} id collision(s), ${failedFiles.length} failed file(s)). Refusing to report success.`,
+    );
+    process.exitCode = 1;
+  }
 
   return {
     type: "feqh",
@@ -609,7 +681,7 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  const result = parseFeqh(inputPath);
+  const result = parseFeqh(inputPath, outputDir);
 
   fs.mkdirSync(path.resolve(outputDir), { recursive: true });
   const outFile = path.join(path.resolve(outputDir), "feqh.json");

@@ -279,9 +279,9 @@ alone would not have stopped them.
 - [x] 2.2 `js-yaml` (CORE_SCHEMA) replacing the hand-rolled frontmatter parser
 - [x] 2.3 ~~`section_code`~~ **descoped — verified already correct** (see below)
 - [x] 2.4 Shared `lib/slug.ts` + Arabic-Indic digits + equivalence test
-- [x] 2.5 Slug-collision detector wired into `parse-laws`
-- [x] 2.6 Fail-loud exit code in `parse-laws` (was: swallow per file, exit 0)
-- [ ] 2.5/2.6 for `parse-decrees`, `parse-precedents`, `parse-feqh`
+- [x] 2.5 Identity-collision detector in **all four** parsers
+- [x] 2.6 Fail-loud exit code in **all four** (was: swallow per file, exit 0)
+- [x] All four parsers on shared slug / frontmatter / exclusions / report modules
 - [ ] 2.7 Provenance `source_path` / `source_anchor_index`
 - [ ] 2.8 Kill `Number()` coercion — `number_raw: string | null`
 - [ ] 2.9 Re-key ids (chapter-scoped); hard uniqueness assertion
@@ -412,13 +412,71 @@ duplicate-key files with exact field names and line numbers, and what was
 deleted. Flags the worst case — `_هيئة_المياه.md` has **`slug` itself duplicated**
 (lines 2 and 33), so the document's own identity was ambiguous.
 
+### All four parsers now guarded — full-corpus results
+
+| Parser | Parsed | Excluded | Identity collisions | Unclassified | Exit |
+|---|---:|---:|---:|---:|:--:|
+| laws | 1,533 laws · 41,462 articles | 194 | **14** (88 docs lost) | — | 1 |
+| decrees | 2,313 decrees · 3,199 articles | 1 | **1** | — | 1 |
+| precedents | 215 collections · 18,020 principles · 1,213 rulings | 38 | **6** (87 lost) | **4** | 1 |
+| feqh | 144 books · 119,392 pages | 1 | **0** | — | **0** ✅ |
+
+**Feqh is clean** — 0 collisions, 0 empty books. This independently confirms the
+"82% of feqh seeds empty" claim was already fixed before the owner's guide was
+written, as the earlier audit found.
+
+**Precedents: the MOJ volume collapse is real and matches plan decision 1 exactly.**
+215 collections → **128 survive → 87 silently lost**:
+
+| Collection id | Volumes collapsing into one row |
+|---|---:|
+| `moj-judgments-1434` | **30** |
+| `moj-rulings-collection-1434` | **30** |
+| `moj-judgments-1435` | 14 |
+| `moj-rulings-collection-1435` | 13 |
+| `_اللجان_شبه_القضائية` | 3 |
+| `_وزارة_العدل` | 3 |
+
+Each is one file per physical volume sharing a single frontmatter `id` — roughly
+a thousand real rulings reachable only through whichever volume seeds last.
+
+**Decrees: 1 id collision** — the duplicate basename from plan decision 5
+(`قرار مجلس الوزراء 123 - 1443-02-21هـ`, two distinct files).
+
+**Fixed the missing `else` branch in precedents.** The three-way classifier
+cascade ended with no fallback, so a file matching none of the branches vanished
+with no warning, no counter and no exit code. Now counted: **41 → 4** after
+exclusions, and those 4 are exactly the files plan decision 3 names.
+
+### Reporting: console caps, the record does not
+
+I capped console warnings at 15 and then realised that hid 873 of 888 decree
+warnings — the same silent-truncation pattern this whole pass exists to remove.
+Added **`lib/report.ts`**: every run writes a complete, uncapped
+`parse-report-<type>.json` beside the output with every warning, exclusion,
+collision and unclassified file, and the console prints where to find it.
+
+The decree warnings turned out to be two systematic template defects, not 888
+distinct problems — most prominently `section_name: "غير_مصنف" والتعاميم والمراسيم`,
+a quoted scalar followed by bare text. That is invalid YAML; the old parser
+stored it with the literal quote characters embedded.
+
 ### ⏸️ Needs an owner decision before Phase 2 can finish
 
 The collision guard now blocks seeding — by design. Unblocking needs decisions
 **4** and **5** from the plan:
 
 1. ~~Exclude the junk?~~ ✅ **Done** — approved and applied (see above).
-2. **88 documents still need distinct `slug:` values at source.** Cannot be
+2. **MOJ volume collapse (plan decision 1)** — 87 collections lost. Recommend one
+   row per physical volume, deriving the id from the per-file frontmatter rather
+   than the shared collection id.
+3. **4 unclassified precedent files (plan decision 3)** — `_قرارات_الضريبة_الانتقائية_2023`,
+   `القرارت والتعاميم…الزكاة_والجمارك`, `وزارة_العدل_المجموعة_1435_المجلد_14`,
+   `مبادئ-المحكمة-الإدارية-العليا-1442هـ`. The last is marked
+   `status: جاري الاستخراج` (extraction in progress) — quarantine it; fix the
+   others at source.
+4. **Duplicate decree basename (plan decision 5)** — owner renames one file.
+5. **88 documents still need distinct `slug:` values at source.** Cannot be
    auto-generated: a machine-invented slug becomes a fabricated citation URL for
    a real law. Guide sent to the owner. Worst groups: `regulation` (28),
    `document-slug` (21 — an unreplaced template placeholder), `regulation-transport`
