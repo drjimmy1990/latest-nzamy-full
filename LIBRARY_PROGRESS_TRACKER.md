@@ -16,7 +16,7 @@ summary (`LIBRARY_PIPELINE_FIX_STATUS.md`) is produced at Phase 8 from this file
 |---|---|---|---|
 | **0** | Tooling truth & safety net | 🔄 | Code done + committed `d5aca3f`. **Backup (0.5) blocked — needs owner.** |
 | **1** | Kill switch (open/close library) | ✅ | Built + verified end-to-end. **Not yet deployed to VPS.** |
-| **2** | Parser foundations | ⬜ | |
+| **2** | Parser foundations | 🔄 | Laws track done. **Found 232 documents that would be silently lost.** Blocked on owner decisions 4 & 5. |
 | **3** | Content correctness (4 tracks) | ⬜ | |
 | **4** | Build `library_next` | ⬜ | |
 | **5** | Shadow seed & integrity | ⬜ | |
@@ -273,20 +273,130 @@ alone would not have stopped them.
 
 ---
 
-## PHASE 2 — Parser foundations ⬜
+## PHASE 2 — Parser foundations 🔄 (laws track done; 3 parsers remain)
 
-- [ ] 2.1 Vendor `schema_manifest.json`; `getManifest()` outside try/catch
-- [ ] 2.2 `js-yaml` (CORE_SCHEMA) replacing the hand-rolled frontmatter parser
-- [ ] 2.3 ~~`section_code`~~ **descoped** — measured fine in prod; add guard only
-- [ ] 2.4 Shared `slug.ts`; delete 4 `AR_TRANSLIT` copies; add Arabic-Indic digits
-- [ ] 2.5 `identity.ts` — `assertUniqueIdentity()`, `dedupeOrDie()` (4 silent dedups)
-- [ ] 2.6 `guard.ts` — anchor conservation (ق-3); delete 5 catch-and-continue blocks
-- [ ] 2.7 Provenance `source_path` / `source_anchor_index` (pre-scan before chapter split)
+- [x] 2.1 Vendor `schema_manifest.json`; `getManifest()` eager + shape-asserted
+- [x] 2.2 `js-yaml` (CORE_SCHEMA) replacing the hand-rolled frontmatter parser
+- [x] 2.3 ~~`section_code`~~ **descoped — verified already correct** (see below)
+- [x] 2.4 Shared `lib/slug.ts` + Arabic-Indic digits + equivalence test
+- [x] 2.5 Slug-collision detector wired into `parse-laws`
+- [x] 2.6 Fail-loud exit code in `parse-laws` (was: swallow per file, exit 0)
+- [ ] 2.5/2.6 for `parse-decrees`, `parse-precedents`, `parse-feqh`
+- [ ] 2.7 Provenance `source_path` / `source_anchor_index`
 - [ ] 2.8 Kill `Number()` coercion — `number_raw: string | null`
 - [ ] 2.9 Re-key ids (chapter-scoped); hard uniqueness assertion
 - [ ] 2.10 Build old→new id map for the bookmark remap
 
-**What was done:** _(pending)_
+### 🛑 Headline result: 232 documents would have been silently lost
+
+Ran the new pipeline over the full delivered laws corpus
+(`last_owner/01_المكتبة_القانونية/أنظمة ولوائح`):
+
+```
+1,765 files parsed → 41,924 articles
+1,765 laws         → only 1,533 distinct slugs
+                   → 232 documents silently discarded at seed time  (13%)
+```
+
+`library.laws` is keyed by slug and upserted with `merge-duplicates`, so each
+collision group collapses to ONE row and the rest vanish with no error. The new
+detector stops the run before any write (**exit 1**).
+
+**18 collision groups / 250 files.** Split:
+
+| Kind | Groups | Files | Notes |
+|---|---:|---:|---|
+| Pure junk | 2 | 141 | `PDF_EXTRACTION_REPORT.md` (122), non-legislative GACA forms |
+| **Contains real legal documents** | **16** | **109** | collapse to 16 rows ⇒ **93 real documents lost** |
+
+Worst offenders:
+
+| Slug | Real files | What they are |
+|---|---:|---|
+| `document-slug` | 21 | **A placeholder template that was never replaced** — real transport regulations |
+| `regulation-transport` | 14 | Distinct transport executive regulations |
+| `transport` | 9 | Distinct transport regulations |
+| `law` | 8 | Railways Law, Ports Authority Law, Ship Registration Fees… all → `"law"` |
+| `transport-1447` | 4 | Distinct 1447 instruments |
+| `chambers-of-commerce-law` | 2 | ⚠️ **the ACTIVE law and the REPEALED 1400هـ version collide** |
+
+That last one is the sharpest example of why this matters: the current Chambers
+of Commerce Law and its repealed 1400هـ predecessor map to the same primary key.
+Whichever seeds last wins the URL — so the library could serve a **repealed**
+law as the current one, with no indication anything was dropped.
+
+### Also found: 8 files with duplicated YAML keys
+
+The old hand-rolled parser applied silent last-wins. Confirmed example —
+`اللائحة التنفيذية لإجراءات الاستئناف_وزارة_العدل.md` has `source_note` **twice**
+(line 19: an extraction audit note; line 47: the notice that the regulation was
+repealed and superseded). One was discarded invisibly. On a field like
+`issue_date_hijri` or `superseded_by` that same behaviour is a legal-accuracy
+defect. These files now parse via a recorded fallback — content preserved,
+problem visible.
+
+### What was done
+
+**`lib/slug.ts`** — one shared transliteration table replacing four copies.
+Because slug is the laws PK, consolidation is only safe if output is unchanged,
+so `slug.equivalence.test.mjs` runs the old and new implementations side by side:
+**16 non-digit samples byte-identical**, digits deliberately different. It also
+demonstrates the real bug — 3 distinct royal decrees collapsing to one slug, and
+a pure-numeral title producing an **empty** slug.
+
+Added Arabic-Indic (`٠-٩`) and extended (`۰-۹`) digits. `\bال` was deliberately
+**kept** despite being near-dead on Arabic text: it does fire after an ASCII
+boundary, so removing it would re-key real existing slugs for no gain.
+
+**`lib/frontmatter.ts`** — js-yaml with `CORE_SCHEMA` (not `DEFAULT_SCHEMA`,
+which coerces date-like strings into `Date` objects; Hijri dates must stay
+verbatim per rule ق-1). Not `json: true`, which would restore silent last-wins.
+Malformed YAML falls back to the legacy line parser so no document is ever lost,
+but the failure is **recorded and reported**.
+
+**Prevented a regression in the process:** with a real YAML parser, nested blocks
+now arrive as objects instead of being dropped — and
+[seed-library.ts:289](scripts/seed-library.ts:289) does
+`String(law.article_status_summary || "")`, which would have written the literal
+`"[object Object]"` into the database. `nullIfForbidden` now returns null for
+non-scalars, and `asScalar()` exists for the same purpose at other call sites.
+
+**`manifest.ts`** — the manifest is now vendored into `scripts/parsers/`
+(tracked in git; `test/` is gitignored, so a fresh clone had no manifest, every
+file threw, the per-file catch swallowed it, and the run printed *"Parsed 0
+laws"* and exited **0**). `assertManifestLoadable()` runs once at the entry
+point, outside the try/catch, and asserts the enum shape — an empty enum would
+silently validate every value to its fallback.
+
+**2.3 descoped with evidence.** The plan claimed 55 of 56 laws have
+`section_code = ''`. Measured in prod: **all 386 have real values** (`00`–`08`,
+zero null, zero empty), and
+[parse-laws.ts:296-303](scripts/parsers/parse-laws.ts:296) already re-pads a
+YAML-coerced integer back to `"00"`. The claim does not hold.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ exit 0 |
+| `slug.equivalence.test.mjs` | ✅ 16/16 identical, digit fix confirmed |
+| Parse one section (37 laws) | ✅ 1,929 articles, exit 0, 1 YAML warning surfaced |
+| Parse full corpus (1,765 files) | ✅ 41,924 articles; **exit 1** on 18 collisions — correct |
+
+### ⏸️ Needs an owner decision before Phase 2 can finish
+
+The collision guard now blocks seeding — by design. Unblocking needs decisions
+**4** and **5** from the plan:
+
+1. **Exclude the junk?** `deleted_backups_archive` (38), `PDF_EXTRACTION_REPORT.md`
+   (122), `_غير_تشريعي_مؤكد_لا_يُصنف` (108). Folders literally named "deleted
+   backups" and "confirmed non-legislative — do not classify". *Recommend: yes,
+   exclude and print the count.* Not done unilaterally — deciding what is not a
+   legal document is the owner's call.
+2. **The 93 real colliding documents need distinct `slug:` frontmatter at
+   source.** Cannot be auto-generated: a machine-invented slug becomes a
+   fabricated citation URL. The `document-slug` group (21 files) is an
+   unreplaced template placeholder.
 
 ---
 
@@ -380,4 +490,5 @@ Full list in §8 of the plan. Blocking right now:
 | 2026-07-29 | Verified the `library-clear.mjs` laws bug directly against the live schema — confirmed real and still armed. |
 | 2026-07-29 | Captured production baseline (319,235 rows + 8 data-quality metrics). Found 3 plan claims that don't reproduce on current prod data — recorded above. |
 | 2026-07-29 | **Phase 0 code complete** (0.1–0.4, 0.6). `tsc` clean, dry-run verified, row counts unchanged. 0.5 backup blocked on owner. Committed `d5aca3f`. |
+| 2026-07-29 | **Phase 2 laws track**: shared slug + real YAML + fail-loud guards. Full-corpus parse found **232 documents (13%) that would be silently discarded** by slug collision, 93 of them real legal documents — including the active and repealed Chambers of Commerce Law colliding on one key. Blocked on owner decisions 4 & 5. |
 | 2026-07-29 | **Phase 1 complete and verified end to end** — closed/open flipped against a live dev server, all 9 routes 503, all 4 bundled-content pages sealed, `/laws/subscribe` stays open, restoration byte-identical. Found and gated a 9th leak path (`ai/explain-article`) the plan missed. **Deploy to VPS still pending.** |

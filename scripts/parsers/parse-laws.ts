@@ -23,7 +23,18 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { normalizeType, validateEnum, nullIfForbidden, canonicalizeKey, isInternalField } from "./manifest";
+import {
+  normalizeType,
+  validateEnum,
+  nullIfForbidden,
+  filterMeta,
+  assertManifestLoadable,
+} from "./manifest";
+import { parseFrontmatter } from "./lib/frontmatter";
+import { slugifyArabic as sharedSlugify, findSlugCollisions } from "./lib/slug";
+
+/** Collected across a whole run so YAML problems are reported, never swallowed. */
+const frontmatterWarnings: string[] = [];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -108,83 +119,28 @@ export interface LawsParserOutput {
 // Arabic → ASCII slug transliteration
 // ══════════════════════════════════════════════════════════════════════════════
 
-const AR_TRANSLIT: Record<string, string> = {
-  "ا": "a", "أ": "a", "إ": "e", "آ": "aa", "ب": "b", "ت": "t", "ث": "th",
-  "ج": "j", "ح": "h", "خ": "kh", "د": "d", "ذ": "dh", "ر": "r", "ز": "z",
-  "س": "s", "ش": "sh", "ص": "s", "ض": "d", "ط": "t", "ظ": "dh", "ع": "a",
-  "غ": "gh", "ف": "f", "ق": "q", "ك": "k", "ل": "l", "م": "m", "ن": "n",
-  "ه": "h", "و": "w", "ي": "y", "ى": "a", "ة": "h", "ئ": "e", "ؤ": "w",
-  "ء": "", "ﻻ": "la", "ﻷ": "la",
-};
-
-export function slugifyArabic(text: string): string {
-  // Strip diacritics (tashkeel)
-  let slug = text.replace(/[\u064B-\u065F\u0670]/g, "");
-  // Remove "ال" (the definite article) – keep for readability as "al-"
-  slug = slug.replace(/\bال/g, "al-");
-  // Transliterate
-  let result = "";
-  for (const ch of slug) {
-    if (AR_TRANSLIT[ch] !== undefined) {
-      result += AR_TRANSLIT[ch];
-    } else if (/[a-zA-Z0-9]/.test(ch)) {
-      result += ch.toLowerCase();
-    } else if (/[\s\-_]/.test(ch)) {
-      result += "-";
-    }
-    // else: drop the char
-  }
-  // Clean up
-  return result
-    .replace(/-{2,}/g, "-")
-    .replace(/^-|-$/g, "")
-    .substring(0, 120);
-}
+// The transliteration table and slug function moved to ./lib/slug.ts. They were
+// duplicated verbatim across all four parsers, and `library.laws` is keyed BY
+// SLUG — so any drift between copies could seed one document under two different
+// primary keys. Re-exported so existing import sites keep working.
+export const slugifyArabic = sharedSlugify;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // YAML Frontmatter extraction (no external dependency)
 // ══════════════════════════════════════════════════════════════════════════════
 
-function parseYamlFrontmatter(raw: string): { meta: Record<string, unknown>; body: string } {
-  // Strip BOM (seeder_hazards[0]).
-  let src = raw.replace(/^﻿/, "");
-  // Normalize malformed YAML (seeder_hazards[0]): a closing fence glued to the
-  // last line (e.g. `total_articles: 0---` with no newline) or single-line
-  // frontmatter (`---\nkey: val\n---` collapsed). Insert a newline before a
-  // trailing `---` that isn't already on its own line.
-  src = src.replace(/^(---\s*\r?\n[\s\S]*?\S)[ \t]*---\s*(\r?\n|$)/m, "$1\n---\n");
-
-  const match = src.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
-  if (!match) return { meta: {}, body: raw };
-
-  const yamlStr = match[1];
-  const body = src.slice(match[0].length);
-  const meta: Record<string, unknown> = {};
-
-  for (const line of yamlStr.split(/\r?\n/)) {
-    // Unicode-aware key match so Arabic keys (e.g. إجمالي_المبادئ) are not dropped.
-    const m = line.match(/^([\p{L}\w][\p{L}\w_]*)\s*:\s*(.*)/u);
-    if (!m) continue;
-    const rawKey = m[1];
-    if (isInternalField(rawKey)) continue;
-    const key = canonicalizeKey(rawKey);
-    let value: unknown = m[2].trim();
-    // Strip surrounding quotes
-    if (typeof value === "string" && /^["'].*["']$/.test(value)) {
-      value = (value as string).slice(1, -1);
-    }
-    // Detect numbers
-    if (typeof value === "string" && /^\d+$/.test(value)) {
-      value = parseInt(value, 10);
-    }
-    // Detect booleans
-    if (value === "true") value = true;
-    if (value === "false") value = false;
-    // YAML null literal → null (so nullIfForbidden/alias resolution treats it as empty)
-    if (value === "null" || value === "~") value = null;
-    meta[key] = value;
-  }
-  return { meta, body };
+// Frontmatter is now parsed by js-yaml via ./lib/frontmatter.ts. The previous
+// hand-rolled line matcher silently dropped every indented sub-key (nested
+// blocks like article_status_summary and latest_update), stored raw quote
+// characters from malformed scalars, and let broken YAML pass unnoticed.
+// Warnings are accumulated per run and reported at the end — never swallowed.
+function parseYamlFrontmatter(
+  raw: string,
+  sourcePath = "<unknown>",
+): { meta: Record<string, unknown>; body: string } {
+  const { meta, body, warnings } = parseFrontmatter(raw, sourcePath);
+  if (warnings.length) frontmatterWarnings.push(...warnings);
+  return { meta: filterMeta(meta), body };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -217,7 +173,7 @@ function extractPreamble(body: string): string {
 
 function parseSingleLaw(filePath: string): ParsedLaw | null {
   const raw = fs.readFileSync(filePath, "utf-8");
-  const { meta, body } = parseYamlFrontmatter(raw);
+  const { meta, body } = parseYamlFrontmatter(raw, filePath);
   const variant = detectVariant(body, meta);
 
   const fileBaseName = path.basename(filePath, ".md");
@@ -421,6 +377,12 @@ function parseArticlesInBlock(
 // ══════════════════════════════════════════════════════════════════════════════
 
 export function parseLaws(inputPath: string): LawsParserOutput {
+  // Load and validate the seed contract ONCE, before any file is touched and
+  // OUTSIDE the per-file try/catch below. Previously getManifest() threw lazily
+  // inside the loop, the catch swallowed it per file, and the run printed
+  // "Parsed 0 laws" and exited 0 — a total failure that looked like success.
+  assertManifestLoadable();
+
   const stats = fs.statSync(inputPath);
   const files: string[] = [];
 
@@ -441,19 +403,67 @@ export function parseLaws(inputPath: string): LawsParserOutput {
   const laws: ParsedLaw[] = [];
   let totalArticles = 0;
 
+  const failed: Array<{ file: string; error: string }> = [];
+  const slugSources: Array<{ slug: string; source: string }> = [];
+
   for (const file of files) {
     try {
       const law = parseSingleLaw(file);
       if (law) {
         laws.push(law);
         totalArticles += law.total_articles;
+        slugSources.push({ slug: law.slug, source: file });
       }
     } catch (err) {
+      // Recorded, not swallowed. A file that fails to parse is a legal document
+      // missing from the library; the run must not report success (see below).
       console.error(`  ✗ Failed to parse ${file}: ${(err as Error).message}`);
+      failed.push({ file, error: (err as Error).message });
     }
   }
 
   console.log(`\n✅ Parsed ${laws.length} laws with ${totalArticles} total articles\n`);
+
+  // ── Slug collisions ─────────────────────────────────────────────────────────
+  // `library.laws` is keyed by slug and upserted with merge-duplicates, so two
+  // documents sharing a slug means one is SILENTLY discarded at seed time. This
+  // must stop the pipeline before anything is written. Never auto-disambiguate:
+  // a machine-invented slug becomes a fabricated citation URL for a real law.
+  const collisions = findSlugCollisions(slugSources);
+  if (collisions.length > 0) {
+    console.error(`\n🛑 ${collisions.length} SLUG COLLISION(S) — distinct documents mapping to one primary key:`);
+    for (const c of collisions) {
+      console.error(`   "${c.slug}"`);
+      for (const s of c.sources) console.error(`      ← ${s}`);
+    }
+    console.error(
+      `\n   Seeding would keep only ONE of each group and discard the rest.\n` +
+        `   Fix the source files (give them distinct \`slug:\` frontmatter) and re-run.`,
+    );
+  }
+
+  // ── Frontmatter warnings ────────────────────────────────────────────────────
+  if (frontmatterWarnings.length > 0) {
+    console.warn(`\n⚠️  ${frontmatterWarnings.length} frontmatter warning(s):`);
+    for (const w of frontmatterWarnings.slice(0, 25)) console.warn(`   • ${w}`);
+    if (frontmatterWarnings.length > 25) {
+      console.warn(`   … and ${frontmatterWarnings.length - 25} more`);
+    }
+  }
+
+  if (failed.length > 0) {
+    console.error(`\n🛑 ${failed.length} file(s) failed to parse and are MISSING from the output.`);
+  }
+
+  // Rule ق-3: a run that lost documents or would corrupt identity must not exit 0.
+  if (collisions.length > 0 || failed.length > 0) {
+    console.error(
+      `\n✗ Parse completed with unrecoverable problems ` +
+        `(${collisions.length} collision(s), ${failed.length} failed file(s)). ` +
+        `Refusing to report success.`,
+    );
+    process.exitCode = 1;
+  }
 
   return {
     type: "laws",
