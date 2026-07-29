@@ -32,6 +32,7 @@ import {
 } from "./manifest";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { slugifyArabic as sharedSlugify, findSlugCollisions } from "./lib/slug";
+import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 
 /** Collected across a whole run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
@@ -398,7 +399,19 @@ export function parseLaws(inputPath: string): LawsParserOutput {
     files.push(inputPath);
   }
 
+  // Drop non-content artefacts (maintainer backups, extraction reports, the
+  // explicitly non-legislative folder) before parsing. Reported, never silent.
+  const { kept: contentFiles, countsByRule } = applyExclusions(files);
+  const excludedCount = files.length - contentFiles.length;
+
   console.log(`\n🏛️  Law Parser — ${files.length} file(s) found\n`);
+  if (excludedCount > 0) {
+    console.log(`   ⊘ ${excludedCount} non-content file(s) excluded:`);
+    for (const line of formatExclusionSummary(countsByRule)) console.log(`      • ${line}`);
+    console.log(`   → ${contentFiles.length} legal document(s) to parse\n`);
+  }
+  files.length = 0;
+  files.push(...contentFiles);
 
   const laws: ParsedLaw[] = [];
   let totalArticles = 0;

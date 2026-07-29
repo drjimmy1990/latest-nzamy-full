@@ -383,20 +383,49 @@ YAML-coerced integer back to `"00"`. The claim does not hold.
 | Parse one section (37 laws) | ✅ 1,929 articles, exit 0, 1 YAML warning surfaced |
 | Parse full corpus (1,765 files) | ✅ 41,924 articles; **exit 1** on 18 collisions — correct |
 
+### ✅ Junk removed — collisions 18 → 14
+
+Owner approved deleting the backup archive.
+
+- **Deleted** `deleted_backups_archive` (section 13) — **276 files**, all
+  `.backup_*` / `.bak_*` snapshots from the owner's own July audit runs; the live
+  version of each exists in the main tree. A safety copy was taken and verified
+  (276 = 276) before removal. `du`/`rm` failed on these paths with long-path
+  errors — exactly rule ق-4 — so removal used the `\\?\` prefix and clears
+  read-only attributes, then verifies emptiness.
+- **`lib/exclusions.ts`** — durable, code-level exclusion so artefacts can never
+  re-enter the pipeline, with every exclusion **counted and reported**:
+  `PDF_EXTRACTION_REPORT.md` (89) and `_غير_تشريعي_مؤكد_لا_يُصنف` (105, excluded
+  from parsing only — **not deleted from disk**).
+
+Re-parse: **1,727 files → 194 excluded → 1,533 legal documents, 41,462 articles.**
+Collisions **18 → 14**, remaining loss **232 → 88**.
+
+### 📤 Owner guide produced
+
+[`دليل_المالك_إصلاح_المعرفات.md`](دليل_المالك_إصلاح_المعرفات.md) — Arabic, written
+for a legal expert rather than a programmer. Generated **from the parser's actual
+output**, so every path and count is measured. Contains: what a slug is and why a
+duplicate silently deletes a document, slug-naming rules, edit instructions, the
+full 14-group / 102-file table with a blank column to fill in, the 8
+duplicate-key files with exact field names and line numbers, and what was
+deleted. Flags the worst case — `_هيئة_المياه.md` has **`slug` itself duplicated**
+(lines 2 and 33), so the document's own identity was ambiguous.
+
 ### ⏸️ Needs an owner decision before Phase 2 can finish
 
 The collision guard now blocks seeding — by design. Unblocking needs decisions
 **4** and **5** from the plan:
 
-1. **Exclude the junk?** `deleted_backups_archive` (38), `PDF_EXTRACTION_REPORT.md`
-   (122), `_غير_تشريعي_مؤكد_لا_يُصنف` (108). Folders literally named "deleted
-   backups" and "confirmed non-legislative — do not classify". *Recommend: yes,
-   exclude and print the count.* Not done unilaterally — deciding what is not a
-   legal document is the owner's call.
-2. **The 93 real colliding documents need distinct `slug:` frontmatter at
-   source.** Cannot be auto-generated: a machine-invented slug becomes a
-   fabricated citation URL. The `document-slug` group (21 files) is an
-   unreplaced template placeholder.
+1. ~~Exclude the junk?~~ ✅ **Done** — approved and applied (see above).
+2. **88 documents still need distinct `slug:` values at source.** Cannot be
+   auto-generated: a machine-invented slug becomes a fabricated citation URL for
+   a real law. Guide sent to the owner. Worst groups: `regulation` (28),
+   `document-slug` (21 — an unreplaced template placeholder), `regulation-transport`
+   (13), `transport` (9), `law` (7 — Railways Law, Ports Authority Law and others
+   all sharing the key `law`). Nearly all sit in section 13 (القسم اللوجستي),
+   which appears to have been processed with a template that never filled the
+   slug in.
 
 ---
 
