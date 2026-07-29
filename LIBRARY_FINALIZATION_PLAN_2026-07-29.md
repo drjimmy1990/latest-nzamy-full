@@ -5,6 +5,39 @@
 
 ---
 
+## ⚠️ STATUS — read before using this plan (updated 2026‑07‑30)
+
+This document is the original plan. Parts of it are now **superseded**; the live
+record of what was actually built, and of every plan claim that turned out false,
+is **`LIBRARY_PROGRESS_TRACKER.md`**. Read that first.
+
+| Phase | State |
+|---|---|
+| 0 Tooling truth & safety net | ✅ done |
+| 1 Kill switch | ✅ built — **not deployed** |
+| 2 Parser foundations | ✅ done |
+| 3 Content correctness (4 tracks) | ✅ done — all four |
+| ~~4 Build `library_next`~~ | ❌ **DROPPED** |
+| 5 Seed | ⬜ now a plain wipe + reseed into a **fresh** database |
+| 6 App consumes new data | ✅ done |
+| ~~7 Cutover~~ | ❌ **DROPPED** |
+| 8 SEO, cleanup, owner deliverable | ⬜ |
+
+**Why 4 and 7 are dropped:** the owner confirmed the current Supabase database is
+**disposable** — a fresh one is being built once the content is final. The shadow
+schema and the transactional cutover existed only to protect live data that no
+longer needs protecting. That removes the single riskiest step in this plan.
+
+**What did NOT change:** the migrations are still required (a new database needs
+the schema), the owner's source fixes are still required (a disposable database
+does not make a slug collision harmless — the documents still vanish silently at
+seed time), and every parser guard still applies (they matter more when there is
+no backup).
+
+§0.1 and §3 below are **superseded** — see §3 for the real migration set.
+
+---
+
 ## 0. Read this first — a blocking defect none of the 7 specs found
 
 I verified the reseed tooling myself before planning around it. **The wipe mechanism every spec tells you to use cannot delete `library.laws`.**
@@ -47,7 +80,12 @@ The seeder's own helper already gets this right — `scripts/seed-library.ts:110
 
 **Consequence for the plan:** the `laws-amendments` verdict's *CORRECTION 3* ("the wipe is performed by `library-toolkit/library-clear.mjs`, NOT by `scripts/seed-library.ts`'s `--clean` path") correctly identified the mechanism but drew the wrong conclusion — it points you at the broken tool. **Phase 0 fixes `library-clear.mjs` before anything else touches production.**
 
-### 0.1 Second structural decision: do not wipe production at all
+### 0.1 ~~Second structural decision: do not wipe production at all~~ — SUPERSEDED
+
+> **This section no longer applies.** The database is disposable and is being
+> rebuilt from scratch, so there is no live library to protect and no shadow
+> schema. Phase 5 is a plain seed into a fresh database. The reasoning below is
+> kept only to record why the shadow-schema route was chosen at the time.
 
 Every one of the four content types requires a clean rebuild (ids/slugs change in laws, precedents, feqh; orphan purge in decrees). That is not an incremental patch — **it is a 100% rebuild of the library.** Wiping a live 319,000‑row library in place to rebuild it is the highest‑risk possible way to do a job that has a safe alternative.
 
@@ -136,49 +174,76 @@ graph TD
 
 ---
 
-## 3. Migration batching — 4 migrations, not 9
+## 3. Migrations — the real set, verified against the live database
 
-The seven specs proposed **nine** separate DDL migrations, most of them `ALTER` statements against a live 319k‑row schema, several of which the verdicts proved would fail (`articles.number` blocked by the matview) or silently lose grants (matview DROP/CREATE).
+> Replaces the earlier M1–M4 shadow-schema batching, which assumed Phases 4 and 7.
+> Every row below was checked by querying the live database on 2026‑07‑30, not
+> read off a changelog.
 
-Building fresh in `library_next` collapses all of that into **one CREATE**. Every risky ALTER becomes a column definition.
+### 3.1 The six library migrations, in apply order
 
-| # | File | When | Idempotent | Targets live data? | Contents |
-|---|---|---|---|---|---|
-| **M1** | `supabase/migrations/20260729_library_status.sql` | **Phase 1**, before deploy | `on conflict (key) do nothing` | No (inserts one `public.platform_settings` row) | Kill‑switch flag. **Default `'open'`** — applying it must be a behavioural no‑op. |
-| **M2** | `supabase/migrations/20260730_library_next_bootstrap.sql` | **Phase 4**, before the shadow seed | `create schema if not exists` + `create table if not exists` throughout | No (new schema, zero contact with `library.*`) | The whole content schema at its **final** shape. See §3.1. |
-| **M3** | `supabase/migrations/20260731_library_cutover.sql` | **Phase 7**, once, in the maintenance window | Guarded by a `do $$ ... raise exception ...$$` precondition block | **Yes — this is the swap.** | 14 `alter table ... set schema` out, 14 in, all in one transaction. See §5.4. |
-| **M4** | `supabase/migrations/20260807_library_post_cutover.sql` | **Phase 8**, ≥7 days after cutover | Guarded (`raise exception` if any `type='royal'` row remains) | Yes, but read‑only checks first | Drop legacy `'royal'` from the decrees CHECK; `drop schema library_old cascade`. |
+| Order | File | On the live DB | What it does |
+|---|---|---|---|
+| 1 | `20260626_legal_library_schema.sql` | ✅ applied | The whole `library` schema: 18 tables, the `library.arabic` FTS config, the `cross_section_search` matview. |
+| 2 | `20260722_laws_add_gregorian_guid.sql` | ✅ applied | `laws.issue_date_gregorian`, `laws.law_guid`. |
+| 3 | `20260729_library_status.sql` | ✅ applied | Kill-switch flag. Seeds `platform_settings.library_status = open`, so applying it is a behavioural no-op. |
+| 4 | `20260729_decree_instrument_taxonomy.sql` | ❌ **NOT applied** | Widens the `decrees_circulars.type` CHECK from 3 values to 21 **while retaining the legacy 3**; adds `instrument_ar`. |
+| 5 | `20260729_article_history_columns.sql` | ❌ **NOT applied** | `articles.original_text` / `historic_regulation_text` / `unparsed_details`; rebuilds `articles.fts` to index `original_text`; drops and recreates `cross_section_search`. |
+| 6 | `20260729_feqh_locator_labels.sql` | ❌ **NOT applied** | `feqh_blocks.page_label` / `volume_label` / `book_id`; makes `volume_number`/`page_number` nullable; adds `idx_feqh_blocks_order` and `idx_feqh_blocks_book_order`. |
 
-### 3.1 What M2 must contain (consolidated from all 7 specs)
+**Only 4, 5 and 6 remain.** They are mutually independent — 4 touches
+`decrees_circulars`, 5 touches `articles`, 6 touches `feqh_blocks` — but apply
+them in filename order anyway, because 5 drops and recreates the
+`cross_section_search` matview and doing that last keeps the rebuild ordering
+obvious.
 
-`create schema if not exists library_next;` then the **14 content tables only** (`laws, chapters, articles, article_amendments, decrees_circulars, decree_pages, judicial_collections, principles, principle_paragraphs, feqh_books, feqh_chapters, feqh_sections, feqh_blocks` + `cross_section_search` matview). **The 4 user tables (`smart_folders`, `smart_folder_items`, `issue_reports`, `invitations`) are deliberately EXCLUDED** — they stay in `library` and are never touched by the swap.
+### 3.2 Order relative to the seed — this one matters
 
-Deltas versus `20260626_legal_library_schema.sql`, folded in as column definitions:
+**All three must be applied BEFORE `library:seed`, and PostgREST must be told to
+reload.** Two hard consequences if they are not:
 
-| Table | New / changed | Source spec |
-|---|---|---|
-| `articles` | `number text` (was `varchar(20)`), `number_text text` (was `varchar(50)`), `+ number_label text`, `+ reg_num text`, `+ original_text text`, `+ repealed_by text`, `+ repealed_date text`, `+ unparsed_details text`, `+ source_path text`, `+ source_anchor_index int`; `fts` regenerated to include `original_text` | identity, frontend‑seo, laws |
-| `article_amendments` | `+ original_text_label text`, `+ source_summary text` | laws |
-| `laws` | `+ source_path text`, `+ merged_regulation_details jsonb`, 19 SEO/AEO/GEO columns — with **`seo_keywords text[]`, `seo_long_tail_keywords text[]`** (verdict: list‑valued in 1,339/158 files respectively), **no** `og_image`/`canonical_url`/`breadcrumb` (0 occurrences) | frontend‑seo |
-| `decrees_circulars` | `type` CHECK widened to the 22‑value taxonomy **+ legacy `'royal'`**; `+ instrument_ar text` | decrees |
-| `judicial_collections` | `court text NULL`‑able (already), `track varchar(16) not null default 'unknown'` + CHECK, `+ source_paths text[]` | precedents |
-| `principles` | `+ track varchar(16) not null default 'unknown'` + CHECK, `+ source_path text`, `+ source_anchor_index int` | precedents, identity |
-| `feqh_blocks` | `+ page_label text`, `+ volume_label text` | feqh |
-| `feqh_chapters` | `+ volume_label text` | feqh |
-| Indexes | `uq_articles_source_anchor`, `uq_principles_source_anchor` (partial unique), `idx_principles_track`, `laws_section_code_idx` | identity, precedents, frontend‑seo |
-| Grants | `grant usage on schema library_next to anon, authenticated;` + `grant select on all tables in schema library_next to anon, authenticated;` **at the end of M2** | fixes the matview‑grant loss the laws verdict found |
+- Without #4 the widened CHECK does not exist, so every decree carrying one of the
+  18 new instrument types is **rejected at insert** (707 of 2,077 decrees were
+  mistyped, so this is not an edge case).
+- Without #5 and #6 the seeder writes columns that do not exist, and PostgREST
+  rejects the whole row batch with PGRST204.
 
-**Two traps in generating M2 — both must be in the PR description:**
+```sql
+-- after applying, in the SQL editor:
+notify pgrst, 'reload schema';
+```
 
-1. If you generate M2 by substituting `library.` → `library_next.` over the existing migrations, the regconfig literal `to_tsvector('library.arabic', …)` **must be restored to `'library.arabic'`**. Keep exactly one copy of the text‑search config, in `library`. Both schemas reference it by OID; duplicating it produces two configs that can drift.
-2. `library_next` must be added to Supabase → Settings → API → **Exposed schemas** for the seeder (which writes over PostgREST) to reach it, then removed after cutover. Because grants are only added at the *end* of M2, a half‑seeded `library_next` is not publicly readable in the interim — that is a feature, keep it that way.
+Skipping the reload is the classic failure here: the columns exist, but PostgREST
+is still serving its cached schema and every insert fails.
 
-### 3.2 Fallback migration set (Plan B only, if shadow schema is rejected)
+### 3.3 What the app does if they are missing
 
-Four ALTER‑based migrations, in this order, **each with the verdict corrections applied**: `20260729_laws_historical_text.sql` (must `drop materialized view` → `alter` → recreate → **re‑grant**), `20260729_judicial_track_and_court.sql`, `20260729_feqh_locator_labels.sql` + `20260729_decrees_instrument_taxonomy.sql` (single‑transaction lock claim removed — see decrees verdict problem 4), `20260730_library_identity_provenance.sql`. **All four must be applied AND `notify pgrst, 'reload schema'` issued BEFORE any `library:clear`** — otherwise clear wipes the tables and every seed row fails PGRST204.
+The Phase 6 routes were written to degrade rather than break, so a code-first
+deploy is safe — it just leaves features dead, loudly, in the server log:
+
+| Missing | Symptom |
+|---|---|
+| `20260729_article_history_columns` | Search retries without `original_text` and logs a warning; **1,613 repealed articles render blank**. |
+| `20260729_feqh_locator_labels` | The per-book ordered read has no usable index — measured 3.2–4.3s against the **3s statement timeout the anon role runs under**, so large fiqh books intermittently return 57014 and render empty. Books above **396 sections** have no working fallback at all. |
+| `20260729_decree_instrument_taxonomy` | Nothing breaks until the reseed, then decree inserts are rejected by the CHECK. |
+
+### 3.4 Building the fresh database
+
+The whole repo migration set is **34 files**; they apply in filename order
+(`supabase db push`). Two honest warnings:
+
+1. **This set has never been replayed from empty.** Several files are RLS/patch
+   migrations layered on earlier ones (`20260615_fix_rls_policies`,
+   `20260617_fix_remaining_rls`, `20260625_fix_rls_recursion`,
+   `20260716_security_hardening`). Rehearse on a throwaway Supabase project
+   before pointing the real one at it.
+2. **`library_next` is not needed.** Any instruction elsewhere in this document to
+   create it, expose it, or swap schemas is superseded — see the status banner.
+
+After the schema is up: expose `library` under Settings → API → Exposed schemas,
+`notify pgrst, 'reload schema';`, then seed.
 
 ---
-
 ## 4. Phases
 
 Effort is honest dev‑days for one senior engineer fluent in this codebase. Phase 3 parallelizes across 4 tracks.
@@ -322,7 +387,10 @@ node -e "const fs=require('fs');for(const f of ['laws','decrees','precedents','f
 
 ---
 
-### PHASE 4 — Build `library_next`
+### ~~PHASE 4 — Build `library_next`~~ — ❌ DROPPED
+
+> Dropped: the shadow schema existed only to protect live data, and the database
+> is disposable. Nothing in this phase is needed. Kept for the record.
 **Goal:** the target schema exists, at final shape, with zero contact with live data. **Effort:** 2–3 d.
 
 1. Generate M2 (§3.1). Review the generated SQL by hand — especially the `'library.arabic'` restoration and the exclusion of the 4 user tables.
@@ -350,7 +418,23 @@ See §5 for the full design. **Effort:** 3–5 d.
 
 ---
 
-### PHASE 6 — App changes that consume the new data
+### PHASE 6 — App changes that consume the new data — ✅ DONE (commit `07b27ae`)
+
+> Delivered. Three corrections to what this phase specified, all measured:
+> **(a)** `repealedBy` / `repealedDate` / `numberLabel` have **no source** — all
+> 41,845 `ARTICLE_START` anchors were surveyed and carry no repeal-provenance
+> field, so populating them would invent a legal citation (ق‑2). They stay absent.
+> **(b)** there is **1** `|| "circular"`, not 2, and the order-type ternaries live
+> in `laws/orders/[slug]/`, not the paths given below. **(c)** the plan missed two
+> places the recovered text was being lost: `library.articles` had no column for
+> it, and `laws/[slug]/page.tsx` re-maps articles through a field whitelist that
+> dropped `originalText`.
+>
+> Verifying against the live database also surfaced **three pre-existing production
+> outages** this phase had to fix to be testable at all: the entire library search
+> returned 0 results (unparseable `library.arabic` FTS config), all 144 fiqh book
+> pages 404'd (slug double-encoding), and 138 of 144 books returned no blocks
+> (oversized `.in()` URL). Full detail in `LIBRARY_PROGRESS_TRACKER.md`.
 **Goal:** production code can render the new shape, **while still rendering the old shape identically.** Deployed before cutover. **Effort:** 6–9 d.
 
 | Track | Changes | Backward‑compat requirement |
@@ -371,7 +455,10 @@ npm run type-check && npm run build
 
 ---
 
-### PHASE 7 — Cutover
+### ~~PHASE 7 — Cutover~~ — ❌ DROPPED
+
+> Dropped with Phase 4: there is nothing to cut over from. Phase 5 seeds the
+> fresh database directly.
 See §5.4. **Effort:** 1 d prep, ~30 min execution.
 
 ---
@@ -391,6 +478,13 @@ See §5.4. **Effort:** 1 d prep, ~30 min execution.
 ---
 
 ## 5. The reseed strategy
+
+> ⚠️ **Largely superseded.** §5.4 (the cutover) and §5.6 (Plan B) assumed a live
+> library that had to survive the rebuild. The database is disposable, so the
+> reseed is: create the fresh database → apply all migrations → expose `library` →
+> `notify pgrst, 'reload schema'` → seed → verify. **§5.5 (banned commands) still
+> applies in full** — those commands delete user bookmarks, smart folders, issue
+> reports and invitation codes, none of which are disposable.
 
 ### 5.1 Why "canary then full wipe" is the wrong frame here
 
@@ -639,6 +733,51 @@ BASE_URL=https://nezamy.sa npm run library:verify
 ## 8. Owner decisions — consolidated
 
 Every `openQuestion` across the 7 specs, de‑duplicated, with my recommendation. **These block implementation where marked ⛔.**
+
+### 8.0 Where these stand as of 2026‑07‑30
+
+**Resolved in code — no owner action needed:** 4 (archive excluded), 6 (SAMA
+rulebooks kept with honest types), 8 (bare `قرار` → `decision`), 9 (repealed text
+IS searchable — `original_text` is in the rebuilt `fts`), 10 (historical text is
+paid, truncated by the same `preview()` helper as `text`), 12 (baseline accepted —
+79 blocks quarantined in `unparsed_details`), 13 (`historic_regulation_text`
+column + reader affordance both shipped), 14 + 15 (verbatim labels via
+`_locator.ts`; a null volume renders as nothing, never `"null"`), 17 (manifest
+vendored), 19–22 (deferred as recommended).
+
+**Still needs the OWNER (content, at source):** 1, 2, 3, 5, 16 — these are the
+175 documents in `دليل_المالك_إصلاح_المعرفات.md`. Nothing imports until they are
+fixed; the parser halts before writing.
+
+**Still needs the OWNER (approval of wording):**
+
+- **#11 — the copy-citation wording.** Now implemented and unit-tested. Note it
+  differs from the recommendation below: the noun comes from the document's real
+  `type` (only 526 of 1,532 documents are a `نظام`), and a page-marker locator is
+  never dressed up as an article. The exact strings now produced are:
+  
+  | case | string |
+  |---|---|
+  | article | `المادة (السادسة) من نظام (اسم النظام) ونصه:` |
+  | repealed | `المادة (السادسة) الملغاة من نظام (اسم النظام) ونصه قبل الإلغاء:` |
+  | executive regulation | `المادة (الثالثة) من اللائحة التنفيذية لنظام (اسم النظام) ونصه:` |
+  | page-numbered document | `الصفحة (3) من دليل إرشادي (اسم الدليل) ونصه:` |
+  | unknown document kind | `المادة (الأولى) من (اسم الوثيقة) ونصه:` — noun omitted, never guessed |
+  
+  The grammatical `ونصه` vs `ونصها` question is deliberately left as `ونصه`, the
+  existing wording, rather than changed unasked. Owner decides.
+- **#25 — closure copy** (kill switch is built but not deployed).
+- **#24** — whether paying subscribers also lose access when closed.
+
+**No longer applicable:** 26 (URL-stability 301s before cutover) — there is no
+cutover; the database is new, so the question becomes whether any old
+`/precedents/…` URL was ever published externally. Still worth answering, but it
+no longer blocks a phase.
+
+**New, found in Phase 6 — informational, owner may want to act:** 112 documents
+typed `نظام` / `لائحة تنفيذية` / `تعميم` have **page numbers instead of article
+numbers** for every article (3,036 articles). They were extracted as page scans,
+so they can only ever be cited by page. See «مسألة سادسة» in the owner guide.
 
 | # | Decision | My recommendation | Blocks |
 |---|---|---|---|
