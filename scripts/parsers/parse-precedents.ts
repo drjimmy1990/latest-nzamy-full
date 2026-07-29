@@ -29,6 +29,7 @@ import { slugifyArabic as sharedSlugify } from "./lib/slug";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { writeParseReport, printCapped } from "./lib/report";
+import { classifyCourt, type JudicialTrack } from "./lib/court";
 
 /** Collected per run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
@@ -71,7 +72,10 @@ export interface ParsedPrincipleCollection {
   slug: string;
   title: string;
   court: string;
-  court_type: string;        // ordinary | admin | semi
+  /** Verbatim court name as written in the source (kept for display/citation). */
+  court_type: string;
+  /** Derived judicial branch — see lib/court.ts. Never defaulted to a real branch. */
+  track: JudicialTrack;
   year_hijri: number;
   part: number;
   source_id: string;
@@ -85,7 +89,10 @@ export interface ParsedCourtPrecedent {
   slug: string;
   title: string;
   court: string;
+  /** Verbatim court name as written in the source. */
   court_type: string;
+  /** Derived judicial branch — see lib/court.ts. */
+  track: JudicialTrack;
   ruling_number: string;
   case_number: string;
   year: string;
@@ -217,6 +224,10 @@ function extractDetails(text: string): PrincipleDetail {
 function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection | null {
   const raw = fs.readFileSync(filePath, "utf-8");
   const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  // Judicial branch: derived from the folder first (the strongest signal, and
+  // the only one present for files carrying no court field), then the court name.
+  // Never defaulted to a real branch — see lib/court.ts.
+  const courtInfo = classifyCourt(filePath, meta);
 
   const fileId = path.basename(filePath, ".md");
   const title = String(meta.title || fileId);
@@ -300,8 +311,9 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
     id: fileId,
     slug: (meta.slug as string) || slugifyArabic(title) || fileId,
     title,
-    court: String(meta.court || meta.issuing_body || ""),
-    court_type: String(meta.court_type || meta.track || "ordinary"),
+    court: courtInfo.court || "",
+    court_type: courtInfo.court || "",
+    track: courtInfo.track,
     year_hijri: Number(meta.year_hijri || meta.hijri_year || 0),
     part: Number(meta.part || meta.volume || 1),
     source_id: String(meta.source_id || ""),
@@ -318,6 +330,10 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
 function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
   const raw = fs.readFileSync(filePath, "utf-8");
   const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  // Judicial branch: derived from the folder first (the strongest signal, and
+  // the only one present for files carrying no court field), then the court name.
+  // Never defaulted to a real branch — see lib/court.ts.
+  const courtInfo = classifyCourt(filePath, meta);
 
   // Only parse as precedent if it has the right frontmatter markers
   if (!meta.court_type && !meta.ruling_number && !meta.case_number) {
@@ -405,8 +421,9 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
     id: fileId,
     slug: (meta.slug as string) || slugifyArabic(title) || fileId,
     title,
-    court: String(meta.court || meta.court_type || ""),
-    court_type: String(meta.court_type || "ordinary"),
+    court: courtInfo.court || "",
+    court_type: courtInfo.court || "",
+    track: courtInfo.track,
     ruling_number: String(meta.ruling_number || ""),
     case_number: String(meta.case_number || ""),
     year: String(meta.year || meta.year_hijri || meta.case_year_hijri || ""),
@@ -450,6 +467,10 @@ function extractRulingSection(body: string, synonyms: string[]): string {
 function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | null {
   const raw = fs.readFileSync(filePath, "utf-8");
   const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  // Judicial branch: derived from the folder first (the strongest signal, and
+  // the only one present for files carrying no court field), then the court name.
+  // Never defaulted to a real branch — see lib/court.ts.
+  const courtInfo = classifyCourt(filePath, meta);
 
   const fileId = path.basename(filePath, ".md");
   const hasArticleStart = /<!--\s*ARTICLE_START\s/.test(body);
@@ -519,8 +540,9 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
     id: inherited.collection_id,
     slug: inherited.collection_id,
     title: inherited.collection_title,
-    court: inherited.issuing_body,
-    court_type: String(meta.court_type || meta.track || "ordinary"),
+    court: courtInfo.court || inherited.issuing_body,
+    court_type: courtInfo.court || inherited.issuing_body,
+    track: courtInfo.track,
     year_hijri: Number(meta.year_hijri || 0),
     part: Number(meta.part || 1),
     source_id: String(meta.source_id || inherited.source || ""),

@@ -78,10 +78,22 @@ export default function JudicialPrinciplesPage() {
   };
 
   // Helper functions for citation extraction and normalization
+  // Court/issuing body for display AND for the generated citation.
+  //
+  // The PER-RECORD issuing body wins over the collection's. The collection is a
+  // grouping, so its court is necessarily the less specific of the two — and
+  // until recently every standalone ruling was attached to a single collection
+  // hardcoded as "المحكمة التجارية", which meant Supreme Court, labour and
+  // committee decisions were all displayed and cited as Commercial Court
+  // rulings. Preferring the record's own issuing body makes that class of error
+  // impossible regardless of how collections are grouped.
+  //
+  // The collection TITLE is deliberately no longer used as a court fallback: a
+  // title such as "مجموعة الأحكام القضائية لعام 1434هـ" is a publication, not
+  // an issuing authority, and citing it as one is a fabricated attribution.
   const getCourtOrIssuer = (p: JudicialPrincipleItem | null) => {
-    if (collection?.court && collection.court !== "جهة غير محددة") return collection.court;
     if (p?.issuing_body && p.issuing_body !== "جهة غير محددة") return p.issuing_body;
-    if (collection?.title && collection.title !== "مبادئ قضائية") return collection.title;
+    if (collection?.court && collection.court !== "جهة غير محددة") return collection.court;
     return isRTL ? "جهة غير محددة" : "Unspecified Authority";
   };
 

@@ -487,18 +487,49 @@ async function seedPrecedents(
   const principleRows: Record<string, unknown>[] = [];
   const paragraphRows: Record<string, unknown>[] = [];
 
-  // Default collection for isolated court precedents
-  if (courtPrecs.length > 0) {
+  // ── Collections for standalone court precedents ──────────────────────────
+  // Previously EVERY standalone ruling was attached to one hardcoded row
+  // labelled court "المحكمة التجارية" / track "commercial" — regardless of which
+  // court actually issued it. Rulings of the Supreme Court, the Board of
+  // Grievances, labour courts and quasi-judicial committees were all published
+  // under the Commercial Court's name. ("commercial" was not even a valid track.)
+  //
+  // Now one collection is derived per (track, court) actually present in the
+  // data, so a ruling is only ever filed under the body that issued it.
+  const precedentGroupKey = (p: Record<string, unknown>): string => {
+    const track = String(p.track || "unknown");
+    const court = String(p.court || p.court_type || "").trim();
+    return `${track}::${court}`;
+  };
+
+  const precGroups = new Map<string, Record<string, unknown>[]>();
+  for (const p of courtPrecs) {
+    const k = precedentGroupKey(p as Record<string, unknown>);
+    const list = precGroups.get(k);
+    if (list) list.push(p as Record<string, unknown>);
+    else precGroups.set(k, [p as Record<string, unknown>]);
+  }
+
+  /** Deterministic, stable collection id for a (track, court) pair. */
+  const groupCollectionId = (key: string): string =>
+    `prec-${toUuid(key)}`.substring(0, 100);
+
+  for (const [key, members] of precGroups) {
+    const [track, court] = key.split("::");
     collRows.push({
-      id: "court-precedents-collection",
-      title: "السوابق والأحكام القضائية",
-      court: "المحكمة التجارية",
+      id: groupCollectionId(key),
+      // No court name in the source means we do not know which body issued it.
+      // Saying so is correct; naming a court would be a fabrication.
+      title: court || "أحكام وسوابق — جهة غير محددة",
+      court: court || null,
       year_hijri: null,
       part: 1,
       source_id: "moj",
-      track: "commercial",
-      description: "مجموعة الأحكام والسوابق التجارية",
-      ruling_count: courtPrecs.length,
+      track: track.substring(0, 50),
+      description: court
+        ? `مجموعة الأحكام والسوابق الصادرة عن ${court}`
+        : "أحكام وسوابق لم تُحدَّد جهة إصدارها في المصدر",
+      ruling_count: members.length,
       free: true,
       progress: 100,
     });
@@ -514,7 +545,10 @@ async function seedPrecedents(
       year_hijri: safeInt(coll.year_hijri, null),
       part: coll.part || 1,
       source_id: coll.source_id || "",
-      track: (coll.track || "").substring(0, 50),
+      // `track` is DERIVED by the parser (lib/court.ts), not read from source —
+      // no source file has ever carried a `track` field, which is why this
+      // column was empty for 94 of 95 collections in production.
+      track: String(coll.track || "unknown").substring(0, 50),
       description: coll.description || "",
       ruling_count: coll.total_principles || 0,
       free: coll.free !== false,
@@ -565,9 +599,10 @@ async function seedPrecedents(
 
     principleRows.push({
       id: precId,
-      collection_id: "court-precedents-collection",
+      // Its own court's collection, not the single fabricated commercial one.
+      collection_id: groupCollectionId(precedentGroupKey(prec as Record<string, unknown>)),
       principle_number: String(prec.ruling_number || "").substring(0, 50),
-      issuing_body: prec.court_type || "",
+      issuing_body: prec.court || prec.court_type || "",
       session_date: prec.date || "",
       decision_number: prec.case_number || "",
       reference: prec.subject || "",

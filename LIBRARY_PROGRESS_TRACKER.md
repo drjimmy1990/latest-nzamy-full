@@ -17,7 +17,7 @@ summary (`LIBRARY_PIPELINE_FIX_STATUS.md`) is produced at Phase 8 from this file
 | **0** | Tooling truth & safety net | 🔄 | Code done + committed `d5aca3f`. **Backup (0.5) blocked — needs owner.** |
 | **1** | Kill switch (open/close library) | ✅ | Built + verified end-to-end. **Not yet deployed to VPS.** |
 | **2** | Parser foundations | 🔄 | Laws track done. **Found 232 documents that would be silently lost.** Blocked on owner decisions 4 & 5. |
-| **3** | Content correctness (4 tracks) | 🔄 | **3a done** — the article-text corruption fix. 3b/3c/3d open. |
+| **3** | Content correctness (4 tracks) | 🔄 | **3a + 3c done** — article-text corruption and court attribution. 3b/3d open. |
 | **4** | Build `library_next` | ⬜ | |
 | **5** | Shadow seed & integrity | ⬜ | |
 | **6** | App consumes new data | ⬜ | Must deploy **before** Phase 7 |
@@ -491,7 +491,7 @@ The collision guard now blocks seeding — by design. Unblocking needs decisions
 
 - [x] **3a Laws** — ✅ **DONE** — see below
 - [ ] **3b Decrees** (canary) — exact-match taxonomy · unknown bucket · archive exclusion · duplicate basename
-- [ ] **3c Precedents** — track/court classification · per-court collections · no-else guard · container ids
+- [x] **3c Precedents** — ✅ **DONE** — see below
 - [ ] **3d Feqh** — remove `\b` from Arabic regexes · locator formats · flushPage reset · order_index
 
 ### 3a — Laws: amended/repealed article text ✅
@@ -583,7 +583,69 @@ meaningful test of a heuristic over free-form Arabic legal prose is what it does
 to the real corpus). `tsc` clean. Full parse: **0 failed files**, 41,462 articles,
 0 markup leaked. Only remaining failure is the 14 slug collisions — the owner's.
 
-**What was done:** 3a complete. 3b/3c/3d still open.
+### 3c — Precedents: court attribution ✅
+
+Two independent misattributions, both fixed.
+
+**Root cause found by surveying the corpus, and it is not what the plan said.**
+The plan blamed a bad default. The actual cause is that **the administrative
+judiciary uses a different frontmatter field**: ordinary courts write
+`court_type:`, while ديوان المظالم (61 files) and المحكمة الإدارية العليا (16)
+write `court:`. The parser read `court_type || track || "ordinary"` — so every
+administrative document fell through to the default.
+
+Also measured: **`track` appears in 0 of 1,432 source files**, yet the seeder
+wrote `coll.track`. That is why 94 of 95 collections in production have an empty
+track column. And `court_type` holds court *names* ("المحكمة العليا"), not
+branches — so name and branch were conflated in one column.
+
+| | Before | After |
+|---|---:|---:|
+| Collections on `admin` track | **0** | **100** (6,602 principles) |
+| Collections on `semi` track | 0 | 19 (2,019 principles) |
+| Collections on `ordinary` track | *all of them* | 95 (9,382 principles) |
+| Collections with unresolved track | 215 | **1** |
+| Rulings falsely attributed to المحكمة التجارية | **639** | 0 |
+
+**6,602 principles** of administrative-judiciary rulings — ديوان المظالم and the
+Supreme Administrative Court — were published as ordinary-judiciary decisions.
+In Saudi law these are separate branches.
+
+**New `lib/court.ts`** separates the two concerns: `court` keeps the verbatim
+name; `track` is a derived branch. It classifies from the **folder first** (the
+strongest signal, and the only one present for the 219 files carrying no court
+field), then the court name, then `"unknown"`. Defaulting to a real branch is
+forbidden — that is precisely what published administrative rulings as ordinary.
+
+**The fabricated collection is gone.** Every standalone ruling was attached to
+one hardcoded row: `court: "المحكمة التجارية"`, `track: "commercial"` (not even a
+valid track). The seeder now derives one collection per (track, court) actually
+present:
+
+| Rulings | Track | Court |
+|---:|---|---|
+| 599 | ordinary | المحكمة العليا |
+| 574 | ordinary | المحكمة التجارية |
+| 15 | semi | لجنة الاستئناف في منازعات الأوراق المالية |
+| 12 | ordinary | المحكمة العمالية |
+| 11 | ordinary | محكمة الاستئناف |
+| 2 | ordinary | المحكمة العامة |
+
+**Frontend priority inverted.** `getCourtOrIssuer` preferred the collection's
+court over the record's own `issuing_body`, so the fake label won on screen and
+in generated citations. The per-record body now wins — the collection is a
+grouping and necessarily less specific. Also **removed the collection title as a
+court fallback**: "مجموعة الأحكام القضائية لعام 1434هـ" is a publication, not an
+issuing authority, and citing it as one is a fabricated attribution.
+
+**The one remaining `unknown`** records its issuing body as "وزارة المالية" — a
+ministry, not a court. Left flagged for review rather than assigned a branch on
+a guess.
+
+`tsc` clean; build 394/394.
+
+**What was done:** 3a and 3c complete. 3b (decree taxonomy) and 3d (feqh
+pagination) still open.
 
 ---
 
