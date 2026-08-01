@@ -13,7 +13,6 @@ import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
-import { COMPANIES_LAW } from "../data";
 import type { LawArticle, LawSystem } from "../data";
 import { getLawMeta, fetchLawMetadata, SECTION_COLORS } from "../law-metadata-map";
 import type { LawMetaEntry } from "../law-metadata-map";
@@ -56,7 +55,11 @@ function LawSystemPageContent() {
   const [showCart,    setShowCart]    = useState(false);
   const [activeId,    setActiveId]    = useState<string>("art-1");
   const [explainArticle, setExplainArticle] = useState<LawArticle | null>(null);
-  const [law, setLaw] = useState<LawSystem>(COMPANIES_LAW);
+  // Starts empty. This used to default to the bundled COMPANIES_LAW, which meant
+  // every law page — whichever one you opened — briefly rendered نظام الشركات
+  // while its own data loaded. The `if (!law)` guard below the loading/error
+  // early-returns is what lets the rest of the component keep reading `law.x`.
+  const [law, setLaw] = useState<LawSystem | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [jumpQuery,  setJumpQuery]  = useState("");  // بحث سريع للمواد
@@ -93,29 +96,28 @@ function LawSystemPageContent() {
     // ── Dynamic slug loading (API-backed) ──────────────────────────────────
   useEffect(() => {
     async function loadLaw() {
-      // Keep static fallback for companies-law (backward compat)
-      if (slug === "companies-law") {
-        setLaw(COMPANIES_LAW);
-        setLoading(false);
-        return;
-      }
+      // NOTE: `companies-law` used to short-circuit to the bundled COMPANIES_LAW
+      // constant here, BEFORE the fetch — so the reader never asked the database
+      // for it. Measured: the database holds 281 articles for that law and the
+      // bundled constant held 17, so 264 articles were invisible, and because no
+      // request was made the SERVER-SIDE paywall never ran for it either (the
+      // 13 "locked" articles shipped in full inside the JS bundle).
+      //
+      // A second fallback here did `await import('@/constants/laws/<slug>.json')`.
+      // That directory does not exist in the repo at all, so the import always
+      // threw and the catch set loadError — identical to having no fallback,
+      // except it also emitted a build warning on every build.
+      //
+      // Both are gone: every law now takes the same API path.
       try {
         setLoadError(false);
         setLoading(true);
         const res = await fetch(`/api/library/laws/${apiSlug(slug)}`);
         if (!res.ok) {
-          console.warn(`[LawReader] Law "${slug}" not found in API (${res.status}), using fallback`);
-          // Fallback to local json import if possible (for robustness)
-          try {
-            const data = await import(`@/constants/laws/${slug}.json`);
-            setLaw(data.default);
-            setLoading(false);
-            return;
-          } catch {
-            setLoadError(true);
-            setLoading(false);
-            return;
-          }
+          console.warn(`[LawReader] Law "${slug}" not found in API (${res.status})`);
+          setLoadError(true);
+          setLoading(false);
+          return;
         }
         const data = await res.json();
         // Transform API response to match LawSystem interface
@@ -261,8 +263,8 @@ function LawSystemPageContent() {
     const sectionCode = meta.section_code || (law as any).section_code;
     return {
       slug,
-      title: law.title,
-      titleEn: law.titleEn || law.title,
+      title: law?.title ?? "",
+      titleEn: law?.titleEn || law?.title || "",
       catId: sectionCode ? `SA-${sectionCode}` : "SA-00",
       type: "law" as const
     };
@@ -363,6 +365,7 @@ function LawSystemPageContent() {
 
   // ــ Intersection Observer: تحديث activeId عند السكرول تلقائياً ــــــــــــــــــ
   useEffect(() => {
+    if (!law) return;
     const ids = law.chapters.flatMap(ch => ch.articles.map(a => a.id));
     const observers = ids.map(id => {
       const el = document.getElementById(id);
@@ -383,7 +386,7 @@ function LawSystemPageContent() {
 
   const sectionColors = SECTION_COLORS[lawMeta.section_code ?? "00"];
 
-  const allArticles  = law.chapters.flatMap(ch => ch.articles);
+  const allArticles  = law?.chapters.flatMap(ch => ch.articles) ?? [];
   const activeArticle = allArticles.find(a => a.id === activeId) ?? null;
   const cartMap      = new Map(cart.map(e => [e.articleId, e]));
 
@@ -409,10 +412,10 @@ function LawSystemPageContent() {
 
   const getOrCreateEntry = useCallback((a: LawArticle): CartEntry => ({
     articleId: a.id, articleNum: a.num, articleTitle: a.title, articleText: a.text,
-    lawName: law.title, lawSlug: law.slug,
+    lawName: law?.title ?? "", lawSlug: law?.slug ?? slug,
     execReg: a.executiveReg ? { ref: a.executiveReg.ref, text: a.executiveReg.text } : undefined,
     principles: [], precedents: [], isArticleAdded: false, isExecRegAdded: false,
-  }), [law.title, law.slug]);
+  }), [law?.title, law?.slug, slug]);
 
   const addArticle = useCallback((a: LawArticle) => {
     setCart(prev => {
@@ -455,7 +458,7 @@ function LawSystemPageContent() {
   const muted  = isDark ? "text-zinc-500" : "text-slate-400";
   const border = isDark ? "border-white/[0.07]" : "border-slate-200";
   const card   = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
-  const lawTitle = isRTL ? law.title : law.titleEn;
+  const lawTitle = (isRTL ? law?.title : law?.titleEn) ?? "";
   const fontClass = { normal: "text-[13px]", large: "text-[15px]", xlarge: "text-[17px]" }[fontSize];
 
   // Copy DRAFT — HTML Clipboard (Bold في Word)
@@ -509,7 +512,12 @@ function LawSystemPageContent() {
     );
   }
 
-  if (loadError) {
+  // `law` is null only before the first successful load. `loading` covers that
+  // window, so this is a belt-and-braces guard — but it is also what narrows the
+  // type for the ~24 `law.x` reads below now that the state starts empty.
+  if (!law && !loadError) return null;
+
+  if (loadError || !law) {
     return (
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
         <Navbar />
