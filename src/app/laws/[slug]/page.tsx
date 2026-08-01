@@ -260,7 +260,17 @@ function LawSystemPageContent() {
   // Current Document Meta for folder auto-add
   const currentDoc = useMemo(() => {
     const meta = getLawMeta(slug);
-    const sectionCode = meta.section_code || (law as any).section_code;
+    // ⚠️ `law` is null until the first fetch resolves, and this memo runs during
+    // that render. The `as any` cast hides that from the type checker entirely —
+    // `tsc --noEmit` reports zero errors either way — so the optional chaining
+    // here is load-bearing, not cosmetic.
+    //
+    // It is also easy to "verify" as working when it is not: getLawMeta returns
+    // {} for any slug absent from law-metadata-map.ts, so `meta.section_code` is
+    // falsy and the `||` falls through to this dereference. companies-law HAS a
+    // section_code in that map, so testing that page alone passes while most of
+    // the 1,532-document corpus throws.
+    const sectionCode = meta.section_code || (law as any)?.section_code;
     return {
       slug,
       title: law?.title ?? "",
