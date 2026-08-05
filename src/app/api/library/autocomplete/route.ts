@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { libraryGate } from '@/lib/library-gate';
+import { LIBRARY_FTS_CONFIG } from '@/utils/normalizeArabic';
 
 /**
  * GET /api/library/autocomplete?q=بطلان
@@ -7,6 +9,9 @@ import { createClient } from '@/lib/supabase/server';
  * Returns section counts + top 6 matching items.
  */
 export async function GET(request: Request) {
+  const gate = await libraryGate();
+  if (gate) return gate;
+
   try {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q')?.trim();
@@ -20,11 +25,11 @@ export async function GET(request: Request) {
 
     const supabase = await createClient();
     // Full-text search on the generated `fts` tsvector columns (GIN-indexed),
-    // built with `to_tsvector('library.arabic', ...)`. We query with
-    // `plainto_tsquery('library.arabic', <raw query>)` so query tokens are
-    // produced with the same config as the stored tsvector (the `library.arabic`
-    // config is `copy = simple` and does not normalize Arabic forms, so the raw
-    // query is used as-is).
+    // built with `to_tsvector('library.arabic', ...)`. Queried with
+    // LIBRARY_FTS_CONFIG, which yields the same lexemes as that config but is
+    // expressible in a PostgREST filter — 'library.arabic' itself is a parse
+    // error and made every autocomplete return nothing. The config does not
+    // normalize Arabic forms, so the raw query is used as-is.
     const ftsQuery = query;
 
     // Run all count queries in parallel for speed
@@ -34,35 +39,35 @@ export async function GET(request: Request) {
         .schema('library')
         .from('articles')
         .select('id', { count: 'exact', head: true })
-        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' }),
+        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' }),
       
       // Count: principles matching
       supabase
         .schema('library')
         .from('principles')
         .select('id', { count: 'exact', head: true })
-        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' }),
+        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' }),
       
       // Count: decrees matching
       supabase
         .schema('library')
         .from('decrees_circulars')
         .select('id', { count: 'exact', head: true })
-        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' }),
+        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' }),
       
       // Count: feqh blocks matching
       supabase
         .schema('library')
         .from('feqh_blocks')
         .select('id', { count: 'exact', head: true })
-        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' }),
+        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' }),
       
       // Top 2 law matches
       supabase
         .schema('library')
         .from('laws')
         .select('slug, title, type')
-        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' })
+        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' })
         .limit(2),
       
       // Top 2 principle matches
@@ -70,7 +75,7 @@ export async function GET(request: Request) {
         .schema('library')
         .from('principles')
         .select('id, principle_number, issuing_body, text')
-        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' })
+        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' })
         .limit(2),
       
       // Top 2 decree matches
@@ -78,7 +83,7 @@ export async function GET(request: Request) {
         .schema('library')
         .from('decrees_circulars')
         .select('id, title, type, ref')
-        .textSearch('fts', ftsQuery, { config: 'library.arabic', type: 'plain' })
+        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' })
         .limit(2),
     ]);
 

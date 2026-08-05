@@ -20,6 +20,7 @@
     "library:seed": "node library-toolkit/library-seed.mjs",
     "library:verify": "node library-toolkit/library-verify.mjs",
     "library:status": "node library-toolkit/library-status.mjs",
+    "library:baseline": "node library-toolkit/library-baseline.mjs",
     "library:reseed": "node library-toolkit/library-reseed.mjs",
     "library:reseed:wipe": "node library-toolkit/library-reseed.mjs --wipe",
     "docs:check-drift": "node scripts/check-docs-drift.mjs"
@@ -42,11 +43,13 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
     "@types/canvas-confetti": "^1.9.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.2.1",
+    "js-yaml": "^4.3.0",
     "sharp": "^0.34.5",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.0.0"

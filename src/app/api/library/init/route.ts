@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getLibraryAccessForUser } from "@/lib/access-control";
+import { libraryGate } from "@/lib/library-gate";
 
 export async function GET(request: Request) {
+  const gate = await libraryGate();
+  if (gate) return gate;
+
   const supabase = await createClient();
 
   // Bounded reads: the front-end mounts this once on load, so cap each table
@@ -80,7 +84,7 @@ export async function GET(request: Request) {
         ? fetchSection(
             "principles",
             `id, principle_number, issuing_body, text, session_date, decision_number, year_hijri,
-             judicial_collections ( id, title, court, track, source_id, category )`,
+             judicial_collections ( id, title, court, track, source_id )`,
             "principles"
           )
         : Promise.resolve(emptySection),

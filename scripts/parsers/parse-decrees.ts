@@ -18,12 +18,25 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { slugifyArabic as sharedSlugify } from "./lib/slug";
+import { parseFrontmatter } from "./lib/frontmatter";
+import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
+import { filterMeta } from "./manifest";
+import { writeParseReport, printCapped } from "./lib/report";
+import { classifyInstrument, type InstrumentType } from "./lib/instrument";
+
+/** Documents whose instrument could not be determined — counted, never guessed. */
+const unknownInstruments: string[] = [];
+
+/** Collected per run so YAML problems are reported, never swallowed. */
+const frontmatterWarnings: string[] = [];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
 // ══════════════════════════════════════════════════════════════════════════════
 
-export type DecreeType = "royal" | "cabinet" | "circular" | "ministerial";
+/** Superseded by InstrumentType in ./lib/instrument.ts. */
+export type DecreeType = InstrumentType;
 
 export interface DecreeArticle {
   number: number;
@@ -35,6 +48,8 @@ export interface ParsedDecree {
   slug: string;
   title: string;
   type: DecreeType;
+  /** Verbatim Arabic instrument name from the source. */
+  instrument_ar: string;
   issuer: string;
   ref: string;
   date: string;
@@ -61,49 +76,24 @@ export interface DecreesParserOutput {
 // Arabic → ASCII slug (shared logic)
 // ══════════════════════════════════════════════════════════════════════════════
 
-const AR_TRANSLIT: Record<string, string> = {
-  "ا": "a", "أ": "a", "إ": "e", "آ": "aa", "ب": "b", "ت": "t", "ث": "th",
-  "ج": "j", "ح": "h", "خ": "kh", "د": "d", "ذ": "dh", "ر": "r", "ز": "z",
-  "س": "s", "ش": "sh", "ص": "s", "ض": "d", "ط": "t", "ظ": "dh", "ع": "a",
-  "غ": "gh", "ف": "f", "ق": "q", "ك": "k", "ل": "l", "م": "m", "ن": "n",
-  "ه": "h", "و": "w", "ي": "y", "ى": "a", "ة": "h", "ئ": "e", "ؤ": "w",
-  "ء": "", "ﻻ": "la", "ﻷ": "la",
-};
-
-function slugifyArabic(text: string): string {
-  let slug = text.replace(/[\u064B-\u065F\u0670]/g, "");
-  slug = slug.replace(/\bال/g, "al-");
-  let result = "";
-  for (const ch of slug) {
-    if (AR_TRANSLIT[ch] !== undefined) result += AR_TRANSLIT[ch];
-    else if (/[a-zA-Z0-9]/.test(ch)) result += ch.toLowerCase();
-    else if (/[\s\-_]/.test(ch)) result += "-";
-  }
-  return result.replace(/-{2,}/g, "-").replace(/^-|-$/g, "").substring(0, 120);
-}
+// Transliteration table + slug function moved to ./lib/slug.ts (was duplicated
+// verbatim in all four parsers). Aliased so existing call-sites are unchanged.
+const slugifyArabic = sharedSlugify;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // YAML frontmatter (minimal parser — same as parse-laws)
 // ══════════════════════════════════════════════════════════════════════════════
 
-function parseYamlFrontmatter(raw: string): { meta: Record<string, unknown>; body: string } {
-  const match = raw.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n/);
-  if (!match) return { meta: {}, body: raw };
-  const yamlStr = match[1];
-  const body = raw.slice(match[0].length);
-  const meta: Record<string, unknown> = {};
-  for (const line of yamlStr.split(/\r?\n/)) {
-    const m = line.match(/^(\w[\w_]*)\s*:\s*(.*)/);
-    if (m) {
-      let value: unknown = m[2].trim();
-      if (typeof value === "string" && /^["'].*["']$/.test(value)) value = (value as string).slice(1, -1);
-      if (typeof value === "string" && /^\d+$/.test(value)) value = parseInt(value, 10);
-      if (value === "true") value = true;
-      if (value === "false") value = false;
-      meta[m[1]] = value;
-    }
-  }
-  return { meta, body };
+// Frontmatter now parsed by js-yaml via ./lib/frontmatter.ts. The previous
+// line-by-line matcher silently dropped indented sub-keys, kept raw quote
+// characters from malformed scalars, and let broken YAML pass unnoticed.
+function parseYamlFrontmatter(
+  raw: string,
+  sourcePath = "<unknown>",
+): { meta: Record<string, unknown>; body: string } {
+  const { meta, body, warnings } = parseFrontmatter(raw, sourcePath);
+  if (warnings.length) frontmatterWarnings.push(...warnings);
+  return { meta: filterMeta(meta), body };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -143,7 +133,7 @@ function parseUnifiedIndex(filePath: string): ParsedDecree[] {
       }
     }
 
-    const decreeType = detectDecreeType(String(entry.type || ""));
+    const decreeType = classifyInstrument(entry as Record<string, unknown>).type;
     const slug = String(entry.id || uuid);
 
     decrees.push({
@@ -151,6 +141,7 @@ function parseUnifiedIndex(filePath: string): ParsedDecree[] {
       slug,
       title,
       type: decreeType,
+      instrument_ar: String(entry.type || ""),
       issuer: String(entry.issuer || ""),
       ref: String(entry.ref || ""),
       date: String(entry.date || ""),
@@ -170,17 +161,10 @@ function parseUnifiedIndex(filePath: string): ParsedDecree[] {
   return decrees;
 }
 
-function detectDecreeType(typeStr: string): DecreeType {
-  const lower = typeStr.toLowerCase();
-  if (lower.includes("royal") || lower.includes("ملكي")) return "royal";
-  if (lower.includes("cabinet") || lower.includes("مجلس الوزراء") || lower.includes("وزراء")) return "cabinet";
-  if (lower.includes("circular") || lower.includes("تعميم")) return "circular";
-  if (lower.includes("ministerial") || lower.includes("وزاري")) return "ministerial";
-  // Default based on Arabic text
-  if (typeStr.includes("أمر")) return "royal";
-  if (typeStr.includes("قرار")) return "cabinet";
-  return "cabinet";
-}
+// detectDecreeType() removed. It was a chain of loose substring tests ending in
+// `return "cabinet"`, which asserted 207 unrecognised documents were Cabinet
+// Decisions and conflated أمر سامي with مرسوم ملكي. Replaced by the exact-match
+// table in ./lib/instrument.ts, which returns "unknown" rather than guessing.
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Parse circular markdown files
@@ -189,10 +173,20 @@ function detectDecreeType(typeStr: string): DecreeType {
 function parseCircularMd(filePath: string): ParsedDecree | null {
   console.log(`  📄 Parsing circular markdown: ${path.basename(filePath)}`);
   const raw = fs.readFileSync(filePath, "utf-8");
-  const { meta, body } = parseYamlFrontmatter(raw);
+  const { meta, body } = parseYamlFrontmatter(raw, filePath);
 
   const fileId = path.basename(filePath, ".md");
   const title = String(meta.title || fileId);
+
+  // Real Saudi instrument type: exact-match on the frontmatter value, with the
+  // ambiguous "قرار" bucket refined by issuing_instrument. Never guessed —
+  // unrecognised values become "unknown" and are reported below.
+  const instrument = classifyInstrument(meta);
+  if (instrument.type === "unknown") {
+    unknownInstruments.push(
+      `${path.basename(filePath)} :: type=${JSON.stringify(instrument.instrumentAr)}`,
+    );
+  }
 
   // Extract articles using ARTICLE_START/END markers
   const articles: DecreeArticle[] = [];
@@ -229,7 +223,8 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
     id: fileId,
     slug: slugifyArabic(title) || fileId,
     title,
-    type: detectDecreeType(String(meta.type || "circular")),
+    type: instrument.type,
+    instrument_ar: instrument.instrumentAr,
     // Section 30 مراسيم/قرارات (2026-06 extraction round) use `issuing_authority`
     // rather than `issuer`/`issuing_body`.
     issuer: String(meta.issuer || meta.issuing_body || meta.issuing_authority || ""),
@@ -253,10 +248,13 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
 // Public API
 // ══════════════════════════════════════════════════════════════════════════════
 
-export function parseDecrees(inputPath: string): DecreesParserOutput {
+export function parseDecrees(inputPath: string, reportDir?: string): DecreesParserOutput {
   const resolvedPath = path.resolve(inputPath);
   const stats = fs.statSync(resolvedPath);
   const allDecrees: ParsedDecree[] = [];
+  const failedFiles: string[] = [];
+  let excludedTotal = 0;
+  let excludedList: Array<{ file: string; ruleId: string }> = [];
 
   if (stats.isFile()) {
     if (resolvedPath.endsWith(".json")) {
@@ -284,16 +282,29 @@ export function parseDecrees(inputPath: string): DecreesParserOutput {
       }
     }
 
-    // Then process markdown files
-    for (const entry of entries) {
-      const full = path.join(resolvedPath, entry);
-      if (full.endsWith(".md") && fs.statSync(full).isFile()) {
-        try {
-          const d = parseCircularMd(full);
-          if (d) allDecrees.push(d);
-        } catch (err) {
-          console.error(`  ✗ Failed to parse circular ${full}: ${(err as Error).message}`);
-        }
+    // Then process markdown files, minus non-content artefacts.
+    const mdFiles = entries
+      .map((e) => path.join(resolvedPath, e))
+      .filter((f) => f.endsWith(".md") && fs.statSync(f).isFile());
+
+    const { kept, countsByRule, excluded } = applyExclusions(mdFiles);
+    const excludedCount = mdFiles.length - kept.length;
+    excludedTotal = excludedCount;
+    excludedList = excluded;
+    if (excludedCount > 0) {
+      console.log(`\n   ⊘ ${excludedCount} non-content file(s) excluded:`);
+      for (const line of formatExclusionSummary(countsByRule)) console.log(`      • ${line}`);
+      console.log("");
+    }
+
+    for (const full of kept) {
+      try {
+        const d = parseCircularMd(full);
+        if (d) allDecrees.push(d);
+      } catch (err) {
+        // Recorded, not swallowed — see the failure report below.
+        console.error(`  ✗ Failed to parse circular ${full}: ${(err as Error).message}`);
+        failedFiles.push(full);
       }
     }
   }
@@ -302,11 +313,72 @@ export function parseDecrees(inputPath: string): DecreesParserOutput {
   console.log(`\n📜 Decree Parser Summary`);
   console.log(`  Total decrees: ${allDecrees.length}`);
   console.log(`  Total articles: ${totalArticles}`);
-  console.log(
-    `  By type: royal=${allDecrees.filter(d => d.type === "royal").length}, ` +
-    `cabinet=${allDecrees.filter(d => d.type === "cabinet").length}, ` +
-    `circular=${allDecrees.filter(d => d.type === "circular").length}\n`
-  );
+  // Full histogram, not three hardcoded buckets — the taxonomy now has ~21
+  // instrument types and a fixed three-way count would hide the rest.
+  const typeHistogram = new Map<string, number>();
+  for (const d of allDecrees) typeHistogram.set(d.type, (typeHistogram.get(d.type) || 0) + 1);
+  console.log(`  By instrument type:`);
+  for (const [t, n] of [...typeHistogram.entries()].sort((a, b) => b[1] - a[1])) {
+    console.log(`     ${String(n).padStart(6)}  ${t}`);
+  }
+  console.log(``);
+
+  // ── Identity guard ──────────────────────────────────────────────────────────
+  // seed-library.ts derives decrees_circulars.id from this `id` via toUuid(), so
+  // two decrees sharing an id collapse to one row on upsert and the other is
+  // silently discarded. Fail before anything is written.
+  const byId = new Map<string, string[]>();
+  for (const d of allDecrees) {
+    const list = byId.get(d.id);
+    if (list) list.push(d.title);
+    else byId.set(d.id, [d.title]);
+  }
+  const idCollisions = [...byId.entries()].filter(([, v]) => v.length > 1);
+  if (idCollisions.length > 0) {
+    console.error(`\n🛑 ${idCollisions.length} DECREE ID COLLISION(S) — distinct decrees sharing one key:`);
+    for (const [id, titles] of idCollisions.slice(0, 20)) {
+      console.error(`   "${id}"`);
+      for (const t of titles) console.error(`      ← ${t}`);
+    }
+    if (idCollisions.length > 20) console.error(`   … and ${idCollisions.length - 20} more`);
+  }
+
+  printCapped("⚠️  frontmatter warning(s)", frontmatterWarnings);
+
+  if (failedFiles.length > 0) {
+    console.error(`\n🛑 ${failedFiles.length} file(s) failed to parse and are MISSING from the output.`);
+  }
+
+  // Complete, uncapped record — the console preview above is truncated on purpose.
+  if (reportDir) {
+    const p = writeParseReport(reportDir, {
+      type: "decrees",
+      generated_at: new Date().toISOString(),
+      input: resolvedPath,
+      counts: {
+        decrees: allDecrees.length,
+        articles: totalArticles,
+        excluded: excludedTotal,
+        frontmatterWarnings: frontmatterWarnings.length,
+        idCollisions: idCollisions.length,
+        failed: failedFiles.length,
+      },
+      excluded: excludedList,
+      frontmatterWarnings,
+      identityCollisions: idCollisions.map(([key, members]) => ({ key, members })),
+      failed: failedFiles,
+    });
+    if (p) console.log(`\n📄 Full parse report: ${p}`);
+  }
+
+  // Rule ق-3: a run that lost documents or would corrupt identity must not exit 0.
+  if (idCollisions.length > 0 || failedFiles.length > 0) {
+    console.error(
+      `\n✗ Parse completed with unrecoverable problems ` +
+        `(${idCollisions.length} id collision(s), ${failedFiles.length} failed file(s)). Refusing to report success.`,
+    );
+    process.exitCode = 1;
+  }
 
   return {
     type: "decrees",
@@ -335,7 +407,7 @@ if (require.main === module) {
   }
 
   console.log(`\n📋 Decree Parser — processing: ${inputPath}\n`);
-  const result = parseDecrees(inputPath);
+  const result = parseDecrees(inputPath, outputDir);
 
   fs.mkdirSync(path.resolve(outputDir), { recursive: true });
   const outFile = path.join(path.resolve(outputDir), "decrees.json");

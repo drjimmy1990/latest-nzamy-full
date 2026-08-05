@@ -4,10 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookBookmark,
+  BookOpen,
   Check,
   CreditCard,
   FloppyDisk,
   Gear,
+  Lock,
+  LockOpen,
   Plus,
   Shield,
   Sliders,
@@ -33,6 +36,7 @@ interface SettingsData {
   library_whitelisted_laws?: { slugs: string[] };
   tier_limits?: TierLimit[];
   payments_gateway?: { status: "disabled" | "test" | "live"; provider?: string | null };
+  library_status?: { status: "open" | "closed"; message?: string | null };
 }
 
 const TIER_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -73,6 +77,12 @@ export default function AdminSettingsPage() {
   // Payment gateway
   const [paymentStatus, setPaymentStatus] = useState<"disabled" | "test" | "live">("disabled");
   const [paymentProvider, setPaymentProvider] = useState<string>("");
+
+  // Legal library open/close switch. Defaults to "open" so a failed settings
+  // load never renders this control as if the library were already closed.
+  const [libraryStatus, setLibraryStatus] = useState<"open" | "closed">("open");
+  const [libraryMessage, setLibraryMessage] = useState<string>("");
+  const [confirmCloseLibrary, setConfirmCloseLibrary] = useState(false);
 
   // ── Styles ──
   const card = isDark
@@ -119,6 +129,12 @@ export default function AdminSettingsPage() {
         if (typeof settings.payments_gateway?.provider === "string") {
           setPaymentProvider(settings.payments_gateway.provider);
         }
+        if (settings.library_status?.status) {
+          setLibraryStatus(settings.library_status.status);
+        }
+        if (typeof settings.library_status?.message === "string") {
+          setLibraryMessage(settings.library_status.message);
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -164,6 +180,23 @@ export default function AdminSettingsPage() {
       "payments_gateway",
       { status: paymentStatus, provider: paymentProvider.trim() || null },
       "تم حفظ إعدادات بوابة الدفع.",
+    );
+  }
+
+  function saveLibraryStatus() {
+    // Closing takes the entire library offline for every visitor, so require a
+    // second deliberate click. Reopening is harmless and saves immediately.
+    if (libraryStatus === "closed" && !confirmCloseLibrary) {
+      setConfirmCloseLibrary(true);
+      return;
+    }
+    setConfirmCloseLibrary(false);
+    saveSettingKey(
+      "library_status",
+      { status: libraryStatus, message: libraryMessage.trim() || null },
+      libraryStatus === "closed"
+        ? "تم إغلاق المكتبة القانونية — لن تظهر للزوار."
+        : "تم فتح المكتبة القانونية.",
     );
   }
 
@@ -667,6 +700,112 @@ export default function AdminSettingsPage() {
             <p className={`text-xs mt-2 ${muted}`}>
               عند ضبط الحالة على «معطّلة»، تُحظر جميع إجراءات الدفع في المنصة ويعرض المستخدمون رسالة «الدفع غير متاح حالياً».
             </p>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* ── Section 4: Legal Library Open/Close ── */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.19 }} className={`${card} overflow-hidden`}>
+        <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-xl ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-[#C8A762]/10 text-[#C8A762]"}`}>
+              <BookOpen size={20} weight="duotone" />
+            </div>
+            <div>
+              <h2 className={`text-base font-black ${isDark ? "text-white" : "text-gray-900"}`}>المكتبة القانونية</h2>
+              <p className={`text-xs mt-0.5 ${muted}`}>افتح أو أغلق المكتبة بالكامل — يسري فوراً بدون إعادة نشر</p>
+            </div>
+          </div>
+          <button
+            onClick={saveLibraryStatus}
+            disabled={saving === "library_status"}
+            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-colors ${
+              confirmCloseLibrary ? "bg-red-600 hover:bg-red-700" : "bg-[#0B3D2E] hover:bg-[#0a3328]"
+            }`}
+          >
+            {saving === "library_status" ? (
+              <SpinnerGap size={16} className="animate-spin" />
+            ) : (
+              <FloppyDisk size={16} />
+            )}
+            {confirmCloseLibrary ? "تأكيد الإغلاق" : "حفظ"}
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Status selector */}
+          <div>
+            <label className={`text-sm font-bold block mb-3 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+              حالة المكتبة
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                { value: "open",   label: "مفتوحة", desc: "الزوار يتصفحون المكتبة بشكل طبيعي", Icon: LockOpen, tone: "emerald" },
+                { value: "closed", label: "مغلقة",  desc: "تُخفى المكتبة عن الجميع عدا المسؤولين", Icon: Lock, tone: "red" },
+              ] as const).map((opt) => {
+                const active = libraryStatus === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      setLibraryStatus(opt.value);
+                      setConfirmCloseLibrary(false);
+                    }}
+                    className={`flex items-start gap-3 rounded-xl border p-4 text-right transition-all ${
+                      active
+                        ? opt.tone === "red"
+                          ? "border-red-500/50 bg-red-500/10"
+                          : "border-emerald-500/50 bg-emerald-500/10"
+                        : isDark
+                          ? "border-white/10 hover:border-white/20"
+                          : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <opt.Icon
+                      size={18}
+                      weight="duotone"
+                      className={active ? (opt.tone === "red" ? "text-red-500" : "text-emerald-500") : muted}
+                    />
+                    <span className="flex-1">
+                      <span className={`block text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>{opt.label}</span>
+                      <span className={`block text-[11px] mt-0.5 ${muted}`}>{opt.desc}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Closure message */}
+          <div className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+            <label className={`text-sm font-bold block mb-3 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+              رسالة الإغلاق (اختيارية)
+            </label>
+            <textarea
+              value={libraryMessage}
+              onChange={(e) => setLibraryMessage(e.target.value)}
+              rows={2}
+              placeholder="اتركها فارغة لاستخدام الرسالة الافتراضية"
+              className={`w-full px-4 py-2.5 rounded-xl border text-sm outline-none resize-y ${
+                isDark
+                  ? "bg-[#0d1117] border-white/10 text-white placeholder:text-zinc-600 focus:border-[#C8A762]/40"
+                  : "bg-white border-slate-200 text-gray-900 placeholder:text-slate-400 focus:border-[#0B3D2E]/40"
+              }`}
+            />
+            <p className={`text-xs mt-2 ${muted}`}>
+              عند الإغلاق تُرجع جميع واجهات المكتبة الحالة 503 ويُمنع عرض أي نص نظامي — لا يقتصر الأمر على إخفاء الروابط. المسؤولون يحتفظون بالوصول لمراجعة المحتوى.
+            </p>
+            {confirmCloseLibrary && (
+              <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
+                <WarningCircle size={16} weight="fill" className="mt-0.5 shrink-0 text-red-500" />
+                <p className="text-xs font-bold text-red-500">
+                  سيتم إغلاق المكتبة القانونية بالكامل لجميع الزوار فوراً. اضغط «تأكيد الإغلاق» للمتابعة.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </motion.div>

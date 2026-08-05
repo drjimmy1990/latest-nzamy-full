@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { libraryGate } from '@/lib/library-gate';
 
 /**
  * POST /api/ai/library-chat
@@ -15,6 +16,12 @@ const N8N_LIBRARY_CHAT_WEBHOOK_URL = process.env.N8N_LIBRARY_CHAT_WEBHOOK_URL;
 const N8N_WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET;
 
 export async function POST(request: Request) {
+  // This proxies questions to a RAG agent grounded in the same library corpus,
+  // so leaving it open while the library is closed would answer from the very
+  // content that is supposed to be offline.
+  const gate = await libraryGate();
+  if (gate) return gate;
+
   try {
     if (!N8N_LIBRARY_CHAT_WEBHOOK_URL) {
       return NextResponse.json(

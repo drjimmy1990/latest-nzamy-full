@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { checkLibraryAccess } from '@/lib/access-control';
+import { libraryGate } from '@/lib/library-gate';
 
 /**
  * GET /api/library/precedents/[slug]
@@ -10,6 +11,9 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const gate = await libraryGate();
+  if (gate) return gate;
+
   try {
     const { slug } = await params;
     const supabase = await createClient();

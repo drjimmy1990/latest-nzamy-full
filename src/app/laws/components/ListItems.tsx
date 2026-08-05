@@ -30,17 +30,88 @@ export function highlightText(text: string, q: string, isDark: boolean) {
   );
 }
 
-export const ORDER_TYPE_STYLES: Record<DemoOrder["type"], { label: string; class: string }> = {
+// Keyed by string, NOT by DemoOrder["type"], and every lookup goes through
+// orderTypeStyle() below. The decree taxonomy is being widened from 3 values to
+// the ~21 real Saudi instrument types actually present in the corpus, and an
+// exhaustive Record + unguarded `ORDER_TYPE_STYLES[o.type].label` would throw on
+// the first unrecognised value and take down the whole Orders tab.
+export const ORDER_TYPE_STYLES: Record<string, { label: string; class: string }> = {
+  // Legacy three — still the stored values until the taxonomy migration runs.
   royal:    { label: "أمر ملكي",           class: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
   cabinet:  { label: "قرار مجلس الوزراء", class: "bg-blue-500/10 text-blue-700 dark:text-blue-400" },
   circular: { label: "تعميم",              class: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" },
+
+  // Widened taxonomy. Royal-family instruments share the gold treatment, but
+  // each keeps its own LABEL — a Supreme Order is not a Royal Decree.
+  royal_decree:  { label: "مرسوم ملكي",  class: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+  royal_order:   { label: "أمر ملكي",    class: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+  supreme_order: { label: "أمر سامي",    class: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+  supreme_directive: { label: "توجيه سامي", class: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+  decree:        { label: "مرسوم",       class: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+
+  cabinet_decision:          { label: "قرار مجلس الوزراء",          class: "bg-blue-500/10 text-blue-700 dark:text-blue-400" },
+  ministerial_decision:      { label: "قرار وزاري",                 class: "bg-blue-500/10 text-blue-700 dark:text-blue-400" },
+  economic_council_decision: { label: "قرار المجلس الاقتصادي الأعلى", class: "bg-blue-500/10 text-blue-700 dark:text-blue-400" },
+  administrative_decision:   { label: "قرار إداري",                 class: "bg-blue-500/10 text-blue-700 dark:text-blue-400" },
+  decision:                  { label: "قرار",                       class: "bg-blue-500/10 text-blue-700 dark:text-blue-400" },
+
+  rules:        { label: "قواعد",   class: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
+  principles:   { label: "مبادئ",   class: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
+  regulation:   { label: "لائحة",   class: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
+  standards:    { label: "معايير",  class: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
+  guide:        { label: "دليل",    class: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
+  policy:       { label: "سياسة",   class: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
+  instructions: { label: "تعليمات", class: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
+  organization: { label: "تنظيم",   class: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
+  interpretation: { label: "تفسير", class: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
+  law:          { label: "نظام",    class: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
+
+  unknown: { label: "غير محدد", class: "bg-slate-500/10 text-slate-700 dark:text-slate-400" },
 };
 
-const ORDER_TYPE_LABELS_EN: Record<DemoOrder["type"], string> = {
+/** Shown for any type not in the map — never throws, never invents a label. */
+export const ORDER_TYPE_FALLBACK = {
+  label: "غير محدد",
+  class: "bg-slate-500/10 text-slate-700 dark:text-slate-400",
+};
+
+/** ALWAYS use this instead of indexing ORDER_TYPE_STYLES directly. */
+export function orderTypeStyle(type: string | undefined | null) {
+  return (type && ORDER_TYPE_STYLES[type]) || ORDER_TYPE_FALLBACK;
+}
+
+const ORDER_TYPE_LABELS_EN: Record<string, string> = {
   royal: "Royal Order",
   cabinet: "Cabinet Resolution",
   circular: "Circular",
+
+  royal_decree: "Royal Decree",
+  royal_order: "Royal Order",
+  supreme_order: "Supreme Order",
+  supreme_directive: "Supreme Directive",
+  decree: "Decree",
+  cabinet_decision: "Cabinet Decision",
+  ministerial_decision: "Ministerial Decision",
+  economic_council_decision: "Economic Council Decision",
+  administrative_decision: "Administrative Decision",
+  decision: "Decision",
+  rules: "Rules",
+  principles: "Principles",
+  regulation: "Regulation",
+  standards: "Standards",
+  guide: "Guide",
+  policy: "Policy",
+  instructions: "Instructions",
+  organization: "Organization",
+  interpretation: "Interpretation",
+  law: "Law",
+  unknown: "Unspecified",
 };
+
+/** English label with the same never-throw guarantee. */
+export function orderTypeLabelEn(type: string | undefined | null): string {
+  return (type && ORDER_TYPE_LABELS_EN[type]) || "Unspecified";
+}
 
 export const ISSUER_MAP: Record<string, { ar: string; en: string }> = {
   diwan: { ar: "الديوان الملكي", en: "Royal Court" },
@@ -399,8 +470,8 @@ export function PrecedentRow({ pr, isDark, idx, isRTL = true, onClick, onHashtag
 }
 
 export function OrderRow({ o, isDark, idx, isRTL = true, onClick, onHashtagClick }: { o: DemoOrder; isDark: boolean; idx: number; isRTL?: boolean; onClick?: () => void; onHashtagClick?: (tag: string) => void }) {
-  const style = ORDER_TYPE_STYLES[o.type];
-  const typeLabel = isRTL ? style.label : ORDER_TYPE_LABELS_EN[o.type];
+  const style = orderTypeStyle(o.type);
+  const typeLabel = isRTL ? style.label : orderTypeLabelEn(o.type);
   const issuerLabel = ISSUER_MAP[o.issuer]?.[isRTL ? "ar" : "en"] || o.issuer;
   return (
     <motion.div
@@ -590,8 +661,8 @@ export function PrecedentCard({ pr, isDark, idx, isRTL = true, onClick, onHashta
 
 // ─── OrderCard ───────────────────────────────────────────────────────────────────
 export function OrderCard({ o, isDark, idx, isRTL = true, onClick, onHashtagClick }: { o: DemoOrder; isDark: boolean; idx: number; isRTL?: boolean; onClick?: () => void; onHashtagClick?: (tag: string) => void }) {
-  const style = ORDER_TYPE_STYLES[o.type];
-  const typeLabel = isRTL ? style.label : ORDER_TYPE_LABELS_EN[o.type];
+  const style = orderTypeStyle(o.type);
+  const typeLabel = isRTL ? style.label : orderTypeLabelEn(o.type);
   const issuerLabel = ISSUER_MAP[o.issuer]?.[isRTL ? "ar" : "en"] || o.issuer;
   return (
     <motion.div

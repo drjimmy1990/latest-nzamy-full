@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { libraryGate } from '@/lib/library-gate';
 
 /**
  * POST /api/ai/explain-article
@@ -15,6 +16,11 @@ const N8N_EXPLAIN_WEBHOOK_URL = process.env.N8N_EXPLAIN_WEBHOOK_URL;
 const N8N_WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET;
 
 export async function POST(request: Request) {
+  // The n8n response carries `relatedArticles[].text` — real statutory text — so
+  // this is a content route despite living under /api/ai/.
+  const gate = await libraryGate();
+  if (gate) return gate;
+
   try {
     // Check if n8n is configured
     if (!N8N_EXPLAIN_WEBHOOK_URL) {

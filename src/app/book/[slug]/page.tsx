@@ -17,6 +17,7 @@ import { useUser } from "@/hooks/useUser";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 import SidebarPanel from "./_sidebar";
 import IdentityPanel from "./_identity-panel";
+import { formatLocator, matchesLocator, pageToken, volumeToken } from "./_locator";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import { LibraryAI, CommunityQuestionModal } from "@/app/laws/[slug]/_ai-components";
@@ -45,6 +46,7 @@ function stripMd(s: string): string {
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 import { FeqhBookSystem, FeqhBlock } from "@/app/laws/data";
+import { apiSlug } from '@/utils/apiSlug';
 
 // Demo Data: الروض المربع
 const DEMO_RAWD: FeqhBookSystem = {
@@ -151,19 +153,23 @@ export default function FeqhBookPage() {
     const trimmed = query.trim();
     if (!trimmed) return;
     
-    let targetVol = 1;
-    let targetPage = parseInt(trimmed, 10);
-    
+    // "3/47" → volume 3, page 47. A bare "47" means page 47 in ANY volume —
+    // it used to default the volume to 1, which was invisible only while the
+    // parser claimed volume 1 for every block. 116,828 blocks now carry a real
+    // volume, so that default would hide every match outside volume 1.
+    let targetVol: string | null = null;
+    let targetPage: string | null = trimmed;
+
     if (trimmed.includes("/")) {
       const parts = trimmed.split("/");
-      targetVol = parseInt(parts[0], 10);
-      targetPage = parseInt(parts[1], 10);
+      targetVol = parts[0].trim() || null;
+      targetPage = parts[1].trim() || null;
     }
-    
+
     let foundBlockId = "";
     for (const ch of book.chapters) {
       for (const sec of ch.sections) {
-        const found = sec.blocks.find(b => b.vol === targetVol && b.page === targetPage);
+        const found = sec.blocks.find(b => matchesLocator(b, targetVol, targetPage));
         if (found) {
           foundBlockId = found.id;
           break;
@@ -205,7 +211,7 @@ export default function FeqhBookPage() {
       try {
         // Try API first. encodeURI (not encodeURIComponent) avoids double-encoding
         // a pre-encoded slug into %25… which would 404 the /api/library/books/[id] lookup.
-        const res = await fetch(`/api/library/books/${encodeURI(slug)}`);
+        const res = await fetch(`/api/library/books/${apiSlug(slug)}`);
         if (res.ok) {
           const apiData = await res.json();
           setBook(apiData as FeqhBookSystem);
@@ -291,9 +297,26 @@ export default function FeqhBookPage() {
     activeChapterTitle = book.chapters[0].title;
   }
 
+  /**
+   * The source's own locator, or "" when it states none. Interpolating vol/page
+   * directly printed «ج null، ص null» once the schema stopped fabricating a
+   * volume for every block.
+   */
+  const blockLoc = (style: "short" | "long" = "short") =>
+    formatLocator(activeBlock, isRTL, style);
+
+  /** Reference line: the locator segment disappears when the source has none. */
+  const blockCitation = () => {
+    if (!book || !activeBlock) return "";
+    const loc = blockLoc("short");
+    return [book.author, book.title, loc, `(طبعة ${book.publisher})`]
+      .filter(Boolean)
+      .join("، ");
+  };
+
   const handleCopyCitation = () => {
     if (!book || !activeBlock) return;
-    const citation = `${book.author}، ${book.title}، ج ${activeBlock.vol}، ص ${activeBlock.page} (طبعة ${book.publisher})`;
+    const citation = blockCitation();
     navigator.clipboard.writeText(citation);
     setCopiedCitation(true);
     setTimeout(() => setCopiedCitation(false), 2000);
@@ -319,22 +342,20 @@ export default function FeqhBookPage() {
       textBlock = parts.join("\n\n");
     }
     
-    const citation = `${book.author}، ${book.title}، ج ${activeBlock.vol}، ص ${activeBlock.page} (طبعة ${book.publisher})`;
+    const citation = blockCitation();
+    // «كتاب (العنوان - ج 3، ص 47)» → «كتاب (العنوان)» when the source gives no
+    // locator, instead of «كتاب (العنوان - ج null، ص null)».
+    const loc = blockLoc("short");
+    const where = loc ? `${book.title} - ${loc}` : book.title;
     const prefixPlain = isSelectionCopy
-      ? (isRTL 
-          ? `مقتبس من كتاب (${book.title} - ج ${activeBlock.vol}، ص ${activeBlock.page}):` 
-          : `Excerpt from book (${book.title} - V ${activeBlock.vol}, P ${activeBlock.page}):`)
-      : (isRTL 
-          ? `الموضع من كتاب (${book.title} - ج ${activeBlock.vol}، ص ${activeBlock.page}):` 
-          : `Excerpt from book (${book.title} - V ${activeBlock.vol}, P ${activeBlock.page}):`);
+      ? (isRTL
+          ? `مقتبس من كتاب (${where}):`
+          : `Excerpt from book (${where}):`)
+      : (isRTL
+          ? `الموضع من كتاب (${where}):`
+          : `Excerpt from book (${where}):`);
 
-    const prefixHtml = isSelectionCopy
-      ? (isRTL 
-          ? `<b>مقتبس من كتاب (${book.title} - ج ${activeBlock.vol}، ص ${activeBlock.page}):</b>` 
-          : `<b>Excerpt from book (${book.title} - V ${activeBlock.vol}, P ${activeBlock.page}):</b>`)
-      : (isRTL 
-          ? `<b>الموضع من كتاب (${book.title} - ج ${activeBlock.vol}، ص ${activeBlock.page}):</b>` 
-          : `<b>Excerpt from book (${book.title} - V ${activeBlock.vol}, P ${activeBlock.page}):</b>`);
+    const prefixHtml = `<b>${prefixPlain}</b>`;
 
     const plain = `${prefixPlain}\n“${stripMd(textBlock)}”\n\nالمرجعية: ${citation}`;
     const html  = `${prefixHtml}<br>“${textBlock.replace(/\n/g, "<br>")}”<br><br><i>المرجعية: ${citation}</i>`;
@@ -517,11 +538,23 @@ export default function FeqhBookPage() {
               <div id={`book-block-${activeBlock.id}`} className={`nzamy-reader-block ${card} p-6 md:p-8`}>
                 {/* Embedded physical page indicator */}
                 <div className="flex items-center justify-between border-b pb-4 mb-6 border-slate-200 dark:border-white/[0.05]">
+                  {/*
+                    Each segment appears only when the source states it. The
+                    volume used to be hardcoded to 1 by the parser, so this bar
+                    always had something to print; now a NULL means "the source
+                    gives no volume" and must render as nothing, not "null".
+                  */}
                   <div className="flex items-center gap-2 text-xs font-black text-amber-600 dark:text-[#C8A762]">
                     <FileText size={16} />
-                    <span>{isRTL ? `المجلد ${activeBlock.vol}` : `Volume ${activeBlock.vol}`}</span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762]" />
-                    <span>{isRTL ? `الصفحة ${activeBlock.page}` : `Page ${activeBlock.page}`}</span>
+                    {volumeToken(activeBlock) && (
+                      <span>{isRTL ? `المجلد ${volumeToken(activeBlock)}` : `Volume ${volumeToken(activeBlock)}`}</span>
+                    )}
+                    {volumeToken(activeBlock) && pageToken(activeBlock) && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762]" />
+                    )}
+                    {pageToken(activeBlock) && (
+                      <span>{isRTL ? `الصفحة ${pageToken(activeBlock)}` : `Page ${pageToken(activeBlock)}`}</span>
+                    )}
                   </div>
                   <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500">
                     {book.title}

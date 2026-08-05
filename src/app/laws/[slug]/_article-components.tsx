@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import type { LawArticle, JudicialPrinciple, JudicialPrecedent } from "../data";
+import { buildCitation } from "./_citation";
 import { useSubscription } from "@/hooks/useSubscription";
 
 interface ParseBlock {
@@ -490,8 +491,11 @@ export function RightPanel({ article, isDark, cart, onTogglePrinciple, onToggleP
 }
 
 // ─── Article Block ─────────────────────────────────────────────────────────────
-export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, onRemoveArticle, onAddExecReg, onRemoveExecReg, onActive, isActive, showPaywall, onExplain, isRTL = true, fontClass = "text-[13px]", isReadingMode = false, viewMode = "all" }: {
-  article: LawArticle; lawName: string; isDark: boolean;
+export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddArticle, onRemoveArticle, onAddExecReg, onRemoveExecReg, onActive, isActive, showPaywall, onExplain, isRTL = true, fontClass = "text-[13px]", isReadingMode = false, viewMode = "all" }: {
+  article: LawArticle; lawName: string;
+  /** The document's own kind, straight from `library.laws.type`. */
+  lawType?: string;
+  isDark: boolean;
   entry: CartEntry | undefined;
   onAddArticle: (a: LawArticle) => void;
   onRemoveArticle: (id: string) => void;
@@ -516,61 +520,66 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
     const { can }     = useSubscription();
   const hasLibraryAccess = can("library-full-access");
   const isLocked    = !article.free && !hasLibraryAccess;
+  /**
+   * For a repealed article the substantive content lives in `originalText` —
+   * `text` is legitimately empty, because the live article no longer exists.
+   * Measured on the corpus: 1,613 of 1,862 repealed articles are in exactly
+   * that shape, and only 9 carry neither.
+   */
+  const repealedText = article.originalText || article.text || "";
   const inCart      = !!entry && entry.isArticleAdded;
   const regInCart   = !!entry && entry.isExecRegAdded;
 
   const handleCopy = useCallback(() => {
     if (isLocked) { showPaywall(); return; }
-    const selectedText = getSelectedTextWithin(article.id, article.text);
-    const base  = lawName.replace(/\s*ولوائحه التنفيذية.*/, "").trim();
-    
-    let plainText = "";
-    if (selectedText) {
-      plainText = selectedText;
-    } else {
-      plainText = article.text;
-    }
-    
-    const cleanNum = article.num.replace(/المادة\s*/, "").trim();
-    const prefixPlain = isRTL
-      ? `${article.num} من نظام (${base}) ونصه:`
-      : `Article (${cleanNum}) of the (${base}) system, text:`;
-    const prefixHtml = isRTL
-      ? `<b>${article.num} من نظام (${base}) ونصه:</b>`
-      : `<b>Article (${cleanNum}) of the (${base}) system, text:</b>`;
-      
-    const plain = `${prefixPlain}\n“${stripMd(plainText)}”`;
-    const html  = `${prefixHtml}<br>“${md2html(plainText)}”`;
+    // A repealed article's substance is its pre-repeal wording; `text` is empty.
+    const body = isRepealed ? repealedText : article.text;
+    const selectedText = getSelectedTextWithin(article.id, body);
+    const plainText = selectedText || body;
+
+    // Built by _citation.ts rather than inline: the old template called every
+    // document a "نظام" (true of 526 of 1,532) and wrapped page markers as if
+    // they were articles (6,566 articles carry one).
+    const citation = buildCitation(
+      {
+        docTitle: lawName,
+        docType: lawType,
+        numberText: article.numberText,
+        displayNum: article.num,
+        status: article.status,
+      },
+      isRTL,
+    );
+
+    const plain = `${citation.plain}\n“${stripMd(plainText)}”`;
+    const html  = `${citation.html}<br>“${md2html(plainText)}”`;
     copyRich(html, plain);
     setCopied(true); setTimeout(() => setCopied(false), 1800);
-  }, [article, isLocked, showPaywall, lawName, isRTL]);
+  }, [article, isLocked, isRepealed, repealedText, showPaywall, lawName, lawType, isRTL]);
 
   const handleCopyReg = useCallback(() => {
     if (isLocked) { showPaywall(); return; }
     if (!article.executiveReg) return;
     const selectedText = getSelectedTextWithin(`exec-reg-${article.id}`, article.executiveReg.text);
-    const base = lawName.replace(/\s*ولوائحه التنفيذية.*/, "").trim();
-    
-    let plainText = "";
-    if (selectedText) {
-      plainText = selectedText;
-    } else {
-      plainText = article.executiveReg.text;
-    }
-    
-    const cleanNum = article.executiveReg.ref.replace(/المادة\s*/, "").trim();
-    const prefixPlain = isRTL
-      ? `${article.executiveReg.ref} من اللائحة التنفيذية لنظام (${base}) ونصه:`
-      : `Article (${cleanNum}) of the Executive Regulations of (${base}), text:`;
-    const prefixHtml = isRTL
-      ? `<b>${article.executiveReg.ref} من اللائحة التنفيذية لنظام (${base}) ونصه:</b>`
-      : `<b>Article (${cleanNum}) of the Executive Regulations of (${base}), text:</b>`;
-      
-    const plain = `${prefixPlain}\n“${stripMd(plainText)}”`;
-    const html  = `${prefixHtml}<br>“${md2html(plainText)}”`;
+    const plainText = selectedText || article.executiveReg.text;
+
+    const citation = buildCitation(
+      {
+        docTitle: lawName,
+        docType: lawType,
+        regulationRef: article.executiveReg.ref,
+      },
+      isRTL,
+    );
+
+    const plain = `${citation.plain}\n“${stripMd(plainText)}”`;
+    const html  = `${citation.html}<br>“${md2html(plainText)}”`;
     copyRich(html, plain);
     setCopiedReg(true); setTimeout(() => setCopiedReg(false), 1800);
-  }, [article, isLocked, showPaywall, lawName, isRTL]);
+  }, [article, isLocked, showPaywall, lawName, lawType, isRTL]);
+    copyRich(html, plain);
+    setCopiedReg(true); setTimeout(() => setCopiedReg(false), 1800);
+  }, [article, isLocked, showPaywall, lawName, lawType, isRTL]);
 
 
 
@@ -711,30 +720,60 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
               <MD text={article.executiveReg.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
             </div>
           )
-        ) : isRepealed ? (
-          viewMode !== "regulation" && (
-            <div>
-              <button onClick={() => setShowRepealed(!showRepealed)} className={`flex items-center gap-1.5 text-[11px] font-semibold text-red-400 hover:text-red-300`}>
-                {showRepealed ? <CaretUp size={11} /> : <CaretDown size={11} />}
-                {showRepealed ? (isRTL ? "إخفاء نص المادة الملغاة" : "Hide repealed text") : (isRTL ? "عرض النص الأصلي قبل الإلغاء" : "Show original text before repeal")}
-              </button>
-              <AnimatePresence>
-                {showRepealed && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className={`mt-2 p-3 rounded-xl border text-[12px] leading-relaxed ${isDark ? "border-red-500/20 bg-red-900/10 text-red-200" : "border-red-200 bg-red-50 text-red-800"}`}>
-                      <p className="text-[10px] font-bold mb-1 opacity-60">{isRTL ? "النص الأصلي:" : "Original text:"}</p>
-                      {article.originalText || article.text}
-                      {article.repealedBy && <p className={`text-[10px] mt-2 pt-2 border-t font-semibold ${isDark ? "border-red-500/20 text-red-400" : "border-red-200 text-red-600"}`}>{isRTL ? "ألغيت بـ:" : "Repealed by:"} {article.repealedBy}{article.repealedDate && ` — ${article.repealedDate}`}</p>}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )
         ) : (
+          /*
+           * One shared branch for every non-regulation view. The repealed case
+           * used to be a sibling alternative to this whole fragment, which meant
+           * a repealed article could never reach the amendments block, the
+           * executive-regulation box, or the draft-cart list below — 87 repealed
+           * articles carry executive-regulation text that was unreachable. Only
+           * the BODY differs by status now; everything after it is common.
+           */
           <>
             {viewMode !== "regulation" && (
-              isLocked ? (
+              isRepealed ? (
+                <div>
+                  <button onClick={() => setShowRepealed(!showRepealed)} className={`flex items-center gap-1.5 text-[11px] font-semibold text-red-400 hover:text-red-300`}>
+                    {showRepealed ? <CaretUp size={11} /> : <CaretDown size={11} />}
+                    {showRepealed ? (isRTL ? "إخفاء نص المادة الملغاة" : "Hide repealed text") : (isRTL ? "عرض النص الأصلي قبل الإلغاء" : "Show original text before repeal")}
+                  </button>
+                  <AnimatePresence>
+                    {showRepealed && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                        <div className={`mt-2 p-3 rounded-xl border text-[12px] leading-relaxed ${isDark ? "border-red-500/20 bg-red-900/10 text-red-200" : "border-red-200 bg-red-50 text-red-800"}`}>
+                          <p className="text-[10px] font-bold mb-1 opacity-60">{isRTL ? "النص الأصلي:" : "Original text:"}</p>
+                          {/*
+                           * This is paid content like any other article body.
+                           * It was previously rendered ungated and as bare JSX,
+                           * so markdown showed as literal asterisks and the
+                           * server-side truncation was the only thing standing
+                           * between an anonymous reader and the full text.
+                           */}
+                          {!repealedText ? (
+                            <p className="text-[11px] italic opacity-70">
+                              {isRTL ? "المصدر لا يورد نص المادة قبل الإلغاء." : "The source does not carry this article's text prior to repeal."}
+                            </p>
+                          ) : isLocked ? (
+                            <div className="relative">
+                              <div className="blur-[3px] opacity-60 pointer-events-none select-none">
+                                <MD text={repealedText.split("\n").slice(0, 2).join("\n") + "\n..."} isDark={isDark} isRTL={isRTL} />
+                              </div>
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <button onClick={showPaywall} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0B3D2E] text-white text-[11px] font-bold shadow">
+                                  <Lock size={11} /> {isRTL ? "اشترك للوصول" : "Subscribe to access"}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <MD text={repealedText} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                          )}
+                          {article.repealedBy && <p className={`text-[10px] mt-2 pt-2 border-t font-semibold ${isDark ? "border-red-500/20 text-red-400" : "border-red-200 text-red-600"}`}>{isRTL ? "ألغيت بـ:" : "Repealed by:"} {article.repealedBy}{article.repealedDate && ` — ${article.repealedDate}`}</p>}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              ) : isLocked ? (
                 <div className="relative">
                   <div className="blur-[3px] opacity-60 pointer-events-none select-none">
                     <MD text={article.text.split("\n").slice(0, 2).join("\n") + "\n..."} isDark={isDark} isRTL={isRTL} />
@@ -750,7 +789,16 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
               )
             )}
 
-            {/* Amendments toggle (collapsible <details> block, matches the layout/style of parsed details blocks) */}
+            {/*
+              Amendments toggle (collapsible <details> block, matches the layout/style of parsed details blocks).
+
+              Still gated on isAmended even though repealed articles can now
+              reach this point. The parser pushes every recovered history entry
+              into `amendments` AND promotes one of them to `originalText`;
+              measured, all 1,613 repealed articles that have an originalText
+              have it duplicated by an amendment fullText. Showing both would
+              print the same superseded text twice on every one of them.
+            */}
             {viewMode !== "regulation" && isAmended && article.amendments && article.amendments.length > 0 && (
               <details
                 className={`my-3 rounded-xl border transition-all ${
@@ -813,6 +861,25 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
                   <MD text={article.executiveReg.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
                 </div>
               </div>
+            )}
+
+            {/*
+              Historic executive-regulation text found inside the article's
+              history block. Real content, but a previous version of the
+              REGULATION rather than of the article — so it is kept out of both
+              the live text and the amendments list. 16 articles carry it; the
+              API only emits it to readers who are not paywalled.
+            */}
+            {viewMode !== "regulation" && article.historicRegulationText && (
+              <details className={`my-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02] text-zinc-300" : "border-slate-200 bg-slate-50/70 text-slate-700"}`}>
+                <summary className="px-4 py-2.5 font-black cursor-pointer hover:underline text-[12px] flex items-center gap-1.5 select-none">
+                  <ClockCounterClockwise size={12} className={isDark ? "text-zinc-400" : "text-slate-500"} />
+                  <span>{isRTL ? "نص لائحي تاريخي" : "Historic regulation text"}</span>
+                </summary>
+                <div className="px-4 pb-3 pt-2 border-t border-dashed border-slate-300/20">
+                  <MD text={article.historicRegulationText} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                </div>
+              </details>
             )}
 
             {/* Cart additions for this article */}

@@ -12,6 +12,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
+import { apiSlug } from '@/utils/apiSlug';
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 interface FeqhBlock {
@@ -153,7 +154,7 @@ export default function FeqhPreviewPage() {
 
         // Step 2: Fetch full content for the first book
         const firstBook = books[0];
-        const bookRes = await fetch(`/api/library/books/${encodeURI(firstBook.id)}`);
+        const bookRes = await fetch(`/api/library/books/${apiSlug(firstBook.id)}`);
         if (!bookRes.ok) throw new Error("book fetch failed");
         const data = await bookRes.json();
 

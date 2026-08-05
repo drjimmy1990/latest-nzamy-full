@@ -55,13 +55,17 @@ interface SeedResult {
 
 let supabaseClient: ReturnType<typeof createSupabaseClient> | null = null;
 
+// Target schema. Defaults to the live schema; set LIBRARY_SCHEMA=library_next to
+// seed a shadow build that production is not yet reading from.
+const LIBRARY_SCHEMA = process.env.LIBRARY_SCHEMA || "library";
+
 function createSupabaseClient(url: string, key: string) {
   const headers = {
     apikey: key,
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
-    "Content-Profile": "library",
-    "Accept-Profile": "library",
+    "Content-Profile": LIBRARY_SCHEMA,
+    "Accept-Profile": LIBRARY_SCHEMA,
   };
 
   return {
@@ -222,6 +226,21 @@ function toUuid(key: string): string {
 // number (17+ digits) into an integer column (year_hijri/order_index) → 22003
 // "out of range for type integer". Out-of-range/NaN → fallback instead of a crash.
 const INT4_MAX = 2147483647;
+
+/**
+ * Instrument types the decrees_circulars CHECK constraint accepts. MUST stay in
+ * sync with supabase/migrations/20260729_decree_instrument_taxonomy.sql. The
+ * three legacy values are included because existing rows still carry them.
+ */
+const ALLOWED_DECREE_TYPES = new Set([
+  "royal", "cabinet", "circular",
+  "royal_decree", "royal_order", "supreme_order", "supreme_directive", "decree",
+  "cabinet_decision", "ministerial_decision", "economic_council_decision",
+  "administrative_decision", "decision",
+  "rules", "principles", "regulation", "standards", "guide", "policy",
+  "instructions", "organization", "interpretation", "law",
+  "unknown",
+]);
 function safeInt(v: unknown, fallback: number | null): number | null {
   const n = typeof v === "number" ? v : parseInt(String(v ?? ""), 10);
   return Number.isFinite(n) && n >= -2147483648 && n <= INT4_MAX ? n : fallback;
@@ -320,6 +339,16 @@ async function seedLaws(
           executive_reg_ref: regs.map(r => r.ref || "").join(", ") || null,
           instrument: art.instrument || regs[0]?.instrument || null,
           order_index: parseInt(art.number) || 0,
+          // Recovered history. Until these columns existed the parser extracted
+          // this text and the seeder dropped it on the floor — and for the 1,613
+          // repealed articles whose `text` is legitimately empty, that is the
+          // whole article. NULL (not "") so "the source has none" stays
+          // distinguishable from "the source has an empty one".
+          original_text: art.original_text || null,
+          historic_regulation_text: art.historic_regulation_text || null,
+          // Quarantine only: excluded from the fts index by the migration and
+          // never returned by any API route.
+          unparsed_details: art.unparsed_details || null,
         });
 
         for (let ai = 0; ai < amends.length; ai++) {
@@ -428,15 +457,28 @@ async function seedDecrees(
     const decId = toUuid(rawId);
 
     // decrees_circulars.type has a CHECK allowing only royal|cabinet|circular.
-    // Clamp anything else (e.g. the ~15 "ministerial" rows) to circular so the
-    // insert is not rejected (23514).
-    const decType = ["royal", "cabinet", "circular"].includes(String(dec.type))
-      ? String(dec.type)
-      : "circular";
+    // Instrument type. The parser (lib/instrument.ts) now emits a precise value;
+    // this asserts it is one the DB accepts rather than silently coercing.
+    //
+    // The old code clamped anything outside ('royal','cabinet','circular') to
+    // "circular" — which is how every قرار وزاري (Ministerial Decision) ended up
+    // stored as a mere circular. Silently rewriting a legal instrument type is
+    // exactly the failure this program exists to remove, so an unexpected value
+    // now fails loudly instead.
+    const decType = String(dec.type || "unknown");
+    if (!ALLOWED_DECREE_TYPES.has(decType)) {
+      throw new Error(
+        `decree "${dec.id}" has instrument type "${decType}", which the ` +
+          `decrees_circulars CHECK constraint does not allow. Apply migration ` +
+          `20260729_decree_instrument_taxonomy.sql, or add the value there — ` +
+          `do NOT coerce it to another instrument.`,
+      );
+    }
     decreeRows.push({
       id: decId,
       title: dec.title || "",
       type: decType,
+      instrument_ar: dec.instrument_ar || null,
       issuer: dec.issuer || "",
       ref: dec.ref || "",
       date: dec.date || "",
@@ -508,18 +550,49 @@ async function seedPrecedents(
   const principleRows: Record<string, unknown>[] = [];
   const paragraphRows: Record<string, unknown>[] = [];
 
-  // Default collection for isolated court precedents
-  if (courtPrecs.length > 0) {
+  // ── Collections for standalone court precedents ──────────────────────────
+  // Previously EVERY standalone ruling was attached to one hardcoded row
+  // labelled court "المحكمة التجارية" / track "commercial" — regardless of which
+  // court actually issued it. Rulings of the Supreme Court, the Board of
+  // Grievances, labour courts and quasi-judicial committees were all published
+  // under the Commercial Court's name. ("commercial" was not even a valid track.)
+  //
+  // Now one collection is derived per (track, court) actually present in the
+  // data, so a ruling is only ever filed under the body that issued it.
+  const precedentGroupKey = (p: Record<string, unknown>): string => {
+    const track = String(p.track || "unknown");
+    const court = String(p.court || p.court_type || "").trim();
+    return `${track}::${court}`;
+  };
+
+  const precGroups = new Map<string, Record<string, unknown>[]>();
+  for (const p of courtPrecs) {
+    const k = precedentGroupKey(p as Record<string, unknown>);
+    const list = precGroups.get(k);
+    if (list) list.push(p as Record<string, unknown>);
+    else precGroups.set(k, [p as Record<string, unknown>]);
+  }
+
+  /** Deterministic, stable collection id for a (track, court) pair. */
+  const groupCollectionId = (key: string): string =>
+    `prec-${toUuid(key)}`.substring(0, 100);
+
+  for (const [key, members] of precGroups) {
+    const [track, court] = key.split("::");
     collRows.push({
-      id: "court-precedents-collection",
-      title: "السوابق والأحكام القضائية",
-      court: "المحكمة التجارية",
+      id: groupCollectionId(key),
+      // No court name in the source means we do not know which body issued it.
+      // Saying so is correct; naming a court would be a fabrication.
+      title: court || "أحكام وسوابق — جهة غير محددة",
+      court: court || null,
       year_hijri: null,
       part: 1,
       source_id: "moj",
-      track: "commercial",
-      description: "مجموعة الأحكام والسوابق التجارية",
-      ruling_count: courtPrecs.length,
+      track: track.substring(0, 50),
+      description: court
+        ? `مجموعة الأحكام والسوابق الصادرة عن ${court}`
+        : "أحكام وسوابق لم تُحدَّد جهة إصدارها في المصدر",
+      ruling_count: members.length,
       free: true,
       progress: 100,
     });
@@ -535,7 +608,10 @@ async function seedPrecedents(
       year_hijri: safeInt(coll.year_hijri, null),
       part: coll.part || 1,
       source_id: coll.source_id || "",
-      track: (coll.track || "").substring(0, 50),
+      // `track` is DERIVED by the parser (lib/court.ts), not read from source —
+      // no source file has ever carried a `track` field, which is why this
+      // column was empty for 94 of 95 collections in production.
+      track: String(coll.track || "unknown").substring(0, 50),
       description: coll.description || "",
       ruling_count: coll.total_principles || 0,
       free: coll.free !== false,
@@ -586,9 +662,10 @@ async function seedPrecedents(
 
     principleRows.push({
       id: precId,
-      collection_id: "court-precedents-collection",
+      // Its own court's collection, not the single fabricated commercial one.
+      collection_id: groupCollectionId(precedentGroupKey(prec as Record<string, unknown>)),
       principle_number: String(prec.ruling_number || "").substring(0, 50),
-      issuing_body: prec.court_type || "",
+      issuing_body: prec.court || prec.court_type || "",
       session_date: prec.date || "",
       decision_number: prec.case_number || "",
       reference: prec.subject || "",
@@ -658,6 +735,17 @@ async function seedFeqh(
 
   for (const book of books) {
     const bookId = String(book.id || book.slug).substring(0, 100);
+    // Book-global reading position for the paywall.
+    //
+    // order_index was the page index WITHIN a section (`pi`). Almost every
+    // section holds a single page, so 119,353 of 119,392 blocks were 0 — and
+    // the paywall test in api/library/books/[slug]/route.ts is
+    // `order_index >= freeLimit`, which `0 >= 5` never satisfies. Every paid
+    // feqh book was therefore fully readable by anonymous visitors.
+    //
+    // One counter across the whole book makes the index mean "how far into the
+    // book is this block", which is what the paywall assumes.
+    let bookBlockOrder = 0;
     if (bookId.includes("EXTRACTION_REPORT")) continue;
 
     bookRows.push({
@@ -703,12 +791,23 @@ async function seedFeqh(
             id: `${dummySecId}__blk-${pi}`.substring(0, 150),
             section_id: dummySecId,
             topic: ch.title || "",
-            volume_number: safeInt(pg.volume, 1),
-            page_number: safeInt(pg.page_number, 0),
+            // null volume means the source states none — do not invent 1.
+            volume_number: safeInt(pg.volume, null),
+            page_number: safeInt(pg.page_number, null),
+            // Verbatim locator tokens, so a non-numeric one ("مقدمة", "7-1",
+            // "None") is shown as the source wrote it, not coerced to a number.
+            page_label: pg.page_label ?? null,
+            volume_label: pg.volume_label ?? null,
             matn: pg.text || "",
             sharh: null,
             hashiyah: {},
-            order_index: pi,
+            order_index: bookBlockOrder++,
+            // Denormalised owning book, so the reader can page a book in
+            // reading order with one indexed scan. Without it the route must
+            // reach the book through section -> chapter -> book; the old
+            // section_id IN(...) form built a URL so long that 138 of 144
+            // books returned 400 and rendered completely empty.
+            book_id: bookId,
           });
         }
       }
@@ -733,12 +832,23 @@ async function seedFeqh(
             id: `${secId}__blk-${pi}`.substring(0, 150),
             section_id: secId,
             topic: sec.title || "",
-            volume_number: safeInt(pg.volume, 1),
-            page_number: safeInt(pg.page_number, 0),
+            // null volume means the source states none — do not invent 1.
+            volume_number: safeInt(pg.volume, null),
+            page_number: safeInt(pg.page_number, null),
+            // Verbatim locator tokens, so a non-numeric one ("مقدمة", "7-1",
+            // "None") is shown as the source wrote it, not coerced to a number.
+            page_label: pg.page_label ?? null,
+            volume_label: pg.volume_label ?? null,
             matn: pg.text || "",
             sharh: null,
             hashiyah: {},
-            order_index: pi,
+            order_index: bookBlockOrder++,
+            // Denormalised owning book, so the reader can page a book in
+            // reading order with one indexed scan. Without it the route must
+            // reach the book through section -> chapter -> book; the old
+            // section_id IN(...) form built a URL so long that 138 of 144
+            // books returned 400 and rendered completely empty.
+            book_id: bookId,
           });
         }
       }

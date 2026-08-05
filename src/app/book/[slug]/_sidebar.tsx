@@ -4,6 +4,7 @@ import {
   ListNumbers, MagnifyingGlass, Compass
 } from "@phosphor-icons/react";
 import type { FeqhChapter } from "@/app/laws/data";
+import { formatLocator } from "./_locator";
 
 interface SidebarPanelProps {
   isDark: boolean;
@@ -119,9 +120,12 @@ export default function SidebarPanel({
                       }`}
                     >
                       <span className="truncate max-w-[150px]">{b.topic}</span>
-                      <span className="text-[9px] opacity-75 px-1.5 py-0.5 bg-black/10 dark:bg-white/5 rounded">
-                        {isRTL ? `ج ${b.vol}، ص ${b.page}` : `V ${b.vol}, P ${b.page}`}
-                      </span>
+                      {/* Chip omitted entirely when the source states no locator. */}
+                      {formatLocator(b, isRTL) && (
+                        <span className="text-[9px] opacity-75 px-1.5 py-0.5 bg-black/10 dark:bg-white/5 rounded">
+                          {formatLocator(b, isRTL)}
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>

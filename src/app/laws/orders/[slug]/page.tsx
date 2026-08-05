@@ -18,13 +18,14 @@ import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import { DEMO_ORDERS, type DemoOrder } from "../../demo-data-access";
 import { isSupabaseMode } from "@/lib/services/api";
-import { ISSUER_MAP } from "../../components/ListItems";
+import { ISSUER_MAP, orderTypeStyle, orderTypeLabelEn } from "../../components/ListItems";
 import { useDraftCart } from "@/hooks/useDraftCart";
 import { SmartFolder } from "../../components/SmartFolders";
 import { DraftDrawer } from "@/components/laws/DraftDrawer";
 import SidebarPanel from "./_sidebar";
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
+import { apiSlug } from '@/utils/apiSlug';
 
 function getSelectedTextWithin(containerId: string): string {
   if (typeof window === "undefined") return "";
@@ -140,7 +141,7 @@ export default function OrderReaderPage() {
     async function loadOrder() {
       // Try API first
       try {
-        const res = await fetch(`/api/library/decrees/${encodeURI(slug)}`);
+        const res = await fetch(`/api/library/decrees/${apiSlug(slug)}`);
         if (res.ok) {
           const data = await res.json();
           setOrder(data as DemoOrder);
@@ -267,9 +268,14 @@ export default function OrderReaderPage() {
       textBlock = art;
     }
     
-    const docTypeLabel = order.type === "royal" ? (isRTL ? "أمر ملكي" : "Royal Decree") : 
-                         order.type === "cabinet" ? (isRTL ? "قرار مجلس الوزراء" : "Cabinet Order") : 
-                         (isRTL ? "تعميم" : "Circular");
+    // Was a 3-way ternary whose final branch labelled EVERYTHING else a
+    // "تعميم". The decree taxonomy now has 21 instrument types, so that branch
+    // would have mislabelled 265 supreme orders, 118 sets of rules, 64 royal
+    // orders and 34 ministerial decisions as circulars — a false legal
+    // characterisation on the clipboard, which is worse than a blank one.
+    const docTypeLabel = isRTL
+      ? orderTypeStyle(order.type).label
+      : orderTypeLabelEn(order.type);
                          
     const prefixPlain = isRTL
       ? `الصفحة ${idx + 1} من ${docTypeLabel} رقم (${order.ref}) ونصه:`

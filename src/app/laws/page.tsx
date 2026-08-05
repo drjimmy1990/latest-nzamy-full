@@ -536,7 +536,11 @@ export default function LegalLibraryPage() {
     ? dbDecrees.map((d: any) => ({
         id: String(d.id),
         title: d.title,
-        type: d.type || "circular",
+        // A decree with no type is not a circular. With 21 instrument types now
+        // in the taxonomy, defaulting to one of them asserts a legal
+        // characterisation the source never made (rule ق-2); "unknown" renders
+        // through ORDER_TYPE_FALLBACK as «غير محدد».
+        type: d.type || "unknown",
         issuer: d.issuer || "—",
         ref: d.ref || "—",
         date: d.date || "—",
@@ -557,7 +561,12 @@ export default function LegalLibraryPage() {
         ref: p.decision_number || "—",
         year: String(p.year_hijri || 1445),
         subject: "civil" as any,
-        cat: p.judicial_collections?.category || "SA-03"
+        // `judicial_collections.category` does not exist — see the table
+        // definition in 20260626_legal_library_schema.sql. This read was always
+        // undefined, so the value has always been the constant; it is written
+        // as one now, and the phantom column is out of the init select where it
+        // was making PostgREST reject the whole embed.
+        cat: "SA-03"
       }))
     : (isSupabaseMode ? [] : DEMO_PRINCIPLES)) as any[];
 

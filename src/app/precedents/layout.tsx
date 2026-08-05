@@ -1,4 +1,5 @@
 import { buildMetadata } from "@/lib/seo";
+import LibraryGuard from "@/components/library/LibraryGuard";
 
 export const metadata = buildMetadata({
   titleAr: "السوابق القضائية",
@@ -10,5 +11,5 @@ export const metadata = buildMetadata({
 });
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return <LibraryGuard>{children}</LibraryGuard>;
 }

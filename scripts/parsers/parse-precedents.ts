@@ -24,7 +24,15 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { nullIfForbidden, canonicalizeKey, isInternalField } from "./manifest";
+import { nullIfForbidden, filterMeta } from "./manifest";
+import { slugifyArabic as sharedSlugify } from "./lib/slug";
+import { parseFrontmatter } from "./lib/frontmatter";
+import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
+import { writeParseReport, printCapped } from "./lib/report";
+import { classifyCourt, type JudicialTrack } from "./lib/court";
+
+/** Collected per run so YAML problems are reported, never swallowed. */
+const frontmatterWarnings: string[] = [];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -64,7 +72,10 @@ export interface ParsedPrincipleCollection {
   slug: string;
   title: string;
   court: string;
-  court_type: string;        // ordinary | admin | semi
+  /** Verbatim court name as written in the source (kept for display/citation). */
+  court_type: string;
+  /** Derived judicial branch — see lib/court.ts. Never defaulted to a real branch. */
+  track: JudicialTrack;
   year_hijri: number;
   part: number;
   source_id: string;
@@ -78,7 +89,10 @@ export interface ParsedCourtPrecedent {
   slug: string;
   title: string;
   court: string;
+  /** Verbatim court name as written in the source. */
   court_type: string;
+  /** Derived judicial branch — see lib/court.ts. */
+  track: JudicialTrack;
   ruling_number: string;
   case_number: string;
   year: string;
@@ -110,56 +124,24 @@ export interface PrecedentsParserOutput {
 // Arabic → ASCII slug
 // ══════════════════════════════════════════════════════════════════════════════
 
-const AR_TRANSLIT: Record<string, string> = {
-  "ا": "a", "أ": "a", "إ": "e", "آ": "aa", "ب": "b", "ت": "t", "ث": "th",
-  "ج": "j", "ح": "h", "خ": "kh", "د": "d", "ذ": "dh", "ر": "r", "ز": "z",
-  "س": "s", "ش": "sh", "ص": "s", "ض": "d", "ط": "t", "ظ": "dh", "ع": "a",
-  "غ": "gh", "ف": "f", "ق": "q", "ك": "k", "ل": "l", "م": "m", "ن": "n",
-  "ه": "h", "و": "w", "ي": "y", "ى": "a", "ة": "h", "ئ": "e", "ؤ": "w",
-  "ء": "", "ﻻ": "la", "ﻷ": "la",
-};
-
-function slugifyArabic(text: string): string {
-  let slug = text.replace(/[\u064B-\u065F\u0670]/g, "");
-  slug = slug.replace(/\bال/g, "al-");
-  let result = "";
-  for (const ch of slug) {
-    if (AR_TRANSLIT[ch] !== undefined) result += AR_TRANSLIT[ch];
-    else if (/[a-zA-Z0-9]/.test(ch)) result += ch.toLowerCase();
-    else if (/[\s\-_]/.test(ch)) result += "-";
-  }
-  return result.replace(/-{2,}/g, "-").replace(/^-|-$/g, "").substring(0, 120);
-}
+// Transliteration table + slug function moved to ./lib/slug.ts (was duplicated
+// verbatim in all four parsers). Aliased so existing call-sites are unchanged.
+const slugifyArabic = sharedSlugify;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // YAML frontmatter (minimal parser)
 // ══════════════════════════════════════════════════════════════════════════════
 
-function parseYamlFrontmatter(raw: string): { meta: Record<string, unknown>; body: string } {
-  // Strip BOM + normalize malformed YAML (seeder_hazards[0]): a closing fence
-  // glued to the last line (`total_articles: 0---`) or single-line frontmatter.
-  let src = raw.replace(/^﻿/, "");
-  src = src.replace(/^(---\s*\r?\n[\s\S]*?\S)[ \t]*---\s*(\r?\n|$)/m, "$1\n---\n");
-
-  const match = src.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
-  if (!match) return { meta: {}, body: raw };
-  const yamlStr = match[1];
-  const body = src.slice(match[0].length);
-  const meta: Record<string, unknown> = {};
-  for (const line of yamlStr.split(/\r?\n/)) {
-    // Unicode-aware key match so Arabic keys are not dropped.
-    const m = line.match(/^([\p{L}\w][\p{L}\w_]*)\s*:\s*(.*)/u);
-    if (!m) continue;
-    if (isInternalField(m[1])) continue;
-    const key = canonicalizeKey(m[1]);
-    let value: unknown = m[2].trim();
-    if (typeof value === "string" && /^["'].*["']$/.test(value)) value = (value as string).slice(1, -1);
-    if (typeof value === "string" && /^\d+$/.test(value)) value = parseInt(value, 10);
-    if (value === "true") value = true;
-    if (value === "false") value = false;
-    meta[key] = value;
-  }
-  return { meta, body };
+// Frontmatter now parsed by js-yaml via ./lib/frontmatter.ts. The previous
+// line-by-line matcher silently dropped indented sub-keys, kept raw quote
+// characters from malformed scalars, and let broken YAML pass unnoticed.
+function parseYamlFrontmatter(
+  raw: string,
+  sourcePath = "<unknown>",
+): { meta: Record<string, unknown>; body: string } {
+  const { meta, body, warnings } = parseFrontmatter(raw, sourcePath);
+  if (warnings.length) frontmatterWarnings.push(...warnings);
+  return { meta: filterMeta(meta), body };
 }
 
 function safeJsonParse(str: string, ctx: string): Record<string, unknown> | null {
@@ -241,7 +223,11 @@ function extractDetails(text: string): PrincipleDetail {
 
 function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection | null {
   const raw = fs.readFileSync(filePath, "utf-8");
-  const { meta, body } = parseYamlFrontmatter(raw);
+  const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  // Judicial branch: derived from the folder first (the strongest signal, and
+  // the only one present for files carrying no court field), then the court name.
+  // Never defaulted to a real branch — see lib/court.ts.
+  const courtInfo = classifyCourt(filePath, meta);
 
   const fileId = path.basename(filePath, ".md");
   const title = String(meta.title || fileId);
@@ -325,8 +311,9 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
     id: fileId,
     slug: (meta.slug as string) || slugifyArabic(title) || fileId,
     title,
-    court: String(meta.court || meta.issuing_body || ""),
-    court_type: String(meta.court_type || meta.track || "ordinary"),
+    court: courtInfo.court || "",
+    court_type: courtInfo.court || "",
+    track: courtInfo.track,
     year_hijri: Number(meta.year_hijri || meta.hijri_year || 0),
     part: Number(meta.part || meta.volume || 1),
     source_id: String(meta.source_id || ""),
@@ -342,7 +329,11 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
 
 function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
   const raw = fs.readFileSync(filePath, "utf-8");
-  const { meta, body } = parseYamlFrontmatter(raw);
+  const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  // Judicial branch: derived from the folder first (the strongest signal, and
+  // the only one present for files carrying no court field), then the court name.
+  // Never defaulted to a real branch — see lib/court.ts.
+  const courtInfo = classifyCourt(filePath, meta);
 
   // Only parse as precedent if it has the right frontmatter markers
   if (!meta.court_type && !meta.ruling_number && !meta.case_number) {
@@ -430,8 +421,9 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
     id: fileId,
     slug: (meta.slug as string) || slugifyArabic(title) || fileId,
     title,
-    court: String(meta.court || meta.court_type || ""),
-    court_type: String(meta.court_type || "ordinary"),
+    court: courtInfo.court || "",
+    court_type: courtInfo.court || "",
+    track: courtInfo.track,
     ruling_number: String(meta.ruling_number || ""),
     case_number: String(meta.case_number || ""),
     year: String(meta.year || meta.year_hijri || meta.case_year_hijri || ""),
@@ -474,7 +466,11 @@ function extractRulingSection(body: string, synonyms: string[]): string {
 
 function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | null {
   const raw = fs.readFileSync(filePath, "utf-8");
-  const { meta, body } = parseYamlFrontmatter(raw);
+  const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  // Judicial branch: derived from the folder first (the strongest signal, and
+  // the only one present for files carrying no court field), then the court name.
+  // Never defaulted to a real branch — see lib/court.ts.
+  const courtInfo = classifyCourt(filePath, meta);
 
   const fileId = path.basename(filePath, ".md");
   const hasArticleStart = /<!--\s*ARTICLE_START\s/.test(body);
@@ -544,8 +540,9 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
     id: inherited.collection_id,
     slug: inherited.collection_id,
     title: inherited.collection_title,
-    court: inherited.issuing_body,
-    court_type: String(meta.court_type || meta.track || "ordinary"),
+    court: courtInfo.court || inherited.issuing_body,
+    court_type: courtInfo.court || inherited.issuing_body,
+    track: courtInfo.track,
     year_hijri: Number(meta.year_hijri || 0),
     part: Number(meta.part || 1),
     source_id: String(meta.source_id || inherited.source || ""),
@@ -559,7 +556,7 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
 // Public API
 // ══════════════════════════════════════════════════════════════════════════════
 
-export function parsePrecedents(inputPath: string): PrecedentsParserOutput {
+export function parsePrecedents(inputPath: string, reportDir?: string): PrecedentsParserOutput {
   const resolvedPath = path.resolve(inputPath);
   const stats = fs.statSync(resolvedPath);
   const files: string[] = [];
@@ -576,12 +573,24 @@ export function parsePrecedents(inputPath: string): PrecedentsParserOutput {
     files.push(resolvedPath);
   }
 
+  // Drop non-content artefacts before parsing. Reported, never silent.
+  const { kept: contentFiles, countsByRule, excluded: excludedList } = applyExclusions(files);
+  const excludedCount = files.length - contentFiles.length;
+
   console.log(`\n⚖️  Precedent Parser — ${files.length} file(s) found\n`);
+  if (excludedCount > 0) {
+    console.log(`   ⊘ ${excludedCount} non-content file(s) excluded:`);
+    for (const line of formatExclusionSummary(countsByRule)) console.log(`      • ${line}`);
+    console.log(`   → ${contentFiles.length} document(s) to parse\n`);
+  }
 
   const collections: ParsedPrincipleCollection[] = [];
   const courtPrecedents: ParsedCourtPrecedent[] = [];
+  const failedFiles: string[] = [];
+  /** Matched none of the three classifiers — previously vanished with no trace. */
+  const unclassified: string[] = [];
 
-  for (const file of files) {
+  for (const file of contentFiles) {
     try {
       // Try as a "مجموعة سوابق قضائية" container FIRST (97/1- ministry volumes):
       // un-bundles each ARTICLE_START into its own principle row.
@@ -604,8 +613,14 @@ export function parsePrecedents(inputPath: string): PrecedentsParserOutput {
         courtPrecedents.push(precedent);
         continue;
       }
+
+      // No classifier matched. The cascade previously ended here with no `else`,
+      // so the file was dropped with no warning, no counter and no exit code —
+      // indistinguishable from a file that simply did not exist.
+      unclassified.push(file);
     } catch (err) {
       console.error(`  ✗ Failed to parse ${file}: ${(err as Error).message}`);
+      failedFiles.push(file);
     }
   }
 
@@ -614,6 +629,73 @@ export function parsePrecedents(inputPath: string): PrecedentsParserOutput {
   console.log(`\n✅ Precedent Parser Summary`);
   console.log(`  Collections: ${collections.length} (${totalPrinciples} principles)`);
   console.log(`  Court precedents: ${courtPrecedents.length}\n`);
+
+  // ── Identity guard ──────────────────────────────────────────────────────────
+  // seed-library.ts keys judicial_collections by `coll.id || coll.slug`, so a
+  // duplicate collapses two collections into one row on upsert.
+  const collById = new Map<string, string[]>();
+  for (const c of collections) {
+    const key = String(c.id || c.slug);
+    const list = collById.get(key);
+    if (list) list.push(c.title);
+    else collById.set(key, [c.title]);
+  }
+  const collCollisions = [...collById.entries()].filter(([, v]) => v.length > 1);
+  if (collCollisions.length > 0) {
+    console.error(`\n🛑 ${collCollisions.length} COLLECTION ID COLLISION(S):`);
+    for (const [id, titles] of collCollisions.slice(0, 20)) {
+      console.error(`   "${id}"`);
+      for (const t of titles) console.error(`      ← ${t}`);
+    }
+    if (collCollisions.length > 20) console.error(`   … and ${collCollisions.length - 20} more`);
+  }
+
+  if (unclassified.length > 0) {
+    console.error(`\n🛑 ${unclassified.length} file(s) matched NO parser and were skipped:`);
+    for (const f of unclassified.slice(0, 20)) console.error(`   • ${f}`);
+    if (unclassified.length > 20) console.error(`   … and ${unclassified.length - 20} more`);
+  }
+
+  printCapped("⚠️  frontmatter warning(s)", frontmatterWarnings);
+
+  if (failedFiles.length > 0) {
+    console.error(`\n🛑 ${failedFiles.length} file(s) failed to parse and are MISSING from the output.`);
+  }
+
+  // Complete, uncapped record — the console preview above is truncated on purpose.
+  if (reportDir) {
+    const p = writeParseReport(reportDir, {
+      type: "precedents",
+      generated_at: new Date().toISOString(),
+      input: resolvedPath,
+      counts: {
+        collections: collections.length,
+        principles: totalPrinciples,
+        courtPrecedents: courtPrecedents.length,
+        excluded: excludedCount,
+        frontmatterWarnings: frontmatterWarnings.length,
+        collectionIdCollisions: collCollisions.length,
+        unclassified: unclassified.length,
+        failed: failedFiles.length,
+      },
+      excluded: excludedList,
+      frontmatterWarnings,
+      identityCollisions: collCollisions.map(([key, members]) => ({ key, members })),
+      unclassified,
+      failed: failedFiles,
+    });
+    if (p) console.log(`\n📄 Full parse report: ${p}`);
+  }
+
+  // Rule ق-3: losing documents or corrupting identity must not exit 0.
+  if (collCollisions.length > 0 || unclassified.length > 0 || failedFiles.length > 0) {
+    console.error(
+      `\n✗ Parse completed with unrecoverable problems ` +
+        `(${collCollisions.length} collision(s), ${unclassified.length} unclassified, ` +
+        `${failedFiles.length} failed). Refusing to report success.`,
+    );
+    process.exitCode = 1;
+  }
 
   return {
     type: "precedents",
@@ -643,7 +725,7 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  const result = parsePrecedents(inputPath);
+  const result = parsePrecedents(inputPath, outputDir);
 
   fs.mkdirSync(path.resolve(outputDir), { recursive: true });
   const outFile = path.join(path.resolve(outputDir), "precedents.json");

@@ -9,7 +9,34 @@ const ALLOWED_SETTINGS_KEYS = [
   "library_free_items",
   "tier_limits",
   "payments_gateway",
+  "library_status",
 ] as const;
+
+/**
+ * Per-key value validators for settings whose value is safety-critical.
+ *
+ * library_status is read as "closed only when it is exactly 'closed'", so an
+ * unvalidated typo (e.g. "closd") would read back as OPEN — a failed closure
+ * that looks like a success. Rejecting the write is the only place this can be
+ * caught, so it is enforced here rather than trusted to the caller.
+ *
+ * Returns an error string when invalid, or null when the value is acceptable.
+ */
+const SETTINGS_VALUE_VALIDATORS: Record<string, (value: unknown) => string | null> = {
+  library_status: (value) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return 'قيمة library_status يجب أن تكون كائناً بالشكل: {"status":"open"|"closed","message":string|null}';
+    }
+    const { status, message } = value as { status?: unknown; message?: unknown };
+    if (status !== "open" && status !== "closed") {
+      return `قيمة status غير صالحة${typeof status === "string" ? ` ("${status}")` : ""} — المسموح: "open" أو "closed" فقط`;
+    }
+    if (message !== undefined && message !== null && typeof message !== "string") {
+      return "قيمة message يجب أن تكون نصاً أو null";
+    }
+    return null;
+  },
+};
 
 /**
  * GET /api/v1/admin/settings — Fetch all platform settings
@@ -141,6 +168,15 @@ export async function PATCH(request: NextRequest) {
       },
       { status: 400 },
     );
+  }
+
+  // ── Validate the value shape for safety-critical keys ──────────────────────
+  const validate = SETTINGS_VALUE_VALIDATORS[key];
+  if (validate) {
+    const invalid = validate(value);
+    if (invalid) {
+      return NextResponse.json({ error: invalid }, { status: 400 });
+    }
   }
 
   const adminClient = await createServiceClient();
