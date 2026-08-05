@@ -137,6 +137,7 @@ function LawSystemPageContent() {
               free: a.free ?? true,
               text: a.text || '',
               executiveReg: a.executiveReg,
+              regulations: a.regulations,
               amendments: a.amendments,
               instrument: a.instrument,
             })),
@@ -145,6 +146,7 @@ function LawSystemPageContent() {
           metadata_card: data.metadata_card || null,
           appendices: data.appendices || null,
           regulationPreamble: data.regulationPreamble || '',
+          regulationInstruments: data.regulationInstruments || [],
         } as LawSystem);
       } catch (err) {
         console.error('[LawReader] Failed to load law:', err);
@@ -746,9 +748,70 @@ function LawSystemPageContent() {
                   </div>
                 ))}
               </div>
+            ) : viewMode === "regulation" && (law as any).regulationInstruments?.length > 0 ? (
+              // ── العرض المسطَّح الجديد "اللائحة وحدها" ──────────────────────
+              // مبني من law.regulationInstruments (محسوب مسبقاً من الخادم:
+              // مجمَّع بـref، مرتَّب بـsort_key، ومُستبعَد منه is_secondary_display)
+              // بدل محاولة استنتاج الترتيب من نص/ref كل مادة نظامية بتخمين هش.
+              // راجع 00_عقل_القوانين/13_دليل_المبرمج/02_عقد_اللوائح_المدمجة_والبذر.md §1-3-د.
+              <div className="space-y-4">
+                {(() => {
+                  const instruments = (law as any).regulationInstruments as Array<{
+                    ref: string;
+                    articles: { regNum: string | null; text: string; status: string; systemArticleNumber: string | null }[];
+                  }>;
+                  const visible = selectedRegName
+                    ? instruments.filter((i) => i.ref === selectedRegName)
+                    : instruments;
+
+                  return (
+                    <>
+                      {instruments.length > 1 && (
+                        <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+                          <button
+                            onClick={() => setSelectedRegName(null)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                              selectedRegName === null
+                                ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white shadow-sm"
+                                : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                            }`}
+                          >
+                            {isRTL ? "الكل" : "All"}
+                          </button>
+                          {instruments.map((inst) => (
+                            <button
+                              key={inst.ref}
+                              onClick={() => setSelectedRegName(inst.ref)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                selectedRegName === inst.ref
+                                  ? isDark ? "bg-[#C8A762] text-[#0B3D2E]" : "bg-amber-100 text-amber-800 border border-amber-300"
+                                  : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                              }`}
+                            >
+                              {inst.ref}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {visible.map((inst) => (
+                        <div key={inst.ref} className="space-y-3">
+                          {inst.articles.map((a, i) => (
+                            <div
+                              key={`${inst.ref}-${a.regNum ?? i}`}
+                              className={`rounded-xl border p-4 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}
+                            >
+                              <MD text={a.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </>
+                  );
+                })()}
+              </div>
             ) : viewMode === "regulation" ? (
               <div className="space-y-4">
-                {/* ── اختيار اللائحة عند تعدد اللوائح ── */}
+                {/* ── اختيار اللائحة عند تعدد اللوائح (نمط تراجعي: بيانات قديمة بلا regulationInstruments) ── */}
                 {availableRegNames.length > 1 && (
                   <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
                     <button

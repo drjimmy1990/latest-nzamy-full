@@ -246,7 +246,7 @@ async function seedLaws(
   if (clean && !dryRun) {
     console.log("    🧹 Cleaning laws tables (delete before insert)...");
     // FK-safe order: children first.
-    for (const t of ["article_amendments", "articles", "chapters", "laws"]) {
+    for (const t of ["article_amendments", "article_regulations", "articles", "chapters", "laws"]) {
       const { error } = await client.delete(t, {});
       if (error) {
         console.error(`    ✗ clean ${t}: ${error}`);
@@ -259,6 +259,7 @@ async function seedLaws(
   const chapterRows: Record<string, unknown>[] = [];
   const articleRows: Record<string, unknown>[] = [];
   const amendmentRows: Record<string, unknown>[] = [];
+  const regulationRows: Record<string, unknown>[] = [];
 
   for (const law of laws) {
     const lawId = String(law.slug || law.id);
@@ -333,6 +334,23 @@ async function seedLaws(
             full_text: amends[ai].original_text || null,
           });
         }
+
+        for (let ri = 0; ri < regs.length; ri++) {
+          const r = regs[ri];
+          regulationRows.push({
+            // article_regulations.id is `uuid`; article_id (→ articles.id) stays.
+            id: toUuid(`${artId}__reg-${ri}`),
+            article_id: artId,
+            law_slug: lawId.substring(0, 200),
+            system_article_number: String(art.number || "0").substring(0, 20),
+            ref: String(r.ref || "").substring(0, 300),
+            reg_num: r.regNum != null ? String(r.regNum).substring(0, 50) : null,
+            sort_key: String(r.sortKey || "99999").substring(0, 50),
+            text: r.text || "",
+            status: (r.status || "active").substring(0, 30),
+            is_secondary_display: r.isSecondaryDisplay === true,
+          });
+        }
       }
     }
   }
@@ -342,6 +360,7 @@ async function seedLaws(
   const uniqueChapterRows = Array.from(new Map(chapterRows.map(r => [r.id, r])).values());
   const uniqueArticleRows = Array.from(new Map(articleRows.map(r => [r.id, r])).values());
   const uniqueAmendmentRows = Array.from(new Map(amendmentRows.map(r => [r.id, r])).values());
+  const uniqueRegulationRows = Array.from(new Map(regulationRows.map(r => [r.id, r])).values());
 
   const lawStats: SeedStats = { table: "laws", inserted: 0, skipped: 0, errors: 0 };
   await batchUpsert(client, "laws", uniqueLawRows, dryRun, lawStats, errors);
@@ -359,6 +378,12 @@ async function seedLaws(
     const amdStats: SeedStats = { table: "article_amendments", inserted: 0, skipped: 0, errors: 0 };
     await batchUpsert(client, "article_amendments", uniqueAmendmentRows, dryRun, amdStats, errors);
     allStats.push(amdStats);
+  }
+
+  if (uniqueRegulationRows.length > 0) {
+    const regStats: SeedStats = { table: "article_regulations", inserted: 0, skipped: 0, errors: 0 };
+    await batchUpsert(client, "article_regulations", uniqueRegulationRows, dryRun, regStats, errors);
+    allStats.push(regStats);
   }
 
   return allStats;

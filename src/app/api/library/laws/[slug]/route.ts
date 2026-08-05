@@ -53,7 +53,8 @@ export async function GET(
       .from('articles')
       .select(`
         *,
-        article_amendments (*)
+        article_amendments (*),
+        article_regulations (*)
       `)
       .eq('law_slug', slug)
       .order('order_index', { ascending: true });
@@ -97,6 +98,33 @@ export async function GET(
       regulationPreamble = parts[1].trim();
     }
 
+    // ── Build the flat "اللائحة وحدها" view — one sorted list per secondary
+    // instrument (`ref`), spanning every نظام article, with dual-linked
+    // duplicates (is_secondary_display) excluded so each article appears once.
+    // See 00_عقل_القوانين/13_دليل_المبرمج/02_عقد_اللوائح_المدمجة_والبذر.md §1-3-د.
+    const regulationsByRef = new Map<string, Record<string, unknown>[]>();
+    articles?.forEach((article: Record<string, unknown>) => {
+      const regRows = (article.article_regulations as Record<string, unknown>[]) || [];
+      regRows.forEach((r) => {
+        if (r.is_secondary_display === true) return;
+        const ref = String(r.ref || '');
+        if (!ref) return;
+        if (!regulationsByRef.has(ref)) regulationsByRef.set(ref, []);
+        regulationsByRef.get(ref)!.push(r);
+      });
+    });
+    const regulationInstruments = Array.from(regulationsByRef.entries()).map(([ref, rows]) => ({
+      ref,
+      articles: [...rows]
+        .sort((a, b) => String(a.sort_key || '99999').localeCompare(String(b.sort_key || '99999')))
+        .map((r) => ({
+          regNum: r.reg_num ?? null,
+          text: r.text || '',
+          status: r.status || 'active',
+          systemArticleNumber: r.system_article_number ?? null,
+        })),
+    }));
+
     // Build the response in the LawSystem format the frontend expects
     const lawSystem = {
       id: law.slug,
@@ -108,6 +136,8 @@ export async function GET(
       source: law.boe_source_url || '',
       preamble: preamble,
       regulationPreamble: regulationPreamble,
+      // Flat per-instrument view for the "اللائحة وحدها" tab — see build above.
+      regulationInstruments,
       // Paywall metadata for frontend
       paywall: {
         isWhitelisted,
@@ -170,12 +200,41 @@ function formatArticleWithPaywall(
     result.text = article.text || '';
   }
 
-  // Add executive regulation if present (only for unlocked articles)
-  if (!isLocked && article.executive_reg_text) {
-    result.executiveReg = {
-      ref: article.executive_reg_ref || '',
-      text: article.executive_reg_text,
-    };
+  // Add executive regulation if present (only for unlocked articles).
+  //
+  // `regulations` is the NEW array form (one entry per regulation article,
+  // individually sortable by regNum, carrying isSecondaryDisplay for dedup) —
+  // the frontend should migrate to this. Until it does, `executiveReg` is
+  // ALWAYS also populated (merged ref/text, mirroring the old
+  // join(", ")/join("\n\n") shape from executive_reg_text/executive_reg_ref)
+  // so every existing render path keeps working unchanged. Do not remove
+  // `executiveReg` until the frontend reads `regulations` everywhere it
+  // currently reads `executiveReg` (see §1-3 of
+  // 00_عقل_القوانين/13_دليل_المبرمج/02_عقد_اللوائح_المدمجة_والبذر.md).
+  if (!isLocked) {
+    const regRows = (article.article_regulations as Record<string, unknown>[]) || [];
+    if (regRows.length > 0) {
+      const sorted = [...regRows].sort((a, b) =>
+        String(a.sort_key || '99999').localeCompare(String(b.sort_key || '99999'))
+      );
+      result.regulations = sorted.map((r) => ({
+        ref: r.ref || '',
+        regNum: r.reg_num ?? null,
+        text: r.text || '',
+        status: r.status || 'active',
+        isSecondaryDisplay: r.is_secondary_display === true,
+      }));
+      const distinctRefs = Array.from(new Set(sorted.map((r) => String(r.ref || '')).filter(Boolean)));
+      result.executiveReg = {
+        ref: distinctRefs.join(', '),
+        text: sorted.map((r) => String(r.text || '')).join('\n\n'),
+      };
+    } else if (article.executive_reg_text) {
+      result.executiveReg = {
+        ref: article.executive_reg_ref || '',
+        text: article.executive_reg_text,
+      };
+    }
   }
 
   // Add amendments if present (only for unlocked articles)

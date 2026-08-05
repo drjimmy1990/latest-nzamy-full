@@ -533,10 +533,10 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
     
     const cleanNum = article.num.replace(/المادة\s*/, "").trim();
     const prefixPlain = isRTL
-      ? `المادة (${cleanNum}) من نظام (${base}) ونصه:`
+      ? `${article.num} من نظام (${base}) ونصه:`
       : `Article (${cleanNum}) of the (${base}) system, text:`;
     const prefixHtml = isRTL
-      ? `<b>المادة (${cleanNum}) من نظام (${base}) ونصه:</b>`
+      ? `<b>${article.num} من نظام (${base}) ونصه:</b>`
       : `<b>Article (${cleanNum}) of the (${base}) system, text:</b>`;
       
     const plain = `${prefixPlain}\n“${stripMd(plainText)}”`;
@@ -560,10 +560,10 @@ export function ArticleBlock({ article, lawName, isDark, entry, onAddArticle, on
     
     const cleanNum = article.executiveReg.ref.replace(/المادة\s*/, "").trim();
     const prefixPlain = isRTL
-      ? `المادة (${cleanNum}) من اللائحة التنفيذية لنظام (${base}) ونصه:`
+      ? `${article.executiveReg.ref} من اللائحة التنفيذية لنظام (${base}) ونصه:`
       : `Article (${cleanNum}) of the Executive Regulations of (${base}), text:`;
     const prefixHtml = isRTL
-      ? `<b>المادة (${cleanNum}) من اللائحة التنفيذية لنظام (${base}) ونصه:</b>`
+      ? `<b>${article.executiveReg.ref} من اللائحة التنفيذية لنظام (${base}) ونصه:</b>`
       : `<b>Article (${cleanNum}) of the Executive Regulations of (${base}), text:</b>`;
       
     const plain = `${prefixPlain}\n“${stripMd(plainText)}”`;

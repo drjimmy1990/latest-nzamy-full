@@ -42,6 +42,9 @@ export interface ExecutiveRegulation {
   instrument: string;
   ref: string;
   text: string;
+  regNum?: string;
+  sortKey?: string;
+  isSecondaryDisplay?: boolean;
 }
 
 export interface ParsedArticle {
@@ -198,6 +201,41 @@ function safeJsonParse(str: string, context: string): Record<string, unknown> | 
     console.warn(`  ⚠ JSON parse error in ${context}: ${(err as Error).message}`);
     return null;
   }
+}
+
+// Arabic-Indic digits (٠-٩) → Latin (0-9), used so regNum values like "٢٢" or
+// "٣/١٧٧" sort numerically instead of lexicographically.
+function normalizeDigits(str: string): string {
+  const map: Record<string, string> = {
+    "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+    "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+  };
+  return str.replace(/[٠-٩]/g, (d) => map[d] || d);
+}
+
+// Builds a zero-padded, lexicographically-sortable key from a raw regNum string.
+// Absolute numbering ("5", "17", "100") → "00005".
+// Fractional X/Y numbering ("3/177") → sorted by the *system* article number Y
+// first, then the regulation's own sub-number X: "00177-00003".
+// Trailing "مكرر" (repeated-article) suffixes sort just after their base number.
+function toSortKey(rawNum: string | undefined | null): string {
+  if (!rawNum) return "99999";
+  const normalized = normalizeDigits(String(rawNum)).trim();
+  const mkrMatch = normalized.match(/^(.*?)\s*مكرر\s*(\d*)$/);
+  const base = mkrMatch ? mkrMatch[1].trim() : normalized;
+  const mkrSuffix = mkrMatch ? `-mkr${(mkrMatch[2] || "1").padStart(3, "0")}` : "";
+
+  const fracMatch = base.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (fracMatch) {
+    const [, sub, parent] = fracMatch;
+    return `${parent.padStart(5, "0")}-${sub.padStart(5, "0")}${mkrSuffix}`;
+  }
+  const plain = base.match(/^\d+$/);
+  if (plain) {
+    return `${base.padStart(5, "0")}${mkrSuffix}`;
+  }
+  // Non-numeric regNum (shouldn't normally happen) — sort after all numeric ones.
+  return `99999-${base}${mkrSuffix}`;
 }
 
 function detectVariant(body: string, meta: Record<string, unknown>): "boe" | "qadha" {
@@ -359,10 +397,14 @@ function parseArticlesInBlock(
       const regText = regMatch[2]
         .replace(/^>\s*/gm, "") // Strip block-quote markers
         .trim();
+      const regNum = regMeta?.regNum != null ? String(regMeta.regNum) : undefined;
       regulations.push({
         instrument: String(regMeta?.instrument || "لائحة تنفيذية"),
         ref: String(regMeta?.ref || ""),
         text: regText,
+        regNum,
+        sortKey: toSortKey(regNum),
+        isSecondaryDisplay: regMeta?.is_secondary_display === true,
       });
     }
 

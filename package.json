@@ -21,7 +21,8 @@
     "library:verify": "node library-toolkit/library-verify.mjs",
     "library:status": "node library-toolkit/library-status.mjs",
     "library:reseed": "node library-toolkit/library-reseed.mjs",
-    "library:reseed:wipe": "node library-toolkit/library-reseed.mjs --wipe"
+    "library:reseed:wipe": "node library-toolkit/library-reseed.mjs --wipe",
+    "docs:check-drift": "node scripts/check-docs-drift.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.7",

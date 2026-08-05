@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:mc.gov.sa)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"EXIT_CODE=$?\")"
+    ]
+  }
+}

@@ -11,6 +11,22 @@ export interface AmendmentEntry {
 export interface ExecutiveRegulation {
   ref: string;
   text: string;
+  regNum?: string | null;
+  status?: string;
+  isSecondaryDisplay?: boolean;
+}
+
+// One secondary instrument's own articles, flattened across every نظام
+// article it's attached to and pre-sorted/deduplicated server-side (excludes
+// is_secondary_display duplicates) — powers the "اللائحة وحدها" flat view.
+export interface RegulationInstrument {
+  ref: string;
+  articles: {
+    regNum: string | null;
+    text: string;
+    status: string;
+    systemArticleNumber: string | null;
+  }[];
 }
 
 export interface JudicialPrinciple {
@@ -38,6 +54,7 @@ export interface LawArticle {
   text: string;
   instrument?: string;
   executiveReg?: ExecutiveRegulation;
+  regulations?: ExecutiveRegulation[];
   amendments?: AmendmentEntry[];
   repealedBy?: string;
   repealedDate?: string;
@@ -90,6 +107,7 @@ export interface LawSystem {
   preamble: string;              // نص الديباجة
   chapters: LawChapter[];
   regulationPreamble?: string;   // نص ديباجة اللائحة
+  regulationInstruments?: RegulationInstrument[]; // العرض المسطَّح "اللائحة وحدها"
   appendices?: LawAppendix[];    // جداول/ملاحق مستوى الوثيقة (اختياري — أنظمة قليلة فقط)
 
   // ── حقول البطاقة التعريفية — كلها اختيارية ──
