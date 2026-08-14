@@ -1471,6 +1471,43 @@ export async function PATCH(
 }
 ```
 
+- [ ] **Step 2b: Wire `requesterProfile` into the pre-existing generic PATCH route**
+
+`src/app/api/v1/service-requests/[id]/route.ts` already dispatches to n8n on status
+change, but calls `buildWebhookPayload` without the `requesterProfile` argument Task 3
+added. That route is generic — it can also move an `ai_workspace` order to `completed` —
+and when it does, the payload carries no phone and the WhatsApp workflow has no one to
+address. (This file was listed in the plan's File Structure but no task covered it;
+found by the Task 3 review.)
+
+Next to the existing `actorProfile` lookup in that route's dispatch block, add a
+requester lookup and pass it through:
+
+```ts
+    const { data: requesterProfile } = await supabase
+      .from("profiles")
+      .select("id, display_name, phone, email, user_type")
+      .eq("id", data.requester_user_id as string)
+      .maybeSingle();
+
+    await dispatchToN8n(
+      eventName,
+      buildWebhookPayload({
+        event: eventName,
+        timestamp: new Date().toISOString(),
+        request: data as unknown as Record<string, unknown>,
+        actor: actorProfile as unknown as Record<string, unknown> | null,
+        requesterProfile: requesterProfile as unknown as Record<string, unknown> | null,
+      }),
+    );
+```
+
+Keep it inside the existing `try` — this dispatch is best-effort and must not break the
+update. Do not change any other behaviour of that route.
+
+Run: `npx tsc --noEmit`
+Expected: no new type errors.
+
 - [ ] **Step 3: Verify the admin gate**
 
 Signed in as a non-admin, in the browser console:
