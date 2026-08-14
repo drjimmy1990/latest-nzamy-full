@@ -161,7 +161,7 @@ export async function PATCH(
 
     const { data: existing, error: existingError } = await supabase
       .from("service_requests")
-      .select("requester_user_id, assigned_to")
+      .select("requester_user_id, assigned_to, receiver")
       .eq("id", id)
       .single();
 
@@ -174,25 +174,58 @@ export async function PATCH(
 
     const requesterId = (existing.requester_user_id as string | null) ?? null;
     const assigneeId = (existing.assigned_to as string | null) ?? null;
+    const receiver = (existing.receiver as string | null) ?? null;
     const isRequester = requesterId === user.id;
     const isAssignee = assigneeId != null && assigneeId === user.id;
 
-    // `assigned_to` is null until an admin claims the order (Task 8), so an
-    // admin acting on an unclaimed order is NOT the assignee — resolve
-    // admin-ness from `profiles.user_type` directly rather than assuming
-    // either implies the other.
-    let isAdmin = false;
-    if (!isAssignee) {
-      const { data: callerProfile } = await supabase
-        .from("profiles")
-        .select("user_type")
-        .eq("id", user.id)
-        .single();
-      isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
-    }
+    let permitted: boolean;
 
-    const permitted =
-      isAssignee || isAdmin || (isRequester && targetStatus === "cancelled");
+    if (receiver === "ai_workspace") {
+      // Follow-up to the original Task 6d fix: `assigned_to` is client-
+      // supplied at POST with no server-side check (only `requester_user_id`
+      // is RLS-constrained on insert), so a requester could self-assign at
+      // creation and satisfy `isAssignee` below on their own order — the
+      // exact "self-assign then self-complete" bypass a security review
+      // caught. Rather than weaken `isAssignee` in a way that also 403s the
+      // lawyer dashboard's legitimate self-tracking of its own
+      // contracts/cases (same person is intentionally both requester and
+      // assignee there — see the `else` branch), the four AI-fulfillment
+      // services (`receiver='ai_workspace'`) get their own, stricter rule:
+      // through this RLS-scoped handler, the ONLY allowed move is the
+      // requester cancelling their own order. Every other transition for
+      // these orders belongs to Task 8's admin route, which uses
+      // `createServiceClient()` and never reaches this handler — so there is
+      // no legitimate `isAssignee`/`isAdmin` case to preserve here.
+      //
+      // This holds even though `receiver` is itself client-supplied at POST:
+      // Task 8's admin queue filters on `receiver='ai_workspace'`, the same
+      // field this gate keys on. A requester who lies about `receiver` to
+      // dodge this branch has simultaneously pulled their order out of the
+      // only queue an admin will ever look at — self-completing an order no
+      // admin was ever going to fulfil, with no real deliverable behind it.
+      // Dodging the gate means dodging the prize, so `receiver` does not
+      // need to be locked down at POST for this to hold.
+      permitted = isRequester && targetStatus === "cancelled";
+    } else {
+      // Unchanged from the original Task 6d rule. Covers lawyer/firm
+      // self-tracking (contracts, cases, hearings) where the same person is
+      // legitimately both requester and assignee of their own record —
+      // `assigned_to` is null until an admin claims an order (Task 8), so an
+      // admin acting on an unclaimed order is NOT the assignee; resolve
+      // admin-ness from `profiles.user_type` directly rather than assuming
+      // either implies the other.
+      let isAdmin = false;
+      if (!isAssignee) {
+        const { data: callerProfile } = await supabase
+          .from("profiles")
+          .select("user_type")
+          .eq("id", user.id)
+          .single();
+        isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
+      }
+      permitted =
+        isAssignee || isAdmin || (isRequester && targetStatus === "cancelled");
+    }
 
     if (!permitted) {
       console.error(
