@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "test": "node scripts/smoke-routes.mjs",
     "test:smoke": "node scripts/smoke-routes.mjs",
-    "test:unit": "node --test \"src/**/*.test.ts\"",
+    "test:unit": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"src/**/*.test.ts\"",
     "type-check": "tsc --noEmit",
     "blog:clear": "node blog-toolkit/blog-clear.mjs",
     "blog:images": "node blog-toolkit/seed-blog-images.mjs",
