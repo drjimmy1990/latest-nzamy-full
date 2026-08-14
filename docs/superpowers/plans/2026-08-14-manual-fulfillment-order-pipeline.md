@@ -957,9 +957,21 @@ async function attachFile(file: File): Promise<void> {
 
 Add to the hook's return object: `submitNotes, setSubmitNotes, submitting, submitErrors, uploadedAttachments, attachFile, buildSummary, submitOrder`.
 
-- [ ] **Step 3: Make the step-transition guard allow `submit`**
+- [ ] **Step 3: Remove the fake-processing delay**
 
-In the same file, `nextStep()` currently walks `STEPS`. Change it to walk `CLIENT_VISIBLE_STEPS` (imported from `draftConstants`) so `case` advances to `submit`, and remove the `setTimeout(2000)` fake-processing delay at line 113 — there is no processing to simulate.
+> **Already done in Task 4:** repointing `currentStepIndex`, `nextStep()` and `prevStep()`
+> at `CLIENT_VISIBLE_STEPS`. Splitting the step list and the state machine that walks it
+> across two tasks left Task 4 shipping a wizard whose three-step path did not work —
+> blank intermediate screens and a dead السابق button — so the Task 4 review moved it
+> there. Do not redo it; verify it is already the case and say so in your report.
+
+What remains here is the `setTimeout(2000)` fake-processing delay inside `nextStep()`. It
+existed only to make the mock feel like it was thinking; there is no processing between
+steps any more, so remove it.
+
+Be careful: the `processing` flag it sets is also bound to the التالي button's spinner and
+disabled state in `src/app/ai/draft/page.tsx`. After removing the delay, confirm the button
+is not left permanently disabled and the spinner is not left permanently visible.
 
 - [ ] **Step 4: Verify end to end**
 
