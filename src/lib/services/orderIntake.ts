@@ -68,6 +68,11 @@ export function validateDraftIntake(input: unknown): ValidationResult<DraftIntak
     return { ok: false, errors: ["البيانات المرسلة غير صالحة"] };
   }
 
+  const service = str(input.service);
+  if (service !== "draft") {
+    errors.push("نوع الخدمة غير صحيح");
+  }
+
   const clientRole = str(input.clientRole);
   if (clientRole !== "plaintiff" && clientRole !== "defendant") {
     errors.push("صفة الموكل غير محددة");

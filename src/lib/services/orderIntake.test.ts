@@ -50,3 +50,13 @@ test("maps every service key to a service_requests type", () => {
   assert.equal(SERVICE_TYPE_BY_KEY.draft, "ai_draft");
   assert.equal(SERVICE_TYPE_BY_KEY.legal_opinion, "ai_legal_opinion");
 });
+
+test("rejects an intake with wrong service value", () => {
+  const r = validateDraftIntake({ ...valid, service: "contracts" });
+  assert.equal(r.ok, false);
+});
+
+test("rejects an intake with missing service key", () => {
+  const r = validateDraftIntake({ ...valid, service: undefined });
+  assert.equal(r.ok, false);
+});
