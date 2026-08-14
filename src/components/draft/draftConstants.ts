@@ -13,6 +13,22 @@ export const STEPS = [
 
 export type StepKey = (typeof STEPS)[number]["key"];
 
+// ─── Client-visible steps ─────────────────────────────────────────────────────
+// The middle steps (analysis/defenses/laws/drafting/review/approval) render
+// mock AI output (MOCK_DEFENSES et al). Until real generation exists, the
+// client sees intake + submit only. The step components stay on disk so this
+// is a one-line reversal.
+
+export const SUBMIT_STEP = { key: "submit", label: "الإرسال", num: 3 } as const;
+
+export const CLIENT_VISIBLE_STEPS = [
+  STEPS[0], // identify
+  STEPS[1], // case
+  SUBMIT_STEP,
+] as const;
+
+export type VisibleStepKey = (typeof CLIENT_VISIBLE_STEPS)[number]["key"];
+
 // ─── Legal branches ────────────────────────────────────────────────────────────
 
 export const LEGAL_BRANCHES_REGULAR = [

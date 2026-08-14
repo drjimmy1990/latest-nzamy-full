@@ -6,16 +6,11 @@ import { motion } from "framer-motion";
 import { Check, ArrowRight, ArrowLeft } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useDraftState } from "@/hooks/useDraftState";
-import { STEPS } from "@/components/draft/draftConstants";
+import { CLIENT_VISIBLE_STEPS } from "@/components/draft/draftConstants";
 import { DraftPreStep } from "@/components/draft/DraftPreStep";
 import { StepIdentify }  from "@/components/draft/steps/StepIdentify";
 import { StepCase }      from "@/components/draft/steps/StepCase";
-import { StepAnalysis }  from "@/components/draft/steps/StepAnalysis";
-import { StepDefenses }  from "@/components/draft/steps/StepDefenses";
-import { StepLaws }      from "@/components/draft/steps/StepLaws";
-import { StepDrafting }  from "@/components/draft/steps/StepDrafting";
-import { StepReview }    from "@/components/draft/steps/StepReview";
-import { StepApproval }  from "@/components/draft/steps/StepApproval";
+import { StepSubmit }    from "@/components/draft/steps/StepSubmit";
 
 // Labels shown as badge in wizard header when ?mode= param is present
 const MODE_BADGE_LABELS: Record<string, string> = {
@@ -32,7 +27,7 @@ export default function AIDraftPage() {
   const modeParam = searchParams.get("mode") ?? "";
 
   const s = useDraftState(modeParam);
-  // "pre" = show chooser, "draft" = show 8-step wizard
+  // "pre" = show chooser, "draft" = show the wizard
   // If a mode param is provided skip the chooser and go straight to draft
   const [preMode, setPreMode] = useState<"pre" | "draft">(modeParam ? "draft" : "pre");
 
@@ -49,7 +44,7 @@ export default function AIDraftPage() {
     );
   }
 
-  // ── Main 8-step wizard ────────────────────────────────────────────────────
+  // ── Main wizard ────────────────────────────────────────────────────────────
   return (
     <div className={`p-5 md:p-7 max-w-5xl mx-auto space-y-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
 
@@ -72,14 +67,14 @@ export default function AIDraftPage() {
               </span>
             )}
           </div>
-          <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>صياغة جديدة — ٨ خطوات ذكية</p>
+          <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>صياغة جديدة — ٣ خطوات</p>
         </div>
       </div>
 
       {/* Progress stepper */}
       <div className={`${card} p-4 shadow-sm`}>
         <div className="flex items-center gap-1">
-          {STEPS.map((step, i) => {
+          {CLIENT_VISIBLE_STEPS.map((step, i) => {
             const isActive = i === s.currentStepIndex;
             const isDone   = i < s.currentStepIndex;
             return (
@@ -99,7 +94,7 @@ export default function AIDraftPage() {
                   isDone   ? "text-emerald-500 font-medium" :
                   (isDark  ? "text-zinc-600" : "text-zinc-400")
                 }`}>{step.label}</span>
-                {i < STEPS.length - 1 && (
+                {i < CLIENT_VISIBLE_STEPS.length - 1 && (
                   <div className={`flex-1 h-px mx-1 ${isDone ? "bg-emerald-500/40" : isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />
                 )}
               </div>
@@ -111,12 +106,18 @@ export default function AIDraftPage() {
       {/* Step content */}
       {s.step === "identify"  && <StepIdentify  isDark={isDark} clientRole={s.clientRole} setClientRole={s.setClientRole} memoType={s.memoType} setMemoType={s.setMemoType} memoSubType={s.memoSubType} setMemoSubType={s.setMemoSubType} legalBranch={s.legalBranch} setLegalBranch={s.setLegalBranch} notesText={s.notesText} setNotesText={s.setNotesText} showPreFiling={s.showPreFiling} setShowPreFiling={s.setShowPreFiling} />}
       {s.step === "case"      && <StepCase      isDark={isDark} clientRole={s.clientRole} memoType={s.memoType} legalBranch={s.legalBranch} caseText={s.caseText} setCaseText={s.setCaseText} caseFile={s.caseFile} setCaseFile={s.setCaseFile} supportDocs={s.supportDocs} addDoc={s.addDoc} removeDoc={s.removeDoc} updateDoc={s.updateDoc} lawyerNotes={s.lawyerNotes} setLawyerNotes={s.setLawyerNotes} useFirmMemory={s.useFirmMemory} setUseFirmMemory={s.setUseFirmMemory} bulkUpload={s.bulkUpload} setBulkUpload={s.setBulkUpload} partyOne={s.partyOne} setPartyOne={s.setPartyOne} partyTwo={s.partyTwo} setPartyTwo={s.setPartyTwo} caseFileRef={s.caseFileRef} attachRefs={s.attachRefs} plaintiffName={s.plaintiffName} setPlaintiffName={s.setPlaintiffName} defendantName={s.defendantName} setDefendantName={s.setDefendantName} judgmentCourt={s.judgmentCourt} setJudgmentCourt={s.setJudgmentCourt} judgmentNumber={s.judgmentNumber} setJudgmentNumber={s.setJudgmentNumber} judgmentDate={s.judgmentDate} setJudgmentDate={s.setJudgmentDate} judgmentText={s.judgmentText} setJudgmentText={s.setJudgmentText} judgmentReasons={s.judgmentReasons} setJudgmentReasons={s.setJudgmentReasons} />}
-      {s.step === "analysis"  && <StepAnalysis  isDark={isDark} memoType={s.memoType} memoSubType={s.memoSubType} disputeSummary={s.disputeSummary} setDisputeSummary={s.setDisputeSummary} plaintiffName={s.plaintiffName} defendantName={s.defendantName} judgmentCourt={s.judgmentCourt} judgmentNumber={s.judgmentNumber} judgmentDate={s.judgmentDate} judgmentText={s.judgmentText} judgmentReasons={s.judgmentReasons} partyOne={s.partyOne} preFilingAnswers={s.preFilingAnswers} setPreFilingAnswers={s.setPreFilingAnswers} legalBranch={s.legalBranch} />}
-      {s.step === "defenses"  && <StepDefenses  isDark={isDark} />}
-      {s.step === "laws"      && <StepLaws      isDark={isDark} customLegalTexts={s.customLegalTexts} setCustomLegalTexts={s.setCustomLegalTexts} />}
-      {s.step === "drafting"  && <StepDrafting  isDark={isDark} memoType={s.memoType} memoSubType={s.memoSubType} />}
-      {s.step === "review"    && <StepReview    isDark={isDark} memoType={s.memoType} legalBranch={s.legalBranch} hasParties={!!(s.partyOne?.fullName || s.partyOne?.companyName)} hasCaseText={s.caseText.length > 30} hasJudgmentData={!!(s.judgmentNumber && s.judgmentText)} />}
-      {s.step === "approval"  && <StepApproval  isDark={isDark} shareLink={s.shareLink} sharePasscode={s.sharePasscode} linkCopied={s.linkCopied} setLinkCopied={s.setLinkCopied} clientEmail={s.clientEmail} setClientEmail={s.setClientEmail} clientPhone={s.clientPhone} setClientPhone={s.setClientPhone} setShareLink={s.setShareLink} setSharePasscode={s.setSharePasscode} generateShareLink={s.generateShareLink} />}
+      {s.step === "submit" && (
+        <StepSubmit
+          isDark={isDark}
+          summary={s.buildSummary()}
+          attachments={s.uploadedAttachments}
+          notes={s.submitNotes}
+          setNotes={s.setSubmitNotes}
+          submitting={s.submitting}
+          errors={s.submitErrors}
+          onSubmit={s.submitOrder}
+        />
+      )}
 
       {/* Navigation */}
       <div className="flex items-center justify-between pt-2">
@@ -124,7 +125,7 @@ export default function AIDraftPage() {
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px] font-semibold border transition-colors disabled:opacity-30 ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-300" : "border-zinc-200 bg-white text-zinc-600"}`}>
           <ArrowRight size={13} /> السابق
         </button>
-        {s.currentStepIndex < STEPS.length - 1 && (
+        {s.step !== "submit" && (
           <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
             onClick={s.nextStep} disabled={!s.canProceed() || s.processing}
             className="flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-6 py-2.5 text-[12px] font-bold text-white shadow-md disabled:opacity-40">

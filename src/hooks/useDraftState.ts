@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import {
-  STEPS, StepKey, PartyData, EMPTY_PARTY, SupportDoc,
+  STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc,
 } from "@/components/draft/draftConstants";
 
 export function useDraftState(initialMode = "") {
@@ -16,7 +16,7 @@ export function useDraftState(initialMode = "") {
     }
   }
   const seed = seedFromMode(initialMode);
-  const [step, setStep]           = useState<StepKey>("identify");
+  const [step, setStep]           = useState<StepKey | VisibleStepKey>("identify");
   const [processing, setProcessing] = useState(false);
   const [copied, setCopied]       = useState(false);
 
@@ -61,6 +61,32 @@ export function useDraftState(initialMode = "") {
 
   // Step 7
   const [reviewPhase, setReviewPhase] = useState(0);
+
+  // ── Submit step state ───────────────────────────────────────────────────
+  // Network wiring (validateDraftIntake, createServiceOrder, document upload)
+  // lands in Task 5. This is local-only state so the wizard compiles and
+  // StepSubmit is inspectable in the meantime.
+  const [submitNotes, setSubmitNotes]   = useState("");
+  const [submitting, setSubmitting]     = useState(false);
+  const [submitErrors, setSubmitErrors] = useState<string[]>([]);
+  const [uploadedAttachments, setUploadedAttachments] =
+    useState<{ documentId: string; name: string; size: number }[]>([]);
+
+  function buildSummary(): { label: string; value: string }[] {
+    return [
+      { label: "صفة الموكل", value: clientRole === "plaintiff" ? "مدعٍ" : clientRole === "defendant" ? "مدعى عليه" : "" },
+      { label: "نوع المذكرة", value: memoType },
+      { label: "التصنيف", value: memoSubType },
+      { label: "الفرع القانوني", value: legalBranch },
+      { label: "الوقائع", value: caseText.slice(0, 120) + (caseText.length > 120 ? "…" : "") },
+    ];
+  }
+
+  // Network wiring lands in Task 5 — this task delivers the UI and its local
+  // state only, so that every commit compiles and the wizard is inspectable.
+  async function submitOrder(): Promise<void> {
+    setSubmitErrors(["الإرسال غير مُفعّل بعد — يُوصَل في المهمة التالية."]);
+  }
 
   // Refs
   const caseFileRef = useRef<HTMLInputElement>(null);
@@ -165,6 +191,10 @@ export function useDraftState(initialMode = "") {
     partyOne, setPartyOne, partyTwo, setPartyTwo,
     // step 7
     reviewPhase, setReviewPhase,
+    // submit step
+    submitNotes, setSubmitNotes, submitting, setSubmitting, submitErrors,
+    uploadedAttachments, setUploadedAttachments,
+    buildSummary, submitOrder,
     // sharing
     shareLink, setShareLink, sharePasscode, setSharePasscode,
     linkCopied, setLinkCopied, clientEmail, setClientEmail,
