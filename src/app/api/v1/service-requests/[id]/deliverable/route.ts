@@ -22,7 +22,7 @@ export async function GET(
 
   const { data: order } = await admin
     .from("service_requests")
-    .select("id, requester_user_id, assigned_to, status, metadata")
+    .select("id, requester_user_id, assigned_to, metadata")
     .eq("id", id)
     .maybeSingle();
 
@@ -42,8 +42,27 @@ export async function GET(
     | { documentId?: string; fileName?: string }
     | undefined;
 
+  // Every "you get nothing" branch below returns this exact 404 body. Do not give
+  // any of them a distinct message: distinguishable responses would let a caller
+  // who can influence `documentId` (the PATCH route has no column allowlist yet)
+  // enumerate `attachments` row existence/ownership without ever getting a signed
+  // URL. The branches stay distinguishable server-side via differently worded
+  // console.error calls, because each represents a different failure mode worth
+  // separating in logs (data-integrity bug vs. tampering vs. a malformed value).
+  const NO_DOCUMENT = { error: "لا يوجد مستند بعد" } as const;
+
   if (!deliverable?.documentId) {
-    return NextResponse.json({ error: "لا يوجد مستند بعد" }, { status: 404 });
+    return NextResponse.json(NO_DOCUMENT, { status: 404 });
+  }
+
+  // attachments.id is a bigserial (plain integer). `documentId` is typed as a
+  // string but nothing upstream validates its shape — enforce it here rather
+  // than letting a non-numeric value fail downstream as a PostgREST accident.
+  if (!/^\d+$/.test(deliverable.documentId)) {
+    console.error(
+      `[deliverable] non-integer documentId: order=${id} documentId=${deliverable.documentId}`,
+    );
+    return NextResponse.json(NO_DOCUMENT, { status: 404 });
   }
 
   const { data: attachment } = await admin
@@ -53,20 +72,26 @@ export async function GET(
     .maybeSingle();
 
   if (!attachment?.storage_path) {
-    return NextResponse.json({ error: "المستند غير متاح" }, { status: 404 });
+    // A deliverable pointing at an attachment row that doesn't exist (or has no
+    // storage_path) is a genuine data-integrity bug — never legitimate — distinct
+    // from a binding mismatch below, so it gets its own log line.
+    console.error(
+      `[deliverable] attachment row missing or has no storage_path: order=${id} documentId=${deliverable.documentId}`,
+    );
+    return NextResponse.json(NO_DOCUMENT, { status: 404 });
   }
 
   // Never trust `deliverable.documentId` as a free-floating pointer: it can be
   // client-tampered via the generic PATCH route (no column allowlist there yet).
   // Bind it to THIS order before signing anything — a mismatch means either
   // tampering or a bug upstream, and both are worth seeing in logs, but the
-  // caller gets the same "no document yet" response either way so a mismatch
-  // can't be used to fingerprint who else's document that id belongs to.
+  // caller gets the identical "no document yet" response either way so a
+  // mismatch can't be used to fingerprint who else's document that id belongs to.
   if (attachment.request_id !== id) {
     console.error(
       `[deliverable] attachment/order mismatch: order=${id} documentId=${deliverable.documentId} attachment.request_id=${attachment.request_id}`,
     );
-    return NextResponse.json({ error: "لا يوجد مستند بعد" }, { status: 404 });
+    return NextResponse.json(NO_DOCUMENT, { status: 404 });
   }
 
   const { data: signed, error: signErr } = await admin.storage
