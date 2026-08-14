@@ -142,8 +142,8 @@ export function StepCase({
             </span>
           )}
         </div>
-        <div className={`rounded-xl border-2 border-dashed p-5 text-center mt-3 cursor-pointer transition-colors ${caseFile ? isDark ? "border-emerald-700/30 bg-emerald-900/8" : "border-emerald-200 bg-emerald-50" : isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#C8A762]/40"}`}
-          onClick={() => { if (!uploading) caseFileRef.current?.click(); }}>
+        <div className={`rounded-xl border-2 border-dashed p-5 text-center mt-3 transition-colors ${caseFile ? isDark ? "border-emerald-700/30 bg-emerald-900/8" : "border-emerald-200 bg-emerald-50" : `cursor-pointer ${isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#C8A762]/40"}`}`}
+          onClick={() => { if (!uploading && !caseFile) caseFileRef.current?.click(); }}>
           <input ref={caseFileRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png"
             onChange={async e => {
               const f = e.target.files?.[0];
