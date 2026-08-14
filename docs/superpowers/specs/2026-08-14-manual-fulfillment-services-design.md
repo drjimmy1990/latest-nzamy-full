@@ -326,7 +326,11 @@ Principle, consistent with the existing codebase: **side-channels (n8n, notifica
 
 ## 10. Testing
 
-The project has no unit-test framework — `npm test` runs `node scripts/smoke-routes.mjs`. Proposal proportionate to that:
+The project has no test *framework* — `npm test` runs `node scripts/smoke-routes.mjs`.
+
+> **Correction (2026-08-14, during implementation):** an earlier draft of this section claimed the repo had no unit tests at all. That was wrong. Three exist from commit `07b27ae` — `src/utils/apiSlug.test.ts`, `src/app/book/[slug]/_locator.test.ts`, `src/app/laws/[slug]/_citation.test.ts` — written to be run by hand with `npx tsx` and therefore using extensionless imports. `node --test` requires explicit extensions, so they fail with `ERR_MODULE_NOT_FOUND` until repaired. Nothing in the repo ran them.
+
+Proposal proportionate to that:
 
 1. **Unit tests via `node --test`** (built into Node, zero dependencies) for the two pure modules: `validateDraftIntake()` and `buildWebhookPayload()` — including a regression test that `service_request.completed` resolves `recipient` to the **requester**, not the assignee (§7.1).
 2. **Extend `scripts/smoke-routes.mjs`** with the new routes: `/ai/orders`, `/dashboard/admin/service-orders`, `POST /api/v1/n8n/callback`.

@@ -1876,8 +1876,32 @@ git commit -m "docs(n8n): webhook contract for service order completion"
 ## Task 12: Smoke routes and manual QA checklist
 
 **Files:**
+- Modify: `src/utils/apiSlug.test.ts`
+- Modify: `src/app/book/[slug]/_locator.test.ts`
+- Modify: `src/app/laws/[slug]/_citation.test.ts`
 - Modify: `scripts/smoke-routes.mjs`
 - Modify: `DEPLOY_AND_SMOKETEST_RUNBOOK.md`
+
+- [ ] **Step 0: Repair the three pre-existing test files**
+
+These predate this work (commit `07b27ae`) and were written to be run by hand with
+`npx tsx`, so their imports have no file extension. `node --test` cannot resolve
+those, so each throws `ERR_MODULE_NOT_FOUND` under the `test:unit` glob and
+`npm run test:unit` is red regardless of this branch's correctness.
+
+Add the `.ts` extension to the local relative import in each file — for example, in
+`src/utils/apiSlug.test.ts`:
+
+```ts
+import { apiSlug } from './apiSlug.ts';   // was './apiSlug'
+```
+
+Change only the import specifier. Do not alter any assertion, and do not "fix" a
+test that then legitimately fails — if a repaired file reveals a real failure,
+stop and report it rather than editing the assertion.
+
+Run: `npm run test:unit`
+Expected: every test file resolves and runs; report the pass/fail totals.
 
 - [ ] **Step 1: Read the existing smoke script to match its route-list format**
 
