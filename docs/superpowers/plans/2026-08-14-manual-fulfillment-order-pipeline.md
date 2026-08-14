@@ -1283,6 +1283,119 @@ git commit -m "feat(orders): ownership-checked signed URL endpoint for deliverab
 
 ---
 
+## Task 6b: Column allowlist on the service-requests PATCH handler
+
+**SECURITY — root cause.** Found via Task 6, confirmed against source. This is the shared
+enabler for two separate document-leak paths, one of which Task 6 closed at the point of use.
+
+`src/app/api/v1/service-requests/[id]/route.ts:112-124` builds the update object from the
+client's request body with no filtering:
+
+```ts
+const rawPatch = body.patch ?? body;
+const keyMap: Record<string, string> = { sourcePath: 'source_path', assignedTo: 'assigned_to', auditEvent: '__skip__' };
+const patch: Record<string, unknown> = {};
+for (const [k, v] of Object.entries(rawPatch)) {
+  if (keyMap[k] === '__skip__') continue;
+  patch[keyMap[k] ?? k] = v;
+}
+await supabase.from("service_requests").update(patch).eq("id", id)
+```
+
+`service_requests` UPDATE RLS is `requester_user_id = auth.uid() or assigned_to = auth.uid()`,
+so any authenticated requester may write **any column on their own order** — `metadata`,
+`status`, `assigned_to`, `payment`, `type`, `receiver`. Writing `metadata.deliverable.documentId`
+was the first half of the cross-tenant leak Task 6 closed.
+
+**Files:**
+- Modify: `src/app/api/v1/service-requests/[id]/route.ts`
+
+- [ ] **Step 1: Enumerate the real callers before choosing the allowlist**
+
+An allowlist that is too tight breaks working features. These call the endpoint today:
+
+| Caller | What it sends |
+|---|---|
+| `src/lib/services/workflowService.ts:68` | `{ ...Partial<WorkflowRequest>, auditEvent }` |
+| `src/lib/clientWorkflowRepository.ts:189` | `{ ...patch, auditEvent }` |
+| `src/lib/services/casesService.ts:236-244` | `{ status?, scheduled_at?, notes? }` |
+| Task 8's admin route | uses `createServiceClient()` directly, NOT this endpoint |
+
+Read each, list every distinct key any of them can send, and record the list in your report
+**before** writing the allowlist. Note that `casesService` sends `scheduled_at` and `notes`,
+which are not `service_requests` columns at all — determine what currently happens to them.
+
+- [ ] **Step 2: Apply the allowlist**
+
+Permit only columns a participant may legitimately set. `metadata` is the field that carried
+the exploit — exclude it unless Step 1 proves a legitimate caller depends on it, and if one
+does, say so and stop rather than inventing a nested-field filter on your own.
+
+Unknown keys must not reach `.update()`. Choose between silently dropping them and returning
+400, and justify the choice in your report — silently dropping is more forgiving of existing
+callers, a 400 surfaces bugs faster. Either is defensible; an unjustified choice is not.
+
+- [ ] **Step 3: Verify no legitimate flow breaks**
+
+For each caller from Step 1, state which of its keys survive the allowlist and which are
+dropped, and whether dropping them changes observable behaviour.
+
+Run: `npx tsc --noEmit`, `npm run test:unit` (17 pass / 0 fail pristine), `npm run build`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git commit -m "fix(security): allowlist the columns a client may PATCH on a service request"
+```
+
+---
+
+## Task 6c: Validate ownership on POST /api/v1/documents
+
+**SECURITY — lower severity.** Requires out-of-band knowledge rather than enumeration, but it
+undermines the guarantee Task 6's binding check relies on.
+
+`src/app/api/v1/documents/route.ts:65-76` inserts `storage_path` and `request_id` straight from
+the client body. The only insert policy (`attachments_insert_policy`,
+`supabase/migrations/20260616_production_readiness_fixes.sql:106-110`) checks solely
+`owner_user_id = auth.uid()`. So a caller can register an `attachments` row that claims an
+honest `request_id` (their own order) while pointing `storage_path` at a victim's object.
+
+Mitigating fact, verified during the Task 6 review: no endpoint discloses `storage_path` for
+attachments you do not own — `documents/[id]` uses the RLS-scoped client and
+`attachments_select_policy` restricts reads to owner-or-participant. So the attacker needs the
+victim's user id, upload timestamp in milliseconds, and exact filename.
+
+**Files:**
+- Modify: `src/app/api/v1/documents/route.ts`
+
+- [ ] **Step 1: Require the storage path to belong to the caller**
+
+Uploads are written to `${user.id}/${Date.now()}-${safeName}` (`documentService.ts:82`). Reject
+any `storage_path` whose first segment is not the authenticated user's id. Reject path
+traversal (`..`) explicitly rather than relying on the prefix check alone.
+
+- [ ] **Step 2: Require the request to belong to the caller**
+
+If `request_id` is supplied, verify the caller is the requester or assignee of that order
+before accepting it. A null `request_id` stays legal — general document uploads use it
+(`20260616_production_readiness_fixes.sql:27-29` made the column nullable deliberately).
+
+- [ ] **Step 3: Verify**
+
+State in your report what each rejection returns (status + Arabic message), and confirm the
+legitimate upload path in `documentService.uploadDocumentFile` still succeeds unchanged.
+
+Run: `npx tsc --noEmit`, `npm run test:unit` (17 pass / 0 fail pristine), `npm run build`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git commit -m "fix(security): verify storage path and request ownership on document upload"
+```
+
+---
+
 ## Task 7: Client order tracking pages
 
 **Files:**
