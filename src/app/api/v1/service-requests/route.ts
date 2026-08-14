@@ -121,6 +121,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Task 6d follow-up — clamp the creation-time status. Without this, a
+    // client could POST a row already `status: "completed"` and it would
+    // never touch the PATCH gate at all: invisible to the status-filtered
+    // admin queue from birth. (This is a queue-visibility bug only — the
+    // "تم إكمال طلبك" notification and the /request-completed n8n dispatch
+    // live exclusively in PATCH's status-transition branch, so a
+    // pre-completed row does not also send a false completion notice.)
+    // Every real caller was enumerated (workflowService.ts/
+    // clientWorkflowRepository.ts create wrappers, called from
+    // AddHearingModal.tsx, AddCaseModal.tsx, lawyer/contracts/page.tsx,
+    // lawyer/consultations/page.tsx, client/requests/new/page.tsx,
+    // client/find-lawyer/page.tsx, client/consultation/new/page.tsx) and
+    // none of them ever sends `completed`, `assigned`, or `cancelled` at
+    // creation — the full observed set is exactly this allowlist.
+    const CREATE_STATUS_ALLOWLIST = new Set([
+      "draft",
+      "in_review",
+      "pending_payment",
+      "pending_assignment",
+    ]);
+    const requestedStatus =
+      typeof requestData.status === "string" ? requestData.status : undefined;
+    const status =
+      requestedStatus && CREATE_STATUS_ALLOWLIST.has(requestedStatus)
+        ? requestedStatus
+        : "pending_assignment";
+
     // Create the service request
     // Only include columns that exist in the service_requests table:
     // id, requester_user_id, type, title, description, requester, receiver,
@@ -133,7 +160,7 @@ export async function POST(request: NextRequest) {
         title: requestData.title,
         description: requestData.description ?? '',
         type: requestData.type ?? 'service',
-        status: requestData.status ?? 'pending_assignment',
+        status,
         requester_user_id: user.id,
         source_path: requestData.sourcePath ?? requestData.source_path ?? '',
         assigned_to: requestData.assignedTo ?? requestData.assigned_to ?? null,
