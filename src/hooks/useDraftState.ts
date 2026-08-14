@@ -1,11 +1,38 @@
 import { useState, useRef } from "react";
 import {
-  CLIENT_VISIBLE_STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc,
+  CLIENT_VISIBLE_STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc, MEMO_MAIN_TYPES,
 } from "@/components/draft/draftConstants";
 import { validateDraftIntake, type OrderAttachment } from "@/lib/services/orderIntake";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { uploadDocumentFile } from "@/lib/services/documentService";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
+
+/**
+ * Resolve a raw memoType id (e.g. "case") to its Arabic label ("تحرير دعوى")
+ * for human-facing copy (order title, notifications). Falls back to a
+ * generic Arabic label for empty/unrecognised ids (e.g. the specialist-mode
+ * ids that have no MEMO_MAIN_TYPES entry). Does NOT affect the raw id stored
+ * in metadata.intake.memoType — that stays the machine value.
+ */
+function memoTypeLabelAr(memoType: string): string {
+  return MEMO_MAIN_TYPES.find((mt) => mt.id === memoType)?.label || "مذكرة";
+}
+
+/**
+ * Map a thrown submit error to Arabic user-facing copy. The underlying
+ * message (which may be English — "Unauthorized", a raw Postgres error,
+ * etc.) is logged for developers via console.error but never shown to the
+ * user; the user only ever sees one of a small set of known-safe Arabic
+ * strings.
+ */
+function submitErrorMessageAr(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  console.error("[useDraftState] submitOrder failed:", raw);
+  if (raw === "Unauthorized") {
+    return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
+  }
+  return "تعذّر إرسال الطلب — حاول مجدداً";
+}
 
 export function useDraftState(initialMode = "") {
   // Seed initial values from ?mode= query param
@@ -113,7 +140,7 @@ export function useDraftState(initialMode = "") {
 
       const order = await createServiceOrder({
         service: "draft",
-        title: `${memoType || "مذكرة"} — ${legalBranch || "عام"}`,
+        title: `${memoTypeLabelAr(memoType)} — ${legalBranch || "عام"}`,
         description: caseText.slice(0, 200),
         intake: check.value as unknown as Record<string, unknown>,
         attachments: uploadedAttachments,
@@ -125,7 +152,7 @@ export function useDraftState(initialMode = "") {
       });
       window.location.href = `/ai/orders/${order.id}`;
     } catch (err) {
-      setSubmitErrors([(err as Error).message || "تعذّر إرسال الطلب — حاول مجدداً"]);
+      setSubmitErrors([submitErrorMessageAr(err)]);
     } finally {
       setSubmitting(false);
     }
