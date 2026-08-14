@@ -56,8 +56,8 @@ export function useDraftState(initialMode = "") {
   // Seed initial values from ?mode= query param
   function seedFromMode(mode: string): { memoType: string; legalBranch: string } {
     switch (mode) {
-      case "arbitration": return { memoType: "arbitration", legalBranch: "commercial" };
-      case "notary":      return { memoType: "notary",      legalBranch: "civil" };
+      case "arbitration": return { memoType: "arbitration", legalBranch: "تحكيم" };
+      case "notary":      return { memoType: "notary",      legalBranch: "مدني" };
       case "report":      return { memoType: "report",      legalBranch: "" };
       case "minutes":     return { memoType: "minutes",     legalBranch: "" };
       case "reply":       return { memoType: "reply",       legalBranch: "" };
