@@ -117,10 +117,29 @@ export async function PATCH(
     assignedTo: 'assigned_to',
     auditEvent: '__skip__',
   };
+  // Column allowlist — a participant (requester or assignee) may only move a
+  // request's status through this endpoint. `metadata`, `assigned_to`,
+  // `payment`, `type`, and `receiver` are deliberately excluded: RLS lets any
+  // participant write ANY column on their own row, and this was half of a
+  // cross-tenant document leak (a client could point metadata.deliverable at
+  // another tenant's attachment). No real caller sends anything beyond
+  // `status` today — see task-6b-report.md for the enumeration. Keys not on
+  // this list are silently dropped (not 400'd), matching the existing
+  // `auditEvent` skip below.
+  const ALLOWED_PATCH_FIELDS = new Set<string>(['status']);
   const patch: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(rawPatch)) {
     if (keyMap[k] === '__skip__') continue;
-    patch[keyMap[k] ?? k] = v;
+    const mapped = keyMap[k] ?? k;
+    if (!ALLOWED_PATCH_FIELDS.has(mapped)) continue;
+    patch[mapped] = v;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json(
+      { error: "لا توجد حقول صالحة للتحديث" },
+      { status: 400 },
+    );
   }
 
   const { data, error } = await supabase
