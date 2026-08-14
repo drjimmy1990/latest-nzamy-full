@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import {
-  STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc,
+  CLIENT_VISIBLE_STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc,
 } from "@/components/draft/draftConstants";
 
 export function useDraftState(initialMode = "") {
@@ -112,7 +112,10 @@ export function useDraftState(initialMode = "") {
   }
 
   // Navigation
-  const currentStepIndex = STEPS.findIndex(s => s.key === step);
+  // Walks CLIENT_VISIBLE_STEPS (identify -> case -> submit), not the full
+  // 8-item STEPS array — the hidden mock steps are not part of the client
+  // navigation flow. See draftConstants.ts CLIENT_VISIBLE_STEPS.
+  const currentStepIndex = CLIENT_VISIBLE_STEPS.findIndex(s => s.key === step);
 
   function canProceed() {
     if (step === "identify") {
@@ -131,7 +134,7 @@ export function useDraftState(initialMode = "") {
 
   async function nextStep() {
     const idx = currentStepIndex;
-    if (idx >= STEPS.length - 1) return;
+    if (idx >= CLIENT_VISIBLE_STEPS.length - 1) return;
     
     // Simulate AI processing & extraction between steps
     if (step === "case" || step === "identify") {
@@ -166,12 +169,12 @@ export function useDraftState(initialMode = "") {
       
       setProcessing(false);
     }
-    setStep(STEPS[idx + 1].key);
+    setStep(CLIENT_VISIBLE_STEPS[idx + 1].key);
   }
 
   function prevStep() {
     if (currentStepIndex <= 0) return;
-    setStep(STEPS[currentStepIndex - 1].key);
+    setStep(CLIENT_VISIBLE_STEPS[currentStepIndex - 1].key);
   }
 
   return {
