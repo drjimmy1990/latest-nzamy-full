@@ -143,6 +143,68 @@ export async function PATCH(
     );
   }
 
+  // Task 6d — gate status transitions by role. RLS's UPDATE policy is
+  // `requester_user_id = auth.uid() or assigned_to = auth.uid()`, which lets a
+  // requester PATCH their own order's status to ANYTHING, including
+  // `completed` — sending themselves a false completion notification/n8n
+  // dispatch and pulling their own order out of the admin queue. Guard on the
+  // *target* status only (not the current one): a requester may only cancel
+  // their own order; every other target requires the assignee or an admin.
+  if ("status" in patch) {
+    // Gate on presence, not on being a string: a non-string status (e.g.
+    // `{status: 0}`) still passes the Task 6b allowlist and must not slip
+    // past this check unexamined — it can never equal "cancelled" below, so
+    // a bare requester correctly gets refused rather than silently writing
+    // an unrecognized status that would vanish from the status-filtered
+    // admin queue.
+    const targetStatus = patch.status;
+
+    const { data: existing, error: existingError } = await supabase
+      .from("service_requests")
+      .select("requester_user_id, assigned_to")
+      .eq("id", id)
+      .single();
+
+    if (existingError || !existing) {
+      return NextResponse.json(
+        { error: "Service request not found" },
+        { status: 404 },
+      );
+    }
+
+    const requesterId = (existing.requester_user_id as string | null) ?? null;
+    const assigneeId = (existing.assigned_to as string | null) ?? null;
+    const isRequester = requesterId === user.id;
+    const isAssignee = assigneeId != null && assigneeId === user.id;
+
+    // `assigned_to` is null until an admin claims the order (Task 8), so an
+    // admin acting on an unclaimed order is NOT the assignee — resolve
+    // admin-ness from `profiles.user_type` directly rather than assuming
+    // either implies the other.
+    let isAdmin = false;
+    if (!isAssignee) {
+      const { data: callerProfile } = await supabase
+        .from("profiles")
+        .select("user_type")
+        .eq("id", user.id)
+        .single();
+      isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
+    }
+
+    const permitted =
+      isAssignee || isAdmin || (isRequester && targetStatus === "cancelled");
+
+    if (!permitted) {
+      console.error(
+        `[service-requests PATCH] refused status transition: order=${id} caller=${user.id} target=${targetStatus}`,
+      );
+      return NextResponse.json(
+        { error: "غير مسموح بتنفيذ هذا الإجراء" },
+        { status: 403 },
+      );
+    }
+  }
+
   const { data, error } = await supabase
     .from("service_requests")
     .update(patch)
