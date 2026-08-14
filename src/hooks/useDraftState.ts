@@ -2,6 +2,10 @@ import { useState, useRef } from "react";
 import {
   CLIENT_VISIBLE_STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc,
 } from "@/components/draft/draftConstants";
+import { validateDraftIntake, type OrderAttachment } from "@/lib/services/orderIntake";
+import { createServiceOrder } from "@/lib/services/serviceOrders";
+import { uploadDocumentFile } from "@/lib/services/documentService";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
 
 export function useDraftState(initialMode = "") {
   // Seed initial values from ?mode= query param
@@ -63,14 +67,10 @@ export function useDraftState(initialMode = "") {
   const [reviewPhase, setReviewPhase] = useState(0);
 
   // ── Submit step state ───────────────────────────────────────────────────
-  // Network wiring (validateDraftIntake, createServiceOrder, document upload)
-  // lands in Task 5. This is local-only state so the wizard compiles and
-  // StepSubmit is inspectable in the meantime.
   const [submitNotes, setSubmitNotes]   = useState("");
   const [submitting, setSubmitting]     = useState(false);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
-  const [uploadedAttachments, setUploadedAttachments] =
-    useState<{ documentId: string; name: string; size: number }[]>([]);
+  const [uploadedAttachments, setUploadedAttachments] = useState<OrderAttachment[]>([]);
 
   function buildSummary(): { label: string; value: string }[] {
     return [
@@ -82,10 +82,61 @@ export function useDraftState(initialMode = "") {
     ];
   }
 
-  // Network wiring lands in Task 5 — this task delivers the UI and its local
-  // state only, so that every commit compiles and the wizard is inspectable.
+  function buildIntake(): Record<string, unknown> {
+    return {
+      schemaVersion: 1,
+      service: "draft",
+      clientRole, memoType, memoSubType, legalBranch, caseText,
+      parties: { one: partyOne, two: partyTwo },
+      judgment: {
+        number: judgmentNumber, court: judgmentCourt, date: judgmentDate,
+        text: judgmentText, reasons: judgmentReasons,
+      },
+      lawyerNotes: [lawyerNotes, submitNotes].filter(Boolean).join("\n\n"),
+      attachments: uploadedAttachments,
+    };
+  }
+
   async function submitOrder(): Promise<void> {
-    setSubmitErrors(["الإرسال غير مُفعّل بعد — يُوصَل في المهمة التالية."]);
+    setSubmitErrors([]);
+    const intake = buildIntake();
+    const check = validateDraftIntake(intake);
+    if (!check.ok) { setSubmitErrors(check.errors); return; }
+
+    setSubmitting(true);
+    try {
+      const supabase = createBrowserClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: profile } = user
+        ? await supabase.from("profiles").select("display_name, phone, email").eq("id", user.id).single()
+        : { data: null };
+
+      const order = await createServiceOrder({
+        service: "draft",
+        title: `${memoType || "مذكرة"} — ${legalBranch || "عام"}`,
+        description: caseText.slice(0, 200),
+        intake: check.value as unknown as Record<string, unknown>,
+        attachments: uploadedAttachments,
+        requester: {
+          name: profile?.display_name ?? undefined,
+          phone: profile?.phone ?? undefined,
+          email: profile?.email ?? undefined,
+        },
+      });
+      window.location.href = `/ai/orders/${order.id}`;
+    } catch (err) {
+      setSubmitErrors([(err as Error).message || "تعذّر إرسال الطلب — حاول مجدداً"]);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function attachFile(file: File): Promise<void> {
+    const doc = await uploadDocumentFile(file);
+    setUploadedAttachments((prev) => [
+      ...prev,
+      { documentId: doc.id, name: doc.file_name, size: doc.size_bytes ?? 0 },
+    ]);
   }
 
   // Refs
@@ -132,15 +183,13 @@ export function useDraftState(initialMode = "") {
     return true;
   }
 
-  async function nextStep() {
+  function nextStep() {
     const idx = currentStepIndex;
     if (idx >= CLIENT_VISIBLE_STEPS.length - 1) return;
-    
-    // Simulate AI processing & extraction between steps
+
+    // Auto-extract/mock data between steps (no real processing delay any more —
+    // there is nothing between these steps to wait on).
     if (step === "case" || step === "identify") {
-      setProcessing(true);
-      await new Promise(r => setTimeout(r, 2000));
-      
       // Auto-extract judgment data mock if moving from step 2 to 3 for appeal/reply
       if (step === "case" && (memoType === "appeal" || memoType === "reply")) {
         if (!judgmentNumber) setJudgmentNumber("٣٤٢/ع/١٤٤٥");
@@ -166,8 +215,6 @@ export function useDraftState(initialMode = "") {
           setDisputeSummary(summaryText);
         }
       }
-      
-      setProcessing(false);
     }
     setStep(CLIENT_VISIBLE_STEPS[idx + 1].key);
   }
@@ -197,7 +244,7 @@ export function useDraftState(initialMode = "") {
     // submit step
     submitNotes, setSubmitNotes, submitting, setSubmitting, submitErrors,
     uploadedAttachments, setUploadedAttachments,
-    buildSummary, submitOrder,
+    buildSummary, submitOrder, attachFile,
     // sharing
     shareLink, setShareLink, sharePasscode, setSharePasscode,
     linkCopied, setLinkCopied, clientEmail, setClientEmail,
