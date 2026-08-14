@@ -47,10 +47,26 @@ export async function GET(
   }
 
   const { data: attachment } = await admin
-    .from("attachments").select("storage_path, file_name").eq("id", deliverable.documentId).maybeSingle();
+    .from("attachments")
+    .select("request_id, storage_path, file_name")
+    .eq("id", deliverable.documentId)
+    .maybeSingle();
 
   if (!attachment?.storage_path) {
     return NextResponse.json({ error: "المستند غير متاح" }, { status: 404 });
+  }
+
+  // Never trust `deliverable.documentId` as a free-floating pointer: it can be
+  // client-tampered via the generic PATCH route (no column allowlist there yet).
+  // Bind it to THIS order before signing anything — a mismatch means either
+  // tampering or a bug upstream, and both are worth seeing in logs, but the
+  // caller gets the same "no document yet" response either way so a mismatch
+  // can't be used to fingerprint who else's document that id belongs to.
+  if (attachment.request_id !== id) {
+    console.error(
+      `[deliverable] attachment/order mismatch: order=${id} documentId=${deliverable.documentId} attachment.request_id=${attachment.request_id}`,
+    );
+    return NextResponse.json({ error: "لا يوجد مستند بعد" }, { status: 404 });
   }
 
   const { data: signed, error: signErr } = await admin.storage
