@@ -105,7 +105,7 @@ export default function AIDraftPage() {
 
       {/* Step content */}
       {s.step === "identify"  && <StepIdentify  isDark={isDark} clientRole={s.clientRole} setClientRole={s.setClientRole} memoType={s.memoType} setMemoType={s.setMemoType} memoSubType={s.memoSubType} setMemoSubType={s.setMemoSubType} legalBranch={s.legalBranch} setLegalBranch={s.setLegalBranch} notesText={s.notesText} setNotesText={s.setNotesText} showPreFiling={s.showPreFiling} setShowPreFiling={s.setShowPreFiling} />}
-      {s.step === "case"      && <StepCase      isDark={isDark} clientRole={s.clientRole} memoType={s.memoType} legalBranch={s.legalBranch} caseText={s.caseText} setCaseText={s.setCaseText} caseFile={s.caseFile} setCaseFile={s.setCaseFile} supportDocs={s.supportDocs} addDoc={s.addDoc} removeDoc={s.removeDoc} updateDoc={s.updateDoc} lawyerNotes={s.lawyerNotes} setLawyerNotes={s.setLawyerNotes} useFirmMemory={s.useFirmMemory} setUseFirmMemory={s.setUseFirmMemory} bulkUpload={s.bulkUpload} setBulkUpload={s.setBulkUpload} partyOne={s.partyOne} setPartyOne={s.setPartyOne} partyTwo={s.partyTwo} setPartyTwo={s.setPartyTwo} caseFileRef={s.caseFileRef} attachRefs={s.attachRefs} plaintiffName={s.plaintiffName} setPlaintiffName={s.setPlaintiffName} defendantName={s.defendantName} setDefendantName={s.setDefendantName} judgmentCourt={s.judgmentCourt} setJudgmentCourt={s.setJudgmentCourt} judgmentNumber={s.judgmentNumber} setJudgmentNumber={s.setJudgmentNumber} judgmentDate={s.judgmentDate} setJudgmentDate={s.setJudgmentDate} judgmentText={s.judgmentText} setJudgmentText={s.setJudgmentText} judgmentReasons={s.judgmentReasons} setJudgmentReasons={s.setJudgmentReasons} />}
+      {s.step === "case"      && <StepCase      isDark={isDark} clientRole={s.clientRole} memoType={s.memoType} legalBranch={s.legalBranch} caseText={s.caseText} setCaseText={s.setCaseText} caseFile={s.caseFile} setCaseFile={s.setCaseFile} supportDocs={s.supportDocs} addDoc={s.addDoc} removeDoc={s.removeDoc} updateDoc={s.updateDoc} lawyerNotes={s.lawyerNotes} setLawyerNotes={s.setLawyerNotes} useFirmMemory={s.useFirmMemory} setUseFirmMemory={s.setUseFirmMemory} bulkUpload={s.bulkUpload} setBulkUpload={s.setBulkUpload} partyOne={s.partyOne} setPartyOne={s.setPartyOne} partyTwo={s.partyTwo} setPartyTwo={s.setPartyTwo} caseFileRef={s.caseFileRef} attachRefs={s.attachRefs} uploading={s.uploading} attachError={s.attachError} attachFile={s.attachFile} removeAttachment={s.removeAttachment} plaintiffName={s.plaintiffName} setPlaintiffName={s.setPlaintiffName} defendantName={s.defendantName} setDefendantName={s.setDefendantName} judgmentCourt={s.judgmentCourt} setJudgmentCourt={s.setJudgmentCourt} judgmentNumber={s.judgmentNumber} setJudgmentNumber={s.setJudgmentNumber} judgmentDate={s.judgmentDate} setJudgmentDate={s.setJudgmentDate} judgmentText={s.judgmentText} setJudgmentText={s.setJudgmentText} judgmentReasons={s.judgmentReasons} setJudgmentReasons={s.setJudgmentReasons} />}
       {s.step === "submit" && (
         <StepSubmit
           isDark={isDark}
@@ -127,13 +127,19 @@ export default function AIDraftPage() {
         </button>
         {s.step !== "submit" && (
           <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-            onClick={s.nextStep} disabled={!s.canProceed() || s.processing}
+            onClick={s.nextStep} disabled={!s.canProceed() || s.processing || s.uploading}
             className="flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-6 py-2.5 text-[12px] font-bold text-white shadow-md disabled:opacity-40">
             {s.processing ? (
               <>
                 <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                   className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white" />
                 جارٍ المعالجة...
+              </>
+            ) : s.uploading ? (
+              <>
+                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white" />
+                جارٍ رفع المرفق...
               </>
             ) : (
               <>التالي <ArrowLeft size={13} /></>
