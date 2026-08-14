@@ -1000,6 +1000,184 @@ git commit -m "feat(draft): submit the wizard as a real service_requests order"
 
 ---
 
+## Task 5b: Make client attachments actually upload
+
+Found during the Task 5 review and confirmed independently: `StepCase`'s file inputs are
+mock. Both call sites read the `File` and then throw it away, keeping only `f.name`:
+
+```tsx
+// src/components/draft/steps/StepCase.tsx:124  — main case file
+onChange={e => { const f = e.target.files?.[0]; if (f) setCaseFile(f.name); }}
+
+// src/components/draft/steps/StepCase.tsx:199  — supporting documents
+updateDoc(doc.id, "file", f.name);
+```
+
+Nothing is ever uploaded, so `attachFile()` in `useDraftState` — which is correct and
+exported — has zero call sites, `metadata.attachments` is always `[]`, and **the admin
+receives none of the client's documents**. For a service whose whole premise is that a
+human drafts a memo from the client's case file, that is a product hole, not polish.
+
+**Files:**
+- Modify: `src/components/draft/steps/StepCase.tsx`
+- Modify: `src/hooks/useDraftState.ts` (expose per-file upload state)
+
+**Interfaces:**
+- Consumes: `attachFile(file: File): Promise<void>` and `uploadedAttachments: OrderAttachment[]` (Task 5); `uploadDocumentFile` (existing, throws on failure and rolls back its own orphaned storage object)
+- Produces: `metadata.attachments[]` actually populated on submit
+
+- [ ] **Step 1: Add per-file upload state to the hook**
+
+The upload is a network call that can fail, so the UI needs to show progress and errors
+rather than silently appearing to have attached something.
+
+```ts
+const [uploading, setUploading]         = useState(false);
+const [attachError, setAttachError]     = useState("");
+
+async function attachFile(file: File): Promise<void> {
+  setAttachError("");
+  setUploading(true);
+  try {
+    const doc = await uploadDocumentFile(file);
+    setUploadedAttachments(prev => [
+      ...prev,
+      { documentId: doc.id, name: doc.file_name, size: doc.size_bytes ?? 0 },
+    ]);
+  } catch (err) {
+    console.error("[draft] attachment upload failed:", err);
+    setAttachError("تعذّر رفع الملف — تحقق من الاتصال وحاول مجدداً");
+    throw err;
+  } finally {
+    setUploading(false);
+  }
+}
+
+function removeAttachment(documentId: string): void {
+  setUploadedAttachments(prev => prev.filter(a => a.documentId !== documentId));
+}
+```
+
+Return `uploading`, `attachError`, `setAttachError`, `attachFile`, and `removeAttachment`
+from the hook.
+
+- [ ] **Step 2: Capture the real File at both input sites**
+
+Keep the existing display-name strings (`caseFile`, `SupportDoc.file`) — `canProceed()` at
+`useDraftState.ts:209` reads `!!caseFile` and the UI renders them. Add the upload alongside:
+
+```tsx
+// main case file
+onChange={async e => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  setCaseFile(f.name);
+  try { await attachFile(f); } catch { setCaseFile(null); }
+}}
+```
+
+Apply the same shape at the supporting-documents input, reverting `updateDoc(doc.id, "file", null)`
+on failure. **Reverting the display name on failure is the point** — otherwise the client
+sees an attached file that was never uploaded and submits believing the admin has it.
+
+- [ ] **Step 3: Surface upload state in the UI**
+
+Disable the التالي button while `uploading` is true, and render `attachError` near the
+inputs in the same red style `StepSubmit` uses for `submitErrors`. Wire the existing
+remove buttons (`StepCase.tsx:129` and `:187`) to also call `removeAttachment(documentId)`
+so a removed file leaves `uploadedAttachments`.
+
+- [ ] **Step 4: Verify**
+
+Run: `npx tsc --noEmit` — clean.
+Run: `npm run test:unit` — 17 pass / 0 fail, pristine.
+Run: `npm run build` — succeeds.
+
+State in your report how a failed upload is surfaced and what happens to the display name.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/components/draft/steps/StepCase.tsx src/hooks/useDraftState.ts
+git commit -m "feat(draft): upload client attachments instead of storing filenames"
+```
+
+---
+
+## Task 5c: Fix the four `?mode=` dead-end entry points
+
+Four navbar links (`/ai/draft?mode=arbitration|notary|report|minutes`) reach the wizard and
+strand the user on step 1. Two independent defects, both in seeded specialist modes:
+
+1. `seedFromMode` (`useDraftState.ts:12-21`) sets `memoType` to `"arbitration"` / `"notary"` /
+   `"report"` / `"minutes"`. `MEMO_SUB_TYPES_REGULAR` has keys only for `case` / `reply` /
+   `appeal`, so `activeSubTypes` resolves to `[]` (`StepIdentify.tsx:90-92`), the subtype
+   picker never renders (`StepIdentify.tsx:150` requires `activeSubTypes.length > 0`), and
+   `canProceed()` for specialist modes requires `memoSubType` (`useDraftState.ts:176-179`).
+   Unsatisfiable — التالي never enables.
+2. The same function seeds `legalBranch: "commercial"` and `"civil"`. `LEGAL_BRANCHES_REGULAR`
+   holds Arabic values (`"تجاري"`, `"مدني"`), so those ids match no branch, the picker shows
+   nothing selected, and the English id would persist into `metadata`.
+
+**Files:**
+- Modify: `src/components/draft/draftConstants.ts`
+- Modify: `src/hooks/useDraftState.ts` (seed values)
+- Modify: `src/components/draft/steps/StepIdentify.tsx` (picker label)
+
+- [ ] **Step 1: Add the four subtype lists (owner-approved)**
+
+In `draftConstants.ts`, extend `MEMO_SUB_TYPES_REGULAR`:
+
+```ts
+  arbitration: ["حكم تحكيم نهائي", "حكم تحكيم جزئي", "قرار إجرائي", "حكم بإثبات الصلح"],
+  notary:      ["عقد بيع عقار", "وكالة شرعية", "عقد تأسيس شركة", "إقرار موثّق", "عقد رهن"],
+  report:      ["تقرير خبرة", "تقرير فني", "تقرير مالي", "تقرير حالة قضية"],
+  minutes:     ["محضر اجتماع جمعية عامة", "محضر مجلس إدارة", "محضر تسليم واستلام", "محضر صلح"],
+```
+
+- [ ] **Step 2: Seed real Arabic branches**
+
+In `seedFromMode`, replace the English ids with values that exist in `LEGAL_BRANCHES_REGULAR`:
+
+```ts
+case "arbitration": return { memoType: "arbitration", legalBranch: "تحكيم" };
+case "notary":      return { memoType: "notary",      legalBranch: "مدني" };
+```
+
+`"تحكيم"` and `"مدني"` are both present in `LEGAL_BRANCHES_REGULAR`. Leave `report` and
+`minutes` seeding an empty branch — they are not branch-specific.
+
+- [ ] **Step 3: Fix the subtype picker label**
+
+`StepIdentify.tsx:153` reads `memoType === "case" ? "نوع الدعوى" : memoType === "reply" ? "نوع المذكرة" : "نوع الطعن"`,
+so all four specialist modes fall through to **"نوع الطعن"**, which is wrong for every one of
+them. Replace the chain with a lookup that covers all seven ids and defaults sensibly:
+
+```ts
+const SUBTYPE_LABEL: Record<string, string> = {
+  case: "نوع الدعوى", reply: "نوع المذكرة", appeal: "نوع الطعن",
+  arbitration: "نوع الحكم", notary: "نوع العقد",
+  report: "نوع التقرير", minutes: "نوع المحضر",
+};
+```
+
+- [ ] **Step 4: Verify each mode can now complete step 1**
+
+For each of the four modes, trace in code and state in your report: the seeded `memoType`,
+the resulting `activeSubTypes` length (must be > 0), the picker label shown, and that
+`canProceed()` returns true once a subtype is chosen.
+
+Run: `npx tsc --noEmit` — clean. `npm run test:unit` — 17/0 pristine. `npm run build` — succeeds.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/components/draft/draftConstants.ts src/hooks/useDraftState.ts src/components/draft/steps/StepIdentify.tsx
+git commit -m "fix(draft): the four specialist mode entry points dead-ended on step 1"
+```
+
+---
+
 ## Task 6: Deliverable download endpoint
 
 Ownership is checked in one auditable place rather than implied by a storage path.
