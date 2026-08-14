@@ -123,8 +123,9 @@ export async function PATCH(
   // participant write ANY column on their own row, and this was half of a
   // cross-tenant document leak (a client could point metadata.deliverable at
   // another tenant's attachment). No real caller sends anything beyond
-  // `status` today — see task-6b-report.md for the enumeration. Keys not on
-  // this list are silently dropped (not 400'd), matching the existing
+  // `status` today (verified against every call site behind
+  // workflowService.ts and clientWorkflowRepository.ts). Keys not on this
+  // list are silently dropped (not 400'd), matching the existing
   // `auditEvent` skip below.
   const ALLOWED_PATCH_FIELDS = new Set<string>(['status']);
   const patch: Record<string, unknown> = {};
