@@ -1396,6 +1396,69 @@ git commit -m "fix(security): verify storage path and request ownership on docum
 
 ---
 
+## Task 6d: Gate status transitions by role
+
+**SECURITY / INTEGRITY.** Task 6b restricted *which columns* a client may PATCH, but `status`
+had to stay writable because real callers set it. RLS permits `requester_user_id = auth.uid()`
+to update, so **a client can PATCH their own unfulfilled order to `status: "completed"`.**
+
+That is not cosmetic. In `src/app/api/v1/service-requests/[id]/route.ts`:
+- `:212-219` fires `recordNotification` with title `"تم إكمال طلبك"` to the requester
+- `:170-187` dispatches to n8n's `/request-completed` webhook
+
+So a client can send themselves a false "your document is ready" WhatsApp, and drop their own
+order out of any admin queue that filters on status — which is exactly the queue Task 8 builds.
+The whole premise of this feature is admin-controlled fulfillment; a self-serve `completed` breaks it.
+
+**Files:**
+- Modify: `src/app/api/v1/service-requests/[id]/route.ts`
+
+- [ ] **Step 1: Establish who the caller is relative to the order**
+
+The handler already fetches the row. Determine whether the caller is the **requester**, the
+**assignee**, or an **admin** (`profiles.user_type === 'admin'`). Note that this endpoint uses
+the RLS-scoped client, so a caller who is neither requester nor assignee cannot reach the row
+at all — the meaningful distinction is requester vs assignee/admin.
+
+- [ ] **Step 2: Apply a transition table**
+
+| Target status | Who may set it |
+|---|---|
+| `cancelled` | requester, assignee, admin |
+| `in_review`, `assigned`, `completed` | assignee or admin only |
+| `draft`, `pending_payment`, `pending_assignment` | assignee or admin only |
+
+A requester setting anything other than `cancelled` is refused. Return `403` with a generic
+Arabic message; log the attempted transition server-side with `console.error` including the
+order id, the caller id, and the target status — an attempted illegitimate transition is worth
+seeing in logs.
+
+Guard on the **target** status, not on the current one. A transition table keyed on both is
+more machinery than this needs and invites gaps.
+
+- [ ] **Step 3: Confirm no legitimate flow breaks**
+
+Enumerate the callers found in Task 6b (`workflowService.ts:68`,
+`clientWorkflowRepository.ts:189`) and their real call sites — the Task 6b review found every
+one sends only `{ status }`. For each, state who the acting user is and whether the transition
+they perform is still permitted. **If any legitimate client-side flow sets a status other than
+`cancelled`, stop and report it** rather than widening the table to accommodate it silently.
+
+- [ ] **Step 4: Verify**
+
+Run: `npx tsc --noEmit`, `npm run test:unit` (17 pass / 0 fail pristine), `npm run build`.
+
+State in your report what a requester now receives when attempting `completed`, and confirm
+the notification and n8n dispatch do **not** fire on a refused transition.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -m "fix(security): only the assignee or an admin may complete an order"
+```
+
+---
+
 ## Task 7: Client order tracking pages
 
 **Files:**
