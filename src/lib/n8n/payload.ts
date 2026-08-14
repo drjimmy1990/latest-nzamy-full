@@ -7,7 +7,10 @@
  * and reused from workflow scripts where `Date` may be unavailable.
  *
  * `recipient` is derived from the request's `receiver` (the role the request is
- * routed to) plus `assigned_to` / `requester_user_id` when present.
+ * routed to) plus `assigned_to` / `requester_user_id` when present. On
+ * `service_request.completed` / `.cancelled` it always addresses the
+ * requester (never the assignee) and, given `requesterProfile`, carries
+ * their name/phone/email for outbound channels like WhatsApp.
  */
 
 export interface WebhookPayload {
