@@ -190,6 +190,17 @@ test("rejects an unknown clientRole", () => {
   assert.equal(r.ok, false);
 });
 
+test("rejects a mismatched service key", () => {
+  const r = validateDraftIntake({ ...valid, service: "contracts" });
+  assert.equal(r.ok, false);
+});
+
+test("rejects a missing service key", () => {
+  const { service: _drop, ...withoutService } = valid;
+  const r = validateDraftIntake(withoutService);
+  assert.equal(r.ok, false);
+});
+
 test("collects every error, not just the first", () => {
   const r = validateDraftIntake({ ...valid, caseText: "x", legalBranch: "" });
   assert.equal(r.ok, false);
@@ -287,6 +298,14 @@ export function validateDraftIntake(input: unknown): ValidationResult<DraftIntak
     return { ok: false, errors: ["البيانات المرسلة غير صالحة"] };
   }
 
+  // The discriminant is validated, not assumed: the other three services
+  // reuse this pipeline, and a mis-routed payload must be rejected rather
+  // than silently relabelled "draft".
+  const service = str(input.service);
+  if (service !== "draft") {
+    errors.push("نوع الخدمة غير صحيح");
+  }
+
   const clientRole = str(input.clientRole);
   if (clientRole !== "plaintiff" && clientRole !== "defendant") {
     errors.push("صفة الموكل غير محددة");
@@ -359,7 +378,7 @@ export function validateDraftIntake(input: unknown): ValidationResult<DraftIntak
 - [ ] **Step 5: Run the tests and make sure they pass**
 
 Run: `npm run test:unit`
-Expected: PASS — 7 tests.
+Expected: PASS — 9 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -550,7 +569,7 @@ recipient: deriveRecipient(request, opts.event, opts.requesterProfile ?? null),
 - [ ] **Step 4: Run the tests and make sure they pass**
 
 Run: `npm run test:unit`
-Expected: PASS — 12 tests total (7 from Task 2, 5 here).
+Expected: PASS — 14 tests total (9 from Task 2, 5 here).
 
 - [ ] **Step 5: Commit**
 
