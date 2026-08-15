@@ -2350,6 +2350,55 @@ git commit -m "feat(n8n): callback endpoint recording WhatsApp delivery status"
 
 ---
 
+## Task 10b: Surface delivery-status events in the UI
+
+**NOT BLOCKING — filed from Task 10 review round 1.** Task 10 makes the callback *record* a
+delivery-status event (`notification.whatsapp_sent` / `_failed` / `_read`) into `request_events`.
+Nothing reads it back. Confirmed by checking every plausible consumer:
+
+- `src/app/ai/orders/[id]/page.tsx` (client order page) fetches only the deliverable endpoint.
+- `src/app/dashboard/admin/service-orders/page.tsx` (admin queue) never fetches `/events` either.
+- The admin audit-log page reads a *different* table (`admin_audit_events`, not `request_events`).
+- Task 11 (webhook contract doc) and Task 12 (smoke routes/QA checklist) do not add UI wiring —
+  checked both, this is not an ordering artifact that resolves itself later in the plan.
+
+This is exactly the failure mode Task 10 exists to prevent: n8n can report a WhatsApp send
+failed, `request_events` gets the row, and an admin looking at the order has no way to see it —
+they can still believe the client was notified. Recorded is not the same as visible.
+
+**One RLS wrinkle to design around, not just plug in:** `GET /api/v1/service-requests/[id]/events`
+(`src/app/api/v1/service-requests/[id]/events/route.ts`) is RLS-scoped via `createClient()`. The
+`"participants read request events"` policy (`20260518_client_workflow_backend_ready.sql:161-169`)
+only grants read access where `sr.requester_user_id = auth.uid() or sr.assigned_to = auth.uid()`
+— there is **no admin clause**, same gap as load-bearing fact #1 for `service_requests` itself.
+That means:
+- The **client order page** can call the existing `GET /events` endpoint as-is — the client is
+  always the requester, so RLS admits them.
+- The **admin queue** cannot, for any order the viewing admin hasn't personally claimed
+  (`assigned_to` is null or a different admin) — the existing endpoint would silently return an
+  empty list for exactly the rows where the admin isn't a participant. A correct fix needs the
+  same `createServiceClient()` + `requireAdmin()` pattern Task 8's admin route already uses, not
+  a call to the existing participant-scoped endpoint.
+
+**Files (indicative — confirm against the codebase at implementation time):**
+- Modify: `src/app/api/v1/service-requests/[id]/events/route.ts` (or a new admin-scoped
+  sibling) to allow admin reads via `createServiceClient()` behind `requireAdmin()`
+- Modify: `src/app/dashboard/admin/service-orders/page.tsx` — show the latest `notification.*`
+  event/status per row (at minimum, surface a failed delivery distinctly)
+- Modify: `src/app/ai/orders/[id]/page.tsx` — show delivery status to the client using the
+  existing (already-permitted) `GET /events` endpoint
+
+- [ ] **Step 1:** Decide and implement the admin-read path for `request_events` (service-role
+  behind `requireAdmin()`, matching Task 8's admin route — do not add an admin RLS clause to
+  `request_events`/`service_requests`, per this plan's established pattern).
+- [ ] **Step 2:** Surface the latest `notification.*` event (or a "failed" badge specifically)
+  on each row of the admin service-orders queue.
+- [ ] **Step 3:** Surface delivery status on the client order page via the existing
+  participant-scoped `GET /events` endpoint.
+- [ ] **Step 4: Verify and commit.**
+
+---
+
 ## Task 11: Owner-facing webhook contract
 
 This is the document the owner builds his n8n workflow against.
