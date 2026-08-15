@@ -115,6 +115,13 @@ export async function getServiceOrder(id: string): Promise<ServiceOrder> {
     throw new Error("تعذّر تحميل الطلب");
   }
   const body = await res.json();
+  // A 200 with no `data` is a contract violation, not a legitimate empty
+  // result (unlike the list endpoint, a single-resource GET has no "empty"
+  // state) — treat it as a failure rather than silently handing the caller
+  // `undefined` typed as ServiceOrder.
+  if (!body?.data) {
+    throw new Error("تعذّر تحميل الطلب");
+  }
   return body.data as ServiceOrder;
 }
 

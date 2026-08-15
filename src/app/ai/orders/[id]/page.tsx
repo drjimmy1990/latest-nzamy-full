@@ -4,7 +4,7 @@ import { useEffect, useState, use } from "react";
 import { DownloadSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import {
-  getServiceOrder, ORDER_STATUS_AR, ServiceOrderNotFoundError, type ServiceOrder,
+  getServiceOrder, ORDER_STATUS_AR, type ServiceOrder,
 } from "@/lib/services/serviceOrders";
 
 type LoadState = "loading" | "error" | "not_found" | "loaded";
@@ -21,7 +21,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     getServiceOrder(id)
       .then((o) => { setOrder(o); setState("loaded"); })
       .catch((e) => {
-        setState(e instanceof ServiceOrderNotFoundError ? "not_found" : "error");
+        // Match on .name rather than `instanceof ServiceOrderNotFoundError`:
+        // instanceof against a subclassed built-in (Error) is only reliable
+        // once you're certain nothing in the bundling pipeline downlevels
+        // classes to ES5 prototypes (which breaks the prototype chain for
+        // built-in extends). Matching the name string sidesteps that
+        // question entirely, at no cost, so there's nothing to verify later.
+        setState(e instanceof Error && e.name === "ServiceOrderNotFoundError" ? "not_found" : "error");
       });
   };
 
@@ -71,7 +77,21 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   if (state === "not_found" || !order) {
-    return <div className={`p-7 text-[12px] ${mutedText}`} dir="rtl">الطلب غير موجود.</div>;
+    // The server's own GET route conflates "row genuinely doesn't exist"
+    // with "any other query error" into the same 404 (it does
+    // `if (error || !serviceRequest) return 404`) — so this branch cannot
+    // promise the order truly doesn't exist, only that it couldn't be
+    // loaded under that id. Never assert non-existence outright; offer a
+    // retry, since a transient failure on the server side is indistinguishable
+    // from here.
+    return (
+      <div className="p-7 space-y-3" dir="rtl">
+        <p className={`text-[12px] ${mutedText}`}>الطلب غير موجود أو تعذّر الوصول إليه. حاول مرة أخرى.</p>
+        <button onClick={load} className="rounded-xl bg-[#0B3D2E] px-5 py-2 text-[12px] font-bold text-white">
+          إعادة المحاولة
+        </button>
+      </div>
+    );
   }
 
   const s = ORDER_STATUS_AR[order.status] ?? ORDER_STATUS_AR.pending_assignment;
