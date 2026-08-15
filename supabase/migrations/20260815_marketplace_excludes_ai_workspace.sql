@@ -35,7 +35,13 @@ CREATE POLICY "service_requests_select_policy" ON public.service_requests
     -- Verified lawyers can browse unassigned requests in marketplace,
     -- excluding AI service orders (receiver = 'ai_workspace'), which
     -- are routed to the platform's own fulfillment team, not the
-    -- lawyer marketplace.
+    -- lawyer marketplace. General rule for whoever next extends the
+    -- receiver CHECK constraint: any receiver value that represents
+    -- platform-internal fulfillment (work handled by the platform's
+    -- own team, never assigned out to a marketplace lawyer) belongs
+    -- on this exclusion list alongside 'ai_workspace' — it is not
+    -- unassigned marketplace work just because assigned_to happens
+    -- to be NULL.
     OR (
       EXISTS (
         SELECT 1 FROM public.lawyer_profiles
