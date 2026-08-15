@@ -179,17 +179,27 @@ export default function AdminServiceOrdersPage() {
                       مرفقات العميل
                     </p>
                     <div className="flex flex-col gap-1">
+                      {/* documentId is typed `string` (OrderAttachment) but that's a
+                          TS-level promise, not a runtime one: attachments.id is a
+                          Postgres bigserial, and PostgREST serialises int8 as a JSON
+                          number — POST /api/v1/documents returns it uncast, so it may
+                          arrive as a number despite its declared type. Accept both and
+                          coerce with String(...) rather than type-guarding on "string"
+                          alone, or a numeric id silently drops every download button. */}
                       {(o.metadata.attachments as OrderAttachment[])
-                        .filter((a) => a && typeof a.documentId === "string")
-                        .map((a) => (
-                          <button key={a.documentId} disabled={busy}
-                            onClick={() => downloadAttachment(o.id, a.documentId)}
-                            className={`flex items-center gap-2 text-[12px] font-semibold disabled:opacity-40 ${
-                              isDark ? "text-emerald-400" : "text-emerald-700"}`}>
-                            <DownloadSimple size={13} />
-                            {a.name || "مرفق"} {a.size ? `(${Math.max(1, Math.round(a.size / 1024))} كيلوبايت)` : ""}
-                          </button>
-                        ))}
+                        .filter((a) => a && (typeof a.documentId === "string" || typeof a.documentId === "number"))
+                        .map((a) => {
+                          const documentId = String(a.documentId);
+                          return (
+                            <button key={documentId} disabled={busy}
+                              onClick={() => downloadAttachment(o.id, documentId)}
+                              className={`flex items-center gap-2 text-[12px] font-semibold disabled:opacity-40 ${
+                                isDark ? "text-emerald-400" : "text-emerald-700"}`}>
+                              <DownloadSimple size={13} />
+                              {a.name || "مرفق"} {a.size ? `(${Math.max(1, Math.round(a.size / 1024))} كيلوبايت)` : ""}
+                            </button>
+                          );
+                        })}
                     </div>
                   </div>
                 )}

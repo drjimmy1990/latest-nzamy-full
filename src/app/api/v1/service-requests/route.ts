@@ -217,11 +217,24 @@ export async function POST(request: NextRequest) {
     //     with no way back once that order is completed/cancelled.
     // Best-effort: a binding failure must not fail the order creation — the
     // client would otherwise lose their whole submission over an attachment.
+    // `documentId` is typed as `string` throughout (OrderAttachment,
+    // Document.id) but that's a TS-level promise, not a runtime one:
+    // attachments.id is a Postgres bigserial, and PostgREST serialises int8
+    // as a JSON *number*. POST /api/v1/documents returns `data` straight
+    // from Supabase with no cast, so `doc.id` (and therefore this
+    // `documentId`) may arrive here as a number despite its declared type.
+    // Accept both and coerce, rather than type-guarding on `string` alone —
+    // deliverable/route.ts's `/^\d+$/.test(...)` already tolerates this
+    // silently via JS's implicit ToString() coercion; do the same explicitly
+    // here so a numeric documentId doesn't get silently dropped before the
+    // regex ever runs.
     const orderMetadata = (serviceRequest.metadata ?? {}) as Record<string, unknown>;
     const metaAttachments = Array.isArray(orderMetadata.attachments) ? orderMetadata.attachments : [];
     const documentIds = metaAttachments
       .map((a) => (a && typeof a === "object" ? (a as Record<string, unknown>).documentId : undefined))
-      .filter((v): v is string => typeof v === "string" && /^\d+$/.test(v));
+      .filter((v) => typeof v === "string" || typeof v === "number")
+      .map((v) => String(v))
+      .filter((v) => /^\d+$/.test(v));
 
     if (documentIds.length > 0) {
       try {
