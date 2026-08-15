@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-15
 **Branch:** `feat/manual-fulfillment-services` (38 commits ahead of `main`)
-**Status:** ⚠️ **INCOMPLETE — NOT DEPLOYABLE.** Client side built and the PII blocker is closed; **admin fulfillment interface not built**, so nothing can move an order forward.
+**Status:** ✅ **COMPLETE — deployable, pending a live round-trip test.** All tasks built and independently reviewed. Both migrations applied and verified on the live database by the owner. See §10 for why the live test is not optional.
 
 ---
 
@@ -68,8 +68,43 @@ They persisted **nothing** — no API call, no DB row, not even `localStorage`. 
 | **T6d** Role-gated status transitions | `3cc645b`…`7c7d391` | ✅ |
 | **T7** Client order tracking pages | `bb8e162`…`5d5ada2` | ✅ |
 | **T7b** Marketplace RLS PII fix | `a617e92`, `8210d12` | ✅ **blocker closed** |
+| **T8** Admin queue API | `70d3f68` | ✅ approved first pass |
+| **T9** Admin queue UI | `89db01b`…`e238348` | ✅ |
+| **T9b** Admin access to intake attachments | `cd68cfd`…`7218dc5` | ✅ |
+| **T10** n8n delivery-status callback | `884a5af`, `78b1619` | ✅ |
+| **T11** Owner-facing webhook contract | `a4a857f`…`78778e3` | ✅ `n8n/CONTRACT-service-orders.md` |
+| **T12** Smoke routes + QA checklist | `b2f3a5e` | ✅ |
+
+**Controller-verified at HEAD `b2f3a5e`** (run directly, not taken from agent reports):
+`npm run test:unit` → **20 pass / 0 fail**; `npx tsc --noEmit` → **exit 0, zero errors**;
+`npm run build` → **exit 0**, all seven new routes present in the route table.
+
+> An initial `tsc` run reported 63 errors, every one of them inside
+> `.next/dev/types/routes.d.ts` — a Next.js dev-server artifact left **truncated mid-string**
+> (line 240 cut at 1328 chars) when the process was killed during a network disconnection.
+> `.next/` is gitignored build output; clearing it resolved all 63. **Zero errors were ever in
+> `src/`.**
 
 Test suite: **17 pass / 0 fail, pristine output** (`npm run test:unit`).
+
+## 4b. The bug no static check could catch
+
+`attachments.id` is Postgres **bigserial**. PostgREST serialises it as a JSON **number** — but
+`documentId` is typed `string` throughout the TypeScript. A `typeof v === 'string'` guard (the
+first draft of T9b) would have made the entire attachment feature a **silent no-op**: empty
+binding, zero download buttons, admin still unable to read case files — while `tsc`, the test
+suite, and `npm run build` all stayed green.
+
+It was caught by an advisor review, not by tooling, and fixed by coercing with `String()` in the
+bind logic, the admin render filter, and `validateDraftIntake`.
+
+This is the concrete reason a live round-trip test is required before the feature is used with
+real clients. No verification available in this environment — no browser, no live Supabase —
+could have surfaced it.
+
+T9b also added a `.is('request_id', null)` guard beyond its brief: without it, resubmitting a
+`documentId` already bound to a prior order would silently steal it and permanently 404 that
+order's download.
 
 ## 5. Work NOT done
 
