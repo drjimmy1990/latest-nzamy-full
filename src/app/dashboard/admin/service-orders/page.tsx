@@ -4,18 +4,13 @@ import { useEffect, useState, useCallback } from "react";
 import { DownloadSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { uploadDocumentFile } from "@/lib/services/documentService";
+import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { uploadErrorMessage } from "./_errorCopy";
 
 interface AdminOrder {
   id: string; title: string; description: string; status: string;
   created_at: string; metadata: Record<string, unknown>;
   profile: { display_name?: string; email?: string; phone?: string } | null;
-}
-
-interface IntakeAttachment {
-  documentId: string;
-  name: string;
-  size: number;
 }
 
 const STATUSES = [
@@ -178,13 +173,13 @@ export default function AdminServiceOrdersPage() {
                   {JSON.stringify(o.metadata?.intake ?? {}, null, 2)}
                 </pre>
 
-                {Array.isArray(o.metadata?.attachments) && (o.metadata.attachments as IntakeAttachment[]).length > 0 && (
+                {Array.isArray(o.metadata?.attachments) && (o.metadata.attachments as OrderAttachment[]).length > 0 && (
                   <div className="space-y-1.5">
                     <p className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
                       مرفقات العميل
                     </p>
                     <div className="flex flex-col gap-1">
-                      {(o.metadata.attachments as IntakeAttachment[])
+                      {(o.metadata.attachments as OrderAttachment[])
                         .filter((a) => a && typeof a.documentId === "string")
                         .map((a) => (
                           <button key={a.documentId} disabled={busy}
