@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-15
 **Branch:** `feat/manual-fulfillment-services` (38 commits ahead of `main`)
-**Status:** ⚠️ **INCOMPLETE — NOT DEPLOYABLE.** Client side built; admin side not built; one PII blocker outstanding.
+**Status:** ⚠️ **INCOMPLETE — NOT DEPLOYABLE.** Client side built and the PII blocker is closed; **admin fulfillment interface not built**, so nothing can move an order forward.
 
 ---
 
@@ -66,7 +66,8 @@ They persisted **nothing** — no API call, no DB row, not even `localStorage`. 
 | **T6b** PATCH column allowlist | `df0232b`, `1aee89b` | ✅ |
 | **T6c** Upload ownership validation | `fb3473e` | ✅ |
 | **T6d** Role-gated status transitions | `3cc645b`…`7c7d391` | ✅ |
-| **T7** Client order tracking pages | `bb8e162`…`285b755` | ✅ |
+| **T7** Client order tracking pages | `bb8e162`…`5d5ada2` | ✅ |
+| **T7b** Marketplace RLS PII fix | `a617e92`, `8210d12` | ✅ **blocker closed** |
 
 Test suite: **17 pass / 0 fail, pristine output** (`npm run test:unit`).
 
@@ -74,8 +75,7 @@ Test suite: **17 pass / 0 fail, pristine output** (`npm run test:unit`).
 
 | Task | What it is | Why it matters |
 |---|---|---|
-| **T7b** 🔴 | Exclude AI orders from lawyer marketplace RLS | **BLOCKER — see §6.5.** Specced in the plan, migration not written. |
-| **T8** | Admin queue API | Without it **no one can fulfil an order** |
+| **T8** 🔴 | Admin queue API | Without it **no one can fulfil an order** |
 | **T9** | Admin queue UI | Same |
 | **T10** | `POST /api/v1/n8n/callback` | WhatsApp delivery status invisible |
 | **T11** | Owner-facing webhook contract doc | **This is what the owner is waiting for** |
@@ -117,7 +117,9 @@ Fixed by scoping the gate on `receiver`: `ai_workspace` orders permit only reque
 
 AI orders are created with exactly that shape. So every verified lawyer could read every client's drafting order including `metadata.intake`: case narrative, party names, national ID numbers, commercial registration numbers, judgment text, and private notes to the fulfillment team.
 
-**Fix (T7b, specced, not written):** add `AND receiver <> 'ai_workspace'` to the marketplace clause only.
+**✅ Fixed — T7b, `a617e92`.** `supabase/migrations/20260815_marketplace_excludes_ai_workspace.sql` adds `AND receiver <> 'ai_workspace'` to the marketplace clause only. Review verified clause-by-clause equivalence against the live baseline file (not the brief's quote), confirmed `receiver` is `text not null` throughout the migration history so the comparison cannot silently drop rows via NULL semantics, and confirmed marketplace browse still works for all six other receiver values.
+
+**Narrowing discovered during review — the uploaded files were never exposed.** `supabase/storage_policies_documents.sql:30-35` restricts bucket SELECT to `auth.uid()::text = (storage.foldername(name))[1]` — owner-only, narrower even than `attachments_select_policy` (`20260616:88-103`), which itself has no marketplace branch. Only the order's text metadata was readable, never the client's documents.
 
 ---
 
@@ -138,10 +140,23 @@ Errors in the plan and spec I authored, caught by review:
 
 Two migrations, in this order:
 
-1. `supabase/migrations/20260814_service_orders_types.sql` — **written, not applied.** Safe to run any time; it only widens a CHECK constraint and nothing uses the new values until the app deploys.
-2. **T7b migration — not yet written.** Must be applied **before** the app code ships, or §6.5 goes live.
+1. `supabase/migrations/20260814_service_orders_types.sql` — widens a CHECK constraint. Safe any time; inert until the app deploys.
+2. `supabase/migrations/20260815_marketplace_excludes_ai_workspace.sql` — closes §6.5. **Must be applied before the app code ships.**
 
-**Do not deploy the application code** until T7b exists and T8/T9 provide a fulfillment interface.
+Both are safe to run now. Verify:
+
+```sql
+-- expect: contains ai_legal_opinion
+select pg_get_constraintdef(oid) from pg_constraint
+where conname = 'service_requests_type_check';
+
+-- expect: contains receiver <> 'ai_workspace'
+-- AND still contains requester_user_id = auth.uid() and assigned_to = auth.uid()
+select pg_get_expr(polqual, polrelid) from pg_policy
+where polname = 'service_requests_select_policy';
+```
+
+**Do not deploy the application code** until T8/T9 provide a fulfillment interface — otherwise orders accumulate in `pending_assignment` with no way to work them. Deployment is now blocked on missing functionality, not on security.
 
 ---
 
