@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { recordEvent, RequestEvent } from "@/lib/events";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
@@ -268,6 +268,25 @@ export async function PATCH(
       .select("id, display_name, user_type")
       .eq("id", user.id)
       .single();
+
+    // Task 3 added `requesterProfile` to buildWebhookPayload so completion
+    // events carry the requester's phone for outbound channels (WhatsApp).
+    // This route is generic: the caller completing/cancelling the order is
+    // often the ASSIGNEE (lawyer/firm/admin), not the requester, so the
+    // requester's profile must be looked up separately. The RLS-scoped
+    // `supabase` client cannot be used for this lookup — `profiles` only has
+    // "read own profile" and "admins read all profiles" SELECT policies, so
+    // a non-admin assignee reading a different user's row would silently get
+    // null, defeating the fix on exactly the path it exists for. Use the
+    // service-role client for this one read; it's still inside this
+    // best-effort try and never blocks or fails the parent update.
+    const svc = await createServiceClient();
+    const { data: requesterProfile } = await svc
+      .from("profiles")
+      .select("id, display_name, phone, email, user_type")
+      .eq("id", data.requester_user_id as string)
+      .maybeSingle();
+
     await dispatchToN8n(
       eventName,
       buildWebhookPayload({
@@ -275,6 +294,7 @@ export async function PATCH(
         timestamp: new Date().toISOString(),
         request: data as unknown as Record<string, unknown>,
         actor: actorProfile as unknown as Record<string, unknown> | null,
+        requesterProfile: requesterProfile as unknown as Record<string, unknown> | null,
       }),
     );
   } catch (e) {
