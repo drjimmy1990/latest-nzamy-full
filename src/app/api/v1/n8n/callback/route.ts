@@ -39,6 +39,22 @@ export async function POST(request: NextRequest) {
     .from("service_requests").select("id").eq("id", orderId).maybeSingle();
   if (!order) return NextResponse.json({ error: "unknown order" }, { status: 404 });
 
+  // `request_events` has no metadata column (see events.ts), so a failure
+  // reason from n8n can't be persisted — but it must not be silently
+  // dropped either. Log it so the cause of a failed send is traceable from
+  // server logs even though `notification.${channel}_failed` alone only
+  // records that it failed, not why. `messageId` doubles as n8n's
+  // idempotency key, so it's logged alongside for correlation.
+  if (status === "failed") {
+    console.error(
+      "[n8n callback] delivery failed:",
+      "orderId=", orderId,
+      "channel=", channel,
+      "messageId=", body.messageId ?? "(none)",
+      "error=", body.error ?? "(none)",
+    );
+  }
+
   await recordEvent({
     supabase: admin,
     requestId: orderId,
