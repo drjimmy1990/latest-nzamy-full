@@ -86,7 +86,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data: mapped, total: count ?? 0 });
   } catch (err) {
     console.error("[service-requests GET] Unexpected error:", err);
-    return NextResponse.json({ data: [], total: 0 });
+    // Same failure shape as the Supabase-error branch above (an empty list
+    // standing in for a real error, kept at 200 for the same existing-caller
+    // reasons) — so it gets the same `degraded: true` marker. Leaving this
+    // branch unflagged while the other one was flagged would read as "this
+    // path is known-benign," which it isn't: it's the identical defect on a
+    // rarer trigger (anything that throws outside the Supabase query itself).
+    return NextResponse.json({ data: [], total: 0, degraded: true });
   }
 }
 
