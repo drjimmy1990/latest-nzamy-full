@@ -100,6 +100,16 @@ export async function listMyServiceOrders(): Promise<ServiceOrder[]> {
     throw new Error("تعذّر تحميل الطلبات");
   }
   const body = await res.json();
+  // The route answers a Supabase-side failure with `200 { data: [], total: 0,
+  // degraded: true }` (kept at 200 on purpose — other, unrelated callers of
+  // this same endpoint rely on that graceful empty-list fallback and never
+  // look past `data`). Throwing here — instead of returning `[]` — routes a
+  // degraded load through the exact same catch/error-state path a non-200
+  // failure already takes on the orders list page, so no separate handling
+  // is needed there for this case.
+  if (body?.degraded) {
+    throw new Error("تعذّر تحميل الطلبات");
+  }
   return (body.data as ServiceOrder[] | undefined) ?? [];
 }
 

@@ -71,8 +71,15 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("[service-requests GET] Supabase error:", error.message, error.details, error.hint, error.code);
-      // Return empty data so frontend falls back to local store gracefully
-      return NextResponse.json({ data: [], total: 0 });
+      // Keep the 200 and the empty data — existing callers rely on this
+      // graceful fallback and only ever read `data`/`total`. `degraded: true`
+      // is purely additive: it says plainly that this empty list is a
+      // failure, not a genuine absence, for any caller that opts in to
+      // checking it (see listMyServiceOrders in
+      // src/lib/services/serviceOrders.ts). Named `degraded`, not `error`,
+      // so it can never collide with an `.error` key a caller might already
+      // destructure off a *failed* (non-200) response elsewhere.
+      return NextResponse.json({ data: [], total: 0, degraded: true });
     }
 
     const mapped = (data ?? []).map((row) => toWorkflowRequest(row as Record<string, unknown>));
