@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useTheme } from "@/components/ThemeProvider";
 import { uploadDocumentFile } from "@/lib/services/documentService";
+import { uploadErrorMessage } from "./_errorCopy";
 
 interface AdminOrder {
   id: string; title: string; description: string; status: string;
@@ -79,8 +80,23 @@ export default function AdminServiceOrdersPage() {
       const doc = await uploadDocumentFile(file, { requestId: order.id });
       await act(order.id, { action: "deliver", documentId: doc.id, fileName: doc.file_name, notes });
     } catch (e) {
-      setErr((e as Error).message || "تعذّر رفع الملف"); setBusy(false);
+      // Fix (review finding IMPORTANT 3): uploadDocumentFile can throw raw,
+      // untranslated causes — see _errorCopy.ts for the full trace and the
+      // covering tests. Never render e.message verbatim.
+      setErr(uploadErrorMessage(e));
+      setBusy(false);
     }
+  }
+
+  // Fix (review finding IMPORTANT 1): `notes` is a single page-level state
+  // shared by every order card's deliver/cancel form. Without this reset, an
+  // admin who drafts a note for order A and then opens order B without
+  // submitting would have A's leftover text sent as B's delivery notes or
+  // cancellation reason. Clearing it on every open/close transition — not
+  // just on successful submit (act() already does that) — closes that gap.
+  function toggleOpen(o: AdminOrder) {
+    setOpen(open?.id === o.id ? null : o);
+    setNotes("");
   }
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
@@ -122,7 +138,7 @@ export default function AdminServiceOrdersPage() {
                   {o.profile?.display_name ?? "—"} · {o.profile?.phone ?? "لا يوجد جوال"} · {new Date(o.created_at).toLocaleDateString("ar-SA")}
                 </p>
               </div>
-              <button onClick={() => setOpen(open?.id === o.id ? null : o)}
+              <button onClick={() => toggleOpen(o)}
                 className={`text-[11px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
                 {open?.id === o.id ? "إغلاق" : "التفاصيل"}
               </button>
@@ -144,6 +160,18 @@ export default function AdminServiceOrdersPage() {
 
                 {o.status === "in_review" && (
                   <div className="space-y-2">
+                    {/* Fix (review finding IMPORTANT 2): the backend's claim
+                        action is an intentional takeover — it re-assigns an
+                        in_review order to whoever calls it, specifically so an
+                        order stuck with an AWOL admin can be unstuck (see the
+                        PATCH handler's own comment). Without this control, a
+                        second admin who opens an in_review order they aren't
+                        assigned to has no way to become the assignee, so their
+                        upload silently 403s at POST /api/v1/documents. */}
+                    <button disabled={busy} onClick={() => act(o.id, { action: "claim" })}
+                      className="rounded-xl border border-emerald-500/30 px-4 py-2 text-[12px] font-bold text-emerald-500 disabled:opacity-40">
+                      تولّي الطلب (نقل لي)
+                    </button>
                     <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
                       placeholder="ملاحظات للعميل (اختياري)"
                       className={`w-full rounded-xl p-2.5 text-[12px] border ${
