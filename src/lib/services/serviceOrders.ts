@@ -88,3 +88,11 @@ export async function getServiceOrder(id: string): Promise<ServiceOrder | null> 
     return null;
   }
 }
+
+export const ORDER_STATUS_AR: Record<ServiceOrder["status"], { label: string; tone: string }> = {
+  pending_assignment: { label: "بانتظار الاستلام", tone: "amber" },
+  assigned:           { label: "قيد التنفيذ",      tone: "blue"  },
+  in_review:          { label: "قيد التنفيذ",      tone: "blue"  },
+  completed:          { label: "جاهز",             tone: "emerald" },
+  cancelled:          { label: "ملغى",             tone: "zinc"  },
+};
