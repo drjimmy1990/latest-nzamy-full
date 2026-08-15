@@ -55,12 +55,22 @@ export default function AdminServiceOrdersPage() {
 
   async function act(id: string, payload: Record<string, unknown>) {
     setBusy(true); setErr("");
-    const res = await fetch(`/api/v1/admin/service-orders/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-    });
-    if (!res.ok) setErr((await res.json().catch(() => ({}))).error ?? "فشل الإجراء");
-    else { setOpen(null); setNotes(""); await load(); }
-    setBusy(false);
+    // Deliberate deviation from the brief's literal act(): the original
+    // fetch is unguarded, so a dropped connection throws out of an
+    // onClick handler with no catch anywhere in the call chain — busy
+    // stays true forever and claim/cancel look permanently disabled with
+    // no error shown. try/finally guarantees setBusy(false) always runs.
+    try {
+      const res = await fetch(`/api/v1/admin/service-orders/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      if (!res.ok) setErr((await res.json().catch(() => ({}))).error ?? "فشل الإجراء");
+      else { setOpen(null); setNotes(""); await load(); }
+    } catch {
+      setErr("تعذّر تنفيذ الإجراء. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function deliver(order: AdminOrder, file: File) {
