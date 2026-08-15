@@ -51,7 +51,7 @@ X-Webhook-Secret: {N8N_WEBHOOK_SECRET}   ← فقط إن كان N8N_WEBHOOK_SECR
       "serviceTitleAr": "الصائغ القانوني",
       "schemaVersion": 1,
       "intake": { "...": "إجابات نموذج الإدخال — قد تحتوي وقائع القضية كاملة" },
-      "attachments": [ { "documentId": "480", "fileName": "..." } ],
+      "attachments": [ { "documentId": "480", "name": "...", "size": 245678 } ],
       "deliverable": {
         "documentId": "482",
         "fileName": "مذكرة.docx",
