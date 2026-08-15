@@ -8,7 +8,7 @@
 
 "use client";
 
-import { apiGet, apiMutate } from "@/lib/services/api";
+import { apiMutate } from "@/lib/services/api";
 import {
   SERVICE_TYPE_BY_KEY, SERVICE_TITLE_AR,
   type ServiceKey, type OrderAttachment,
@@ -69,24 +69,53 @@ export async function createServiceOrder(args: {
   return res.data;
 }
 
-export async function listMyServiceOrders(): Promise<ServiceOrder[]> {
-  try {
-    const res = await apiGet<{ data: ServiceOrder[] }>(
-      "/api/v1/service-requests?receiver=ai_workspace",
-    );
-    return res.data ?? [];
-  } catch {
-    return [];
+/**
+ * Thrown by getServiceOrder specifically when the server says 404 — i.e. the
+ * order genuinely doesn't exist (or isn't visible to this caller). Any other
+ * failure (network drop, 401, 500, ...) throws a plain Error instead, so
+ * callers can tell "this order isn't there" apart from "we couldn't check."
+ */
+export class ServiceOrderNotFoundError extends Error {
+  constructor() {
+    super("الطلب غير موجود");
+    this.name = "ServiceOrderNotFoundError";
   }
 }
 
-export async function getServiceOrder(id: string): Promise<ServiceOrder | null> {
-  try {
-    const res = await apiGet<{ data: ServiceOrder }>(`/api/v1/service-requests/${id}`);
-    return res.data ?? null;
-  } catch {
-    return null;
+// listMyServiceOrders/getServiceOrder intentionally bypass the shared
+// apiGet() helper (src/lib/services/api.ts) and fetch directly: apiGet()
+// discards the HTTP status code when it throws, which is exactly the signal
+// the detail page needs to tell "not found" (404) apart from "failed to
+// load" (network error, 401, 500, ...). Both functions used to swallow every
+// failure into an empty result ([] / null), which made a DB hiccup or an
+// expired session indistinguishable from "you have no orders" / "this order
+// doesn't exist" — a false statement about the client's data. They now throw
+// on failure so the pages can render a real error state instead.
+export async function listMyServiceOrders(): Promise<ServiceOrder[]> {
+  const res = await fetch("/api/v1/service-requests?receiver=ai_workspace", {
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error("تعذّر تحميل الطلبات");
   }
+  const body = await res.json();
+  return (body.data as ServiceOrder[] | undefined) ?? [];
+}
+
+export async function getServiceOrder(id: string): Promise<ServiceOrder> {
+  const res = await fetch(`/api/v1/service-requests/${id}`, {
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    cache: "no-store",
+  });
+  if (res.status === 404) {
+    throw new ServiceOrderNotFoundError();
+  }
+  if (!res.ok) {
+    throw new Error("تعذّر تحميل الطلب");
+  }
+  const body = await res.json();
+  return body.data as ServiceOrder;
 }
 
 export const ORDER_STATUS_AR: Record<ServiceOrder["status"], { label: string; tone: string }> = {

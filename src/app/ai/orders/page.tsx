@@ -12,13 +12,23 @@ const TONE: Record<string, string> = {
   zinc: "bg-zinc-500/10 text-zinc-500 border-zinc-500/20",
 };
 
+type LoadState = "loading" | "error" | "loaded";
+
 export default function OrdersPage() {
   const { isDark } = useTheme();
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<LoadState>("loading");
+
+  const load = () => {
+    setState("loading");
+    listMyServiceOrders()
+      .then((o) => { setOrders(o); setState("loaded"); })
+      .catch(() => { setState("error"); });
+  };
 
   useEffect(() => {
-    listMyServiceOrders().then((o) => { setOrders(o); setLoading(false); });
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const card = isDark
@@ -29,15 +39,24 @@ export default function OrdersPage() {
     <div className="p-5 md:p-7 max-w-4xl mx-auto space-y-4" dir="rtl">
       <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>طلباتي</h1>
 
-      {loading && <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>جارٍ التحميل...</p>}
+      {state === "loading" && <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>جارٍ التحميل...</p>}
 
-      {!loading && orders.length === 0 && (
+      {state === "error" && (
+        <div className={`${card} p-8 text-center space-y-3`}>
+          <p className="text-[13px] text-red-500">تعذّر تحميل الطلبات. حاول مرة أخرى.</p>
+          <button onClick={load} className="rounded-xl bg-[#0B3D2E] px-5 py-2 text-[12px] font-bold text-white">
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
+      {state === "loaded" && orders.length === 0 && (
         <div className={`${card} p-8 text-center`}>
           <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>لا توجد طلبات بعد.</p>
         </div>
       )}
 
-      {orders.map((o) => {
+      {state === "loaded" && orders.map((o) => {
         const s = ORDER_STATUS_AR[o.status] ?? ORDER_STATUS_AR.pending_assignment;
         return (
           <Link key={o.id} href={`/ai/orders/${o.id}`} className={`${card} p-4 flex items-center gap-3 hover:shadow-md transition-shadow`}>
