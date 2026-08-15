@@ -2187,6 +2187,84 @@ git commit -m "feat(admin): service order queue UI with claim, deliver and cance
 
 ---
 
+## Task 9b: Let the admin actually read the client's intake attachments
+
+**FUNCTIONAL BLOCKER.** Found by the Task 9 implementer, chain traced and confirmed.
+
+The admin is asked to draft a legal document from the client's case file — the contract, the
+judgment, the supporting documents. **They cannot open any of them.** The queue renders a
+filename and a size out of the `metadata` JSON and nothing more.
+
+Why, end to end:
+
+| Link in the chain | Where | Effect |
+|---|---|---|
+| Intake uploads pass no `requestId` | `src/hooks/useDraftState.ts` → `uploadDocumentFile(file)` | `attachments.request_id` is permanently `null` |
+| Storage bucket RLS is owner-folder-only | `supabase/storage_policies_documents.sql:30-35` | no admin bypass at the storage layer |
+| Deliverable endpoint serves only `metadata.deliverable` and requires `request_id === order.id` | `service-requests/[id]/deliverable/route.ts` | intake attachments fail both conditions |
+| `GET /api/v1/documents` and `documents/[id]` are owner-scoped | `api/v1/documents/*` | admin gets nothing |
+
+Note the irony: the `request_id === order.id` binding was added deliberately in Task 6 to close
+a cross-tenant leak, and it is correct. The gap is that intake attachments were never *given* a
+`request_id` to be checked against.
+
+**Files:**
+- Modify: `src/app/api/v1/service-requests/route.ts` (bind attachments on create)
+- Create: `src/app/api/v1/service-requests/[id]/attachments/[attachmentId]/route.ts`
+- Modify: `src/app/dashboard/admin/service-orders/page.tsx` (render download links)
+
+- [ ] **Step 1: Bind intake attachments to the order at creation**
+
+In the POST handler, after the `service_requests` row is inserted, take the `documentId`s from
+`metadata.attachments[]` and set `attachments.request_id = <new order id>` for each.
+
+**Only bind attachments the caller owns.** Filter on `owner_user_id = auth.uid()` in the update
+— never trust the ids in the request body. An attacker supplying someone else's attachment id
+must not get it bound to their own order, because that binding is exactly what the deliverable
+and attachment endpoints trust.
+
+Do this best-effort: a binding failure must not fail the order creation (the client would lose
+their whole submission over an attachment). Log failures, and return the order regardless.
+
+- [ ] **Step 2: Add an entitlement-checked attachment download endpoint**
+
+Create `GET /api/v1/service-requests/[id]/attachments/[attachmentId]`, mirroring the existing
+deliverable route **exactly** in shape and in refusal behaviour:
+
+- `requireAdmin()`-style entitlement: caller must be the requester, the assignee, or an admin
+- the attachment must satisfy `attachment.request_id === order.id`
+- mint a 300s signed URL via the service-role client
+- **every refusal returns one identical 404 body** — the deliverable route unified its refusal
+  branches deliberately so the response cannot be used to enumerate which attachment ids exist.
+  Match that. Distinguish the branches only in `console.error`.
+
+Read `src/app/api/v1/service-requests/[id]/deliverable/route.ts` and follow it rather than
+inventing a second pattern — a divergent second download path is how one of them ends up wrong.
+
+- [ ] **Step 3: Surface the attachments in the admin queue**
+
+Replace the filename-and-size text with real download links that call the new endpoint, in the
+same click-to-fetch-then-open style the client detail page uses (fetch on click, never prefetch,
+never cache the signed URL — it expires in 300s).
+
+- [ ] **Step 4: Verify**
+
+State in your report:
+1. What a client sees if a binding fails during submission (must be: order still created).
+2. What an admin who is not entitled receives (must be the same 404 as every other refusal).
+3. Whether an attachment belonging to a different order can be fetched through this endpoint.
+4. Whether the client can still download their own intake attachments.
+
+Run: `npx tsc --noEmit`, `npm run test:unit` (17/0 pristine), `npm run build`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -m "feat(orders): bind intake attachments to their order and let the admin read them"
+```
+
+---
+
 ## Task 10: n8n delivery-status callback
 
 **Files:**
