@@ -61,6 +61,23 @@ function str(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
+/**
+ * documentId comes from Postgres's `attachments.id` (bigserial). PostgREST
+ * serialises int8 as a JSON number, not a string, and `POST /api/v1/documents`
+ * returns that value uncast (see `uploadDocumentFile` -> `doc.id`, consumed by
+ * `attachFile()` in useDraftState.ts) — so a well-formed attachment's
+ * documentId arrives here as a runtime `number` despite OrderAttachment's
+ * `string` type. `str()` above returns "" for a number, which made this
+ * loop reject every real attachment. Accept both and coerce — the same fix
+ * already applied in service-requests/route.ts's documentIds filter and the
+ * admin queue's render filter (page.tsx).
+ */
+function documentIdStr(v: unknown): string {
+  if (typeof v === "string") return v.trim();
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  return "";
+}
+
 export function validateDraftIntake(input: unknown): ValidationResult<DraftIntakeV1> {
   const errors: string[] = [];
 
@@ -97,12 +114,13 @@ export function validateDraftIntake(input: unknown): ValidationResult<DraftIntak
   const attachmentsRaw = Array.isArray(input.attachments) ? input.attachments : [];
   const attachments: OrderAttachment[] = [];
   attachmentsRaw.forEach((a, i) => {
-    if (!isRecord(a) || !str(a.documentId)) {
+    const documentId = isRecord(a) ? documentIdStr(a.documentId) : "";
+    if (!isRecord(a) || !documentId) {
       errors.push(`المرفق رقم ${i + 1} غير صالح`);
       return;
     }
     attachments.push({
-      documentId: str(a.documentId),
+      documentId,
       name: str(a.name) || "مرفق",
       size: typeof a.size === "number" && a.size >= 0 ? a.size : 0,
     });

@@ -46,6 +46,21 @@ test("rejects an attachment missing documentId", () => {
   assert.equal(r.ok, false);
 });
 
+test("accepts a numeric documentId (PostgREST bigserial arrives as a JS number, not a string)", () => {
+  const r = validateDraftIntake({ ...valid, attachments: [{ documentId: 123, name: "a.pdf", size: 10 }] });
+  assert.equal(r.ok, true);
+  if (r.ok) {
+    assert.equal(r.value.attachments.length, 1);
+    assert.equal(r.value.attachments[0].documentId, "123");
+    assert.equal(typeof r.value.attachments[0].documentId, "string");
+  }
+});
+
+test("rejects an attachment with a non-finite numeric documentId", () => {
+  const r = validateDraftIntake({ ...valid, attachments: [{ documentId: NaN, name: "a.pdf", size: 10 }] });
+  assert.equal(r.ok, false);
+});
+
 test("maps every service key to a service_requests type", () => {
   assert.equal(SERVICE_TYPE_BY_KEY.draft, "ai_draft");
   assert.equal(SERVICE_TYPE_BY_KEY.legal_opinion, "ai_legal_opinion");
