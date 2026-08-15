@@ -1645,6 +1645,112 @@ git commit -m "feat(orders): client order list and detail with deliverable downl
 
 ---
 
+## Task 7b: Exclude AI orders from the lawyer marketplace RLS clause
+
+**SECURITY / PII — BLOCKER. This is the one finding in this plan that this feature *causes*
+rather than merely exposes.** Do not ship T1–T7 without it.
+
+`service_requests_select_policy` (`supabase/migrations/20260616_production_readiness_fixes.sql:58-75`)
+lets any **verified lawyer** read any row in the marketplace browse scope:
+
+```sql
+OR (
+  EXISTS (SELECT 1 FROM public.lawyer_profiles
+          WHERE lawyer_profiles.user_id = auth.uid()
+            AND lawyer_profiles.verification_status = 'verified')
+  AND assigned_to IS NULL
+  AND status IN ('pending', 'pending_assignment')
+)
+```
+
+There is **no `receiver` filter** — the policy predates `ai_workspace`. AI service orders are
+created with exactly `assigned_to = NULL` and `status = 'pending_assignment'`, so every verified
+lawyer on the platform can read every client's drafting order, including `metadata.intake`:
+case narrative, party names, national ID numbers, commercial registration numbers, judgment
+text, and the client's private notes to the fulfillment team.
+
+A client submitting a confidential matter for the platform's own team would have it visible to
+every competing lawyer in the marketplace.
+
+**Files:**
+- Create: `supabase/migrations/20260815_marketplace_excludes_ai_workspace.sql`
+
+- [ ] **Step 1: Write the migration**
+
+Re-create the policy with one added condition on the marketplace clause **only**. Every other
+clause must stay byte-identical — a requester reading their own row and an assignee reading a
+row they are assigned to are both unaffected, and no existing marketplace behaviour changes for
+any receiver other than `ai_workspace`.
+
+```sql
+-- 20260815_marketplace_excludes_ai_workspace.sql
+-- The marketplace browse clause had no receiver filter because it predates
+-- ai_workspace. AI service orders are created assigned_to IS NULL /
+-- status='pending_assignment', so they fell into lawyer marketplace browse and
+-- exposed metadata.intake PII to every verified lawyer. Surgical fix: exclude
+-- that one receiver from the marketplace clause. Nothing else changes.
+
+begin;
+
+DROP POLICY IF EXISTS "service_requests_select_policy" ON public.service_requests;
+
+CREATE POLICY "service_requests_select_policy" ON public.service_requests
+  FOR SELECT
+  USING (
+    requester_user_id = auth.uid()
+    OR assigned_to = auth.uid()
+    OR (
+      EXISTS (
+        SELECT 1 FROM public.lawyer_profiles
+        WHERE lawyer_profiles.user_id = auth.uid()
+          AND lawyer_profiles.verification_status = 'verified'
+      )
+      AND assigned_to IS NULL
+      AND status IN ('pending', 'pending_assignment')
+      AND receiver <> 'ai_workspace'
+    )
+  );
+
+commit;
+```
+
+- [ ] **Step 2: Verify the policy text is what you intended**
+
+```sql
+select pg_get_expr(polqual, polrelid)
+from pg_policy
+where polname = 'service_requests_select_policy';
+```
+
+Expect the output to contain `receiver <> 'ai_workspace'`, and to still contain both
+`requester_user_id = auth.uid()` and `assigned_to = auth.uid()`.
+
+- [ ] **Step 3: Prove the leak is closed and nothing else broke**
+
+State in your report, by reading the policy rather than by running it (live DB access is the
+human partner's):
+
+1. A verified lawyer, on an `ai_workspace` order with `assigned_to IS NULL` and
+   `status='pending_assignment'`, who is neither requester nor assignee — can they read it?
+2. The same lawyer on a `receiver='lawyer'` marketplace request — can they still read it?
+   (A "no" here is a regression that breaks the marketplace.)
+3. The requester on their own `ai_workspace` order — still readable?
+4. An admin — note that this policy has no admin clause at all, so admin reads go through the
+   service-role client, unchanged by this migration.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add supabase/migrations/20260815_marketplace_excludes_ai_workspace.sql
+git commit -m "fix(security): keep AI service orders out of lawyer marketplace browse"
+```
+
+> **Deployment note for the owner:** this migration must be applied to Supabase alongside
+> `20260814_service_orders_types.sql`. Until it is applied, every submitted order is readable
+> by every verified lawyer.
+
+---
+
 ## Task 8: Admin queue API
 
 **Files:**
