@@ -190,6 +190,69 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: reqError.message, code: reqError.code, hint: reqError.hint }, { status: 500 });
     }
 
+    // Task 9b — bind intake attachments (uploaded via uploadDocumentFile(file)
+    // with no requestId — see useDraftState.ts attachFile) to the order that
+    // was just created, so the admin fulfillment routes (which check
+    // attachment.request_id === order.id, deliberately, to close a
+    // cross-tenant leak) can actually see them.
+    //
+    // Read the ids off the persisted row (serviceRequest.metadata), not the
+    // raw request body, so this can never drift from what the order actually
+    // stores. `attachments` has SELECT and INSERT RLS policies only (no
+    // UPDATE policy exists anywhere in supabase/migrations/*.sql) — the
+    // RLS-scoped `supabase` client cannot write this column at all, so the
+    // service-role client is required, exactly as the payments insert below
+    // already does for the same reason.
+    //
+    // Because the service-role client bypasses RLS entirely, ownership must
+    // be enforced here in the query itself:
+    //   - owner_user_id = auth.uid() — never trust the documentId's implied
+    //     ownership; an attacker who guesses/enumerates someone else's
+    //     attachment id must not get it bound to their own order.
+    //   - request_id IS NULL — never let an already-bound attachment be
+    //     re-bound. Without this, resubmitting a documentId that belongs to
+    //     a PRIOR order (e.g. that order's now-delivered deliverable) would
+    //     silently move it here, 404-ing the original client's download
+    //     forever (deliverable/route.ts requires request_id === order.id)
+    //     with no way back once that order is completed/cancelled.
+    // Best-effort: a binding failure must not fail the order creation — the
+    // client would otherwise lose their whole submission over an attachment.
+    const orderMetadata = (serviceRequest.metadata ?? {}) as Record<string, unknown>;
+    const metaAttachments = Array.isArray(orderMetadata.attachments) ? orderMetadata.attachments : [];
+    const documentIds = metaAttachments
+      .map((a) => (a && typeof a === "object" ? (a as Record<string, unknown>).documentId : undefined))
+      .filter((v): v is string => typeof v === "string" && /^\d+$/.test(v));
+
+    if (documentIds.length > 0) {
+      try {
+        const adminClient = await createServiceClient();
+        const { data: bound, error: bindError } = await adminClient
+          .from("attachments")
+          .update({ request_id: serviceRequest.id })
+          .in("id", documentIds)
+          .eq("owner_user_id", user.id)
+          .is("request_id", null)
+          .select("id");
+
+        if (bindError) {
+          console.error(
+            "[service-requests POST] attachment binding failed:",
+            bindError.message, bindError.details, bindError.hint, bindError.code,
+          );
+        } else if ((bound?.length ?? 0) !== documentIds.length) {
+          // Not necessarily a bug: a documentId the caller doesn't own, or
+          // one already bound to another order, is silently excluded by the
+          // filters above rather than erroring — this just makes that
+          // otherwise-invisible drop visible in logs.
+          console.error(
+            `[service-requests POST] attachment binding partial: order=${serviceRequest.id} requested=${documentIds.length} bound=${bound?.length ?? 0}`,
+          );
+        }
+      } catch (bindErr) {
+        console.error("[service-requests POST] attachment binding error:", bindErr);
+      }
+    }
+
     // Create the initial event (namespaced vocabulary via recordEvent).
     const requestEvent = body.request_event ?? body.auditEvent;
     const actorName =

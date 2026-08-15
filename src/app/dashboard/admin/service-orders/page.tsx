@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { DownloadSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { uploadDocumentFile } from "@/lib/services/documentService";
 import { uploadErrorMessage } from "./_errorCopy";
@@ -9,6 +10,12 @@ interface AdminOrder {
   id: string; title: string; description: string; status: string;
   created_at: string; metadata: Record<string, unknown>;
   profile: { display_name?: string; email?: string; phone?: string } | null;
+}
+
+interface IntakeAttachment {
+  documentId: string;
+  name: string;
+  size: number;
 }
 
 const STATUSES = [
@@ -88,6 +95,26 @@ export default function AdminServiceOrdersPage() {
     }
   }
 
+  // Task 9b — click-to-fetch-then-open, same pattern as
+  // src/app/ai/orders/[id]/page.tsx's download(): never prefetch, never
+  // cache the signed URL (it expires in 300s), fetch fresh on every click.
+  async function downloadAttachment(orderId: string, attachmentId: string) {
+    setErr("");
+    try {
+      const res = await fetch(
+        `/api/v1/service-requests/${orderId}/attachments/${encodeURIComponent(attachmentId)}`,
+      );
+      if (!res.ok) {
+        setErr((await res.json().catch(() => ({}))).error ?? "تعذّر التحميل");
+        return;
+      }
+      const { url } = await res.json();
+      window.open(url, "_blank");
+    } catch {
+      setErr("تعذّر التحميل. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.");
+    }
+  }
+
   // Fix (review finding IMPORTANT 1): `notes` is a single page-level state
   // shared by every order card's deliver/cancel form. Without this reset, an
   // admin who drafts a note for order A and then opens order B without
@@ -150,6 +177,27 @@ export default function AdminServiceOrdersPage() {
                   isDark ? "bg-zinc-950 text-zinc-400" : "bg-slate-50 text-slate-600"}`}>
                   {JSON.stringify(o.metadata?.intake ?? {}, null, 2)}
                 </pre>
+
+                {Array.isArray(o.metadata?.attachments) && (o.metadata.attachments as IntakeAttachment[]).length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                      مرفقات العميل
+                    </p>
+                    <div className="flex flex-col gap-1">
+                      {(o.metadata.attachments as IntakeAttachment[])
+                        .filter((a) => a && typeof a.documentId === "string")
+                        .map((a) => (
+                          <button key={a.documentId} disabled={busy}
+                            onClick={() => downloadAttachment(o.id, a.documentId)}
+                            className={`flex items-center gap-2 text-[12px] font-semibold disabled:opacity-40 ${
+                              isDark ? "text-emerald-400" : "text-emerald-700"}`}>
+                            <DownloadSimple size={13} />
+                            {a.name || "مرفق"} {a.size ? `(${Math.max(1, Math.round(a.size / 1024))} كيلوبايت)` : ""}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
 
                 {o.status === "pending_assignment" && (
                   <button disabled={busy} onClick={() => act(o.id, { action: "claim" })}
