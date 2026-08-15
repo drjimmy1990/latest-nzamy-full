@@ -14,6 +14,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * persisted until a migration adds the column. Both `actor_user_id` and
  * `actor_name` columns exist, so both are written when provided.
  *
+ * `actor_user_id` is nullable (`references auth.users(id) on delete set
+ * null`, no `not null`) because not every event has a human actor behind a
+ * session — e.g. the n8n delivery-status callback
+ * (`src/app/api/v1/n8n/callback/route.ts`) authenticates via a shared
+ * webhook secret, not a user session, so there is no `auth.users` row to
+ * attribute the event to. `actorUserId` is optional here to match: when
+ * omitted, the column is left NULL rather than being fed a fabricated id
+ * (which would FK-violate and — since insert errors are swallowed — silently
+ * drop the event entirely). `actor_name` still identifies the actor in that
+ * case (defaults to the DB's `'system'` when the caller doesn't override it).
+ *
  * An event failure MUST NEVER break the parent write — errors are logged via
  * `console.error` and swallowed. Pass in whichever Supabase client the caller
  * already has (RLS-bound user client or service-role client).
@@ -22,7 +33,7 @@ export async function recordEvent(opts: {
   supabase: SupabaseClient;
   requestId: string;
   event: string;
-  actorUserId: string;
+  actorUserId?: string;
   actorName?: string;
   metadata?: Record<string, unknown>;
 }): Promise<void> {
@@ -31,8 +42,10 @@ export async function recordEvent(opts: {
   const row: Record<string, unknown> = {
     request_id: requestId,
     event,
-    actor_user_id: actorUserId,
   };
+  if (actorUserId) {
+    row.actor_user_id = actorUserId;
+  }
   if (actorName) {
     row.actor_name = actorName;
   }
@@ -44,7 +57,7 @@ export async function recordEvent(opts: {
       "[recordEvent] failed to insert request_events row:",
       "request_id=", requestId,
       "event=", event,
-      "actor_user_id=", actorUserId,
+      "actor_user_id=", actorUserId ?? "(none)",
       "actor_name=", actorName ?? "(none)",
       "metadata=", metadata ? JSON.stringify(metadata) : "(none)",
       "error=", error.message,

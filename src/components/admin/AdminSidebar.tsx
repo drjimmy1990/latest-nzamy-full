@@ -9,7 +9,7 @@ import {
   Gear, SignOut, Bell, ChartLine, Buildings,
   Scales, ShieldCheck, Database, CaretDown, ClipboardText,
   Money, Megaphone, Star, Globe, BookOpen, Article,
-  Storefront, ToggleRight, Flag, Tag, UsersFour, Crown, Tray,
+  Storefront, ToggleRight, Flag, Tag, UsersFour, Crown, Tray, Files,
 } from "@phosphor-icons/react";
 
 const NAV = [
@@ -39,6 +39,7 @@ const NAV = [
     section: "النظام",
     items: [
       { href: "/dashboard/admin/ai-usage",   icon: Robot,   label: "استخدام الذكاء الاصطناعي" },
+      { href: "/dashboard/admin/service-orders", icon: Files, label: "طلبات الخدمات" },
       { href: "/dashboard/admin/tickets",    icon: Ticket,  label: "تذاكر الدعم" },
       { href: "/dashboard/admin/broadcasts", icon: Megaphone, label: "البث والإشعارات" },
       { href: "/dashboard/admin/reviews",    icon: Star,    label: "التقييمات" },

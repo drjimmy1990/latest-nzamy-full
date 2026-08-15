@@ -13,6 +13,12 @@ import {
 
 // TODO: إعادة إضافة "المستشار المسبق" (PreFilingChecklist) في مرحلة الإنتاج عند ربطه بقاعدة البيانات
 
+const SUBTYPE_LABEL: Record<string, string> = {
+  case: "نوع الدعوى", reply: "نوع المذكرة", appeal: "نوع الطعن",
+  arbitration: "نوع الحكم", notary: "نوع العقد",
+  report: "نوع التقرير", minutes: "نوع المحضر",
+};
+
 interface StepIdentifyProps {
   isDark: boolean;
   clientRole: "plaintiff" | "defendant" | "";
@@ -150,7 +156,7 @@ export function StepIdentify({
           {memoType && activeSubTypes.length > 0 && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mt-4 overflow-hidden">
               <p className={`text-[11px] font-semibold mb-2 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                {memoType === "case" ? "نوع الدعوى" : memoType === "reply" ? "نوع المذكرة" : "نوع الطعن"}
+                {SUBTYPE_LABEL[memoType] || "نوع الطعن"}
                 {isCommitteeSubtype && <span className="ms-2 text-[9px] text-amber-500 font-bold">(⚠️ لجان شبه قضائية — ❌ لا نقض)</span>}
               </p>
               <div className="flex flex-wrap gap-2">

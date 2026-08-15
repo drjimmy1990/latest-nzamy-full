@@ -1,14 +1,63 @@
 import { useState, useRef } from "react";
 import {
-  STEPS, StepKey, PartyData, EMPTY_PARTY, SupportDoc,
+  CLIENT_VISIBLE_STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc, MEMO_MAIN_TYPES,
 } from "@/components/draft/draftConstants";
+import { validateDraftIntake, type OrderAttachment } from "@/lib/services/orderIntake";
+import { createServiceOrder } from "@/lib/services/serviceOrders";
+import { uploadDocumentFile } from "@/lib/services/documentService";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
+
+/**
+ * Resolve a raw memoType id (e.g. "case") to its Arabic label ("تحرير دعوى")
+ * for human-facing copy (order title, notifications). Falls back to a
+ * generic Arabic label for empty/unrecognised ids (e.g. the specialist-mode
+ * ids that have no MEMO_MAIN_TYPES entry). Does NOT affect the raw id stored
+ * in metadata.intake.memoType — that stays the machine value.
+ */
+function memoTypeLabelAr(memoType: string): string {
+  return MEMO_MAIN_TYPES.find((mt) => mt.id === memoType)?.label || "مذكرة";
+}
+
+/**
+ * Map a thrown submit error to Arabic user-facing copy. The underlying
+ * message (which may be English — "Unauthorized", a raw Postgres error,
+ * etc.) is logged for developers via console.error but never shown to the
+ * user; the user only ever sees one of a small set of known-safe Arabic
+ * strings.
+ */
+function submitErrorMessageAr(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  console.error("[useDraftState] submitOrder failed:", raw);
+  if (raw === "Unauthorized") {
+    return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
+  }
+  return "تعذّر إرسال الطلب — حاول مجدداً";
+}
+
+/**
+ * Map a thrown attachFile error to Arabic user-facing copy. Same rules as
+ * submitErrorMessageAr: the underlying message (which may be an internal
+ * token like "upload_unavailable_demo" or a raw Postgres/storage error) is
+ * logged for developers but never shown to the user.
+ */
+function attachErrorMessageAr(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  console.error("[useDraftState] attachFile failed:", raw);
+  if (raw === "upload_unavailable_demo") {
+    return "رفع المرفقات غير متاح في وضع العرض التجريبي — تواصل مع الفريق لتفعيل الحساب.";
+  }
+  if (raw === "Unauthorized") {
+    return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
+  }
+  return "تعذّر رفع الملف — تحقق من الاتصال وحاول مجدداً";
+}
 
 export function useDraftState(initialMode = "") {
   // Seed initial values from ?mode= query param
   function seedFromMode(mode: string): { memoType: string; legalBranch: string } {
     switch (mode) {
-      case "arbitration": return { memoType: "arbitration", legalBranch: "commercial" };
-      case "notary":      return { memoType: "notary",      legalBranch: "civil" };
+      case "arbitration": return { memoType: "arbitration", legalBranch: "تحكيم" };
+      case "notary":      return { memoType: "notary",      legalBranch: "مدني" };
       case "report":      return { memoType: "report",      legalBranch: "" };
       case "minutes":     return { memoType: "minutes",     legalBranch: "" };
       case "reply":       return { memoType: "reply",       legalBranch: "" };
@@ -16,7 +65,7 @@ export function useDraftState(initialMode = "") {
     }
   }
   const seed = seedFromMode(initialMode);
-  const [step, setStep]           = useState<StepKey>("identify");
+  const [step, setStep]           = useState<StepKey | VisibleStepKey>("identify");
   const [processing, setProcessing] = useState(false);
   const [copied, setCopied]       = useState(false);
 
@@ -62,6 +111,102 @@ export function useDraftState(initialMode = "") {
   // Step 7
   const [reviewPhase, setReviewPhase] = useState(0);
 
+  // ── Submit step state ───────────────────────────────────────────────────
+  const [submitNotes, setSubmitNotes]   = useState("");
+  const [submitting, setSubmitting]     = useState(false);
+  const [submitErrors, setSubmitErrors] = useState<string[]>([]);
+  const [uploadedAttachments, setUploadedAttachments] = useState<OrderAttachment[]>([]);
+  const [uploading, setUploading]     = useState(false);
+  const [attachError, setAttachError] = useState("");
+
+  function buildSummary(): { label: string; value: string }[] {
+    return [
+      { label: "صفة الموكل", value: clientRole === "plaintiff" ? "مدعٍ" : clientRole === "defendant" ? "مدعى عليه" : "" },
+      { label: "نوع المذكرة", value: memoType },
+      { label: "التصنيف", value: memoSubType },
+      { label: "الفرع القانوني", value: legalBranch },
+      { label: "الوقائع", value: caseText.slice(0, 120) + (caseText.length > 120 ? "…" : "") },
+    ];
+  }
+
+  function buildIntake(): Record<string, unknown> {
+    return {
+      schemaVersion: 1,
+      service: "draft",
+      clientRole, memoType, memoSubType, legalBranch, caseText,
+      parties: { one: partyOne, two: partyTwo },
+      judgment: {
+        number: judgmentNumber, court: judgmentCourt, date: judgmentDate,
+        text: judgmentText, reasons: judgmentReasons,
+      },
+      lawyerNotes: [lawyerNotes, submitNotes].filter(Boolean).join("\n\n"),
+      attachments: uploadedAttachments,
+    };
+  }
+
+  async function submitOrder(): Promise<void> {
+    setSubmitErrors([]);
+    const intake = buildIntake();
+    const check = validateDraftIntake(intake);
+    if (!check.ok) { setSubmitErrors(check.errors); return; }
+
+    setSubmitting(true);
+    try {
+      const supabase = createBrowserClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: profile } = user
+        ? await supabase.from("profiles").select("display_name, phone, email").eq("id", user.id).single()
+        : { data: null };
+
+      const order = await createServiceOrder({
+        service: "draft",
+        title: `${memoTypeLabelAr(memoType)} — ${legalBranch || "عام"}`,
+        description: caseText.slice(0, 200),
+        intake: check.value as unknown as Record<string, unknown>,
+        attachments: uploadedAttachments,
+        requester: {
+          name: profile?.display_name ?? undefined,
+          phone: profile?.phone ?? undefined,
+          email: profile?.email ?? undefined,
+        },
+      });
+      window.location.href = `/ai/orders/${order.id}`;
+    } catch (err) {
+      setSubmitErrors([submitErrorMessageAr(err)]);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /**
+   * Upload a file and record it as an attachment. Returns the created
+   * OrderAttachment (with the real documentId) so callers — e.g. StepCase —
+   * can associate it with the UI row that triggered the upload, for later
+   * removal via removeAttachment(). Throws on failure; callers are expected
+   * to revert whatever optimistic UI state (a display filename) they set.
+   */
+  async function attachFile(file: File): Promise<OrderAttachment> {
+    setAttachError("");
+    setUploading(true);
+    try {
+      const doc = await uploadDocumentFile(file);
+      const attachment: OrderAttachment = {
+        documentId: doc.id, name: doc.file_name, size: doc.size_bytes ?? 0,
+      };
+      setUploadedAttachments((prev) => [...prev, attachment]);
+      return attachment;
+    } catch (err) {
+      setAttachError(attachErrorMessageAr(err));
+      throw err;
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeAttachment(documentId: string): void {
+    setUploadedAttachments((prev) => prev.filter((a) => a.documentId !== documentId));
+  }
+
   // Refs
   const caseFileRef = useRef<HTMLInputElement>(null);
   const attachRefs  = useRef<(HTMLInputElement | null)[]>([]);
@@ -86,7 +231,10 @@ export function useDraftState(initialMode = "") {
   }
 
   // Navigation
-  const currentStepIndex = STEPS.findIndex(s => s.key === step);
+  // Walks CLIENT_VISIBLE_STEPS (identify -> case -> submit), not the full
+  // 8-item STEPS array — the hidden mock steps are not part of the client
+  // navigation flow. See draftConstants.ts CLIENT_VISIBLE_STEPS.
+  const currentStepIndex = CLIENT_VISIBLE_STEPS.findIndex(s => s.key === step);
 
   function canProceed() {
     if (step === "identify") {
@@ -103,15 +251,13 @@ export function useDraftState(initialMode = "") {
     return true;
   }
 
-  async function nextStep() {
+  function nextStep() {
     const idx = currentStepIndex;
-    if (idx >= STEPS.length - 1) return;
-    
-    // Simulate AI processing & extraction between steps
+    if (idx >= CLIENT_VISIBLE_STEPS.length - 1) return;
+
+    // Auto-extract/mock data between steps (no real processing delay any more —
+    // there is nothing between these steps to wait on).
     if (step === "case" || step === "identify") {
-      setProcessing(true);
-      await new Promise(r => setTimeout(r, 2000));
-      
       // Auto-extract judgment data mock if moving from step 2 to 3 for appeal/reply
       if (step === "case" && (memoType === "appeal" || memoType === "reply")) {
         if (!judgmentNumber) setJudgmentNumber("٣٤٢/ع/١٤٤٥");
@@ -137,15 +283,13 @@ export function useDraftState(initialMode = "") {
           setDisputeSummary(summaryText);
         }
       }
-      
-      setProcessing(false);
     }
-    setStep(STEPS[idx + 1].key);
+    setStep(CLIENT_VISIBLE_STEPS[idx + 1].key);
   }
 
   function prevStep() {
     if (currentStepIndex <= 0) return;
-    setStep(STEPS[currentStepIndex - 1].key);
+    setStep(CLIENT_VISIBLE_STEPS[currentStepIndex - 1].key);
   }
 
   return {
@@ -165,6 +309,11 @@ export function useDraftState(initialMode = "") {
     partyOne, setPartyOne, partyTwo, setPartyTwo,
     // step 7
     reviewPhase, setReviewPhase,
+    // submit step
+    submitNotes, setSubmitNotes, submitting, setSubmitting, submitErrors,
+    uploadedAttachments, setUploadedAttachments,
+    uploading, attachError, setAttachError,
+    buildSummary, submitOrder, attachFile, removeAttachment,
     // sharing
     shareLink, setShareLink, sharePasscode, setSharePasscode,
     linkCopied, setLinkCopied, clientEmail, setClientEmail,
