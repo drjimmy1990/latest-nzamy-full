@@ -17,7 +17,9 @@ export const RESEARCH_TYPE_OPTIONS: { id: ResearchType; label: string; desc: str
   {
     id: "text",
     label: "بحث في نص محدد",
-    desc: "أرفق نصاً وسيبحث AI في داخله",
+    // "أرفق نصاً وسيبحث AI في داخله" reworded (Task C4 fix pass) — claimed
+    // automated AI search; fulfilment is manual now.
+    desc: "ألصق نصاً قانونياً محدداً للبحث فيه",
     placeholder: "الصق النص القانوني هنا للبحث فيه..."
   },
   {

@@ -40,11 +40,16 @@ export function SettingsStep({
       {(selectedType === "study" || selectedType === "legal-memo") && (
         <div className={`${card} p-4`}>
           <p className={`text-[10px] font-black uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>عمق البحث</p>
+          {/* time/agents estimates removed (Task C4 fix pass) — "~١ دقيقة ·
+              ٢ وكلاء" etc. asserted an automated turnaround and agent count
+              the system doesn't run or enforce; the depth choice itself
+              (quick/deep/comprehensive → how many sources to draw on) is
+              genuine and still reaches intake.settings.searchDepth. */}
           <div className="grid grid-cols-3 gap-2">
             {([
-              { key: "quick" as SearchDepth, label: "سريع", desc: "نظامي DB فقط", time: "~١ دقيقة", agents: 2 },
-              { key: "deep" as SearchDepth, label: "عميق", desc: "متعدد المصادر", time: "~٤ دقائق", agents: 5 },
-              { key: "comprehensive" as SearchDepth, label: "شامل", desc: "كل المصادر + تحليل", time: "~٨ دقائق", agents: 6 },
+              { key: "quick" as SearchDepth, label: "سريع", desc: "نظامي DB فقط" },
+              { key: "deep" as SearchDepth, label: "عميق", desc: "متعدد المصادر" },
+              { key: "comprehensive" as SearchDepth, label: "شامل", desc: "كل المصادر + تحليل" },
             ] as const).map(d => (
               <button key={d.key} onClick={() => setSearchDepth(d.key)}
                 className={`rounded-xl border p-3 text-center transition-all ${searchDepth === d.key
@@ -53,7 +58,6 @@ export function SettingsStep({
                 }`}>
                 <p className={`text-[12px] font-bold ${searchDepth === d.key ? "text-[#0B3D2E] dark:text-emerald-400" : isDark ? "text-zinc-300" : "text-slate-700"}`}>{d.label}</p>
                 <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{d.desc}</p>
-                <p className={`text-[9px] mt-1 font-mono ${isDark ? "text-zinc-700" : "text-slate-400"}`}>{d.time} · {d.agents} وكلاء</p>
               </button>
             ))}
           </div>

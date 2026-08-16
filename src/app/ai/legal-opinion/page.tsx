@@ -431,13 +431,14 @@ export default function AILegalOpinionPage() {
             </h1>
             <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Al-Ra&apos;y Al-Fasl · رأي · بحث · دراسة · عناية واجبة</p>
           </div>
-          <div className="flex gap-1.5 ms-2">
-            <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2 py-0.5 text-[9px] font-black text-[#C8A762]">MULTI-AGENT</span>
-            <span className="rounded-full bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 text-[9px] font-black text-blue-500">٥ نماذج AI</span>
-          </div>
         </div>
+        {/* "MULTI-AGENT" / "٥ نماذج AI" badges and the "متعدد المصادر
+            ومتعدد الوكلاء" (multi-source, multi-agent) phrase removed
+            (Task C4 fix pass) — they asserted an automated multi-agent
+            pipeline that no longer runs; fulfilment is manual. What
+            remains below still describes what the client receives. */}
         <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-          استشارات · دراسات · مذكرات رأي · بحث قانوني متخصص · عناية واجبة — متعدد المصادر ومتعدد الوكلاء
+          استشارات · دراسات · مذكرات رأي · بحث قانوني متخصص · عناية واجبة
         </p>
       </div>
 
@@ -494,7 +495,19 @@ export default function AILegalOpinionPage() {
                       // real submit step (the fake processing/result theatre
                       // is gone); the ≥20-char gate above replaces the old
                       // inline 2200ms fake-processing timer.
+                      //
+                      // setTopicArea("") is required, not redundant: the
+                      // type-picker's own reset (clearFlowState()) only runs
+                      // when selectedType actually changes. If the client
+                      // had already picked "consult" via the type picker,
+                      // tapped a topic-area pill, backed out to the type
+                      // step without submitting, and then sent a question
+                      // through this box instead, selectedType would still
+                      // read "consult" — leaving that abandoned pill's value
+                      // in topicArea for buildIntake() to ship as if the
+                      // client had chosen it here (review finding, C4 fix).
                       setSelectedType("consult");
+                      setTopicArea("");
                       setDescription(question);
                       setCurrentStep("submit");
                     }}

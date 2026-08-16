@@ -57,7 +57,10 @@ export const OUTPUT_TYPES: {
   },
   {
     id: "letter", icon: Envelope, title: "خطاب رسمي", titleEn: "Official Letter",
-    desc: "إنذار قانوني · إخطار رسمي · مطالبة مالية · طلب مستند — خطاب جاهز في ١ دقيقة",
+    // "— خطاب جاهز في ١ دقيقة" removed (Task C4 fix pass): asserted a
+    // turnaround the system doesn't enforce and contradicted this flow's
+    // own step-4 copy admitting manual review (LetterWorkflow.tsx).
+    desc: "إنذار قانوني · إخطار رسمي · مطالبة مالية · طلب مستند",
     // Unused at runtime once isLetterMode is true (LetterWorkflow drives its
     // own internal letterStep 1-4 instead) — left as-is, out of scope.
     depth: "quick", steps: ["type", "context", "processing", "result"],
