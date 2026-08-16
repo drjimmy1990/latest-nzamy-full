@@ -4,6 +4,7 @@ import { INITIAL_CLAUSES, CONTRACT_TYPES } from "@/components/contracts/constant
 import { validateContractsIntake } from "@/lib/services/orderIntake.contracts";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 
 /**
  * Map a thrown submitOrder error to Arabic user-facing copy. Mirrors
@@ -72,13 +73,21 @@ export function useContractsState() {
   const [rOtherParty, setROtherParty] = useState("");
   const [rClauseDecisions, setRClauseDecisions] = useState<Record<string, "accept" | "edit" | "reject"> | null>(null);
 
+  // Review mode's file upload (Task C3) — real attachment state from
+  // useOrderAttachments(), embedded here the same way useDraftState.ts embeds
+  // it, so StepRUpload and submitReviewOrder() share one source of truth.
+  const {
+    attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError,
+  } = useOrderAttachments();
+
   // Drafting Mode States
   const [paraEdits, setParaEdits] = useState<Record<string, string>>({});
   const [generalEdits, setGeneralEdits] = useState("");
 
-  // Submit step (draft mode) — Task C2. Review mode's own submission is
-  // Task C3's concern; STEPS_REVIEW has no "submit" key so this never fires
-  // while contractMode === "review".
+  // Submit step — Task C2 (draft) / Task C3 (review). Both modes' "submit"
+  // step share this submitting/submitErrors pair; only one mode is ever
+  // active at a time, and submitOrder()/submitReviewOrder() each reset
+  // setSubmitErrors([]) at the top of their own run.
   const [submitting, setSubmitting] = useState(false);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
 
@@ -104,7 +113,21 @@ export function useContractsState() {
 
   function canProceed() {
     if (contractMode === "review") {
-      if (step === "r_upload") return !!contractType;
+      // Matches validateContractsIntake's review-mode requirements exactly
+      // (Task B2): representing (rPartyFocus) must be non-empty — no length
+      // minimum — and at least one attachment. Both are stopped here, not
+      // three steps later at submit, mirroring the contractDesc gate below
+      // (Task C2). contractType has no validator requirement for review
+      // mode, so it is not gated — replaces the old `!!contractType` check,
+      // which tested the wrong field entirely (Task C3).
+      if (step === "r_identity") return rPartyFocus.trim().length > 0;
+      // `!uploading` closes a race: r_upload no longer triggers the
+      // processing-overlay delay (that was fake theatre for the removed
+      // r_analysis screen — see nextStep() below), so without this a second
+      // file mid-upload could be abandoned by clicking "التالي" the instant
+      // the first attachment lands, unmounting StepRUpload and losing that
+      // in-flight upload from the payload submitReviewOrder() later reads.
+      if (step === "r_upload") return attachments.length > 0 && !uploading;
       return true;
     }
     // contractDesc is the brief the admin drafts from when no document is
@@ -186,10 +209,66 @@ export function useContractsState() {
     }
   }
 
+  // ── Submit (review mode) — Task C3 ────────────────────────────────────
+  // Mirrors submitOrder() (draft) and useDraftState.ts's submitOrder(). The
+  // uploaded contract (attachments) is the deliverable; rPartyFocus/rFears/
+  // rOtherParty are the genuine free text StepRIdentity always collected but
+  // that, before this task, reached nowhere (recon-contracts.md §3).
+  function buildReviewIntake(): Record<string, unknown> {
+    return {
+      schemaVersion: 1,
+      service: "contracts",
+      mode: "review",
+      ...(contractType ? { contractType } : {}),
+      representing: rPartyFocus,
+      ...(rFears.trim() ? { concerns: rFears } : {}),
+      ...(rOtherParty.trim() ? { otherParty: rOtherParty } : {}),
+      attachments,
+    };
+  }
+
+  async function submitReviewOrder(): Promise<void> {
+    setSubmitErrors([]);
+    const intake = buildReviewIntake();
+    const check = validateContractsIntake(intake);
+    if (!check.ok) { setSubmitErrors(check.errors); return; }
+
+    setSubmitting(true);
+    try {
+      const supabase = createBrowserClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: profile } = user
+        ? await supabase.from("profiles").select("display_name, phone, email").eq("id", user.id).single()
+        : { data: null };
+
+      const contractLabel = CONTRACT_TYPES.find(c => c.id === contractType)?.title;
+      const order = await createServiceOrder({
+        service: "contracts",
+        title: `محترف العقود — ${contractLabel ? `مراجعة ${contractLabel}` : "مراجعة عقد"}`,
+        description: [rPartyFocus, rFears].filter(Boolean).join(" — ").slice(0, 200),
+        intake: check.value as unknown as Record<string, unknown>,
+        attachments,
+        requester: {
+          name: profile?.display_name ?? undefined,
+          phone: profile?.phone ?? undefined,
+          email: profile?.email ?? undefined,
+        },
+      });
+      window.location.href = `/ai/orders/${order.id}`;
+    } catch (err) {
+      setSubmitErrors([submitErrorMessageAr(err)]);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const nextStep = useCallback(async () => {
     const idx = currentStepIndex;
     if (idx >= currentSteps.length - 1) return;
-    if (step === "parties" || step === "clauses" || step === "r_upload" || step === "r_analysis") {
+    // "r_upload" was here because moving off it used to lead into the mock
+    // r_analysis screen; it now leads straight to "submit" (Task C3), which
+    // processes nothing, so it no longer gets the fake delay either.
+    if (step === "parties" || step === "clauses") {
       setProcessing(true);
       await new Promise(r => setTimeout(r, 1400));
       setProcessing(false);
@@ -217,5 +296,6 @@ export function useContractsState() {
     rPartyFocus, setRPartyFocus, rFears, setRFears, rOtherParty, setROtherParty, rClauseDecisions, setRClauseDecisions,
     paraEdits, setParaEdits, generalEdits, setGeneralEdits,
     submitting, submitErrors, submitOrder,
+    attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError, submitReviewOrder,
   };
 }

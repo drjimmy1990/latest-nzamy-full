@@ -17,9 +17,10 @@ import { StepSubmit, type StepSubmitRow } from "@/components/contracts/steps/Ste
 
 import { StepRIdentity } from "@/components/contracts/steps/review/StepRIdentity";
 import { StepRUpload } from "@/components/contracts/steps/review/StepRUpload";
-import { StepRAnalysis } from "@/components/contracts/steps/review/StepRAnalysis";
-import { StepRDecisions } from "@/components/contracts/steps/review/StepRDecisions";
-import { StepRReport } from "@/components/contracts/steps/review/StepRReport";
+// StepRAnalysis / StepRDecisions / StepRReport were simulated theatre with no
+// real AI behind them (hardcoded mock clauses, a decision keyed only "c1"
+// that nothing downstream read, download buttons with no onClick) — hidden
+// per Task C3. The files stay in the tree, unreferenced, not deleted.
 
 // Resolves the party's own display name field, which depends on its `type`
 // discriminator (company/individual/government) — used to recap "الطرف
@@ -80,6 +81,30 @@ export default function AIContractsPage() {
     }] : []),
   ];
 
+  // Review-mode submit recap — rows for the "submit" step when contractMode
+  // === "review". Mirrors buildReviewIntake() in useContractsState.ts:
+  // representing (rPartyFocus) is the only field validateContractsIntake
+  // (Task B2) requires for review mode, so it's the only row that warns when
+  // empty — canProceed() already gates "r_identity" on it, so in practice it
+  // should never actually be empty here; the warn stays as a defensive
+  // signal in case that gate is ever bypassed. concerns/otherParty/
+  // contractType are genuinely optional and are shown only when filled,
+  // matching the "بنود إضافية" convention above.
+  const reviewContractLabel = CONTRACT_TYPES.find(c => c.id === s.contractType)?.title;
+  const reviewSubmitRows: StepSubmitRow[] = [
+    {
+      label: "الطرف الذي تمثله",
+      value: s.rPartyFocus.trim().slice(0, 150) + (s.rPartyFocus.trim().length > 150 ? "…" : ""),
+      warn: !s.rPartyFocus.trim(),
+    },
+    ...(s.rFears.trim() ? [{
+      label: "المخاوف / نقاط التركيز",
+      value: s.rFears.trim().slice(0, 150) + (s.rFears.trim().length > 150 ? "…" : ""),
+    }] : []),
+    ...(s.rOtherParty.trim() ? [{ label: "الطرف الآخر", value: s.rOtherParty.trim() }] : []),
+    ...(reviewContractLabel ? [{ label: "مجال العقد", value: reviewContractLabel }] : []),
+  ];
+
   return (
     <div className={`p-5 md:p-7 max-w-5xl mx-auto space-y-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
       {/* Header */}
@@ -91,7 +116,7 @@ export default function AIContractsPage() {
         </div>
         <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
           {s.contractMode === "review"
-            ? "مراجعة العقود وتحليل المخاطر بدقة قانونية — بحث أفضل الممارسات · تعديل مباشر · مشاركة العميل"
+            ? "ارفع عقدك الحالي — يراجعه فريق نظامي يدوياً ويرسل لك تقرير المخاطر والملاحظات"
             : "صف فكرة عقدك وبنوده — يراجعها فريق نظامي ويتولى صياغته يدوياً"}
         </p>
       </div>
@@ -126,7 +151,7 @@ export default function AIContractsPage() {
               <p className={`text-[16px] font-bold mb-1 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>مراجعة عقد</p>
               <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>تحليل عقد موجود وكشف المخاطر</p>
               <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                {["رفع العقد", "تحليل المخاطر", "ملاحظات التعديل", "اعتماد + مشاركة"].map(f => (
+                {["بياناتك عن العقد", "رفع ملف العقد", "مراجعة وإرسال"].map(f => (
                   <span key={f} className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>{f}</span>
                 ))}
               </div>
@@ -289,7 +314,7 @@ export default function AIContractsPage() {
           {s.step === "context"  && <StepContext isDark={isDark} contractDesc={s.contractDesc} setContractDesc={s.setContractDesc} courtType={s.courtType} setCourtType={s.setCourtType} />}
           {s.step === "clauses"  && <StepClauses isDark={isDark} clauses={s.clauses} setClauses={s.setClauses} clauseEdits={s.clauseEdits} setClauseEdits={s.setClauseEdits} newClause={s.newClause} setNewClause={s.setNewClause} additionalClauses={s.additionalClauses} setAdditionalClauses={s.setAdditionalClauses} />}
           {s.step === "review"   && <StepReview isDark={isDark} contractType={s.contractType} clauses={s.clauses} additionalClauses={s.additionalClauses} />}
-          {s.step === "submit"   && (
+          {s.step === "submit" && s.contractMode === "draft" && (
             <StepSubmit
               isDark={isDark}
               heading="مراجعة الطلب وإرساله"
@@ -301,13 +326,35 @@ export default function AIContractsPage() {
               onSubmit={s.submitOrder}
             />
           )}
+          {s.step === "submit" && s.contractMode === "review" && (
+            <StepSubmit
+              isDark={isDark}
+              heading="مراجعة الطلب وإرساله"
+              description="سيراجع فريق نظامي العقد المرفوع ويرسل لك تقرير المراجعة يدوياً، وسيصلك إشعار عند جهوزيته."
+              rows={reviewSubmitRows}
+              attachments={s.attachments}
+              consentText="أقر بأن البيانات المدخلة صحيحة، وأوافق على إرسال العقد المرفوع لفريق نظامي لمراجعته."
+              submitting={s.submitting}
+              submitErrors={s.submitErrors}
+              onSubmit={s.submitReviewOrder}
+            />
+          )}
 
           {/* REVIEW MODE STEPS */}
           {s.step === "r_identity"  && <StepRIdentity isDark={isDark} rPartyFocus={s.rPartyFocus} setRPartyFocus={s.setRPartyFocus} rFears={s.rFears} setRFears={s.setRFears} rOtherParty={s.rOtherParty} setROtherParty={s.setROtherParty} />}
-          {s.step === "r_upload"    && <StepRUpload isDark={isDark} contractType={s.contractType} setContractType={s.setContractType} />}
-          {s.step === "r_analysis"  && <StepRAnalysis isDark={isDark} />}
-          {s.step === "r_decisions" && <StepRDecisions isDark={isDark} rClauseDecisions={s.rClauseDecisions} setRClauseDecisions={s.setRClauseDecisions} />}
-          {s.step === "r_report"    && <StepRReport isDark={isDark} shareLink={s.shareLink} sharePasscode={s.sharePasscode} linkCopied={s.linkCopied} setLinkCopied={s.setLinkCopied} clientEmail={s.clientEmail} setClientEmail={s.setClientEmail} clientPhone={s.clientPhone} setClientPhone={s.setClientPhone} generateShareLink={s.generateShareLink} setShareLink={s.setShareLink} setSharePasscode={s.setSharePasscode} />}
+          {s.step === "r_upload"    && (
+            <StepRUpload
+              isDark={isDark}
+              contractType={s.contractType}
+              setContractType={s.setContractType}
+              attachments={s.attachments}
+              uploading={s.uploading}
+              attachError={s.attachError}
+              attachFile={s.attachFile}
+              removeAttachment={s.removeAttachment}
+              clearAttachError={s.clearAttachError}
+            />
+          )}
 
           {/* Navigation */}
           <div className="flex items-center justify-between pt-2">

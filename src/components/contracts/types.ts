@@ -15,12 +15,17 @@ export const STEPS_DRAFT = [
   { key: "submit",     label: "المراجعة والإرسال",  num: 6 },
 ] as const;
 
+// Review path. "r_analysis" (a hardcoded 5-clause mock analysis), "r_decisions"
+// (wrote only a single fixed key, read nowhere) and "r_report" (share/download
+// buttons with no onClick) were simulated theatre with no real AI behind
+// them — hidden per Task C3, their components stay in the tree
+// (steps/review/{StepRAnalysis,StepRDecisions,StepRReport}.tsx) unreferenced,
+// not deleted. "submit" replaces them: a real order submission, reviewed and
+// fulfilled by a human admin, mirroring Task C2's draft-mode "submit".
 export const STEPS_REVIEW = [
-  { key: "r_identity",  label: "الهوية",            num: 1 },
-  { key: "r_upload",    label: "الأنواع والرفع",    num: 2 },
-  { key: "r_analysis",  label: "تحليل AI",          num: 3 },
-  { key: "r_decisions", label: "القرارات",          num: 4 },
-  { key: "r_report",    label: "التقرير والاعتماد", num: 5 },
+  { key: "r_identity", label: "الهوية",            num: 1 },
+  { key: "r_upload",   label: "الأنواع والرفع",    num: 2 },
+  { key: "submit",     label: "المراجعة والإرسال", num: 3 },
 ] as const;
 
 // Simple draft path — already skips "domain" and "clauses" (contractType and
