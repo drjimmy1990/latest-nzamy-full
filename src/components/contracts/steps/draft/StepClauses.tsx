@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Check, Sparkle, PencilLine, X, Plus } from "@phosphor-icons/react";
+import { Check, PencilLine, X, Plus } from "@phosphor-icons/react";
 import { VoiceBtn } from "@/components/contracts/SharedComponents";
 
 interface StepClausesProps {
@@ -61,12 +61,6 @@ export function StepClauses({
                     <PencilLine size={10} className="inline me-0.5" />
                     تعديل
                   </button>
-                </div>
-              )}
-              {clause.aiSuggestion && !clauseEdits[clause.id] && (
-                <div className={`mt-1.5 flex items-start gap-1.5 text-[11px] ${isDark ? "text-[#C8A762]/80" : "text-amber-600"}`}>
-                  <Sparkle size={10} className="flex-shrink-0 mt-0.5" weight="fill" />
-                  {clause.aiSuggestion}
                 </div>
               )}
             </div>

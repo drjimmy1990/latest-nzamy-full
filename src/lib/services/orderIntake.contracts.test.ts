@@ -143,3 +143,48 @@ test("draft mode does not require representing", () => {
   const r = validateContractsIntake({ ...validDraft, representing: undefined });
   assert.equal(r.ok, true);
 });
+
+// ── Task C2: courtType and custom-language fields are optional, unvalidated
+// passthrough (same shape as DraftIntakeV1's `judgment`) — StepContext and
+// StepDomain collect real data here that must reach the admin's order.
+
+test("carries courtType through when present", () => {
+  const r = validateContractsIntake({ ...validDraft, courtType: "المحكمة التجارية" });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.value.courtType, "المحكمة التجارية");
+});
+
+test("omits courtType when absent", () => {
+  const r = validateContractsIntake(validDraft);
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal("courtType" in r.value, false);
+});
+
+test("carries custom-language fields through when present and valid", () => {
+  const r = validateContractsIntake({
+    ...validDraft,
+    language: "custom",
+    customLanguageName: "الفرنسية",
+    customLanguageLayout: "dual",
+    customLanguageBase: "ar",
+  });
+  assert.equal(r.ok, true);
+  if (r.ok) {
+    assert.equal(r.value.customLanguageName, "الفرنسية");
+    assert.equal(r.value.customLanguageLayout, "dual");
+    assert.equal(r.value.customLanguageBase, "ar");
+  }
+});
+
+test("drops an out-of-range customLanguageLayout/customLanguageBase instead of passing it through", () => {
+  const r = validateContractsIntake({
+    ...validDraft,
+    customLanguageLayout: "triple",
+    customLanguageBase: "fr",
+  });
+  assert.equal(r.ok, true);
+  if (r.ok) {
+    assert.equal("customLanguageLayout" in r.value, false);
+    assert.equal("customLanguageBase" in r.value, false);
+  }
+});

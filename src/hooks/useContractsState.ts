@@ -1,6 +1,24 @@
 import { useState, useCallback } from "react";
 import { STEPS_DRAFT, STEPS_DRAFT_SIMPLE, STEPS_REVIEW, StepKey, PartyData, EMPTY_PARTY } from "@/components/contracts/types";
-import { INITIAL_CLAUSES } from "@/components/contracts/constants";
+import { INITIAL_CLAUSES, CONTRACT_TYPES } from "@/components/contracts/constants";
+import { validateContractsIntake } from "@/lib/services/orderIntake.contracts";
+import { createServiceOrder } from "@/lib/services/serviceOrders";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
+
+/**
+ * Map a thrown submitOrder error to Arabic user-facing copy. Mirrors
+ * useDraftState.ts's submitErrorMessageAr — the underlying message (which
+ * may be English, e.g. "Unauthorized", or a raw Postgres error) is logged
+ * for developers but never shown to the user.
+ */
+function submitErrorMessageAr(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  console.error("[useContractsState] submitOrder failed:", raw);
+  if (raw === "Unauthorized") {
+    return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
+  }
+  return "تعذّر إرسال الطلب — حاول مجدداً";
+}
 
 export function useContractsState() {
   const [step, setStep] = useState<StepKey>("parties");
@@ -27,7 +45,6 @@ export function useContractsState() {
   // Step 3 — Context
   const [contractDesc, setContractDesc] = useState("");
   const [courtType, setCourtType] = useState("");
-  const [useFirmMemory, setUseFirmMemory] = useState(false);
 
   // Step 4 — Clauses
   const [clauses, setClauses] = useState(INITIAL_CLAUSES);
@@ -59,6 +76,12 @@ export function useContractsState() {
   const [paraEdits, setParaEdits] = useState<Record<string, string>>({});
   const [generalEdits, setGeneralEdits] = useState("");
 
+  // Submit step (draft mode) — Task C2. Review mode's own submission is
+  // Task C3's concern; STEPS_REVIEW has no "submit" key so this never fires
+  // while contractMode === "review".
+  const [submitting, setSubmitting] = useState(false);
+  const [submitErrors, setSubmitErrors] = useState<string[]>([]);
+
   function generateShareLink() {
     const token = Math.random().toString(36).substring(2, 10).toUpperCase();
     const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -82,9 +105,85 @@ export function useContractsState() {
   function canProceed() {
     if (contractMode === "review") {
       if (step === "r_upload") return !!contractType;
+      return true;
     }
-    // domain step is now optional — always can proceed
+    // contractDesc is the brief the admin drafts from when no document is
+    // uploaded (draft mode never collects one) — match
+    // validateContractsIntake's MIN_CONTRACT_DESC (20 chars) so the client
+    // is stopped here, not three steps later at submit (Task C2).
+    if (step === "context") return contractDesc.trim().length >= 20;
+    // domain step is optional — always can proceed
     return true;
+  }
+
+  // ── Submit (draft mode) — Task C2 ─────────────────────────────────────
+  // Carries only what each draft path actually collected: STEPS_DRAFT_SIMPLE
+  // skips "domain" and "clauses", so contractType/language/selectedClauses
+  // stay legitimately absent on that path rather than shipping stale
+  // never-shown defaults (see recon-contracts.md §9).
+  function buildIntake(): Record<string, unknown> {
+    const isDetailed = contractComplexity === "detailed";
+    return {
+      schemaVersion: 1,
+      service: "contracts",
+      mode: "draft",
+      ...(contractComplexity ? { complexity: contractComplexity } : {}),
+      parties: { one: party1Data, two: party2Data },
+      contractDesc,
+      ...(courtType ? { courtType } : {}),
+      ...(isDetailed && contractType ? { contractType } : {}),
+      ...(isDetailed ? { language: contractLanguage } : {}),
+      ...(isDetailed && contractLanguage === "custom"
+        ? { customLanguageName, customLanguageLayout, customLanguageBase }
+        : {}),
+      ...(isDetailed
+        ? {
+            // clauseEdits[c.id] can be "" (user cleared the edit box without
+            // cancelling it) — fall back to the original title rather than
+            // dropping a still-checked clause from the payload.
+            selectedClauses: clauses
+              .filter(c => c.checked)
+              .map(c => clauseEdits[c.id]?.trim() || c.title),
+          }
+        : {}),
+      additionalClauses,
+      attachments: [],
+    };
+  }
+
+  async function submitOrder(): Promise<void> {
+    setSubmitErrors([]);
+    const intake = buildIntake();
+    const check = validateContractsIntake(intake);
+    if (!check.ok) { setSubmitErrors(check.errors); return; }
+
+    setSubmitting(true);
+    try {
+      const supabase = createBrowserClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: profile } = user
+        ? await supabase.from("profiles").select("display_name, phone, email").eq("id", user.id).single()
+        : { data: null };
+
+      const contractLabel = CONTRACT_TYPES.find(c => c.id === contractType)?.title;
+      const order = await createServiceOrder({
+        service: "contracts",
+        title: `محترف العقود — ${contractLabel || "صياغة عقد"}`,
+        description: contractDesc.slice(0, 200),
+        intake: check.value as unknown as Record<string, unknown>,
+        attachments: [],
+        requester: {
+          name: profile?.display_name ?? undefined,
+          phone: profile?.phone ?? undefined,
+          email: profile?.email ?? undefined,
+        },
+      });
+      window.location.href = `/ai/orders/${order.id}`;
+    } catch (err) {
+      setSubmitErrors([submitErrorMessageAr(err)]);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const nextStep = useCallback(async () => {
@@ -111,11 +210,12 @@ export function useContractsState() {
     party1Data, setParty1Data, party2Data, setParty2Data,
     contractType, setContractType, contractLanguage, setContractLanguage,
     customLanguageName, setCustomLanguageName, customLanguageLayout, setCustomLanguageLayout, customLanguageBase, setCustomLanguageBase,
-    contractDesc, setContractDesc, courtType, setCourtType, useFirmMemory, setUseFirmMemory,
+    contractDesc, setContractDesc, courtType, setCourtType,
     clauses, setClauses, clauseEdits, setClauseEdits, newClause, setNewClause, additionalClauses, setAdditionalClauses,
     bpSearching, setBpSearching, bpDone, setBpDone, appliedBP, setAppliedBP, skipBP, setSkipBP, deepSearch, setDeepSearch, startBPSearch,
     shareLink, setShareLink, sharePasscode, setSharePasscode, linkCopied, setLinkCopied, clientEmail, setClientEmail, clientPhone, setClientPhone, generateShareLink,
     rPartyFocus, setRPartyFocus, rFears, setRFears, rOtherParty, setROtherParty, rClauseDecisions, setRClauseDecisions,
-    paraEdits, setParaEdits, generalEdits, setGeneralEdits
+    paraEdits, setParaEdits, generalEdits, setGeneralEdits,
+    submitting, submitErrors, submitOrder,
   };
 }

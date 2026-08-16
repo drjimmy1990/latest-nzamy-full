@@ -5,15 +5,15 @@ import { Check, ArrowRight, ArrowLeft, PencilSimple, ShieldCheck, FileText, File
 import { useTheme } from "@/components/ThemeProvider";
 
 import { useContractsState } from "@/hooks/useContractsState";
+import { CONTRACT_TYPES } from "@/components/contracts/constants";
+import type { PartyData } from "@/components/contracts/types";
 
 import { StepParties } from "@/components/contracts/steps/draft/StepParties";
 import { StepDomain } from "@/components/contracts/steps/draft/StepDomain";
 import { StepContext } from "@/components/contracts/steps/draft/StepContext";
 import { StepClauses } from "@/components/contracts/steps/draft/StepClauses";
-import { StepBestPractices } from "@/components/contracts/steps/draft/StepBestPractices";
-import { StepDrafting } from "@/components/contracts/steps/draft/StepDrafting";
 import { StepReview } from "@/components/contracts/steps/draft/StepReview";
-import { StepApproval } from "@/components/contracts/steps/draft/StepApproval";
+import { StepSubmit, type StepSubmitRow } from "@/components/contracts/steps/StepSubmit";
 
 import { StepRIdentity } from "@/components/contracts/steps/review/StepRIdentity";
 import { StepRUpload } from "@/components/contracts/steps/review/StepRUpload";
@@ -21,10 +21,60 @@ import { StepRAnalysis } from "@/components/contracts/steps/review/StepRAnalysis
 import { StepRDecisions } from "@/components/contracts/steps/review/StepRDecisions";
 import { StepRReport } from "@/components/contracts/steps/review/StepRReport";
 
+// Resolves the party's own display name field, which depends on its `type`
+// discriminator (company/individual/government) — used to recap "الطرف
+// الأول"/"الطرف الثاني" on the submit step.
+function partyLabel(p: PartyData): string {
+  if (p.type === "company") return p.companyName;
+  if (p.type === "government") return p.entityName;
+  return p.fullName;
+}
+
+const LANGUAGE_LABEL_AR: Record<string, string> = {
+  ar: "عربي فقط",
+  en: "إنجليزي فقط",
+  ar_en: "عربي / إنجليزي",
+};
+
 export default function AIContractsPage() {
   const { isDark } = useTheme();
   const s = useContractsState();
   const card = isDark ? "bg-zinc-900 border border-white/[0.07] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
+
+  // Draft-mode submit recap — rows for the "submit" step. Mirrors buildIntake()
+  // in useContractsState.ts: STEPS_DRAFT_SIMPLE never visits "domain" or
+  // "clauses", so contractType/language/selectedClauses stay legitimately
+  // absent there (recon-contracts.md §9) rather than showing a never-seen
+  // default.
+  const isDetailedDraft = s.contractComplexity === "detailed";
+  const submitRows: StepSubmitRow[] = [
+    { label: "الطرف الأول", value: partyLabel(s.party1Data) },
+    { label: "الطرف الثاني", value: partyLabel(s.party2Data) },
+    ...(isDetailedDraft ? [{
+      label: "نوع العقد",
+      value: CONTRACT_TYPES.find(c => c.id === s.contractType)?.title ?? "",
+    }] : []),
+    ...(isDetailedDraft ? [{
+      label: "لغة العقد",
+      value: s.contractLanguage === "custom"
+        ? `مخصصة: ${s.customLanguageName || "—"} (${s.customLanguageLayout === "dual" ? "ثنائية متقابلة" : "أحادية"})`
+        : LANGUAGE_LABEL_AR[s.contractLanguage] ?? s.contractLanguage,
+    }] : []),
+    {
+      label: "وصف الفكرة",
+      value: s.contractDesc.trim().slice(0, 150) + (s.contractDesc.trim().length > 150 ? "…" : ""),
+      warn: s.contractDesc.trim().length < 20,
+    },
+    { label: "الجهة القضائية المختصة", value: s.courtType },
+    ...(isDetailedDraft ? [{
+      label: "البنود المختارة",
+      value: s.clauses.filter(c => c.checked).map(c => s.clauseEdits[c.id]?.trim() || c.title).join(" · "),
+    }] : []),
+    ...(s.additionalClauses.length > 0 ? [{
+      label: "بنود إضافية",
+      value: s.additionalClauses.join(" · "),
+    }] : []),
+  ];
 
   return (
     <div className={`p-5 md:p-7 max-w-5xl mx-auto space-y-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
@@ -38,7 +88,7 @@ export default function AIContractsPage() {
         <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
           {s.contractMode === "review"
             ? "مراجعة العقود وتحليل المخاطر بدقة قانونية — بحث أفضل الممارسات · تعديل مباشر · مشاركة العميل"
-            : "صياغة ومراجعة العقود — وصف الفكرة · بحث أفضل الممارسات · تعديل مباشر على البنود · إملاء صوتي"}
+            : "صف فكرة عقدك وبنوده — يراجعها فريق نظامي ويتولى صياغته يدوياً"}
         </p>
       </div>
 
@@ -48,7 +98,7 @@ export default function AIContractsPage() {
           <div className="grid grid-cols-2 gap-4">
             {/* Draft Mode — goes to B0.5 */}
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-              onClick={() => s.setContractMode("draft")}
+              onClick={() => { s.setContractMode("draft"); s.setStep("parties"); }}
               className={`rounded-2xl border-2 p-6 text-center transition-all ${isDark ? "border-[#0B3D2E]/60 bg-[#0B3D2E]/15 hover:border-[#0B3D2E]/80 hover:bg-[#0B3D2E]/25" : "border-[#0B3D2E]/30 bg-[#0B3D2E]/5 hover:border-[#0B3D2E]/50 hover:bg-[#0B3D2E]/10"}`}>
               <div className={`h-14 w-14 mx-auto mb-3 flex items-center justify-center rounded-2xl ${isDark ? "bg-[#0B3D2E]/40" : "bg-[#0B3D2E]/10"}`}>
                 <PencilSimple size={26} weight="duotone" className={isDark ? "text-emerald-300" : "text-[#0B3D2E]"} />
@@ -56,7 +106,7 @@ export default function AIContractsPage() {
               <p className={`text-[16px] font-bold mb-1 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>صياغة عقد</p>
               <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>صمّم عقداً جديداً من الصفر</p>
               <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                {["وصف الفكرة", "بحث أفضل الممارسات", "تعديل البنود", "اعتماد + مشاركة"].map(f => (
+                {["الأطراف والنوع", "وصف الفكرة", "اختيار البنود", "مراجعة وإرسال"].map(f => (
                   <span key={f} className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>{f}</span>
                 ))}
               </div>
@@ -232,27 +282,21 @@ export default function AIContractsPage() {
             </>
           )}
 
-          {s.step === "context"  && <StepContext isDark={isDark} contractDesc={s.contractDesc} setContractDesc={s.setContractDesc} courtType={s.courtType} setCourtType={s.setCourtType} useFirmMemory={s.useFirmMemory} setUseFirmMemory={s.setUseFirmMemory} />}
+          {s.step === "context"  && <StepContext isDark={isDark} contractDesc={s.contractDesc} setContractDesc={s.setContractDesc} courtType={s.courtType} setCourtType={s.setCourtType} />}
           {s.step === "clauses"  && <StepClauses isDark={isDark} clauses={s.clauses} setClauses={s.setClauses} clauseEdits={s.clauseEdits} setClauseEdits={s.setClauseEdits} newClause={s.newClause} setNewClause={s.setNewClause} additionalClauses={s.additionalClauses} setAdditionalClauses={s.setAdditionalClauses} />}
-          {s.step === "bestprac" && <StepBestPractices isDark={isDark} contractType={s.contractType} bestPractices={[]} bpSearching={s.bpSearching} bpDone={s.bpDone} startBPSearch={s.startBPSearch} deepSearch={s.deepSearch} setDeepSearch={s.setDeepSearch} skipBP={s.skipBP} setSkipBP={s.setSkipBP} appliedBP={s.appliedBP} setAppliedBP={s.setAppliedBP} />}
-          {s.step === "drafting" && (
-            <StepDrafting
+          {s.step === "review"   && <StepReview isDark={isDark} contractType={s.contractType} clauses={s.clauses} additionalClauses={s.additionalClauses} />}
+          {s.step === "submit"   && (
+            <StepSubmit
               isDark={isDark}
-              contractType={s.contractType}
-              copied={s.copied}
-              setCopied={s.setCopied}
-              paraEdits={s.paraEdits}
-              setParaEdits={s.setParaEdits}
-              generalEdits={s.generalEdits}
-              setGeneralEdits={s.setGeneralEdits}
-              contractLanguage={s.contractLanguage}
-              customLanguageName={s.customLanguageName}
-              customLanguageLayout={s.customLanguageLayout}
-              customLanguageBase={s.customLanguageBase}
+              heading="مراجعة الطلب وإرساله"
+              description="سيراجع فريق نظامي بيانات العقد المدخلة ويتولى صياغته يدوياً، وسيصلك إشعار عند جهوزيته."
+              rows={submitRows}
+              consentText="أقر بأن البيانات المدخلة صحيحة، وأوافق على إرسالها لفريق نظامي لصياغة العقد."
+              submitting={s.submitting}
+              submitErrors={s.submitErrors}
+              onSubmit={s.submitOrder}
             />
           )}
-          {s.step === "review"   && <StepReview isDark={isDark} contractType={s.contractType} clauses={s.clauses} additionalClauses={s.additionalClauses} onGoToStep={(st) => s.setStep(st as any)} />}
-          {s.step === "approval" && <StepApproval isDark={isDark} shareLink={s.shareLink} sharePasscode={s.sharePasscode} linkCopied={s.linkCopied} setLinkCopied={s.setLinkCopied} clientEmail={s.clientEmail} setClientEmail={s.setClientEmail} clientPhone={s.clientPhone} setClientPhone={s.setClientPhone} generateShareLink={s.generateShareLink} setShareLink={s.setShareLink} setSharePasscode={s.setSharePasscode} />}
 
           {/* REVIEW MODE STEPS */}
           {s.step === "r_identity"  && <StepRIdentity isDark={isDark} rPartyFocus={s.rPartyFocus} setRPartyFocus={s.setRPartyFocus} rFears={s.rFears} setRFears={s.setRFears} rOtherParty={s.rOtherParty} setROtherParty={s.setROtherParty} />}

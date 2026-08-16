@@ -17,8 +17,20 @@ export interface ContractsIntakeV1 {
   complexity?: "simple" | "detailed";
   contractType?: string;
   language?: string;
+  // Only meaningful when language === "custom" (StepDomain's custom-language
+  // panel). Optional, unvalidated passthrough — same shape as DraftIntakeV1's
+  // `judgment` in orderIntake.ts: no required sub-shape, just carried along
+  // when the wizard set it, so it isn't silently dropped from the admin's
+  // order the way "hide, do not delete" is meant to prevent (Task C2).
+  customLanguageName?: string;
+  customLanguageLayout?: "single" | "dual";
+  customLanguageBase?: "ar" | "en";
   parties?: { one: unknown; two: unknown };
   contractDesc?: string;
+  // The client's chosen jurisdiction (StepContext) — free-text-equivalent,
+  // no required shape, same passthrough rationale as the custom-language
+  // fields above (Task C2).
+  courtType?: string;
   selectedClauses?: string[];
   additionalClauses?: string[];
   // review mode:
@@ -94,6 +106,14 @@ export function validateContractsIntake(input: unknown): ValidationResult<Contra
   const otherParty = str(input.otherParty);
   const selectedClauses = strArray(input.selectedClauses);
   const additionalClauses = strArray(input.additionalClauses);
+  const courtType = str(input.courtType);
+  const customLanguageName = str(input.customLanguageName);
+  const customLanguageLayoutRaw = str(input.customLanguageLayout);
+  const customLanguageLayout =
+    customLanguageLayoutRaw === "single" || customLanguageLayoutRaw === "dual" ? customLanguageLayoutRaw : undefined;
+  const customLanguageBaseRaw = str(input.customLanguageBase);
+  const customLanguageBase =
+    customLanguageBaseRaw === "ar" || customLanguageBaseRaw === "en" ? customLanguageBaseRaw : undefined;
 
   return {
     ok: true,
@@ -104,8 +124,12 @@ export function validateContractsIntake(input: unknown): ValidationResult<Contra
       ...(complexity ? { complexity: complexity as "simple" | "detailed" } : {}),
       ...(contractType ? { contractType } : {}),
       ...(language ? { language } : {}),
+      ...(customLanguageName ? { customLanguageName } : {}),
+      ...(customLanguageLayout ? { customLanguageLayout } : {}),
+      ...(customLanguageBase ? { customLanguageBase } : {}),
       ...(partiesRaw ? { parties: { one: partiesRaw.one, two: partiesRaw.two } } : {}),
       ...(contractDesc ? { contractDesc } : {}),
+      ...(courtType ? { courtType } : {}),
       ...(selectedClauses ? { selectedClauses } : {}),
       ...(additionalClauses ? { additionalClauses } : {}),
       ...(representing ? { representing } : {}),
