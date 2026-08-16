@@ -47,8 +47,13 @@ function buildChecks(
     {
       id: "parties",
       label: "بيانات الأطراف",
+      // hasParties reads the "الطرف الأول والثاني" *clause checkbox*
+      // (clauses.id === 1) — whether that clause is included in the draft —
+      // not whether party1Data/party2Data were actually filled in on the
+      // parties step. The two are unrelated; do not imply the party records
+      // themselves are populated here.
       detail: hasParties
-        ? "بيانات الطرفين مُحددة — الاسم والهوية والعنوان"
+        ? "بند الأطراف مُفعّل — سيُدرَج ضمن نص العقد"
         : "بند الأطراف غير مفعّل — قد يفقد العقد حجيته القانونية",
       status: hasParties ? "ok" : "error",
     },
@@ -93,10 +98,13 @@ function buildChecks(
       status: hasDispute ? "ok" : "warn",
     },
     {
+      // This is a count of ticked checkboxes (activeCount >= 5), nothing
+      // more — it cannot establish regulatory compliance, so neither the
+      // label nor the detail text claims that.
       id: "compliance",
-      label: "التوافق مع الأنظمة",
+      label: "تغطية البنود الأساسية",
       detail: activeCount >= 5
-        ? "البنود المفعّلة كافية — العقد متوافق مع المتطلبات التنظيمية الأساسية"
+        ? "عدد البنود المفعّلة كافٍ لتغطية أساسيات العقد"
         : "عدد البنود أقل من المعتاد — يُوصى بمراجعة اكتمال العقد",
       status: activeCount >= 5 ? "ok" : "warn",
     },
@@ -130,6 +138,8 @@ export function StepReview({ isDark, contractType, clauses, additionalClauses }:
   const errors   = checks.filter(c => c.status === "error");
   const warnings = checks.filter(c => c.status === "warn");
   const passed   = checks.filter(c => c.status === "ok");
+  // Ratio of checklist items passed — a proxy for clause coverage, not a
+  // legal-quality score. Labelled "نسبة اكتمال البنود" below, never "جودة".
   const score    = Math.round((passed.length / checks.length) * 100);
 
   const card = isDark
@@ -182,7 +192,7 @@ export function StepReview({ isDark, contractType, clauses, additionalClauses }:
             {score}%
           </p>
           <p className={`text-[9px] font-bold ${score >= 80 ? "text-emerald-500" : score >= 60 ? "text-amber-500" : "text-red-500"}`}>
-            جودة العقد
+            نسبة اكتمال البنود
           </p>
         </div>
       </div>
