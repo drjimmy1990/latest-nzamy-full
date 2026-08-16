@@ -34,6 +34,14 @@ function strArray(v: unknown): string[] | undefined {
   return out.length > 0 ? out : undefined;
 }
 
+/**
+ * Draft mode has no uploaded document to fall back on — contractDesc IS the
+ * brief the admin drafts from. Review mode has no free-text minimum: the
+ * uploaded contract (attachments, required below) is the deliverable.
+ * Ruling: coordinator review of af0929e, 2026-08-16.
+ */
+const MIN_CONTRACT_DESC = 20;
+
 export function validateContractsIntake(input: unknown): ValidationResult<ContractsIntakeV1> {
   const errors: string[] = [];
 
@@ -63,6 +71,16 @@ export function validateContractsIntake(input: unknown): ValidationResult<Contra
     errors.push("بيانات الأطراف غير مكتملة");
   }
 
+  const contractDesc = str(input.contractDesc);
+  if (mode === "draft" && contractDesc.length < MIN_CONTRACT_DESC) {
+    errors.push(`وصف العقد قصير جداً — الحد الأدنى ${MIN_CONTRACT_DESC} حرفاً`);
+  }
+
+  const representing = str(input.representing);
+  if (mode === "review" && !representing) {
+    errors.push("يجب تحديد الطرف الذي تمثله");
+  }
+
   const attachments = collectAttachments(input.attachments, errors);
   if (mode === "review" && attachments.length === 0) {
     errors.push("مراجعة العقد تتطلب إرفاق العقد على الأقل");
@@ -72,8 +90,6 @@ export function validateContractsIntake(input: unknown): ValidationResult<Contra
 
   const contractType = str(input.contractType);
   const language = str(input.language);
-  const contractDesc = str(input.contractDesc);
-  const representing = str(input.representing);
   const concerns = str(input.concerns);
   const otherParty = str(input.otherParty);
   const selectedClauses = strArray(input.selectedClauses);

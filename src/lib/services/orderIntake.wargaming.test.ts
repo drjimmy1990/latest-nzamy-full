@@ -38,7 +38,7 @@ test("rejects an intake with missing service key", () => {
 });
 
 test("rejects a missing required field (area)", () => {
-  const r = validateWargamingIntake({ ...valid, area: "" });
+  const r = validateWargamingIntake({ ...valid, area: undefined });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.some((e) => e.includes("تخصص")));
 });
@@ -46,6 +46,7 @@ test("rejects a missing required field (area)", () => {
 test("rejects an unknown role", () => {
   const r = validateWargamingIntake({ ...valid, role: "judge" });
   assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("صفة")));
 });
 
 test("rejects a caseSummary shorter than 20 characters", () => {
@@ -75,6 +76,7 @@ test("accepts the critique target when memoText is provided", () => {
 test("rejects an attachment missing documentId (malformed attachment)", () => {
   const r = validateWargamingIntake({ ...valid, attachments: [{ name: "a.pdf", size: 10 }] });
   assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("المرفق")));
 });
 
 test("accepts a numeric documentId (PostgREST bigserial arrives as a JS number, not a string)", () => {

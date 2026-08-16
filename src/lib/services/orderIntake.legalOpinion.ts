@@ -45,6 +45,15 @@ function isValidOutputType(v: string): v is LegalOpinionOutputType {
   return (LEGAL_OPINION_OUTPUT_TYPES as readonly string[]).includes(v);
 }
 
+/**
+ * For the six non-letter sub-flows, `description` IS the request — the
+ * admin has nothing else to fulfil the order from. `letter` is exempt: its
+ * content comes from the structured `letter` fields the wizard collects and
+ * composes into a letter body, so it legitimately has no long free-text
+ * field. Ruling: coordinator review of af0929e, 2026-08-16.
+ */
+const MIN_DESCRIPTION = 20;
+
 export function validateLegalOpinionIntake(input: unknown): ValidationResult<LegalOpinionIntakeV1> {
   const errors: string[] = [];
 
@@ -72,12 +81,16 @@ export function validateLegalOpinionIntake(input: unknown): ValidationResult<Leg
     errors.push("بيانات الخطاب غير صالحة");
   }
 
+  const description = str(input.description);
+  if (outputType !== "letter" && description.length < MIN_DESCRIPTION) {
+    errors.push(`وصف الطلب قصير جداً — الحد الأدنى ${MIN_DESCRIPTION} حرفاً`);
+  }
+
   const attachments = collectAttachments(input.attachments, errors);
 
   if (errors.length > 0) return { ok: false, errors };
 
   const topicArea = str(input.topicArea);
-  const description = str(input.description);
   const question = str(input.question);
 
   return {

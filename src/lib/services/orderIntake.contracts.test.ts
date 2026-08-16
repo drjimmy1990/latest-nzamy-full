@@ -8,7 +8,7 @@ const validDraft = {
   mode: "draft",
   complexity: "simple",
   contractType: "sale",
-  contractDesc: "بيع عقار",
+  contractDesc: "عقد بيع عقار سكني بين طرفين وفق الشروط المتفق عليها",
   attachments: [],
 };
 
@@ -47,6 +47,7 @@ test("rejects an intake with wrong service discriminant", () => {
 test("rejects an intake with missing service key", () => {
   const r = validateContractsIntake({ ...validDraft, service: undefined });
   assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("الخدمة")));
 });
 
 test("rejects a missing required field (mode)", () => {
@@ -55,14 +56,16 @@ test("rejects a missing required field (mode)", () => {
   if (!r.ok) assert.ok(r.errors.some((e) => e.includes("الوضع") || e.includes("وضع")));
 });
 
-test("rejects a blank mode — nearest equivalent to a too-short free-text field (contracts shape has no free-text minimum in the brief)", () => {
+test("rejects a blank mode", () => {
   const r = validateContractsIntake({ ...validDraft, mode: "" });
   assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("وضع")));
 });
 
 test("rejects an unknown mode", () => {
   const r = validateContractsIntake({ ...validDraft, mode: "delete" });
   assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("وضع")));
 });
 
 test("draft mode does not require attachments", () => {
@@ -79,6 +82,7 @@ test("review mode requires at least one attachment", () => {
 test("rejects an attachment missing documentId (malformed attachment)", () => {
   const r = validateContractsIntake({ ...validReview, attachments: [{ name: "a.pdf", size: 10 }] });
   assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("المرفق")));
 });
 
 test("accepts a numeric documentId (PostgREST bigserial arrives as a JS number, not a string)", () => {
@@ -95,4 +99,47 @@ test("collects every error, not just the first", () => {
   const r = validateContractsIntake({ service: "wrong", mode: "delete", attachments: [{ name: "a.pdf" }] });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.length >= 3);
+});
+
+// ── Coordinator ruling on af0929e: draft-mode contractDesc minimum ─────────
+// "an order the admin cannot fulfil must not be submittable" — draft mode
+// has no uploaded document, so contractDesc IS the brief the admin drafts
+// from.
+
+test("rejects draft mode with no contractDesc", () => {
+  const r = validateContractsIntake({ ...validDraft, contractDesc: undefined });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("وصف العقد")));
+});
+
+test("rejects draft mode with a contractDesc shorter than 20 characters", () => {
+  const r = validateContractsIntake({ ...validDraft, contractDesc: "بيع عقار" });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("وصف العقد")));
+});
+
+test("review mode does not require contractDesc", () => {
+  const r = validateContractsIntake({ ...validReview, contractDesc: undefined });
+  assert.equal(r.ok, true);
+});
+
+// ── Coordinator ruling on af0929e: review-mode representing is required ────
+// The uploaded contract is the deliverable (attachments, already required
+// above), but the admin still needs to know which side the client is on.
+
+test("rejects review mode with no representing", () => {
+  const r = validateContractsIntake({ ...validReview, representing: undefined });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("الطرف")));
+});
+
+test("review mode's representing has no length minimum", () => {
+  const r = validateContractsIntake({ ...validReview, representing: "أ" });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.value.representing, "أ");
+});
+
+test("draft mode does not require representing", () => {
+  const r = validateContractsIntake({ ...validDraft, representing: undefined });
+  assert.equal(r.ok, true);
 });
