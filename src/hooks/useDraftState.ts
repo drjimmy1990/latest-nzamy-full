@@ -2,10 +2,10 @@ import { useState, useRef } from "react";
 import {
   CLIENT_VISIBLE_STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc, MEMO_MAIN_TYPES,
 } from "@/components/draft/draftConstants";
-import { validateDraftIntake, type OrderAttachment } from "@/lib/services/orderIntake";
+import { validateDraftIntake } from "@/lib/services/orderIntake";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
-import { uploadDocumentFile } from "@/lib/services/documentService";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 
 /**
  * Resolve a raw memoType id (e.g. "case") to its Arabic label ("تحرير دعوى")
@@ -32,24 +32,6 @@ function submitErrorMessageAr(err: unknown): string {
     return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
   }
   return "تعذّر إرسال الطلب — حاول مجدداً";
-}
-
-/**
- * Map a thrown attachFile error to Arabic user-facing copy. Same rules as
- * submitErrorMessageAr: the underlying message (which may be an internal
- * token like "upload_unavailable_demo" or a raw Postgres/storage error) is
- * logged for developers but never shown to the user.
- */
-function attachErrorMessageAr(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  console.error("[useDraftState] attachFile failed:", raw);
-  if (raw === "upload_unavailable_demo") {
-    return "رفع المرفقات غير متاح في وضع العرض التجريبي — تواصل مع الفريق لتفعيل الحساب.";
-  }
-  if (raw === "Unauthorized") {
-    return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
-  }
-  return "تعذّر رفع الملف — تحقق من الاتصال وحاول مجدداً";
 }
 
 export function useDraftState(initialMode = "") {
@@ -115,9 +97,18 @@ export function useDraftState(initialMode = "") {
   const [submitNotes, setSubmitNotes]   = useState("");
   const [submitting, setSubmitting]     = useState(false);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
-  const [uploadedAttachments, setUploadedAttachments] = useState<OrderAttachment[]>([]);
-  const [uploading, setUploading]     = useState(false);
-  const [attachError, setAttachError] = useState("");
+
+  // Real file uploads — extracted into useOrderAttachments() so the other
+  // three AI services can reuse the same implementation. `attachments` is
+  // re-exposed here as `uploadedAttachments` to keep this hook's public
+  // surface unchanged for /ai/draft's components.
+  const {
+    attachments: uploadedAttachments,
+    uploading,
+    attachError,
+    attachFile,
+    removeAttachment,
+  } = useOrderAttachments();
 
   function buildSummary(): { label: string; value: string }[] {
     return [
@@ -176,35 +167,6 @@ export function useDraftState(initialMode = "") {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  /**
-   * Upload a file and record it as an attachment. Returns the created
-   * OrderAttachment (with the real documentId) so callers — e.g. StepCase —
-   * can associate it with the UI row that triggered the upload, for later
-   * removal via removeAttachment(). Throws on failure; callers are expected
-   * to revert whatever optimistic UI state (a display filename) they set.
-   */
-  async function attachFile(file: File): Promise<OrderAttachment> {
-    setAttachError("");
-    setUploading(true);
-    try {
-      const doc = await uploadDocumentFile(file);
-      const attachment: OrderAttachment = {
-        documentId: doc.id, name: doc.file_name, size: doc.size_bytes ?? 0,
-      };
-      setUploadedAttachments((prev) => [...prev, attachment]);
-      return attachment;
-    } catch (err) {
-      setAttachError(attachErrorMessageAr(err));
-      throw err;
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  function removeAttachment(documentId: string): void {
-    setUploadedAttachments((prev) => prev.filter((a) => a.documentId !== documentId));
   }
 
   // Refs
@@ -311,8 +273,7 @@ export function useDraftState(initialMode = "") {
     reviewPhase, setReviewPhase,
     // submit step
     submitNotes, setSubmitNotes, submitting, setSubmitting, submitErrors,
-    uploadedAttachments, setUploadedAttachments,
-    uploading, attachError, setAttachError,
+    uploadedAttachments, uploading, attachError,
     buildSummary, submitOrder, attachFile, removeAttachment,
     // sharing
     shareLink, setShareLink, sharePasscode, setSharePasscode,
