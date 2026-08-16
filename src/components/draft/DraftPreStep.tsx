@@ -130,8 +130,10 @@ export function DraftPreStep({ onStartDraft, initialMode = "" }: DraftPreStepPro
           );
         })()}
 
-        {/* Two main cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* Single card — was a 2-card grid. Card B ("مراجعة مذكرة") is
+            hidden below; with only one live card left, this no longer needs
+            to be a 2-column grid. */}
+        <div className="grid grid-cols-1 gap-5 sm:max-w-sm">
 
           {/* A — صياغة جديدة */}
           <motion.button
@@ -158,13 +160,13 @@ export function DraftPreStep({ onStartDraft, initialMode = "" }: DraftPreStepPro
             <div className="relative space-y-2">
               <p className={`font-bold text-[17px] ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>صياغة جديدة</p>
               <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                مذكرة · دعوى · رد · استئناف · طعن — صياغة احترافية من الصفر في ٨ خطوات ذكية
+                مذكرة · دعوى · رد · استئناف · طعن — صياغة احترافية من الصفر يعدّها فريق نظامي
               </p>
             </div>
 
             {/* Features */}
             <div className="relative flex flex-wrap gap-2 mt-5">
-              {["تحليل القضية", "المبادئ القضائية", "الدفوع تلقائياً", "تنزيل Word"].map(f => (
+              {["تحديد نوع المذكرة", "رفع المستندات", "صياغة يدوية من الفريق", "استلام الملف النهائي"].map(f => (
                 <span key={f} className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${
                   isDark
                     ? "border-emerald-700/30 text-emerald-400 bg-emerald-900/20"
@@ -180,52 +182,63 @@ export function DraftPreStep({ onStartDraft, initialMode = "" }: DraftPreStepPro
             </div>
           </motion.button>
 
-          {/* B — مراجعة مذكرة */}
-          <motion.button
-            whileHover={{ scale: 1.02, y: -2 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => setMode("review")}
-            className={`group relative overflow-hidden rounded-3xl border p-6 text-start transition-all duration-300 ${
-              isDark
-                ? "border-amber-700/30 bg-amber-900/10 hover:border-amber-600/50 hover:bg-amber-900/20"
-                : "border-amber-200/80 bg-gradient-to-br from-amber-50/80 to-orange-50/40 hover:border-amber-300 hover:shadow-lg hover:shadow-amber-500/10"
-            }`}
-          >
-            {/* Glow */}
-            <div className="absolute -top-10 -left-10 w-32 h-32 rounded-full bg-amber-500/10 blur-2xl group-hover:bg-amber-500/20 transition-all" />
+          {/* B — مراجعة مذكرة — HIDDEN (Task C6). This was a fully
+              simulated tool, not a copy problem: a 2.8s fake "processing"
+              delay (startReview() below), MOCK_PARAS presented as a
+              color-coded AI analysis of the client's own uploaded memo, and
+              a "تنزيل التقرير" button with no onClick. There is no order
+              path to convert this to and inventing one is out of scope for
+              this task. The button (the only way to reach `mode === "review"`)
+              is disabled here; the REVIEW WORKFLOW render branch and its
+              state below stay in the file, unreachable, per "hide, do not
+              delete" — same pattern as every other mock step in this plan. */}
+          {false && (
+            <motion.button
+              whileHover={{ scale: 1.02, y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setMode("review")}
+              className={`group relative overflow-hidden rounded-3xl border p-6 text-start transition-all duration-300 ${
+                isDark
+                  ? "border-amber-700/30 bg-amber-900/10 hover:border-amber-600/50 hover:bg-amber-900/20"
+                  : "border-amber-200/80 bg-gradient-to-br from-amber-50/80 to-orange-50/40 hover:border-amber-300 hover:shadow-lg hover:shadow-amber-500/10"
+              }`}
+            >
+              {/* Glow */}
+              <div className="absolute -top-10 -left-10 w-32 h-32 rounded-full bg-amber-500/10 blur-2xl group-hover:bg-amber-500/20 transition-all" />
 
-            {/* Icon */}
-            <div className="relative mb-5">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/30">
-                <MagnifyingGlass size={24} weight="duotone" className="text-white" />
+              {/* Icon */}
+              <div className="relative mb-5">
+                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/30">
+                  <MagnifyingGlass size={24} weight="duotone" className="text-white" />
+                </div>
               </div>
-            </div>
 
-            {/* Content */}
-            <div className="relative space-y-2">
-              <p className={`font-bold text-[17px] ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>مراجعة مذكرة</p>
-              <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                ارفع مذكرتك الحالية — AI يحللها بعين الخصم والقاضي ويكشف الثغرات مع إصلاح تلقائي
-              </p>
-            </div>
+              {/* Content */}
+              <div className="relative space-y-2">
+                <p className={`font-bold text-[17px] ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>مراجعة مذكرة</p>
+                <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                  ارفع مذكرتك الحالية — AI يحللها بعين الخصم والقاضي ويكشف الثغرات مع إصلاح تلقائي
+                </p>
+              </div>
 
-            {/* Features */}
-            <div className="relative flex flex-wrap gap-2 mt-5">
-              {["كشف نقاط الضعف", "ترتيب بالخطورة", "اقتراح الإصلاح", "diff تلقائي"].map(f => (
-                <span key={f} className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${
-                  isDark
-                    ? "border-amber-700/30 text-amber-400 bg-amber-900/20"
-                    : "border-amber-300/60 text-amber-700 bg-amber-50"
-                }`}>✓ {f}</span>
-              ))}
-            </div>
+              {/* Features */}
+              <div className="relative flex flex-wrap gap-2 mt-5">
+                {["كشف نقاط الضعف", "ترتيب بالخطورة", "اقتراح الإصلاح", "diff تلقائي"].map(f => (
+                  <span key={f} className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${
+                    isDark
+                      ? "border-amber-700/30 text-amber-400 bg-amber-900/20"
+                      : "border-amber-300/60 text-amber-700 bg-amber-50"
+                  }`}>✓ {f}</span>
+                ))}
+              </div>
 
-            {/* CTA */}
-            <div className={`relative mt-5 flex items-center gap-2 text-[12px] font-bold ${isDark ? "text-amber-400" : "text-amber-600"}`}>
-              <span>ارفع مذكرتك</span>
-              <motion.span animate={{ x: [0, 4, 0] }} transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}>←</motion.span>
-            </div>
-          </motion.button>
+              {/* CTA */}
+              <div className={`relative mt-5 flex items-center gap-2 text-[12px] font-bold ${isDark ? "text-amber-400" : "text-amber-600"}`}>
+                <span>ارفع مذكرتك</span>
+                <motion.span animate={{ x: [0, 4, 0] }} transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}>←</motion.span>
+              </div>
+            </motion.button>
+          )}
         </div>
 
         {/* Bottom hint */}

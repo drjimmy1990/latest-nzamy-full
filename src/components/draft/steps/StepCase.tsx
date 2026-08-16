@@ -112,10 +112,10 @@ export function StepCase({
       ) : (
         <div className={`${card} p-4 shadow-sm`}>
           <div className="flex items-center gap-2">
-            <span className="text-emerald-500 text-lg">🤖</span>
+            <span className="text-emerald-500 text-lg">📌</span>
             <div>
-              <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>AI سيستخرج بيانات الأطراف تلقائياً</p>
-              <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>من الملفات التي سترفعها أسفله — ستظهر في Step 3 للتأكيد</p>
+              <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>اذكر أسماء الأطراف وبياناتهم ضمن ملخص القضية أو المرفقات أدناه</p>
+              <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>سيحددها فريق نظامي منها يدوياً عند الصياغة</p>
             </div>
           </div>
         </div>
@@ -277,8 +277,8 @@ export function StepCase({
           <div className="space-y-2">
             <div className={`rounded-xl border-2 border-dashed p-4 text-center ${isDark ? "border-white/[0.08]" : "border-zinc-200"}`}>
               <FileArrowUp size={18} className={`mx-auto mb-1 ${isDark ? "text-zinc-600" : "text-zinc-400"}`} />
-              <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>ارفع جميع المرفقات — AI سيحللها تلقائياً</p>
-              <p className={`text-[10px] mt-0.5 ${isDark ? "text-amber-600" : "text-amber-500"}`}>⚠ هذا الخيار قد يستغرق وقتاً أطول للتحليل</p>
+              <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>ارفع جميع المرفقات دفعة واحدة — سيراجعها فريق نظامي يدوياً</p>
+              <p className={`text-[10px] mt-0.5 ${isDark ? "text-amber-600" : "text-amber-500"}`}>⚠ قد يحتاج الفريق وقتاً أطول لمراجعة عدد أكبر من الملفات</p>
             </div>
             <button onClick={() => setBulkUpload(false)} className={`text-[11px] underline ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>عودة للإضافة الفردية</button>
           </div>
@@ -307,103 +307,115 @@ export function StepCase({
         </AnimatePresence>
       </div>
 
-      {/* ذاكرة المكتب */}
-      <div className={`${card} p-4 shadow-sm`}>
-        <div className="flex items-center gap-3">
-          <div className={`flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0 ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
-            <BookOpen size={17} weight="duotone" className="text-[#C8A762]" />
-          </div>
-          <div className="flex-1">
-            <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>استخدم ذاكرة مكتبك</p>
-            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>AI يجمع بين قاعدة نظامي + نماذج مكتبك لاقتراح دفوع أقوى</p>
-          </div>
-          <button onClick={() => {
-            if (!useFirmMemory) setShowFirmModal(true);
-            else { setUseFirmMemory(false); setSelectedTemplate(null); }
-          }}
-            className={`relative h-6 w-11 rounded-full transition-colors flex-shrink-0 ${useFirmMemory ? "bg-[#0B3D2E]" : isDark ? "bg-zinc-700" : "bg-zinc-300"}`}>
-            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${useFirmMemory ? "start-5" : "start-0.5"}`} />
-          </button>
-        </div>
-        {useFirmMemory && selectedTemplate && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-3 overflow-hidden">
-            <div className={`p-3 rounded-xl border flex items-center justify-between ${isDark ? "border-[#C8A762]/30 bg-[#C8A762]/10" : "border-amber-200 bg-amber-50"}`}>
-              <div className="flex items-center gap-2">
-                <FolderOpen size={16} className="text-[#C8A762]" weight="duotone" />
-                <p className={`text-[12px] font-bold ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}>{selectedTemplate}</p>
+      {/* ذاكرة المكتب — HIDDEN (Task C6): "AI يجمع بين قاعدة نظامي + نماذج
+          مكتبك لاقتراح دفوع أقوى" claimed AI-assisted suggestions, but
+          useFirmMemory/selectedTemplate never reached buildIntake() — this
+          toggle affected nothing in the submitted order — and the modal's
+          "ابحث في النماذج..." search input had no value/onChange, so even
+          browsing departments/templates was decorative. Same defect class as
+          the fake VoiceBtn dictation control. Kept (not deleted) behind
+          `false` for when a real firm-template feature exists and can
+          actually reach an order. */}
+      {false && (
+        <>
+          <div className={`${card} p-4 shadow-sm`}>
+            <div className="flex items-center gap-3">
+              <div className={`flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0 ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
+                <BookOpen size={17} weight="duotone" className="text-[#C8A762]" />
               </div>
-              <button onClick={() => setShowFirmModal(true)} className={`text-[10px] underline font-semibold ${isDark ? "text-zinc-400 hover:text-white" : "text-amber-600 hover:text-amber-800"}`}>تغيير</button>
+              <div className="flex-1">
+                <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>استخدم ذاكرة مكتبك</p>
+                <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>AI يجمع بين قاعدة نظامي + نماذج مكتبك لاقتراح دفوع أقوى</p>
+              </div>
+              <button onClick={() => {
+                if (!useFirmMemory) setShowFirmModal(true);
+                else { setUseFirmMemory(false); setSelectedTemplate(null); }
+              }}
+                className={`relative h-6 w-11 rounded-full transition-colors flex-shrink-0 ${useFirmMemory ? "bg-[#0B3D2E]" : isDark ? "bg-zinc-700" : "bg-zinc-300"}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${useFirmMemory ? "start-5" : "start-0.5"}`} />
+              </button>
             </div>
-          </motion.div>
-        )}
-      </div>
-
-      <AnimatePresence>
-        {showFirmModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowFirmModal(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }} className={`relative w-full max-w-lg rounded-2xl border shadow-xl ${isDark ? "border-white/[0.1] bg-zinc-900" : "border-slate-200 bg-white"} overflow-hidden flex flex-col max-h-[80vh]`}>
-              <div className={`flex items-center justify-between border-b p-4 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-                <div className="flex items-center gap-2">
-                  {firmModalStep === "templates" && (
-                    <button onClick={() => setFirmModalStep("departments")} className={`me-1 rounded p-1 transition-colors ${isDark ? "hover:bg-white/5 text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
-                      <ArrowRight size={14} />
-                    </button>
-                  )}
-                  <BookOpen size={18} className="text-[#C8A762]" />
-                  <h3 className={`text-[14px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
-                    {firmModalStep === "departments" ? "اختر القسم" : `نماذج ${selectedDept}`}
-                  </h3>
-                </div>
-                <button onClick={() => setShowFirmModal(false)} className={`rounded-lg p-1.5 transition-colors ${isDark ? "hover:bg-white/5 text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}><X size={16} /></button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                {firmModalStep === "departments" ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    {["القسم العمالي", "القسم التجاري والشركات", "القسم الإداري", "القسم الجزائي", "القسم العقاري", "قسم الأحوال الشخصية"].map(dept => (
-                      <button key={dept} onClick={() => { setSelectedDept(dept); setFirmModalStep("templates"); }} className={`flex flex-col items-center justify-center gap-3 rounded-xl border p-4 transition-all hover:scale-[1.02] ${isDark ? "border-white/[0.06] bg-zinc-800/30 hover:border-[#C8A762]/40" : "border-slate-100 bg-white hover:border-amber-300 shadow-sm"}`}>
-                        <div className={`rounded-xl p-2.5 ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
-                           <FolderOpen size={22} className="text-[#C8A762]" weight="duotone" />
-                        </div>
-                        <p className={`text-[12px] font-bold text-center ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{dept}</p>
-                      </button>
-                    ))}
+            {useFirmMemory && selectedTemplate && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-3 overflow-hidden">
+                <div className={`p-3 rounded-xl border flex items-center justify-between ${isDark ? "border-[#C8A762]/30 bg-[#C8A762]/10" : "border-amber-200 bg-amber-50"}`}>
+                  <div className="flex items-center gap-2">
+                    <FolderOpen size={16} className="text-[#C8A762]" weight="duotone" />
+                    <p className={`text-[12px] font-bold ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}>{selectedTemplate}</p>
                   </div>
-                ) : (
-                  <>
-                    <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 mb-4 ${isDark ? "border-white/[0.08] bg-zinc-800/50" : "border-slate-200 bg-slate-50"}`}>
-                      <MagnifyingGlass size={15} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-                      <input type="text" placeholder="ابحث في النماذج..." className={`w-full bg-transparent text-[12px] outline-none ${isDark ? "text-white placeholder:text-zinc-500" : "text-zinc-900 placeholder:text-slate-400"}`} />
-                    </div>
-                    {[
-                      { id: "1", title: "قالب الدعوى العمالية القياسي", desc: "القالب المعتمد ٢٠٢٥", type: "template" },
-                      { id: "2", title: "مذكرة قضية فصل تعسفي مشابهة", desc: "القضية رقم ١٤٤٢ - لصالح المدعي", type: "case" },
-                      { id: "3", title: "صيغة دفاع سابقة ناجحة", desc: "نفس الخصم - شركة المقاولات", type: "case" },
-                    ].map(t => (
-                      <button key={t.id} onClick={() => { setSelectedTemplate(t.title); setUseFirmMemory(true); setShowFirmModal(false); setFirmModalStep("departments"); }} className={`w-full flex items-start gap-3 rounded-xl border p-3 text-start transition-all hover:scale-[1.01] ${isDark ? "border-white/[0.06] bg-zinc-800/30 hover:border-[#C8A762]/40" : "border-slate-100 bg-white hover:border-amber-300 shadow-sm"}`}>
-                        <div className={`mt-0.5 rounded-lg p-1.5 flex-shrink-0 ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
-                          <FolderOpen size={16} className="text-[#C8A762]" weight="duotone" />
-                        </div>
-                        <div>
-                          <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{t.title}</p>
-                          <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{t.desc}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </>
-                )}
-              </div>
-            </motion.div>
+                  <button onClick={() => setShowFirmModal(true)} className={`text-[10px] underline font-semibold ${isDark ? "text-zinc-400 hover:text-white" : "text-amber-600 hover:text-amber-800"}`}>تغيير</button>
+                </div>
+              </motion.div>
+            )}
           </div>
-        )}
-      </AnimatePresence>
+
+          <AnimatePresence>
+            {showFirmModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowFirmModal(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+                <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }} className={`relative w-full max-w-lg rounded-2xl border shadow-xl ${isDark ? "border-white/[0.1] bg-zinc-900" : "border-slate-200 bg-white"} overflow-hidden flex flex-col max-h-[80vh]`}>
+                  <div className={`flex items-center justify-between border-b p-4 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+                    <div className="flex items-center gap-2">
+                      {firmModalStep === "templates" && (
+                        <button onClick={() => setFirmModalStep("departments")} className={`me-1 rounded p-1 transition-colors ${isDark ? "hover:bg-white/5 text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
+                          <ArrowRight size={14} />
+                        </button>
+                      )}
+                      <BookOpen size={18} className="text-[#C8A762]" />
+                      <h3 className={`text-[14px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
+                        {firmModalStep === "departments" ? "اختر القسم" : `نماذج ${selectedDept}`}
+                      </h3>
+                    </div>
+                    <button onClick={() => setShowFirmModal(false)} className={`rounded-lg p-1.5 transition-colors ${isDark ? "hover:bg-white/5 text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}><X size={16} /></button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                    {firmModalStep === "departments" ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        {["القسم العمالي", "القسم التجاري والشركات", "القسم الإداري", "القسم الجزائي", "القسم العقاري", "قسم الأحوال الشخصية"].map(dept => (
+                          <button key={dept} onClick={() => { setSelectedDept(dept); setFirmModalStep("templates"); }} className={`flex flex-col items-center justify-center gap-3 rounded-xl border p-4 transition-all hover:scale-[1.02] ${isDark ? "border-white/[0.06] bg-zinc-800/30 hover:border-[#C8A762]/40" : "border-slate-100 bg-white hover:border-amber-300 shadow-sm"}`}>
+                            <div className={`rounded-xl p-2.5 ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
+                               <FolderOpen size={22} className="text-[#C8A762]" weight="duotone" />
+                            </div>
+                            <p className={`text-[12px] font-bold text-center ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{dept}</p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <>
+                        <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 mb-4 ${isDark ? "border-white/[0.08] bg-zinc-800/50" : "border-slate-200 bg-slate-50"}`}>
+                          <MagnifyingGlass size={15} className={isDark ? "text-zinc-500" : "text-slate-400"} />
+                          <input type="text" placeholder="ابحث في النماذج..." className={`w-full bg-transparent text-[12px] outline-none ${isDark ? "text-white placeholder:text-zinc-500" : "text-zinc-900 placeholder:text-slate-400"}`} />
+                        </div>
+                        {[
+                          { id: "1", title: "قالب الدعوى العمالية القياسي", desc: "القالب المعتمد ٢٠٢٥", type: "template" },
+                          { id: "2", title: "مذكرة قضية فصل تعسفي مشابهة", desc: "القضية رقم ١٤٤٢ - لصالح المدعي", type: "case" },
+                          { id: "3", title: "صيغة دفاع سابقة ناجحة", desc: "نفس الخصم - شركة المقاولات", type: "case" },
+                        ].map(t => (
+                          <button key={t.id} onClick={() => { setSelectedTemplate(t.title); setUseFirmMemory(true); setShowFirmModal(false); setFirmModalStep("departments"); }} className={`w-full flex items-start gap-3 rounded-xl border p-3 text-start transition-all hover:scale-[1.01] ${isDark ? "border-white/[0.06] bg-zinc-800/30 hover:border-[#C8A762]/40" : "border-slate-100 bg-white hover:border-amber-300 shadow-sm"}`}>
+                            <div className={`mt-0.5 rounded-lg p-1.5 flex-shrink-0 ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
+                              <FolderOpen size={16} className="text-[#C8A762]" weight="duotone" />
+                            </div>
+                            <div>
+                              <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{t.title}</p>
+                              <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{t.desc}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
 
       {/* ملاحظات المحامي */}
       <div className={`${card} p-5 shadow-sm`}>
         <p className={`text-[12px] font-semibold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>ملاحظات المحامي (اختياري)</p>
         <div className="relative">
           <textarea value={lawyerNotes} onChange={e => setLawyerNotes(e.target.value)}
-            placeholder="أي توجيهات خاصة للـ AI: ركّز على نقطة معينة، تجنب دفع معين..." rows={3}
+            placeholder="أي توجيهات خاصة لفريق نظامي: ركّز على نقطة معينة، تجنب دفع معين..." rows={3}
             className={`w-full resize-none rounded-xl border p-3 pe-14 text-[13px] outline-none leading-relaxed ${isDark ? "border-white/[0.07] bg-zinc-800/50 text-zinc-200 placeholder:text-zinc-600" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400"}`} />
           <div className="absolute bottom-3 start-3">
             <VoiceInput onTranscript={(t) => setLawyerNotes(lawyerNotes ? `${lawyerNotes} ${t}` : t)} compact />

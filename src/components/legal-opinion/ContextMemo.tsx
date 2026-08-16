@@ -78,9 +78,15 @@ export function ContextMemo({
             );
           })}
         </div>
-        {/* Hint about auto-style */}
+        {/* Hint — audience is a real field that reaches the order (see the
+            comment above on ContextMemo's props); a human admin reads it and
+            tailors the writing style manually. Reworded (Task C6) — this
+            used to say the style "adapts automatically", which a client
+            reading it right after picking an audience would reasonably take
+            as a promise about the memo they receive, and nothing adapts
+            anything here. */}
         <p className={`text-[10px] mt-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-          سيتكيّف أسلوب الكتابة تلقائياً بحسب الجهة المستهدفة
+          سيراعي فريق نظامي أسلوب الكتابة المناسب لهذه الجهة عند إعداد الرأي
         </p>
       </div>
 

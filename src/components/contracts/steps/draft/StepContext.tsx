@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
-import { ChatCircleDots, Robot } from "@phosphor-icons/react";
-import { VoiceBtn } from "@/components/contracts/SharedComponents";
+import { ChatCircleDots, UsersThree } from "@phosphor-icons/react";
+import { VoiceInput } from "@/components/ui/VoiceInput";
 
 interface StepContextProps {
   isDark: boolean;
@@ -29,13 +29,13 @@ export function StepContext({ isDark, contractDesc, setContractDesc, courtType, 
           <textarea value={contractDesc} onChange={e => setContractDesc(e.target.value)}
             placeholder="مثال: عقد عمل لمهندس برمجيات، يشمل راتب أساسي + حوافز + خيارات أسهم. مدة سنة قابلة للتمديد. أريد بند عدم منافسة وسرية صارم..."
             rows={4} className={`${inputCls} resize-none pe-20`} />
-          <div className="absolute bottom-3 start-3"><VoiceBtn label="صوّت الفكرة" /></div>
+          <div className="absolute bottom-3 start-3"><VoiceInput onTranscript={t => setContractDesc(contractDesc ? `${contractDesc} ${t}` : t)} compact /></div>
         </div>
         {contractDesc.length > 0 && contractDesc.trim().length < 20 ? (
           <p className="text-[11px] text-amber-500">أضف المزيد من التفاصيل (٢٠ حرفاً على الأقل) — هذا الوصف هو ما يعتمد عليه الفريق عند الصياغة</p>
         ) : (
           <p className={`text-[11px] flex items-center gap-1.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-            <Robot size={12} className="text-[#C8A762]" />
+            <UsersThree size={12} className="text-[#C8A762]" />
             سيعتمد فريق نظامي على هذا الوصف عند صياغة عقدك يدوياً
           </p>
         )}

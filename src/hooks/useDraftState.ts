@@ -130,7 +130,11 @@ export function useDraftState(initialMode = "") {
         number: judgmentNumber, court: judgmentCourt, date: judgmentDate,
         text: judgmentText, reasons: judgmentReasons,
       },
-      lawyerNotes: [lawyerNotes, submitNotes].filter(Boolean).join("\n\n"),
+      // notesText (StepIdentify's "ملاحظات ومرئيات") used to be collected on
+      // screen and then silently dropped here — never reaching the admin.
+      // Folded into the same free-text field lawyerNotes/submitNotes already
+      // join, rather than dropping it (Task C6).
+      lawyerNotes: [notesText, lawyerNotes, submitNotes].filter(Boolean).join("\n\n"),
       attachments: uploadedAttachments,
     };
   }
@@ -220,16 +224,17 @@ export function useDraftState(initialMode = "") {
     // Auto-extract/mock data between steps (no real processing delay any more —
     // there is nothing between these steps to wait on).
     if (step === "case" || step === "identify") {
-      // Auto-extract judgment data mock if moving from step 2 to 3 for appeal/reply
-      if (step === "case" && (memoType === "appeal" || memoType === "reply")) {
-        if (!judgmentNumber) setJudgmentNumber("٣٤٢/ع/١٤٤٥");
-        if (!judgmentCourt)   setJudgmentCourt("المحكمة العمالية بالرياض");
-        if (!judgmentDate)    setJudgmentDate("12/04/2024");
-        if (!plaintiffName)   setPlaintiffName("شركة الأفق الحديثة");
-        if (!defendantName)   setDefendantName("أحمد عبد الله المرزوقي");
-        if (!judgmentText)    setJudgmentText("حكمت المحكمة غيابياً بإلزام المدعى عليه بدفع مبلغ ٤٥,٠٠٠ ريال سعودي للمدعي، ورفض ما عدا ذلك من طلبات لعدم كفاية الأدلة.");
-        if (!judgmentReasons) setJudgmentReasons("عولت المحكمة على إقرار المدعى عليه بصحة العقد في الجلسة الأولى، وثبوت التحويلات البنكية الناقصة عن المستحقات الثابتة في النظام.");
-      }
+      // Judgment data (judgmentNumber/Court/Date/plaintiffName/defendantName/
+      // judgmentText/judgmentReasons) used to be silently mock-filled here for
+      // رد/طعن memo types. No reachable control ever writes to those seven
+      // fields — the only input for them, JudgmentHeader, is imported by
+      // StepCase.tsx but never rendered (dead, per "hide, do not delete").
+      // That meant fabricated court/party names/amounts were shipping inside
+      // real orders, invisible to both the client (no UI shows them) and the
+      // admin fulfilling the order (no way to tell they weren't the client's
+      // own account). Removed per Task C6 — the fields stay declared and
+      // still flow into buildIntake()'s `judgment` object, just empty
+      // instead of fabricated, until a reachable input exists for them.
 
       // Auto-extract or mock the case/reply facts summary when moving from step 2 to 3
       if (step === "case") {
