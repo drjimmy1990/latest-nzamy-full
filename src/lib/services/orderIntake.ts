@@ -53,11 +53,11 @@ export type ValidationResult<T> =
 
 const MIN_CASE_TEXT = 30;
 
-function isRecord(v: unknown): v is Record<string, unknown> {
+export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-function str(v: unknown): string {
+export function str(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
@@ -76,6 +76,33 @@ function documentIdStr(v: unknown): string {
   if (typeof v === "string") return v.trim();
   if (typeof v === "number" && Number.isFinite(v)) return String(v);
   return "";
+}
+
+/**
+ * Shared attachment-list validator for every AI service intake. Coerces
+ * `documentId` with `documentIdStr` (see above — bigserial arrives as a JS
+ * number), pushes one Arabic error per malformed entry into the caller's
+ * `errors` accumulator, and returns only the well-formed attachments.
+ * Exported so orderIntake.wargaming.ts / .contracts.ts / .legalOpinion.ts
+ * reuse this loop instead of re-declaring it three times (and risking the
+ * documentId coercion drifting out of sync between them).
+ */
+export function collectAttachments(rawAttachments: unknown, errors: string[]): OrderAttachment[] {
+  const attachmentsRaw = Array.isArray(rawAttachments) ? rawAttachments : [];
+  const attachments: OrderAttachment[] = [];
+  attachmentsRaw.forEach((a, i) => {
+    const documentId = isRecord(a) ? documentIdStr(a.documentId) : "";
+    if (!isRecord(a) || !documentId) {
+      errors.push(`المرفق رقم ${i + 1} غير صالح`);
+      return;
+    }
+    attachments.push({
+      documentId,
+      name: str(a.name) || "مرفق",
+      size: typeof a.size === "number" && a.size >= 0 ? a.size : 0,
+    });
+  });
+  return attachments;
 }
 
 export function validateDraftIntake(input: unknown): ValidationResult<DraftIntakeV1> {
@@ -111,20 +138,7 @@ export function validateDraftIntake(input: unknown): ValidationResult<DraftIntak
     errors.push("بيانات الأطراف غير مكتملة");
   }
 
-  const attachmentsRaw = Array.isArray(input.attachments) ? input.attachments : [];
-  const attachments: OrderAttachment[] = [];
-  attachmentsRaw.forEach((a, i) => {
-    const documentId = isRecord(a) ? documentIdStr(a.documentId) : "";
-    if (!isRecord(a) || !documentId) {
-      errors.push(`المرفق رقم ${i + 1} غير صالح`);
-      return;
-    }
-    attachments.push({
-      documentId,
-      name: str(a.name) || "مرفق",
-      size: typeof a.size === "number" && a.size >= 0 ? a.size : 0,
-    });
-  });
+  const attachments = collectAttachments(input.attachments, errors);
 
   if (errors.length > 0) return { ok: false, errors };
 
