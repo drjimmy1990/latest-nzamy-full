@@ -19,6 +19,7 @@ const PROTECTED = [
   "/ai/settings",
   "/ai/vault",
   "/ai/secretary",
+  "/ai/legal-opinion",
   "/ai/fee-calculator",
   "/ai/report-generator",
   "/ai/tracker",
