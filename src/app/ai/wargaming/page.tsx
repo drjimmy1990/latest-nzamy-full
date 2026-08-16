@@ -343,7 +343,7 @@ function CaseSetup({
   const card = `rounded-2xl border ${D?"bg-zinc-900 border-white/[0.07]":"bg-white border-zinc-200/70"}`;
   const fRef = useRef<HTMLInputElement>(null);
   const UserIcon = user.userType==="firm"?Buildings:user.userType==="lawyer"?UserFocus:User;
-  const canNext = ctx.role!==""&&ctx.area!==""&&ctx.summary.trim().length>=20;
+  const canNext = ctx.role!==""&&ctx.area!==""&&ctx.summary.trim().length>=20&&!uploading;
 
   return (
     <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="space-y-4">
@@ -472,7 +472,7 @@ function TargetSelect({
       </div>
 
       <p className={`text-[13px] font-bold ${D?"text-zinc-200":"text-zinc-700"}`}>اختر ما تريد محاكاته:</p>
-      <p className={`text-[11px] -mt-2 ${D?"text-zinc-500":"text-slate-400"}`}>يمكنك اختيار أكثر من هدف — ستُجمع النتائج في قائمة واحدة مرتّبة حسب الأهمية</p>
+      <p className={`text-[11px] -mt-2 ${D?"text-zinc-500":"text-slate-400"}`}>يمكنك اختيار أكثر من هدف — سيراجع الفريق كل هدف تختاره على حدة</p>
 
       {/* Target chips grid */}
       <div className="grid grid-cols-2 gap-3">
