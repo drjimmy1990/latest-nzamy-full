@@ -43,6 +43,24 @@ So: **56 files**, all but one (`procedures/page.tsx`, which has 3) contain
 exactly one `<BetaReviewGate>` JSX opening tag → 55 × 1 + 1 × 3 = **58 call
 sites**. That is the number this document audits and the number in the title.
 
+The same 58 falls out if you start from the *unfiltered* count instead of
+pre-filtering the definition file out, which is a useful cross-check because
+it does not rely on the `grep -v` exclusion being correct:
+
+```
+$ grep -rho "<BetaReviewGate" --include=*.tsx src/app src/components | wc -l
+61
+
+$ grep -n "<BetaReviewGate" src/components/BetaReviewGate.tsx
+22: *   Option B: Delete the <BetaReviewGate> wrapper tags from pages
+27: *   <BetaReviewGate toolName="صياغة مذكرة">
+32: *   <BetaReviewGate
+```
+
+`src/components/BetaReviewGate.tsx` itself contains **3** matches — all
+inside its own doc comment (lines 22, 27, 32), not real call sites. 61 − 3 =
+**58**, the same figure both ways.
+
 For completeness, one more check proves the population is fully captured —
 that no `<BetaReviewGate` usage exists anywhere outside `src/app` or
 `src/components` (only non-JSX mentions — comments, `betaConfig.ts` labels —
@@ -82,6 +100,43 @@ this document passes `reviewScope="legal-data"`. Per
 the audience is not limited to lawyer/firm roles the way `reviewScope="role"`
 would be.
 
+## 1b. What a reachable gate actually shows the user today
+
+Every one of the 54 reachable sites in this document is reached with no
+`orderPayload` prop supplied — grepping the 58 call sites confirms none
+passes one:
+
+```
+$ grep -rn "orderPayload=" --include=*.tsx src/app src/components \
+    | grep -v "components/BetaReviewGate.tsx"
+(no matches)
+```
+
+Per `src/components/BetaReviewGate.tsx:170` (`const payload = orderPayload
+? orderPayload() : null;`) and the `if (payload) {...}` branch at line 317,
+a call site with no payload falls straight through to the final branch at
+lines 385-439 — the "no payload" card. Concretely, what every reachable gate
+in this document renders is (`BetaReviewGate.tsx:412-420`):
+
+```tsx
+<h3>{toolName}: المخرج التلقائي غير متاح خلال البيتا</h3>
+<p>هذا المخرج لا يُعرض تلقائيًا خلال الفترة الحالية من البيتا، ولم يُسجَّل أي طلب بشأنه.</p>
+```
+
+("`{toolName}`: the automatic output is unavailable during the beta" /
+"this output is not shown automatically during the current beta period, and
+no request has been recorded regarding it.") Below that, a static card
+pointing to `/ai/draft` ("الخدمة المتاحة حاليًا — الصائغ القانوني — صياغة
+المذكرات") as the one service that does work. **There is no send button, no
+turnaround-time promise, and no "تم استلام طلبك بنجاح" success card** — that
+copy was Task A1's target and no longer exists in `BetaReviewGate.tsx` at
+all (confirmed by reading the file's current source in full before writing
+this document; see the file's own header comment, which documents both the
+with-payload and without-payload paths). This is what every "honest copy"
+and "dead-if-it-were-reachable" row in §5 and §2 means when it says the tool
+is gated: the user sees the card above, and nothing they typed reaches any
+database.
+
 ## 2. The four dead call sites (draft wizard's hidden steps)
 
 `src/components/draft/draftConstants.ts:24-28`:
@@ -111,7 +166,7 @@ on `s.step`:
 confirms no file anywhere imports them:
 
 ```
-$ grep -rn "from ['\"]@/components/draft/steps/Step(Defenses|Drafting|Laws|Review)['\"]" src
+$ grep -rnE "from ['\"]@/components/draft/steps/Step(Defenses|Drafting|Laws|Review)['\"]" src
 (no matches)
 ```
 
@@ -305,9 +360,12 @@ All 19 files below share the same three-step shape (`"input" → "generating"/
 "reviewing"/"analyzing" → "result"`, guarded by a `mounted` SSR check), and
 the same evidence pattern: `{step === "result" && (<BetaReviewGate>...)}`
 following a `setStep("result")` timeout after the user fills a `form` object
-and passes its `isValid`/`canProceed`-style gate. Reachability is cited once
-per file at its gate's line number; it is not re-derived per row because the
-pattern was verified identically in all 19.
+and passes its `isValid`/`canProceed`-style gate. 14 of the 19 were confirmed
+by a direct full read of the file; the remaining 5 (judgment-weigher,
+jurisdiction-analyzer, legal-opinion-drafter, procurement-reviewer,
+verdict-drafter) were confirmed with a direct `grep -n -B4` shown in §6 —
+every row's gate line is independently checked, none is assumed by pattern
+alone.
 
 | Route | toolId — toolName | Gate line | Real user input held |
 |---|---|---|---|
@@ -322,14 +380,14 @@ pattern was verified identically in all 19.
 | `/ai/gov/indictment-drafter` | `gov.indictment-drafter` — "لائحة الاتهام" | `page.tsx:371` (`step === "result"`) | `caseNumber`, `accusedName`, `accusedId`, `incidentDate`, `incidentPlace`, `factsText`, `customCharge`, `penaltyText` — 8 discrete fields. |
 | `/ai/gov/investigation-forms` | `gov.investigation-forms` — "نموذج التحقيق" | `page.tsx:61` (`step === "result"`) | `selected` (5 template types), `details` (textarea). `DRAFT` interpolates `selected`/`details` directly. Note: the "إنشاء النموذج" button (line 47) has **no `disabled` guard** — every sibling gov tool disables its generate button until `isValid`; this one does not (minor inconsistency, not a security issue since the template still just echoes whatever was typed, including empty). |
 | `/ai/gov/judgment-drafter` | `gov.judgment-drafter` — "مسودة الحكم القضائي" | `page.tsx:118` (`step === "result"`) | `form = { caseType, facts, legalBasis, decision }` (`isValid` requires `facts` ≥20 chars). `DRAFT` (line 26) interpolates **only** `form.decision` — `facts` is validated as required but never appears in the rendered draft text, nor is it saved anywhere; `legalBasis` at least reaches `saveWorkflowRequest`'s `metadata`. See §7 finding. Also the only other gov tool (besides `/ai/micro`) using the local-only `saveWorkflowRequest` path (§7). |
-| `/ai/gov/judgment-weigher` | `gov.judgment-weigher` — "ترجيح الأدلة القضائية" | `page.tsx:153` (`step === "result"`, inferred from identical pattern; not independently re-verified beyond the `form` shape) | `form = { claimSummary, claimEvidence, defenseSummary, defenseEvidence, legalBasis }` (`isValid` requires `claimSummary`/`defenseSummary` ≥20 chars). `MOCK_RESULT` static regardless. |
+| `/ai/gov/judgment-weigher` | `gov.judgment-weigher` — "ترجيح الأدلة القضائية" | `page.tsx:153` (`step === "result"` — confirmed directly, see §6) | `form = { claimSummary, claimEvidence, defenseSummary, defenseEvidence, legalBasis }` (`isValid` requires `claimSummary`/`defenseSummary` ≥20 chars). `MOCK_RESULT` static regardless. |
 | `/ai/gov/judicial-search` | `gov.judicial-search` — "بحث المبادئ القضائية" | `page.tsx:114` (`step === "result"`) | `query` (free text), `category` (select). `MOCK_PRINCIPLES` (3 static entries) unaffected by either. |
-| `/ai/gov/jurisdiction-analyzer` | `gov.jurisdiction-analyzer` — "تحليل الاختصاص القضائي" | `page.tsx:82` (`step === "result"`, inferred from identical pattern) | `form = { subject, parties, amount, location }`. |
-| `/ai/gov/legal-opinion-drafter` | `gov.legal-opinion-drafter` — "الرأي القانوني الحكومي" | `page.tsx:274` (`step === "result"`, inferred from identical pattern) | `factsText`, `question`, `relatedLaws`, `requestingEntity`, `requestDate` — 5 discrete fields. Distinct tool from `/ai/legal-opinion` (الرأي الفصل); government-sector naming overlap only. |
+| `/ai/gov/jurisdiction-analyzer` | `gov.jurisdiction-analyzer` — "تحليل الاختصاص القضائي" | `page.tsx:82` (`step === "result"` — confirmed directly, see §6) | `form = { subject, parties, amount, location }`. |
+| `/ai/gov/legal-opinion-drafter` | `gov.legal-opinion-drafter` — "الرأي القانوني الحكومي" | `page.tsx:274` (`step === "result"` — confirmed directly, see §6) | `factsText`, `question`, `relatedLaws`, `requestingEntity`, `requestDate` — 5 discrete fields. Distinct tool from `/ai/legal-opinion` (الرأي الفصل); government-sector naming overlap only. |
 | `/ai/gov/procedure-guide` | `gov.procedure-guide` — "دليل الإجراءات الأمنية" | `page.tsx:65`, inside `{selected === p.id && (<BetaReviewGate>...)}` per accordion card | `search` (filter text) and `selected` (which of 4 static procedures is expanded) both stay usable **outside** the gate — only the expanded step-by-step content (fully static `PROCEDURES[].steps`) is hidden. No free text is hidden; this gate hides pure reference content. |
-| `/ai/gov/procurement-reviewer` | `gov.procurement-reviewer` — "تقرير مراجعة المنافسات والمشتريات" | `page.tsx:78` (`step === "result"`, inferred from identical pattern) | `form = { type, value, entity, details }`. |
+| `/ai/gov/procurement-reviewer` | `gov.procurement-reviewer` — "تقرير مراجعة المنافسات والمشتريات" | `page.tsx:78` (`step === "result"` — confirmed directly, see §6) | `form = { type, value, entity, details }`. |
 | `/ai/gov/rights-reminder` | `gov.rights-reminder` — "قائمة ضمانات الموقوف" | `page.tsx:56` — **unconditional**, wraps the entire interactive checklist itself, not just an AI-generated result | `checked: number[]` — which of the 8 static rights items (`RIGHTS`) the officer has marked complete, via clickable toggle rows, plus a reset button. **This gate hides the tool's only functionality, not an AI output** — while `BETA_REVIEW_MODE` is on, the checklist cannot be interacted with at all, since the toggle buttons themselves are children of `<BetaReviewGate>`. See §7 finding. |
-| `/ai/gov/verdict-drafter` | `gov.verdict-drafter` — "مسودة الحكم القضائي" | `page.tsx:334` (`step === "result"`, inferred from identical pattern) | `caseNumber`, `caseYear`, `factsText`, `evidenceText`, `lawsText`, `weighingReason` — 6 discrete fields. Same Arabic tool name as `/ai/gov/judgment-drafter` but a distinct route/file. |
+| `/ai/gov/verdict-drafter` | `gov.verdict-drafter` — "مسودة الحكم القضائي" | `page.tsx:334` (`step === "result"` — confirmed directly, see §6) | `caseNumber`, `caseYear`, `factsText`, `evidenceText`, `lawsText`, `weighingReason` — 6 discrete fields. Same Arabic tool name as `/ai/gov/judgment-drafter` but a distinct route/file. |
 
 ### 5.4 NGO tools (`src/app/ai/ngo/*`)
 
