@@ -48,8 +48,12 @@ export default function AIContractsPage() {
   // default.
   const isDetailedDraft = s.contractComplexity === "detailed";
   const submitRows: StepSubmitRow[] = [
-    { label: "الطرف الأول", value: partyLabel(s.party1Data) },
-    { label: "الطرف الثاني", value: partyLabel(s.party2Data) },
+    // canProceed() has no gate on "parties" (never asked to add one) — a
+    // client can reach submit having never touched either party form. Shown
+    // truthfully as "—" rather than hidden; warn flags it on screen instead
+    // of silently shipping an order with no party names.
+    { label: "الطرف الأول", value: partyLabel(s.party1Data), warn: !partyLabel(s.party1Data) },
+    { label: "الطرف الثاني", value: partyLabel(s.party2Data), warn: !partyLabel(s.party2Data) },
     ...(isDetailedDraft ? [{
       label: "نوع العقد",
       value: CONTRACT_TYPES.find(c => c.id === s.contractType)?.title ?? "",
