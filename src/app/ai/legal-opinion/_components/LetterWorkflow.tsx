@@ -5,17 +5,36 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle, DownloadSimple, PencilSimple, Plus, X,
   User, Buildings, Scroll, PaperPlaneTilt, ArrowRight, ArrowLeft, Paperclip,
+  Warning,
 } from "@phosphor-icons/react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { LETTER_TYPES, GOV_ENTITIES } from "../_constants";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import { useUser } from "@/hooks/useUser";
+import { validateLegalOpinionIntake } from "@/lib/services/orderIntake.legalOpinion";
+import { createServiceOrder } from "@/lib/services/serviceOrders";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
 
 interface LetterWorkflowProps {
   isDark: boolean;
   card: string;
   onBack: () => void;
+}
+
+/**
+ * Map a thrown submit error to Arabic user-facing copy. The underlying
+ * message (which may be English — "Unauthorized", a raw Postgres error,
+ * etc.) is logged for developers via console.error but never shown to the
+ * user. Mirrors useDraftState.ts's submitErrorMessageAr.
+ */
+function submitErrorMessageAr(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  console.error("[LetterWorkflow] submitOrder failed:", raw);
+  if (raw === "Unauthorized") {
+    return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
+  }
+  return "تعذّر إرسال الطلب — حاول مجدداً";
 }
 
 // ── Spring physics preset (MOTION_INTENSITY: 6) ──────────────────────────────
@@ -38,12 +57,36 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
   const [letterAttachments, setLetterAttachments] = useState<string[]>([]);
   const [attachmentInput, setAttachmentInput] = useState("");
   const [letterLegalRef, setLetterLegalRef] = useState("");
+  // Kept defined but never set to true any more (Task C4) — letterDone used
+  // to gate the fake "AI is drafting" spinner (generateLetter()) before
+  // revealing a canned-feeling "ready" view with non-functional PDF/Word/
+  // WhatsApp buttons. That view is hidden (not deleted) below; the real
+  // replacement is letterStep 4, a genuine review-and-submit screen.
   const [letterDone, setLetterDone] = useState(false);
   const [letterProcessing, setLetterProcessing] = useState(false);
+  // Submit-step state (Task C4) — this workflow is self-contained and never
+  // touches page.tsx's state machine or its shared submitOrder(), per the
+  // controller notes: it needs its own submit path.
+  const [submitting, setSubmitting] = useState(false);
+  const [submitErrors, setSubmitErrors] = useState<string[]>([]);
 
-  // ── Full letter text for AiResultActions (built once letterDone) ─────────────
+  // Resolves letterType to a display label, "other" included. Previously
+  // `LETTER_TYPES.find(l => l.id === letterType)?.label` resolved to
+  // `undefined` for "other" (not in LETTER_TYPES) — silently dropping the
+  // one piece of information ("خطاب مخصص: <ما وصفه المستخدم>") that made a
+  // custom letter type meaningful. Task C4.
+  const letterTypeLabel = letterType === "other"
+    ? (letterTypeCustom.trim() || "خطاب مخصص")
+    : (LETTER_TYPES.find(l => l.id === letterType)?.label ?? "");
+
+  // ── Full letter text for AiResultActions ──────────────────────────────────
+  // Previously guarded by `if (!letterDone) return ""`, so this was only
+  // ever computed after the fake "AI drafting" step. Computed eagerly now —
+  // letterStep 4 needs a live preview before any "done" flag exists, and the
+  // submit-order payload needs the same text as the admin's starting draft
+  // (controller notes §7/§9: "carry it into the order").
   const fullLetterText = useMemo(() => {
-    if (!letterDone) return "";
+    if (!senderName.trim() || !recipientName.trim() || !letterSubject.trim()) return "";
     const recipientLine = recipientType === "government"
       ? `معالي / سعادة رئيس ${govEntity || recipientName}`
       : `السيد / ${recipientName}`;
@@ -70,9 +113,12 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
       `مقدمه،\n${senderName}`,
     ];
     return lines.filter(Boolean).join("\n");
-  }, [letterDone, recipientType, govEntity, recipientName, letterType, senderName,
+  }, [recipientType, govEntity, recipientName, letterType, senderName,
       letterSubject, letterLegalRef, responseDeadline, deadlineDays, letterAttachments]);
 
+  // Kept defined but never called any more (Task C4) — see the letterDone
+  // comment above. The step-3 "التالي" button now moves straight to
+  // letterStep 4 with no artificial delay.
   async function generateLetter() {
     setLetterProcessing(true);
     await new Promise(r => setTimeout(r, 1800));
@@ -80,31 +126,94 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
     setLetterDone(true);
   }
 
+  // Real submit path (Task C4) — modelled on useDraftState.submitOrder():
+  // build the letter intake → validateLegalOpinionIntake → read
+  // profiles(display_name, phone, email) → createServiceOrder → redirect.
+  // "attachments" here is the real OrderAttachment[] the order needs — the
+  // letter flow never collects real files, so it is always []. The client's
+  // free-text attachment labels travel inside `letter.attachmentLabels`
+  // instead, named so they can never be mistaken for uploaded files.
+  async function submitLetterOrder() {
+    setSubmitErrors([]);
+    const intake = {
+      schemaVersion: 1,
+      service: "legal_opinion",
+      outputType: "letter",
+      letter: {
+        letterType,
+        letterTypeCustom: letterType === "other" ? letterTypeCustom.trim() : undefined,
+        letterTypeLabel,
+        senderName, senderRole,
+        recipientName, recipientType,
+        ...(recipientType === "government" ? { govEntity } : {}),
+        ...(responseDeadline ? { responseDeadline, deadlineDays } : {}),
+        letterSubject, letterLegalRef,
+        // Free-text labels the client typed, NOT uploaded files — no
+        // <input type="file"> exists in this workflow. Named distinctly
+        // from `attachments` (the real OrderAttachment[] below) so an
+        // admin reading the order can't mistake one for the other.
+        attachmentLabels: letterAttachments,
+        fullLetterText,
+      },
+      attachments: [] as { documentId: string; name: string; size: number }[],
+    };
+    const check = validateLegalOpinionIntake(intake);
+    if (!check.ok) { setSubmitErrors(check.errors); return; }
+
+    setSubmitting(true);
+    try {
+      const supabase = createBrowserClient();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const { data: profile } = authUser
+        ? await supabase.from("profiles").select("display_name, phone, email").eq("id", authUser.id).single()
+        : { data: null };
+
+      const order = await createServiceOrder({
+        service: "legal_opinion",
+        title: `خطاب رسمي — ${letterTypeLabel || "خطاب"}`,
+        description: letterSubject.slice(0, 200),
+        intake: check.value as unknown as Record<string, unknown>,
+        attachments: [],
+        requester: {
+          name: profile?.display_name ?? undefined,
+          phone: profile?.phone ?? undefined,
+          email: profile?.email ?? undefined,
+        },
+      });
+      window.location.href = `/ai/orders/${order.id}`;
+    } catch (err) {
+      setSubmitErrors([submitErrorMessageAr(err)]);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <AnimatePresence mode="wait">
-      {/* Step indicator */}
-      {!letterDone && (
-        <div className={`${card} p-3 mb-4`}>
-          <div className="flex items-center gap-1">
-            {["نوع الخطاب", "الأطراف", "الموضوع", "الخطاب الجاهز"].map((l, i) => {
-              const n = i + 1;
-              const isActive = letterStep === n;
-              const isDone = letterStep > n;
-              return (
-                <div key={n} className="flex items-center gap-1 flex-1">
-                  <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0 transition-all ${
-                    isDone ? "bg-emerald-500 text-white" : isActive ? "bg-blue-600 text-white" : isDark ? "bg-zinc-800 text-zinc-500" : "bg-zinc-100 text-zinc-400"
-                  }`}>
-                    {isDone ? <CheckCircle size={12} weight="fill" /> : n}
-                  </div>
-                  <span className={`text-[10px] hidden sm:block truncate font-medium ${isActive ? (isDark ? "text-white" : "text-zinc-800") : isDark ? "text-zinc-600" : "text-zinc-400"}`}>{l}</span>
-                  {i < 3 && <div className={`flex-1 h-px mx-1 ${isDone ? "bg-emerald-500/40" : isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />}
+      {/* Step indicator — always shown now (Task C4): the old `!letterDone`
+          guard hid it once the fake "ready" view appeared; that view is
+          unreachable now, and the real step 4 (review & submit) still wants
+          the indicator visible like every other step. */}
+      <div className={`${card} p-3 mb-4`}>
+        <div className="flex items-center gap-1">
+          {["نوع الخطاب", "الأطراف", "الموضوع", "مراجعة وإرسال"].map((l, i) => {
+            const n = i + 1;
+            const isActive = letterStep === n;
+            const isDone = letterStep > n;
+            return (
+              <div key={n} className="flex items-center gap-1 flex-1">
+                <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0 transition-all ${
+                  isDone ? "bg-emerald-500 text-white" : isActive ? "bg-blue-600 text-white" : isDark ? "bg-zinc-800 text-zinc-500" : "bg-zinc-100 text-zinc-400"
+                }`}>
+                  {isDone ? <CheckCircle size={12} weight="fill" /> : n}
                 </div>
-              );
-            })}
-          </div>
+                <span className={`text-[10px] hidden sm:block truncate font-medium ${isActive ? (isDark ? "text-white" : "text-zinc-800") : isDark ? "text-zinc-600" : "text-zinc-400"}`}>{l}</span>
+                {i < 3 && <div className={`flex-1 h-px mx-1 ${isDone ? "bg-emerald-500/40" : isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />}
+              </div>
+            );
+          })}
         </div>
-      )}
+      </div>
 
       {/* Step 1 — نوع الخطاب */}
       {letterStep === 1 && (
@@ -330,7 +439,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
       )}
 
       {/* Step 3 — الموضوع */}
-      {letterStep === 3 && !letterDone && (
+      {letterStep === 3 && (
         <motion.div key="ls3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
           className={`${card} p-5 space-y-4`}>
           <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>الموضوع والمطلوب</p>
@@ -357,10 +466,14 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               }`} />
           </div>
 
-          {/* Attachments */}
+          {/* Attachments — free-text labels, NOT uploaded files. There is no
+              file picker in this workflow; these are just names the client
+              wants noted (e.g. what they will physically enclose with the
+              mailed letter). Copy says so explicitly so this can't be
+              mistaken for a real upload control (Task C4). */}
           <div>
             <p className={`text-[10px] font-bold mb-1.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-              المرفقات <span className="opacity-60 font-normal">(اختياري)</span>
+              أسماء المرفقات المطلوب إرفاقها بالخطاب <span className="opacity-60 font-normal">(اختياري — نص فقط، بدون رفع ملفات هنا)</span>
             </p>
             <div className="flex gap-2">
               <input value={attachmentInput} onChange={e => setAttachmentInput(e.target.value)}
@@ -422,28 +535,106 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
             <motion.button
               whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
               transition={spring}
-              onClick={generateLetter}
-              disabled={letterSubject.trim().length < 10 || letterProcessing}
+              onClick={() => setLetterStep(4)}
+              disabled={letterSubject.trim().length < 10}
               className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-700 to-blue-500 px-6 py-2.5 text-[13px] font-bold text-white disabled:opacity-40 shadow-[0_4px_12px_-4px_rgba(37,99,235,0.5)]"
             >
-              {letterProcessing ? (
-                <>
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
-                    className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white"
-                  />
-                  جارٍ الصياغة...
-                </>
-              ) : (
-                <><PaperPlaneTilt size={14} />صِغ الخطاب</>
-              )}
+              <PaperPlaneTilt size={14} />التالي: مراجعة وإرسال
             </motion.button>
           </div>
         </motion.div>
       )}
 
-      {/* Step 4 — الخطاب الجاهز */}
+      {/* Step 4 — مراجعة الطلب وإرساله (Task C4). Real replacement for the
+          old letterDone-gated view below, which showed a fake "AI drafting"
+          spinner then non-functional PDF/Word/تعديل/واتساب buttons. This
+          screen previews the same fullLetterText (genuinely composed from
+          steps 1-3, not fabricated) and submits it as a real order — the
+          admin's starting draft, per the controller notes. */}
+      {letterStep === 4 && (
+        <motion.div key="ls4-submit" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${card} p-5 space-y-4`}>
+          <div>
+            <h2 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>مراجعة الطلب وإرساله</h2>
+            <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              سيراجع فريق نظامي بيانات الخطاب يدوياً ويُصدر لك النسخة النهائية الجاهزة للاستخدام، وسيصلك إشعار عند جهوزيتها. النص أدناه مسودة انطلاق مبنية على بياناتك — لن يُرسل كما هو دون مراجعة الفريق.
+            </p>
+          </div>
+
+          <dl className="space-y-2">
+            <div className="flex gap-3 text-[12px]">
+              <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>نوع الخطاب</dt>
+              <dd className={isDark ? "text-zinc-200" : "text-zinc-800"}>{letterTypeLabel || "—"}</dd>
+            </div>
+            <div className="flex gap-3 text-[12px]">
+              <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>المرسِل</dt>
+              <dd className={isDark ? "text-zinc-200" : "text-zinc-800"}>{senderName} ({senderRole === "individual" ? "فرد" : "شركة / مؤسسة"})</dd>
+            </div>
+            <div className="flex gap-3 text-[12px]">
+              <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>المستلِم</dt>
+              <dd className={isDark ? "text-zinc-200" : "text-zinc-800"}>
+                {recipientType === "government" ? `${govEntity || recipientName} (جهة حكومية)` : `${recipientName} (${recipientType === "individual" ? "فرد" : "شركة / مؤسسة"})`}
+              </dd>
+            </div>
+            {letterLegalRef && (
+              <div className="flex gap-3 text-[12px]">
+                <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>مرجع نظامي</dt>
+                <dd className={isDark ? "text-zinc-200" : "text-zinc-800"}>{letterLegalRef}</dd>
+              </div>
+            )}
+            {responseDeadline && (
+              <div className="flex gap-3 text-[12px]">
+                <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>مهلة الرد</dt>
+                <dd className={isDark ? "text-zinc-200" : "text-zinc-800"}>{deadlineDays} أيام</dd>
+              </div>
+            )}
+            {letterAttachments.length > 0 && (
+              <div className="flex gap-3 text-[12px]">
+                <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>أسماء مرفقات (نص فقط)</dt>
+                <dd className={isDark ? "text-zinc-200" : "text-zinc-800"}>{letterAttachments.join("، ")}</dd>
+              </div>
+            )}
+          </dl>
+
+          <div className={`rounded-xl p-4 font-sans text-[12px] leading-[2] whitespace-pre-line ${isDark ? "bg-zinc-800/50 text-zinc-300" : "bg-zinc-50 text-zinc-700"}`} dir="rtl">
+            {fullLetterText || "أكمل بيانات الخطوات السابقة لمعاينة نص الخطاب"}
+          </div>
+
+          {submitErrors.length > 0 && (
+            <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 space-y-1">
+              {submitErrors.map(e => (
+                <p key={e} className="flex items-center gap-1.5 text-[11px] text-red-500">
+                  <Warning size={12} />{e}
+                </p>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => { setSubmitErrors([]); setLetterStep(3); }}
+              className={`flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[12px] font-semibold transition-colors active:scale-[0.98] ${
+                isDark ? "border-white/[0.08] text-zinc-400 hover:bg-white/[0.04]" : "border-slate-200 text-zinc-500 hover:bg-slate-50"
+              }`}
+            >
+              <ArrowRight size={13} /> رجوع
+            </button>
+            <motion.button
+              whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+              transition={spring}
+              onClick={submitLetterOrder}
+              disabled={submitting}
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] px-6 py-2.5 text-[13px] font-bold text-white disabled:opacity-40 shadow-lg"
+            >
+              <PaperPlaneTilt size={14} />{submitting ? "جارٍ الإرسال..." : "إرسال الطلب"}
+            </motion.button>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Step 4 (legacy) — الخطاب الجاهز. HIDDEN, not deleted (Task C4):
+          generateLetter() is never called any more, so letterDone stays
+          false forever and this block never renders. Kept for when real
+          AI letter generation lands — see task-C4-report.md. */}
       {letterDone && (
         <motion.div key="ls4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           <BetaReviewGate toolId="legal-opinion.letter" toolName="الخطاب القانوني" reviewScope="legal-data">

@@ -174,24 +174,31 @@ export function SettingsStep({
         </div>
       )}
 
-      {/* Agent preview (always shown) */}
-      <div className={`${card} p-4`}>
-        <p className={`text-[10px] font-black uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>الوكلاء الذين سيعملون</p>
-        <div className={`grid gap-2 ${agents.length <= 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
-          {agents.map((agent) => {
-            const Icon = agent.icon;
-            return (
-              <div key={agent.key} className={`rounded-xl border p-2.5 flex items-center gap-2 ${agent.border} ${agent.bg}`}>
-                <Icon size={13} className={agent.color} />
-                <div className="min-w-0">
-                  <p className={`text-[10px] font-bold truncate ${agent.color}`}>{agent.label}</p>
-                  <p className={`text-[9px] truncate ${isDark ? "text-zinc-700" : "text-slate-400"}`}>{agent.desc}</p>
+      {/* Agent preview — HIDDEN (Task C4): this card claimed a list of AI
+          agents would process the request. Requests are now fulfilled
+          manually by a human admin, not by a multi-agent AI pipeline, so the
+          claim was no longer true. Kept (not deleted) for when real
+          multi-agent processing lands — `agents` stays a required prop so
+          this component's call sites don't need to change either way. */}
+      {false && (
+        <div className={`${card} p-4`}>
+          <p className={`text-[10px] font-black uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>الوكلاء الذين سيعملون</p>
+          <div className={`grid gap-2 ${agents.length <= 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
+            {agents.map((agent) => {
+              const Icon = agent.icon;
+              return (
+                <div key={agent.key} className={`rounded-xl border p-2.5 flex items-center gap-2 ${agent.border} ${agent.bg}`}>
+                  <Icon size={13} className={agent.color} />
+                  <div className="min-w-0">
+                    <p className={`text-[10px] font-bold truncate ${agent.color}`}>{agent.label}</p>
+                    <p className={`text-[9px] truncate ${isDark ? "text-zinc-700" : "text-slate-400"}`}>{agent.desc}</p>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

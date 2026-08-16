@@ -10,4 +10,9 @@ export type OutputType =
   | "cross-exam";    // مُولّد أسئلة الاستجواب
 
 export type SearchDepth = "quick" | "deep" | "comprehensive";
-export type StepKey = "type" | "context" | "settings" | "processing" | "result";
+// "submit" is the real replacement for the old processing/result theatre
+// (Task C4). "processing"/"result" stay in the union because ProcessingView
+// / ResultView / CrossExamResultView are kept — hidden, not deleted — behind
+// JSX conditionals in page.tsx that still type-check against these values;
+// no live code path sets currentStep to either any more.
+export type StepKey = "type" | "context" | "settings" | "processing" | "result" | "submit";

@@ -4,14 +4,16 @@ import { useState, KeyboardEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Plus } from "@phosphor-icons/react";
 
-type ResearchType = "text" | "topic" | "compare";
+export type ResearchType = "text" | "topic" | "compare";
 
-const COMPARE_SYSTEMS = [
+// Exported so page.tsx can resolve researchType/compareWith to Arabic labels
+// for the submit-step recap without duplicating this list.
+export const COMPARE_SYSTEMS = [
   "النظام الإماراتي", "النظام المصري", "النظام الفرنسي",
   "النظام الأمريكي", "القانون الدولي", "نظام DIFC",
 ];
 
-const RESEARCH_TYPE_OPTIONS: { id: ResearchType; label: string; desc: string; placeholder: string }[] = [
+export const RESEARCH_TYPE_OPTIONS: { id: ResearchType; label: string; desc: string; placeholder: string }[] = [
   {
     id: "text",
     label: "بحث في نص محدد",
@@ -35,14 +37,26 @@ const RESEARCH_TYPE_OPTIONS: { id: ResearchType; label: string; desc: string; pl
 interface Props {
   description: string;
   setDescription: (v: string) => void;
+  researchType: ResearchType;
+  setResearchType: (v: ResearchType) => void;
+  compareWith: string;
+  setCompareWith: (v: string) => void;
+  keywords: string[];
+  setKeywords: (v: string[] | ((prev: string[]) => string[])) => void;
   isDark: boolean;
   card: string;
 }
 
-export function ContextResearch({ description, setDescription, isDark, card }: Props) {
-  const [researchType, setResearchType] = useState<ResearchType>("topic");
-  const [compareWith, setCompareWith] = useState("النظام الإماراتي");
-  const [keywords, setKeywords] = useState<string[]>([]);
+// researchType/compareWith/keywords used to be local useState here — Props
+// had none of them, so all three died the moment the user chose them and
+// never reached the order (Task C4 recon). Now controlled props owned by
+// page.tsx. `kwInput` stays local — it's a transient input buffer for the
+// keyword text box, not a value the order needs.
+export function ContextResearch({
+  description, setDescription,
+  researchType, setResearchType, compareWith, setCompareWith,
+  keywords, setKeywords, isDark, card,
+}: Props) {
   const [kwInput, setKwInput] = useState("");
 
   const addKeyword = () => {

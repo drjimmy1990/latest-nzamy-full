@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { Gavel, Buildings, Handshake, User } from "@phosphor-icons/react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 
-type MemoAudience = "judge" | "gov" | "partner" | "client";
-type LawyerSide = "plaintiff" | "defendant" | "neutral";
+export type MemoAudience = "judge" | "gov" | "partner" | "client";
+export type LawyerSide = "plaintiff" | "defendant" | "neutral";
 
-const AUDIENCE_OPTIONS: { id: MemoAudience; label: string; icon: React.ElementType; placeholder: string }[] = [
+// Exported so page.tsx can resolve audience/side to Arabic labels for the
+// submit-step recap and the order title without duplicating this list.
+export const AUDIENCE_OPTIONS: { id: MemoAudience; label: string; icon: React.ElementType; placeholder: string }[] = [
   { id: "judge",   label: "قاضٍ",          icon: Gavel,    placeholder: "اشرح الوقائع بصيغة قانونية دقيقة وحيادية مناسبة للمذكرة القضائية..." },
   { id: "gov",     label: "جهة حكومية",    icon: Buildings, placeholder: "اشرح الموضوع بأسلوب رسمي مؤسسي مع الإشارة للصلاحيات والأنظمة المعنية..." },
   { id: "partner", label: "شريك / مستثمر", icon: Handshake, placeholder: "اشرح الموقف القانوني بأسلوب ذكي يراعي المصالح التجارية والمخاطر..." },
@@ -22,14 +23,22 @@ interface Props {
   setDescription: (v: string) => void;
   question: string;
   setQuestion: (v: string) => void;
+  audience: MemoAudience;
+  setAudience: (v: MemoAudience) => void;
+  side: LawyerSide;
+  setSide: (v: LawyerSide) => void;
   isDark: boolean;
   card: string;
 }
 
-export function ContextMemo({ description, setDescription, question, setQuestion, isDark, card }: Props) {
-  const [audience, setAudience] = useState<MemoAudience>("judge");
-  const [side, setSide] = useState<LawyerSide>("plaintiff");
-
+// audience/side used to be local useState here — Props had neither, so both
+// choices died the moment the user made them and never reached the order
+// (Task C4 recon). Now controlled props owned by page.tsx, matching the
+// pattern already used for description/topicArea/question.
+export function ContextMemo({
+  description, setDescription, question, setQuestion,
+  audience, setAudience, side, setSide, isDark, card,
+}: Props) {
   const selectedAudience = AUDIENCE_OPTIONS.find(a => a.id === audience)!;
 
   return (

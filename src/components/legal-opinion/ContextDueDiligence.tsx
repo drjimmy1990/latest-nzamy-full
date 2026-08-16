@@ -1,31 +1,34 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Buildings, House, FolderOpen, HandCoins,
-  CloudArrowUp, X, CheckCircle,
+  CloudArrowUp, X, CheckCircle, Warning, Spinner, FileText,
 } from "@phosphor-icons/react";
+import type { OrderAttachment } from "@/lib/services/orderIntake";
 
-type EntityType = "company" | "property" | "project" | "deal";
-type DdGoal = "acquisition" | "investment" | "partnership" | "dispute";
-type DdSide = "buyer" | "seller" | "investor";
+export type EntityType = "company" | "property" | "project" | "deal";
+export type DdGoal = "acquisition" | "investment" | "partnership" | "dispute";
+export type DdSide = "buyer" | "seller" | "investor";
 
-const ENTITY_TYPES: { id: EntityType; label: string; icon: React.ElementType; extraField: string | null }[] = [
+// Exported so page.tsx can resolve entityType/goal/side to Arabic labels for
+// the submit-step recap and the order title without duplicating this list.
+export const ENTITY_TYPES: { id: EntityType; label: string; icon: React.ElementType; extraField: string | null }[] = [
   { id: "company",  label: "شركة",   icon: Buildings, extraField: "رقم السجل التجاري" },
   { id: "property", label: "عقار",   icon: House,     extraField: "رقم الصك" },
   { id: "project",  label: "مشروع",  icon: FolderOpen, extraField: null },
   { id: "deal",     label: "صفقة",   icon: HandCoins, extraField: null },
 ];
 
-const DD_GOALS: { id: DdGoal; label: string }[] = [
+export const DD_GOALS: { id: DdGoal; label: string }[] = [
   { id: "acquisition", label: "استحواذ" },
   { id: "investment",  label: "استثمار" },
   { id: "partnership", label: "شراكة" },
   { id: "dispute",     label: "تسوية نزاع" },
 ];
 
-const DD_SCOPE_ITEMS = [
+export const DD_SCOPE_ITEMS = [
   { id: "legal_structure",  label: "الهيكل القانوني",        default: true },
   { id: "regulatory",       label: "الالتزامات التنظيمية",   default: true },
   { id: "contracts",        label: "العقود القائمة",          default: true },
@@ -37,28 +40,52 @@ const DD_SCOPE_ITEMS = [
 interface Props {
   description: string;
   setDescription: (v: string) => void;
+  entityType: EntityType;
+  setEntityType: (v: EntityType) => void;
+  entityName: string;
+  setEntityName: (v: string) => void;
+  extraFieldVal: string;
+  setExtraFieldVal: (v: string) => void;
+  goal: DdGoal;
+  setGoal: (v: DdGoal) => void;
+  side: DdSide;
+  setSide: (v: DdSide) => void;
+  scope: Record<string, boolean>;
+  setScope: (v: Record<string, boolean> | ((prev: Record<string, boolean>) => Record<string, boolean>)) => void;
   isDark: boolean;
   card: string;
+  attachments: OrderAttachment[];
+  uploading: boolean;
+  attachError: string;
+  attachFile: (file: File) => Promise<OrderAttachment>;
+  removeAttachment: (documentId: string) => void;
 }
 
-export function ContextDueDiligence({ description, setDescription, isDark, card }: Props) {
-  const [entityType, setEntityType] = useState<EntityType>("company");
-  const [entityName, setEntityName] = useState("");
-  const [extraFieldVal, setExtraFieldVal] = useState("");
-  const [goal, setGoal] = useState<DdGoal>("acquisition");
-  const [side, setSide] = useState<DdSide>("buyer");
-  const [scope, setScope] = useState<Record<string, boolean>>(
-    Object.fromEntries(DD_SCOPE_ITEMS.map(i => [i.id, i.default]))
-  );
-  const [files, setFiles] = useState<string[]>([]);
+// entityType/entityName/extraFieldVal/goal/side/scope used to be local
+// useState here — Props exposed only description/setDescription/isDark/card,
+// so every one of them died the moment the user chose it and never reached
+// the order except `description` (Task C4 recon). Now controlled props
+// owned by page.tsx, matching the pattern already used for description.
+export function ContextDueDiligence({
+  description, setDescription,
+  entityType, setEntityType, entityName, setEntityName,
+  extraFieldVal, setExtraFieldVal, goal, setGoal, side, setSide,
+  scope, setScope, isDark, card,
+  attachments, uploading, attachError, attachFile, removeAttachment,
+}: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const selectedEntity = ENTITY_TYPES.find(e => e.id === entityType)!;
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newFiles = Array.from(e.target.files ?? []).map(f => f.name);
-    setFiles(prev => [...prev, ...newFiles]);
+  // Real uploads (Task C4) — previously kept f.name only, into a local
+  // string[] that never left the component. Multiple files supported, same
+  // as the original.
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
+    for (const f of files) {
+      try { await attachFile(f); } catch { /* attachError is set inside the hook and rendered below */ }
+    }
   };
 
   const toggleScope = (id: string) =>
@@ -130,24 +157,38 @@ export function ContextDueDiligence({ description, setDescription, isDark, card 
           )}
         </AnimatePresence>
 
-        {/* File upload */}
-        <input ref={fileRef} type="file" multiple accept=".pdf,.doc,.docx,.txt" className="hidden" onChange={handleFile} />
+        {/* File upload — real attachments (Task C4) */}
+        <input ref={fileRef} type="file" multiple accept=".pdf,.doc,.docx,.txt" className="hidden" disabled={uploading} onChange={handleFile} />
         <button
-          onClick={() => fileRef.current?.click()}
-          className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed text-[11px] transition-colors ${
+          onClick={() => { if (!uploading) fileRef.current?.click(); }}
+          disabled={uploading}
+          className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed text-[11px] transition-colors disabled:opacity-60 ${
             isDark ? "border-white/[0.07] text-zinc-500 hover:border-red-500/30 hover:text-zinc-300" : "border-slate-200 text-slate-400 hover:border-red-300 hover:text-slate-600"
           }`}
         >
-          <CloudArrowUp size={15} /> ارفع مستندات الكيان (متعدد)
+          {uploading ? (
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+              <Spinner size={14} />
+            </motion.div>
+          ) : (
+            <CloudArrowUp size={15} />
+          )}
+          {uploading ? "جارٍ رفع الملف..." : "ارفع مستندات الكيان (متعدد)"}
         </button>
-        {files.length > 0 && (
+        {attachError && (
+          <p className="flex items-center gap-1.5 text-[11px] text-red-500 mt-1">
+            <Warning size={12} />{attachError}
+          </p>
+        )}
+        {attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-1">
-            {files.map((f, i) => (
-              <span key={i} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] ${
+            {attachments.map(a => (
+              <span key={a.documentId} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] ${
                 isDark ? "bg-zinc-800 text-zinc-400" : "bg-slate-100 text-slate-500"
               }`}>
-                {f.slice(0, 20)}
-                <button onClick={() => setFiles(prev => prev.filter((_, fi) => fi !== i))} className="hover:text-red-400"><X size={9} /></button>
+                <FileText size={11} />
+                {a.name.length > 20 ? `${a.name.slice(0, 20)}…` : a.name}
+                <button onClick={() => removeAttachment(a.documentId)} className="hover:text-red-400"><X size={9} /></button>
               </span>
             ))}
           </div>
@@ -218,21 +259,27 @@ export function ContextDueDiligence({ description, setDescription, isDark, card 
         </div>
       </div>
 
-      {/* Additional notes */}
+      {/* Additional notes — was labelled optional with no minimum, so the
+          context step had no gate at all (Task C4 recon: "due-diligence has
+          no gate at all"). This is the only free-text field due-diligence
+          has, and the order validator requires >= 20 characters of
+          description for every non-letter sub-flow, so it is now required. */}
       <div className={`${card} p-4`}>
         <p className={`text-[12px] font-semibold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-          ملاحظات إضافية
-          <span className={`text-[10px] font-normal ms-2 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>(اختياري)</span>
+          تفاصيل الفحص المطلوب
         </p>
         <textarea
           value={description}
           onChange={e => setDescription(e.target.value)}
-          placeholder="أي معلومات إضافية تساعد في الفحص — نوع القطاع، القيمة التقديرية، الجداول الزمنية..."
+          placeholder="اشرح ما تحتاج فحصه بالتفصيل — نوع القطاع، القيمة التقديرية، الجداول الزمنية، أي نقاط قلق محددة..."
           rows={3}
           className={`w-full resize-none rounded-xl border p-3.5 text-[13px] outline-none leading-relaxed ${
             isDark ? "border-white/[0.07] bg-zinc-800/50 text-zinc-200 placeholder:text-zinc-600" : "border-slate-200 bg-slate-50 text-zinc-800 placeholder:text-zinc-400"
           }`}
         />
+        <p className={`text-[10px] mt-1.5 ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
+          {description.length} حرف {description.length < 20 && "— الحد الأدنى ٢٠ حرفاً"}
+        </p>
       </div>
     </motion.div>
   );
