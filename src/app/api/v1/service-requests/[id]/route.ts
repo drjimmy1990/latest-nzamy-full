@@ -5,6 +5,7 @@ import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
+import { canRequesterCancel } from "@/lib/services/orderTransitions";
 
 /**
  * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
@@ -176,9 +177,11 @@ export async function PATCH(
   // `requester_user_id = auth.uid() or assigned_to = auth.uid()`, which lets a
   // requester PATCH their own order's status to ANYTHING, including
   // `completed` — sending themselves a false completion notification/n8n
-  // dispatch and pulling their own order out of the admin queue. Guard on the
-  // *target* status only (not the current one): a requester may only cancel
-  // their own order; every other target requires the assignee or an admin.
+  // dispatch and pulling their own order out of the admin queue. The base
+  // rule guards on the *target* status: a requester may only cancel their own
+  // order; every other target requires the assignee or an admin. Task 1 then
+  // adds a *current*-status guard on top, for `ai_workspace` orders only —
+  // see canRequesterCancel below.
   if ("status" in patch) {
     // Gate on presence, not on being a string: a non-string status (e.g.
     // `{status: 0}`) still passes the Task 6b allowlist and must not slip
@@ -190,7 +193,11 @@ export async function PATCH(
 
     const { data: existing, error: existingError } = await supabase
       .from("service_requests")
-      .select("requester_user_id, assigned_to, receiver")
+      // `status` is here for Task 1's cancellation lock below. Without it
+      // `existing.status` is `undefined`, `canRequesterCancel(String(...))`
+      // sees `""` and refuses EVERY client cancel — the guard would fail
+      // closed so hard it would break the working case.
+      .select("requester_user_id, assigned_to, receiver, status")
       .eq("id", id)
       .single();
 
@@ -234,7 +241,21 @@ export async function PATCH(
       // admin was ever going to fulfil, with no real deliverable behind it.
       // Dodging the gate means dodging the prize, so `receiver` does not
       // need to be locked down at POST for this to hold.
-      permitted = isRequester && targetStatus === "cancelled";
+      //
+      // Task 1 (owner decision س٢, 20 August): «قفل إمكانية الإلغاء على
+      // مستوى الـ Backend Server فور تحول الطلب إلى completed، ولا يُعتمد
+      // على إخفاء الزر فقط.» Until now this branch checked only the CALLER
+      // and the TARGET status, never the CURRENT one, so a direct PATCH
+      // cancelled an order the admin had already delivered — the real
+      // deliverable still attached to it. `canRequesterCancel` adds the
+      // missing source-status check and fails closed on anything it does
+      // not model. `String(existing.status ?? "")` rather than a cast: a
+      // null/absent status must land on `""` (refused), not on the string
+      // "null", and never throw here.
+      permitted =
+        isRequester &&
+        targetStatus === "cancelled" &&
+        canRequesterCancel(String(existing.status ?? ""));
     } else {
       // Unchanged from the original Task 6d rule. Covers lawyer/firm
       // self-tracking (contracts, cases, hearings) where the same person is
