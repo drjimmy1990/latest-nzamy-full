@@ -12,7 +12,7 @@ import { uploadErrorMessage } from "./_errorCopy";
 interface AdminOrder {
   id: string; title: string; description: string; status: string;
   created_at: string; metadata: Record<string, unknown>;
-  profile: { display_name?: string; email?: string; phone?: string } | null;
+  profile: { display_name?: string; email?: string; phone?: string; user_type?: string } | null;
 }
 
 const STATUSES = [
@@ -22,6 +22,27 @@ const STATUSES = [
   { key: "completed", label: "مُسلّمة" },
   { key: "cancelled", label: "ملغاة" },
 ];
+
+// Task 5 — account-type badge, keyed by profiles.user_type. Every key here
+// matches a value in the CHECK constraint at
+// supabase/migrations/20260603_phase1_001_profiles.sql:32 except `provider`
+// and `admin`, deliberately left unmapped: `provider` has no distinct
+// Arabic label in this queue's context yet, and an order's requester is
+// never an admin account. An unmapped user_type simply renders no badge —
+// see the `ACCOUNT_BADGE[...]` guard below — never an empty grey pill.
+const ACCOUNT_BADGE: Record<string, { label: string; cls: string }> = {
+  lawyer:     { label: "محامٍ",        cls: "bg-emerald-500/10 text-emerald-500" },
+  firm:       { label: "مكتب محاماة",  cls: "bg-emerald-500/10 text-emerald-500" },
+  individual: { label: "عميل فرد",     cls: "bg-sky-500/10 text-sky-500" },
+  corporate:  { label: "منشأة تجارية", cls: "bg-amber-500/10 text-amber-600" },
+  micro:      { label: "منشأة صغيرة",  cls: "bg-amber-500/10 text-amber-600" },
+  government: { label: "جهة حكومية",   cls: "bg-violet-500/10 text-violet-500" },
+  ngo:        { label: "جهة غير ربحية", cls: "bg-violet-500/10 text-violet-500" },
+};
+
+const SERVICE_BADGE: Record<string, string> = {
+  draft: "الصائغ", contracts: "العقود", wargaming: "المحاكاة", legal_opinion: "الرأي الفصل",
+};
 
 export default function AdminServiceOrdersPage() {
   const { isDark } = useTheme();
@@ -197,7 +218,23 @@ export default function AdminServiceOrdersPage() {
           <div key={o.id} className={`${card} p-4`}>
             <div className="flex items-center gap-3">
               <div className="flex-1 min-w-0">
-                <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{o.title}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{o.title}</p>
+                  {/* Task 5 — account-type and service badges. An unmapped
+                      user_type (e.g. `provider`, `admin`) or service key
+                      renders nothing here rather than an empty grey pill. */}
+                  {o.profile?.user_type && ACCOUNT_BADGE[o.profile.user_type] && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0 ${ACCOUNT_BADGE[o.profile.user_type].cls}`}>
+                      {ACCOUNT_BADGE[o.profile.user_type].label}
+                    </span>
+                  )}
+                  {SERVICE_BADGE[(o.metadata?.service as string) ?? ""] && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0 ${
+                      isDark ? "bg-white/5 text-zinc-300" : "bg-zinc-100 text-zinc-600"}`}>
+                      {SERVICE_BADGE[(o.metadata?.service as string) ?? ""]}
+                    </span>
+                  )}
+                </div>
                 <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                   {o.profile?.display_name ?? "—"} · {o.profile?.phone ?? "لا يوجد جوال"} · {new Date(o.created_at).toLocaleDateString("ar-SA")}
                 </p>
