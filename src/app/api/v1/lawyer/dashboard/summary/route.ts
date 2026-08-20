@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { stripInternalNotes } from "@/lib/services/internalNotes";
 
 /**
  * GET /api/v1/lawyer/dashboard/summary
@@ -10,9 +11,20 @@ export async function GET() {
   try {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
-    const { user, supabase } = auth;
+    const { user, userType, supabase } = auth;
 
     const uid = user.id;
+    // Review round 3, fourth-door leak: assertRole's own doc comment says
+    // "'admin' is always permitted" — it lets userType === "admin" through
+    // regardless of the `allowed` list, and this route's own header comment
+    // already documents "(lawyer/firm/admin)" as its caller set. So an admin
+    // hitting this route is a real, already-intended case, not a
+    // hypothetical — derive isAdmin from the userType assertRole already
+    // resolved server-side (one query, already paid for) rather than pass
+    // `false` unconditionally, which would wrongly hide an admin's own note
+    // from them, or re-deriving it with a second profiles lookup, which
+    // would just repeat work assertRole already did.
+    const isAdmin = userType === "admin";
 
     const [
       activeCases,
@@ -71,6 +83,13 @@ export async function GET() {
         .catch(() => 0),
 
       // 5. Recent cases (last 4)
+      // Review round 3 — this select includes metadata, and assigned_to is
+      // client-supplied at POST with no server-side check (see
+      // service-requests/route.ts), so a lawyer/firm caller who self-assigned
+      // an ai_workspace order at creation could otherwise read
+      // metadata.internalNotes here once an admin delivers/cancels it
+      // without an intervening claim. Same stripInternalNotes() helper used
+      // by both service-requests routes and buildWebhookPayload.
       Promise.resolve(
         supabase
           .from("service_requests")
@@ -80,7 +99,12 @@ export async function GET() {
           .order("updated_at", { ascending: false })
           .limit(4),
       )
-        .then(({ data }) => data ?? [])
+        .then(({ data }) =>
+          (data ?? []).map((row) => ({
+            ...row,
+            metadata: stripInternalNotes(row.metadata as Record<string, unknown> | null | undefined, isAdmin),
+          })),
+        )
         .catch(() => []),
 
       // 6. Upcoming deadlines (consultations + hearings in next 14 days)
