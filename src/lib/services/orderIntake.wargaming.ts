@@ -64,11 +64,14 @@ export function validateWargamingIntake(input: unknown): ValidationResult<Wargam
   }
 
   const memoText = str(input.memoText);
-  if (targets.includes(WARGAMING_CRITIQUE_TARGET) && !memoText) {
-    errors.push("نص المذكرة مطلوب عند اختيار نقض المذكرة");
-  }
-
   const attachments = collectAttachments(input.attachments, errors);
+  // The client supplies the memo being critiqued either as pasted text or as
+  // an uploaded file (owners field-tested the text-only textarea and found
+  // clients hold the memo as a PDF, not text they can paste) — so either
+  // satisfies the requirement, not memoText alone.
+  if (targets.includes(WARGAMING_CRITIQUE_TARGET) && !memoText && attachments.length === 0) {
+    errors.push("عند اختيار نقض المذكرة، أدخل نص المذكرة أو أرفق ملفها");
+  }
 
   if (errors.length > 0) return { ok: false, errors };
 

@@ -73,6 +73,23 @@ test("accepts the critique target when memoText is provided", () => {
   if (r.ok) assert.equal(r.value.memoText, "نص المذكرة الأصلية");
 });
 
+test("critique target is satisfied by an attachment instead of memoText", () => {
+  const r = validateWargamingIntake({
+    ...valid,
+    targets: [WARGAMING_CRITIQUE_TARGET],
+    memoText: "",
+    attachments: [{ documentId: 12, name: "memo.pdf", size: 900 }],
+  });
+  assert.equal(r.ok, true);
+});
+
+test("critique target with neither memoText nor an attachment is rejected", () => {
+  const r = validateWargamingIntake({
+    ...valid, targets: [WARGAMING_CRITIQUE_TARGET], memoText: "", attachments: [],
+  });
+  assert.equal(r.ok, false);
+});
+
 test("rejects an attachment missing documentId (malformed attachment)", () => {
   const r = validateWargamingIntake({ ...valid, attachments: [{ name: "a.pdf", size: 10 }] });
   assert.equal(r.ok, false);

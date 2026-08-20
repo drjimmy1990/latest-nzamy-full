@@ -442,16 +442,22 @@ function CaseSetup({
 function TargetSelect({
   D, ctx, targets, setTargets, onRun, onBack,
   attachments, memoText, setMemoText,
+  uploading, attachError, attachFile, removeAttachment,
 }: {
   D:boolean; ctx:CaseContext;
   targets:Set<SimTarget>; setTargets:(t:Set<SimTarget>)=>void;
   onRun:()=>void; onBack:()=>void;
   attachments: OrderAttachment[];
   memoText: string; setMemoText: (v:string)=>void;
+  uploading: boolean; attachError: string;
+  attachFile: (file: File) => Promise<OrderAttachment>;
+  removeAttachment: (documentId: string) => void;
 }) {
   const areaLabel = CASE_AREAS.find(a=>a.id===ctx.area)?.label??"";
   const roleLabel  = CASE_ROLES.find(r=>r.id===ctx.role)?.label??"";
   const hasCritique = targets.has(WARGAMING_CRITIQUE_TARGET);
+  const memoFileRef = useRef<HTMLInputElement>(null);
+  const memoSatisfied = memoText.trim().length>0 || attachments.length>0;
 
   function toggle(t:SimTarget) {
     const n = new Set(targets);
@@ -508,25 +514,67 @@ function TargetSelect({
         <span className="ms-auto">{targets.size} من {SIM_TARGETS.length} محددة</span>
       </div>
 
-      {/* Memo text — required only when نقض المذكرة is selected; the target
-          implies the client supplies the memo being critiqued, and no other
-          field can carry it. */}
+      {/* Memo — required only when نقض المذكرة is selected; the target
+          implies the client supplies the memo being critiqued. Either pasted
+          text or an uploaded file satisfies it (owners field-tested the
+          text-only textarea and found clients hold the memo as a PDF, not
+          text they can paste) — both feed the same shared attachments list
+          from useOrderAttachments() up in AIWargamingPage, so a file
+          attached here reaches the order payload exactly like the case-file
+          upload in step 1 does. */}
       {hasCritique && (
         <motion.div initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} className="overflow-hidden">
           <div className={`rounded-2xl border p-4 space-y-2 ${D?"border-purple-700/25 bg-purple-900/8":"border-purple-200 bg-purple-50/60"}`}>
             <div className="flex items-center gap-2">
               <Notebook size={14} className="text-purple-400"/>
-              <p className={`text-[12px] font-bold ${D?"text-zinc-200":"text-zinc-700"}`}>نص المذكرة المراد نقضها</p>
+              <p className={`text-[12px] font-bold ${D?"text-zinc-200":"text-zinc-700"}`}>المذكرة المراد نقضها</p>
             </div>
             <p className={`text-[11px] ${D?"text-zinc-500":"text-slate-500"}`}>
-              اختيار «نقض المذكرة» يحتاج نص مذكرتك الحالية كاملاً — الصقه هنا ليراجعه الفريق.
+              الصق نص المذكرة، أو ارفع ملفها — يكفي أحدهما.
             </p>
             <textarea value={memoText} onChange={e=>setMemoText(e.target.value)}
               placeholder="الصق نص المذكرة كاملاً هنا..." rows={6}
               className={`w-full resize-none rounded-xl border px-3 py-2.5 text-[12px] outline-none ${D?"border-white/[0.07] bg-zinc-800/60 text-zinc-200 placeholder:text-zinc-600":"border-purple-200 bg-white text-zinc-800 placeholder:text-zinc-400"}`}/>
-            {memoText.trim().length===0 && (
+
+            {attachments.length>0 && (
+              <div className="space-y-1.5">
+                {attachments.map(a=>(
+                  <div key={a.documentId} className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${D?"border-emerald-700/30 bg-emerald-900/10":"border-emerald-200 bg-emerald-50"}`}>
+                    <FileText size={13} className="text-emerald-500"/>
+                    <span className={`flex-1 truncate text-[11px] ${D?"text-emerald-300":"text-emerald-700"}`}>{a.name}</span>
+                    <button onClick={()=>removeAttachment(a.documentId)}><X size={12} className="text-emerald-500"/></button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div onClick={()=>{if(!uploading)memoFileRef.current?.click();}}
+              className={`rounded-xl border-2 border-dashed p-2.5 flex items-center gap-2.5 ${uploading?"opacity-60":"cursor-pointer"} ${D?"border-white/[0.08] hover:border-[#C8A762]/30":"border-zinc-200 hover:border-[#C8A762]/40"}`}>
+              <input ref={memoFileRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png" disabled={uploading}
+                onChange={async e=>{
+                  const f=e.target.files?.[0];
+                  if(!f)return;
+                  try { await attachFile(f); } catch { /* attachError is set inside the hook and rendered below */ }
+                  e.target.value = "";
+                }}/>
+              {uploading ? (
+                <motion.div animate={{rotate:360}} transition={{duration:1,repeat:Infinity,ease:"linear"}}>
+                  <Spinner size={15} className={D?"text-zinc-500":"text-zinc-400"}/>
+                </motion.div>
+              ) : (
+                <FileArrowUp size={15} className={D?"text-zinc-600":"text-zinc-400"}/>
+              )}
+              <p className={`text-[11px] font-semibold ${D?"text-zinc-400":"text-zinc-600"}`}>{uploading?"جارٍ رفع الملف...":"أو ارفع ملف المذكرة (PDF · Word · صورة)"}</p>
+            </div>
+
+            {attachError && (
+              <p className="flex items-center gap-1.5 text-[11px] text-red-500">
+                <Warning size={12}/>{attachError}
+              </p>
+            )}
+            {!memoSatisfied && (
               <p className="flex items-center gap-1.5 text-[11px] text-amber-500">
-                <Warning size={12}/>نص المذكرة مطلوب عند اختيار «نقض المذكرة»
+                <Warning size={12}/>نص المذكرة أو ملفها مطلوب عند اختيار «نقض المذكرة»
               </p>
             )}
           </div>
@@ -591,11 +639,13 @@ function SubmitReview({
           </div>
           {hasCritique && (
             <div className="flex gap-3 text-[12px]">
-              <dt className={D?"text-zinc-500 w-32 shrink-0":"text-zinc-400 w-32 shrink-0"}>نص المذكرة</dt>
-              <dd className={memoText.trim() ? (D?"text-zinc-200":"text-zinc-800") : "text-amber-500"}>
+              <dt className={D?"text-zinc-500 w-32 shrink-0":"text-zinc-400 w-32 shrink-0"}>المذكرة المراد نقضها</dt>
+              <dd className={(memoText.trim() || attachments.length>0) ? (D?"text-zinc-200":"text-zinc-800") : "text-amber-500"}>
                 {memoText.trim()
                   ? `${memoText.trim().slice(0,150)}${memoText.trim().length>150?"…":""}`
-                  : "لم تُدرِج نص المذكرة بعد — عد للخطوة السابقة لإضافته قبل الإرسال"}
+                  : attachments.length>0
+                    ? "أُرفق ملف المذكرة — راجع المرفقات أدناه"
+                    : "لم تُدرِج نص المذكرة ولم ترفق ملفها بعد — عد للخطوة السابقة لإضافة إحداهما قبل الإرسال"}
               </dd>
             </div>
           )}
@@ -934,7 +984,9 @@ export default function AIWargamingPage() {
           <motion.div key="targets" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
             <TargetSelect D={D} ctx={ctx} targets={targets} setTargets={setTargets}
               onRun={()=>setStep("submit")} onBack={()=>setStep("setup")}
-              attachments={attachments} memoText={memoText} setMemoText={setMemoText}/>
+              attachments={attachments} memoText={memoText} setMemoText={setMemoText}
+              uploading={uploading} attachError={attachError}
+              attachFile={attachFile} removeAttachment={removeAttachment}/>
           </motion.div>
         )}
 
