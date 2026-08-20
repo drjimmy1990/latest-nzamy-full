@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { uploadDocumentFile } from "@/lib/services/documentService";
+import { validateUploadFile } from "@/lib/services/fileValidation";
 
 /**
  * Map a thrown attachFile error to Arabic user-facing copy. The underlying
@@ -16,6 +17,11 @@ function attachErrorMessageAr(err: unknown): string {
   }
   if (raw === "Unauthorized") {
     return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
+  }
+  if (raw === "file_rejected") {
+    // attachFile already set the precise Arabic reason before throwing;
+    // returning "" leaves that message in place instead of replacing it.
+    return "";
   }
   return "تعذّر رفع الملف — تحقق من الاتصال وحاول مجدداً";
 }
@@ -42,6 +48,13 @@ export function useOrderAttachments() {
    */
   async function attachFile(file: File): Promise<OrderAttachment> {
     setAttachError("");
+    // Refuse locally before spending a round trip, and before any caller's
+    // optimistic filename has to be reverted.
+    const rejection = validateUploadFile(file);
+    if (rejection) {
+      setAttachError(rejection);
+      throw new Error("file_rejected");
+    }
     setUploading(true);
     try {
       const doc = await uploadDocumentFile(file);
