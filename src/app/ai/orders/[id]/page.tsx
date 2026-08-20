@@ -1,13 +1,29 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import { DownloadSimple } from "@phosphor-icons/react";
+import Link from "next/link";
+import { ArrowRight, DownloadSimple, WhatsappLogo } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import {
   getServiceOrder, ORDER_STATUS_AR, type ServiceOrder,
 } from "@/lib/services/serviceOrders";
+// Reuse the codebase's one real support WhatsApp number (also used by
+// src/app/contact/page.tsx and the floating WhatsApp widget) rather than
+// inventing a second one for this page. NOT src/lib/betaConfig.ts's
+// BETA_WHATSAPP_NUMBER / BetaReviewGate's inline "966XXXXXXXXX" — those are
+// explicitly still placeholders ("Update with real number").
+import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
+import { OrderTimeline } from "./_components/OrderTimeline";
+import { OrderSummary } from "./_components/OrderSummary";
 
 type LoadState = "loading" | "error" | "not_found" | "loaded";
+
+// Statuses for which the three-stage progress strip (OrderTimeline) makes
+// sense to show at all — every status ServiceOrder["status"] models except
+// "cancelled" (a cancelled order never finishes this journey; it gets its
+// own panel below, unchanged). The page's fifth, catch-all branch handles
+// status values outside this union entirely and never gets a timeline.
+const TIMELINE_STATUSES = new Set(["pending_assignment", "assigned", "in_review", "completed"]);
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -15,6 +31,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [order, setOrder] = useState<ServiceOrder | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [downloadErr, setDownloadErr] = useState("");
+  const [idCopied, setIdCopied] = useState(false);
+  const [copyErr, setCopyErr] = useState("");
 
   const load = () => {
     setState("loading");
@@ -53,6 +71,19 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       // feedback. This is a distinct message from the endpoint's own
       // (deliberately non-distinguishing) 404 body above.
       setDownloadErr("تعذّر التحميل. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.");
+    }
+  }
+
+  async function copyId() {
+    setCopyErr("");
+    try {
+      // navigator.clipboard throws on insecure origins (plain HTTP,
+      // non-localhost) — never let the button look dead with no feedback.
+      await navigator.clipboard.writeText(id);
+      setIdCopied(true);
+      setTimeout(() => setIdCopied(false), 2000);
+    } catch {
+      setCopyErr("تعذّر النسخ تلقائياً — انسخ الرقم يدوياً.");
     }
   }
 
@@ -96,15 +127,39 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   const s = ORDER_STATUS_AR[order.status] ?? ORDER_STATUS_AR.pending_assignment;
   const deliverable = order.metadata?.deliverable;
+  const supportHref = buildWhatsAppHref(
+    `مرحباً فريق نظامي، أحتاج مساعدة بخصوص طلبي رقم ${order.id} (${order.metadata?.serviceTitleAr ?? order.title}).`,
+  );
 
   return (
     <div className="p-5 md:p-7 max-w-3xl mx-auto space-y-4" dir="rtl">
-      <div>
+      <div className="space-y-1.5">
+        {/* Task 6, Step 1 — a reference the client can quote. The order id
+            is already the primary key (service_requests.id); this doesn't
+            invent a second, parallel numbering scheme. */}
+        <div className="flex items-center gap-2">
+          <span className={`text-[11px] font-mono ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>#{order.id}</span>
+          <button onClick={copyId} className="text-[11px] font-semibold text-[#0B3D2E]">
+            {idCopied ? "تم النسخ ✓" : "نسخ رقم الطلب"}
+          </button>
+        </div>
+        {copyErr && <p className="text-[10px] text-red-500">{copyErr}</p>}
+
         <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{order.title}</h1>
         <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
           {order.metadata?.serviceTitleAr} · الحالة: {s.label}
         </p>
       </div>
+
+      {/* Task 6, Step 2 — progress strip + (on open orders only) the
+          owner-ruled delivery-time card. Not shown for "cancelled" (its own
+          panel below covers that) or for any status outside the five this
+          page knows about (the catch-all branch at the bottom). */}
+      {TIMELINE_STATUSES.has(order.status) && (
+        <div className={`${card} p-5`}>
+          <OrderTimeline status={order.status} isDark={isDark} />
+        </div>
+      )}
 
       {order.status === "completed" && deliverable ? (
         <div className={`${card} p-5 space-y-3`}>
@@ -150,6 +205,31 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </p>
         </div>
       )}
+
+      {/* Task 6, Step 3 — what the client actually sent: intake answers
+          rendered generically (differs per service) plus their own
+          attachments with working download links. Shown regardless of
+          status — it's a record of what was submitted, not a status
+          indicator, so it stays visible on delivered/cancelled orders too. */}
+      <OrderSummary order={order} isDark={isDark} />
+
+      {/* Task 6, Step 4 — always-available actions. */}
+      <div className={`${card} p-5 flex flex-wrap items-center gap-3`}>
+        <Link
+          href="/ai/orders"
+          className={`flex items-center gap-1.5 text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}
+        >
+          <ArrowRight size={14} /> رجوع إلى طلباتي
+        </Link>
+        <a
+          href={supportHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 text-[12px] font-semibold text-emerald-600"
+        >
+          <WhatsappLogo size={14} weight="fill" /> تواصل مع الدعم
+        </a>
+      </div>
     </div>
   );
 }
