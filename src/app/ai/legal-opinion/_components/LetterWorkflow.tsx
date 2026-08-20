@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle, DownloadSimple, PencilSimple, Plus, X,
   User, Buildings, Scroll, PaperPlaneTilt, ArrowRight, ArrowLeft, Paperclip,
-  Warning,
+  Warning, CloudArrowUp, FileText, Spinner,
 } from "@phosphor-icons/react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { LETTER_TYPES, GOV_ENTITIES } from "../_constants";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import { useUser } from "@/hooks/useUser";
+import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { validateLegalOpinionIntake } from "@/lib/services/orderIntake.legalOpinion";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
@@ -42,6 +43,13 @@ const spring = { type: "spring" as const, stiffness: 320, damping: 26 };
 
 export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
   const user = useUser();
+  // Real file uploads (Task 11) — this workflow is self-contained (see the
+  // submit-path comment below), so it owns its own useOrderAttachments()
+  // instance rather than being fed one from page.tsx. `attachments` here is
+  // genuine OrderAttachment[] the admin can open/download; kept distinct
+  // from the typed-only `letterAttachments` labels declared further down.
+  const { attachments, uploading, attachError, attachFiles, removeAttachment } = useOrderAttachments();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [letterStep, setLetterStep] = useState(1);
   const [letterType, setLetterType] = useState("");
   const [letterTypeCustom, setLetterTypeCustom] = useState("");
@@ -126,13 +134,17 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
     setLetterDone(true);
   }
 
-  // Real submit path (Task C4) — modelled on useDraftState.submitOrder():
-  // build the letter intake → validateLegalOpinionIntake → read
-  // profiles(display_name, phone, email) → createServiceOrder → redirect.
-  // "attachments" here is the real OrderAttachment[] the order needs — the
-  // letter flow never collects real files, so it is always []. The client's
-  // free-text attachment labels travel inside `letter.attachmentLabels`
-  // instead, named so they can never be mistaken for uploaded files.
+  // Real submit path (Task C4; real uploads added Task 11) — modelled on
+  // useDraftState.submitOrder(): build the letter intake →
+  // validateLegalOpinionIntake → read profiles(display_name, phone, email)
+  // → createServiceOrder → redirect.
+  // "attachments" here is the real OrderAttachment[] from useOrderAttachments()
+  // above — genuine uploaded files the admin can open and download. The
+  // client's free-text attachment labels (an enclosure they'll bring in
+  // person, or one that only exists on paper) travel separately inside
+  // `letter.attachmentLabels`, named distinctly and never merged with
+  // `attachments` so an admin can always tell which enclosures are real
+  // files and which are only named.
   async function submitLetterOrder() {
     setSubmitErrors([]);
     const intake = {
@@ -148,14 +160,13 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
         ...(recipientType === "government" ? { govEntity } : {}),
         ...(responseDeadline ? { responseDeadline, deadlineDays } : {}),
         letterSubject, letterLegalRef,
-        // Free-text labels the client typed, NOT uploaded files — no
-        // <input type="file"> exists in this workflow. Named distinctly
-        // from `attachments` (the real OrderAttachment[] below) so an
-        // admin reading the order can't mistake one for the other.
+        // Free-text labels the client typed, NOT uploaded files. Named
+        // distinctly from `attachments` (the real OrderAttachment[] below)
+        // so an admin reading the order can't mistake one for the other.
         attachmentLabels: letterAttachments,
         fullLetterText,
       },
-      attachments: [] as { documentId: string; name: string; size: number }[],
+      attachments,
     };
     const check = validateLegalOpinionIntake(intake);
     if (!check.ok) { setSubmitErrors(check.errors); return; }
@@ -173,7 +184,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
         title: `خطاب رسمي — ${letterTypeLabel || "خطاب"}`,
         description: letterSubject.slice(0, 200),
         intake: check.value as unknown as Record<string, unknown>,
-        attachments: [],
+        attachments,
         requester: {
           name: profile?.display_name ?? undefined,
           phone: profile?.phone ?? undefined,
@@ -186,6 +197,14 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // One batch call rather than a loop of single attachFile() calls — see
+  // useOrderAttachments.ts's attachFiles.
+  async function handleLetterFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    e.target.value = "";
+    if (files && files.length) await attachFiles(files);
   }
 
   return (
@@ -466,14 +485,93 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               }`} />
           </div>
 
-          {/* Attachments — free-text labels, NOT uploaded files. There is no
-              file picker in this workflow; these are just names the client
-              wants noted (e.g. what they will physically enclose with the
-              mailed letter). Copy says so explicitly so this can't be
-              mistaken for a real upload control (Task C4). */}
+          {/* Real file uploads (Task 11) — genuine OrderAttachment[] via
+              useOrderAttachments(), admin can open/download each one. Kept
+              under its own heading, deliberately separate from the typed
+              labels block below: two distinct headings, two distinct
+              payload keys (`attachments` vs `letter.attachmentLabels`) so
+              an admin can always tell which enclosures are real files and
+              which are only named. */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className={`text-[10px] font-bold ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                الملفات المرفقة <span className="opacity-60 font-normal">(اختياري — ملفات حقيقية يمكن للفريق فتحها وتنزيلها)</span>
+              </p>
+              {attachments.length > 0 && !uploading && (
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors flex-shrink-0 ${
+                    isDark ? "border-white/[0.08] text-zinc-400 hover:text-zinc-200" : "border-slate-200 text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  إضافة ملف
+                </button>
+              )}
+            </div>
+
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+              multiple
+              className="hidden"
+              disabled={uploading}
+              onChange={handleLetterFile}
+            />
+
+            {attachError && (
+              <p className="flex items-center gap-1.5 text-[11px] text-red-500 mb-2">
+                <Warning size={12} />{attachError}
+              </p>
+            )}
+
+            {attachments.length > 0 ? (
+              <div className="space-y-1.5">
+                {attachments.map(att => (
+                  <div
+                    key={att.documentId}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${
+                      isDark ? "border-white/[0.07] bg-zinc-800/40" : "border-slate-200 bg-slate-50"
+                    }`}
+                  >
+                    <FileText size={13} weight="duotone" className="text-blue-500 flex-shrink-0" />
+                    <span className={`flex-1 text-[12px] truncate ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{att.name}</span>
+                    <button onClick={() => removeAttachment(att.documentId)} className="text-red-400 hover:text-red-500 p-0.5 flex-shrink-0">
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <button
+                onClick={() => { if (!uploading) fileRef.current?.click(); }}
+                disabled={uploading}
+                className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed text-[12px] transition-colors disabled:opacity-60 ${
+                  isDark ? "border-white/[0.07] text-zinc-500 hover:border-blue-500/30 hover:text-zinc-300" : "border-slate-200 text-slate-400 hover:border-blue-400/40 hover:text-slate-600"
+                }`}
+              >
+                {uploading ? (
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                    <Spinner size={15} />
+                  </motion.div>
+                ) : (
+                  <CloudArrowUp size={15} />
+                )}
+                {uploading ? "جارٍ رفع الملف..." : "أرفق ملفاً — PDF · Word · صورة"}
+              </button>
+            )}
+          </div>
+
+          {/* Typed attachment LABELS — free-text names, NOT uploaded files.
+              Kept deliberately separate from the real file-upload block
+              above (Task 11): a client may want to name an enclosure
+              they'll bring in person, or one that exists only on paper.
+              Copy says so explicitly so this can't be mistaken for the
+              real upload control above (Task C4 / Task 11). */}
           <div>
             <p className={`text-[10px] font-bold mb-1.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-              أسماء المرفقات المطلوب إرفاقها بالخطاب <span className="opacity-60 font-normal">(اختياري — نص فقط، بدون رفع ملفات هنا)</span>
+              أسماء مرفقات إضافية (بدون رفع ملف) <span className="opacity-60 font-normal">(اختياري — نص فقط، لعناصر لن تُرفق كملف هنا)</span>
             </p>
             <div className="flex gap-2">
               <input value={attachmentInput} onChange={e => setAttachmentInput(e.target.value)}
@@ -587,6 +685,12 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
                 <dd className={isDark ? "text-zinc-200" : "text-zinc-800"}>{deadlineDays} أيام</dd>
               </div>
             )}
+            {attachments.length > 0 && (
+              <div className="flex gap-3 text-[12px]">
+                <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>الملفات المرفقة</dt>
+                <dd className={isDark ? "text-zinc-200" : "text-zinc-800"}>{attachments.map(a => a.name).join("، ")}</dd>
+              </div>
+            )}
             {letterAttachments.length > 0 && (
               <div className="flex gap-3 text-[12px]">
                 <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>أسماء مرفقات (نص فقط)</dt>
@@ -622,10 +726,10 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
               transition={spring}
               onClick={submitLetterOrder}
-              disabled={submitting}
+              disabled={submitting || uploading}
               className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] px-6 py-2.5 text-[13px] font-bold text-white disabled:opacity-40 shadow-lg"
             >
-              <PaperPlaneTilt size={14} />{submitting ? "جارٍ الإرسال..." : "إرسال الطلب"}
+              <PaperPlaneTilt size={14} />{submitting ? "جارٍ الإرسال..." : uploading ? "جارٍ رفع الملف..." : "إرسال الطلب"}
             </motion.button>
           </div>
         </motion.div>
