@@ -5,6 +5,7 @@ import { recordEvent, RequestEvent } from "@/lib/events";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
+import { stripInternalNotes } from "@/lib/services/internalNotes";
 
 /**
  * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
@@ -82,7 +83,37 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ data: [], total: 0, degraded: true });
     }
 
-    const mapped = (data ?? []).map((row) => toWorkflowRequest(row as Record<string, unknown>));
+    // Critical fix (review round 2) — this list is exactly what
+    // listMyServiceOrders() / طلباتي (src/app/ai/orders/page.tsx) reads for a
+    // client's own orders, and `toWorkflowRequest` used to spread `row`
+    // wholesale, metadata.internalNotes included. Closing that leak only in
+    // the [id] detail route left it wide open here. Same admin-vs-not
+    // resolution as that route (profiles.user_type, not RLS/participation,
+    // since an admin who claimed an ai_workspace order legitimately sees
+    // their own note), but resolved ONCE for the whole page instead of once
+    // per row — a per-row profile lookup would turn one list fetch into
+    // N+1 queries. Only pays for that one lookup when at least one row on
+    // this page actually carries the field.
+    const rows = (data ?? []) as Record<string, unknown>[];
+    const anyInternalNotes = rows.some((row) => {
+      const m = row.metadata;
+      return !!m && typeof m === "object" && "internalNotes" in (m as Record<string, unknown>);
+    });
+    let isAdmin = false;
+    if (anyInternalNotes) {
+      const { data: callerProfile } = await supabase
+        .from("profiles")
+        .select("user_type")
+        .eq("id", user.id)
+        .maybeSingle();
+      isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
+    }
+    const mapped = rows.map((row) =>
+      toWorkflowRequest({
+        ...row,
+        metadata: stripInternalNotes(row.metadata as Record<string, unknown> | null | undefined, isAdmin),
+      }),
+    );
     return NextResponse.json({ data: mapped, total: count ?? 0 });
   } catch (err) {
     console.error("[service-requests GET] Unexpected error:", err);

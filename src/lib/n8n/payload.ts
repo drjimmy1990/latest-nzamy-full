@@ -11,7 +11,16 @@
  * `service_request.completed` / `.cancelled` it always addresses the
  * requester (never the assignee) and, given `requesterProfile`, carries
  * their name/phone/email for outbound channels like WhatsApp.
+ *
+ * `data.metadata` always has `internalNotes` stripped, unconditionally — see
+ * stripInternalNotes(). n8n is a third-party automation platform outside the
+ * application's own trust boundary; a private team note must never leave via
+ * this payload regardless of which caller (or which action) produced the
+ * event. Scrubbing here, once, is what makes that structural rather than a
+ * property every call site has to remember to preserve.
  */
+
+import { stripInternalNotes } from "../services/internalNotes.ts";
 
 export interface WebhookPayload {
   event: string;
@@ -163,7 +172,10 @@ export function buildWebhookPayload(
       title: request.title ?? "",
       description: request.description ?? "",
       sourcePath: request.source_path ?? "",
-      metadata: request.metadata ?? {},
+      // n8n is outside the application's trust boundary — always strip
+      // internalNotes here, regardless of who triggered this event. See the
+      // module doc comment above.
+      metadata: stripInternalNotes((request.metadata as Record<string, unknown> | null | undefined) ?? {}, false),
       receiver: request.receiver ?? null,
       assignedTo: request.assigned_to ?? null,
       requester: request.requester ?? null,

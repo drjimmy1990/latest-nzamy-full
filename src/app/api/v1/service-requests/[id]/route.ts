@@ -4,6 +4,7 @@ import { recordEvent, RequestEvent } from "@/lib/events";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
+import { stripInternalNotes } from "@/lib/services/internalNotes";
 
 /**
  * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
@@ -88,26 +89,26 @@ export async function GET(
   // admin claims an ai_workspace order they become `assigned_to`, so an
   // admin viewing their own claimed order is a legitimate case, not just the
   // requester. Resolve admin-ness from profiles.user_type directly (same
-  // pattern as this route's own PATCH handler below) and strip the key for
-  // everyone else. This is the one place that closes the leak — the field
-  // exists in the row from the moment an admin delivers or cancels an order.
-  let responseMetadata = (serviceRequest as Record<string, unknown>).metadata as
+  // pattern as this route's own PATCH handler below) and let the shared
+  // stripInternalNotes() helper (also used by the list route and by
+  // buildWebhookPayload) do the actual scrub — a single implementation
+  // instead of a `delete` copied at every boundary this field crosses.
+  const rawMetadata = (serviceRequest as Record<string, unknown>).metadata as
     | Record<string, unknown>
     | null;
-  if (responseMetadata && typeof responseMetadata === "object" && "internalNotes" in responseMetadata) {
+  let isAdmin = false;
+  if (rawMetadata && typeof rawMetadata === "object" && "internalNotes" in rawMetadata) {
     const { data: callerProfile } = await supabase
       .from("profiles")
       .select("user_type")
       .eq("id", user.id)
       .maybeSingle();
-    const isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
-    if (!isAdmin) {
-      const sanitized = { ...responseMetadata };
-      delete sanitized.internalNotes;
-      responseMetadata = sanitized;
-    }
+    isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
   }
-  const sanitizedRequest = { ...(serviceRequest as Record<string, unknown>), metadata: responseMetadata };
+  const sanitizedRequest = {
+    ...(serviceRequest as Record<string, unknown>),
+    metadata: stripInternalNotes(rawMetadata, isAdmin),
+  };
 
   return NextResponse.json({
     data: {

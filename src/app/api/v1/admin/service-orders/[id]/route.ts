@@ -93,9 +93,17 @@ export async function PATCH(
           documentId: body.documentId, fileName: body.fileName,
           notes: body.notes ?? "", deliveredAt: nowIso, deliveredBy: adminUserId,
         },
-        // Task 3 — a note for the team, never sent to the client. Kept out of
-        // the client's response by GET /api/v1/service-requests/[id] (see
-        // that route's own comment); this route only has to write it.
+        // Task 3 — a note for the team, never sent to the client and never
+        // sent to n8n. This route only has to write it: both the client's
+        // GET routes (service-requests/[id] and the service-requests list)
+        // and buildWebhookPayload() (used a few lines below, for the n8n
+        // dispatch) strip it via the shared stripInternalNotes() helper —
+        // see src/lib/services/internalNotes.ts. (Review round 2, Critical
+        // 1/2: an earlier version of this comment claimed the client-facing
+        // strip alone was enough and missed that this same handler also
+        // forwards `updated` — internalNotes included — to n8n a few lines
+        // down; the strip now lives inside the payload builder itself so no
+        // caller of it can reintroduce either leak.)
         internalNotes: body.internalNotes ?? "",
       },
     };

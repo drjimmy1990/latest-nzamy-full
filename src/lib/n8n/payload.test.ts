@@ -67,3 +67,18 @@ test("timestamp and entity pass through unchanged", () => {
   assert.equal(p.entity.id, "order-1");
   assert.equal(p.entity.type, "ai_draft");
 });
+
+test("REGRESSION: internalNotes never appears in the webhook payload, even when set on metadata", () => {
+  const p = buildWebhookPayload({
+    event: "service_request.completed",
+    timestamp: ts,
+    request: {
+      ...completedRequest,
+      metadata: { service: "draft", internalNotes: "لا يرسل هذا لأي جهة خارج الفريق" },
+    },
+    requesterProfile,
+  });
+  assert.equal((p.data.metadata as Record<string, unknown>).internalNotes, undefined);
+  assert.equal((p.data.metadata as Record<string, unknown>).service, "draft");
+  assert.ok(!("internalNotes" in (p.data.metadata as Record<string, unknown>)));
+});
