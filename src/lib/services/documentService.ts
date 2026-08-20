@@ -78,7 +78,22 @@ export async function uploadDocumentFile(
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Unauthorized");
 
-  const safeName = file.name.replace(/[^a-zA-Z0-9._\-؀-ۿ\s]/g, "_");
+  // The storage key travels inside an HTTP header on the way to S3, and HTTP
+  // headers are ASCII-only — so an Arabic or spaced filename makes Supabase
+  // reject the upload outright. Strip the KEY to ASCII; the original name
+  // (Arabic and all) is still stored verbatim in `attachments.file_name`
+  // below, and that is what the client and the admin actually see.
+  const dot = file.name.lastIndexOf(".");
+  const rawBase = dot > 0 ? file.name.slice(0, dot) : file.name;
+  const rawExt = dot > 0 ? file.name.slice(dot + 1) : "";
+  const asciiBase = rawBase
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+  const asciiExt = rawExt.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+  // A fully non-Latin name sanitises to an empty string — fall back rather
+  // than building a key that is just a timestamp and a dot.
+  const safeName = (asciiBase || "file") + (asciiExt ? `.${asciiExt}` : "");
   const storagePath = `${user.id}/${Date.now()}-${safeName}`;
 
   const { error: uploadError } = await supabase.storage
