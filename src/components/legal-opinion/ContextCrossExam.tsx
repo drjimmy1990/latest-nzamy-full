@@ -27,7 +27,7 @@ interface Props {
   attachments: OrderAttachment[];
   uploading: boolean;
   attachError: string;
-  attachFile: (file: File) => Promise<OrderAttachment>;
+  attachFiles: (files: FileList | File[]) => Promise<OrderAttachment[]>;
   removeAttachment: (documentId: string) => void;
   // Fired once confirmReady() composes the final text block, carrying the
   // two structured picks (witnessRole/destroyGoal) up to page.tsx — used to
@@ -62,7 +62,7 @@ const DESTROY_GOALS = [
 
 export function ContextCrossExam({
   description, setDescription, isDark, card,
-  attachments, uploading, attachError, attachFile, removeAttachment, onReadyInfo,
+  attachments, uploading, attachError, attachFiles, removeAttachment, onReadyInfo,
 }: Props) {
   const [phase, setPhase] = useState<ScanPhase>("input");
   const [dynQuestions, setDynQuestions] = useState<DynQ[]>([]);
@@ -131,9 +131,11 @@ export function ContextCrossExam({
   // useOrderAttachments(); no more folding filenames into description — see
   // startScan()'s note below.
   async function handleFiles(fileList: FileList) {
-    for (const f of Array.from(fileList)) {
-      try { await attachFile(f); } catch { /* attachError is set inside the hook and rendered below */ }
-    }
+    // One batch call, not a loop of single attachFile() calls — attachFiles
+    // validates and uploads the whole selection together, so a rejection
+    // earlier in the batch survives a later file's success instead of being
+    // cleared by it (see useOrderAttachments.ts).
+    await attachFiles(fileList);
   }
 
   async function startScan() {

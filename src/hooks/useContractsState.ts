@@ -77,7 +77,7 @@ export function useContractsState() {
   // useOrderAttachments(), embedded here the same way useDraftState.ts embeds
   // it, so StepRUpload and submitReviewOrder() share one source of truth.
   const {
-    attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError,
+    attachments, uploading, attachError, attachFile, attachFiles, removeAttachment, clearAttachError,
   } = useOrderAttachments();
 
   // Drafting Mode States
@@ -305,6 +305,6 @@ export function useContractsState() {
     rPartyFocus, setRPartyFocus, rFears, setRFears, rOtherParty, setROtherParty, rClauseDecisions, setRClauseDecisions,
     paraEdits, setParaEdits, generalEdits, setGeneralEdits,
     submitting, submitErrors, submitOrder,
-    attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError, submitReviewOrder,
+    attachments, uploading, attachError, attachFile, attachFiles, removeAttachment, clearAttachError, submitReviewOrder,
   };
 }

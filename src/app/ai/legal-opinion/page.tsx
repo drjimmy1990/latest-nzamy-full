@@ -150,7 +150,7 @@ export default function AILegalOpinionPage() {
   // sub-flow is ever active at a time (selectedType is single-select), and
   // switching sub-flows clears whatever was attached — see clearFlowState().
   const {
-    attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError,
+    attachments, uploading, attachError, attachFiles, removeAttachment, clearAttachError,
   } = useOrderAttachments();
 
   // Submit-step state
@@ -583,7 +583,7 @@ export default function AILegalOpinionPage() {
                   studyGoal={studyGoal} setStudyGoal={setStudyGoal}
                   isDark={isDark} card={card}
                   attachments={attachments} uploading={uploading} attachError={attachError}
-                  attachFile={attachFile} removeAttachment={removeAttachment}
+                  attachFiles={attachFiles} removeAttachment={removeAttachment}
                 />
               )}
               {selectedType === "legal-memo" && (
@@ -619,7 +619,7 @@ export default function AILegalOpinionPage() {
                   scope={ddScope} setScope={setDdScope}
                   isDark={isDark} card={card}
                   attachments={attachments} uploading={uploading} attachError={attachError}
-                  attachFile={attachFile} removeAttachment={removeAttachment}
+                  attachFiles={attachFiles} removeAttachment={removeAttachment}
                 />
               )}
               {selectedType === "cross-exam" && (
@@ -628,7 +628,7 @@ export default function AILegalOpinionPage() {
                   description={description} setDescription={setDescription}
                   isDark={isDark} card={card}
                   attachments={attachments} uploading={uploading} attachError={attachError}
-                  attachFile={attachFile} removeAttachment={removeAttachment}
+                  attachFiles={attachFiles} removeAttachment={removeAttachment}
                   onReadyInfo={({ witnessRole, destroyGoal }) => {
                     setCrossExamReady(true);
                     setCrossExamWitnessRole(witnessRole);

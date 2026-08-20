@@ -94,7 +94,7 @@ interface Props {
   attachments: OrderAttachment[];
   uploading: boolean;
   attachError: string;
-  attachFile: (file: File) => Promise<OrderAttachment>;
+  attachFiles: (files: FileList | File[]) => Promise<OrderAttachment[]>;
   removeAttachment: (documentId: string) => void;
 }
 
@@ -112,16 +112,16 @@ export function ContextStudy({
   description, setDescription,
   studyGoal, setStudyGoal,
   isDark, card,
-  attachments, uploading, attachError, attachFile, removeAttachment,
+  attachments, uploading, attachError, attachFiles, removeAttachment,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // One batch call rather than a loop of single attachFile() calls — see
+  // useOrderAttachments.ts's attachFiles.
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+    const files = e.target.files;
     e.target.value = "";
-    for (const f of files) {
-      try { await attachFile(f); } catch { /* attachError is set inside the hook and rendered below */ }
-    }
+    if (files && files.length) await attachFiles(files);
   }
 
   const selectedGoal = STUDY_GOALS.find(g => g.id === studyGoal);

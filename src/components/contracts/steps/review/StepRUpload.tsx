@@ -13,40 +13,41 @@ interface StepRUploadProps {
   attachments: OrderAttachment[];
   uploading: boolean;
   attachError: string;
-  attachFile: (file: File) => Promise<OrderAttachment>;
+  attachFiles: (files: FileList | File[]) => Promise<OrderAttachment[]>;
   removeAttachment: (documentId: string) => void;
   clearAttachError: () => void;
 }
 
 export function StepRUpload({
   isDark, contractType, setContractType,
-  attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError,
+  attachments, uploading, attachError, attachFiles, removeAttachment, clearAttachError,
 }: StepRUploadProps) {
   const card = isDark ? "bg-zinc-900 border border-white/[0.07] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Files picked but not yet resolved by attachFile() — shown immediately so
-  // the client sees the filename without waiting on the network round trip,
-  // matching src/components/draft/steps/StepCase.tsx (the one working upload
-  // in this codebase). Each entry is removed the instant its attachFile()
-  // settles: on success the real row then comes from `attachments`; on
-  // failure (attachError, set inside the hook, explains why) the optimistic
-  // name simply disappears rather than lingering as if it had worked.
+  // Files picked but not yet resolved — shown immediately so the client
+  // sees the filenames without waiting on the network round trip, matching
+  // src/components/draft/steps/StepCase.tsx (the one working upload in this
+  // codebase). The whole selection is entered as pending together and
+  // cleared together once attachFiles() settles: successes then come from
+  // `attachments`, and anything rejected simply disappears rather than
+  // lingering as if it had worked — attachError (set inside the hook,
+  // rendered below) explains why, and — unlike a per-file attachFile()
+  // loop — is never cleared out by a later file in the same batch
+  // succeeding (see useOrderAttachments.ts's attachFiles).
   const [pending, setPending] = useState<{ id: number; name: string }[]>([]);
 
   async function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
     clearAttachError();
-    for (const file of Array.from(fileList)) {
-      const id = Date.now() + Math.random();
-      setPending(prev => [...prev, { id, name: file.name }]);
-      try {
-        await attachFile(file);
-      } catch {
-        // attachError is set inside the hook and rendered below
-      } finally {
-        setPending(prev => prev.filter(p => p.id !== id));
-      }
+    const files = Array.from(fileList);
+    const entries = files.map(file => ({ id: Date.now() + Math.random(), name: file.name }));
+    setPending(prev => [...prev, ...entries]);
+    try {
+      await attachFiles(files);
+    } finally {
+      const ids = new Set(entries.map(e => e.id));
+      setPending(prev => prev.filter(p => !ids.has(p.id)));
     }
   }
 

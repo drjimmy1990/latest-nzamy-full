@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { uploadDocumentFile } from "@/lib/services/documentService";
-import { validateUploadFile } from "@/lib/services/fileValidation";
+import { validateUploadFile, partitionUploadFiles } from "@/lib/services/fileValidation";
 
 /**
  * Map a thrown attachFile error to Arabic user-facing copy. The underlying
@@ -18,11 +18,6 @@ function attachErrorMessageAr(err: unknown): string {
   if (raw === "Unauthorized") {
     return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
   }
-  if (raw === "file_rejected") {
-    // attachFile already set the precise Arabic reason before throwing;
-    // returning "" leaves that message in place instead of replacing it.
-    return "";
-  }
   return "تعذّر رفع الملف — تحقق من الاتصال وحاول مجدداً";
 }
 
@@ -38,6 +33,18 @@ export function useOrderAttachments() {
   const [attachments, setAttachments] = useState<OrderAttachment[]>([]);
   const [uploading, setUploading]     = useState(false);
   const [attachError, setAttachError] = useState("");
+
+  // Actually performs the upload for a file already known to pass
+  // validateUploadFile — shared by attachFile (single, throws on failure)
+  // and attachFiles (batch, collects failures instead of throwing).
+  async function uploadAndRecord(file: File): Promise<OrderAttachment> {
+    const doc = await uploadDocumentFile(file);
+    const attachment: OrderAttachment = {
+      documentId: doc.id, name: doc.file_name, size: doc.size_bytes ?? 0,
+    };
+    setAttachments((prev) => [...prev, attachment]);
+    return attachment;
+  }
 
   /**
    * Upload a file and record it as an attachment. Returns the created
@@ -57,18 +64,52 @@ export function useOrderAttachments() {
     }
     setUploading(true);
     try {
-      const doc = await uploadDocumentFile(file);
-      const attachment: OrderAttachment = {
-        documentId: doc.id, name: doc.file_name, size: doc.size_bytes ?? 0,
-      };
-      setAttachments((prev) => [...prev, attachment]);
-      return attachment;
+      return await uploadAndRecord(file);
     } catch (err) {
       setAttachError(attachErrorMessageAr(err));
       throw err;
     } finally {
       setUploading(false);
     }
+  }
+
+  /**
+   * Upload every acceptable file from a multi-select in one batch. Unlike
+   * looping attachFile() over the selection, this validates the whole batch
+   * up front and sets attachError exactly once at the end — so a file
+   * rejected early in the selection is not silently wiped by a later file's
+   * success. (attachFile() resets attachError at the start of every one of
+   * its own calls; that is correct for a single retry but wrong across a
+   * batch, since call N+1 would clear the rejection call N just set.)
+   * Never throws — callers just render attachError and get back whatever
+   * of the selection actually attached.
+   */
+  async function attachFiles(fileList: FileList | File[]): Promise<OrderAttachment[]> {
+    const files = Array.from(fileList);
+    setAttachError("");
+    const { accepted, rejectedMessage } = partitionUploadFiles(files);
+    const attached: OrderAttachment[] = [];
+    const problems: string[] = rejectedMessage ? [rejectedMessage] : [];
+
+    if (accepted.length > 0) {
+      setUploading(true);
+      try {
+        for (const file of accepted) {
+          try {
+            attached.push(await uploadAndRecord(file));
+          } catch (err) {
+            problems.push(`${file.name}: ${attachErrorMessageAr(err)}`);
+          }
+        }
+      } finally {
+        setUploading(false);
+      }
+    }
+
+    if (problems.length > 0) {
+      setAttachError(problems.join("، "));
+    }
+    return attached;
   }
 
   function removeAttachment(documentId: string): void {
@@ -79,5 +120,5 @@ export function useOrderAttachments() {
     setAttachError("");
   }
 
-  return { attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError };
+  return { attachments, uploading, attachError, attachFile, attachFiles, removeAttachment, clearAttachError };
 }

@@ -353,7 +353,7 @@ export default function AIContractsPage() {
               attachments={s.attachments}
               uploading={s.uploading}
               attachError={s.attachError}
-              attachFile={s.attachFile}
+              attachFiles={s.attachFiles}
               removeAttachment={s.removeAttachment}
               clearAttachError={s.clearAttachError}
             />
