@@ -44,6 +44,107 @@ interface DocumentCreateResponse {
   data: Document;
 }
 
+// ─── Upload timeout ───────────────────────────────────────────────────────────
+
+/**
+ * Ceiling on how long the client waits for the storage upload before it gives
+ * up. A hung upload used to leave the caller's `uploading` flag true forever —
+ * and since that flag now disables the wizard's "التالي"/"إرسال الطلب"
+ * buttons, a stalled request meant a client who could not proceed at all and
+ * had no way out but reloading the page (owner question س٣).
+ *
+ * 20 MB is the largest file validateUploadFile() lets through, so 60 s is also
+ * a floor of roughly 2.7 Mbps: a genuinely slow-but-working upload of a large
+ * file on a weak mobile link will be cut off and reported as a timeout. That
+ * is the trade the 60-second figure buys.
+ */
+const UPLOAD_TIMEOUT_MS = 60_000;
+
+/**
+ * The machine-readable cause of an upload the client stopped waiting for.
+ * It lives on `UploadTimeoutError.code` and never inside `.message` — see the
+ * class below for why the two are kept apart.
+ */
+export const UPLOAD_TIMEOUT_CODE = "upload_timeout";
+
+/**
+ * Thrown when the storage upload passes UPLOAD_TIMEOUT_MS.
+ *
+ * WHY A CLASS INSTEAD OF `new Error("upload_timeout")` — five call sites catch
+ * what uploadDocumentFile() throws, and two of them put `err.message` into a
+ * red banner (`dashboard/lawyer/cases/[id]/page.tsx` verbatim,
+ * `dashboard/client/documents/page.tsx` after an Arabic prefix). A bare token
+ * therefore reached those
+ * screens as raw English, which this project forbids. Splitting the two
+ * audiences serves both in one move:
+ *   - `.message` is the Arabic sentence a client may safely read.
+ *   - `.code` is the token that code branches on, via isUploadTimeoutError().
+ *
+ * SCOPE, so nobody reads more into this than it does: this closes the timeout
+ * path only. Two lines of raw English still reach those same two banners by
+ * their own routes — `uploadError.message` straight from Supabase Storage, and
+ * apiMutate's "API error: <status>" fallback. Neither is fixed here.
+ *
+ * The wording says only what is true: we stopped waiting. It does not claim
+ * the upload was cancelled — the request may still be running, and the file
+ * may still land in the bucket without ever becoming an attachment.
+ */
+export class UploadTimeoutError extends Error {
+  readonly code = UPLOAD_TIMEOUT_CODE;
+  constructor() {
+    super("تعذّر الرفع — استغرق وقتاً طويلاً. تحقق من اتصالك وحاول مجدداً.");
+    this.name = "UploadTimeoutError";
+  }
+}
+
+/**
+ * True when `err` is the upload timeout above. Tests the class first, then
+ * falls back to the `code` field so the guard still holds if this module ever
+ * ends up duplicated in a bundle — two copies of the class would make
+ * `instanceof` false for an object that is otherwise identical.
+ */
+export function isUploadTimeoutError(err: unknown): err is UploadTimeoutError {
+  if (err instanceof UploadTimeoutError) return true;
+  return err instanceof Error && (err as { code?: unknown }).code === UPLOAD_TIMEOUT_CODE;
+}
+
+/**
+ * Reject `work` with `makeError()` once `ms` have passed. The error is built
+ * by a factory rather than passed in ready-made so that each timeout gets its
+ * own stack trace, and so nothing is constructed on the (normal) path where
+ * the work settles first.
+ *
+ * WHAT THIS DOES AND DOES NOT DO — racing a timer against a promise releases
+ * the *caller*. It does not cancel the in-flight request: `fetch` keeps
+ * running and the bytes keep going up. An upload we stopped waiting for may
+ * still land in the bucket afterwards, leaving a storage object that no
+ * `attachments` row ever points at (no metadata row at all, so no
+ * `request_id`). That is already this app's norm for an abandoned upload —
+ * the metadata-POST rollback below can leave the mirror-image leftover when
+ * the POST succeeds server-side but fails for the client — and an orphaned
+ * object is a far cheaper failure than a frozen client.
+ *
+ * Cancelling for real would need an AbortSignal, and the installed Supabase
+ * storage client will not take one on `.upload()`. @supabase/storage-js
+ * 2.107.0 types it as `upload(path, fileBody, fileOptions?: FileOptions)`
+ * (dist/index.d.mts:882) with no third fetch-parameters argument, and
+ * `FileOptions` (dist/index.d.mts:238-262) has no `signal` field — only
+ * `FetchParameters` (dist/index.d.mts:356-360) does, and that type is
+ * accepted by `download()`/`createSignedUrl()`, not by `upload()`. The
+ * runtime agrees: `uploadOrUpdate` (dist/index.mjs:603-635) never forwards a
+ * signal into its `post()` call, so even an untyped one would be ignored. A
+ * race is the only tool this version leaves us.
+ */
+function withTimeout<T>(work: Promise<T>, ms: number, makeError: () => Error): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(makeError()), ms);
+    work.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 // ─── Service functions ────────────────────────────────────────────────────────
 
 export async function getDocuments(): Promise<Document[]> {
@@ -96,12 +197,35 @@ export async function uploadDocumentFile(
   const safeName = (asciiBase || "file") + (asciiExt ? `.${asciiExt}` : "");
   const storagePath = `${user.id}/${Date.now()}-${safeName}`;
 
-  const { error: uploadError } = await supabase.storage
-    .from("documents")
-    .upload(storagePath, file, {
+  // The 60-second ceiling covers the storage upload only. The metadata POST
+  // below is deliberately left unraced: a timeout there would run the rollback
+  // and delete the storage object while the row may still be created
+  // server-side (the race cancels nothing), leaving an `attachments` row whose
+  // storage_path points at a file that no longer exists — strictly worse than
+  // an orphaned object. Residual, stated rather than hidden: a hung metadata
+  // POST still leaves the caller waiting indefinitely.
+  const { error: uploadError } = await withTimeout(
+    supabase.storage.from("documents").upload(storagePath, file, {
       contentType: file.type || "application/octet-stream",
       upsert: false,
-    });
+    }),
+    UPLOAD_TIMEOUT_MS,
+    // UploadTimeoutError carries Arabic in `.message` and the token in
+    // `.code`, so every caller that renders a caught `.message` renders Arabic
+    // on this path. How the five callers each behave:
+    //   - useOrderAttachments.ts — isUploadTimeoutError() also stops a
+    //     multi-file batch instead of re-timing-out on every remaining file.
+    //   - admin/service-orders/page.tsx:189 — uploadErrorMessage() in
+    //     _errorCopy.ts passes an already-Arabic message through unchanged, so
+    //     the admin now sees this specific sentence instead of its generic one.
+    //   - client/consultation/new/page.tsx:194 — console.errors only; nothing
+    //     user-visible changes there.
+    //   - client/documents/page.tsx:215-216 — renders `.message` inside
+    //     "فشل رفع الملف: …", so the banner is Arabic but reads doubled.
+    //   - lawyer/cases/[id]/page.tsx:325 — `e?.message ?? "…"`; `.message` is
+    //     truthy, and it is now the Arabic sentence rather than a bare token.
+    () => new UploadTimeoutError(),
+  );
   if (uploadError) throw new Error(uploadError.message);
 
   try {
