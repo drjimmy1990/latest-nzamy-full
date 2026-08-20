@@ -38,6 +38,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       { label: "المحاكي الشامل",   labelEn: "Litigation Studio",        href: "/ai/wargaming",     icon: "Scales",       divider: true, badge: "مُدمَج" },
       { label: "عصارة المرفقات",    labelEn: "Attachment Analyzer",      href: "/ai/analyze",       icon: "MagnifyingGlass", badge: "PRO" },
       { label: "الرأي الفصل",       labelEn: "Al-Ra'y Al-Fasl",          href: "/ai/legal-opinion", icon: "Lightbulb",    badge: "PRO" },
+      { label: "طلباتي الذكية",     labelEn: "My AI Orders",             href: "/ai/orders",        icon: "Tray",          divider: true },
       // ٤: المساعدة والمتابعة
       { label: "السكرتير الذكي",    labelEn: "AI Secretary",             href: "/ai/secretary",     icon: "Robot",        divider: true },
       { label: "راصد التشريعات",    labelEn: "Law Monitor",              href: "/ai/monitor",       icon: "Bell" },
@@ -166,6 +167,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
       { label: "الصائغ القانوني",   labelEn: "Legal Drafter",   href: "/ai/draft",         icon: "PencilSimple", divider: true },
       { label: "محترف العقود",      labelEn: "Contract Pro",    href: "/ai/contracts",     icon: "FileText" },
       { label: "الرأي الفصل",       labelEn: "Legal Opinion",   href: "/ai/legal-opinion", icon: "Lightbulb" },
+      { label: "طلباتي الذكية",     labelEn: "My AI Orders",    href: "/ai/orders",        icon: "Tray",         divider: true },
       { label: "عصارة المرفقات",    labelEn: "Doc Analyzer",    href: "/ai/analyze",       icon: "MagnifyingGlass" },
     ],
   },
@@ -278,6 +280,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "منقح ناجز",             labelEn: "Najiz Optimizer",  href: "/ai/najiz-optimizer",  icon: "Broom",        badge: "جديد" },
       // ③ التحليل والاستراتيجية
       { label: "المحاكي الشامل للقضايا",labelEn: "Litigation Studio", href: "/ai/wargaming",        icon: "Scales",       divider: true, badge: "مُدمَج" },
+      { label: "طلباتي الذكية",         labelEn: "My AI Orders",     href: "/ai/orders",           icon: "Tray",         divider: true },
       { label: "فاحص المستندات",        labelEn: "Doc Analyzer",     href: "/ai/analyze?source=firm", icon: "MagnifyingGlass", gateKey: "firm-ai" },
       // ④ البحث والمراقبة
       { label: "المرشد القضائي",        labelEn: "Court Guide",      href: "/ai/procedures",       icon: "MapTrifold",   divider: true },
@@ -395,6 +398,7 @@ export const FIRM_SIDEBAR_LITE: SidebarGroup[] = [
       { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A", href: "/ai/quick-answer", icon: "ChatCircle", badge: "جديد" },
       { label: "الصائغ القانوني", labelEn: "Legal Drafter", href: "/ai/draft", icon: "PencilSimple", divider: true },
       { label: "محترف العقود", labelEn: "Contract Pro", href: "/ai/contracts", icon: "FileText" },
+      { label: "طلباتي الذكية", labelEn: "My AI Orders", href: "/ai/orders", icon: "Tray", divider: true },
       { label: "مراجع العقود", labelEn: "Contract Reviewer", href: "/ai/contract-reviewer", icon: "MagnifyingGlass", badge: "جديد" },
       { label: "فاحص المستندات", labelEn: "Doc Analyzer", href: "/ai/analyze?source=firm", icon: "MagnifyingGlass", gateKey: "firm-ai" },
     ],
