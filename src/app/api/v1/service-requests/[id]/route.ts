@@ -81,9 +81,37 @@ export async function GET(
     };
   });
 
+  // Task 3 — metadata.internalNotes is a private note admins write for the
+  // team (see the admin PATCH route's deliver/cancel branches) and must
+  // never reach a non-admin caller. This route serves it wholesale via
+  // `select("*")`, and RLS alone does not answer "who is asking": once an
+  // admin claims an ai_workspace order they become `assigned_to`, so an
+  // admin viewing their own claimed order is a legitimate case, not just the
+  // requester. Resolve admin-ness from profiles.user_type directly (same
+  // pattern as this route's own PATCH handler below) and strip the key for
+  // everyone else. This is the one place that closes the leak — the field
+  // exists in the row from the moment an admin delivers or cancels an order.
+  let responseMetadata = (serviceRequest as Record<string, unknown>).metadata as
+    | Record<string, unknown>
+    | null;
+  if (responseMetadata && typeof responseMetadata === "object" && "internalNotes" in responseMetadata) {
+    const { data: callerProfile } = await supabase
+      .from("profiles")
+      .select("user_type")
+      .eq("id", user.id)
+      .maybeSingle();
+    const isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
+    if (!isAdmin) {
+      const sanitized = { ...responseMetadata };
+      delete sanitized.internalNotes;
+      responseMetadata = sanitized;
+    }
+  }
+  const sanitizedRequest = { ...(serviceRequest as Record<string, unknown>), metadata: responseMetadata };
+
   return NextResponse.json({
     data: {
-      ...toWorkflowRequest(serviceRequest as unknown as Record<string, unknown>),
+      ...toWorkflowRequest(sanitizedRequest),
       events: events ?? [],
       attachments,
     },

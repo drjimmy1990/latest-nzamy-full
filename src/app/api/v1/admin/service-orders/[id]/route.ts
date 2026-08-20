@@ -36,6 +36,7 @@ export async function PATCH(
   let body: {
     action?: "claim" | "deliver" | "cancel";
     documentId?: string; fileName?: string; notes?: string; reason?: string;
+    internalNotes?: string;
   };
   try { body = await request.json(); }
   catch { return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 }); }
@@ -92,6 +93,10 @@ export async function PATCH(
           documentId: body.documentId, fileName: body.fileName,
           notes: body.notes ?? "", deliveredAt: nowIso, deliveredBy: adminUserId,
         },
+        // Task 3 — a note for the team, never sent to the client. Kept out of
+        // the client's response by GET /api/v1/service-requests/[id] (see
+        // that route's own comment); this route only has to write it.
+        internalNotes: body.internalNotes ?? "",
       },
     };
     notifyTitle = "طلبك جاهز";
@@ -99,7 +104,7 @@ export async function PATCH(
   } else if (body.action === "cancel") {
     patch = {
       status: "cancelled", updated_at: nowIso,
-      metadata: { ...metadata, cancelReason: body.reason ?? "" },
+      metadata: { ...metadata, cancelReason: body.reason ?? "", internalNotes: body.internalNotes ?? "" },
     };
     notifyTitle = "تم إلغاء طلبك";
   } else {
