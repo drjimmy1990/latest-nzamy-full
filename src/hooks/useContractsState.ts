@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { STEPS_DRAFT, STEPS_DRAFT_SIMPLE, STEPS_REVIEW, StepKey, PartyData, EMPTY_PARTY } from "@/components/contracts/types";
 import { INITIAL_CLAUSES, CONTRACT_TYPES } from "@/components/contracts/constants";
-import { validateContractsIntake } from "@/lib/services/orderIntake.contracts";
+import { validateContractsIntake, partyIsNamed } from "@/lib/services/orderIntake.contracts";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
@@ -130,6 +130,15 @@ export function useContractsState() {
       if (step === "r_upload") return attachments.length > 0 && !uploading;
       return true;
     }
+    // Task 12: matches validateContractsIntake's draft-mode parties gate
+    // exactly (partyIsNamed — a non-empty fullName, companyName or
+    // entityName, the three shapes PartyData supports) so the client is
+    // stopped at the form, not three steps later at submit. Both parties
+    // (STEPS_DRAFT and STEPS_DRAFT_SIMPLE both include "parties" — see
+    // types.ts) must be named; a stricter wizard than validator would block
+    // legitimate company/government orders, a laxer one would reproduce the
+    // dead-end this task fixes.
+    if (step === "parties") return partyIsNamed(party1Data) && partyIsNamed(party2Data);
     // contractDesc is the brief the admin drafts from when no document is
     // uploaded (draft mode never collects one) — match
     // validateContractsIntake's MIN_CONTRACT_DESC (20 chars) so the client

@@ -25,6 +25,9 @@ export interface ContractsIntakeV1 {
   customLanguageName?: string;
   customLanguageLayout?: "single" | "dual";
   customLanguageBase?: "ar" | "en";
+  // Optional in the TS type (review mode never sets it), but required and
+  // both sides must be named when mode === "draft" — see partyIsNamed and
+  // its call below (Task 12).
   parties?: { one: unknown; two: unknown };
   contractDesc?: string;
   // The client's chosen jurisdiction (StepContext) — free-text-equivalent,
@@ -38,6 +41,27 @@ export interface ContractsIntakeV1 {
   concerns?: string;
   otherParty?: string;
   attachments: OrderAttachment[];
+}
+
+/**
+ * A party is "named" when it carries a non-empty fullName, companyName or
+ * entityName — the three shapes PartyData supports for individual/company/
+ * government respectively (src/components/contracts/types.ts:33-42).
+ * Checked independently of whatever `type` the payload claims: `p` arrives
+ * here as `unknown` (parties' inner shape is deliberately unvalidated
+ * elsewhere in this file), so a forged or mismatched `type` discriminator
+ * must not decide which single field gets checked — that would silently
+ * reject, e.g., a company party whose `type` field was dropped or wrong.
+ *
+ * Exported so useContractsState.ts's canProceed() gates the wizard's
+ * "parties" step on this exact same function — Task 12 requires the two
+ * rules to agree exactly, and sharing one implementation is the only way to
+ * guarantee that rather than hoping two hand-written conditions stay in
+ * sync.
+ */
+export function partyIsNamed(p: unknown): boolean {
+  if (!isRecord(p)) return false;
+  return !!(str(p.fullName) || str(p.companyName) || str(p.entityName));
 }
 
 function strArray(v: unknown): string[] | undefined {
@@ -81,6 +105,18 @@ export function validateContractsIntake(input: unknown): ValidationResult<Contra
   const partiesRaw = isRecord(input.parties) ? input.parties : null;
   if (input.parties !== undefined && (!partiesRaw || !isRecord(partiesRaw.one) || !isRecord(partiesRaw.two))) {
     errors.push("بيانات الأطراف غير مكتملة");
+  }
+
+  // Task 12 (owner's 16 August technical report, pending-decision 2): draft
+  // mode's order is drafted by a human admin from the two named parties —
+  // an order with a blank party name is not fulfillable, the same rationale
+  // as MIN_CONTRACT_DESC below. Review mode never collects party1Data/
+  // party2Data (buildReviewIntake() never sets `parties`), so this is
+  // draft-mode-only. useContractsState.ts's canProceed() gates the wizard's
+  // "parties" step on the identical condition so the client is stopped at
+  // the form, not here at submit.
+  if (mode === "draft" && !(partyIsNamed(partiesRaw?.one) && partyIsNamed(partiesRaw?.two))) {
+    errors.push("يجب إدخال اسم الطرف الأول والطرف الثاني قبل إرسال طلب الصياغة — تحقق من الأطراف");
   }
 
   const contractDesc = str(input.contractDesc);

@@ -2,13 +2,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateContractsIntake } from "./orderIntake.contracts.ts";
 
-const validDraft = {
+// Named per PartyData's "individual" shape (fullName) — one of the three
+// shapes validated below. companyName/entityName are exercised by their own
+// tests further down (Task: require the contract parties).
+const validDraftBase = {
   schemaVersion: 1,
   service: "contracts",
   mode: "draft",
   complexity: "simple",
   contractType: "sale",
   contractDesc: "عقد بيع عقار سكني بين طرفين وفق الشروط المتفق عليها",
+  parties: {
+    one: { type: "individual", fullName: "أحمد سالم" },
+    two: { type: "individual", fullName: "خالد فهد" },
+  },
   attachments: [],
 };
 
@@ -22,7 +29,7 @@ const validReview = {
 };
 
 test("accepts a well-formed draft-mode intake", () => {
-  const r = validateContractsIntake(validDraft);
+  const r = validateContractsIntake(validDraftBase);
   assert.equal(r.ok, true);
   if (r.ok) assert.equal(r.value.mode, "draft");
 });
@@ -39,37 +46,37 @@ test("rejects a non-object", () => {
 });
 
 test("rejects an intake with wrong service discriminant", () => {
-  const r = validateContractsIntake({ ...validDraft, service: "wargaming" });
+  const r = validateContractsIntake({ ...validDraftBase, service: "wargaming" });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.some((e) => e.includes("الخدمة")));
 });
 
 test("rejects an intake with missing service key", () => {
-  const r = validateContractsIntake({ ...validDraft, service: undefined });
+  const r = validateContractsIntake({ ...validDraftBase, service: undefined });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.some((e) => e.includes("الخدمة")));
 });
 
 test("rejects a missing required field (mode)", () => {
-  const r = validateContractsIntake({ ...validDraft, mode: undefined });
+  const r = validateContractsIntake({ ...validDraftBase, mode: undefined });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.some((e) => e.includes("الوضع") || e.includes("وضع")));
 });
 
 test("rejects a blank mode", () => {
-  const r = validateContractsIntake({ ...validDraft, mode: "" });
+  const r = validateContractsIntake({ ...validDraftBase, mode: "" });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.some((e) => e.includes("وضع")));
 });
 
 test("rejects an unknown mode", () => {
-  const r = validateContractsIntake({ ...validDraft, mode: "delete" });
+  const r = validateContractsIntake({ ...validDraftBase, mode: "delete" });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.some((e) => e.includes("وضع")));
 });
 
 test("draft mode does not require attachments", () => {
-  const r = validateContractsIntake({ ...validDraft, attachments: [] });
+  const r = validateContractsIntake({ ...validDraftBase, attachments: [] });
   assert.equal(r.ok, true);
 });
 
@@ -107,13 +114,13 @@ test("collects every error, not just the first", () => {
 // from.
 
 test("rejects draft mode with no contractDesc", () => {
-  const r = validateContractsIntake({ ...validDraft, contractDesc: undefined });
+  const r = validateContractsIntake({ ...validDraftBase, contractDesc: undefined });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.some((e) => e.includes("وصف العقد")));
 });
 
 test("rejects draft mode with a contractDesc shorter than 20 characters", () => {
-  const r = validateContractsIntake({ ...validDraft, contractDesc: "بيع عقار" });
+  const r = validateContractsIntake({ ...validDraftBase, contractDesc: "بيع عقار" });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.some((e) => e.includes("وصف العقد")));
 });
@@ -140,7 +147,7 @@ test("review mode's representing has no length minimum", () => {
 });
 
 test("draft mode does not require representing", () => {
-  const r = validateContractsIntake({ ...validDraft, representing: undefined });
+  const r = validateContractsIntake({ ...validDraftBase, representing: undefined });
   assert.equal(r.ok, true);
 });
 
@@ -149,20 +156,20 @@ test("draft mode does not require representing", () => {
 // StepDomain collect real data here that must reach the admin's order.
 
 test("carries courtType through when present", () => {
-  const r = validateContractsIntake({ ...validDraft, courtType: "المحكمة التجارية" });
+  const r = validateContractsIntake({ ...validDraftBase, courtType: "المحكمة التجارية" });
   assert.equal(r.ok, true);
   if (r.ok) assert.equal(r.value.courtType, "المحكمة التجارية");
 });
 
 test("omits courtType when absent", () => {
-  const r = validateContractsIntake(validDraft);
+  const r = validateContractsIntake(validDraftBase);
   assert.equal(r.ok, true);
   if (r.ok) assert.equal("courtType" in r.value, false);
 });
 
 test("carries custom-language fields through when present and valid", () => {
   const r = validateContractsIntake({
-    ...validDraft,
+    ...validDraftBase,
     language: "custom",
     customLanguageName: "الفرنسية",
     customLanguageLayout: "dual",
@@ -178,7 +185,7 @@ test("carries custom-language fields through when present and valid", () => {
 
 test("drops an out-of-range customLanguageLayout/customLanguageBase instead of passing it through", () => {
   const r = validateContractsIntake({
-    ...validDraft,
+    ...validDraftBase,
     customLanguageLayout: "triple",
     customLanguageBase: "fr",
   });
@@ -187,4 +194,100 @@ test("drops an out-of-range customLanguageLayout/customLanguageBase instead of p
     assert.equal("customLanguageLayout" in r.value, false);
     assert.equal("customLanguageBase" in r.value, false);
   }
+});
+
+// ── Task 12: require the contract parties before a drafting order can be
+// sent (owner's 16 August technical report, pending-decision 2). Draft mode
+// previously let both party names ship blank — the submit recap only
+// flagged this amber. PartyData (src/components/contracts/types.ts) carries
+// a different name field per party.type: fullName (individual), companyName
+// (company), entityName (government) — a party is "named" when at least one
+// of those three is non-empty, checked independently of whatever `type` the
+// payload claims (the validator receives `unknown`, so it must not trust an
+// attacker-forged type discriminator to decide which field to check).
+
+test("draft mode rejects an intake with no party names", () => {
+  const r = validateContractsIntake({
+    ...validDraftBase,
+    parties: { one: {}, two: {} },
+  });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some((e) => e.includes("الأطراف")));
+});
+
+test("draft mode rejects an intake with parties missing entirely", () => {
+  const r = validateContractsIntake({ ...validDraftBase, parties: undefined });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("الأطراف")));
+});
+
+test("draft mode rejects an intake where only party one is named", () => {
+  const r = validateContractsIntake({
+    ...validDraftBase,
+    parties: { one: { type: "individual", fullName: "أحمد سالم" }, two: {} },
+  });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("الأطراف")));
+});
+
+test("draft mode rejects an intake where only party two is named", () => {
+  const r = validateContractsIntake({
+    ...validDraftBase,
+    parties: { one: {}, two: { type: "individual", fullName: "خالد فهد" } },
+  });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("الأطراف")));
+});
+
+test("draft mode rejects a party whose name field is present but blank/whitespace", () => {
+  const r = validateContractsIntake({
+    ...validDraftBase,
+    parties: {
+      one: { type: "individual", fullName: "   " },
+      two: { type: "individual", fullName: "خالد فهد" },
+    },
+  });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("الأطراف")));
+});
+
+test("draft mode accepts a company party named via companyName (not fullName)", () => {
+  const r = validateContractsIntake({
+    ...validDraftBase,
+    parties: {
+      one: { type: "company", companyName: "شركة الأمانة للمقاولات" },
+      two: { type: "individual", fullName: "خالد فهد" },
+    },
+  });
+  assert.equal(r.ok, true);
+});
+
+test("draft mode accepts a government party named via entityName (not fullName)", () => {
+  const r = validateContractsIntake({
+    ...validDraftBase,
+    parties: {
+      one: { type: "government", entityName: "أمانة منطقة الرياض" },
+      two: { type: "individual", fullName: "خالد فهد" },
+    },
+  });
+  assert.equal(r.ok, true);
+});
+
+test("draft mode accepts all three party shapes named across both parties", () => {
+  const r = validateContractsIntake({
+    ...validDraftBase,
+    parties: {
+      one: { type: "company", companyName: "شركة الأمانة للمقاولات" },
+      two: { type: "government", entityName: "أمانة منطقة الرياض" },
+    },
+  });
+  assert.equal(r.ok, true);
+});
+
+test("review mode does not require named parties", () => {
+  // Review mode never collects party1Data/party2Data (StepRIdentity collects
+  // rPartyFocus/rOtherParty instead) — buildReviewIntake() never sets
+  // `parties` at all, so the gate above is draft-mode-only.
+  const r = validateContractsIntake({ ...validReview, parties: undefined });
+  assert.equal(r.ok, true);
 });
