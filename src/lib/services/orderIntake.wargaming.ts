@@ -6,7 +6,7 @@
  * from orderIntake.ts rather than re-declaring them.
  */
 
-import { isRecord, str, collectAttachments, type OrderAttachment, type ValidationResult } from "./orderIntake.ts";
+import { isRecord, str, collectAttachments, documentIdStr, type OrderAttachment, type ValidationResult } from "./orderIntake.ts";
 
 /**
  * The wargaming wizard's "نقض المذكرة" (critique-the-memo) target id, from
@@ -27,6 +27,12 @@ export interface WargamingIntakeV1 {
   caseSummary: string;
   targets: string[];
   memoText?: string;
+  // documentIds (from `attachments`) that the client tagged specifically as
+  // the memo being critiqued — a strict subset of `attachments`, never all
+  // of it. Distinct from "the order has at least one attachment": a case
+  // file uploaded for an unrelated reason must not satisfy the critique
+  // requirement just because *something* was attached.
+  memoAttachmentIds?: string[];
   attachments: OrderAttachment[];
 }
 
@@ -64,13 +70,24 @@ export function validateWargamingIntake(input: unknown): ValidationResult<Wargam
   }
 
   const memoText = str(input.memoText);
+  // memoAttachmentIds must be tagged specifically as the memo — NOT "any
+  // attachment on the order". An earlier version of this validator accepted
+  // attachments.length > 0, which let an unrelated case file uploaded in
+  // step 1 silently satisfy "the client supplied the memo": the admin would
+  // receive an order asking for a memo critique with no memo anywhere in
+  // it. Coerce with documentIdStr, not `typeof v === "string"` — a
+  // Postgres bigserial documentId arrives here as a JSON number.
+  const memoAttachmentIdsRaw = Array.isArray(input.memoAttachmentIds) ? input.memoAttachmentIds : [];
+  const memoAttachmentIds = memoAttachmentIdsRaw.map((v) => documentIdStr(v)).filter(Boolean);
   const attachments = collectAttachments(input.attachments, errors);
   // The client supplies the memo being critiqued either as pasted text or as
-  // an uploaded file (owners field-tested the text-only textarea and found
-  // clients hold the memo as a PDF, not text they can paste) — so either
-  // satisfies the requirement, not memoText alone.
-  if (targets.includes(WARGAMING_CRITIQUE_TARGET) && !memoText && attachments.length === 0) {
-    errors.push("عند اختيار نقض المذكرة، أدخل نص المذكرة أو أرفق ملفها");
+  // an uploaded file tagged as the memo (owners field-tested the text-only
+  // textarea and found clients hold the memo as a PDF, not text they can
+  // paste) — so either satisfies the requirement. A file that was removed
+  // (dropped from memoAttachmentIds by the caller) no longer counts, even if
+  // it is still present elsewhere in `attachments`.
+  if (targets.includes(WARGAMING_CRITIQUE_TARGET) && !memoText && memoAttachmentIds.length === 0) {
+    errors.push("المذكرة المراد نقضها غير موجودة — أدخل نصها أو أرفق ملفها");
   }
 
   if (errors.length > 0) return { ok: false, errors };
@@ -85,6 +102,7 @@ export function validateWargamingIntake(input: unknown): ValidationResult<Wargam
       caseSummary,
       targets,
       ...(memoText ? { memoText } : {}),
+      ...(memoAttachmentIds.length > 0 ? { memoAttachmentIds } : {}),
       attachments,
     },
   };

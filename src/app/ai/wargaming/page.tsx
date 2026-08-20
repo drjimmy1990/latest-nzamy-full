@@ -442,22 +442,28 @@ function CaseSetup({
 function TargetSelect({
   D, ctx, targets, setTargets, onRun, onBack,
   attachments, memoText, setMemoText,
-  uploading, attachError, attachFile, removeAttachment,
+  memoAttachmentIds, uploading, attachError, attachMemoFile, removeMemoAttachment,
 }: {
   D:boolean; ctx:CaseContext;
   targets:Set<SimTarget>; setTargets:(t:Set<SimTarget>)=>void;
   onRun:()=>void; onBack:()=>void;
   attachments: OrderAttachment[];
   memoText: string; setMemoText: (v:string)=>void;
+  // memoAttachmentIds is the subset of documentIds (from the shared
+  // attachments list) that the client tagged specifically as the memo via
+  // this section's own dropzone — NOT every attachment on the order. A case
+  // file uploaded in step 1 must not silently satisfy "provide the memo".
+  memoAttachmentIds: string[];
   uploading: boolean; attachError: string;
-  attachFile: (file: File) => Promise<OrderAttachment>;
-  removeAttachment: (documentId: string) => void;
+  attachMemoFile: (file: File) => Promise<OrderAttachment>;
+  removeMemoAttachment: (documentId: string) => void;
 }) {
   const areaLabel = CASE_AREAS.find(a=>a.id===ctx.area)?.label??"";
   const roleLabel  = CASE_ROLES.find(r=>r.id===ctx.role)?.label??"";
   const hasCritique = targets.has(WARGAMING_CRITIQUE_TARGET);
   const memoFileRef = useRef<HTMLInputElement>(null);
-  const memoSatisfied = memoText.trim().length>0 || attachments.length>0;
+  const memoFiles = attachments.filter(a => memoAttachmentIds.includes(a.documentId));
+  const memoSatisfied = memoText.trim().length>0 || memoAttachmentIds.length>0;
 
   function toggle(t:SimTarget) {
     const n = new Set(targets);
@@ -536,13 +542,13 @@ function TargetSelect({
               placeholder="الصق نص المذكرة كاملاً هنا..." rows={6}
               className={`w-full resize-none rounded-xl border px-3 py-2.5 text-[12px] outline-none ${D?"border-white/[0.07] bg-zinc-800/60 text-zinc-200 placeholder:text-zinc-600":"border-purple-200 bg-white text-zinc-800 placeholder:text-zinc-400"}`}/>
 
-            {attachments.length>0 && (
+            {memoFiles.length>0 && (
               <div className="space-y-1.5">
-                {attachments.map(a=>(
+                {memoFiles.map(a=>(
                   <div key={a.documentId} className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${D?"border-emerald-700/30 bg-emerald-900/10":"border-emerald-200 bg-emerald-50"}`}>
                     <FileText size={13} className="text-emerald-500"/>
                     <span className={`flex-1 truncate text-[11px] ${D?"text-emerald-300":"text-emerald-700"}`}>{a.name}</span>
-                    <button onClick={()=>removeAttachment(a.documentId)}><X size={12} className="text-emerald-500"/></button>
+                    <button onClick={()=>removeMemoAttachment(a.documentId)}><X size={12} className="text-emerald-500"/></button>
                   </div>
                 ))}
               </div>
@@ -554,7 +560,7 @@ function TargetSelect({
                 onChange={async e=>{
                   const f=e.target.files?.[0];
                   if(!f)return;
-                  try { await attachFile(f); } catch { /* attachError is set inside the hook and rendered below */ }
+                  try { await attachMemoFile(f); } catch { /* attachError is set inside the hook and rendered below */ }
                   e.target.value = "";
                 }}/>
               {uploading ? (
@@ -574,7 +580,7 @@ function TargetSelect({
             )}
             {!memoSatisfied && (
               <p className="flex items-center gap-1.5 text-[11px] text-amber-500">
-                <Warning size={12}/>نص المذكرة أو ملفها مطلوب عند اختيار «نقض المذكرة»
+                <Warning size={12}/>المذكرة المراد نقضها غير موجودة — أدخل نصها أو ارفع ملفها هنا تحديداً
               </p>
             )}
           </div>
@@ -595,11 +601,11 @@ function TargetSelect({
 // included verbatim in buildIntake() — nothing here is a control whose value
 // fails to reach the order payload.
 function SubmitReview({
-  D, ctx, areaLabel, roleLabel, targets, memoText, attachments,
+  D, ctx, areaLabel, roleLabel, targets, memoText, memoAttachmentIds, attachments,
   submitting, submitErrors, onBack, onSubmit,
 }: {
   D:boolean; ctx:CaseContext; areaLabel:string; roleLabel:string;
-  targets:Set<SimTarget>; memoText:string; attachments:OrderAttachment[];
+  targets:Set<SimTarget>; memoText:string; memoAttachmentIds:string[]; attachments:OrderAttachment[];
   submitting:boolean; submitErrors:string[];
   onBack:()=>void; onSubmit:()=>void;
 }) {
@@ -640,10 +646,10 @@ function SubmitReview({
           {hasCritique && (
             <div className="flex gap-3 text-[12px]">
               <dt className={D?"text-zinc-500 w-32 shrink-0":"text-zinc-400 w-32 shrink-0"}>المذكرة المراد نقضها</dt>
-              <dd className={(memoText.trim() || attachments.length>0) ? (D?"text-zinc-200":"text-zinc-800") : "text-amber-500"}>
+              <dd className={(memoText.trim() || memoAttachmentIds.length>0) ? (D?"text-zinc-200":"text-zinc-800") : "text-amber-500"}>
                 {memoText.trim()
                   ? `${memoText.trim().slice(0,150)}${memoText.trim().length>150?"…":""}`
-                  : attachments.length>0
+                  : memoAttachmentIds.length>0
                     ? "أُرفق ملف المذكرة — راجع المرفقات أدناه"
                     : "لم تُدرِج نص المذكرة ولم ترفق ملفها بعد — عد للخطوة السابقة لإضافة إحداهما قبل الإرسال"}
               </dd>
@@ -839,12 +845,34 @@ export default function AIWargamingPage() {
   const [targets, setTargets] = useState<Set<SimTarget>>(new Set(["opponent","court"]));
   const [points,  setPoints]  = useState<SimPoint[]>([]);
   const [memoText, setMemoText] = useState("");
+  // documentIds from the shared attachments list that were uploaded via the
+  // memo-specific dropzone in TargetSelect — distinct from "any attachment
+  // on the order" so an unrelated case file from step 1 can never silently
+  // satisfy "the client supplied the memo".
+  const [memoAttachmentIds, setMemoAttachmentIds] = useState<string[]>([]);
   const [submitting,    setSubmitting]    = useState(false);
   const [submitErrors,  setSubmitErrors]  = useState<string[]>([]);
 
   const {
     attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError,
   } = useOrderAttachments();
+
+  // Wraps the single shared attachFile/removeAttachment from
+  // useOrderAttachments() — still one hook instance, one attachments array —
+  // so a file uploaded specifically as the memo is also tagged in
+  // memoAttachmentIds, and removing it drops the tag too (otherwise a
+  // removed file would keep satisfying the critique gate, the same class of
+  // stale-state bug memoText had when critique was deselected).
+  async function attachMemoFile(file: File): Promise<OrderAttachment> {
+    const attachment = await attachFile(file);
+    setMemoAttachmentIds(prev => [...prev, attachment.documentId]);
+    return attachment;
+  }
+
+  function removeMemoAttachment(documentId: string): void {
+    removeAttachment(documentId);
+    setMemoAttachmentIds(prev => prev.filter(id => id !== documentId));
+  }
 
   // Kept defined but uncalled — the button that used to fire this now goes
   // to "submit" instead (Task C1). Left in place along with buildPoints() so
@@ -866,6 +894,7 @@ export default function AIWargamingPage() {
     setTargets(new Set(["opponent","court"]));
     setPoints([]);
     setMemoText("");
+    setMemoAttachmentIds([]);
     setSubmitErrors([]);
     clearAttachError();
     attachments.forEach(a => removeAttachment(a.documentId));
@@ -882,13 +911,16 @@ export default function AIWargamingPage() {
       area: ctx.area,
       caseSummary: ctx.summary,
       targets: Array.from(targets),
-      // Only send memoText when critique is actually selected — otherwise a
-      // memo typed while critique was toggled on, then left behind after
-      // deselecting it, would ship silently in an order that never asked
-      // for a memo critique, and the submit-step recap (which only shows
-      // this row when critique is selected) would disagree with the payload.
+      // Only send memoText/memoAttachmentIds when critique is actually
+      // selected — otherwise a memo typed or attached while critique was
+      // toggled on, then left behind after deselecting it, would ship
+      // silently in an order that never asked for a memo critique, and the
+      // submit-step recap (which only shows this row when critique is
+      // selected) would disagree with the payload.
       ...(targets.has(WARGAMING_CRITIQUE_TARGET) && memoText.trim()
         ? { memoText: memoText.trim() } : {}),
+      ...(targets.has(WARGAMING_CRITIQUE_TARGET) && memoAttachmentIds.length > 0
+        ? { memoAttachmentIds } : {}),
       attachments,
     };
   }
@@ -985,8 +1017,9 @@ export default function AIWargamingPage() {
             <TargetSelect D={D} ctx={ctx} targets={targets} setTargets={setTargets}
               onRun={()=>setStep("submit")} onBack={()=>setStep("setup")}
               attachments={attachments} memoText={memoText} setMemoText={setMemoText}
+              memoAttachmentIds={memoAttachmentIds}
               uploading={uploading} attachError={attachError}
-              attachFile={attachFile} removeAttachment={removeAttachment}/>
+              attachMemoFile={attachMemoFile} removeMemoAttachment={removeMemoAttachment}/>
           </motion.div>
         )}
 
@@ -999,7 +1032,7 @@ export default function AIWargamingPage() {
         {step==="submit" && (
           <motion.div key="submit" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
             <SubmitReview D={D} ctx={ctx} areaLabel={areaLabel} roleLabel={roleLabel}
-              targets={targets} memoText={memoText} attachments={attachments}
+              targets={targets} memoText={memoText} memoAttachmentIds={memoAttachmentIds} attachments={attachments}
               submitting={submitting} submitErrors={submitErrors}
               onBack={()=>{setSubmitErrors([]);setStep("targets");}} onSubmit={submitOrder}/>
           </motion.div>

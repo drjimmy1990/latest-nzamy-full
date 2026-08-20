@@ -61,10 +61,10 @@ test("rejects empty targets (at least one required)", () => {
   if (!r.ok) assert.ok(r.errors.some((e) => e.includes("هدف")));
 });
 
-test("requires memoText when targets include the critique target", () => {
+test("requires memoText or a tagged memo attachment when targets include the critique target", () => {
   const r = validateWargamingIntake({ ...valid, targets: [WARGAMING_CRITIQUE_TARGET], memoText: undefined });
   assert.equal(r.ok, false);
-  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("نص المذكرة")));
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("المذكرة")));
 });
 
 test("accepts the critique target when memoText is provided", () => {
@@ -73,19 +73,57 @@ test("accepts the critique target when memoText is provided", () => {
   if (r.ok) assert.equal(r.value.memoText, "نص المذكرة الأصلية");
 });
 
-test("critique target is satisfied by an attachment instead of memoText", () => {
+test("critique target is satisfied by a memo attachment (memoAttachmentIds) instead of memoText", () => {
   const r = validateWargamingIntake({
     ...valid,
     targets: [WARGAMING_CRITIQUE_TARGET],
     memoText: "",
     attachments: [{ documentId: 12, name: "memo.pdf", size: 900 }],
+    memoAttachmentIds: [12],
   });
   assert.equal(r.ok, true);
+  if (r.ok) assert.deepEqual(r.value.memoAttachmentIds, ["12"]);
 });
 
-test("critique target with neither memoText nor an attachment is rejected", () => {
+test("accepts a numeric memoAttachmentIds entry (PostgREST bigserial arrives as a JS number, not a string)", () => {
+  const r = validateWargamingIntake({
+    ...valid,
+    targets: [WARGAMING_CRITIQUE_TARGET],
+    memoText: "",
+    attachments: [{ documentId: 12, name: "memo.pdf", size: 900 }],
+    memoAttachmentIds: [12],
+  });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(typeof r.value.memoAttachmentIds?.[0], "string");
+});
+
+test("an unrelated attachment does NOT satisfy the critique requirement — only a tagged memo attachment does", () => {
+  const r = validateWargamingIntake({
+    ...valid,
+    targets: [WARGAMING_CRITIQUE_TARGET],
+    memoText: "",
+    // a case file was uploaded (e.g. in step 1), but never tagged as the
+    // memo — memoAttachmentIds is omitted/empty, so it must not count.
+    attachments: [{ documentId: 99, name: "case-file.pdf", size: 500 }],
+  });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("المذكرة")));
+});
+
+test("critique target with neither memoText nor a memo attachment is rejected", () => {
   const r = validateWargamingIntake({
     ...valid, targets: [WARGAMING_CRITIQUE_TARGET], memoText: "", attachments: [],
+  });
+  assert.equal(r.ok, false);
+});
+
+test("removing the memo attachment (dropped from memoAttachmentIds) is rejected even though the file is still in `attachments`", () => {
+  const r = validateWargamingIntake({
+    ...valid,
+    targets: [WARGAMING_CRITIQUE_TARGET],
+    memoText: "",
+    attachments: [{ documentId: 12, name: "memo.pdf", size: 900 }],
+    memoAttachmentIds: [], // client removed the memo file — the id must be dropped here too, not just left dangling
   });
   assert.equal(r.ok, false);
 });

@@ -70,9 +70,12 @@ export function str(v: unknown): string {
  * `string` type. `str()` above returns "" for a number, which made this
  * loop reject every real attachment. Accept both and coerce — the same fix
  * already applied in service-requests/route.ts's documentIds filter and the
- * admin queue's render filter (page.tsx).
+ * admin queue's render filter (page.tsx). Exported so sibling intake
+ * validators (e.g. orderIntake.wargaming.ts's memoAttachmentIds) reuse this
+ * exact coercion instead of re-deriving it with a `typeof v === "string"`
+ * check that would silently reject every numeric id.
  */
-function documentIdStr(v: unknown): string {
+export function documentIdStr(v: unknown): string {
   if (typeof v === "string") return v.trim();
   if (typeof v === "number" && Number.isFinite(v)) return String(v);
   return "";
