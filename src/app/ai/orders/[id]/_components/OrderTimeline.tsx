@@ -20,9 +20,12 @@ const STAGES = [
 ] as const;
 
 // The three statuses during which the order is still open — i.e. nothing
-// has been delivered or cancelled yet. Shared with page.tsx's own branching
-// so "which panel shows the delivery-time card" and "which statuses count as
-// still-open" never drift apart into two different lists.
+// has been delivered or cancelled yet. This is a separate literal from
+// page.tsx's TIMELINE_STATUSES and OrderActions.tsx's CANCELLABLE_STATUSES
+// (each answers a different question — "show the timeline at all", "show
+// the delivery-time card", "offer cancel" — so they aren't the same set:
+// TIMELINE_STATUSES also includes "completed"). Kept deliberately in sync by
+// eye across the three; there is no shared constant enforcing that.
 const OPEN_STATUSES = new Set(["pending_assignment", "assigned", "in_review"]);
 
 export function OrderTimeline({ status, isDark }: { status: string; isDark: boolean }) {

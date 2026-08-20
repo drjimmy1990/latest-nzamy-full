@@ -80,7 +80,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     try {
       // navigator.clipboard throws on insecure origins (plain HTTP,
       // non-localhost) — never let the button look dead with no feedback.
-      await navigator.clipboard.writeText(id);
+      // Copies order.id, not the route param `id`, so what's copied is
+      // provably the same value the header displays (#order.id).
+      await navigator.clipboard.writeText(order?.id ?? id);
       setIdCopied(true);
       setTimeout(() => setIdCopied(false), 2000);
     } catch {
