@@ -24,25 +24,22 @@
  *
  * This component deliberately does NOT expose every status the server would
  * technically accept. It only offers cancel for the three statuses where
- * cancelling is a meaningful, safe action for the client to take —
- * pending_assignment / assigned / in_review (the same "still open" set
- * OrderTimeline's delivery-time card uses). A completed order already has a
- * real deliverable behind it; offering "cancel" there would dangle a button
- * that "succeeds" at the server (no source-status gate stops it) while
- * doing something no client actually wants and this product has no recovery
- * path for. A cancelled order cancelling itself again is a pointless no-op.
- * Both are excluded here as a client-side UX decision, not because the
- * server would refuse them.
+ * cancelling is a meaningful, safe action for the client to take — the
+ * shared OPEN_ORDER_STATUSES set (pending_assignment / assigned / in_review
+ * — the same "still open" set OrderTimeline's delivery-time card uses). A
+ * completed order already has a real deliverable behind it; offering
+ * "cancel" there would dangle a button that "succeeds" at the server (no
+ * source-status gate stops it) while doing something no client actually
+ * wants and this product has no recovery path for. A cancelled order
+ * cancelling itself again is a pointless no-op. Both are excluded here as a
+ * client-side UX decision, not because the server would refuse them.
  */
 
 import { useState } from "react";
 import type { ServiceOrder } from "@/lib/services/serviceOrders";
+import { OPEN_ORDER_STATUSES } from "./openOrderStatuses";
 
-const CANCELLABLE_STATUSES = new Set<ServiceOrder["status"]>([
-  "pending_assignment",
-  "assigned",
-  "in_review",
-]);
+const CANCELLABLE_STATUSES = OPEN_ORDER_STATUSES;
 
 export function OrderActions({
   order,

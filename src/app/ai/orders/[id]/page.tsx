@@ -16,15 +16,17 @@ import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
 import { OrderTimeline } from "./_components/OrderTimeline";
 import { OrderSummary } from "./_components/OrderSummary";
 import { OrderActions } from "./_components/OrderActions";
+import { OPEN_ORDER_STATUSES } from "./_components/openOrderStatuses";
 
 type LoadState = "loading" | "error" | "not_found" | "loaded";
 
 // Statuses for which the three-stage progress strip (OrderTimeline) makes
-// sense to show at all — every status ServiceOrder["status"] models except
-// "cancelled" (a cancelled order never finishes this journey; it gets its
+// sense to show at all — the shared OPEN_ORDER_STATUSES set plus
+// "completed" (every status ServiceOrder["status"] models except
+// "cancelled" — a cancelled order never finishes this journey; it gets its
 // own panel below, unchanged). The page's fifth, catch-all branch handles
 // status values outside this union entirely and never gets a timeline.
-const TIMELINE_STATUSES = new Set(["pending_assignment", "assigned", "in_review", "completed"]);
+const TIMELINE_STATUSES = new Set([...OPEN_ORDER_STATUSES, "completed"]);
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);

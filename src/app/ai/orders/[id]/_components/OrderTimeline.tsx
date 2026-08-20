@@ -13,20 +13,13 @@
  * model at all, so there is no sane "reached" mapping for them).
  */
 
+import { OPEN_ORDER_STATUSES } from "./openOrderStatuses";
+
 const STAGES = [
   { key: "sent", label: "تم الإرسال" },
   { key: "working", label: "قيد التدقيق والصياغة" },
   { key: "ready", label: "جاهز للتحميل" },
 ] as const;
-
-// The three statuses during which the order is still open — i.e. nothing
-// has been delivered or cancelled yet. This is a separate literal from
-// page.tsx's TIMELINE_STATUSES and OrderActions.tsx's CANCELLABLE_STATUSES
-// (each answers a different question — "show the timeline at all", "show
-// the delivery-time card", "offer cancel" — so they aren't the same set:
-// TIMELINE_STATUSES also includes "completed"). Kept deliberately in sync by
-// eye across the three; there is no shared constant enforcing that.
-const OPEN_STATUSES = new Set(["pending_assignment", "assigned", "in_review"]);
 
 export function OrderTimeline({ status, isDark }: { status: string; isDark: boolean }) {
   const reached =
@@ -58,7 +51,8 @@ export function OrderTimeline({ status, isDark }: { status: string; isDark: bool
        * claim from BetaReviewGate for that reason. He reaffirmed it should
        * ship here anyway, on two conditions that are both load-bearing:
        *
-       *   1. Shown ONLY while the order is still open (this Set). On a
+       *   1. Shown ONLY while the order is still open (OPEN_ORDER_STATUSES,
+       *      the shared constant this file imports). On a
        *      delivered or cancelled order it would be noise at best and a
        *      contradiction at worst — the client is looking at an outcome,
        *      not a wait.
@@ -69,7 +63,7 @@ export function OrderTimeline({ status, isDark }: { status: string; isDark: bool
        * Do not soften this further and do not omit it — both would undo a
        * decision the owner already made explicitly.
        */}
-      {OPEN_STATUSES.has(status) && (
+      {OPEN_ORDER_STATUSES.has(status) && (
         <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
           متوسط وقت التسليم المتوقع: خلال ٤ – ٢٤ ساعة
         </p>

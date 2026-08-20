@@ -82,6 +82,70 @@ const INTAKE_LABELS: Record<string, string> = {
   date: "التاريخ",
   text: "النص",
   reasons: "الأسباب",
+  // PartyData sub-fields (parties.one / parties.two — draft + contracts).
+  // Sourced from the PartyData type itself (src/components/draft/
+  // draftConstants.ts:124-131), not guessed: type, companyName,
+  // commercialReg, unifiedNum, representative, representativeRole, address,
+  // fullName, idNumber, nationality, entityName, unifiedNumGov,
+  // contactPerson, taxOrCustomsNum — every field the wizard can collect for
+  // a party, company or government entity.
+  type: "نوع الطرف",
+  companyName: "اسم الشركة",
+  commercialReg: "السجل التجاري",
+  unifiedNum: "الرقم الموحّد",
+  representative: "الممثل",
+  representativeRole: "صفة الممثل",
+  address: "العنوان",
+  fullName: "الاسم الكامل",
+  idNumber: "رقم الهوية",
+  entityName: "اسم الجهة",
+  unifiedNumGov: "الرقم الموحّد للجهة",
+  contactPerson: "مسؤول التواصل",
+  taxOrCustomsNum: "الرقم الضريبي / الجمركي",
+  nationality: "الجنسية",
+  // legal_opinion `letter` sub-fields (outputType: "letter"). Sourced from
+  // the object literal LetterWorkflow.tsx's submitLetterOrder() actually
+  // sends (src/app/ai/legal-opinion/_components/LetterWorkflow.tsx
+  // ~line 150-168), read rather than guessed — that file is owned by
+  // another agent this wave, read-only here.
+  letterType: "نوع الخطاب",
+  letterTypeCustom: "نوع الخطاب (مخصص)",
+  letterTypeLabel: "نوع الخطاب",
+  senderName: "اسم المرسل",
+  senderRole: "صفة المرسل",
+  recipientName: "اسم المستلم",
+  recipientType: "صفة المستلم",
+  govEntity: "الجهة الحكومية",
+  responseDeadline: "مهلة الرد مطلوبة",
+  deadlineDays: "عدد أيام المهلة",
+  letterSubject: "موضوع الخطاب",
+  letterLegalRef: "السند النظامي",
+  attachmentLabels: "المرفقات المذكورة (غير مرفوعة)",
+  fullLetterText: "نص الخطاب",
+  // legal_opinion `settings` sub-fields — the six non-letter sub-flows
+  // (consult/study/legal-memo/research/due-diligence/cross-exam). Sourced
+  // from buildSettings() in src/app/ai/legal-opinion/page.tsx (~line
+  // 271-303), read rather than guessed. Some keys (side, entityName,
+  // entityType, goal) are reused across more than one sub-flow with a
+  // shared, still-accurate Arabic label.
+  searchDepth: "عمق البحث",
+  studyGoal: "هدف الدراسة",
+  litigationStage: "مرحلة التقاضي",
+  memoStructure: "هيكل المذكرة",
+  memoDetailLevel: "مستوى التفصيل",
+  audience: "الجهة المخاطَبة",
+  side: "الجهة الممثَّلة",
+  researchType: "نوع البحث",
+  compareWith: "المقارنة مع",
+  keywords: "الكلمات المفتاحية",
+  researchSources: "مصادر البحث",
+  researchLimit: "حد نتائج البحث",
+  entityType: "نوع الجهة",
+  extraField: "بيانات إضافية",
+  goal: "الهدف",
+  scope: "نطاق الفحص",
+  witnessRole: "صفة الشاهد",
+  destroyGoal: "الهدف من الاستجواب",
 };
 
 function labelFor(key: string): string {
@@ -92,7 +156,21 @@ function isEmptyValue(v: unknown): boolean {
   if (v === null || v === undefined) return true;
   if (typeof v === "string") return v.trim().length === 0;
   if (Array.isArray(v)) return v.length === 0;
-  if (typeof v === "object") return Object.keys(v as Record<string, unknown>).length === 0;
+  if (typeof v === "object") {
+    // An object counts as empty when none of its fields — other than a
+    // bare "type" discriminant — carry a real value. Plain
+    // `Object.keys(...).length === 0` is never true for an untouched party:
+    // EMPTY_PARTY (src/components/draft/draftConstants.ts) always sets
+    // `type: "individual"` even when the client never touched that party at
+    // all, so a shallow key-count check would keep rendering its heading
+    // with nothing meaningful underneath it — just "نوع الطرف: فرد". Any
+    // other structural field that always carries a non-empty default would
+    // hit the same trap; "type" is the one that actually occurs in today's
+    // intake shapes.
+    return !Object.entries(v as Record<string, unknown>).some(
+      ([k, val]) => k !== "type" && !isEmptyValue(val),
+    );
+  }
   return false;
 }
 
