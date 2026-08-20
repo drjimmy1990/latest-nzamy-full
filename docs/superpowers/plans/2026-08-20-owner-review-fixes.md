@@ -684,7 +684,17 @@ export function OrderTimeline({ status, isDark }: { status: string; isDark: bool
 }
 ```
 
-**Do not add a delivery-time promise.** The owner's plan asks for *متوسط وقت التسليم المتوقع: خلال 4 - 24 ساعة*. Nothing in the system enforces that window, and the predecessor plan removed exactly this claim from `BetaReviewGate` for that reason. If the owner wants it back, it is his call to make explicitly — raise it, do not add it silently.
+**Add the delivery-time card — the owner ruled on this explicitly.** It was raised with him that nothing in the system enforces the window, and that the predecessor plan removed exactly this claim from `BetaReviewGate` for that reason. He reaffirmed it. So it ships, worded as an expectation rather than a guarantee:
+
+```tsx
+<p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+  متوسط وقت التسليم المتوقع: خلال ٤ – ٢٤ ساعة
+</p>
+```
+
+Two rules on it, both load-bearing:
+- Show it **only** while the order is still open — `pending_assignment`, `assigned`, `in_review`. On a delivered or cancelled order it is noise at best and a contradiction at worst.
+- Say **متوسط** (average/expected), never a promise verb. The Arabic must not read as a commitment the platform cannot keep.
 
 - [ ] **Step 3: The summary — what the client actually sent**
 
