@@ -5,6 +5,7 @@ import { DownloadSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { uploadDocumentFile } from "@/lib/services/documentService";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
+import { validateUploadFile } from "@/lib/services/fileValidation";
 import { uploadErrorMessage } from "./_errorCopy";
 
 interface AdminOrder {
@@ -27,6 +28,11 @@ export default function AdminServiceOrdersPage() {
   const [filter, setFilter] = useState("");
   const [open, setOpen] = useState<AdminOrder | null>(null);
   const [notes, setNotes] = useState("");
+  // Task 2 — the file an admin picked in the browser dialog, held here until
+  // اعتماد وتسليم المستند للعميل is pressed. Page-level state shared by every
+  // order card, exactly like `notes` below: a file staged on order A must
+  // never survive into order B, so it is reset everywhere `notes` is reset.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [loadErr, setLoadErr] = useState("");
@@ -56,7 +62,7 @@ export default function AdminServiceOrdersPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function act(id: string, payload: Record<string, unknown>) {
+  async function act(id: string, payload: Record<string, unknown>, opts: { keepOpen?: boolean } = {}) {
     setBusy(true); setErr("");
     // Deliberate deviation from the brief's literal act(): the original
     // fetch is unguarded, so a dropped connection throws out of an
@@ -68,7 +74,13 @@ export default function AdminServiceOrdersPage() {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       if (!res.ok) setErr((await res.json().catch(() => ({}))).error ?? "فشل الإجراء");
-      else { setOpen(null); setNotes(""); await load(); }
+      else {
+        // Claim starts work on an order; deliver and cancel finish it. Only the
+        // finishing actions should collapse the panel — closing it on claim
+        // hides the upload field the admin pressed استلام to reach.
+        if (!opts.keepOpen) { setOpen(null); setNotes(""); setPendingFile(null); }
+        await load();
+      }
     } catch {
       setErr("تعذّر تنفيذ الإجراء. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.");
     } finally {
@@ -119,6 +131,7 @@ export default function AdminServiceOrdersPage() {
   function toggleOpen(o: AdminOrder) {
     setOpen(open?.id === o.id ? null : o);
     setNotes("");
+    setPendingFile(null);
   }
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
@@ -205,7 +218,7 @@ export default function AdminServiceOrdersPage() {
                 )}
 
                 {o.status === "pending_assignment" && (
-                  <button disabled={busy} onClick={() => act(o.id, { action: "claim" })}
+                  <button disabled={busy} onClick={() => act(o.id, { action: "claim" }, { keepOpen: true })}
                     className="rounded-xl bg-[#0B3D2E] px-4 py-2 text-[12px] font-bold text-white disabled:opacity-40">
                     استلام
                   </button>
@@ -221,7 +234,7 @@ export default function AdminServiceOrdersPage() {
                         second admin who opens an in_review order they aren't
                         assigned to has no way to become the assignee, so their
                         upload silently 403s at POST /api/v1/documents. */}
-                    <button disabled={busy} onClick={() => act(o.id, { action: "claim" })}
+                    <button disabled={busy} onClick={() => act(o.id, { action: "claim" }, { keepOpen: true })}
                       className="rounded-xl border border-emerald-500/30 px-4 py-2 text-[12px] font-bold text-emerald-500 disabled:opacity-40">
                       تولّي الطلب (نقل لي)
                     </button>
@@ -231,15 +244,29 @@ export default function AdminServiceOrdersPage() {
                         isDark ? "bg-zinc-950 border-white/[0.07] text-zinc-200" : "bg-white border-zinc-200"}`} />
                     <input type="file" disabled={busy}
                       onChange={(e) => {
-                        const f = e.target.files?.[0];
+                        const f = e.target.files?.[0] ?? null;
                         // Reset the input so a failed upload can be retried by
                         // re-picking the exact same file — without this, the
                         // browser suppresses onChange for an unchanged value
                         // and the file picker looks dead after an error.
                         e.target.value = "";
-                        if (f) deliver(o, f);
+                        const rejection = f ? validateUploadFile(f) : null;
+                        if (rejection) { setErr(rejection); setPendingFile(null); return; }
+                        setPendingFile(f);
                       }}
                       className={`block text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`} />
+                    {pendingFile && (
+                      <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                        الملف المختار: <span className="font-semibold">{pendingFile.name}</span>
+                        {" "}({Math.max(1, Math.round(pendingFile.size / 1024))} كيلوبايت)
+                      </p>
+                    )}
+                    <button
+                      disabled={busy || !pendingFile}
+                      onClick={() => { if (pendingFile) deliver(o, pendingFile); }}
+                      className="w-full rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-[12px] font-bold text-white disabled:opacity-40">
+                      اعتماد وتسليم المستند للعميل
+                    </button>
                     <button disabled={busy} onClick={() => act(o.id, { action: "cancel", reason: notes })}
                       className="rounded-xl border border-red-500/30 px-4 py-2 text-[12px] font-bold text-red-500 disabled:opacity-40">
                       إلغاء الطلب
