@@ -15,6 +15,7 @@ import {
 import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
 import { OrderTimeline } from "./_components/OrderTimeline";
 import { OrderSummary } from "./_components/OrderSummary";
+import { OrderActions } from "./_components/OrderActions";
 
 type LoadState = "loading" | "error" | "not_found" | "loaded";
 
@@ -213,7 +214,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           indicator, so it stays visible on delivered/cancelled orders too. */}
       <OrderSummary order={order} isDark={isDark} />
 
-      {/* Task 6, Step 4 — always-available actions. */}
+      {/* Task 6, Step 4 — always-available actions, plus Task 7's cancel
+          control (self-guarded: renders nothing once the order is no
+          longer cancellable). */}
       <div className={`${card} p-5 flex flex-wrap items-center gap-3`}>
         <Link
           href="/ai/orders"
@@ -229,6 +232,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         >
           <WhatsappLogo size={14} weight="fill" /> تواصل مع الدعم
         </a>
+        <OrderActions order={order} isDark={isDark} onCancelled={load} />
       </div>
     </div>
   );
