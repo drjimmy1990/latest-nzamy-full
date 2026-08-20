@@ -18,6 +18,16 @@
  * this payload regardless of which caller (or which action) produced the
  * event. Scrubbing here, once, is what makes that structural rather than a
  * property every call site has to remember to preserve.
+ *
+ * On top of that, for `receiver === "ai_workspace"` ONLY (the AI service
+ * orders: draft / contracts / wargaming / legal_opinion) `data` is reduced to
+ * a fixed ALLOW-LIST — see redactForAiWorkspace() below. Those orders carry
+ * the client's case in `description` (the first 200 characters of the case
+ * text) and in `metadata.intake` (the full narrative: party names, national
+ * IDs, judgment text, uploaded-file names), and n8n keeps every execution's
+ * input in its own logs. The redaction is deliberately NOT applied to the
+ * other receivers: `buildWebhookPayload` also serves the lawyer-marketplace
+ * events, whose workflows read fields a blanket redaction would delete.
  */
 
 import { stripInternalNotes } from "../services/internalNotes.ts";
@@ -60,7 +70,122 @@ export interface BuildWebhookPayloadOpts {
   actor?: Record<string, unknown> | null;
   /** Requester's profile row — supplies name/phone/email for outbound channels. */
   requesterProfile?: Record<string, unknown> | null;
-  /** Override the event name; falls back to `request.status`-derived default. */
+  /**
+   * Absolute link to the order page, e.g.
+   * `https://nezamy.sa/ai/orders/<id>`. Emitted as `data.orderUrl` when
+   * supplied and omitted otherwise.
+   *
+   * It is threaded in from the caller rather than derived here on purpose:
+   * the base URL lives in `NEXT_PUBLIC_APP_URL`, and reading `process.env`
+   * inside this function would break the purity promise the module doc above
+   * makes — the same promise that lets these payloads be unit-tested and
+   * reproduced byte-for-byte from a workflow script. A caller that has the
+   * environment (a route handler) composes the URL; this function only
+   * carries it.
+   */
+  orderUrl?: string;
+}
+
+/**
+ * The ONLY `data` keys an `ai_workspace` payload may carry, and — for the two
+ * nested objects — the only keys inside those.
+ *
+ * These are allow-lists, never deny-lists: a deny-list means the next field
+ * somebody adds to the intake wizard, or to the `requester` blob, reaches n8n
+ * by default. Adding a key here has to be a deliberate act.
+ *
+ * `title` is NOT on the list even though it reads like a generic service
+ * descriptor. In four flows it is built from client-typed free text — the
+ * name of the company under due diligence and the witness's role
+ * (`src/app/ai/legal-opinion/page.tsx:266-267`), a custom letter type
+ * (`src/app/ai/legal-opinion/_components/LetterWorkflow.tsx:86`), and a
+ * custom legal branch (`src/components/draft/steps/StepIdentify.tsx:257` →
+ * `src/hooks/useDraftState.ts:158`). `metadata.serviceTitleAr` is what an
+ * outbound message should say instead: the intake wizard writes it from the
+ * fixed per-service constant `SERVICE_TITLE_AR`
+ * (`src/lib/services/orderIntake.ts:20`, via `createServiceOrder`,
+ * `src/lib/services/serviceOrders.ts:63`), so in the flows that write it at
+ * all it is that constant and never a text box.
+ *
+ * That is the wizard's convention, though, and NOT a guarantee this module
+ * can make. `service_requests.metadata` is unvalidated on the wire (see
+ * pickPrimitives below), so a crafted POST can put an arbitrary plain STRING
+ * in `service` or `serviceTitleAr` and it will pass. State the guarantee at
+ * the width it actually holds: no key outside the three named here survives,
+ * and no nested object or array survives inside them — so `title`,
+ * `description` and the entire `intake` blob are gone whatever the caller
+ * sends. "These two cannot contain client text" would be a stronger claim
+ * than the code makes, and is not made here.
+ */
+const AI_WORKSPACE_METADATA_KEYS = ["service", "serviceTitleAr", "schemaVersion"] as const;
+const AI_WORKSPACE_REQUESTER_KEYS = ["name", "phone", "email"] as const;
+
+/**
+ * Copy `keys` off `raw`, keeping only primitive values.
+ *
+ * The primitive filter is not paranoia: both `service_requests.requester` and
+ * `service_requests.metadata` are JSONB columns written verbatim from the
+ * POST body (`src/app/api/v1/service-requests/route.ts:212` and `:214`), so
+ * neither is shape-checked on the wire. Without this, `requester: { name: {
+ * caseText: "..." } }` would walk straight through a key-only allow-list.
+ */
+function pickPrimitives(
+  raw: unknown,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const src = raw as Record<string, unknown>;
+  for (const key of keys) {
+    const value = src[key];
+    if (
+      value === null ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+/**
+ * Reduce an already-assembled `data` object to the AI-order allow-list.
+ *
+ * Note what is NOT touched: `recipient`. That is where the requester's name
+ * and phone live on the completed/cancelled path (see deriveRecipient), and
+ * the owner's ruling is to send the name and the phone. `entity.id` likewise
+ * still carries the order id — `data` has never had an `orderId` key and this
+ * does not invent one.
+ *
+ * `assignedTo` is off the list too. It is the fulfilling admin's UUID, and no
+ * AI-order workflow can consume it: dispatch.ts only routes `status_changed`
+ * on `assigned`, and an ai_workspace order never reaches that status — the
+ * admin route moves it `in_review → completed | cancelled`, and the RLS-scoped
+ * PATCH route permits the requester exactly one transition, `cancelled`
+ * (src/app/api/v1/service-requests/[id]/route.ts:219-259).
+ */
+function redactForAiWorkspace(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  const reduced: Record<string, unknown> = {
+    sourcePath: data.sourcePath ?? "",
+    receiver: data.receiver ?? null,
+    requesterUserId: data.requesterUserId ?? null,
+    createdAt: data.createdAt ?? null,
+    // The client's contact block — name/phone/email read off their own
+    // `profiles` row by createServiceOrder (src/lib/services/serviceOrders.ts:60).
+    // On order CREATION this is the only place the phone exists: that dispatch
+    // (src/app/api/v1/service-requests/route.ts:342) passes no requesterProfile,
+    // so `recipient` resolves to `{ role: "ai_workspace" }` with no contact at all.
+    requester: pickPrimitives(data.requester, AI_WORKSPACE_REQUESTER_KEYS),
+    metadata: pickPrimitives(data.metadata, AI_WORKSPACE_METADATA_KEYS),
+  };
+  if (typeof data.orderUrl === "string" && data.orderUrl) {
+    reduced.orderUrl = data.orderUrl;
+  }
+  return reduced;
 }
 
 /**
@@ -153,6 +278,30 @@ export function buildWebhookPayload(
   const actorRole =
     actor && typeof actor.user_type === "string" ? actor.user_type : undefined;
 
+  const data: Record<string, unknown> = {
+    title: request.title ?? "",
+    description: request.description ?? "",
+    sourcePath: request.source_path ?? "",
+    // n8n is outside the application's trust boundary — always strip
+    // internalNotes here, regardless of who triggered this event. See the
+    // module doc comment above. This stays where it is: the ai_workspace
+    // allow-list below would also drop internalNotes, but every OTHER
+    // receiver still depends on this one call.
+    metadata: stripInternalNotes((request.metadata as Record<string, unknown> | null | undefined) ?? {}, false),
+    receiver: request.receiver ?? null,
+    assignedTo: request.assigned_to ?? null,
+    requester: request.requester ?? null,
+    // requesterUserId always identifies the client, regardless of who
+    // `recipient` above resolves to (the assignee on non-completion
+    // events, the requester on completed/cancelled events).
+    requesterUserId: request.requester_user_id ?? null,
+    createdAt: request.created_at ?? null,
+    ...(opts.orderUrl ? { orderUrl: opts.orderUrl } : {}),
+  };
+
+  const receiver =
+    typeof request.receiver === "string" ? request.receiver : undefined;
+
   return {
     event,
     entity: {
@@ -168,22 +317,6 @@ export function buildWebhookPayload(
     recipient: deriveRecipient(request, opts.event, opts.requesterProfile ?? null),
     payment: coercePayment(request.payment),
     timestamp,
-    data: {
-      title: request.title ?? "",
-      description: request.description ?? "",
-      sourcePath: request.source_path ?? "",
-      // n8n is outside the application's trust boundary — always strip
-      // internalNotes here, regardless of who triggered this event. See the
-      // module doc comment above.
-      metadata: stripInternalNotes((request.metadata as Record<string, unknown> | null | undefined) ?? {}, false),
-      receiver: request.receiver ?? null,
-      assignedTo: request.assigned_to ?? null,
-      requester: request.requester ?? null,
-      // requesterUserId always identifies the client, regardless of who
-      // `recipient` above resolves to (the assignee on non-completion
-      // events, the requester on completed/cancelled events).
-      requesterUserId: request.requester_user_id ?? null,
-      createdAt: request.created_at ?? null,
-    },
+    data: receiver === "ai_workspace" ? redactForAiWorkspace(data) : data,
   };
 }

@@ -150,15 +150,64 @@ export async function PATCH(
       request: updated as unknown as Record<string, unknown>,
       actor: actorProfile as unknown as Record<string, unknown> | null,
       requesterProfile: requesterProfile as unknown as Record<string, unknown> | null,
+      // The order link the owner asked n8n to send. Threaded through the
+      // builder rather than pasted onto payload.data afterwards so it goes
+      // through the ai_workspace allow-list instead of around it — see the
+      // note on `deliverable` below for why "afterwards" is the dangerous
+      // shape here.
+      orderUrl: `${appUrl}/ai/orders/${id}`,
     });
+    // Anything set here lands AFTER buildWebhookPayload's ai_workspace
+    // redaction and is therefore invisible to it. So these two mirror the
+    // copies the redaction already produced — `payload.data.metadata` —
+    // instead of re-reading `order.metadata`, and that distinction is the
+    // whole point. `service_requests.metadata` is a JSONB column stored
+    // verbatim from the client's POST body
+    // (src/app/api/v1/service-requests/route.ts:214, `metadata:
+    // requestData.metadata ?? {}` — no shape validation of any kind), so
+    // reading it here would go around the allow-list's primitive filter
+    // (pickPrimitives, src/lib/n8n/payload.ts) and could ship
+    // `{ caseText: "..." }` as `data.service` even though the redaction had
+    // just dropped it.
+    //
+    // What this does NOT claim: that these two values are safe vocabulary.
+    // Filtering to primitives only stops a nested object or array from riding
+    // along on an allowed key. The values are still client-controlled and are
+    // NOT checked against SERVICE_TITLE_AR
+    // (src/lib/services/orderIntake.ts:20) — that constant is the intake
+    // wizard's convention, not a constraint the server enforces, so a crafted
+    // POST can put an arbitrary plain string in either key. Mirroring adds no
+    // exposure the redacted payload does not already have: the identical
+    // string is sitting in `payload.data.metadata` two keys away.
+    //
+    // The `?? "draft"` default these keys used to carry is gone, because it
+    // was a fabrication n8n could act on. Not every ai_workspace order comes
+    // from the AI intake wizard: the client consultation flow
+    // (src/app/dashboard/client/consultation/new/page.tsx:148, `receiver:
+    // path === "ai" ? "ai_workspace" : "lawyer"`) writes metadata with no
+    // `service` key at all, and the admin queue filters on `receiver` alone
+    // (../route.ts:42) — so the default told n8n that an AI consultation was
+    // a "draft". An empty string says "not known" instead. Both keys stay
+    // present, so for the live workflow this is a value change in its input,
+    // never a shape change.
+    //
+    // `deliverable: { fileName, notes }` used to be re-added here on the
+    // deliver branch and is now gone: `notes` is the admin's free-text note
+    // about the case (body.notes, written into metadata.deliverable at the
+    // top of this handler) and `fileName` is a client- or admin-chosen file
+    // name that routinely names the parties. Both are exactly the case
+    // detail the owner ruled must not reach n8n, and the completion workflow
+    // does not need either — `event`/`entity.status` say the order is done
+    // and `orderUrl` is where the file actually is. No receiver check guards
+    // this: the order lookup at the top of this handler is
+    // `.eq("receiver", "ai_workspace")`, so every order this route can reach
+    // is an AI order and an `if` here would have a dead false branch.
+    const redactedMetadata = (payload.data.metadata ?? {}) as Record<string, unknown>;
     payload.data = {
       ...payload.data,
-      service: (metadata.service as string) ?? "draft",
-      serviceTitleAr: (metadata.serviceTitleAr as string) ?? "",
-      orderUrl: `${appUrl}/ai/orders/${id}`,
-      ...(body.action === "deliver"
-        ? { deliverable: { fileName: body.fileName, notes: body.notes ?? "" } }
-        : {}),
+      service: typeof redactedMetadata.service === "string" ? redactedMetadata.service : "",
+      serviceTitleAr:
+        typeof redactedMetadata.serviceTitleAr === "string" ? redactedMetadata.serviceTitleAr : "",
     };
     await dispatchToN8n(eventName, payload);
   } catch (e) { console.error("[service-orders] dispatchToN8n failed:", e); }
