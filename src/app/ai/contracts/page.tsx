@@ -49,10 +49,13 @@ export default function AIContractsPage() {
   // default.
   const isDetailedDraft = s.contractComplexity === "detailed";
   const submitRows: StepSubmitRow[] = [
-    // canProceed() has no gate on "parties" (never asked to add one) — a
-    // client can reach submit having never touched either party form. Shown
-    // truthfully as "—" rather than hidden; warn flags it on screen instead
-    // of silently shipping an order with no party names.
+    // canProceed() gates step === "parties" on partyIsNamed() for both
+    // party1Data and party2Data (Task 12), so the wizard no longer lets a
+    // client reach submit with either party form untouched — these two rows
+    // can no longer show blank through the ordinary UI flow. The warn flags
+    // stay as defensive signals in case that gate is ever bypassed, the same
+    // rationale already applied to contractDesc's warn below and to
+    // rPartyFocus's warn in reviewSubmitRows.
     { label: "الطرف الأول", value: partyLabel(s.party1Data), warn: !partyLabel(s.party1Data) },
     { label: "الطرف الثاني", value: partyLabel(s.party2Data), warn: !partyLabel(s.party2Data) },
     ...(isDetailedDraft ? [{
