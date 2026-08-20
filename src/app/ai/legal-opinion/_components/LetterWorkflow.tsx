@@ -48,7 +48,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
   // instance rather than being fed one from page.tsx. `attachments` here is
   // genuine OrderAttachment[] the admin can open/download; kept distinct
   // from the typed-only `letterAttachments` labels declared further down.
-  const { attachments, uploading, attachError, attachFiles, removeAttachment } = useOrderAttachments();
+  const { attachments, uploading, attachError, attachFiles, removeAttachment, clearAttachError } = useOrderAttachments();
   const fileRef = useRef<HTMLInputElement>(null);
   const [letterStep, setLetterStep] = useState(1);
   const [letterType, setLetterType] = useState("");
@@ -634,10 +634,15 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
               transition={spring}
               onClick={() => setLetterStep(4)}
-              disabled={letterSubject.trim().length < 10}
+              // uploading gated here too (not just the submit button on step
+              // 4): without this, a client can leave step 3 while a file is
+              // still mid-upload, reach step 4 with no visible upload
+              // indicator, and submit before the upload -- success or
+              // failure -- has resolved. Review finding, Task 11 follow-up.
+              disabled={letterSubject.trim().length < 10 || uploading}
               className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-700 to-blue-500 px-6 py-2.5 text-[13px] font-bold text-white disabled:opacity-40 shadow-[0_4px_12px_-4px_rgba(37,99,235,0.5)]"
             >
-              <PaperPlaneTilt size={14} />التالي: مراجعة وإرسال
+              <PaperPlaneTilt size={14} />{uploading ? "جارٍ رفع الملف..." : "التالي: مراجعة وإرسال"}
             </motion.button>
           </div>
         </motion.div>
@@ -685,12 +690,17 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
                 <dd className={isDark ? "text-zinc-200" : "text-zinc-800"}>{deadlineDays} أيام</dd>
               </div>
             )}
-            {attachments.length > 0 && (
-              <div className="flex gap-3 text-[12px]">
-                <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>الملفات المرفقة</dt>
-                <dd className={isDark ? "text-zinc-200" : "text-zinc-800"}>{attachments.map(a => a.name).join("، ")}</dd>
-              </div>
-            )}
+            {/* Always rendered, unlike the other conditional rows above:
+                a client who believes they attached a file needs to be able
+                to tell "genuinely none attached" apart from "this row just
+                isn't shown" -- a hidden row and an empty one look identical
+                otherwise. Review finding, Task 11 follow-up. */}
+            <div className="flex gap-3 text-[12px]">
+              <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>الملفات المرفقة</dt>
+              <dd className={attachments.length > 0 ? (isDark ? "text-zinc-200" : "text-zinc-800") : (isDark ? "text-zinc-600" : "text-zinc-400")}>
+                {attachments.length > 0 ? attachments.map(a => a.name).join("، ") : "لا يوجد"}
+              </dd>
+            </div>
             {letterAttachments.length > 0 && (
               <div className="flex gap-3 text-[12px]">
                 <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>أسماء مرفقات (نص فقط)</dt>
@@ -698,6 +708,23 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               </div>
             )}
           </dl>
+
+          {/* attachError was previously rendered only inside letterStep 3 --
+              a failure that resolves (or first appears) after the client
+              has already advanced to step 4 was invisible: uploading flips
+              back to false, the submit button silently re-enables, and the
+              client submits believing their file attached. Surfaced here
+              too, and the submit button below is gated on it. Review
+              finding, Task 11 follow-up. */}
+          {attachError && (
+            <p className="flex items-center gap-1.5 text-[11px] text-red-500">
+              <Warning size={12} />{attachError}
+              {/* Dismiss path so a client who decides not to retry a
+                  rejected file isn't permanently blocked from submitting
+                  (the button below is disabled while attachError is set). */}
+              <button type="button" onClick={clearAttachError} className="underline opacity-80 hover:opacity-100">تجاهل</button>
+            </p>
+          )}
 
           <div className={`rounded-xl p-4 font-sans text-[12px] leading-[2] whitespace-pre-line ${isDark ? "bg-zinc-800/50 text-zinc-300" : "bg-zinc-50 text-zinc-700"}`} dir="rtl">
             {fullLetterText || "أكمل بيانات الخطوات السابقة لمعاينة نص الخطاب"}
@@ -726,7 +753,10 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
               transition={spring}
               onClick={submitLetterOrder}
-              disabled={submitting || uploading}
+              // !!attachError: an unresolved upload error must not let this
+              // button read as ready -- the client can dismiss it above
+              // (تجاهل) once they decide not to retry, or fix the upload.
+              disabled={submitting || uploading || !!attachError}
               className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] px-6 py-2.5 text-[13px] font-bold text-white disabled:opacity-40 shadow-lg"
             >
               <PaperPlaneTilt size={14} />{submitting ? "جارٍ الإرسال..." : uploading ? "جارٍ رفع الملف..." : "إرسال الطلب"}
