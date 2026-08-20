@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
@@ -8,9 +8,14 @@ import {
   Clock, CheckCircle, XCircle, HourglassSimple,
   ArrowLeft, Plus, MagnifyingGlass, Storefront,
   Users, CalendarCheck, X, Copy, Check, DownloadSimple,
+  NotePencil, Scales, Lightbulb, Warning, Info, ArrowSquareOut,
 } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
-import { listClientWorkflowRequests, updateWorkflowRequestById } from "@/lib/clientWorkflowRepository";
+import {
+  listClientWorkflowRequestsPage,
+  updateWorkflowRequestById,
+  WorkflowApiError,
+} from "@/lib/clientWorkflowRepository";
 import type { WorkflowRequest, WorkflowRequestStatus } from "@/lib/workflowStore";
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -26,15 +31,96 @@ const STATUS_CFG: Record<WorkflowRequestStatus, {
   cancelled:          { label: "ملغي",              dot: "bg-red-400",     badge: "text-red-700 bg-red-50 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-700/30",                         Icon: XCircle },
 };
 
-const TYPE_CFG: Record<WorkflowRequest["type"], { label: string; icon: React.ElementType; color: string }> = {
-  service:         { label: "خدمة",       icon: ShieldStar,    color: "text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-400" },
-  consultation:    { label: "استشارة",    icon: ChatCircle,    color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400" },
-  business_case:   { label: "قضية",       icon: Gavel,         color: "text-amber-600 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400" },
-  ngo_volunteer:   { label: "متطوع",      icon: Users,         color: "text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400" },
-  ai_draft:        { label: "مسودة AI",   icon: FileText,      color: "text-rose-600 bg-rose-50 dark:bg-rose-900/20 dark:text-rose-400" },
+// Same reasoning as `typeCfg` below: the seven statuses match the database
+// CHECK constraint exactly today (20260518_client_workflow_backend_ready.sql),
+// but an unmodelled value must degrade to a label rather than index to
+// `undefined` and take the whole list down on `status.label`.
+const UNKNOWN_STATUS_CFG = {
+  label: "حالة غير معروفة",
+  dot: "bg-gray-400",
+  badge: "text-gray-600 bg-gray-100 border-gray-200 dark:bg-white/5 dark:text-gray-300 dark:border-white/10",
+  Icon: HourglassSimple,
+} as const;
+
+function statusCfg(status: WorkflowRequestStatus) {
+  return STATUS_CFG[status] ?? UNKNOWN_STATUS_CFG;
+}
+
+type TypeConfig = { label: string; icon: React.ElementType; color: string };
+
+// Every value the `service_requests_type_check` CHECK constraint allows
+// (supabase/migrations/20260814_service_orders_types.sql). The four `ai_*`
+// rows are the four premium services; before this round only `ai_draft` had a
+// config and its label read "مسودة AI" — half English, which the owner's س٤
+// ruling forbids. Labels here are the service *category* in Arabic, matching
+// what the client saw when they placed the order.
+// Colours are one per type and deliberately distinct from their neighbours:
+// purple / emerald / amber / blue were taken, so the AI four use rose, indigo,
+// orange and teal.
+const TYPE_CFG: Record<WorkflowRequest["type"], TypeConfig> = {
+  service:          { label: "خدمة",        icon: ShieldStar, color: "text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-400" },
+  consultation:     { label: "استشارة",     icon: ChatCircle, color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400" },
+  business_case:    { label: "قضية",        icon: Gavel,      color: "text-amber-600 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400" },
+  ngo_volunteer:    { label: "متطوع",       icon: Users,      color: "text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400" },
+  ai_draft:         { label: "صياغة مذكرة", icon: NotePencil, color: "text-rose-600 bg-rose-50 dark:bg-rose-900/20 dark:text-rose-400" },
+  ai_contracts:     { label: "عقود",        icon: FileText,   color: "text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 dark:text-indigo-400" },
+  ai_wargaming:     { label: "محاكاة",      icon: Scales,     color: "text-orange-600 bg-orange-50 dark:bg-orange-900/20 dark:text-orange-400" },
+  ai_legal_opinion: { label: "رأي قانوني",  icon: Lightbulb,  color: "text-teal-600 bg-teal-50 dark:bg-teal-900/20 dark:text-teal-400" },
 };
 
-type FilterKey = "all" | WorkflowRequestStatus;
+// The CHECK constraint keeps the union above complete for anything the server
+// can send today, but this page is a client bundle: a row carrying a type
+// added to the database before this build ships would otherwise index to
+// `undefined` and crash the whole list on `type.icon`. Degrade to a neutral,
+// honest label instead of white-screening.
+const UNKNOWN_TYPE_CFG: TypeConfig = {
+  label: "طلب",
+  icon: FileText,
+  color: "text-gray-600 bg-gray-100 dark:bg-white/5 dark:text-gray-300",
+};
+
+function typeCfg(type: WorkflowRequest["type"]): TypeConfig {
+  return TYPE_CFG[type] ?? UNKNOWN_TYPE_CFG;
+}
+
+type FilterKey = "all" | "pending" | "active" | "completed" | "cancelled";
+
+// One status → one chip, as a total Record so TypeScript refuses to compile if
+// a status is ever added without being placed. Counts and the visible list are
+// both derived from this single map (see `matchesFilter`), which is the whole
+// point: they used to be written twice and had drifted apart — «معلقة» counted
+// `pending_payment` but showed only `pending_assignment`, «جارية» counted
+// `assigned` but showed only `in_review`, and `draft` was counted by no chip
+// at all. A chip reading 5 and listing 3 is exactly the kind of silent lie
+// that gets worse now that AI orders (which sit in `assigned` for the whole
+// time an admin is working them) land on this page.
+const STATUS_GROUP: Record<WorkflowRequestStatus, Exclude<FilterKey, "all">> = {
+  draft:              "pending",
+  pending_payment:    "pending",
+  pending_assignment: "pending",
+  assigned:           "active",
+  in_review:          "active",
+  completed:          "completed",
+  cancelled:          "cancelled",
+};
+
+function matchesFilter(status: WorkflowRequestStatus, filter: FilterKey): boolean {
+  if (filter === "all") return true;
+  return STATUS_GROUP[status] === filter;
+}
+
+/**
+ * True for an order placed through the four premium services
+ * (`createServiceOrder` → POST /api/v1/service-requests), which always stamps
+ * `metadata.service`. Those orders have a full detail page at
+ * `/ai/orders/[id]` carrying their attachments and their delivered file;
+ * everything else on this page does not, so the link must not be offered for
+ * them — including the localStorage-only rows that `/ai/contract-drafter`
+ * writes with the same `ai_workspace` receiver, which that page would 404 on.
+ */
+function isPremiumServiceOrder(req: WorkflowRequest): boolean {
+  return req.receiver === "ai_workspace" && typeof req.metadata?.service === "string";
+}
 
 // ─── Format date ──────────────────────────────────────────────────────────────
 function fmtDate(iso: string) {
@@ -48,13 +134,16 @@ function RequestCard({
   req,
   onCancel,
   onSelect,
+  cancelling,
 }: {
   req: WorkflowRequest;
   onCancel: (id: string) => void;
   onSelect: (req: WorkflowRequest) => void;
+  /** A cancel for THIS request is in flight — the button says so and refuses a second click. */
+  cancelling: boolean;
 }) {
-  const status = STATUS_CFG[req.status];
-  const type   = TYPE_CFG[req.type];
+  const status = statusCfg(req.status);
+  const type   = typeCfg(req.type);
   const CatIcon    = type.icon;
   const StatusIcon = status.Icon;
 
@@ -107,7 +196,7 @@ function RequestCard({
           </div>
 
           {/* Audit trail last event */}
-          {req.auditTrail.length > 0 && (
+          {(req.auditTrail?.length ?? 0) > 0 && (
             <div className="flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-600 mb-3">
               <CalendarCheck size={11} />
               <span>آخر تحديث: {req.auditTrail[0].event} — {fmtDate(req.auditTrail[0].at)}</span>
@@ -124,9 +213,10 @@ function RequestCard({
             {(req.status === "pending_assignment" || req.status === "pending_payment" || req.status === "draft") ? (
               <button
                 onClick={(e) => { e.stopPropagation(); onCancel(req.id); }}
-                className="text-xs text-red-500 hover:text-red-600 dark:hover:text-red-400 transition-colors mr-auto font-bold border border-red-100 dark:border-red-900/30 px-3 py-1 rounded-xl bg-red-50/50 dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20"
+                disabled={cancelling}
+                className="text-xs text-red-500 hover:text-red-600 dark:hover:text-red-400 transition-colors mr-auto font-bold border border-red-100 dark:border-red-900/30 px-3 py-1 rounded-xl bg-red-50/50 dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                إلغاء الطلب
+                {cancelling ? "جارٍ الإلغاء…" : "إلغاء الطلب"}
               </button>
             ) : (
               <span className="text-xs text-[#0B3D2E] dark:text-emerald-400 font-bold opacity-70 group-hover:opacity-100 transition-all mr-auto flex items-center gap-1 bg-[#0B3D2E]/5 dark:bg-emerald-500/10 px-3 py-1 rounded-xl hover:scale-105 active:scale-95">
@@ -152,9 +242,10 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
 
   if (!req) return null;
 
-  const status = STATUS_CFG[req.status];
-  const type = TYPE_CFG[req.type];
+  const status = statusCfg(req.status);
+  const type = typeCfg(req.type);
   const CatIcon = type.icon;
+  const premium = isPremiumServiceOrder(req);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(req.description || "");
@@ -169,7 +260,14 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
       const element = document.createElement("a");
       const file = new Blob([req.description || ""], { type: 'text/plain;charset=utf-8' });
       element.href = URL.createObjectURL(file);
-      element.download = `${req.title}-${req.id}.txt`;
+      // What this writes is `req.description`, and for a premium service order
+      // that is the client's own 200-character excerpt — not the deliverable.
+      // Naming the file after the order title ("المحاكي الشامل — تجاري-….txt")
+      // would leave a saved artifact that reads like the delivered document on
+      // the very page the client goes to looking for it.
+      element.download = premium
+        ? `ملخص-الطلب-${req.id}.txt`
+        : `${req.title}-${req.id}.txt`;
       document.body.appendChild(element);
       element.click();
       document.body.removeChild(element);
@@ -241,7 +339,19 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
               <div>
                 <span className="block text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase">الجهة المستقبلة</span>
                 <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 mt-0.5 block">
-                  {req.receiver === "ai_workspace" ? "نظامي عالمي (مساعد AI)" : "المنصة القانونية"}
+                  {/*
+                    Was "نظامي عالمي (مساعد AI)". No createServiceOrder order
+                    could reach this modal before — they were all filtered out —
+                    so the string never had to be true. It is reachable now, and
+                    it is false: an `ai_workspace` order is claimed and
+                    fulfilled by a person in /dashboard/admin/service-orders,
+                    who reads the file and uploads the deliverable. No AI
+                    touches it. «فريق نظامي» is the name every one of the four
+                    wizards already uses for that team when it takes the order
+                    (ai/contracts/page.tsx:324, legal-opinion/SubmitStep.tsx:48),
+                    so the client sees the same fulfiller here as there.
+                  */}
+                  {req.receiver === "ai_workspace" ? "فريق نظامي" : "المنصة القانونية"}
                 </span>
               </div>
               {req.payment.amount > 0 && (
@@ -266,7 +376,18 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
             <div className="mb-6">
               <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 flex items-center gap-1.5">
                 <FileText size={16} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
-                {req.type === "ai_draft" ? "معاينة مسودة العقد" : "تفاصيل ووصف الطلب"}
+                {/*
+                  This used to read "معاينة مسودة العقد" for every ai_draft
+                  row — a false claim for the orders that now arrive here. For
+                  all four premium services `createServiceOrder` sets
+                  `description` to the first 200 characters of what the CLIENT
+                  typed (caseText / contractDesc / scenario summary / letter
+                  subject — see useDraftState.ts:159, useContractsState.ts:204
+                  and :257, wargaming/page.tsx:945, legal-opinion/page.tsx:402
+                  and LetterWorkflow.tsx:185). It is never a produced draft,
+                  and it is always truncated, so the heading says exactly that.
+                */}
+                {premium ? "مقتطف من طلبك كما أرسلته" : "تفاصيل ووصف الطلب"}
               </h3>
               
               <div className="relative group">
@@ -318,7 +439,15 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
               )}
             </div>
 
-            {/* Audit Trail Timeline */}
+            {/* Audit Trail Timeline.
+                Hidden entirely when there is nothing to show. The list route's
+                `toWorkflowRequest` hard-codes `auditTrail: []` (events are only
+                joined by the [id] route), so every server-side row reaches this
+                modal with an empty trail — which used to render a heading over
+                an empty rail. There is no event log on /ai/orders/[id] either
+                (that page shows a three-stage status strip, not a log), so
+                nothing here may promise one. */}
+            {(req.auditTrail?.length ?? 0) > 0 && (
             <div className="mb-6">
               <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-1.5">
                 <CalendarCheck size={16} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
@@ -347,6 +476,7 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
                 ))}
               </div>
             </div>
+            )}
 
             {/* Bottom Actions */}
             <div className="flex items-center gap-3 pt-6 mt-6 border-t border-gray-100 dark:border-white/5">
@@ -361,7 +491,25 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
                   إلغاء هذا الطلب
                 </button>
               )}
-              
+
+              {/*
+                This modal shows the excerpt and the activity log only. For a
+                premium service order the attachments the client uploaded and
+                the file the team delivers live on /ai/orders/[id], so «طلباتي»
+                links there rather than pretending this is the whole order.
+                Gated on isPremiumServiceOrder because that page loads through
+                getServiceOrder() and would 404 on a localStorage-only row.
+              */}
+              {premium && (
+                <Link
+                  href={`/ai/orders/${req.id}`}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[#0B3D2E]/20 dark:border-emerald-500/30 text-[#0B3D2E] dark:text-emerald-400 hover:bg-[#0B3D2E]/5 dark:hover:bg-emerald-500/10 text-xs font-bold transition-all"
+                >
+                  <ArrowSquareOut size={14} weight="bold" />
+                  فتح صفحة الطلب الكاملة
+                </Link>
+              )}
+
               <button
                 onClick={onClose}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0B3D2E] text-white hover:bg-[#0a3328] text-xs font-bold transition-all mr-auto shadow-sm"
@@ -384,42 +532,131 @@ export default function MyRequestsPage() {
   const [filter, setFilter]     = useState<FilterKey>("all");
   const [search, setSearch]     = useState("");
   const [selectedRequest, setSelectedRequest] = useState<WorkflowRequest | null>(null);
+  // True when the server holds more requests than this page asked for. The cap
+  // is stated on screen rather than truncating in silence — see
+  // CLIENT_REQUESTS_FETCH_LIMIT in clientWorkflowRepository.ts.
+  const [truncatedAt, setTruncatedAt] = useState<number | null>(null);
+  // The load itself failed (or came back degraded). Without this the page
+  // renders "لا توجد طلبات بعد" over a broken query — a false statement about
+  // the client's own data.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  // False until the first load has actually finished. Without it the empty
+  // state says «لا توجد طلبات بعد» before anything has been fetched, which is
+  // a statement about the client's data that the page cannot yet make.
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const page = await listClientWorkflowRequestsPage({ requesterUserId: user.userId });
+      setRequests(page.requests);
+      setLoadFailed(page.degraded);
+      // Compare the server's total against the rows it actually returned
+      // (pre-filter), not against what survives the requester filter: the
+      // question is only ever "did the limit cut rows off".
+      setTruncatedAt(page.total !== null && page.total > page.fetched ? page.limit : null);
+    } catch (err) {
+      console.error("[client requests] load failed:", err);
+      setRequests([]);
+      setTruncatedAt(null);
+      setLoadFailed(true);
+    } finally {
+      setHasLoaded(true);
+    }
+  }, [user.userId]);
 
   // Load from store + listen for updates
   useEffect(() => {
-    const load = () => {
-      listClientWorkflowRequests({ requesterUserId: user.userId }).then(setRequests).catch(() => setRequests([]));
-    };
-    load();
-    window.addEventListener("nzamy-workflow-updated", load);
-    return () => window.removeEventListener("nzamy-workflow-updated", load);
-  }, [user.userId]);
+    // Wait for useUser() to resolve before fetching anything.
+    //
+    // useUser starts at GUEST_SESSION, so `user.userId` is undefined on the
+    // first render in Supabase mode too. A load fired there goes down the
+    // no-requester-id branch of listClientWorkflowRequestsPage, which now
+    // (correctly) refuses every server row — it exists only for the
+    // localStorage/demo path. Firing it anyway would race the real load, and
+    // if the id-less one resolved second it would overwrite a correct list
+    // with an empty one and leave «طلباتي» reading "لا توجد طلبات بعد" until
+    // a workflow event or a page reload. `loading` is set to false by both
+    // branches of useUser (Supabase and demo), so this cannot deadlock; in
+    // demo mode it resolves with userId still undefined and the id-less branch
+    // then runs exactly as intended, against localStorage.
+    if (user.loading) return;
+    // `load` is async and every setState in it runs after an `await`, so
+    // nothing here is synchronous with the effect body — the rule cannot see
+    // through the async boundary.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+    const onUpdated = () => { void load(); };
+    window.addEventListener("nzamy-workflow-updated", onUpdated);
+    return () => window.removeEventListener("nzamy-workflow-updated", onUpdated);
+  }, [load, user.loading]);
 
   const filtered = requests.filter(r => {
-    if (filter !== "all" && r.status !== filter) return false;
+    if (!matchesFilter(r.status, filter)) return false;
     if (search && !r.title.includes(search) && !r.description?.includes(search)) return false;
     return true;
   });
 
-  const counts = {
-    all: requests.length,
-    pending_assignment: requests.filter(r => r.status === "pending_assignment" || r.status === "pending_payment").length,
-    in_review:  requests.filter(r => r.status === "in_review" || r.status === "assigned").length,
-    completed:  requests.filter(r => r.status === "completed").length,
-    cancelled:  requests.filter(r => r.status === "cancelled").length,
-  };
+  // Every count comes from the same predicate the list uses, so a chip can no
+  // longer promise rows the chip does not show.
+  const FILTERS: { key: FilterKey; label: string; count: number }[] = (
+    [
+      { key: "all",       label: "الكل" },
+      { key: "pending",   label: "معلقة" },
+      { key: "active",    label: "جارية" },
+      { key: "completed", label: "مكتملة" },
+      { key: "cancelled", label: "ملغية" },
+    ] as const
+  ).map(({ key, label }) => ({
+    key,
+    label,
+    count: requests.filter(r => matchesFilter(r.status, key)).length,
+  }));
 
-  const FILTERS: { key: FilterKey; label: string; count: number }[] = [
-    { key: "all",               label: "الكل",       count: counts.all },
-    { key: "pending_assignment", label: "معلقة",     count: counts.pending_assignment },
-    { key: "in_review",         label: "جارية",      count: counts.in_review },
-    { key: "completed",         label: "مكتملة",     count: counts.completed },
-    { key: "cancelled",         label: "ملغية",      count: counts.cancelled },
-  ];
+  /**
+   * Arabic for a cancel that did not go through.
+   *
+   * `updateWorkflowRequestById` throws on every non-ok response
+   * (WorkflowApiError) and the route's own `error` strings are a mix of Arabic
+   * and English, so the server text is never echoed — the status code picks
+   * the copy instead. 403 is the branch that matters: the PATCH route refuses
+   * a status transition it does not permit, and from this page the caller is
+   * always the requester asking for "cancelled", so the only refusal that can
+   * reach a client here is "not cancellable from where this order is now".
+   */
+  function cancelErrorAr(err: unknown): string {
+    if (err instanceof WorkflowApiError) {
+      if (err.status === 403) return "لا يمكن إلغاء هذا الطلب في وضعه الحالي.";
+      if (err.status === 401) return "انتهت جلستك. سجّل الدخول من جديد ثم أعد المحاولة.";
+      if (err.status === 404) return "لم يعد هذا الطلب موجوداً.";
+    }
+    return "تعذّر إلغاء الطلب. تحقّق من اتصالك بالإنترنت ثم حاول مجدداً.";
+  }
 
   const handleCancel = async (id: string) => {
-    await updateWorkflowRequestById(id, { status: "cancelled" }, "cancelled_by_client", user.name || user.userId || "client");
-    setRequests(await listClientWorkflowRequests({ requesterUserId: user.userId }));
+    setCancelError(null);
+    setCancellingId(id);
+    try {
+      const updated = await updateWorkflowRequestById(
+        id,
+        { status: "cancelled" },
+        "cancelled_by_client",
+        user.name || user.userId || "client",
+      );
+      // The local/demo path returns null instead of throwing when the id is
+      // not in localStorage. That is still a cancel that did not happen, so it
+      // must not look like one that did.
+      if (!updated) setCancelError("تعذّر إلغاء الطلب. لم يتم العثور عليه.");
+    } catch (err) {
+      console.error("[client requests] cancel failed:", err);
+      setCancelError(cancelErrorAr(err));
+    } finally {
+      setCancellingId(null);
+      // Refresh either way: on success to show «ملغي», on refusal to show the
+      // status the order is actually in.
+      await load();
+    }
   };
 
   return (
@@ -473,6 +710,49 @@ export default function MyRequestsPage() {
         ))}
       </div>
 
+      {/* A cancel that did not go through. Before this, updateWorkflowRequestById
+          was awaited with no try/catch and apiRequest throws on every non-ok
+          response — so a 403 or a dropped connection left the button looking
+          like it had worked. */}
+      {cancelError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 mb-4 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/15 px-4 py-3 text-xs font-bold text-red-700 dark:text-red-300"
+        >
+          <Warning size={16} weight="fill" className="flex-shrink-0 mt-0.5" />
+          <span className="flex-1">{cancelError}</span>
+          <button
+            onClick={() => setCancelError(null)}
+            aria-label="إخفاء التنبيه"
+            className="flex-shrink-0 p-0.5 rounded-md hover:bg-red-100 dark:hover:bg-red-900/30"
+          >
+            <X size={14} weight="bold" />
+          </button>
+        </div>
+      )}
+
+      {/* The list could not be loaded. Says so instead of showing an empty page. */}
+      {loadFailed && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 mb-4 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/15 px-4 py-3 text-xs font-bold text-amber-800 dark:text-amber-300"
+        >
+          <Warning size={16} weight="fill" className="flex-shrink-0 mt-0.5" />
+          <span>تعذّر تحميل طلباتك من الخادم. قد تكون هذه القائمة غير مكتملة — حدّث الصفحة وحاول مجدداً.</span>
+        </div>
+      )}
+
+      {/* The stated cap. The server holds more requests than this page asked
+          for, so it says so rather than dropping the oldest in silence. */}
+      {truncatedAt !== null && (
+        <div className="flex items-start gap-2 mb-4 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.03] px-4 py-3 text-xs font-bold text-gray-600 dark:text-gray-300">
+          <Info size={16} weight="fill" className="flex-shrink-0 mt-0.5" />
+          <span>
+            يتم عرض أحدث {truncatedAt.toLocaleString("ar-SA")} طلب فقط. توجد طلبات أقدم لم يتم تحميلها في هذه القائمة.
+          </span>
+        </div>
+      )}
+
       {/* List */}
       <div className="space-y-4">
         <AnimatePresence mode="popLayout">
@@ -481,12 +761,22 @@ export default function MyRequestsPage() {
               className="text-center py-16">
               <Storefront size={48} className="mx-auto mb-3 text-gray-200 dark:text-white/10" weight="duotone" />
               <p className="text-sm font-semibold text-gray-400">
-                {requests.length === 0 ? "لا توجد طلبات بعد" : "لا توجد طلبات في هذا الفلتر"}
+                {/* Never claim "no requests yet" over a failed load, and never
+                    claim it before the first load has come back at all. */}
+                {!hasLoaded
+                  ? "جارٍ تحميل طلباتك…"
+                  : loadFailed
+                    ? "تعذّر تحميل الطلبات"
+                    : requests.length === 0 ? "لا توجد طلبات بعد" : "لا توجد طلبات في هذا الفلتر"}
               </p>
               <p className="text-xs text-gray-300 dark:text-gray-600 mt-1 mb-4">
-                {requests.length === 0 ? "اطلب خدمة قانونية وستظهر هنا فور الإرسال" : "جرّب فلتراً آخر"}
+                {!hasLoaded
+                  ? ""
+                  : loadFailed
+                    ? "لا يعني هذا أنه لا توجد لديك طلبات — حدّث الصفحة وحاول مجدداً."
+                    : requests.length === 0 ? "اطلب خدمة قانونية وستظهر هنا فور الإرسال" : "جرّب فلتراً آخر"}
               </p>
-              {requests.length === 0 && (
+              {hasLoaded && requests.length === 0 && !loadFailed && (
                 <Link href="/dashboard/client/services">
                   <motion.button
                     whileTap={{ scale: 0.97 }}
@@ -504,6 +794,7 @@ export default function MyRequestsPage() {
                 req={r}
                 onCancel={handleCancel}
                 onSelect={setSelectedRequest}
+                cancelling={cancellingId === r.id}
               />
             ))
           )}
