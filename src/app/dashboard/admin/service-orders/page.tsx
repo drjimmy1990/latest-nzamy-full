@@ -6,6 +6,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { uploadDocumentFile } from "@/lib/services/documentService";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { validateUploadFile } from "@/lib/services/fileValidation";
+import { buildOrderPrompt } from "@/lib/services/orderPrompt";
 import { uploadErrorMessage } from "./_errorCopy";
 
 interface AdminOrder {
@@ -28,6 +29,10 @@ export default function AdminServiceOrdersPage() {
   const [filter, setFilter] = useState("");
   const [open, setOpen] = useState<AdminOrder | null>(null);
   const [notes, setNotes] = useState("");
+  // Task 3 — a second, private note for the team, never sent to the client.
+  // Page-level state shared by every order card, same reset discipline as
+  // `notes`: leftover text from order A must never survive into order B.
+  const [internalNotes, setInternalNotes] = useState("");
   // Task 2 — the file an admin picked in the browser dialog, held here until
   // اعتماد وتسليم المستند للعميل is pressed. Page-level state shared by every
   // order card, exactly like `notes` below: a file staged on order A must
@@ -78,7 +83,7 @@ export default function AdminServiceOrdersPage() {
         // Claim starts work on an order; deliver and cancel finish it. Only the
         // finishing actions should collapse the panel — closing it on claim
         // hides the upload field the admin pressed استلام to reach.
-        if (!opts.keepOpen) { setOpen(null); setNotes(""); setPendingFile(null); }
+        if (!opts.keepOpen) { setOpen(null); setNotes(""); setInternalNotes(""); setPendingFile(null); }
         await load();
       }
     } catch {
@@ -92,7 +97,7 @@ export default function AdminServiceOrdersPage() {
     setBusy(true); setErr("");
     try {
       const doc = await uploadDocumentFile(file, { requestId: order.id });
-      await act(order.id, { action: "deliver", documentId: doc.id, fileName: doc.file_name, notes });
+      await act(order.id, { action: "deliver", documentId: doc.id, fileName: doc.file_name, notes, internalNotes });
     } catch (e) {
       // Fix (review finding IMPORTANT 3): uploadDocumentFile can throw raw,
       // untranslated causes — see _errorCopy.ts for the full trace and the
@@ -122,6 +127,29 @@ export default function AdminServiceOrdersPage() {
     }
   }
 
+  // Task 4 — a copy of buildOrderPrompt(o) the admin can hand to another
+  // tool, so the queue itself is not the only place the brief exists.
+  function downloadPrompt(o: AdminOrder) {
+    const blob = new Blob([buildOrderPrompt(o)], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `order-${o.id}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // navigator.clipboard is unavailable on insecure origins (plain HTTP,
+  // non-localhost) — wrapped so the copy button reports failure in Arabic
+  // instead of looking dead.
+  async function copyPrompt(o: AdminOrder) {
+    try {
+      await navigator.clipboard.writeText(buildOrderPrompt(o));
+    } catch {
+      setErr("تعذّر نسخ الملخص. حاول تنزيل الملف بدلاً من ذلك.");
+    }
+  }
+
   // Fix (review finding IMPORTANT 1): `notes` is a single page-level state
   // shared by every order card's deliver/cancel form. Without this reset, an
   // admin who drafts a note for order A and then opens order B without
@@ -131,6 +159,7 @@ export default function AdminServiceOrdersPage() {
   function toggleOpen(o: AdminOrder) {
     setOpen(open?.id === o.id ? null : o);
     setNotes("");
+    setInternalNotes("");
     setPendingFile(null);
   }
 
@@ -181,9 +210,21 @@ export default function AdminServiceOrdersPage() {
 
             {open?.id === o.id && (
               <div className="mt-4 space-y-3 border-t pt-4 border-white/[0.06]">
+                <div className="flex gap-2">
+                  <button onClick={() => copyPrompt(o)}
+                    className="rounded-xl border border-emerald-500/30 px-3 py-1.5 text-[11px] font-bold text-emerald-500">
+                    نسخ ملخص الطلب
+                  </button>
+                  <button onClick={() => downloadPrompt(o)}
+                    className={`rounded-xl border px-3 py-1.5 text-[11px] font-bold ${
+                      isDark ? "border-white/10 text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>
+                    تنزيل ملف .md
+                  </button>
+                </div>
+
                 <pre className={`text-[11px] leading-[1.9] whitespace-pre-wrap p-3 rounded-xl overflow-x-auto ${
                   isDark ? "bg-zinc-950 text-zinc-400" : "bg-slate-50 text-slate-600"}`}>
-                  {JSON.stringify(o.metadata?.intake ?? {}, null, 2)}
+                  {buildOrderPrompt(o)}
                 </pre>
 
                 {Array.isArray(o.metadata?.attachments) && (o.metadata.attachments as OrderAttachment[]).length > 0 && (
@@ -239,7 +280,11 @@ export default function AdminServiceOrdersPage() {
                       تولّي الطلب (نقل لي)
                     </button>
                     <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
-                      placeholder="ملاحظات للعميل (اختياري)"
+                      placeholder="ملاحظات تظهر للعميل مع المستند (اختياري)"
+                      className={`w-full rounded-xl p-2.5 text-[12px] border ${
+                        isDark ? "bg-zinc-950 border-white/[0.07] text-zinc-200" : "bg-white border-zinc-200"}`} />
+                    <textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2}
+                      placeholder="ملاحظة داخلية للفريق — لا يراها العميل (اختياري)"
                       className={`w-full rounded-xl p-2.5 text-[12px] border ${
                         isDark ? "bg-zinc-950 border-white/[0.07] text-zinc-200" : "bg-white border-zinc-200"}`} />
                     <input type="file" disabled={busy}
@@ -267,7 +312,7 @@ export default function AdminServiceOrdersPage() {
                       className="w-full rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-[12px] font-bold text-white disabled:opacity-40">
                       اعتماد وتسليم المستند للعميل
                     </button>
-                    <button disabled={busy} onClick={() => act(o.id, { action: "cancel", reason: notes })}
+                    <button disabled={busy} onClick={() => act(o.id, { action: "cancel", reason: notes, internalNotes })}
                       className="rounded-xl border border-red-500/30 px-4 py-2 text-[12px] font-bold text-red-500 disabled:opacity-40">
                       إلغاء الطلب
                     </button>
