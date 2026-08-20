@@ -3,10 +3,39 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/access-control";
 
 /**
+ * Task 7 (owner س١١) — the only evidence the app ever has that an outbound
+ * notice reached the client is the n8n callback
+ * (`src/app/api/v1/n8n/callback/route.ts`), which writes
+ * `notification.${channel}_${status}` into `request_events`. That table has NO
+ * metadata column (see `src/lib/events.ts`), so the event NAME is the entire
+ * signal and the channel has to be read off the prefix.
+ *
+ * Only the WhatsApp channel is surfaced here because the admin UI names
+ * WhatsApp explicitly; a future `notification.sms_*` row must never be
+ * rendered under a WhatsApp label.
+ */
+const WHATSAPP_EVENT_PREFIX = "notification.whatsapp_";
+
+/**
  * GET /api/v1/admin/service-orders — the AI service fulfillment queue.
  * Query: ?status=pending_assignment|in_review|completed|cancelled  ?service=draft|...
  * service_requests has no admin RLS policy, so this uses the service-role
  * client behind requireAdmin().
+ *
+ * Each row also carries `whatsappNotice`: the latest WhatsApp delivery status
+ * n8n reported back for that ORDER, or `null` when nothing ever reported back.
+ *
+ * It is deliberately raw: it carries NO indication of which outbound message
+ * it answers, because the callback cannot say. Its body is
+ * orderId/channel/status and `request_events` has no metadata column to hold
+ * more, while every order gets an intake dispatch at creation
+ * (`service_request.created` → /new-request) on top of any later one. A
+ * consumer that wants to claim a specific message reached the client must
+ * therefore check `at` against that message's own timestamp first — the admin
+ * queue compares it with `metadata.deliverable.deliveredAt` and shows the
+ * no-claim state whenever the confirmation does not postdate it. Rendering
+ * this field as a bare "sent ✓" would attribute an intake confirmation to
+ * whatever the reader happens to be looking at.
  */
 export async function GET(request: NextRequest) {
   const gate = await requireAdmin();
@@ -42,8 +71,58 @@ export async function GET(request: NextRequest) {
     profileMap = new Map((profs ?? []).map((p) => [p.id as string, p]));
   }
 
+  // Task 7 — same shape as the profiles enrichment above and for the same
+  // reason: ONE query for every visible order, never one per order. This queue
+  // renders up to 200 rows (the .limit(200) above), so per-row lookups would
+  // be 200 round-trips.
+  //
+  // `.in()` is safe at this size: 200 ids is well under the point where the
+  // PostgREST query string starts getting truncated.
+  const requestIds = orders.map((o) => String(o.id));
+  const noticeMap = new Map<string, { status: string; at: string }>();
+  if (requestIds.length > 0) {
+    const { data: events, error: eventsError } = await admin
+      .from("request_events")
+      .select("id, request_id, event, created_at")
+      .in("request_id", requestIds)
+      .like("event", "notification.%")
+      // Newest first, with the bigserial id as the tie-break for two events
+      // written inside the same millisecond. `id` is only ever used to order
+      // here — it is a bigserial and arrives as a JSON number, never a string.
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(2000);
+
+    if (eventsError) {
+      // Deliberately NOT a 500: losing this lookup must not take the whole
+      // queue down. The order then falls back to the "no confirmation yet"
+      // state, which asserts nothing — a lost lookup can never read as a
+      // successful send. Same reasoning if the .limit() above ever truncates.
+      console.error(
+        "[admin service-orders] notification events lookup failed:",
+        eventsError.message,
+      );
+    }
+
+    for (const row of events ?? []) {
+      const event = String(row.event ?? "");
+      if (!event.startsWith(WHATSAPP_EVENT_PREFIX)) continue;
+      const key = String(row.request_id ?? "");
+      // Rows arrive newest-first, so the first one seen per order is the latest.
+      if (!key || noticeMap.has(key)) continue;
+      noticeMap.set(key, {
+        status: event.slice(WHATSAPP_EVENT_PREFIX.length),
+        at: String(row.created_at ?? ""),
+      });
+    }
+  }
+
   return NextResponse.json({
     success: true,
-    data: orders.map((o) => ({ ...o, profile: profileMap.get(o.requester_user_id as string) ?? null })),
+    data: orders.map((o) => ({
+      ...o,
+      profile: profileMap.get(o.requester_user_id as string) ?? null,
+      whatsappNotice: noticeMap.get(String(o.id)) ?? null,
+    })),
   });
 }

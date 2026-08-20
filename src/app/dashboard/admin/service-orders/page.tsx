@@ -13,6 +13,20 @@ interface AdminOrder {
   id: string; title: string; description: string; status: string;
   created_at: string; metadata: Record<string, unknown>;
   profile: { display_name?: string; email?: string; phone?: string; user_type?: string } | null;
+  // Task 7 — the latest `notification.whatsapp_*` event n8n reported back for
+  // this ORDER (see GET /api/v1/admin/service-orders), or null when nothing
+  // ever reported back. `status` is the raw suffix n8n sent: sent | failed |
+  // read (the callback route rejects anything else).
+  //
+  // It says nothing about WHICH outbound message it answers: the callback body
+  // (src/app/api/v1/n8n/callback/route.ts:25) carries only orderId/channel/
+  // status, and `request_events` has no metadata column to hold more. Every
+  // order also gets an intake dispatch at creation
+  // (`service_request.created` → /new-request, src/app/api/v1/service-requests/
+  // route.ts), so the latest row here is very often the confirmation of the
+  // INTAKE message, not the delivery one. Never attribute it to a specific
+  // message without comparing its timestamp — see whatsappNoticeState().
+  whatsappNotice: { status: string; at: string } | null;
 }
 
 const STATUSES = [
@@ -43,6 +57,148 @@ const ACCOUNT_BADGE: Record<string, { label: string; cls: string }> = {
 const SERVICE_BADGE: Record<string, string> = {
   draft: "الصائغ", contracts: "العقود", wargaming: "المحاكاة", legal_opinion: "الرأي الفصل",
 };
+
+/**
+ * Task 7 (owner س١١) — the ISO instant the deliverable was written, i.e. the
+ * moment the ONLY client notice an admin action ever dispatches was triggered
+ * (`metadata.deliverable.deliveredAt`, written at
+ * src/app/api/v1/admin/service-orders/[id]/route.ts on the deliver branch).
+ *
+ * A `typeof === "string"` guard is safe HERE — unlike the attachments.id case
+ * further down this file, where a bigserial arriving as a JSON number would
+ * silently drop a control. This value is only ever the ISO string that route
+ * writes, and anything unexpected falls back to "", which forces the
+ * no-claim state below. Understating is the safe direction; there is no
+ * control to lose.
+ */
+function deliveredAtOf(order: AdminOrder): string {
+  const deliverable = (order.metadata?.deliverable ?? null) as { deliveredAt?: unknown } | null;
+  return typeof deliverable?.deliveredAt === "string" ? deliverable.deliveredAt : "";
+}
+
+function formatNoticeAt(at: string): string {
+  const ms = Date.parse(at);
+  return Number.isNaN(ms) ? "" : new Date(ms).toLocaleString("ar-SA");
+}
+
+/**
+ * Task 7 (owner س١١) — the honest states of the client's WhatsApp notice **for
+ * the delivery message, and only that message**.
+ *
+ * The ONLY evidence this app ever has is the n8n callback
+ * (`src/app/api/v1/n8n/callback/route.ts`) writing a
+ * `notification.whatsapp_<status>` row into `request_events`. There is no
+ * delivery receipt anywhere else in the system.
+ *
+ * That callback cannot say which outbound message it answers — its body is
+ * orderId/channel/status and `request_events` has no metadata column — while
+ * EVERY order already got an earlier dispatch at intake
+ * (`service_request.created` → /new-request). So "the newest
+ * notification.whatsapp_sent for this order" is NOT evidence that the delivery
+ * notice landed: on the ordinary timeline (order created 10:00, intake
+ * callback lands, admin delivers 14:00, the /request-completed callback never
+ * arrives) it is the intake confirmation, four hours stale. Rendering it as a
+ * green ✓ under a delivered order claims the client was told the document is
+ * ready when the client may have heard nothing about it. Hence `deliveredAt`:
+ * only a callback that POSTDATES the deliverable can be about it. Clock skew
+ * between the app server and Postgres can only push a genuine confirmation
+ * into the no-claim state, never the reverse.
+ *
+ * The no-claim state is the important one and is deliberately NOT dressed up
+ * as success. No callback can mean `N8N_WEBHOOK_SECRET` is unset (the callback
+ * fails closed and 401s every call — which is the state on the server today),
+ * or `N8N_WEBHOOK_BASE_URL` is unset (no outbound call is made at all), or n8n
+ * is down, or the workflow never ran, or its 5s webhook timeout fired. In
+ * every one of those cases the client may have received nothing, so the copy
+ * must claim nothing — and the hint must say which of those it is looking at
+ * rather than asserting "nothing arrived" over the top of a stale row that
+ * did.
+ *
+ * `read` collapses into the same copy as `sent`: a read receipt entails the
+ * message was sent, so «تم إرسال إشعار الواتساب» is true for it, and inventing
+ * a stronger "the client opened it" claim would outrun what a WhatsApp read
+ * receipt actually proves. Any other suffix (nothing can write one today —
+ * the callback route's VALID_STATUSES is sent | failed | read) falls through
+ * to the no-claim state on purpose: understating is the safe direction.
+ */
+function whatsappNoticeState(
+  notice: AdminOrder["whatsappNotice"],
+  deliveredAt: string,
+): { label: string; hint: string; tone: "ok" | "failed" | "unknown"; at: string } {
+  const UNKNOWN_LABEL = "لم يصل تأكيد الإرسال بعد";
+  const unknown = (hint: string) => ({ label: UNKNOWN_LABEL, hint, tone: "unknown" as const, at: "" });
+
+  // (a) nothing ever reported back. «بعد» on its own reads as "it will arrive
+  // shortly"; it might never arrive, so say what the absence actually means.
+  if (!notice) {
+    return unknown(
+      "لم يصل من n8n أي تأكيد لهذا الطلب — قد لا يكون إشعار التسليم قد أُرسل أصلًا، وقد لا يكون العميل قد استلم شيئًا.",
+    );
+  }
+
+  // (b) a status this panel cannot interpret. Unreachable today (the callback
+  // route only writes sent | failed | read) and kept as the safe fallback.
+  if (notice.status !== "sent" && notice.status !== "read" && notice.status !== "failed") {
+    return unknown(
+      "وصل تأكيد من n8n لهذا الطلب بحالة غير معروفة لهذه اللوحة، فلا يمكن اعتباره تأكيدًا لوصول إشعار التسليم.",
+    );
+  }
+
+  const noticeMs = Date.parse(notice.at);
+  const deliveredMs = Date.parse(deliveredAt);
+
+  // (c) one of the two instants is missing or unparseable, so the confirmation
+  // cannot be placed before or after the delivery.
+  if (Number.isNaN(noticeMs) || Number.isNaN(deliveredMs)) {
+    return unknown(
+      "وصل تأكيد من n8n لهذا الطلب لكن تعذّر مقارنة وقته بوقت التسليم، فلا يمكن اعتباره تأكيدًا لوصول إشعار التسليم.",
+    );
+  }
+
+  // (d) the confirmation predates the deliverable — it answers an earlier
+  // message (the intake notice), never the delivery one.
+  if (noticeMs < deliveredMs) {
+    return unknown(
+      `آخر تأكيد من n8n لهذا الطلب مؤرَّخ ${formatNoticeAt(notice.at)}، أي قبل تسليم المستند، فهو يخصّ إشعارًا سابقًا لا إشعار التسليم. لم يصل أي تأكيد بعد التسليم.`,
+    );
+  }
+
+  // The confirmation postdates the deliverable: it is about the delivery notice.
+  return notice.status === "failed"
+    ? { label: "⚠️ تعذّر إرسال إشعار الواتساب", hint: "", tone: "failed", at: notice.at }
+    : { label: "📱 تم إرسال إشعار الواتساب ✓", hint: "", tone: "ok", at: notice.at };
+}
+
+function WhatsappNoticeBox(
+  { notice, deliveredAt, isDark }:
+  { notice: AdminOrder["whatsappNotice"]; deliveredAt: string; isDark: boolean },
+) {
+  const { label, hint, tone, at } = whatsappNoticeState(notice, deliveredAt);
+  // The unknown state is neutral zinc, never green: it must not read as a
+  // successful send at a glance.
+  const cls =
+    tone === "ok"
+      ? isDark ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" : "border-emerald-600/20 bg-emerald-50 text-emerald-700"
+      : tone === "failed"
+        ? isDark ? "border-red-500/25 bg-red-500/10 text-red-400" : "border-red-500/20 bg-red-50 text-red-600"
+        : isDark ? "border-white/10 bg-white/[0.03] text-zinc-400" : "border-zinc-200 bg-zinc-50 text-zinc-500";
+
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${cls}`}>
+      {/* Names which message the box is about, so the label underneath cannot
+          be read as "the client was told something at some point". It states
+          what is being reported on, not that anything was sent. */}
+      <p className="text-[10px] font-semibold opacity-70">حالة إشعار الواتساب الخاص بتسليم المستند</p>
+      <p className="mt-1 text-[11px] font-bold">{label}</p>
+      {hint && <p className="mt-1 text-[10px] leading-[1.8] opacity-80">{hint}</p>}
+      {/* Only ever the timestamp of a confirmation that actually answers the
+          delivery notice — `at` is "" in every no-claim state, so a stale
+          intake confirmation never prints a date under «لم يصل تأكيد الإرسال
+          بعد», where it would read as the time that non-event happened. */}
+      {at && <p className="mt-1 text-[10px] opacity-70">{formatNoticeAt(at)}</p>}
+    </div>
+  );
+}
 
 export default function AdminServiceOrdersPage() {
   const { isDark } = useTheme();
@@ -258,6 +414,38 @@ export default function AdminServiceOrdersPage() {
                     تنزيل ملف .md
                   </button>
                 </div>
+
+                {/* Task 7 (owner س١١) — did the WhatsApp notice actually reach
+                    the client? Delivered orders ONLY, because deliver is the
+                    only admin action that dispatches anything to n8n: PATCH
+                    /api/v1/admin/service-orders/[id] sends
+                    `service_request.completed` on deliver, but sends
+                    `service_request.status_changed` on both claim and cancel,
+                    and resolvePath() in src/lib/n8n/dispatch.ts returns null
+                    for status `in_review` and for `cancelled` — no webhook is
+                    fired, nothing is sent to the client's WhatsApp, so there
+                    is nothing to report. (The plan assumed cancel dispatched
+                    too; the code says it does not. The client IS still told
+                    in-app: recordNotification «تم إلغاء طلبك».)
+
+                    An earlier version also rendered this on ANY order carrying
+                    a callback, meaning to avoid hiding evidence. It hid
+                    nothing but asserted plenty: the only callback a cancelled
+                    or in_review order can carry is the one answering the
+                    INTAKE dispatch every order gets at creation, and this
+                    panel's label does not name that message — so a cancelled
+                    order wore a green «تم إرسال إشعار الواتساب ✓» reading as
+                    "we told the client we cancelled", which nothing did.
+
+                    Placed above the prompt block, which can run long — this is
+                    the line that must not be scrolled past. */}
+                {o.status === "completed" && (
+                  <WhatsappNoticeBox
+                    notice={o.whatsappNotice ?? null}
+                    deliveredAt={deliveredAtOf(o)}
+                    isDark={isDark}
+                  />
+                )}
 
                 <pre className={`text-[11px] leading-[1.9] whitespace-pre-wrap p-3 rounded-xl overflow-x-auto ${
                   isDark ? "bg-zinc-950 text-zinc-400" : "bg-slate-50 text-slate-600"}`}>
