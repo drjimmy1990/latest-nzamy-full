@@ -135,6 +135,7 @@ export const PROVIDER_SIDEBAR: SidebarGroup[] = [
       { label: "صياغة تقرير",  labelEn: "Draft Report",  href: "/ai/draft?mode=report",   icon: "FileArrowUp" },
       { label: "صياغة محضر",   labelEn: "Draft Minutes", href: "/ai/draft?mode=minutes",  icon: "Note" },
       { label: "رد احترافي",    labelEn: "Smart Reply",   href: "/ai/draft?mode=reply",    icon: "ChatDots" },
+      { label: "طلباتي الذكية", labelEn: "My AI Orders",  href: "/ai/orders",              icon: "Tray",  divider: true },
     ],
   },
   {
@@ -239,6 +240,7 @@ export const NGO_SIDEBAR: SidebarGroup[] = [
       { label: "مُعد التقارير",       labelEn: "Report Generator",    href: "/ai/ngo/report-generator",    icon: "FileText", gateKey: "ngo-ai" },
       { label: "المستشار الذكي",      labelEn: "AI Consult",          href: "/ai/consult",                 icon: "Robot", gateKey: "ngo-ai" },
       { label: "مراجع العقود",         labelEn: "Contract Review",     href: "/ai/contracts",               icon: "Files", gateKey: "ngo-ai" },
+      { label: "طلباتي الذكية",        labelEn: "My AI Orders",        href: "/ai/orders",                  icon: "Tray", gateKey: "ngo-ai", divider: true },
     ],
   },
   {
