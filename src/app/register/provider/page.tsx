@@ -189,16 +189,21 @@ export default function RegisterProviderPage() {
    * /contact for that, which is a real page whose form POSTs to
    * /api/v1/contact.
    *
-   * ── Reversal condition — ONE line ────────────────────────────────────────
-   * The moment the owner confirms 20260821 has run against the live database,
-   * `emailSignUpWorks` becomes `providerType !== null` and the amber note stops
-   * rendering by itself. Nothing else changes. It is deliberately not
-   * pre-flipped and deliberately not behind an env flag: `NEXT_PUBLIC_*` needs
-   * a redeploy to change anyway, so a flag buys no speed, and set without the
-   * migration it would re-open the hole silently.
+   * ── Reversal condition — MET, 21 August 2026 ─────────────────────────────
+   * 20260821 was reported run against the live database, which was the single
+   * stated condition above, so `emailSignUpWorks` is now `providerType !== null`
+   * and the amber note stops rendering by itself.
+   *
+   * The paragraphs above are kept deliberately rather than deleted. They are
+   * the record of why the gate existed and of what has to stay true for it to
+   * stay lifted: if 20260821 is rolled back, or a later CREATE OR REPLACE of
+   * handle_new_user drops the sub_role clamp again — which is exactly how this
+   * broke in the first place, at 20260616 — this line goes back to
+   * `providerType === "lawyer" || providerType === "firm"` and the note
+   * returns with it.
    */
   const googleSignUpWorks = providerType !== null;
-  const emailSignUpWorks = providerType === "lawyer" || providerType === "firm";
+  const emailSignUpWorks = providerType !== null;
 
   const canNext = () => {
     // Step 1 is gated on more than "a role is selected". For موثّق, معقّب and
