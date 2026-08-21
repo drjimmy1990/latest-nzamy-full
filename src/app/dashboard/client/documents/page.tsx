@@ -14,6 +14,7 @@ import {
   deleteDocument,
   type Document as ApiDocument,
 } from '@/lib/services';
+import { isUploadTimeoutError, isDocumentTimeoutError } from '@/lib/services/documentService';
 import { isSupabaseMode } from '@/lib/services/api';
 import { SkeletonList } from '../_components/DashboardSkeleton';
 
@@ -70,6 +71,60 @@ function apiDocToDoc(d: ApiDocument): Doc {
     format: docFormatFromName(d.file_name),
     storagePath: d.storage_path,
   };
+}
+
+// ─── Arabic failure copy ──────────────────────────────────────────────────────
+
+/**
+ * Arabic copy for one file that did not upload.
+ *
+ * The banner used to read «فشل رفع الملف: » + err.message, which since
+ * UploadTimeoutError started carrying Arabic prose produced «فشل رفع الملف:
+ * تعذّر الرفع — استغرق وقتاً طويلاً…» — two ways of saying the upload failed,
+ * one after the other. The timeout's own sentence is complete, so it is read
+ * back off `.message` unprefixed and stays the single source of that wording
+ * (UploadTimeoutError in documentService.ts). Everything else gets a fixed
+ * Arabic sentence rather than a raw Supabase/HTTP message, which would put
+ * English in front of a client.
+ *
+ * This mirrors attachErrorMessageAr() in src/hooks/useOrderAttachments.ts and
+ * attachmentErrorAr() in dashboard/client/consultation/new/page.tsx. Both are
+ * module-private where they live and this page uses neither the hook nor that
+ * wizard, so the third copy is deliberate, not an oversight.
+ *
+ * The caller prefixes each line with the file's own name, so a batch says
+ * which file it is talking about.
+ */
+function uploadFailureAr(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  // Log the machine code beside the raw text: a timeout's message is Arabic
+  // prose and on its own no longer identifies the error in a console.
+  const code = err instanceof Error ? (err as { code?: unknown }).code : undefined;
+  console.error('[documents] upload failed:', code ?? raw, raw);
+  if (isUploadTimeoutError(err)) return err.message;
+  if (raw === 'upload_unavailable_demo') {
+    return 'رفع المستندات غير متاح في الوضع التجريبي.';
+  }
+  if (raw === 'Unauthorized') {
+    return 'انتهت جلستك — سجّل الدخول مجدداً ثم أعد المحاولة.';
+  }
+  return 'تعذّر رفع الملف — تحقق من الاتصال وحاول مجدداً.';
+}
+
+/**
+ * Arabic copy for a «عرض» or «تنزيل» press that produced no link. Both used to
+ * fail in complete silence — `if (url) window.open(...)` with a console.error
+ * catch — so a client could press either button and get nothing back, forever
+ * on a hung request and instantly on a rejected one.
+ *
+ * A timeout is named as one rather than folded into a generic failure: after
+ * fifteen seconds of nothing, "try again" alone does not tell the client
+ * whether the file is gone or the line is bad.
+ */
+function fileLinkFailureAr(action: 'عرض' | 'تنزيل', name: string, err: unknown): string {
+  return isDocumentTimeoutError(err)
+    ? `تعذّر ${action} «${name}» — استغرق إنشاء الرابط وقتاً طويلاً. تحقق من اتصالك وحاول مجدداً.`
+    : `تعذّر ${action} «${name}» — حاول مرة أخرى.`;
 }
 
 const FormatIcon = ({ format, isDark }: { format: Doc['format']; isDark: boolean }) => {
@@ -176,18 +231,29 @@ export default function ClientDocumentsPage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  // One banner for every action that can fail on this page — upload, view,
+  // download, delete. Renamed from `uploadError` when view/download/delete
+  // stopped failing silently, so the name still describes what it holds.
+  const [actionError, setActionError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadDocs = useCallback(async () => {
+  /**
+   * Reload the list. Returns whether it succeeded, because handleFiles() has
+   * to tell two different stories: a list that would not load on its own, and
+   * a list that would not refresh *after* files were already uploaded. Only
+   * the caller knows which one this is.
+   */
+  const loadDocs = useCallback(async (): Promise<boolean> => {
     setLoading(true);
     setError(null);
     try {
       const data = await getDocuments();
       setDocs(data.map(apiDocToDoc));
+      return true;
     } catch (err) {
       console.error('[documents] failed to load:', err);
       setError('تعذر تحميل المستندات. حاول مرة أخرى لاحقاً.');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -197,63 +263,150 @@ export default function ClientDocumentsPage() {
     loadDocs();
   }, [loadDocs]);
 
+  /**
+   * Upload a whole selection, then refresh the list.
+   *
+   * THREE RULES, the same ones attachFiles() in src/hooks/useOrderAttachments.ts
+   * settled on, because this input is `multiple` too and each file carries its
+   * own independent 60-second ceiling:
+   *   1. Every file gets its own try. One failure used to abandon the entire
+   *      remainder of the selection and put up a banner that named no file at
+   *      all, so a client could not tell which of five documents had landed.
+   *   2. Report as we go. setActionError() runs the moment a file fails, so
+   *      something is on screen at 60 seconds rather than at N × 60.
+   *   3. A timeout — and only a timeout — ends the batch, and the files that
+   *      were never attempted are named. A timeout means the link is not
+   *      carrying data, so spending another four minutes proving it is itself
+   *      the freeze. Every other failure belongs to one file and must not
+   *      cancel the rest.
+   *
+   * The refresh sits AFTER the `finally`, on purpose: the spinner is released
+   * the moment the last upload settles, so nothing about the list refresh can
+   * hold it. loadDocs() also never throws, and getDocuments() is bounded now
+   * (DOCUMENT_OP_TIMEOUT_MS), so neither the spinner nor the skeleton can
+   * outlast a hung GET.
+   */
   const handleFiles = useCallback(async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     if (!isSupabaseMode) {
-      setUploadError('الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات (NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase).');
+      setActionError('الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات (NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase).');
       return;
     }
+    // Indexed rather than for-of: on a timeout we need the tail of the
+    // selection by position, to name what was never attempted.
+    const files = Array.from(fileList);
+    const uploaded: string[] = [];
+    // Each problem is its own line. Joining with «، » would run the timeout
+    // sentence's full stop straight into the next clause («…حاول مجدداً.، لم
+    // تتم محاولة رفع…»), which reads as a typo on screen.
+    const problems: string[] = [];
+
     setUploading(true);
-    setUploadError(null);
+    setActionError(null);
     try {
-      for (const file of Array.from(fileList)) {
-        await uploadDocumentFile(file);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+          await uploadDocumentFile(file);
+          uploaded.push(file.name);
+        } catch (err) {
+          problems.push(`${file.name}: ${uploadFailureAr(err)}`);
+          if (isUploadTimeoutError(err)) {
+            const untried = files.slice(i + 1).map((f) => f.name);
+            // If the timeout hit the last file there is no tail, and claiming
+            // there is one would be a false sentence on screen.
+            if (untried.length > 0) {
+              problems.push(`لم تتم محاولة رفع: ${untried.join('، ')} — توقّف الرفع بعد انتهاء المهلة.`);
+            }
+            setActionError(problems.join('\n'));
+            break;
+          }
+          setActionError(problems.join('\n'));
+        }
       }
-      await loadDocs();
-    } catch (err) {
-      console.error('[documents] upload failed:', err);
-      const msg = err instanceof Error ? err.message : 'فشل رفع الملف.';
-      setUploadError(`فشل رفع الملف: ${msg}`);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+
+    if (uploaded.length === 0) return;
+
+    // The files are on the server whatever happens next, so a failed refresh
+    // must not be reported as a failed upload. loadDocs() has already put its
+    // own «تعذر تحميل المستندات» in `error`; replace it with the sentence that
+    // is actually true here, and name what was saved so the client knows the
+    // work was not lost. The next successful load clears it.
+    const refreshed = await loadDocs();
+    if (!refreshed) {
+      setError(`تم رفع: ${uploaded.join('، ')} — لكن تعذّر تحديث قائمة المستندات. حدّث الصفحة لعرض ما تم رفعه.`);
+    }
   }, [loadDocs]);
 
-  const handleView = useCallback(async (d: Doc) => {
+  /**
+   * Both «عرض» and «تنزيل» need the same signed URL and used to swallow every
+   * way of not getting one: `if (url) …` with a console-only catch meant the
+   * button did nothing and said nothing. A missing storage_path is separated
+   * out from a failed request, so a row that was never stored properly is not
+   * reported as a bad connection.
+   */
+  const resolveFileUrl = useCallback(async (d: Doc, action: 'عرض' | 'تنزيل'): Promise<string | null> => {
+    setActionError(null);
+    if (!d.storagePath) {
+      setActionError(`تعذّر ${action} «${d.name}» — مسار الملف غير متوفر.`);
+      return null;
+    }
     try {
-      const url = await getDocumentFileUrl(d.storagePath ?? '');
-      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      const url = await getDocumentFileUrl(d.storagePath);
+      if (!url) {
+        setActionError(fileLinkFailureAr(action, d.name, null));
+        return null;
+      }
+      return url;
     } catch (err) {
-      console.error('[documents] view failed:', err);
+      // Log key stays English and constant so it is greppable; the Arabic verb
+      // is for the banner, not the console.
+      console.error('[documents] signed url failed:', d.storagePath, err);
+      setActionError(fileLinkFailureAr(action, d.name, err));
+      return null;
     }
   }, []);
 
+  const handleView = useCallback(async (d: Doc) => {
+    const url = await resolveFileUrl(d, 'عرض');
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, [resolveFileUrl]);
+
   const handleDownload = useCallback(async (d: Doc) => {
-    try {
-      const url = await getDocumentFileUrl(d.storagePath ?? '');
-      if (!url) return;
-      const a = window.document.createElement('a');
-      a.href = url;
-      a.download = d.name;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      window.document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (err) {
-      console.error('[documents] download failed:', err);
-    }
-  }, []);
+    const url = await resolveFileUrl(d, 'تنزيل');
+    if (!url) return;
+    const a = window.document.createElement('a');
+    a.href = url;
+    a.download = d.name;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    window.document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }, [resolveFileUrl]);
 
   const handleDelete = useCallback(async (d: Doc) => {
     if (!confirm(`حذف المستند «${d.name}»؟ لا يمكن التراجع.`)) return;
+    setActionError(null);
     try {
       await deleteDocument(d.id, d.storagePath);
       setDocs((prev) => prev.filter((x) => x.id !== d.id));
     } catch (err) {
       console.error('[documents] delete failed:', err);
-      setUploadError('فشل حذف المستند. حاول مرة أخرى.');
+      // A timeout is not a failure: the DELETE may still have been executed
+      // after we stopped waiting (see deleteDocument in documentService.ts), so
+      // the row is left on screen and the client is told to check rather than
+      // told something that may be untrue.
+      setActionError(
+        isDocumentTimeoutError(err)
+          ? `تعذّر تأكيد حذف «${d.name}» — انتهت المهلة قبل وصول ردّ الخادم، وقد يكون الحذف قد تم فعلاً. حدّث الصفحة للتحقق.`
+          : `فشل حذف «${d.name}». حاول مرة أخرى.`,
+      );
     }
   }, []);
 
@@ -291,16 +444,26 @@ export default function ClientDocumentsPage() {
         </label>
       </div>
 
-      {/* Demo-mode gate / upload error */}
-      {(!isSupabaseMode || uploadError) && (
+      {/* Demo-mode gate / failed action (upload, view, download, delete) */}
+      {(!isSupabaseMode || actionError) && (
         <div className={`flex items-start gap-3 p-4 mb-6 rounded-2xl border text-sm ${
           isDark ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"
         }`}>
           <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
-          <span>
-            {!isSupabaseMode
-              ? "الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات (NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase)."
-              : uploadError}
+          {/* whitespace-pre-line: a multi-file batch reports one file per line
+              (see handleFiles), and without this they would run together.
+
+              actionError WINS over the standing demo-mode notice. The arms used
+              to be the other way round, which was harmless while this banner
+              only ever carried upload failures — demo mode refuses those before
+              they happen. Now that «عرض», «تنزيل» and «حذف» write here too, the
+              old order would have shown the demo sentence while silently
+              dropping the failure the client just caused, which is exactly the
+              invisible failure this page is being fixed for. With no
+              actionError the notice still explains why the upload button is
+              disabled. */}
+          <span className="whitespace-pre-line">
+            {actionError ?? "الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات (NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase)."}
           </span>
         </div>
       )}
@@ -388,6 +551,15 @@ export default function ClientDocumentsPage() {
               />
             ))}
           </motion.div>
+        ) : error && docs.length === 0 ? (
+          // The list could not be read, so an empty `docs` means "we do not
+          // know", not "you have none". Printing «لا توجد مستندات» under the
+          // red banner would be a false sentence about files that are on the
+          // server — including, after a failed post-upload refresh, files the
+          // client just watched upload. The banner above says why the list is
+          // missing. Guarded on `docs`, not `filtered`, so a search that
+          // matches nothing still gets its own empty state.
+          null
         ) : (
           <motion.div
             key="empty"

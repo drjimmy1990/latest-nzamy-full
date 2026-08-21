@@ -101,19 +101,22 @@ export const UPLOAD_TIMEOUT_CODE = "upload_timeout";
  * its stages the clock ran out.
  *
  * WHY A CLASS INSTEAD OF `new Error("upload_timeout")` — five call sites catch
- * what uploadDocumentFile() throws, and two of them put `err.message` into a
- * red banner (`dashboard/lawyer/cases/[id]/page.tsx` verbatim,
- * `dashboard/client/documents/page.tsx` after an Arabic prefix). A bare token
- * therefore reached those
- * screens as raw English, which this project forbids. Splitting the two
- * audiences serves both in one move:
+ * what uploadDocumentFile() throws. One renders `err.message` into a red
+ * banner verbatim (`dashboard/lawyer/cases/[id]/page.tsx`), and three more
+ * read `.message` back on purpose, as the Arabic wording for a timeout. A bare
+ * token therefore reached those screens as raw English, which this project
+ * forbids. Splitting the two audiences serves both in one move:
  *   - `.message` is the Arabic sentence a client may safely read.
  *   - `.code` is the token that code branches on, via isUploadTimeoutError().
  *
  * SCOPE, so nobody reads more into this than it does: this closes the timeout
- * path only. Two lines of raw English still reach those same two banners by
+ * path only. Two lines of raw English still reach the lawyer-case banner by
  * their own routes — `uploadError.message` straight from Supabase Storage, and
- * apiMutate's "API error: <status>" fallback. Neither is fixed here.
+ * apiMutate's "API error: <status>" fallback — because that one banner renders
+ * a caught `.message` whatever it holds. Neither is fixed here. The other four
+ * callers never render a raw message: three map every non-timeout cause to
+ * fixed Arabic copy, and the admin one passes an already-Arabic error body
+ * through while replacing anything else.
  *
  * The wording says only what is true: we stopped waiting. It does not claim
  * the upload was cancelled — the request may still be running, and the file
@@ -135,10 +138,16 @@ export const UPLOAD_TIMEOUT_CODE = "upload_timeout";
  *   - dashboard/admin/service-orders/page.tsx, deliver() — uploadErrorMessage()
  *     in _errorCopy.ts passes an already-Arabic message through unchanged, so
  *     the admin sees this specific sentence instead of its generic one.
- *   - dashboard/client/consultation/new/page.tsx, the attachment loop in the
- *     submit handler — console.error only; nothing user-visible there.
- *   - dashboard/client/documents/page.tsx, handleUpload() — renders `.message`
- *     inside "فشل رفع الملف: …", so the banner is Arabic but reads doubled.
+ *   - dashboard/client/consultation/new/page.tsx, attachmentErrorAr() and the
+ *     attachment loop in confirmConsultation() — same two rules as the hook,
+ *     duplicated there deliberately because the hook's helper is
+ *     module-private; the failures are listed per file on the confirmation
+ *     screen.
+ *   - dashboard/client/documents/page.tsx, uploadFailureAr() and handleFiles()
+ *     — reads `.message` back unprefixed for a timeout (so the banner is one
+ *     sentence, not «فشل رفع الملف: تعذّر الرفع …» twice over), maps every
+ *     other cause to fixed Arabic copy, reports each file's failure as it
+ *     happens and stops the batch only on a timeout.
  *   - dashboard/lawyer/cases/[id]/page.tsx, handleUpload() — `e?.message ??
  *     "…"`; `.message` is truthy, and it is the Arabic sentence rather than a
  *     bare token.
@@ -162,6 +171,79 @@ export function isUploadTimeoutError(err: unknown): err is UploadTimeoutError {
   return err instanceof Error && (err as { code?: unknown }).code === UPLOAD_TIMEOUT_CODE;
 }
 
+// ─── Read / delete timeout ────────────────────────────────────────────────────
+
+/**
+ * Ceiling on every document call that is NOT the upload: the list GET, the
+ * signed-URL request, and the delete (its API call and its storage cleanup
+ * together, on one shared deadline).
+ *
+ * WHY THESE NEEDED BOUNDING AT ALL — bounding the upload only ever released
+ * the upload. handleFiles() in dashboard/client/documents/page.tsx uploads and
+ * then refreshes the list; an unbounded list GET meant the refresh could hang
+ * *after* the file had already landed, so the page kept its spinner turning
+ * and said nothing — the same frozen screen owner ruling س٣ was raised about,
+ * one stage further along. The signed-URL call and the delete are the same
+ * shape: «عرض», «تنزيل» and «حذف» each await a network call with nothing on
+ * screen to say the wait has stopped being normal.
+ *
+ * WHY A SMALLER NUMBER THAN UPLOAD_TIMEOUT_MS — none of these three carries
+ * file bytes. Each is one small JSON round trip, the same shape as the
+ * metadata POST that METADATA_RESERVE_MS already funds with 10 s. This is that
+ * figure with room to spare for a list response that can be far longer than a
+ * single-row insert's, and well under the 60 s the upload needs, because
+ * nothing here waits for 20 MB to travel.
+ *
+ * It is a hang detector, not a measured percentile. No timing data for these
+ * routes exists in this repo and the number claims none.
+ */
+const DOCUMENT_OP_TIMEOUT_MS = 15_000;
+
+/**
+ * The machine-readable cause of a document read or delete the client stopped
+ * waiting for. Deliberately a different token from UPLOAD_TIMEOUT_CODE, so the
+ * two guards below cannot match each other's errors.
+ */
+export const DOCUMENT_TIMEOUT_CODE = "document_timeout";
+
+/**
+ * Thrown when getDocuments(), getDocumentFileUrl() or deleteDocument() passes
+ * DOCUMENT_OP_TIMEOUT_MS.
+ *
+ * SEPARATE FROM UploadTimeoutError ON PURPOSE — that class's sentence opens
+ * with «تعذّر الرفع», which would be a false statement on screen for a list
+ * refresh, a preview link or a delete. Same mechanism (withTimeout below),
+ * different fact.
+ *
+ * WHAT CALLERS DO WITH IT — no screen renders this `.message` today; both
+ * documents pages own fixed Arabic copy for these failures, because the right
+ * sentence depends on which button was pressed. dashboard/client/documents
+ * does branch on isDocumentTimeoutError() in two places, fileLinkFailureAr()
+ * («عرض» and «تنزيل») and handleDelete() — because there a timeout and a
+ * failure are genuinely different facts:
+ * a delete we stopped waiting for may still have been executed server-side, so
+ * calling it a failure would be a guess printed as a statement. The Arabic
+ * below exists so that a caller which *does* render `.message` later cannot
+ * leak English into a banner.
+ */
+export class DocumentTimeoutError extends Error {
+  readonly code = DOCUMENT_TIMEOUT_CODE;
+  constructor() {
+    super("انتهت المهلة قبل وصول ردّ الخادم. تحقق من اتصالك وحاول مجدداً.");
+    this.name = "DocumentTimeoutError";
+  }
+}
+
+/**
+ * True when `err` is the read/delete timeout above. Two-step check for the
+ * same reason as isUploadTimeoutError(): a duplicated module in a bundle would
+ * break `instanceof` for an otherwise identical object.
+ */
+export function isDocumentTimeoutError(err: unknown): err is DocumentTimeoutError {
+  if (err instanceof DocumentTimeoutError) return true;
+  return err instanceof Error && (err as { code?: unknown }).code === DOCUMENT_TIMEOUT_CODE;
+}
+
 /**
  * Reject `work` with `makeError()` once `ms` have passed. The error is built
  * by a factory rather than passed in ready-made so that each timeout gets its
@@ -171,7 +253,7 @@ export function isUploadTimeoutError(err: unknown): err is UploadTimeoutError {
  * WHAT THIS DOES AND DOES NOT DO — racing a timer against a promise releases
  * the *caller*. It does not cancel the in-flight request: `fetch` keeps
  * running, the bytes keep going up, and a POST we stopped waiting for may
- * still be executed server-side. This matters differently at each of the four
+ * still be executed server-side. This matters differently at each of the
  * waits below, so each one says what its own leftover is. An upload we
  * stopped waiting for may still land in the bucket afterwards, leaving a
  * storage object that no `attachments` row ever points at (no metadata row at
@@ -206,17 +288,34 @@ function withTimeout<T>(work: Promise<T>, ms: number, makeError: () => Error): P
 
 // ─── Service functions ────────────────────────────────────────────────────────
 
+/**
+ * Every document the signed-in user may see.
+ *
+ * THROWS on failure instead of returning []. It used to swallow every error
+ * into an empty array, which put «لا توجد مستندات» on the client's screen
+ * while their files sat safely on the server and only the network had failed —
+ * a false sentence, and a failure with nothing on screen to show for it. Both
+ * callers already had a catch and neither needed changing for this:
+ *   - dashboard/client/documents/page.tsx — shows an Arabic banner, releases
+ *     its spinner, and now suppresses the «لا توجد مستندات» empty state so the
+ *     page never claims an empty library it could not read.
+ *   - dashboard/lawyer/documents/page.tsx — catches to an empty list, which is
+ *     byte for byte what it used to be handed.
+ * Demo mode still returns [] — there is no request there to fail.
+ */
 export async function getDocuments(): Promise<Document[]> {
   if (!isSupabaseMode) {
     return [];
   }
 
-  try {
-    const response = await apiGet<DocumentListResponse>("/api/v1/documents");
-    return response.data ?? [];
-  } catch {
-    return [];
-  }
+  // A timeout here leaves nothing behind: a GET changes nothing server-side,
+  // so the only cost of giving up on it is a view that stays stale.
+  const response = await withTimeout(
+    apiGet<DocumentListResponse>("/api/v1/documents"),
+    DOCUMENT_OP_TIMEOUT_MS,
+    () => new DocumentTimeoutError(),
+  );
+  return response.data ?? [];
 }
 
 /**
@@ -357,23 +456,75 @@ export async function uploadDocumentFile(
   }
 }
 
-/** Build a signed URL for viewing/downloading a stored document. */
+/**
+ * Build a signed URL for viewing/downloading a stored document.
+ *
+ * NULL vs THROW, because the caller owes the client different sentences:
+ *   - `null` means there is no link — demo mode, a row with no storage_path,
+ *     or a sign request that came back with an error. The caller must still
+ *     say so; «عرض» used to do `if (url) window.open(...)` and show nothing at
+ *     all when it was null, which is a button whose failure is invisible.
+ *   - a throw means we stopped waiting. «استغرق وقتاً طويلاً» and «فشل» are
+ *     different facts and the client is owed the true one.
+ *
+ * A timeout here leaves nothing behind: signing creates no object and no row.
+ */
 export async function getDocumentFileUrl(storagePath: string): Promise<string | null> {
   if (!isSupabaseMode || !storagePath) return null;
   const supabase = createBrowserClient();
-  const { data, error } = await supabase.storage
-    .from("documents")
-    .createSignedUrl(storagePath, 300);
+  const { data, error } = await withTimeout(
+    supabase.storage.from("documents").createSignedUrl(storagePath, 300),
+    DOCUMENT_OP_TIMEOUT_MS,
+    () => new DocumentTimeoutError(),
+  );
   if (error || !data?.signedUrl) return null;
   return data.signedUrl;
 }
 
-/** Delete a document (storage object + metadata row). */
+/**
+ * Delete a document (storage object + metadata row).
+ *
+ * ONE DEADLINE FOR BOTH CALLS, the same reasoning as uploadDocumentFile():
+ * two independent 15-second ceilings would mean a client waiting half a minute
+ * on one «حذف» press, and the ceiling is supposed to be what the client waits,
+ * not what each call is allowed to take.
+ *
+ * WHAT A TIMEOUT ON THE DELETE LEAVES BEHIND — racing cancels nothing, so the
+ * DELETE may still be executed server-side after we give up on it. A timeout
+ * therefore does NOT mean the document survived, and a caller that reports it
+ * as «فشل الحذف» is printing a guess as a statement.
+ * dashboard/client/documents/page.tsx says the timeout happened and asks the
+ * client to refresh and check.
+ *
+ * WHAT A TIMEOUT ON THE CLEANUP LEAVES BEHIND — an orphaned storage object,
+ * swallowed with every other cleanup error exactly as before. The row is
+ * already gone by then, and an object with no row pointing at it is this app's
+ * accepted leftover (see the rollback in uploadDocumentFile).
+ */
 export async function deleteDocument(id: string, storagePath?: string | null): Promise<void> {
   if (!isSupabaseMode) return;
-  await apiMutate<{ ok: boolean }>(`/api/v1/documents/${id}`, "DELETE", {});
+
+  const deadline = Date.now() + DOCUMENT_OP_TIMEOUT_MS;
+  const msUntil = (at: number) => at - Date.now();
+
+  await withTimeout(
+    apiMutate<{ ok: boolean }>(`/api/v1/documents/${id}`, "DELETE", {}),
+    msUntil(deadline),
+    () => new DocumentTimeoutError(),
+  );
+
   if (storagePath) {
     const supabase = createBrowserClient();
-    await supabase.storage.from("documents").remove([storagePath]).catch(() => {});
+    // The `> 0` guard is defensive, as in the upload rollback: reaching this
+    // line means the DELETE settled before the deadline, so in practice there
+    // is always budget left.
+    const cleanupBudget = msUntil(deadline);
+    if (cleanupBudget > 0) {
+      await withTimeout(
+        supabase.storage.from("documents").remove([storagePath]),
+        cleanupBudget,
+        () => new DocumentTimeoutError(),
+      ).catch(() => {});
+    }
   }
 }
