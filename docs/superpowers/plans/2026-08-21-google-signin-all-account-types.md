@@ -334,3 +334,111 @@ A new Google account should land in `/onboarding`, pick its type, and arrive at 
 **What this plan does not do.** It does not migrate existing users, because there are none to migrate: all 16 accounts are email, and metadata and profiles agree on all 16. It does not touch `assertRole` or `requireAdmin`, which already read `profiles`. It does not add a `user_type` URL parameter, deliberately.
 
 **The risk I am most wary of** is Task 4. `useUser` has 115 consumers, and a render pass that briefly reports `individual` before the profile resolves would bounce a lawyer off their own dashboard through `UserTypeGuard`. Step 2 names that failure and requires the implementer to say which way they resolved it.
+
+---
+
+# AMENDMENT — written after Wave 1, before Wave 2
+
+Wave 1 built Tasks 1 and 2 and, in doing so, turned up four facts that change Tasks 5 and 6. **These override the task text above where they conflict.**
+
+## A1. The database forbids what Task 5 Step 3 was going to do
+
+`supabase/migrations/20260716_security_hardening.sql:123-157` adds `trg_lock_user_type`, a BEFORE UPDATE trigger on `public.profiles`:
+
+> Allow service-role operations (`auth.uid() IS NULL`). Otherwise, if `OLD.user_type IS DISTINCT FROM NEW.user_type` and the caller is not an admin, `RAISE EXCEPTION 'Permission denied: user_type cannot be self-modified' USING ERRCODE = '42501'`.
+
+It is a deliberate P0 fix ("Lock user_type column against self-escalation"), and it is correct. **A user's own session cannot change their own `user_type`, ever.** So onboarding cannot write `user_type` the way Task 5 assumed.
+
+`phone` is unaffected — the trigger only fires when `user_type` actually changes.
+
+## A2. `PATCH /api/v1/profile` accepts `phone` but not the other two
+
+Read at `src/app/api/v1/profile/route.ts:91-101`. The `profiles` allowlist is `display_name, display_name_en, phone, avatar_url, language, calendar_type, theme, country_code, city`.
+
+- `phone` — **present.** Use this endpoint for it.
+- `onboarding_completed` — absent.
+- `user_type` — absent, deliberately, alongside `verification_status` whose comment explains the reasoning ("self-verification would be a trust-badge bypass").
+
+It uses `.update()`, not `.upsert()`, so it cannot create a missing row. That is acceptable: the signup trigger creates the row with `ON CONFLICT (id) DO NOTHING` (`20260630_handle_new_user_sectors.sql:26-33`), so the row always exists. **Confirm that rather than assuming it.**
+
+## A3. The live signup trigger is not the one the plan cites
+
+The live definition is `supabase/migrations/20260716_security_hardening.sql:19` (`CREATE OR REPLACE`), which preserves the sector provisioning from `20260630_handle_new_user_sectors.sql` and removes `admin` from the signup whitelist. It:
+
+- defaults `user_type` to `individual` via `COALESCE` — so a Google signup **does** succeed and lands as `individual`;
+- inserts only `(id, display_name, email, user_type)` — **no `phone`, no `onboarding_completed`**;
+- takes `display_name` from `raw_user_meta_data->>'full_name'`, which Google **does** supply;
+- provisions the sector row for `lawyer`, `provider`, `firm`, `corporate`, `government`, `ngo` — **only at signup**.
+
+## A4. Corrected line citations — Wave 1 verified these
+
+| Reference | Plan says | Actual |
+|---|---|---|
+| callback dashboard map | `route.ts:53-63` | **`:47-57`** |
+| callback metadata read (G4) | `:52` | **`:46`** |
+| proxy `dashDir` | `proxy.ts:155-158` | **`:153-156`** |
+| proxy `skipOnboarding` (G1) | `:133` | **`:135`** |
+| proxy RBAC guard (G6) | `:148` | `:148` — correct |
+| onboarding picker | `page.tsx:38-58` | **`:38-57`** |
+| trigger validation list | `20260614:31-36` | **`:32-37`**, and superseded — see A3 |
+| CHECK constraint | `20260603:32-35` | correct |
+
+---
+
+## Task 5a (NEW, supersedes Task 5 Step 3's `user_type` half): the one-time account-type claim
+
+**Files:**
+- Create: `src/app/api/v1/onboarding/account-type/route.ts`
+- Create: `src/lib/auth/accountTypeClaim.ts`, `src/lib/auth/accountTypeClaim.test.ts`
+
+Because of A1, the only way a Google user can be anything but an individual is a **server-side** write with the service-role client, which the trigger exempts. That is a security-relevant decision and it must be built narrowly.
+
+**Why this is parity and not escalation:** `/register/provider:214` already lets anyone self-select `lawyer`, `firm` or `provider` at signup, and the trigger honours it verbatim. The real gate on lawyer privileges is `lawyer_profiles.verification_status = 'verified'`, which this endpoint does not touch and which `supabase/migrations/20260815_marketplace_excludes_ai_workspace.sql` shows the marketplace relying on. This endpoint gives a Google user exactly what an email user already has at signup — no more. **State that argument in the route's doc comment.** If you find a surface that authorizes on `profiles.user_type === 'lawyer'` alone, without a verification check, stop and report it instead of shipping.
+
+- [ ] **Step 1: Put the eligibility rule in a pure, tested module**
+
+`canClaimAccountType({ currentType, onboardingCompleted, requestedPickerId })` returns a discriminated result, not a bare boolean, so the route can map each refusal to its own Arabic message.
+
+It permits the claim **only** when all of these hold:
+- the requested picker id maps through `toDbUserType` to a non-null DB value
+- `isAssignableUserType` is true for it — **never `admin`**
+- the caller's current `user_type` is `individual` — the untouched OAuth/signup default
+- `onboarding_completed` is not `true`
+
+This is a **one-time claim during onboarding, not a role-switch API.** A user who has already onboarded, or who already has a non-individual type, is refused. Pin every one of those refusals with a test, and pin `admin` twice — once through `isAssignableUserType` and once as an explicit case.
+
+- [ ] **Step 2: The route**
+
+Authenticate with `createClient()` and `getUser()`; 401 in Arabic if absent. Read the caller's own profile through that **RLS-scoped** client, not the service client — never trust an id from the body. Evaluate `canClaimAccountType`. On refusal return 403 with the Arabic message for that specific reason.
+
+Only then use `createServiceClient()` to write `user_type`, and re-assert the caller's id in the query itself (`.eq("id", user.id)`) — the service client bypasses RLS, so ownership must be in the query.
+
+- [ ] **Step 3: Provision the sector row the signup trigger would have created**
+
+Per A3 the trigger only runs at signup, so a Google user claiming `lawyer` has no `lawyer_profiles` row and the verification flow has nothing to read. Mirror the trigger's branches for the type being claimed, using the same `ON CONFLICT DO NOTHING` shape. **Read the trigger and match its column names exactly** — `firm_profiles` and `business_profiles` have NOT NULL columns without defaults.
+
+State in your report, per claimable type, which table you provision and which columns you fill.
+
+- [ ] **Step 4: Audit it**
+
+A privileged write deserves a trace. Find what this codebase already uses (there is an admin audit-log surface) and use it if it fits; if nothing fits, `console.error` with the user id, old type and new type, and say in your report that a structured audit trail is a follow-up rather than pretending one exists.
+
+- [ ] **Step 5: Verify** — `npx tsc --noEmit --incremental false`, `npm run test:unit`.
+
+**Report:** the exact Arabic for each refusal, and the full list of conditions under which the claim succeeds.
+
+## Task 5 — revised
+
+Step 3 changes: write `phone` through `PATCH /api/v1/profile`, and `user_type` through the Task 5a endpoint. **Order matters and gets its own step.**
+
+- [ ] **Step 3a: Write the phone FIRST, the type SECOND**
+
+Wave 1's reviewer found the trap: the picker offers `lawyer` and `firm`, and `needsOnboarding` exempts both **unconditionally**. So if the type write lands and the phone write then fails, that user is exempt forever, phone-less forever, and the gate can never bring them back. Writing the phone first means a failure leaves them still gated and still able to retry.
+
+If either write fails, show the Arabic error and **do not advance the step**.
+
+- [ ] **Step 3b: `onboarding_completed`**
+
+Not in the PATCH allowlist (A2). Either add it there — it is a harmless self-set flag, unlike `user_type` — or set it from the Task 5a endpoint. Choose, and say why.
+
+Step 6 (the sub-profile gap) is now **Task 5a Step 3** and is done there. Task 5 should confirm it happened rather than duplicating it.
