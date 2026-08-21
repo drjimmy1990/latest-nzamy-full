@@ -11,13 +11,17 @@
  * iterate the object, skip empty values, label each key from a lookup with
  * a fallback to the raw key — rather than four bespoke layouts.
  *
- * Which rows appear, what each is labelled and what text each value shows is
- * decided entirely by ./intakeValues.ts (buildSummaryRows → SummaryField[]).
- * This file turns that tree into JSX and makes no display decision of its own.
- * The split is not tidiness: this file is JSX, Node's native TypeScript
- * support does not compile JSX, and so `node --test` can only see the rules
- * once they live in a plain .ts module — see the header over that half of
- * intakeValues.ts.
+ * Which INTAKE rows appear, what each is labelled and what text each value
+ * shows is decided entirely by ./intakeValues.ts (buildSummaryRows →
+ * SummaryField[]); this file only turns that tree into JSX. The split is not
+ * tidiness: this file is JSX, Node's native TypeScript support does not
+ * compile JSX, and so `node --test` can only see the rules once they live in
+ * a plain .ts module — see the header over that half of intakeValues.ts.
+ *
+ * The attachment list below that is this file's own: it needs `order.id` and
+ * a fetch, neither of which buildSummaryRows has. Its one display rule — the
+ * «مذكرة» badge, Task 5 — therefore lives here too, in isMemoAttachment(),
+ * and consequently is NOT covered by node --test for the same JSX reason.
  *
  * Deliberately does NOT import buildOrderPrompt (the admin-facing prompt
  * builder, Task 4): that output is written to brief an admin on how to
@@ -61,6 +65,45 @@ function renderSummaryValue(value: SummaryValue, isDark: boolean): ReactNode {
 function formatSize(bytes: number): string {
   if (!bytes || bytes <= 0) return "";
   return `(${Math.max(1, Math.round(bytes / 1024))} كيلوبايت)`;
+}
+
+/**
+ * Task 5 (owner س٥) — is this one attachment the «المذكرة المراد نقضها», as
+ * opposed to an ordinary case file?
+ *
+ * The only evidence is `metadata.intake.memoAttachmentIds`: the documentIds
+ * the client tagged through wargaming's memo-specific dropzone, NOT "any file
+ * on the order". It is written by buildIntake() in
+ * src/app/ai/wargaming/page.tsx:922-923 and normalised by
+ * src/lib/services/orderIntake.wargaming.ts:80-81.
+ *
+ * It is ABSENT — and this returns false for every attachment, so nothing is
+ * badged — in three ordinary cases, none of them a fault:
+ *   1. every non-wargaming order (draft, contracts, legal_opinion);
+ *   2. every wargaming order placed before commit 7b5480b added the control;
+ *   3. a wargaming order whose client typed the memo into `memoText` instead
+ *      of uploading it — there is genuinely no memo FILE to badge.
+ * Badging an unrelated case file would be worse than badging nothing, so the
+ * absent case fails closed rather than guessing.
+ *
+ * String(v) on both sides, never `typeof v === "string"`: these ids trace to
+ * attachments.id, a Postgres bigserial that PostgREST serialises as a JSON
+ * NUMBER — see documentIdStr() in src/lib/services/orderIntake.ts:78-82 and
+ * the test that pins the numeric case at
+ * src/lib/services/orderIntake.wargaming.test.ts:88-98. A `typeof` guard here
+ * would silently un-badge every real memo while tsc and the suite stayed green.
+ *
+ * Twin of the identical function in
+ * src/app/dashboard/admin/service-orders/page.tsx, which shows the same badge
+ * to the admin. Duplicated on purpose: the two live in different feature
+ * trees, this file's neighbour intakeValues.ts is client-page-local, and six
+ * lines did not justify a third module. Change one, change the other.
+ */
+function isMemoAttachment(intake: Record<string, unknown> | undefined, documentId: string): boolean {
+  if (!documentId) return false;
+  const raw = intake?.memoAttachmentIds;
+  if (!Array.isArray(raw)) return false;
+  return raw.some((v) => String(v) === documentId);
 }
 
 export function OrderSummary({ order, isDark }: { order: ServiceOrder; isDark: boolean }) {
@@ -142,6 +185,7 @@ export function OrderSummary({ order, isDark }: { order: ServiceOrder; isDark: b
           <div className="flex flex-col gap-1">
             {attachments.map((a) => {
               const documentId = String(a.documentId);
+              const isMemo = isMemoAttachment(order.metadata?.intake, documentId);
               return (
                 <button
                   key={documentId}
@@ -152,6 +196,18 @@ export function OrderSummary({ order, isDark }: { order: ServiceOrder; isDark: b
                 >
                   <DownloadSimple size={13} />
                   {a.name || "مرفق"} {formatSize(a.size)}
+                  {/* Task 5 (owner س٥) — the same amber «مذكرة» badge the admin
+                      sees on the same file in
+                      src/app/dashboard/admin/service-orders/page.tsx, so the
+                      client and the admin are looking at one marking, not two
+                      different ones. Amber separates it from the emerald the
+                      file name itself is drawn in. */}
+                  {isMemo && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0 ${
+                      isDark ? "bg-amber-500/15 text-amber-400" : "bg-amber-500/10 text-amber-600"}`}>
+                      مذكرة
+                    </span>
+                  )}
                 </button>
               );
             })}

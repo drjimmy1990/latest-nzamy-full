@@ -39,17 +39,26 @@ const STATUSES = [
 
 // Task 5 — account-type badge, keyed by profiles.user_type. Every key here
 // matches a value in the CHECK constraint at
-// supabase/migrations/20260603_phase1_001_profiles.sql:32 except `provider`
-// and `admin`, deliberately left unmapped: `provider` has no distinct
-// Arabic label in this queue's context yet, and an order's requester is
-// never an admin account. An unmapped user_type simply renders no badge —
-// see the `ACCOUNT_BADGE[...]` guard below — never an empty grey pill.
+// supabase/migrations/20260603_phase1_001_profiles.sql:32-35. `admin` is the
+// only value of that constraint left unmapped, deliberately: nothing in the
+// schema stops an account with user_type 'admin' from placing an order, but
+// this queue has no reason to name that case, and an unmapped user_type
+// simply renders no badge — see the `ACCOUNT_BADGE[...]` guard below — never
+// an empty grey pill.
+//
+// `provider` (owner س٦: «شارة ملونة وموحدة لـ provider — 🟣 مزوّد خدمة») is
+// fuchsia rather than violet or purple. violet-500 is already spent on TWO
+// types, government and ngo, and Tailwind's purple-500 sits close enough to
+// violet-500 that a provider would read at a glance as a third
+// government-ish account. fuchsia-500 stays inside the 🟣 family the owner
+// asked for and is plainly distinguishable from both.
 const ACCOUNT_BADGE: Record<string, { label: string; cls: string }> = {
   lawyer:     { label: "محامٍ",        cls: "bg-emerald-500/10 text-emerald-500" },
   firm:       { label: "مكتب محاماة",  cls: "bg-emerald-500/10 text-emerald-500" },
   individual: { label: "عميل فرد",     cls: "bg-sky-500/10 text-sky-500" },
   corporate:  { label: "منشأة تجارية", cls: "bg-amber-500/10 text-amber-600" },
   micro:      { label: "منشأة صغيرة",  cls: "bg-amber-500/10 text-amber-600" },
+  provider:   { label: "مزوّد خدمة",   cls: "bg-fuchsia-500/10 text-fuchsia-500" },
   government: { label: "جهة حكومية",   cls: "bg-violet-500/10 text-violet-500" },
   ngo:        { label: "جهة غير ربحية", cls: "bg-violet-500/10 text-violet-500" },
 };
@@ -57,6 +66,45 @@ const ACCOUNT_BADGE: Record<string, { label: string; cls: string }> = {
 const SERVICE_BADGE: Record<string, string> = {
   draft: "الصائغ", contracts: "العقود", wargaming: "المحاكاة", legal_opinion: "الرأي الفصل",
 };
+
+/**
+ * Task 5 (owner س٥) — is this one attachment the «المذكرة المراد نقضها», as
+ * opposed to an ordinary case file?
+ *
+ * The only evidence is `metadata.intake.memoAttachmentIds`: the documentIds
+ * the client tagged through wargaming's memo-specific dropzone, NOT "any file
+ * on the order". It is written by buildIntake() in
+ * src/app/ai/wargaming/page.tsx:922-923 and normalised by
+ * src/lib/services/orderIntake.wargaming.ts:80-81.
+ *
+ * It is ABSENT — and this returns false for every attachment, so nothing is
+ * badged — in three ordinary cases, none of them a fault:
+ *   1. every non-wargaming order (draft, contracts, legal_opinion);
+ *   2. every wargaming order placed before commit 7b5480b added the control;
+ *   3. a wargaming order whose client typed the memo into `memoText` instead
+ *      of uploading it — there is genuinely no memo FILE to badge.
+ * Badging an unrelated case file would be worse than badging nothing, so the
+ * absent case fails closed rather than guessing.
+ *
+ * String(v) on both sides, never `typeof v === "string"`: these ids trace to
+ * attachments.id, a Postgres bigserial that PostgREST serialises as a JSON
+ * NUMBER — see documentIdStr() in src/lib/services/orderIntake.ts:78-82 and
+ * the test that pins the numeric case at
+ * src/lib/services/orderIntake.wargaming.test.ts:88-98. A `typeof` guard here
+ * would silently un-badge every real memo while tsc and the suite stayed green.
+ *
+ * Twin of the identical function in
+ * src/app/ai/orders/[id]/_components/OrderSummary.tsx, which shows the same
+ * badge to the client. Duplicated on purpose: the two live in different
+ * feature trees, the shared home (intakeValues.ts) is client-page-local, and
+ * six lines did not justify a third module. Change one, change the other.
+ */
+function isMemoAttachment(intake: Record<string, unknown> | undefined, documentId: string): boolean {
+  if (!documentId) return false;
+  const raw = intake?.memoAttachmentIds;
+  if (!Array.isArray(raw)) return false;
+  return raw.some((v) => String(v) === documentId);
+}
 
 /**
  * Task 7 (owner س١١) — the ISO instant the deliverable was written, i.e. the
@@ -376,9 +424,11 @@ export default function AdminServiceOrdersPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{o.title}</p>
-                  {/* Task 5 — account-type and service badges. An unmapped
-                      user_type (e.g. `provider`, `admin`) or service key
-                      renders nothing here rather than an empty grey pill. */}
+                  {/* Task 5 — account-type and service badges. `provider` now
+                      has its own badge (owner س٦); `admin` is the one
+                      user_type still left unmapped, and an unmapped user_type
+                      or service key renders nothing here rather than an empty
+                      grey pill. */}
                   {o.profile?.user_type && ACCOUNT_BADGE[o.profile.user_type] && (
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0 ${ACCOUNT_BADGE[o.profile.user_type].cls}`}>
                       {ACCOUNT_BADGE[o.profile.user_type].label}
@@ -469,6 +519,10 @@ export default function AdminServiceOrdersPage() {
                         .filter((a) => a && (typeof a.documentId === "string" || typeof a.documentId === "number"))
                         .map((a) => {
                           const documentId = String(a.documentId);
+                          const isMemo = isMemoAttachment(
+                            o.metadata?.intake as Record<string, unknown> | undefined,
+                            documentId,
+                          );
                           return (
                             <button key={documentId} disabled={busy}
                               onClick={() => downloadAttachment(o.id, documentId)}
@@ -476,6 +530,22 @@ export default function AdminServiceOrdersPage() {
                                 isDark ? "text-emerald-400" : "text-emerald-700"}`}>
                               <DownloadSimple size={13} />
                               {a.name || "مرفق"} {a.size ? `(${Math.max(1, Math.round(a.size / 1024))} كيلوبايت)` : ""}
+                              {/* Task 5 (owner س٥) — amber, so it separates at a
+                                  glance from the emerald the file name itself
+                                  is drawn in. (It is NOT unique on the card:
+                                  the corporate/micro account badges up in the
+                                  header row are the same amber. Different
+                                  region, different text, and nothing else in
+                                  this expanded panel is amber.) Renders only
+                                  for a file the client tagged as the memo; see
+                                  isMemoAttachment() above for the three
+                                  ordinary cases where nothing is badged. */}
+                              {isMemo && (
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0 ${
+                                  isDark ? "bg-amber-500/15 text-amber-400" : "bg-amber-500/10 text-amber-600"}`}>
+                                  مذكرة
+                                </span>
+                              )}
                             </button>
                           );
                         })}
