@@ -128,11 +128,21 @@ test("a parent-scoped label beats the plain label for the same key", () => {
 
 // ═══ end-to-end: real orders, rendered by the real module ═════════════════════
 //
-// Every fixture below is a combination the wizard can actually produce, and
-// each one is pushed through its own validator first — the validator is what
-// decides the shape and the key ORDER that reach the database, so
-// buildSummaryRows() is fed the stored object rather than a hand-arranged one.
-// The report's before/after tables are generated from these same fixtures.
+// Every fixture below is pushed through its own validator first — the
+// validator is what decides the shape and the key ORDER that reach the
+// database, so buildSummaryRows() is fed the stored object rather than a
+// hand-arranged one. The report's before/after tables are generated from these
+// same fixtures.
+//
+// The field combinations are the wizard's, with one known exception. Only
+// استشارة and دراسة render a topic-area grid (ContextConsult.tsx:104-110,
+// ContextStudy.tsx:192-195), and clearFlowState() blanks topicArea on every
+// sub-flow switch (legal-opinion/page.tsx:221, called at :540) — so the memo,
+// research, due-diligence and cross-exam fixtures below carry a topicArea
+// their own sub-flow cannot set today. The validator takes it as optional
+// (orderIntake.legalOpinion.ts:36, :93, :102) and none of those four fixtures
+// asserts on the row it produces, so it is left as-is rather than quietly
+// edited; it is reported instead.
 //
 // Co-occurrence rules respected here, each verified in source:
 //  · legal-memo settings are {searchDepth, memoStructure, memoDetailLevel,
@@ -143,7 +153,7 @@ test("a parent-scoped label beats the plain label for the same key", () => {
 //  · contracts contractType/language/selectedClauses exist only when
 //    complexity === "detailed" (useContractsState.ts:166-180).
 //  · memoSubType comes from MEMO_SUB_TYPES_REGULAR[memoType] for a regular
-//    legal branch (draftConstants.ts:53-62); a committee branch
+//    legal branch (draftConstants.ts:53-61); a committee branch
 //    (جمركية/ضريبية/زكوية) would use MEMO_SUB_TYPES_COMMITTEES instead.
 //  · wargaming memoAttachmentIds appears only when the client tagged an
 //    uploaded file as the memo (wargaming/page.tsx:922-923).
@@ -415,8 +425,12 @@ test("a letter order shows نوع الخطاب exactly once", () => {
 
 test("a custom letter type still reaches the screen after letterTypeLabel is suppressed", () => {
   // letterType "other" resolves to «أخرى»; the client's own wording survives in
-  // letterTypeCustom, which the step-1 gate guarantees is never blank
-  // (LetterWorkflow.tsx:320 — the only path to step 2).
+  // letterTypeCustom, which the step-1 gate guarantees is never blank in a
+  // submitted order. LetterWorkflow.tsx:319 is not the file's only
+  // setLetterStep(2) — :626 is a second one — but it is the only one outside
+  // steps 2-4, so it is the only door out of step 1, and :320 disables it
+  // while the custom field is empty. Full argument in HIDDEN_NESTED_KEYS's
+  // docblock in intakeValues.ts.
   const letterRow = summaryLines(LEGAL_OPINION_LETTER_OTHER_ORDER)
     .find((l) => l.startsWith("بيانات الخطاب:"));
   assert.ok(letterRow);

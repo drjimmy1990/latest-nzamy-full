@@ -48,7 +48,8 @@ export const INTAKE_VALUE_AR: Record<string, string> = {
   "memoType:reply": "مذكرة رد",
   "memoType:appeal": "طعن",
   // The four specialist modes are seeded from the entry card, not picked from
-  // MEMO_MAIN_TYPES (useDraftState.ts:41-45 seedFromMode), so the label the
+  // MEMO_MAIN_TYPES (src/hooks/useDraftState.ts:41-44, seedFromMode — the file
+  // is under src/hooks, not next to the other draft files), so the label the
   // client actually saw is the entry card's:
   // src/components/draft/DraftPreStep.tsx:51-54.
   "memoType:arbitration": "صائغ حكم التحكيم",
@@ -66,7 +67,7 @@ export const INTAKE_VALUE_AR: Record<string, string> = {
   // src/components/contracts/steps/draft/StepDomain.tsx:90-93. "ENGLISH فقط"
   // and "عربي / ENGLISH" are copied as ideas, not verbatim: an English word
   // must not reach a client-facing screen, and the same component names that
-  // language in Arabic 145 lines further down (StepDomain.tsx:237
+  // language in Arabic further down its own file (StepDomain.tsx:237
   // — { id: "en", label: "الإنجليزية" }), so this is that wizard's own word,
   // not a second translation. The 🌐 on "custom" is dropped for the same
   // reason the party-type emoji is.
@@ -161,11 +162,29 @@ export const INTAKE_VALUE_AR: Record<string, string> = {
   "outputType:letter": "خطاب رسمي",
 
   // ─── الرأي الفصل — topicArea ───────────────────────────────────────────────
-  // src/app/ai/legal-opinion/page.tsx:57-68 (LEGAL_AREA_LABELS). Every
-  // legal-opinion flow passes through the submit recap, which renders
-  // topicArea through this exact map (page.tsx:325, :335) — so this is the
-  // last Arabic the client saw for this field before pressing send. The two
-  // area grids that feed it agree on all 27 ids except one: ContextStudy.tsx:20
+  // src/app/ai/legal-opinion/page.tsx:57-68 (LEGAL_AREA_LABELS). In today's
+  // wizard only two sub-flows put a value in this field — استشارة and دراسة,
+  // the only context steps that render an area grid (grids at
+  // ContextConsult.tsx:104-110 and ContextStudy.tsx:192-195), and the only two
+  // setTopicArea() calls anywhere that pass a real id (ContextConsult.tsx:110,
+  // ContextStudy.tsx:195). The only other invocations write "":
+  // clearFlowState() (page.tsx:221, called at :540 on each sub-flow switch)
+  // and the quick-chat box (page.tsx:510). The page's remaining mentions
+  // (page.tsx:573, :581, :592) only pass the setter down as a prop.
+  // Each of those two flows ends on a submit recap that renders topicArea
+  // through this exact map (page.tsx:325 for استشارة, :335 for دراسة), so this
+  // is the last Arabic the client saw for this field before pressing send; the
+  // remaining branches of buildRecapRows (page.tsx:340-377) carry no
+  // topic-area row at all.
+  //
+  // That is a statement about the wizard, not about stored data. The validator
+  // takes topicArea as optional on EVERY sub-flow
+  // (src/lib/services/orderIntake.legalOpinion.ts:36, :93, :102), so an order
+  // written by an older build or by anything other than this wizard may carry
+  // it under a different outputType — and nothing here breaks if it does,
+  // because the map is keyed on the value id, not on the flow.
+  //
+  // The two area grids agree on all 27 ids except one: ContextStudy.tsx:20
   // labels `contracts` "تحرير عقود" where ContextConsult.tsx:18 and this map
   // both say "عقود".
   "topicArea:commercial": "تجاري",
@@ -451,7 +470,7 @@ export const INTAKE_LABELS: Record<string, string> = {
   // «هيكل المذكرة: facts: نعم، legal: نعم، …» — English, on their own receipt,
   // in الرأي الفصل. Each Arabic string is copied from the checkbox the client
   // actually ticked, never re-translated, on the same rule as INTAKE_VALUE_AR.
-  // src/app/ai/legal-opinion/_components/SettingsStep.tsx:98-101
+  // src/app/ai/legal-opinion/_components/SettingsStep.tsx:97-100
   "memoStructure:facts": "الوقائع",
   "memoStructure:legal": "الأساس النظامي",
   "memoStructure:recommendation": "التوصية",
@@ -495,7 +514,7 @@ export function labelFor(key: string, parent?: string): string {
 // this list is shared across all four rather than hidden per-service.
 //
 // Top level ONLY, and it must stay that way: `memoStructure.attachments` is
-// the client's own "الملاحق" checkbox (SettingsStep.tsx:101), and applying
+// the client's own "الملاحق" checkbox (SettingsStep.tsx:100), and applying
 // this set inside nested objects would delete a real answer.
 export const HIDDEN_INTAKE_KEYS = new Set(["attachments", "schemaVersion", "service"]);
 
@@ -512,10 +531,32 @@ export const HIDDEN_INTAKE_KEYS = new Set(["attachments", "schemaVersion", "serv
  *
  * For "other", letterTypeLabel holds the client's own wording, and dropping it
  * loses nothing: letterTypeCustom holds that same text under
- * «نوع الخطاب (مخصص)», and it can never be blank — step 1's "التالي" button is
- * disabled while `letterType === "other" && !letterTypeCustom.trim()`
- * (LetterWorkflow.tsx:320), and that button carries the file's only
- * setLetterStep(2) call (:319), so no other path advances past step 1.
+ * «نوع الخطاب (مخصص)», and it can never be blank in a submitted order.
+ *
+ * That last part is a reachability argument about LetterWorkflow.tsx, not a
+ * one-line fact, so it is written out here in full. Re-derive all four steps
+ * before adding any new way into step 2 — every line number below is that
+ * file's:
+ *   1. Steps 2, 3 and 4 are one closed group. setLetterStep(2) is called at
+ *      :319 and :626, setLetterStep(3) at :450 and :745, setLetterStep(4) at
+ *      :636 — and every one of those except :319 fires from a control inside
+ *      a step-2/3/4 panel. So :319, step 1's "التالي", is the only door out of
+ *      step 1, and :320 disables it whenever
+ *      `!letterType || (letterType === "other" && !letterTypeCustom.trim())`
+ *      — the second half is the one that matters here.
+ *   2. letterTypeCustom is writable only from step 1: the type tiles clear it
+ *      when a non-"other" type is picked (:254) and the text box sets it
+ *      (:297), both inside the `letterStep === 1` block. Nothing on steps 2-4
+ *      can empty it.
+ *   3. The only live return to step 1 is :440, step 2's "رجوع". Going back and
+ *      clearing the field re-arms that same disabled gate at :320, so the
+ *      client cannot move forward again. (A grep for setLetterStep(1) finds a
+ *      second call, at :837. That button is inside `{letterDone && (` at :772,
+ *      the legacy "الخطاب الجاهز" panel, which never renders: the only
+ *      setLetterDone(true) is at :134 inside generateLetter(), which the file
+ *      defines at :130 and no line in src/ calls — :768-771 documents the
+ *      panel as deliberately kept, not live. It is not a return path.)
+ *   4. submitLetterOrder() is reachable only from step 4 (:755).
  */
 export const HIDDEN_NESTED_KEYS = new Set(["letter:letterTypeLabel"]);
 
