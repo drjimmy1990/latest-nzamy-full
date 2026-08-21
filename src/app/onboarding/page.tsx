@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User,
@@ -17,23 +17,38 @@ import {
   Bell,
   Star,
   MapPin,
+  Phone,
   Briefcase,
   GraduationCap,
   Users,
   ChartLine,
-  Shield,
   CheckCircle,
   Storefront,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { createClient } from "@/lib/supabase/client";
+import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import {
+  dashboardPathFor,
+  isAssignableUserType,
+  isDbUserType,
+  toDbUserType,
+  type DbUserType,
+} from "@/lib/auth/userTypes";
 
-const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
-
-type UserType = "individual" | "company" | "micro" | "government" | "ngo" | "lawyer" | "firm" | null;
+type UserType = DbUserType | null;
 type Step = 1 | 2 | 3 | 4 | 5;
 
 // ── Step 1: confirm user type ──────────────────────────────────────────────────
+// The `id` of each option is a PICKER id, not a `profiles.user_type` value:
+// `company` here is `corporate` in the database. Every read of these ids goes
+// through `toDbUserType` (src/lib/auth/userTypes.ts) — nothing in this file
+// writes a picker id to the database, and nothing indexes PICKER_TO_DB directly.
+//
+// There is no `provider` option and no `admin` option, for opposite reasons.
+// `admin` must never be assignable from a control (see `isAssignableUserType`).
+// `provider` is a real account type with a working dashboard whose only
+// registration path today is /register/provider — see the note under the grid.
 
 const userTypeOptions = {
   ar: [
@@ -104,6 +119,73 @@ const notifOptions = {
   ],
 };
 
+// ── Phone ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Arabic-Indic (٠١٢…) and Extended Arabic-Indic (۰۱۲…) digits → ASCII, so a
+ * number typed on an Arabic keyboard is not rejected as malformed.
+ */
+function toAsciiDigits(value: string): string {
+  return value.replace(/[\u0660-\u0669\u06f0-\u06f9]/g, (d) => {
+    const code = d.charCodeAt(0);
+    const base = code >= 0x06f0 ? 0x06f0 : 0x0660;
+    return String(code - base);
+  });
+}
+
+/**
+ * A Saudi mobile in E.164 (`+9665XXXXXXXX`), or `null` when the input is not
+ * one. Accepts `05…`, `5…`, `966…`, `00966…` and `+966…`, with spaces, dashes
+ * and Arabic-Indic digits.
+ *
+ * NOTE: this is a deliberate duplicate of the same function in
+ * src/app/api/v1/profile/route.ts. The server is what actually guards the
+ * column; this copy exists so the wizard can refuse before it submits, and the
+ * two must stay identical. If a third caller appears, extract them into one
+ * module.
+ */
+function normalizeSaudiMobile(raw: string): string | null {
+  let v = toAsciiDigits(raw).replace(/[\s()\u200e\u200f-]/g, "");
+  if (v.startsWith("00966")) v = `+${v.slice(2)}`;
+  else if (v.startsWith("966")) v = `+${v}`;
+  else if (/^0?5\d{8}$/.test(v)) v = `+966${v.replace(/^0/, "")}`;
+  return /^\+9665\d{8}$/.test(v) ? v : null;
+}
+
+// ── Errors ────────────────────────────────────────────────────────────────────
+
+/** Shown when a failure carries no Arabic message of its own. */
+const GENERIC_SAVE_ERROR = "تعذّر حفظ بياناتك. تحقق من اتصالك وحاول مرة أخرى.";
+
+/**
+ * The Arabic message for a failed request, or the generic one.
+ *
+ * Both endpoints this page calls answer in Arabic, but the transport in
+ * between does not: `apiMutate` (src/lib/services/api.ts:56-59) falls back to
+ * `API error: 500` when a response carries no JSON `error` — a Next.js error
+ * page, a proxy timeout, an endpoint that is not deployed. Rendering that
+ * string would put English in front of a user, so anything without Arabic
+ * letters in it is replaced here and logged instead.
+ */
+function arabicError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : "";
+  if (raw) console.warn("[Nzamy] onboarding save failed:", raw);
+  return /[\u0600-\u06ff]/.test(raw) ? raw : GENERIC_SAVE_ERROR;
+}
+
+/** The shape this page reads from GET/PATCH /api/v1/profile. */
+type ProfileEnvelope = {
+  profile: {
+    user_type?: string | null;
+    phone?: string | null;
+    city?: string | null;
+    onboarding_completed?: boolean | null;
+  } | null;
+};
+
+/** The 200 body of POST /api/v1/onboarding/account-type. */
+type AccountTypeClaimResult = { ok?: boolean; userType?: string };
+
 // ── Helper: step indicator ───────────────────────────────────────────────────
 function StepDots({ step, total }: { step: number; total: number }) {
   return (
@@ -128,8 +210,9 @@ function S1({
   onSelect,
 }: {
   isAr: boolean;
-  selected: UserType;
-  onSelect: (t: UserType) => void;
+  /** The selected PICKER id (`company`, not `corporate`), or null. */
+  selected: string | null;
+  onSelect: (pickerId: string) => void;
 }) {
   const opts = isAr ? userTypeOptions.ar : userTypeOptions.en;
   return (
@@ -149,7 +232,7 @@ function S1({
               key={o.id}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.97 }}
-              onClick={() => onSelect(o.id as UserType)}
+              onClick={() => onSelect(o.id)}
               className={`relative flex flex-col items-start gap-2.5 rounded-2xl border p-4 text-start transition-all ${
                 active
                   ? "border-royal/30 bg-royal/5 dark:border-gold/30 dark:bg-royal/15 shadow-sm"
@@ -172,6 +255,14 @@ function S1({
           );
         })}
       </div>
+      {/* True as written: the account type is claimed once, and only an admin
+          can change it afterwards (the database refuses a self-change —
+          trg_lock_user_type). No promise is made about self-service. */}
+      <p className="mt-4 text-xs text-ink-faint dark:text-gray-500">
+        {isAr
+          ? "يُحدَّد نوع الحساب مرة واحدة. لتغييره لاحقاً تحتاج إلى مراجعة إدارة المنصّة."
+          : "Your account type is set once. Changing it later requires the platform administrators."}
+      </p>
     </motion.div>
   );
 }
@@ -193,7 +284,8 @@ function S2({
   onSetHasLawyer: (v: boolean) => void;
 }) {
   const opts = isAr ? serviceOptions.ar : serviceOptions.en;
-  const showLawyerQ = userType === "company" || userType === "micro";
+  // `corporate` is what the picker calls "شركة / مؤسسة".
+  const showLawyerQ = userType === "corporate" || userType === "micro";
   return (
     <motion.div key="s2" initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -28 }} transition={{ type: "spring", stiffness: 280, damping: 26 }}>
       <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100 mb-1">
@@ -231,7 +323,7 @@ function S2({
         })}
       </div>
 
-      {/* ── Lawyer question for Company / Micro ── */}
+      {/* ── Lawyer question for Corporate / Micro ── */}
       {showLawyerQ && (
         <motion.div
           initial={{ opacity: 0, height: 0 }}
@@ -278,10 +370,12 @@ function S2({
   );
 }
 
-// ── Step 3: location + specialty ─────────────────────────────────────────────
+// ── Step 3: phone + location + specialty ─────────────────────────────────────
 function S3({
   isAr,
   userType,
+  phone,
+  setPhone,
   city,
   setCity,
   specialties,
@@ -289,6 +383,8 @@ function S3({
 }: {
   isAr: boolean;
   userType: UserType;
+  phone: string;
+  setPhone: (p: string) => void;
   city: string;
   setCity: (c: string) => void;
   specialties: string[];
@@ -296,15 +392,53 @@ function S3({
 }) {
   const isLegal = userType === "lawyer" || userType === "firm";
   const inputCls = "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:text-gray-200 dark:focus:border-gold dark:focus:ring-gold/10";
+  const phoneTouched = phone.trim().length > 0;
+  const phoneValid = normalizeSaudiMobile(phone) !== null;
   return (
     <motion.div key="s3" initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -28 }} transition={{ type: "spring", stiffness: 280, damping: 26 }}>
       <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100 mb-1">
-        {isAr ? (isLegal ? "تخصصاتك وموقعك" : "أين تتواجد؟") : (isLegal ? "Your Specialties & Location" : "Where are you located?")}
+        {isAr
+          ? (isLegal ? "تواصلك وتخصصاتك" : "بيانات التواصل")
+          : (isLegal ? "Contact & Specialties" : "Contact Details")}
       </h2>
       <p className="text-sm text-ink-muted dark:text-gray-400 mb-7">
-        {isAr ? "لتوصيل الخدمات المناسبة لك" : "To connect you with the right services"}
+        {isAr
+          ? "نستخدم رقم جوالك للتواصل معك بخصوص طلباتك"
+          : "We use your mobile number to contact you about your requests"}
       </p>
       <div className="space-y-5">
+        <div>
+          <label htmlFor="ob-phone" className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
+            {isAr ? "رقم الجوال" : "Mobile Number"}
+            <span className="text-royal dark:text-gold"> *</span>
+          </label>
+          <div className="relative">
+            <Phone size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
+            <input
+              id="ob-phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              dir="ltr"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="0512345678"
+              aria-invalid={phoneTouched && !phoneValid}
+              className={`${inputCls} ${isAr ? "pr-10 pl-4 text-right" : "pl-10 pr-4"} ${
+                phoneTouched && !phoneValid ? "border-red-400 dark:border-red-500/60" : ""
+              }`}
+            />
+          </div>
+          <p className={`mt-1.5 text-xs ${phoneTouched && !phoneValid ? "text-red-600 dark:text-red-400" : "text-ink-faint dark:text-gray-500"}`}>
+            {phoneTouched && !phoneValid
+              ? (isAr
+                  ? "رقم الجوال غير صحيح. أدخل رقم جوال سعودي يبدأ بـ 05 — مثال: 0512345678"
+                  : "Invalid number. Enter a Saudi mobile starting with 05 — e.g. 0512345678")
+              : (isAr
+                  ? "رقم جوال سعودي — مثال: 0512345678"
+                  : "Saudi mobile number — e.g. 0512345678")}
+          </p>
+        </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
             {isAr ? "المدينة" : "City"}
@@ -400,21 +534,32 @@ function S4({
 }
 
 // ── Step 5: success ───────────────────────────────────────────────────────────
-function S5({ isAr, userType, hasLawyer }: { isAr: boolean; userType: UserType; hasLawyer: boolean | null }) {
-  // Smart routing: each entity type goes to the correct dashboard
-  const getDashLink = () => {
-    switch (userType) {
-      case "lawyer":     return "/dashboard/lawyer";
-      case "firm":       return "/dashboard/firm";
-      case "company":    return hasLawyer ? "/dashboard/business?mode=erp" : "/dashboard/business?mode=service";
-      case "micro":      return hasLawyer ? "/dashboard/business?mode=erp&tier=micro" : "/dashboard/micro";
-      case "individual": return "/dashboard/client";
-      case "government": return "/dashboard/business";
-      case "ngo":        return "/dashboard/client";
-      default:           return "/dashboard/client";
-    }
-  };
-  const dashLink = getDashLink();
+function S5({
+  isAr,
+  userType,
+  hasLawyer,
+  typeWasNotChanged,
+}: {
+  isAr: boolean;
+  userType: UserType;
+  hasLawyer: boolean | null;
+  /**
+   * True when the type the account ended up with is not the one that was
+   * picked — either it was already set, or the account had already finished
+   * onboarding once, which closes the one-time claim.
+   */
+  typeWasNotChanged: boolean;
+}) {
+  // One dashboard map for the whole app (src/lib/auth/userTypes.ts). The local
+  // map this replaced sent a government body and an NGO to /dashboard/business
+  // and /dashboard/client — prefixes ROUTE_ACCESS (src/proxy.ts:5-14) reserves
+  // for `corporate` and `individual`, so those links bounced their own owners
+  // straight back out.
+  const base = userType ? dashboardPathFor(userType) : "/";
+  // ?mode=service is read by the corporate dashboard itself
+  // (src/app/dashboard/business/page.tsx:95); it stays inside the same prefix,
+  // so it cannot fall foul of the rule above.
+  const dashLink = userType === "corporate" && hasLawyer === false ? `${base}?mode=service` : base;
   return (
     <motion.div key="s5" initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
       <motion.div
@@ -431,6 +576,13 @@ function S5({ isAr, userType, hasLawyer }: { isAr: boolean; userType: UserType; 
       <p className="text-sm text-ink-muted dark:text-gray-400 max-w-[280px] mx-auto mb-8">
         {isAr ? "خصّصنا تجربتك. الآن استكشف خدمات نظامي." : "We've personalized your experience. Now explore Nezamy's services."}
       </p>
+      {typeWasNotChanged && (
+        <p className="mx-auto mb-6 max-w-[320px] rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-ink-muted dark:border-gold/20 dark:bg-gold/10 dark:text-gray-300">
+          {isAr
+            ? "لم يتغيّر نوع حسابك — يُحدَّد مرة واحدة فقط. لتغييره تحتاج إلى مراجعة إدارة المنصّة."
+            : "Your account type was not changed — it is set once. Changing it requires the platform administrators."}
+        </p>
+      )}
       <div className="space-y-3 text-start">
         {[
           { icon: Briefcase, ar: "اذهب للوحة التحكم", en: "Go to My Dashboard", href: dashLink },
@@ -468,42 +620,68 @@ export default function OnboardingPage() {
   const dir = isAr ? "rtl" : "ltr";
 
   const [step, setStep] = useState<Step>(1);
-  const [userType, setUserType] = useState<UserType>(null);
-  const [existingUserType, setExistingUserType] = useState<UserType>(null);
+  /** What the user clicked in step 1 — a PICKER id, or null when they have not. */
+  const [pickerId, setPickerId] = useState<string | null>(null);
+  /**
+   * `profiles.user_type` when it is already something other than the signup
+   * default. `individual` is NOT recorded here: it is what the signup trigger
+   * writes for every new account, including every Google one
+   * (supabase/migrations/20260716_security_hardening.sql:19), so treating it as
+   * "already chosen" would leave a Google user unable to say they are a company.
+   */
+  const [existingUserType, setExistingUserType] = useState<DbUserType | null>(null);
+  /**
+   * What `profiles.user_type` holds once the writes below are done — which is
+   * not always what was picked. The success screen links to this and to nothing
+   * else: a link to the dashboard of a type the account does not have would be
+   * bounced straight back out by ROUTE_ACCESS (src/proxy.ts:5-14).
+   */
+  const [resolvedUserType, setResolvedUserType] = useState<DbUserType | null>(null);
   const [services, setServices] = useState<string[]>([]);
+  const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
   const [specialties, setSpecialties] = useState<string[]>([]);
   const [notifs, setNotifs] = useState<string[]>(["case"]);
   const [hasLawyer, setHasLawyer] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Pre-fill from existing user metadata or URL param, skip Step 1 if type already set
+  /**
+   * The type this wizard is working with: whatever the account already has,
+   * otherwise the picker's choice translated into a database value. Never a
+   * picker id, and never `admin` — the picker offers no such option and
+   * `isAssignableUserType` refuses it before any write.
+   */
+  const userType: UserType =
+    existingUserType ?? (pickerId ? toDbUserType(pickerId) : null);
+
+  // Read the account's real type from `profiles` — not from user_metadata,
+  // which an OAuth provider never populates. A type that is already set is
+  // preserved: a lawyer who registered through /register/provider and later
+  // lands here must not be reset by a picker default.
   useEffect(() => {
-    async function prefill() {
-      // 1) Try to read existing user_type from Supabase metadata
-      if (BACKEND_MODE === "supabase") {
-        try {
-          const supabase = createClient();
-          const { data: { user } } = await supabase.auth.getUser();
-          const metaType = user?.user_metadata?.user_type as UserType;
-          if (metaType && ["individual", "company", "micro", "government", "ngo", "lawyer", "firm"].includes(metaType)) {
-            setUserType(metaType);
-            setExistingUserType(metaType);
-            setStep(2); // Skip "Who are you?" — already set during registration
-            return;
-          }
-        } catch {
-          // Fall through to URL param check
+    if (!isSupabaseMode) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiGet<ProfileEnvelope>("/api/v1/profile");
+        if (cancelled) return;
+        const known = res.profile?.user_type ?? "";
+        if (isDbUserType(known) && known !== "individual") {
+          setExistingUserType(known);
+          setStep(2); // Nothing to choose — skip "Who are you?"
         }
+        // Prefill what the account already holds, so a returning user is not
+        // asked to retype it.
+        if (res.profile?.phone) setPhone(res.profile.phone);
+        if (res.profile?.city) setCity(res.profile.city);
+      } catch {
+        // Leave step 1 showing. The submit below re-reads the authoritative
+        // type from the PATCH response before it claims anything, so a failed
+        // read here cannot overwrite an established type.
       }
-      // 2) Fallback: check URL param
-      const p = new URLSearchParams(window.location.search);
-      const t = p.get("type") as UserType;
-      if (t && ["individual", "company", "micro", "government", "ngo", "lawyer", "firm"].includes(t)) {
-        setUserType(t);
-        setStep(2);
-      }
-    }
-    prefill();
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const toggleService = (id: string) =>
@@ -516,17 +694,143 @@ export default function OnboardingPage() {
     setNotifs((prev) => prev.includes(id) ? prev.filter((n) => n !== id) : [...prev, id]);
 
   const canNext = () => {
+    if (saving) return false;
     if (step === 1) return userType !== null;
     if (step === 2) return services.length > 0;
-    if (step === 3) return city.length > 0;
+    // The phone is required, and required means the step does not advance
+    // without it: profiles.phone is the only number the outbound notification
+    // payload can carry, and all 16 live accounts have none.
+    if (step === 3) return city.length > 0 && normalizeSaudiMobile(phone) !== null;
     return true;
+  };
+
+  /**
+   * Persist the wizard, in the only order that is safe to fail in.
+   *
+   *   1. the phone, through PATCH /api/v1/profile
+   *   2. the account type, through POST /api/v1/onboarding/account-type
+   *   3. `onboarding_completed`, through PATCH /api/v1/profile
+   *
+   * Why this order. `needsOnboarding` exempts `lawyer` and `firm`
+   * unconditionally (src/lib/auth/onboardingGate.ts), and the claim endpoint
+   * only fires while the account is still the untouched `individual` default.
+   * So a type written before the phone would strand a lawyer or a firm: exempt
+   * from the gate, phone-less, with nothing left to bring them back. And
+   * `onboarding_completed` written before the claim would make the claim
+   * ineligible — the wizard would lock every non-individual out of their own
+   * account type.
+   *
+   * Each step failing leaves a state the next attempt can recover from, and
+   * every failure stops the wizard where it is with an Arabic message. It never
+   * advances on a failed write: a user who was told "done" while nothing was
+   * saved would be redirected back here by the proxy on their next page load,
+   * with no explanation.
+   *
+   * Returns true only when everything that had to be written was written.
+   */
+  const persistOnboarding = async (): Promise<boolean> => {
+    // Demo mode has no session and no database; the wizard is a preview there.
+    if (!isSupabaseMode) return true;
+
+    const normalizedPhone = normalizeSaudiMobile(phone);
+    if (!normalizedPhone) {
+      setSaveError("رقم الجوال غير صحيح. أدخل رقم جوال سعودي يبدأ بـ 05 — مثال: 0512345678");
+      return false;
+    }
+
+    setSaving(true);
+    setSaveError(null);
+    try {
+      // ── 1. The phone, first and alone ──────────────────────────────────────
+      // The response carries the whole updated row, so this doubles as the
+      // authoritative read of user_type — no second round trip.
+      const patched = await apiMutate<ProfileEnvelope>("/api/v1/profile", "PATCH", {
+        phone: normalizedPhone,
+        ...(city ? { city } : {}),
+      });
+      const currentType = patched.profile?.user_type ?? "";
+      const alreadyCompleted = patched.profile?.onboarding_completed === true;
+
+      // ── 2. The account type, only while it is still the signup default ─────
+      let finalType: UserType = isDbUserType(currentType) ? currentType : userType;
+      const wanted = userType;
+      if (
+        wanted &&
+        wanted !== "individual" &&
+        currentType === "individual" &&
+        // The claim is one-time: the endpoint refuses an account that has
+        // already finished onboarding (src/lib/auth/accountTypeClaim.ts:185-186).
+        // Asking anyway would answer a 403 the user could never clear by
+        // retrying — the refusal is a rule, not a failure. So the same rule is
+        // read here, off the row we just wrote, and the success screen says the
+        // type did not change.
+        !alreadyCompleted &&
+        // `admin` has no picker option and cannot come out of toDbUserType, so
+        // this can only fail if someone adds one. Keep the guard in the path.
+        isAssignableUserType(wanted) &&
+        pickerId
+      ) {
+        const claim = await apiMutate<AccountTypeClaimResult>(
+          "/api/v1/onboarding/account-type",
+          "POST",
+          { pickerId },
+        );
+        // Trust the server's answer over the local pick; fall back to the pick
+        // only if the response does not name a type this app knows.
+        const claimed = claim?.userType ?? "";
+        finalType = isDbUserType(claimed) ? claimed : wanted;
+        setExistingUserType(finalType);
+      } else if (isDbUserType(currentType) && currentType !== "individual") {
+        // Already had a type. Preserve it, and say so on the success screen
+        // rather than showing a dashboard the account cannot open.
+        setExistingUserType(currentType);
+      }
+      // Whatever the branch above decided, the success screen follows the
+      // database, not the picker.
+      setResolvedUserType(finalType);
+
+      // ── 3. Commit: the wizard is finished ──────────────────────────────────
+      await apiMutate("/api/v1/profile", "PATCH", { onboarding_completed: true });
+
+      // ── 4. Mirror into user_metadata, for backwards compatibility only ─────
+      // Nothing routes or authorizes on these values any more — `profiles` is
+      // the source of truth — so a failure here is logged and not shown: it
+      // costs the user nothing, and blocking a finished wizard on it would.
+      // The preferences below have no profiles column today; user_metadata is
+      // still the only place they are kept.
+      try {
+        const supabase = createClient();
+        const mirrored: Record<string, unknown> = {
+          onboarding_completed: true,
+          preferred_services: services,
+          city: city || undefined,
+          specialties: specialties.length > 0 ? specialties : undefined,
+          notification_preferences: notifs,
+          has_in_house_lawyer: hasLawyer,
+          phone: normalizedPhone,
+        };
+        // Mirror the type the database actually holds — never `admin`, which
+        // this wizard must not be able to write anywhere.
+        if (finalType && isAssignableUserType(finalType)) mirrored.user_type = finalType;
+        await supabase.auth.updateUser({ data: mirrored });
+      } catch (err) {
+        console.warn("[Nzamy] onboarding metadata mirror failed:", err);
+      }
+
+      return true;
+    } catch (err) {
+      setSaveError(arabicError(err));
+      return false;
+    } finally {
+      setSaving(false);
+    }
   };
 
   const totalSteps = 5;
 
   const sideLabels = {
-    ar: ["من أنت؟", "ما تحتاجه", "مدينتك", "الإشعارات", "مكتمل"],
-    en: ["Who Are You?", "Services", "Location", "Notifications", "Done"],
+    ar: ["من أنت؟", "ما تحتاجه", "جوالك ومدينتك", "الإشعارات", "مكتمل"],
+    en: ["Who Are You?", "Services", "Phone & City", "Notifications", "Done"],
   };
 
   return (
@@ -588,8 +892,15 @@ export default function OnboardingPage() {
             </div>
           </div>
 
+          {/* This used to read "you can skip this and edit it later in Settings".
+              Both halves are now false: there is no skip, and /settings keeps its
+              profile fields in localStorage only
+              (src/app/settings/components/tabs/ProfileTab.tsx:172-193), so a phone
+              typed there never reaches the profiles row. */}
           <div className="relative z-10 text-sm text-white/40">
-            {isAr ? "يمكنك تخطي هذا وتعديله لاحقاً من الإعدادات" : "You can skip this and edit it later in Settings"}
+            {isAr
+              ? "رقم جوالك مطلوب لإكمال الإعداد، ونستخدمه للتواصل معك بخصوص طلباتك."
+              : "Your mobile number is required to finish setup; we use it to contact you about your requests."}
           </div>
         </div>
 
@@ -629,65 +940,81 @@ export default function OnboardingPage() {
               )}
 
               <AnimatePresence mode="wait">
-                {step === 1 && <S1 key="1" isAr={isAr} selected={userType} onSelect={(t) => { setUserType(t); }} />}
+                {step === 1 && <S1 key="1" isAr={isAr} selected={pickerId} onSelect={(id) => { setPickerId(id); }} />}
                 {step === 2 && <S2 key="2" isAr={isAr} selected={services} onToggle={toggleService} userType={userType} hasLawyer={hasLawyer} onSetHasLawyer={setHasLawyer} />}
-                {step === 3 && <S3 key="3" isAr={isAr} userType={userType} city={city} setCity={setCity} specialties={specialties} onToggleSpec={toggleSpec} />}
+                {step === 3 && <S3 key="3" isAr={isAr} userType={userType} phone={phone} setPhone={setPhone} city={city} setCity={setCity} specialties={specialties} onToggleSpec={toggleSpec} />}
                 {step === 4 && <S4 key="4" isAr={isAr} selected={notifs} onToggle={toggleNotif} />}
-                {step === 5 && <S5 key="5" isAr={isAr} userType={userType} hasLawyer={hasLawyer} />}
+                {step === 5 && (
+                  <S5
+                    key="5"
+                    isAr={isAr}
+                    // The database's answer wins over the picker's.
+                    userType={resolvedUserType ?? userType}
+                    hasLawyer={hasLawyer}
+                    typeWasNotChanged={
+                      resolvedUserType !== null && pickerId !== null && resolvedUserType !== toDbUserType(pickerId)
+                    }
+                  />
+                )}
               </AnimatePresence>
 
               {step < 5 && (
-                <div className="mt-8 flex items-center justify-between gap-3">
-                  {step > 1 ? (
-                    <button
-                      onClick={() => setStep((s) => (s - 1) as Step)}
-                      className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-5 py-3 text-sm font-medium text-ink-muted hover:border-royal/20 hover:text-royal dark:text-gray-400 dark:hover:text-gold transition-all"
+                <div className="mt-8">
+                  {saveError && (
+                    <div
+                      role="alert"
+                      className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
                     >
-                      {isAr ? <ArrowRight size={16} /> : <ArrowLeft size={16} />}
-                      {isAr ? "السابق" : "Back"}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setStep(5)}
-                      className="text-sm text-ink-faint hover:text-ink-muted dark:text-gray-600 dark:hover:text-gray-400 transition-colors"
-                    >
-                      {isAr ? "تخطّى" : "Skip"}
-                    </button>
+                      {saveError}
+                    </div>
                   )}
-                  <motion.button
-                    whileHover={{ scale: canNext() ? 1.015 : 1 }}
-                    whileTap={{ scale: canNext() ? 0.985 : 1 }}
-                    onClick={async () => {
-                      if (!canNext()) return;
-                      if (step === 4 && BACKEND_MODE === "supabase") {
-                        // Save onboarding preferences to Supabase user_metadata
-                        // IMPORTANT: Do NOT overwrite user_type if it was already set during registration
-                        try {
-                          const supabase = createClient();
-                          const updateData: Record<string, unknown> = {
-                            onboarding_completed: true,
-                            preferred_services: services,
-                            city: city || undefined,
-                            specialties: specialties.length > 0 ? specialties : undefined,
-                            notification_preferences: notifs,
-                            has_in_house_lawyer: hasLawyer,
-                          };
-                          // Only set user_type if it wasn't already set during registration
-                          if (!existingUserType) {
-                            updateData.user_type = userType;
-                          }
-                          await supabase.auth.updateUser({ data: updateData });
-                        } catch (err) {
-                          console.warn("[Nzamy] Failed to save onboarding data:", err);
+                  <div className="flex items-center justify-between gap-3">
+                    {/* No way back to the picker for an account whose type is
+                        already set: that step could not change anything, and
+                        the database would refuse the change even if it tried
+                        (trg_lock_user_type). */}
+                    {step > 1 && !(step === 2 && existingUserType !== null) ? (
+                      <button
+                        onClick={() => { setSaveError(null); setStep((s) => (s - 1) as Step); }}
+                        disabled={saving}
+                        className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-5 py-3 text-sm font-medium text-ink-muted hover:border-royal/20 hover:text-royal dark:text-gray-400 dark:hover:text-gold transition-all disabled:opacity-40"
+                      >
+                        {isAr ? <ArrowRight size={16} /> : <ArrowLeft size={16} />}
+                        {isAr ? "السابق" : "Back"}
+                      </button>
+                    ) : (
+                      // Spacer, so the primary button keeps its place when
+                      // there is nothing to go back to. There is no "Skip"
+                      // control here any more either: the onboarding gate
+                      // (src/proxy.ts) sends anyone without a phone straight
+                      // back to this wizard, so a skip could not do what its
+                      // label promised.
+                      <span />
+                    )}
+                    <motion.button
+                      whileHover={{ scale: canNext() ? 1.015 : 1 }}
+                      whileTap={{ scale: canNext() ? 0.985 : 1 }}
+                      onClick={async () => {
+                        if (!canNext()) return;
+                        if (step === 4) {
+                          const saved = await persistOnboarding();
+                          // A failed write keeps the user on step 4 with the
+                          // Arabic reason above the button, free to retry.
+                          if (!saved) return;
                         }
-                      }
-                      setStep((s) => (s + 1) as Step);
-                    }}
-                    disabled={!canNext()}
-                    className="flex-1 rounded-xl bg-royal py-3.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] hover:bg-royal-light transition-all disabled:opacity-40"
-                  >
-                    {step === 4 ? (isAr ? "إتمام الإعداد" : "Complete Setup") : (isAr ? "التالي" : "Next")}
-                  </motion.button>
+                        setSaveError(null);
+                        setStep((s) => (s + 1) as Step);
+                      }}
+                      disabled={!canNext()}
+                      className="flex-1 rounded-xl bg-royal py-3.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] hover:bg-royal-light transition-all disabled:opacity-40"
+                    >
+                      {saving
+                        ? (isAr ? "جارٍ الحفظ…" : "Saving…")
+                        : step === 4
+                          ? (isAr ? "إتمام الإعداد" : "Complete Setup")
+                          : (isAr ? "التالي" : "Next")}
+                    </motion.button>
+                  </div>
                 </div>
               )}
             </div>
