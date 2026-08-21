@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { LAWYER_AI_PERMISSION_KEYS } from "@/constants/lawyerAiCatalog";
+import { isDbUserType } from "@/lib/auth/userTypes";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
@@ -505,11 +506,109 @@ export interface UseUserReturn extends UserSession {
 
 // ─── Map Supabase user → UserSession ─────────────────────────────────────────
 
-function mapSupabaseUser(user: User | null): UserSession {
+/**
+ * The outcome of reading `profiles.user_type` for one user.
+ *
+ * `missing` and `unavailable` are kept apart on purpose. `missing` means the
+ * query succeeded and came back with no usable type — no row at all, or a row
+ * whose `user_type` is null or empty. Either way that is a data problem, and the
+ * `"individual"` fallback below is what keeps the session renderable through it.
+ * `unavailable` means the query itself failed — offline, RLS error, timeout — and
+ * says nothing whatever about who the user is. It must never look like an answer.
+ */
+type ProfileTypeRead =
+  | { status: "found"; userType: string }
+  | { status: "missing" }
+  | { status: "unavailable" };
+
+/**
+ * Reads `profiles.user_type` for one user through the RLS-scoped browser
+ * client. The row is reachable only because of the "users read own profile"
+ * policy (supabase/migrations/20260603_phase1_001_profiles.sql:65-67): the
+ * `.eq("id", …)` selects it, RLS is what keeps every other row out of reach.
+ *
+ * `maybeSingle()` rather than `single()`: `single()` reports "no row" as an
+ * error, which would collapse `missing` and `unavailable` into one case.
+ */
+async function readProfileUserType(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<ProfileTypeRead> {
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("user_type")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) return { status: "unavailable" };
+
+    const value: unknown = data?.user_type;
+    if (typeof value !== "string" || value.length === 0) return { status: "missing" };
+    return { status: "found", userType: value };
+  } catch {
+    // A thrown fetch is a transport failure, never a statement about the user.
+    return { status: "unavailable" };
+  }
+}
+
+/**
+ * Builds the browser-side session.
+ *
+ * `resolvedUserType` is the account type the caller has already decided on, and
+ * `user_type` is the ONLY field on this session that comes from `profiles`. The
+ * caller passes `profiles.user_type` when the row was read, the previously
+ * resolved type when the read was `unavailable` for this same signed-in user,
+ * and `null` when neither applies.
+ *
+ * Everything else below — tier, sub-role, credits, display mode, affiliation
+ * and the sector fields — still comes from `user_metadata`, unchanged.
+ */
+function mapSupabaseUser(user: User | null, resolvedUserType: string | null): UserSession {
   if (!user) return GUEST_SESSION;
 
   const meta = user.user_metadata ?? {};
-  const userType = (meta.user_type ?? "individual") as UserType;
+  const metaUserType: unknown = meta.user_type;
+
+  // Order of preference:
+  //   1. profiles.user_type — the same column the server already authorizes on
+  //      (src/lib/auth/assertRole.ts:37). Reading it here is what stops the
+  //      browser and the server from disagreeing about who someone is.
+  //   2. user_metadata.user_type — a second copy of the same value. This is
+  //      NOT a legacy-only path and it is NOT something an OAuth account
+  //      necessarily lacks. Google itself writes no `user_type`, but this
+  //      application writes one, on two live paths: the email signup's
+  //      `signUp` `options.data` (src/app/register/client/page.tsx:236, and
+  //      the matching `signUp` block in src/app/register/provider/page.tsx),
+  //      and the onboarding wizard's closing `supabase.auth.updateUser`
+  //      mirror in src/app/onboarding/page.tsx — a path an OAuth account
+  //      does reach, because onboarding is where a Google user states their
+  //      type. Treat this branch as live code, not as an archive.
+  //      It is read only when `profiles` could not answer, and `profiles`
+  //      wins whenever the two disagree. That is deliberate: nothing in this
+  //      codebase authorizes on `user_metadata` — `assertRole` reads
+  //      `profiles` (assertRole.ts:36-40) and so does `requireAdmin`
+  //      (src/lib/access-control.ts:109-113) — so a type that exists only in
+  //      metadata is a claim no server would honour, and rendering it would
+  //      put the browser back into the split-brain state this hook is fixing.
+  //      The value is also not guaranteed to be one of the nine DB types: the
+  //      onboarding picker's ids are picker ids, not column values (`company`
+  //      there is `corporate` in the CHECK constraint). Hence `isDbUserType`
+  //      rather than a cast — an unrecognised metadata value falls through to
+  //      the branch below instead of being trusted.
+  //   3. "individual" — NOT a sensible guess about who this person is. It is
+  //      here so that a user with neither a profiles row nor metadata still
+  //      renders a logged-in session instead of pushing a null user_type
+  //      through every consumer of this hook. Someone who lands on this branch
+  //      is quite likely not an individual at all; the onboarding gate, not
+  //      this line, is what is meant to establish their real type.
+  const userType: UserType =
+    resolvedUserType !== null && isDbUserType(resolvedUserType)
+      ? resolvedUserType
+      : typeof metaUserType === "string" && isDbUserType(metaUserType)
+        ? metaUserType
+        : "individual";
+
   const tier = (meta.tier ?? "free") as UserTier;
   const subRole = (meta.sub_role ?? null) as SubRole;
 
@@ -542,26 +641,155 @@ export function useUser(): UseUserReturn {
   const [loading, setLoading]  = useState(true);
 
   // ── Supabase Mode ──────────────────────────────────────────────────────────
-  const initSupabase = useCallback(async () => {
+  //
+  // This returns its cleanup SYNCHRONOUSLY; it used to return a promise of one.
+  // The `cancelled` flag below is why: reached through a promise, the flag could
+  // only be flipped once the async body had already finished — precisely when it
+  // is too late to be worth anything. That matters more now than it did, because
+  // the body makes two round trips (the user, then the profile) instead of one.
+  const initSupabase = useCallback((): (() => void) | undefined => {
     if (!isSupabaseMode) return;
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      setSession(mapSupabaseUser(user));
 
-      // Listen for auth state changes (login, logout, token refresh)
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        (_event, authSession) => {
-          setSession(mapSupabaseUser(authSession?.user ?? null));
-        },
-      );
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
 
-      return () => subscription.unsubscribe();
-    } catch {
-      setSession(GUEST_SESSION);
-    } finally {
+    // Monotonic counter over auth events. Every profile read remembers the value
+    // it started with and discards its own result if a newer event has arrived
+    // in the meantime. This is what stops a profile read that is still in flight
+    // from re-populating a session after the user has already signed out.
+    let latestEvent = 0;
+
+    // The user id the last setSession put on screen, or null for a guest.
+    // Used to tell a token refresh for the person already rendered (resolve it
+    // quietly, no spinner) from a switch to a different person or an arrival
+    // from signed-out (hold `loading` until the profile has been read).
+    let renderedUserId: string | null = null;
+
+    /** Resolve one signed-in user into a session — profile first, then render. */
+    const applyUser = async (
+      supabase: ReturnType<typeof createClient>,
+      authUser: User,
+      eventId: number,
+    ) => {
+      const read = await readProfileUserType(supabase, authUser.id);
+      // Superseded or unmounted: drop this result and leave `loading` alone —
+      // whichever event overtook this one is responsible for releasing it.
+      if (cancelled || eventId !== latestEvent) return;
+
+      setSession(prev => {
+        // Carry the previously resolved type forward on `unavailable` ONLY, and
+        // only for the same signed-in user. Without this, a token refresh while
+        // the network is down would downgrade a lawyer to "individual" and
+        // UserTypeGuard would throw them off their own dashboard — a regression
+        // this change must not introduce. `missing` deliberately does not carry:
+        // a row that is absent, or present with no type, is exactly what the
+        // "individual" fallback exists for, and papering over it would hide a
+        // real data problem.
+        const carried =
+          read.status === "unavailable" && prev.isLoggedIn && prev.userId === authUser.id
+            ? prev.userType
+            : null;
+
+        return mapSupabaseUser(
+          authUser,
+          read.status === "found" ? read.userType : carried,
+        );
+      });
+
+      renderedUserId = authUser.id;
       setLoading(false);
-    }
+    };
+
+    // The event id the mount claimed, so the `finally` below can tell whether
+    // it is still the most recent thing to have happened.
+    let mountEvent = 0;
+
+    void (async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (cancelled) return;
+
+        if (user) {
+          // Both round trips finish before the FIRST setSession of a signed-in
+          // user, so there is no intermediate render that reports the wrong
+          // type — no "individual" flash to bounce a lawyer off their dashboard.
+          mountEvent = ++latestEvent;
+          await applyUser(supabase, user, mountEvent);
+        } else {
+          setSession(GUEST_SESSION);
+        }
+        if (cancelled) return;
+
+        // Listen for auth state changes (login, logout, token refresh)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          (_event, authSession) => {
+            const authUser = authSession?.user ?? null;
+            latestEvent += 1;
+
+            if (!authUser) {
+              // Sign-out, or a session that has gone away. Clear it here and
+              // now: the counter was bumped a line above, so any profile read
+              // still in flight will drop its result instead of restoring the
+              // account that just signed out.
+              renderedUserId = null;
+              setSession(GUEST_SESSION);
+              setLoading(false);
+              return;
+            }
+
+            // A different person than the one on screen — a sign-in arriving
+            // after mount, or an account switch. The session currently
+            // rendered describes somebody else (for a sign-in, it is the guest
+            // session, whose userType is null), and `loading` was already
+            // released by the mount above. Without this, consumers would see
+            // that stale session as settled for one tick plus one profile
+            // round trip: UserTypeGuard.tsx:32-34 would find null in
+            // `allowedTypes`, and flash "صلاحيات غير كافية" at a user who is
+            // in fact signed in. Hold the spinner instead, and release it in
+            // applyUser once the profile has actually been read.
+            //
+            // A token refresh for the person already rendered takes the other
+            // path: no flip, no spinner, the profile is re-read silently and
+            // the session only changes if the answer changed.
+            if (renderedUserId !== authUser.id) setLoading(true);
+
+            // Deferred out of the callback instead of awaited inside it. The
+            // Supabase auth client holds its lock for as long as the callback
+            // runs, and awaiting another Supabase call in there can deadlock it.
+            const eventId = latestEvent;
+            setTimeout(() => {
+              if (cancelled || eventId !== latestEvent) return;
+              void applyUser(supabase, authUser, eventId);
+            }, 0);
+          },
+        );
+
+        if (cancelled) {
+          subscription.unsubscribe();
+          return;
+        }
+        unsubscribe = () => subscription.unsubscribe();
+      } catch {
+        renderedUserId = null;
+        if (!cancelled) setSession(GUEST_SESSION);
+      } finally {
+        // Released on every path the mount can take, the throw above included:
+        // a hook stuck on `loading: true` leaves UserTypeGuard spinning
+        // forever. Skipped only when an auth event has already overtaken the
+        // mount — that event raised the spinner deliberately and its own
+        // applyUser releases it, so releasing here would undo it. As written
+        // there is no `await` between subscribing and this line, so the
+        // subscription cannot in fact fire first; the guard is here so that
+        // stops being something this block depends on.
+        if (!cancelled && latestEvent === mountEvent) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
 
   // ── Demo Mode ──────────────────────────────────────────────────────────────
@@ -590,12 +818,8 @@ export function useUser(): UseUserReturn {
   }, []);
 
   useEffect(() => {
-    if (isSupabaseMode) {
-      const cleanup = initSupabase();
-      return () => { cleanup?.then(fn => fn?.()); };
-    } else {
-      return initDemo();
-    }
+    // Both branches now hand back their cleanup synchronously.
+    return isSupabaseMode ? initSupabase() : initDemo();
   }, [initSupabase, initDemo]);
 
   const isDemoBypass = _DEMO_BYPASS_KEYS.includes(demoKey);
