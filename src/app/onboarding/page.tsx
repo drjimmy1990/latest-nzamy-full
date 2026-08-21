@@ -24,6 +24,9 @@ import {
   ChartLine,
   CheckCircle,
   Storefront,
+  Stamp,
+  Shield,
+  Certificate,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -33,6 +36,7 @@ import {
   isAssignableUserType,
   isDbUserType,
   toDbUserType,
+  toProviderSubRole,
   type DbUserType,
 } from "@/lib/auth/userTypes";
 
@@ -41,33 +45,70 @@ type Step = 1 | 2 | 3 | 4 | 5;
 
 // ── Step 1: confirm user type ──────────────────────────────────────────────────
 // The `id` of each option is a PICKER id, not a `profiles.user_type` value:
-// `company` here is `corporate` in the database. Every read of these ids goes
-// through `toDbUserType` (src/lib/auth/userTypes.ts) — nothing in this file
-// writes a picker id to the database, and nothing indexes PICKER_TO_DB directly.
+// `company` here is `corporate` in the database, and `notary`, `tracker` and
+// `arbitrator` are all the single user_type `provider`. Every read of these ids
+// goes through `toDbUserType` and `toProviderSubRole`
+// (src/lib/auth/userTypes.ts) — nothing in this file writes a picker id to the
+// database, and nothing indexes PICKER_TO_DB or PICKER_TO_SUB_ROLE directly.
 //
-// There is no `provider` option and no `admin` option, for opposite reasons.
-// `admin` must never be assignable from a control (see `isAssignableUserType`).
-// `provider` is a real account type with a working dashboard whose only
-// registration path today is /register/provider — see the note under the grid.
+// `admin` is the one `profiles.user_type` with no option here, permanently: it
+// must never be assignable from a control (see `isAssignableUserType`).
+// src/lib/auth/userTypes.test.ts fails if any option resolves to it.
+//
+// ── The three service-provider options ────────────────────────────────────
+// موثّق, معقّب and محكّم are three options and ONE user_type. What separates
+// them is `provider_profiles.sub_role`, which is NOT NULL with a CHECK over
+// ('notary','arbitrator','bailiff') and no default
+// (supabase/migrations/20260603_phase1_001_profiles.sql:159-160). So the
+// specialty has to travel with the claim, and it does: the submit below sends
+// `subRole` beside `pickerId`, the claim route validates it against the CHECK
+// list AND against the option chosen, and refuses rather than defaulting
+// (src/app/api/v1/onboarding/account-type/route.ts). One generic "service
+// provider" option would have chosen somebody's specialty for them; three
+// options with one hardcoded sub_role behind them would have been worse still,
+// because being filed as the wrong specialty is invisible while being absent
+// is not.
+//
+// The ids are the same three /register/provider uses for the same roles
+// (`ProviderType`, src/app/register/provider/types.ts:1), so the Google route
+// and the email route name them identically. `tracker` → `'bailiff'` is the one
+// id whose sub_role is not its own name; the map is the only place that
+// translation lives.
+//
+// This works without supabase/migrations/20260821_fix_provider_signup_sub_role.sql,
+// which is written and NOT applied. That migration repairs the signup TRIGGER,
+// which is what the /register/provider EMAIL route depends on; the claim route
+// creates the `provider_profiles` row itself in application code. The two
+// routes are still in different states and one is not evidence about the other.
 
 const userTypeOptions = {
   ar: [
-    { id: "individual", icon: User,       label: "فرد",             desc: "مواطن أو مقيم يبحث عن خدمة قانونية" },
-    { id: "company",    icon: Buildings,  label: "شركة / مؤسسة",   desc: "شركة تجارية أو مؤسسة خاصة" },
-    { id: "micro",      icon: Storefront, label: "مؤسسة / منشأة",    desc: "محل تجاري أو مؤسسة فردية أو مطعم" },
-    { id: "government", icon: Bank,       label: "جهة حكومية",      desc: "وزارة أو هيئة أو مؤسسة حكومية" },
-    { id: "ngo",        icon: Handshake,  label: "جمعية / منظمة",   desc: "منظمة غير ربحية أو جمعية أهلية" },
-    { id: "lawyer",     icon: Gavel,      label: "محامي / مستشار",   desc: "ممارس قانوني مرخّص" },
-    { id: "firm",       icon: Scales,     label: "شركة محاماة",     desc: "مكتب أو شركة محاماة" },
+    { id: "individual", icon: User,        label: "فرد",             desc: "مواطن أو مقيم يبحث عن خدمة قانونية" },
+    { id: "company",    icon: Buildings,   label: "شركة / مؤسسة",   desc: "شركة تجارية أو مؤسسة خاصة" },
+    { id: "micro",      icon: Storefront,  label: "مؤسسة / منشأة",    desc: "محل تجاري أو مؤسسة فردية أو مطعم" },
+    { id: "government", icon: Bank,        label: "جهة حكومية",      desc: "وزارة أو هيئة أو مؤسسة حكومية" },
+    { id: "ngo",        icon: Handshake,   label: "جمعية / منظمة",   desc: "منظمة غير ربحية أو جمعية أهلية" },
+    { id: "lawyer",     icon: Gavel,       label: "محامي / مستشار",   desc: "ممارس قانوني مرخّص" },
+    { id: "firm",       icon: Scales,      label: "شركة محاماة",     desc: "مكتب أو شركة محاماة" },
+    // The three service-provider kinds. Labels and descriptions are the ones
+    // /register/provider already uses (src/app/register/provider/data.ts:8-10),
+    // so somebody who saw that page and came here through Google reads the same
+    // words for the same role.
+    { id: "notary",     icon: Stamp,       label: "موثّق",            desc: "توثيق العقود والمحررات الرسمية" },
+    { id: "tracker",    icon: Shield,      label: "معقّب",            desc: "إنجاز المعاملات الحكومية" },
+    { id: "arbitrator", icon: Certificate, label: "محكّم",            desc: "التحكيم وفض النزاعات" },
   ],
   en: [
-    { id: "individual", icon: User,       label: "Individual",           desc: "Citizen or resident seeking legal service" },
-    { id: "company",    icon: Buildings,  label: "Company / Enterprise", desc: "A commercial or private entity" },
-    { id: "micro",      icon: Storefront, label: "Small Business",       desc: "Shop, sole proprietorship, or restaurant" },
-    { id: "government", icon: Bank,       label: "Government Entity",    desc: "Ministry, authority, or public body" },
-    { id: "ngo",        icon: Handshake,  label: "Association / NGO",    desc: "Non-profit or charitable organization" },
-    { id: "lawyer",     icon: Gavel,      label: "Lawyer / Consultant",  desc: "Licensed legal practitioner" },
-    { id: "firm",       icon: Scales,     label: "Law Firm",             desc: "Legal office or firm" },
+    { id: "individual", icon: User,        label: "Individual",           desc: "Citizen or resident seeking legal service" },
+    { id: "company",    icon: Buildings,   label: "Company / Enterprise", desc: "A commercial or private entity" },
+    { id: "micro",      icon: Storefront,  label: "Small Business",       desc: "Shop, sole proprietorship, or restaurant" },
+    { id: "government", icon: Bank,        label: "Government Entity",    desc: "Ministry, authority, or public body" },
+    { id: "ngo",        icon: Handshake,   label: "Association / NGO",    desc: "Non-profit or charitable organization" },
+    { id: "lawyer",     icon: Gavel,       label: "Lawyer / Consultant",  desc: "Licensed legal practitioner" },
+    { id: "firm",       icon: Scales,      label: "Law Firm",             desc: "Legal office or firm" },
+    { id: "notary",     icon: Stamp,       label: "Notary",               desc: "Contract and document notarization" },
+    { id: "tracker",    icon: Shield,      label: "Gov. Agent",           desc: "Complete government transactions" },
+    { id: "arbitrator", icon: Certificate, label: "Arbitrator",           desc: "Arbitration and dispute resolution" },
   ],
 };
 
@@ -184,7 +225,7 @@ type ProfileEnvelope = {
 };
 
 /** The 200 body of POST /api/v1/onboarding/account-type. */
-type AccountTypeClaimResult = { ok?: boolean; userType?: string };
+type AccountTypeClaimResult = { ok?: boolean; userType?: string; subRole?: string | null };
 
 // ── Helper: step indicator ───────────────────────────────────────────────────
 function StepDots({ step, total }: { step: number; total: number }) {
@@ -262,6 +303,32 @@ function S1({
         {isAr
           ? "يُحدَّد نوع الحساب مرة واحدة. لتغييره لاحقاً تحتاج إلى مراجعة إدارة المنصّة."
           : "Your account type is set once. Changing it later requires the platform administrators."}
+      </p>
+      {/* The service-provider options now exist, so the note that used to
+          apologise for their absence is gone. What replaces it is the one thing
+          a موثّق, معقّب or محكّم cannot learn from the cards themselves: the
+          specialty they pick here is what gets written to
+          `provider_profiles.sub_role`, and the sentence above already told them
+          the account type is set once. Every clause below is checked:
+
+            - "يُسجَّل تخصصك" — the submit sends `subRole` with the claim and
+              the route writes it into provider_profiles (see the header
+              comment). It is not a preference stored somewhere soft.
+            - "لا يظهر ملفك في نتائج البحث حتى تراجعه إدارة المنصّة" —
+              `provider_profiles.verification_status` takes its column default
+              of 'pending' and `marketplace_visible` its default of false
+              (supabase/migrations/20260603_phase1_001_profiles.sql:167-169).
+              The claim sets neither, deliberately.
+            - It does NOT say documents or a licence number were submitted:
+              this wizard has no field for either. /register/provider is the
+              page that collects them, and it is not linked from here on
+              purpose — this visitor is already signed in, so registering there
+              on the same email converts nothing and on another email creates a
+              second account they do not want. */}
+      <p className="mt-2 text-xs text-ink-faint dark:text-gray-500">
+        {isAr
+          ? "إن اخترت «موثّق» أو «معقّب» أو «محكّم» فسيُسجَّل تخصصك مع حسابك، ولا يظهر ملفك المهني في نتائج البحث حتى تراجعه إدارة المنصّة."
+          : "If you choose “Notary”, “Gov. Agent” or “Arbitrator”, your specialty is recorded with your account, and your professional file does not appear in search results until the platform administrators review it."}
       </p>
     </motion.div>
   );
@@ -552,7 +619,7 @@ function S5({
 }) {
   // One dashboard map for the whole app (src/lib/auth/userTypes.ts). The local
   // map this replaced sent a government body and an NGO to /dashboard/business
-  // and /dashboard/client — prefixes ROUTE_ACCESS (src/proxy.ts:5-14) reserves
+  // and /dashboard/client — prefixes ROUTE_ACCESS (src/proxy.ts:13-37) reserves
   // for `corporate` and `individual`, so those links bounced their own owners
   // straight back out.
   const base = userType ? dashboardPathFor(userType) : "/";
@@ -634,7 +701,7 @@ export default function OnboardingPage() {
    * What `profiles.user_type` holds once the writes below are done — which is
    * not always what was picked. The success screen links to this and to nothing
    * else: a link to the dashboard of a type the account does not have would be
-   * bounced straight back out by ROUTE_ACCESS (src/proxy.ts:5-14).
+   * bounced straight back out by ROUTE_ACCESS (src/proxy.ts:13-37).
    */
   const [resolvedUserType, setResolvedUserType] = useState<DbUserType | null>(null);
   const [services, setServices] = useState<string[]>([]);
@@ -759,7 +826,7 @@ export default function OnboardingPage() {
         wanted !== "individual" &&
         currentType === "individual" &&
         // The claim is one-time: the endpoint refuses an account that has
-        // already finished onboarding (src/lib/auth/accountTypeClaim.ts:185-186).
+        // already finished onboarding (src/lib/auth/accountTypeClaim.ts:343-344).
         // Asking anyway would answer a 403 the user could never clear by
         // retrying — the refusal is a rule, not a failure. So the same rule is
         // read here, off the row we just wrote, and the success screen says the
@@ -770,10 +837,17 @@ export default function OnboardingPage() {
         isAssignableUserType(wanted) &&
         pickerId
       ) {
+        // `subRole` goes on the wire for the three service-provider options
+        // and is omitted for the other seven — the route refuses a specialty
+        // sent with an option that takes none, and refuses a provider option
+        // that arrives without one, so this is not a field to send "just in
+        // case". `toProviderSubRole` is the single translation of معقّب →
+        // 'bailiff'; this file does not repeat it.
+        const subRole = toProviderSubRole(pickerId);
         const claim = await apiMutate<AccountTypeClaimResult>(
           "/api/v1/onboarding/account-type",
           "POST",
-          { pickerId },
+          subRole === null ? { pickerId } : { pickerId, subRole },
         );
         // Trust the server's answer over the local pick; fall back to the pick
         // only if the response does not name a type this app knows.

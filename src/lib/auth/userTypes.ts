@@ -7,10 +7,13 @@
  *      (supabase/migrations/20260603_phase1_001_profiles.sql:32-35), repeated
  *      verbatim in the signup trigger
  *      (supabase/migrations/20260614_auto_create_role_profiles.sql:32-37);
- *   2. the onboarding picker (src/app/onboarding/page.tsx:40-46), which emits
+ *   2. the onboarding picker (src/app/onboarding/page.tsx:86-99), which emits
  *      `company` — a value the CHECK does not allow; `corporate` is the real one;
- *   3. two dashboard maps that must agree — src/app/auth/callback/route.ts:47-57
- *      and the local `dashDir` in src/proxy.ts:153-156.
+ *   3. two dashboard maps that had to agree — one in the OAuth callback and a
+ *      local `dashDir` in the proxy. Both were deleted when those two files
+ *      started calling `dashboardPathFor` below, so the line numbers an
+ *      earlier version of this note gave now point at unrelated code; what
+ *      each of them said is pinned in `userTypes.test.ts` instead.
  *
  * Everything that translates, validates or routes a user type goes through here
  * so those lists cannot diverge again. This module is pure: no I/O, no Supabase,
@@ -46,21 +49,36 @@ export type DbUserType = (typeof DB_USER_TYPES)[number];
 /**
  * Onboarding picker id → `profiles.user_type` value.
  *
- * Hand-mirrored from the picker options at src/app/onboarding/page.tsx:40-46
- * (the Arabic list; the English list at :49-55 uses the same ids). The picker
- * is a React client component, so this copy cannot be imported from it and is
- * not automatically kept in step — if a picker option is added or renamed,
- * update this map by hand. `userTypes.test.ts` fails if a value here is not a
- * DB value, and fails if the set of DB types with no picker option changes.
+ * Hand-mirrored from the picker options in src/app/onboarding/page.tsx (the
+ * Arabic list; the English list beside it uses the same ids). The picker is a
+ * React client component, so this copy cannot be imported from it and is not
+ * automatically kept in step — if a picker option is added or renamed, update
+ * this map by hand. `userTypes.test.ts` fails if a value here is not a DB
+ * value, and fails if the set of DB types with no picker option changes.
  *
- * Six of the seven ids are identity mappings. `company` is the odd one: the
- * picker calls it a company, the constraint calls it `corporate`.
+ * Seven of the ten ids are identity mappings. Three are not, and each is
+ * deliberate:
  *
- * Two DB types are deliberately absent as keys:
- *   - `admin`   — must never be reachable from a picker (see `isAssignableUserType`);
- *   - `provider`— has no picker option at all today, so a service provider
- *                 signing in with Google cannot state what they are. That is a
- *                 real gap, not a design decision, and is left open on purpose.
+ *   - `company` → `corporate`. The picker calls it a company; the CHECK
+ *     constraint calls it `corporate`. This mismatch is the reason this module
+ *     exists.
+ *
+ *   - `notary`, `tracker` and `arbitrator` → `provider`, all three. A موثّق, a
+ *     معقّب and a محكّم are the ONE user_type `provider`; what separates them
+ *     is `provider_profiles.sub_role`, which `PICKER_TO_SUB_ROLE` below
+ *     carries. This map keeps its single meaning — picker id to `user_type` —
+ *     and the sub-role rides in the second map rather than being smuggled into
+ *     this one.
+ *
+ *     Those three ids are the vocabulary /register/provider already uses for
+ *     the same three roles (`ProviderType` in
+ *     src/app/register/provider/types.ts:1), so the email route and the Google
+ *     route name them identically rather than inventing a second spelling.
+ *
+ * `admin` is the only DB type with no key here, and it must stay that way: it
+ * must never be reachable from any control (see `isAssignableUserType`).
+ * `userTypes.test.ts` pins that the unreachable set is exactly {admin}, so
+ * adding an eleventh id that resolved to `admin` fails the suite.
  *
  * Keyed by `PickerId` rather than by `string` on purpose: indexing this map
  * with an arbitrary string is a compile error, so nobody can write
@@ -74,7 +92,10 @@ export type PickerId =
   | "government"
   | "ngo"
   | "lawyer"
-  | "firm";
+  | "firm"
+  | "notary"
+  | "tracker"
+  | "arbitrator";
 
 export const PICKER_TO_DB: Record<PickerId, DbUserType> = {
   individual: "individual",
@@ -84,7 +105,87 @@ export const PICKER_TO_DB: Record<PickerId, DbUserType> = {
   ngo: "ngo",
   lawyer: "lawyer",
   firm: "firm",
+  notary: "provider",
+  tracker: "provider",
+  arbitrator: "provider",
 };
+
+// ── The service-provider sub-role vocabulary ────────────────────────────────
+
+/**
+ * Exactly the `provider_profiles.sub_role` CHECK-constraint list, copied from
+ * supabase/migrations/20260603_phase1_001_profiles.sql:159-160:
+ *
+ *   sub_role text not null check (sub_role in ('notary', 'arbitrator', 'bailiff'))
+ *
+ * There is no default. Reading that table column by column at :157-173,
+ * `sub_role` is the ONLY not-null column without one apart from the `user_id`
+ * primary key — every other column (`service_areas`, `availability`,
+ * `verification_status`, `marketplace_visible`, `metadata`, `created_at`,
+ * `updated_at`) defaults, and the rest are nullable. So this one value has to
+ * travel with a provider account on every route that can create one, and an
+ * insert that omits it raises 23502 rather than picking something.
+ */
+export const PROVIDER_SUB_ROLES = ["notary", "arbitrator", "bailiff"] as const;
+
+export type ProviderSubRole = (typeof PROVIDER_SUB_ROLES)[number];
+
+/** True when `value` is one of the three values the CHECK constraint allows. */
+export function isProviderSubRole(value: string): value is ProviderSubRole {
+  return (PROVIDER_SUB_ROLES as readonly string[]).includes(value);
+}
+
+/**
+ * Picker id → the `provider_profiles.sub_role` that id means, or `null` for the
+ * seven ids whose `user_type` has no sub-role at all.
+ *
+ * Total over `PickerId` on purpose, for the same reason `DASHBOARD_PATHS` is
+ * total over `DbUserType`: adding a picker option without deciding whether it
+ * carries a sub-role is a compile error here, not a claim that succeeds at
+ * runtime and then fails against a CHECK constraint.
+ *
+ * `tracker` → `'bailiff'` is the one mapping that is not its own name, and it
+ * is not a typo — the interface calls the role معقّب / "Gov. Agent" and the
+ * database column calls it `bailiff`. /register/provider makes exactly the same
+ * three translations for its email signup at
+ * src/app/register/provider/page.tsx:375 (موثّق→'notary', محكّم→'arbitrator',
+ * معقّب→'bailiff'), and the two lists must agree, because both routes end up
+ * writing the same column of the same table.
+ *
+ * Nothing here defaults, and nothing downstream may: `canClaimAccountType`
+ * refuses a sub-role it does not recognise instead of substituting one. A
+ * silent default would file a محكّم as a موثّق, in the wrong review queue,
+ * with nothing on any screen saying so.
+ */
+export const PICKER_TO_SUB_ROLE: Record<PickerId, ProviderSubRole | null> = {
+  individual: null,
+  company: null,
+  micro: null,
+  government: null,
+  ngo: null,
+  lawyer: null,
+  firm: null,
+  notary: "notary",
+  tracker: "bailiff",
+  arbitrator: "arbitrator",
+};
+
+/**
+ * The `sub_role` a picker id means, or `null` when it means none.
+ *
+ * `null` covers two different cases — "not a picker id at all" and "a picker id
+ * whose user_type takes no sub-role" — and they are deliberately not
+ * distinguished here, because every caller has already resolved the id through
+ * `toDbUserType` and so knows which case it is in. `canClaimAccountType`
+ * cross-checks the two maps against each other and refuses the claim outright
+ * if they ever disagree.
+ */
+export function toProviderSubRole(pickerValue: string): ProviderSubRole | null {
+  // hasOwnProperty for the same reason `toDbUserType` uses it: inherited
+  // Object members must not be mistaken for picker ids.
+  if (!Object.prototype.hasOwnProperty.call(PICKER_TO_SUB_ROLE, pickerValue)) return null;
+  return PICKER_TO_SUB_ROLE[pickerValue as PickerId];
+}
 
 /**
  * `profiles.user_type` → the dashboard route for that type.
@@ -112,7 +213,7 @@ export const DASHBOARD_PATHS: Record<DbUserType, string> = {
  *
  * The home page, deliberately, for two reasons. It is not a `/dashboard/*`
  * path — each of those prefixes is restricted to a single user_type by
- * `ROUTE_ACCESS` (src/proxy.ts:5-14), so redirecting an unknown-typed user to
+ * `ROUTE_ACCESS` (src/proxy.ts:13-37), so redirecting an unknown-typed user to
  * one would bounce them straight back out again. And it is not any account's
  * dashboard, so nobody is silently filed under the wrong type.
  *

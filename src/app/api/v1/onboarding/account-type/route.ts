@@ -5,14 +5,17 @@ import {
   canClaimAccountType,
   sectorRowValuesFor,
   type AccountTypeClaimRefusal,
-  type ClaimableDbUserType,
+  type AccountTypeGrant,
 } from "@/lib/auth/accountTypeClaim";
 
 /**
  * POST /api/v1/onboarding/account-type — the one-time account-type claim.
  *
- * Body:     { "pickerId": "<one of the onboarding picker ids>" }
- * 200:      { "ok": true, "userType": "<the DB value written>" }
+ * Body:     { "pickerId": "<one of the onboarding picker ids>",
+ *             "subRole": "<'notary' | 'arbitrator' | 'bailiff'>"  // provider ids only
+ *           }
+ * 200:      { "ok": true, "userType": "<the DB value written>",
+ *             "subRole": "<the sub_role written, or null>" }
  * 400/401/403/500: { "error": "<Arabic>" }
  *
  * ── Why this endpoint has to exist ────────────────────────────────────────
@@ -70,6 +73,27 @@ import {
  *     and `marketplace_visible` to `false`
  *     (supabase/migrations/20260603_phase1_001_profiles.sql:110-111 and :106).
  *
+ * ── The service-provider kinds, and why they need a second field ──────────
+ * موثّق, معقّب and محكّم are not three user types — they are the one
+ * `user_type` `provider`, separated by `provider_profiles.sub_role`, which is
+ * NOT NULL with a CHECK over ('notary','arbitrator','bailiff') and no default
+ * (supabase/migrations/20260603_phase1_001_profiles.sql:159-160). So the type
+ * alone cannot provision their row, and the body carries a `subRole` beside
+ * the `pickerId`.
+ *
+ * The value written is never the body's. It is `PICKER_TO_SUB_ROLE`'s — the
+ * meaning of the option the person clicked (src/lib/auth/userTypes.ts) — and
+ * the body's copy has to match it or the claim is refused, with a different
+ * Arabic sentence for "not one of the three", "missing" and "not this
+ * option's". Nothing here defaults: a claim that quietly chose 'notary' would
+ * put a محكّم in the wrong review queue and no screen would say so.
+ *
+ * This path does NOT depend on
+ * supabase/migrations/20260821_fix_provider_signup_sub_role.sql. That
+ * migration repairs the signup TRIGGER, which is what the /register/provider
+ * email route depends on; this route provisions the row itself, here, in
+ * application code.
+ *
  * ── This is a one-time claim, not a role-switch API ───────────────────────
  * The eligibility rule lives in `src/lib/auth/accountTypeClaim.ts`, where each
  * branch is unit-tested. It refuses anyone whose `user_type` is not still the
@@ -105,6 +129,13 @@ const AR = {
 const AR_REFUSAL: Record<AccountTypeClaimRefusal, string> = {
   invalid_picker_id: "نوع الحساب المُرسل غير معروف. يرجى اختيار نوع من الخيارات المتاحة.",
   not_assignable: "لا يمكن اختيار هذا النوع من الحسابات.",
+  // The three sub-role refusals. All three mean the request was malformed by
+  // the page rather than by anything the user did, so each one asks for the
+  // same simple recovery — pick the option again — while staying a distinct
+  // sentence, so a support call and a log line can tell them apart.
+  invalid_sub_role: "تخصص مقدّم الخدمة المُرسل غير معروف. يرجى اختيار «موثّق» أو «معقّب» أو «محكّم» من الخيارات المتاحة.",
+  sub_role_missing: "لم يُحدَّد تخصص مقدّم الخدمة. يرجى اختيار «موثّق» أو «معقّب» أو «محكّم» ثم المحاولة مرة أخرى.",
+  sub_role_mismatch: "لا يتطابق التخصص المُرسل مع نوع الحساب المختار. يرجى اختيار نوع الحساب مرة أخرى ثم المتابعة.",
   // Deliberately does NOT say "sign out and sign in again": the profiles row
   // is created by handle_new_user on the auth.users INSERT
   // (supabase/migrations/20260716_security_hardening.sql:19,38-45), and
@@ -145,13 +176,21 @@ type SectorOutcome =
  *     realistic case (a retried claim) but not a true concurrent double-POST;
  *     a UNIQUE index on `owner_user_id` is the durable fix and needs its own
  *     migration, which is not part of this change.
+ *   - `provider_profiles` keys on `user_id`, its PRIMARY KEY
+ *     (…20260603_phase1_001_profiles.sql:158), so it takes the race-free upsert
+ *     path as well. It is the one table whose row this route does NOT copy from
+ *     the trigger: the trigger's provider branch omits `sub_role` and therefore
+ *     cannot succeed at all (…20260716:53-56).
+ *
+ * Takes the whole grant, not just the type, because a provider row needs the
+ * `sub_role` the caller chose and the type alone does not carry it.
  */
 async function provisionSectorRow(
   service: SupabaseClient,
-  userType: ClaimableDbUserType,
+  grant: AccountTypeGrant,
   userId: string,
 ): Promise<SectorOutcome> {
-  const spec = sectorRowValuesFor(userType, userId);
+  const spec = sectorRowValuesFor(grant, userId);
   // `individual` has no sector table and the trigger has no branch for one.
   if (spec === null) return { ok: true, table: null, created: false };
 
@@ -206,6 +245,22 @@ export async function POST(request: NextRequest) {
       // not exist IS a refused claim and is handled below.
       return NextResponse.json({ error: AR.badBody }, { status: 400 });
     }
+    const rawSubRole =
+      body !== null && typeof body === "object" && "subRole" in body
+        ? (body as { subRole: unknown }).subRole
+        : undefined;
+    // Same split as `pickerId`: a `subRole` of the wrong SHAPE (a number, an
+    // object) is a malformed body, 400. A string that is not one of the three
+    // the CHECK constraint allows is a refused claim, 403, and
+    // `canClaimAccountType` decides it — this layer must not pre-empt that by
+    // dropping the field, because dropping it would turn "wrong specialty"
+    // into "no specialty" and change which refusal the caller is told about.
+    // `null` and absent both mean "not sent" and are legitimate for the seven
+    // options that take no sub-role.
+    if (rawSubRole !== undefined && rawSubRole !== null && typeof rawSubRole !== "string") {
+      return NextResponse.json({ error: AR.badBody }, { status: 400 });
+    }
+    const subRole = typeof rawSubRole === "string" ? rawSubRole : null;
 
     // ── Who is asking ────────────────────────────────────────────────────────
     const supabase = await createClient();
@@ -236,15 +291,18 @@ export async function POST(request: NextRequest) {
     // ── May they? ────────────────────────────────────────────────────────────
     const decision = canClaimAccountType({
       requestedPickerId: pickerId,
+      requestedSubRole: subRole,
       currentType: profile?.user_type as string | null | undefined,
       onboardingCompleted: profile?.onboarding_completed,
     });
     if (!decision.ok) {
       // Every refusal is logged: this is a privileged write, and a burst of
-      // refusals is the shape a probe would have. `pickerId` is echoed back
-      // truncated because it is a caller-supplied string of any length.
+      // refusals is the shape a probe would have. Both caller-supplied strings
+      // are echoed back truncated, because either can be any length.
       console.error(
-        `${LOG} refused ${user.id}: ${decision.reason} (pickerId=${JSON.stringify(pickerId.slice(0, 40))})`,
+        `${LOG} refused ${user.id}: ${decision.reason} ` +
+          `(pickerId=${JSON.stringify(pickerId.slice(0, 40))}, ` +
+          `subRole=${subRole === null ? "null" : JSON.stringify(subRole.slice(0, 40))})`,
       );
       return NextResponse.json({ error: AR_REFUSAL[decision.reason] }, { status: 403 });
     }
@@ -268,10 +326,11 @@ export async function POST(request: NextRequest) {
     // `user_type = 'lawyer'` AND `verification_status = 'verified'`
     // (src/app/api/v1/lawyers/route.ts:34-35). The retry then finds that row
     // and reuses it.
-    const sector = await provisionSectorRow(service, decision.userType, user.id);
+    const sector = await provisionSectorRow(service, decision, user.id);
     if (!sector.ok) {
       console.error(
-        `${LOG} sector provisioning failed for ${user.id} (${decision.userType} → ${sector.table}): ${sector.detail}`,
+        `${LOG} sector provisioning failed for ${user.id} ` +
+          `(${decision.userType}${decision.subRole ? `/${decision.subRole}` : ""} → ${sector.table}): ${sector.detail}`,
       );
       return NextResponse.json({ error: AR.sectorFailed }, { status: 500 });
     }
@@ -331,8 +390,27 @@ export async function POST(request: NextRequest) {
         before_state: { user_type: profile?.user_type ?? null },
         after_state: { user_type: decision.userType },
         metadata: {
+          // `detail` is the ONE metadata key the admin audit-log screen
+          // actually renders: it reads `meta.detail`, then `meta.description`,
+          // then `meta.reason`, and otherwise falls back to
+          // `${action} — ${target_type}`
+          // (src/app/dashboard/admin/audit-log/page.tsx:104-108). Without it
+          // every claim below would show as "account_type_claimed — profile"
+          // and the specialty would be stored where nobody looks. The DB
+          // values are quoted rather than translated, the same way that screen
+          // already shows `action` and `target_type` verbatim.
+          detail:
+            decision.subRole === null
+              ? `اختار المستخدم نوع الحساب «${decision.userType}» أثناء تهيئة حسابه.`
+              : `اختار المستخدم نوع الحساب «${decision.userType}» بتخصص «${decision.subRole}» أثناء تهيئة حسابه.`,
           source: "onboarding",
           picker_id: pickerId,
+          // The specialty a service provider claimed, so the trace says which
+          // of the three was recorded and not merely that somebody became a
+          // `provider`. Null for the other seven options. Kept as its own key
+          // for the API, which returns `metadata` in full
+          // (src/app/api/v1/admin/audit-log/route.ts:71-72).
+          sub_role: decision.subRole,
           sector_table: sector.table,
           sector_row_created: sector.created,
         },
@@ -350,7 +428,7 @@ export async function POST(request: NextRequest) {
     // `onboarding_completed` is deliberately NOT written here. It is in the
     // self-editable allowlist of `PATCH /api/v1/profile`, which is where the
     // wizard sets it alongside the phone.
-    return NextResponse.json({ ok: true, userType: decision.userType });
+    return NextResponse.json({ ok: true, userType: decision.userType, subRole: decision.subRole });
   } catch (err) {
     console.error(`${LOG} Unexpected error:`, err);
     return NextResponse.json({ error: AR.unexpected }, { status: 500 });

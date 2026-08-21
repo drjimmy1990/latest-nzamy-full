@@ -8,8 +8,14 @@ import {
   sectorRowSpecFor,
   sectorRowValuesFor,
   type AccountTypeClaimRefusal,
+  type ClaimableDbUserType,
 } from "./accountTypeClaim.ts";
-import { DB_USER_TYPES, PICKER_TO_DB, isAssignableUserType } from "./userTypes.ts";
+import {
+  DB_USER_TYPES,
+  PICKER_TO_DB,
+  isAssignableUserType,
+  toProviderSubRole,
+} from "./userTypes.ts";
 
 /**
  * Small reader so a refusal assertion reads as one line and still fails with
@@ -21,6 +27,16 @@ function refusal(decision: ReturnType<typeof canClaimAccountType>): AccountTypeC
 
 /** A caller in the state a fresh Google signup leaves behind. */
 const FRESH = { currentType: "individual", onboardingCompleted: false } as const;
+
+/**
+ * The `subRole` a well-behaved client sends for a given picker id: the one the
+ * option means, or none at all. Used so the success tests below exercise the
+ * real request shape rather than a hand-written table that could drift.
+ */
+function bodyFor(pickerId: string) {
+  const subRole = toProviderSubRole(pickerId);
+  return subRole === null ? { requestedPickerId: pickerId } : { requestedPickerId: pickerId, requestedSubRole: subRole };
+}
 
 // ── admin, pinned twice ──────────────────────────────────────────────────────
 
@@ -70,13 +86,120 @@ test("a DB user_type is not a picker id, so it is refused", () => {
   assert.equal(refusal(canClaimAccountType({ requestedPickerId: "corporate", ...FRESH })), "invalid_picker_id");
 });
 
-test("provider is refused: it has no picker option and no provisionable sector row", () => {
-  // provider_profiles.sub_role is NOT NULL with a CHECK and no default
-  // (supabase/migrations/20260603_phase1_001_profiles.sql:159-160), and a
-  // claim has no way to know whether the caller is a notary, an arbitrator or
-  // a bailiff. Service providers keep registering through /register/provider.
+test("the DB value 'provider' is still not a picker id — the three kinds are", () => {
+  // `provider` is claimable now, but only through one of the three ids that
+  // MEAN a specialty. The bare DB value carries none, so sending it is still
+  // an unknown picker id — the same one-direction rule that refuses
+  // "corporate" above.
   assert.equal(refusal(canClaimAccountType({ requestedPickerId: "provider", ...FRESH })), "invalid_picker_id");
-  assert.equal(isClaimableDbUserType("provider"), false);
+  assert.equal(isClaimableDbUserType("provider"), true);
+});
+
+// ── The sub-role, refused in every way it can be wrong ───────────────────────
+
+test("SPECIALTY: a sub-role outside the CHECK list is refused, never clamped", () => {
+  // supabase/migrations/20260603_phase1_001_profiles.sql:159-160 allows
+  // exactly ('notary','arbitrator','bailiff'). "tracker" is the PICKER id for
+  // معقّب, not a column value, and it is refused here on purpose: the two
+  // vocabularies must not be interchangeable by accident.
+  for (const bad of ["tracker", "provider", "", "NOTARY", "notary ", "nonsense"]) {
+    assert.equal(
+      refusal(canClaimAccountType({ requestedPickerId: "notary", requestedSubRole: bad, ...FRESH })),
+      "invalid_sub_role",
+      `sub-role ${JSON.stringify(bad)} must be refused, not clamped`,
+    );
+  }
+});
+
+test("SPECIALTY: a provider claim with no sub-role is refused, not defaulted to notary", () => {
+  // The database trigger DOES fall back to 'notary' for the email route
+  // (supabase/migrations/20260821_fix_provider_signup_sub_role.sql), because a
+  // trigger can only read what signup metadata gives it. This module must not
+  // imitate that: the person is on screen and was asked, so a missing answer
+  // is a refusal rather than a guess that files them in the wrong queue.
+  for (const pickerId of ["notary", "tracker", "arbitrator"]) {
+    assert.equal(
+      refusal(canClaimAccountType({ requestedPickerId: pickerId, ...FRESH })),
+      "sub_role_missing",
+      `picker id "${pickerId}" with no sub-role must be refused`,
+    );
+    assert.equal(
+      refusal(canClaimAccountType({ requestedPickerId: pickerId, requestedSubRole: null, ...FRESH })),
+      "sub_role_missing",
+    );
+  }
+});
+
+test("SPECIALTY: a valid sub-role that is not this option's is refused", () => {
+  // A محكّم whose body said 'notary'. Both fields are well-formed and they
+  // disagree; preferring either one silently would record the wrong specialty.
+  assert.equal(
+    refusal(canClaimAccountType({ requestedPickerId: "arbitrator", requestedSubRole: "notary", ...FRESH })),
+    "sub_role_mismatch",
+  );
+  assert.equal(
+    refusal(canClaimAccountType({ requestedPickerId: "notary", requestedSubRole: "bailiff", ...FRESH })),
+    "sub_role_mismatch",
+  );
+  // معقّب is the case that catches a client which sent the picker id instead
+  // of the column value — 'tracker' would be `invalid_sub_role`, 'notary' is
+  // this: recognised, and wrong.
+  assert.equal(
+    refusal(canClaimAccountType({ requestedPickerId: "tracker", requestedSubRole: "notary", ...FRESH })),
+    "sub_role_mismatch",
+  );
+});
+
+test("SPECIALTY: a sub-role sent with an option that has none is refused, not ignored", () => {
+  // The silent half of a two-field contract. Dropping the extra field would
+  // mean a client could believe it had asked for something it did not get.
+  for (const pickerId of ["individual", "lawyer", "firm", "company", "micro", "government", "ngo"]) {
+    assert.equal(
+      refusal(canClaimAccountType({ requestedPickerId: pickerId, requestedSubRole: "notary", ...FRESH })),
+      "sub_role_mismatch",
+      `picker id "${pickerId}" takes no sub-role and must refuse one`,
+    );
+  }
+});
+
+test("SPECIALTY: the sub-role is judged before the caller's state", () => {
+  // Same ordering rule as the picker id: what was ASKED is judged before WHO
+  // is asking, so the message a broken client gets names the thing it can fix.
+  assert.equal(
+    refusal(canClaimAccountType({ requestedPickerId: "notary", currentType: "lawyer", onboardingCompleted: true })),
+    "sub_role_missing",
+  );
+  assert.equal(
+    refusal(
+      canClaimAccountType({
+        requestedPickerId: "notary",
+        requestedSubRole: "nonsense",
+        currentType: "lawyer",
+        onboardingCompleted: true,
+      }),
+    ),
+    "invalid_sub_role",
+  );
+});
+
+test("SPECIALTY: each provider kind is granted its own sub_role", () => {
+  // The end-to-end shape of the fix, in one assertion: three options, three
+  // grants, three different specialties — and the same user_type.
+  const expected: Record<string, string> = { notary: "notary", tracker: "bailiff", arbitrator: "arbitrator" };
+  for (const [pickerId, subRole] of Object.entries(expected)) {
+    const decision = canClaimAccountType({ ...bodyFor(pickerId), ...FRESH });
+    assert.equal(decision.ok, true, `picker id "${pickerId}" was refused: ${refusal(decision)}`);
+    assert.equal(decision.ok && decision.userType, "provider");
+    assert.equal(decision.ok && decision.subRole, subRole);
+  }
+});
+
+test("SPECIALTY: every non-provider grant carries subRole null, never a string", () => {
+  for (const [pickerId, dbValue] of Object.entries(PICKER_TO_DB)) {
+    if (dbValue === "provider") continue;
+    const decision = canClaimAccountType({ ...bodyFor(pickerId), ...FRESH });
+    assert.equal(decision.ok && decision.subRole, null, `picker id "${pickerId}" must grant no sub-role`);
+  }
 });
 
 test("a missing profiles row is refused, not assumed to be a fresh individual", () => {
@@ -149,13 +272,13 @@ test("the refusal order is stable: the request is judged before the caller's sta
 // ── The success condition ────────────────────────────────────────────────────
 
 test("every picker id is claimable by a fresh individual, and yields its DB value", () => {
-  // The owner's requirement in one assertion: a Google user who is a client,
-  // a lawyer, a firm, a company, a small business, a government body or an
-  // NGO can say so and get the right DB value — "company" included, which is
-  // the picker id the CHECK constraint does not allow and which has to come
-  // out as "corporate".
+  // The owner's requirement in one assertion: a Google user who is a client, a
+  // lawyer, a firm, a company, a small business, a government body, an NGO, a
+  // موثّق, a معقّب or a محكّم can say so and get the right DB value —
+  // "company" included, which is the picker id the CHECK constraint does not
+  // allow and which has to come out as "corporate".
   for (const [pickerId, expectedDbValue] of Object.entries(PICKER_TO_DB)) {
-    const decision = canClaimAccountType({ requestedPickerId: pickerId, ...FRESH });
+    const decision = canClaimAccountType({ ...bodyFor(pickerId), ...FRESH });
     assert.equal(decision.ok, true, `picker id "${pickerId}" was refused: ${refusal(decision)}`);
     assert.equal(decision.ok && decision.userType, expectedDbValue);
   }
@@ -194,10 +317,12 @@ test("every claimable type is a real DB user_type", () => {
   }
 });
 
-test("admin and provider are DB types that are deliberately not claimable", () => {
+test("SECURITY: admin is the only DB type that is not claimable", () => {
   assert.equal(isClaimableDbUserType("admin"), false);
-  assert.equal(isClaimableDbUserType("provider"), false);
-  assert.equal(CLAIMABLE_DB_USER_TYPES.length, DB_USER_TYPES.length - 2);
+  assert.equal(CLAIMABLE_DB_USER_TYPES.length, DB_USER_TYPES.length - 1);
+  for (const t of DB_USER_TYPES) {
+    assert.equal(isClaimableDbUserType(t), t !== "admin", `isClaimableDbUserType("${t}")`);
+  }
 });
 
 // ── The sector row ───────────────────────────────────────────────────────────
@@ -225,6 +350,11 @@ test("the sector table for each claimable type matches the signup trigger", () =
   assert.equal(sectorRowSpecFor("micro")?.table, "micro_profiles");
   assert.equal(sectorRowSpecFor("government")?.table, "government_profiles");
   assert.equal(sectorRowSpecFor("ngo")?.table, "ngo_profiles");
+  // The one spec that is deliberately NOT the trigger's: the trigger's
+  // provider branch inserts only `user_id` (…20260716:53-56) and so raises
+  // 23502 on the NOT NULL `sub_role`. The table is right; the columns are not,
+  // and `sectorRowValuesFor` supplies the missing one from the grant.
+  assert.equal(sectorRowSpecFor("provider")?.table, "provider_profiles");
 });
 
 test("the NOT NULL columns without defaults are all filled", () => {
@@ -244,6 +374,13 @@ test("the NOT NULL columns without defaults are all filled", () => {
   assert.deepEqual(sectorRowSpecFor("ngo")?.columns, { org_name_ar: "منظمة جديدة", org_type: "other" });
   assert.deepEqual(sectorRowSpecFor("micro")?.columns, { business_name: "نشاط تجاري جديد" });
   assert.deepEqual(sectorRowSpecFor("lawyer")?.columns, { is_accepting_clients: true });
+  // `provider` is empty here ON PURPOSE and it is not a hole. Its one NOT NULL
+  // column without a default is `sub_role`
+  // (…20260603_phase1_001_profiles.sql:157-173, checked column by column), and
+  // a fixed value for it in this record is exactly the bug that would file all
+  // three kinds as one specialty. It arrives from the grant instead — see the
+  // sectorRowValuesFor tests below.
+  assert.deepEqual(sectorRowSpecFor("provider")?.columns, {});
 });
 
 test("SECURITY: no sector spec sets a verification or visibility column", () => {
@@ -263,7 +400,7 @@ test("SECURITY: no sector spec sets a verification or visibility column", () => 
 });
 
 test("the owner column is the only place the user id goes", () => {
-  const lawyer = sectorRowValuesFor("lawyer", "11111111-1111-1111-1111-111111111111");
+  const lawyer = sectorRowValuesFor({ userType: "lawyer", subRole: null }, "11111111-1111-1111-1111-111111111111");
   assert.deepEqual(lawyer, {
     table: "lawyer_profiles",
     ownerColumn: "user_id",
@@ -271,7 +408,7 @@ test("the owner column is the only place the user id goes", () => {
     row: { is_accepting_clients: true, user_id: "11111111-1111-1111-1111-111111111111" },
   });
 
-  const firm = sectorRowValuesFor("firm", "22222222-2222-2222-2222-222222222222");
+  const firm = sectorRowValuesFor({ userType: "firm", subRole: null }, "22222222-2222-2222-2222-222222222222");
   assert.deepEqual(firm, {
     table: "firm_profiles",
     ownerColumn: "owner_user_id",
@@ -283,10 +420,50 @@ test("the owner column is the only place the user id goes", () => {
     },
   });
 
-  assert.equal(sectorRowValuesFor("individual", "33333333-3333-3333-3333-333333333333"), null);
+  assert.equal(
+    sectorRowValuesFor({ userType: "individual", subRole: null }, "33333333-3333-3333-3333-333333333333"),
+    null,
+  );
 });
 
-test("only lawyer_profiles and micro_profiles can be deduplicated by a constraint", () => {
+test("SPECIALTY: the provider row carries the grant's sub_role and nothing else", () => {
+  // The last link in the chain. Three grants, three rows, three different
+  // `sub_role` values in the same table — and the user id only ever in
+  // `user_id`, which is the PRIMARY KEY
+  // (supabase/migrations/20260603_phase1_001_profiles.sql:158).
+  assert.deepEqual(
+    sectorRowValuesFor({ userType: "provider", subRole: "bailiff" }, "44444444-4444-4444-4444-444444444444"),
+    {
+      table: "provider_profiles",
+      ownerColumn: "user_id",
+      ownerColumnIsUnique: true,
+      row: { sub_role: "bailiff", user_id: "44444444-4444-4444-4444-444444444444" },
+    },
+  );
+  assert.equal(
+    sectorRowValuesFor({ userType: "provider", subRole: "notary" }, "55555555-5555-5555-5555-555555555555")?.row
+      .sub_role,
+    "notary",
+  );
+  assert.equal(
+    sectorRowValuesFor({ userType: "provider", subRole: "arbitrator" }, "66666666-6666-6666-6666-666666666666")?.row
+      .sub_role,
+    "arbitrator",
+  );
+});
+
+test("SPECIALTY: no non-provider row ever gets a sub_role column", () => {
+  const nonProvider = CLAIMABLE_DB_USER_TYPES.filter(
+    (t): t is Exclude<ClaimableDbUserType, "provider"> => t !== "provider",
+  );
+  for (const t of nonProvider) {
+    const values = sectorRowValuesFor({ userType: t, subRole: null }, "77777777-7777-7777-7777-777777777777");
+    if (values === null) continue;
+    assert.equal("sub_role" in values.row, false, `${t} must not write sub_role`);
+  }
+});
+
+test("lawyer, micro and provider are the rows a constraint can deduplicate", () => {
   // firm/business/government/ngo have `id uuid primary key default
   // gen_random_uuid()` and no unique index on owner_user_id
   // (supabase/migrations/20260603_phase1_002_entities.sql:36-37, 219-220,
@@ -294,6 +471,11 @@ test("only lawyer_profiles and micro_profiles can be deduplicated by a constrain
   // never fire and the route has to check for an existing row itself. If a
   // migration ever adds those unique indexes, flip the flag here and the
   // route's upsert path covers them race-free.
+  //
+  // lawyer_profiles, provider_profiles and micro_profiles instead key on
+  // `user_id` as their PRIMARY KEY
+  // (supabase/migrations/20260603_phase1_001_profiles.sql:93, :158 and :216
+  // respectively), so the upsert path is race-free for all three.
   const uniqueOwners = CLAIMABLE_DB_USER_TYPES.filter((t) => SECTOR_ROW_BY_USER_TYPE[t]?.ownerColumnIsUnique === true);
-  assert.deepEqual([...uniqueOwners].sort(), ["lawyer", "micro"]);
+  assert.deepEqual([...uniqueOwners].sort(), ["lawyer", "micro", "provider"]);
 });
