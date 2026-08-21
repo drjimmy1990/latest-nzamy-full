@@ -12,9 +12,12 @@
  *     ("متوسط وقت التسليم المتوقع: خلال ٤ – ٢٤ ساعة") — must show on these
  *     three and only these three, never on "completed" or "cancelled".
  *   - OrderActions.tsx: whether to offer the cancel button — a deliberate
- *     client-side subset of what the server would technically accept (see
- *     that file's own comment: the server's actual gate has no source-
- *     status check at all for ai_workspace orders).
+ *     client-side subset of what the server accepts (see that file's own
+ *     comment: since owner decision س٢ the server's ai_workspace gate does
+ *     check the source status, against the five in REQUESTER_CANCELLABLE —
+ *     src/lib/services/orderTransitions.ts:115-121 — so these three have
+ *     always been a subset of it, and `draft`/`pending_payment` are withheld
+ *     here by choice rather than by the server).
  *
  * These three used to be three independently hand-written literals that
  * happened to agree. A future edit to "what counts as open" in one of them
