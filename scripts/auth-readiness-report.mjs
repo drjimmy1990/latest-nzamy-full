@@ -135,6 +135,8 @@ if (disagreements.length) {
 
 console.log(
   `\n  Note: ${metaMissing} account(s) have no user_type in metadata at all.\n` +
-  `  Today useUser() falls back to "individual" for those, whatever their\n` +
-  `  profiles row says — which is the bug this change is meant to fix.\n`,
+  `  That is the normal signature of an OAuth sign-up: Google never writes\n` +
+  `  that object. It is no longer a problem — since e3c6024, useUser() reads\n` +
+  `  profiles.user_type first and only falls back to metadata when the\n` +
+  `  profiles row cannot be read at all.\n`,
 );
