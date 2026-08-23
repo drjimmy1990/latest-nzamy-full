@@ -11,6 +11,7 @@
     "test:smoke": "node scripts/smoke-routes.mjs",
     "test:unit": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"src/**/*.test.ts\"",
     "type-check": "tsc --noEmit",
+    "blog:backup": "node blog-toolkit/blog-backup.mjs",
     "blog:clear": "node blog-toolkit/blog-clear.mjs",
     "blog:images": "node blog-toolkit/seed-blog-images.mjs",
     "blog:seed": "node blog-toolkit/seed-blog.mjs",

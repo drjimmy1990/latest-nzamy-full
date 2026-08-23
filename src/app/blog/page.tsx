@@ -149,6 +149,18 @@ function formatPublished(iso?: string | null): string {
   }
 }
 
+/**
+ * `read_time` is a text column, but the seeded corpus stores the frontmatter's
+ * numeric `reading_time` (minutes) in it — a bare "6" rendered as "6 قراءة".
+ * Give a bare number its unit; pass any already-worded value through unchanged.
+ */
+function formatReadTime(value: string | null | undefined, en: boolean): string {
+  const raw = (value ?? "").trim();
+  if (!raw) return en ? "5 min" : "٥ دقائق";
+  if (!/^\d+$/.test(raw)) return raw;
+  return en ? `${raw} min` : `${raw} دقائق`;
+}
+
 function rowToArticle(row: BlogRow, index: number): Article {
   const author = row.author_name || (index % 2 === 0 ? "أ. أحمد الغامدي" : "أ. سارة العتيبي");
   const cat = (row.category || "").trim();
@@ -169,8 +181,8 @@ function rowToArticle(row: BlogRow, index: number): Article {
     authorEn: row.author_name || author,
     date: dateStr,
     dateEn: dateStr,
-    readTime: row.read_time || "٥ دقائق",
-    readTimeEn: row.read_time || "5 min",
+    readTime: formatReadTime(row.read_time, false),
+    readTimeEn: formatReadTime(row.read_time, true),
     views: row.views ?? 0,
     featured: Boolean(row.featured),
   };

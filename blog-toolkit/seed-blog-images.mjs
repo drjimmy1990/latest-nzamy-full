@@ -31,8 +31,21 @@ const REGISTRY = path.join(BLOG_DIR, "blog_images_registry.json");
 const BUCKET = "blog-covers";
 const DRY = process.argv.includes("--dry");
 
-const sectionsArg = process.argv.find((a) => a.startsWith("--sections="));
-const SECTIONS = sectionsArg ? sectionsArg.slice("--sections=".length).split(",").map((s) => s.trim()).filter(Boolean) : [];
+// Accept both `--sections=a,b` and `--sections a,b` (the guide documents the
+// space form; the equals-only parser used to swallow it and upload everything).
+function argList(name) {
+  const eq = process.argv.find((a) => a.startsWith(`--${name}=`));
+  const raw = eq
+    ? eq.slice(name.length + 3)
+    : (() => {
+        const i = process.argv.indexOf(`--${name}`);
+        const next = i === -1 ? null : process.argv[i + 1];
+        return next && !next.startsWith("--") ? next : null;
+      })();
+  return raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+}
+
+const SECTIONS = argList("sections");
 
 function loadEnv() {
   for (const f of [".env.local", ".env", ".env.vps"]) {

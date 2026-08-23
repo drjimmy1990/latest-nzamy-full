@@ -49,6 +49,18 @@ interface BlogRow {
   category_code?: string | null;
 }
 
+/**
+ * `read_time` is a text column, but the seeded corpus stores the frontmatter's
+ * numeric `reading_time` (minutes) in it — a bare "6" rendered as "6 قراءة".
+ * Give a bare number its unit; pass any already-worded value through unchanged.
+ */
+function formatReadTime(value: string | null | undefined, en: boolean): string {
+  const raw = (value ?? "").trim();
+  if (!raw) return en ? "5 min" : "٥ دقائق";
+  if (!/^\d+$/.test(raw)) return raw;
+  return en ? `${raw} min` : `${raw} دقائق`;
+}
+
 function rowToDetail(row: BlogRow): PlatformBlogArticle {
   const authorName = row.author_name || "فريق المحتوى";
   const tag = row.category || "أخبار قانونية";
@@ -77,8 +89,8 @@ function rowToDetail(row: BlogRow): PlatformBlogArticle {
     date: formatDate(row.published_at),
     dateEn: formatDate(row.published_at, true),
     publishedDate: row.published_at || "",
-    readTime: row.read_time || "٥ دقائق",
-    readTimeEn: row.read_time || "5 min",
+    readTime: formatReadTime(row.read_time, false),
+    readTimeEn: formatReadTime(row.read_time, true),
     views: row.views ?? 0,
     likes: 0,
     featured: Boolean(row.featured),

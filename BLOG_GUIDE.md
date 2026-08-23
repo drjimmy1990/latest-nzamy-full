@@ -63,14 +63,30 @@ The scripts need the **service-role key** (bypasses RLS). They auto-load from th
 
 All four commands accept `--dry` (preview, **no writes / no uploads**). Always dry-run first.
 
+### Back up before wiping — `blog:backup`  (do this first)
+Dumps every row of `articles` to JSON so a clear is reversible. `blog:clear` is destructive and there is no undo without this file.
+
+```bash
+npm run blog:backup              # → blog-toolkit/_articles-backup-<YYYYMMDD>.json
+node blog-toolkit/blog-backup.mjs --out path/to/backup.json
+
+# roll back
+node blog-toolkit/blog-backup.mjs --restore blog-toolkit/_articles-backup-20260823.json --dry
+node blog-toolkit/blog-backup.mjs --restore blog-toolkit/_articles-backup-20260823.json
+```
+
+The dumps are gitignored (`blog-toolkit/_articles-backup-*.json`) — they hold the full corpus and are far too large for git.
+
 ### Wipe the blog — `blog:clear`
 Deletes every row in `articles` (hand-seeded + any prior bulk seed) so the new corpus starts clean.
 
 ```bash
 npm run blog:clear -- --dry      # preview: "articles rows to delete: N"
 npm run blog:clear               # live delete
-npm run blog:clear -- --keep wrongful-termination-rights,commercial-disputes   # keep specific slugs
+npm run blog:clear -- --keep saudi-lease-contracts-rules-2026,company-incorporation-saudi-arabia-2026   # keep specific slugs
 ```
+
+> `--keep` and `--sections` accept both `--flag a,b` and `--flag=a,b`. (Until 2026-08-23 only the `=` form parsed, so the documented space form was silently dropped — which turned `--keep` into "delete everything" and `--sections` into "seed everything". `blog:clear` now refuses to run if `--keep` is passed with no slugs.)
 
 ### Upload cover images — `blog:images`
 Reads `blog_images_registry.json` and uploads each `images_delivered/<slug>.webp` to the `blog-covers` bucket (upsert — re-runnable).

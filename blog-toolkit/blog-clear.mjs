@@ -24,9 +24,31 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const DRY = process.argv.includes("--dry");
 
-// optional --keep slug1,slug2
-const keepArg = process.argv.find((a) => a.startsWith("--keep="));
-const KEEP = keepArg ? keepArg.slice("--keep=".length).split(",").map((s) => s.trim()).filter(Boolean) : [];
+// optional --keep slug1,slug2 — accepts both `--keep=a,b` and `--keep a,b`.
+// The equals-only parser used to silently ignore the documented space form,
+// which turned "keep these" into "delete everything".
+function argList(name) {
+  const eq = process.argv.find((a) => a.startsWith(`--${name}=`));
+  const raw = eq
+    ? eq.slice(name.length + 3)
+    : (() => {
+        const i = process.argv.indexOf(`--${name}`);
+        const next = i === -1 ? null : process.argv[i + 1];
+        return next && !next.startsWith("--") ? next : null;
+      })();
+  return raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+}
+
+const KEEP = argList("keep");
+
+// `--keep` with no usable value (typo, shell-eaten argument, trailing flag) must
+// not quietly degrade into "delete everything" — that is the whole failure mode
+// this script has to be safe against.
+if (process.argv.some((a) => a === "--keep" || a.startsWith("--keep=")) && KEEP.length === 0) {
+  console.error("\n✗ --keep was passed with no slugs. Refusing to run (that would delete every row).");
+  console.error("  Use: --keep=slug1,slug2   or   --keep slug1,slug2");
+  process.exit(1);
+}
 
 function loadEnv() {
   for (const f of [".env.local", ".env", ".env.vps"]) {
