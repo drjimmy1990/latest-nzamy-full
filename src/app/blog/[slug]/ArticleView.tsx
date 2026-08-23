@@ -379,14 +379,19 @@ export default function ArticleView({
           </article>
 
           {/* ── Sidebar ── */}
-          <aside className="hidden lg:flex flex-col gap-5 w-64 shrink-0 sticky top-6">
+          {/* top-24 (96px), not top-6: the site nav is `fixed` and 82px tall, so a
+              24px offset parked the card's header underneath it while scrolling.
+              Same 6rem the headings use for scroll-mt. max-h keeps the column
+              inside the viewport on short laptop screens instead of clipping the
+              related-articles card off the bottom. */}
+          <aside className="hidden lg:flex flex-col gap-5 w-64 shrink-0 sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto">
             {/* Table of contents — the article's own list, lifted out of the body.
-                Long lists scroll inside the card so the sticky column can't run
-                past the viewport and strand the related-articles card below it. */}
+                Overflow is handled by the <aside>, so a long TOC scrolls the whole
+                column rather than nesting a second scrollbar inside this card. */}
             {toc && (
               <div className={`rounded-2xl border p-5 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
                 <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${muted}`}>{isRTL ? "جدول المحتويات" : "Contents"}</p>
-                <nav className="space-y-2 max-h-[60vh] overflow-y-auto">
+                <nav className="space-y-2">
                   {toc.items.map((t, i) => (
                     <a key={i} href={`#${t.href}`} className="flex items-start gap-2 group">
                       <span className="text-[#C8A762] text-xs mt-px flex-shrink-0">•</span>
