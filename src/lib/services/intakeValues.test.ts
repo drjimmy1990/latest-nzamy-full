@@ -9,10 +9,10 @@ import {
   type SummaryField,
   type SummaryValue,
 } from "./intakeValues.ts";
-import { validateDraftIntake } from "../../../../../lib/services/orderIntake.ts";
-import { validateContractsIntake } from "../../../../../lib/services/orderIntake.contracts.ts";
-import { validateWargamingIntake } from "../../../../../lib/services/orderIntake.wargaming.ts";
-import { validateLegalOpinionIntake } from "../../../../../lib/services/orderIntake.legalOpinion.ts";
+import { validateDraftIntake } from "./orderIntake.ts";
+import { validateContractsIntake } from "./orderIntake.contracts.ts";
+import { validateWargamingIntake } from "./orderIntake.wargaming.ts";
+import { validateLegalOpinionIntake } from "./orderIntake.legalOpinion.ts";
 
 // ─── the two-layer lookup ─────────────────────────────────────────────────────
 

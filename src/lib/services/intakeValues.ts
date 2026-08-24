@@ -1,15 +1,28 @@
 /**
  * intakeValues.ts — "Task 4 — Arabic field values", owner question س٤.
- * (The 20 August plan's numbering. OrderSummary.tsx's header names a
- * different "Task 4" from an earlier plan — buildOrderPrompt — which is not
- * this one.)
+ * (The 20 August plan's numbering.)
  *
- * Stored intake values are machine ids in English. The client reads this page,
- * so they must render in Arabic — the same Arabic the picker showed when the
- * client chose them, taken from each wizard's own constant rather than
- * re-translated here, so the two can never drift apart. Every group below
- * names the file and line it was copied from; when a picker's label changes,
- * that citation is where to go.
+ * Stored intake values are machine ids in English. Two surfaces read an
+ * order's intake back, so both must render it in Arabic — the same Arabic the
+ * picker showed when the client chose it, taken from each wizard's own
+ * constant rather than re-translated here, so the two can never drift apart.
+ * Every group below names the file and line it was copied from; when a
+ * picker's label changes, that citation is where to go.
+ *
+ * WHY THIS FILE IS IN src/lib/services AND MUST STAY THERE
+ * It used to live in src/app/ai/orders/[id]/_components/, next to its only
+ * importer, OrderSummary.tsx. Being locked inside a client page's private
+ * folder WAS a reported bug, not just untidiness: the admin fulfilment panel
+ * (src/app/dashboard/admin/service-orders/page.tsx) could not import it, so
+ * buildOrderPrompt() in ./orderPrompt.ts fell back to printing the raw stored
+ * object. The owner screenshotted one order showing «**contractDesc:**»,
+ * «**complexity:** simple» and «**schemaVersion:** 1» to the team, while the
+ * client's own page showed «وصف العقد», «مستوى التفصيل: عقد بسيط» and no
+ * schemaVersion row at all — every Arabic string the admin needed already
+ * existed, in a folder the admin could not reach.
+ *
+ * So: ONE copy, here, imported by both. A second copy anywhere re-creates
+ * that bug the next time a label changes on one side only.
  *
  * Keyed by value, not by field, because the same id (e.g. "individual") means
  * the same thing in every service. Where a value is genuinely field-specific,
@@ -317,7 +330,7 @@ export function valueLabelAr(field: string, value: unknown): string {
  * shows.
  *
  * This lived inside OrderSummary.tsx until the review of the first pass. It
- * moved here for one reason: OrderSummary.tsx is JSX, and Node's native
+ * moved out for one reason: OrderSummary.tsx is JSX, and Node's native
  * TypeScript support strips types but does not compile JSX, so `node --test`
  * cannot import it. Both defects the reviewer found — a duplicated row, and
  * English keys inside a nested object — live in the row-building, not in the

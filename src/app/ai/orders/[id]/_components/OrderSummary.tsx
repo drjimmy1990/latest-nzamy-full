@@ -12,11 +12,19 @@
  * a fallback to the raw key — rather than four bespoke layouts.
  *
  * Which INTAKE rows appear, what each is labelled and what text each value
- * shows is decided entirely by ./intakeValues.ts (buildSummaryRows →
- * SummaryField[]); this file only turns that tree into JSX. The split is not
- * tidiness: this file is JSX, Node's native TypeScript support does not
- * compile JSX, and so `node --test` can only see the rules once they live in
- * a plain .ts module — see the header over that half of intakeValues.ts.
+ * shows is decided entirely by src/lib/services/intakeValues.ts
+ * (buildSummaryRows → SummaryField[]); this file only turns that tree into
+ * JSX. The split is not tidiness: this file is JSX, Node's native TypeScript
+ * support does not compile JSX, and so `node --test` can only see the rules
+ * once they live in a plain .ts module — see the header over that half of
+ * intakeValues.ts.
+ *
+ * That module used to sit in this folder, and living inside a client page's
+ * private _components/ was itself the bug: the admin fulfilment panel could
+ * not reach it, so buildOrderPrompt() printed the client's answers under
+ * their raw English keys («**contractDesc:** …», «**complexity:** simple»)
+ * while this card showed «وصف العقد» and «عقد بسيط» for the very same order.
+ * It is shared now. Do not copy it back here.
  *
  * The attachment list below that is this file's own: it needs `order.id` and
  * a fetch, neither of which buildSummaryRows has. Its one display rule — the
@@ -33,7 +41,7 @@ import { useState, type ReactNode } from "react";
 import { DownloadSimple } from "@phosphor-icons/react";
 import type { ServiceOrder } from "@/lib/services/serviceOrders";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
-import { buildSummaryRows, type SummaryValue } from "./intakeValues";
+import { buildSummaryRows, type SummaryValue } from "@/lib/services/intakeValues";
 
 function renderSummaryValue(value: SummaryValue, isDark: boolean): ReactNode {
   if (value.kind === "text") return value.text;
@@ -96,8 +104,11 @@ function formatSize(bytes: number): string {
  * Twin of the identical function in
  * src/app/dashboard/admin/service-orders/page.tsx, which shows the same badge
  * to the admin. Duplicated on purpose: the two live in different feature
- * trees, this file's neighbour intakeValues.ts is client-page-local, and six
- * lines did not justify a third module. Change one, change the other.
+ * trees and six lines did not justify a third module. (intakeValues.ts is a
+ * shared module now and would house it, but this stayed duplicated: it reads
+ * `intake.memoAttachmentIds` against an ATTACHMENT id, which is neither a
+ * label nor a stored picker value, so it is not what that file is for.)
+ * Change one, change the other.
  */
 function isMemoAttachment(intake: Record<string, unknown> | undefined, documentId: string): boolean {
   if (!documentId) return false;
