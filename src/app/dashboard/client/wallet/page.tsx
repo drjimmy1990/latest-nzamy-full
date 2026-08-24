@@ -27,13 +27,15 @@ import { useTheme } from "@/components/ThemeProvider";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
+// These are the shapes /api/v1/wallet sends. `descEn` is optional: the DB
+// stores a single Arabic description, so only the mock rows below carry one.
 
 interface Coupon {
   code: string;
   labelAr: string;
   labelEn: string;
   descAr: string;
-  descEn: string;
+  descEn?: string;
   discount: string;
   expiry: string;
   daysRemaining: number;
@@ -49,7 +51,7 @@ interface TxRow {
   amountAr: string;
   amountEn: string;
   descAr: string;
-  descEn: string;
+  descEn?: string;
   date: string;
 }
 
@@ -548,10 +550,12 @@ export default function WalletPage() {
                           </p>
                           
                           <div className={`flex flex-wrap items-center gap-3 mt-2`}>
-                            <p className={`text-xs flex items-center gap-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                              <Clock size={12} />
-                              ينتهي {c.expiry}
-                            </p>
+                            {c.expiry && (
+                              <p className={`text-xs flex items-center gap-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                                <Clock size={12} />
+                                ينتهي {c.expiry}
+                              </p>
+                            )}
                             {!c.used && c.daysRemaining > 0 && (
                               <p className={`text-xs font-bold flex items-center gap-1 ${c.daysRemaining < 15 ? "text-rose-500" : isDark ? "text-amber-400" : "text-amber-600"}`}>
                                 <HourglassHigh size={12} weight="fill" />

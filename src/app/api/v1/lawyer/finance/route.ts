@@ -32,6 +32,35 @@ function formatDateAr(iso: string): string {
   }
 }
 
+/** payments row → the Invoice shape finance/page.tsx renders. */
+function mapPaymentToInvoice(p: Record<string, unknown>) {
+  const meta = (p.metadata as Record<string, unknown> | null) ?? {};
+  const amount = Number(p.amount ?? 0);
+  const invStatus = paymentStatusToInvoiceStatus(String(p.status ?? ""));
+  const paidAmount = invStatus === "paid" ? amount : Number(meta.paidAmount ?? 0);
+  // A part-collected invoice stays 'requires_payment' in the DB (payments.status
+  // has no 'partial'), so the partial state is derived from the collected sum.
+  const status =
+    invStatus === "pending" && paidAmount > 0 && paidAmount < amount ? "partial" : invStatus;
+  const createdMonth = new Date(String(p.created_at)).getMonth() + 1;
+  return {
+    id: String(p.id),
+    client: String(meta.client ?? "عميل"),
+    clientType: meta.clientType === "company" ? "company" : "individual",
+    caseTitle: typeof meta.caseTitle === "string" ? meta.caseTitle : "—",
+    desc: typeof meta.description === "string" ? meta.description : "أتعاب قانونية",
+    totalFee: amount,
+    paidAmount,
+    feeType: meta.feeType === "partial" ? "partial" : "full",
+    status,
+    date: formatDateAr(String(p.created_at)),
+    month: createdMonth,
+    quarter: Math.ceil(createdMonth / 3) as 1 | 2 | 3 | 4,
+    provider: p.provider,
+    createdAt: p.created_at,
+  };
+}
+
 /**
  * GET /api/v1/lawyer/finance
  * Auth required. Returns financial data for this lawyer.
@@ -99,29 +128,7 @@ export async function GET() {
     ]);
 
     // Map payments → Invoice shape expected by finance/page.tsx
-    const invoices = (paymentsRaw as Array<Record<string, unknown>>).map((p) => {
-      const meta = (p.metadata as Record<string, unknown> | null) ?? {};
-      const amount = Number(p.amount ?? 0);
-      const invStatus = paymentStatusToInvoiceStatus(String(p.status ?? ""));
-      const paidAmount = invStatus === "paid" ? amount : Number(meta.paidAmount ?? 0);
-      const createdMonth = new Date(String(p.created_at)).getMonth() + 1;
-      return {
-        id: String(p.id),
-        client: String(meta.client ?? "عميل"),
-        clientType: meta.clientType === "company" ? "company" : "individual",
-        caseTitle: typeof meta.caseTitle === "string" ? meta.caseTitle : "—",
-        desc: typeof meta.description === "string" ? meta.description : "أتعاب قانونية",
-        totalFee: amount,
-        paidAmount,
-        feeType: meta.feeType === "partial" ? "partial" : "full",
-        status: invStatus,
-        date: formatDateAr(String(p.created_at)),
-        month: createdMonth,
-        quarter: Math.ceil(createdMonth / 3) as 1 | 2 | 3 | 4,
-        provider: p.provider,
-        createdAt: p.created_at,
-      };
-    });
+    const invoices = (paymentsRaw as Array<Record<string, unknown>>).map(mapPaymentToInvoice);
 
     // Map wallet_transactions → Expense shape expected by finance/page.tsx
     const walletTransactions = (walletTxns as Array<Record<string, unknown>>).map((t) => {
@@ -286,30 +293,118 @@ export async function POST(request: NextRequest) {
     }
 
     // Map to Invoice shape
-    const meta = (paymentRow.metadata as Record<string, unknown> | null) ?? {};
-    const createdMonth = new Date(String(paymentRow.created_at)).getMonth() + 1;
-    const invStatus = paymentStatusToInvoiceStatus(String(paymentRow.status));
-
-    return NextResponse.json({
-      data: {
-        id: paymentRow.id,
-        client: String(meta.client ?? client),
-        clientType: meta.clientType === "company" ? "company" : "individual",
-        caseTitle: typeof meta.caseTitle === "string" ? meta.caseTitle : "—",
-        desc: String(meta.description ?? description ?? "أتعاب قانونية"),
-        totalFee: Number(paymentRow.amount),
-        paidAmount: invStatus === "paid" ? Number(paymentRow.amount) : 0,
-        feeType: meta.feeType === "partial" ? "partial" : "full",
-        status: invStatus,
-        date: formatDateAr(String(paymentRow.created_at)),
-        month: createdMonth,
-        quarter: Math.ceil(createdMonth / 3) as 1 | 2 | 3 | 4,
-        provider: paymentRow.provider,
-        createdAt: paymentRow.created_at,
-      },
-    });
+    return NextResponse.json({ data: mapPaymentToInvoice(paymentRow) });
   } catch (err) {
     console.error("[lawyer/finance POST] Unexpected error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
+ * PATCH /api/v1/lawyer/finance
+ * Auth required. Marks an issued invoice as collected in cash or by bank
+ * transfer — the only two legs available until a payment provider is wired.
+ *
+ * `payments` has a SELECT RLS policy but no UPDATE policy, so the write goes
+ * through createServiceClient and ownership is enforced here instead: the
+ * payment must hang off a service_request assigned to this lawyer. No new
+ * placeholder request is created — the update only reads the existing one.
+ *
+ * Body: { paymentId, method?: "cash" | "bank_transfer", paidAmount? }
+ * `paidAmount` is the cumulative collected total; omit it to settle in full.
+ * Returns { data: <invoice-shaped row> }.
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const auth = await assertRole(["lawyer", "firm"]);
+    if (!auth.ok) return auth.response;
+    const { user } = auth;
+
+    const body = await request.json();
+    const { paymentId, method, paidAmount } = body as {
+      paymentId?: string;
+      method?: string;
+      paidAmount?: number | string;
+    };
+
+    if (!paymentId) {
+      return NextResponse.json({ error: "paymentId required" }, { status: 400 });
+    }
+
+    const collectionMethod = method || "cash";
+    if (collectionMethod !== "cash" && collectionMethod !== "bank_transfer") {
+      return NextResponse.json(
+        { error: "method must be cash or bank_transfer" },
+        { status: 400 },
+      );
+    }
+
+    const service = await createServiceClient();
+
+    const { data: payment, error: readErr } = await service
+      .from("payments")
+      .select("id, request_id, provider, amount, currency, status, metadata, created_at")
+      .eq("id", paymentId)
+      .maybeSingle();
+
+    if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 });
+    if (!payment) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+
+    // payments carries no lawyer column, so ownership is read off the
+    // service_request the invoice hangs on.
+    const { data: reqRow } = await service
+      .from("service_requests")
+      .select("assigned_to")
+      .eq("id", payment.request_id)
+      .maybeSingle();
+
+    if (!reqRow || reqRow.assigned_to !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (payment.status !== "requires_payment") {
+      return NextResponse.json({ error: "Invoice is not collectable" }, { status: 409 });
+    }
+
+    const total = Number(payment.amount ?? 0);
+    const collected =
+      paidAmount === undefined || paidAmount === null ? total : Number(paidAmount);
+    if (Number.isNaN(collected) || collected <= 0 || collected > total) {
+      return NextResponse.json(
+        { error: "paidAmount must be greater than 0 and at most the invoice total" },
+        { status: 400 },
+      );
+    }
+
+    // `feeType` stays as issued — it is the fee arrangement, not the collection
+    // state; how much came in is already carried by status + paidAmount.
+    const fullyCollected = collected >= total;
+    const meta = { ...((payment.metadata as Record<string, unknown> | null) ?? {}) };
+    meta.paidAmount = collected;
+    meta.paidMethod = collectionMethod;
+    meta.paidAt = new Date().toISOString();
+    meta.collected_by = user.id;
+
+    const { data: updated, error: updErr } = await service
+      .from("payments")
+      .update({
+        status: fullyCollected ? "paid" : "requires_payment",
+        metadata: meta,
+      })
+      .eq("id", paymentId)
+      .select("id, request_id, provider, amount, currency, status, metadata, created_at")
+      .single();
+
+    if (updErr || !updated) {
+      return NextResponse.json(
+        { error: updErr?.message || "Failed to update payment" },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json({ data: mapPaymentToInvoice(updated) });
+  } catch (err) {
+    console.error("[lawyer/finance PATCH] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
