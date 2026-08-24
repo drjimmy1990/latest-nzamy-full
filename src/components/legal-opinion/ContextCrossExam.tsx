@@ -130,7 +130,7 @@ export function ContextCrossExam({
   // the name escaped, folded into description as text). Now wired to
   // useOrderAttachments(); no more folding filenames into description — see
   // startScan()'s note below.
-  async function handleFiles(fileList: FileList) {
+  async function handleFiles(fileList: FileList | File[]) {
     // One batch call, not a loop of single attachFile() calls — attachFiles
     // validates and uploads the whole selection together, so a rejection
     // earlier in the batch survives a later file's success instead of being
@@ -248,6 +248,10 @@ export function ContextCrossExam({
               <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
                 مستندات الشهادة (محضر، تسجيل مفرغ، مستند مكتوب...)
               </p>
+              {/* Array.from() before the reset: e.target.files is a live
+                  FileList, and the `e.target.value = ""` that lets the same
+                  filename be re-picked empties it in place — reading length
+                  after the reset always saw zero, so nothing was uploaded. */}
               <input
                 ref={fileRef}
                 type="file"
@@ -255,7 +259,7 @@ export function ContextCrossExam({
                 accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
                 className="hidden"
                 disabled={uploading}
-                onChange={e => { const files = e.target.files; e.target.value = ""; if (files && files.length) handleFiles(files); }}
+                onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; if (files.length) handleFiles(files); }}
               />
               {attachError && (
                 <p className="flex items-center gap-1.5 text-[11px] text-red-500">

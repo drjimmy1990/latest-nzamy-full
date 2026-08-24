@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, RefObject, MutableRefObject, Dispatch, SetStateAction } from "react";
+import { useState, useRef, RefObject, MutableRefObject, Dispatch, SetStateAction } from "react";
 import { motion } from "framer-motion";
 import { CloudArrowUp, PaperclipHorizontal, BookOpen, UploadSimple, FileArrowUp, X, Plus, MagnifyingGlass, FolderOpen, ArrowRight, Warning } from "@phosphor-icons/react";
 import { AnimatePresence } from "framer-motion";
@@ -40,6 +40,10 @@ interface StepCaseProps {
   uploading: boolean;
   attachError: string;
   attachFile: (file: File) => Promise<OrderAttachment>;
+  // Batch path for the bulk dropzone. Optional because /ai/draft/page.tsx does
+  // not pass it yet; without it the dropzone falls back to a per-file
+  // attachFile() loop (see handleBulkFiles below).
+  attachFiles?: (files: FileList | File[]) => Promise<OrderAttachment[]>;
   removeAttachment: (documentId: string) => void;
   // judgment header props
   plaintiffName: string;    setPlaintiffName: (v: string) => void;
@@ -58,7 +62,7 @@ export function StepCase({
   lawyerNotes, setLawyerNotes, useFirmMemory, setUseFirmMemory,
   bulkUpload, setBulkUpload, partyOne, setPartyOne, partyTwo, setPartyTwo,
   caseFileRef, attachRefs,
-  uploading, attachError, attachFile, removeAttachment,
+  uploading, attachError, attachFile, attachFiles, removeAttachment,
   plaintiffName, setPlaintiffName, defendantName, setDefendantName,
   judgmentCourt, setJudgmentCourt, judgmentNumber, setJudgmentNumber,
   judgmentDate, setJudgmentDate, judgmentText, setJudgmentText,
@@ -81,6 +85,42 @@ export function StepCase({
   // added/removed.
   const [caseFileDocId, setCaseFileDocId] = useState<string | null>(null);
   const [docAttachmentIds, setDocAttachmentIds] = useState<Record<number, string>>({});
+
+  // Everything the bulk dropzone uploaded. The hook already holds these in the
+  // attachments array the submit reads — this list is only the visible handle
+  // the client needs to see the names and remove one.
+  const bulkFileRef = useRef<HTMLInputElement>(null);
+  const [bulkAttached, setBulkAttached] = useState<OrderAttachment[]>([]);
+  // Failed filenames from the fallback loop below only. attachFiles() keeps its
+  // own accumulating list in attachError; attachFile() clears attachError at
+  // the start of every call, so on that path a later file succeeding would
+  // wipe an earlier file's failure off the screen.
+  const [bulkFailed, setBulkFailed] = useState<string[]>([]);
+
+  async function handleBulkFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    e.target.value = "";  // so re-picking the same file fires onChange again
+    if (!files || files.length === 0) return;
+    setBulkFailed([]);
+    if (attachFiles) {
+      // One batch call rather than a loop of single attachFile() calls — it
+      // carries the per-file timeout, the accumulating error list and the
+      // «لم تتم محاولة رفع» report. See useOrderAttachments.ts.
+      const added = await attachFiles(files);
+      setBulkAttached(prev => [...prev, ...added]);
+      return;
+    }
+    const failed: string[] = [];
+    for (const f of Array.from(files)) {
+      try {
+        const attachment = await attachFile(f);
+        setBulkAttached(prev => [...prev, attachment]);
+      } catch {
+        failed.push(f.name);
+        setBulkFailed([...failed]);  // report as we go, not after the loop
+      }
+    }
+  }
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -109,6 +149,17 @@ export function StepCase({
             <DraftPartyForm data={partyTwo} onChange={(f, v) => setPartyTwo(p => ({ ...p, [f]: v }))} isCommittee={false} isDark={isDark} />
           )}
         </div>
+      ) : needsJudgment ? (
+        /* رد / طعن: الأطراف تُؤخذ من بيانات الحكم المطعون فيه نفسها، فلا
+           يُعرض معها التنبيه العام أدناه حتى لا تتناقض الشاشة مع نفسها. */
+        <JudgmentHeader isDark={isDark}
+          plaintiffName={plaintiffName}     setPlaintiffName={setPlaintiffName}
+          defendantName={defendantName}     setDefendantName={setDefendantName}
+          judgmentCourt={judgmentCourt}     setJudgmentCourt={setJudgmentCourt}
+          judgmentNumber={judgmentNumber}   setJudgmentNumber={setJudgmentNumber}
+          judgmentDate={judgmentDate}       setJudgmentDate={setJudgmentDate}
+          judgmentText={judgmentText}       setJudgmentText={setJudgmentText}
+          judgmentReasons={judgmentReasons} setJudgmentReasons={setJudgmentReasons} />
       ) : (
         <div className={`${card} p-4 shadow-sm`}>
           <div className="flex items-center gap-2">
@@ -275,18 +326,48 @@ export function StepCase({
           </div>
         ) : (
           <div className="space-y-2">
-            <div className={`rounded-xl border-2 border-dashed p-4 text-center ${isDark ? "border-white/[0.08]" : "border-zinc-200"}`}>
+            <div className={`rounded-xl border-2 border-dashed p-4 text-center transition-colors ${uploading ? isDark ? "border-white/[0.08]" : "border-zinc-200" : `cursor-pointer ${isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#C8A762]/40"}`}`}
+              onClick={() => { if (!uploading) bulkFileRef.current?.click(); }}>
+              <input ref={bulkFileRef} type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.jpg,.png"
+                onChange={handleBulkFiles} />
               <FileArrowUp size={18} className={`mx-auto mb-1 ${isDark ? "text-zinc-600" : "text-zinc-400"}`} />
-              <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>ارفع جميع المرفقات دفعة واحدة — سيراجعها فريق نظامي يدوياً</p>
+              <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                {uploading ? "جارٍ رفع المرفقات..." : "اضغط لاختيار جميع المرفقات دفعة واحدة — سيراجعها فريق نظامي يدوياً"}
+              </p>
               <p className={`text-[10px] mt-0.5 ${isDark ? "text-amber-600" : "text-amber-500"}`}>⚠ قد يحتاج الفريق وقتاً أطول لمراجعة عدد أكبر من الملفات</p>
             </div>
+            {bulkFailed.length > 0 && (
+              <p className="flex items-center gap-1.5 text-[11px] text-red-500">
+                <Warning size={12} /> تعذّر رفع: {bulkFailed.join("، ")}
+              </p>
+            )}
             <button onClick={() => setBulkUpload(false)} className={`text-[11px] underline ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>عودة للإضافة الفردية</button>
           </div>
         )}
 
-        {/* Attachment Analyzer CTA Banner */}
+        {/* المرفوع دفعةً واحدة — يبقى ظاهراً حتى بعد «عودة للإضافة الفردية»:
+            هذه الملفات صارت ضمن الطلب المُرسَل فعلاً، وإخفاؤها يعني مرفقات
+            لا يستطيع الموكل رؤيتها ولا حذفها. */}
+        {bulkAttached.length > 0 && (
+          <div className="space-y-2">
+            {bulkAttached.map(a => (
+              <div key={a.documentId} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px] ${isDark ? "bg-emerald-900/15 border border-emerald-700/25" : "bg-emerald-50 border border-emerald-200"}`}>
+                <UploadSimple size={11} className="text-emerald-500" />
+                <span className={`flex-1 truncate ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{a.name}</span>
+                <button onClick={() => {
+                  removeAttachment(a.documentId);
+                  setBulkAttached(prev => prev.filter(x => x.documentId !== a.documentId));
+                }}><X size={11} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Attachment Analyzer CTA Banner — keyed off what actually attached in
+            bulk, not off `bulkUpload` itself: the mode toggle alone used to
+            pop this upsell on an empty panel. */}
         <AnimatePresence>
-          {(bulkUpload || supportDocs.length > 1 || supportDocs.some(d => d.isLargeFile)) && (
+          {(bulkAttached.length > 1 || supportDocs.length > 1 || supportDocs.some(d => d.isLargeFile)) && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
               <div className={`mt-3 p-3 rounded-xl border flex items-center justify-between gap-4 ${isDark ? "border-[#C8A762]/30 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
                 <div className="flex items-center gap-3">

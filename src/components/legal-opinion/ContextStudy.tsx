@@ -118,10 +118,14 @@ export function ContextStudy({
 
   // One batch call rather than a loop of single attachFile() calls — see
   // useOrderAttachments.ts's attachFiles.
+  // Array.from() before the reset: e.target.files is a live FileList, and the
+  // `e.target.value = ""` that lets the same filename be re-picked empties it
+  // in place — reading length after the reset always saw zero, so nothing was
+  // ever uploaded.
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (files && files.length) await attachFiles(files);
+    if (files.length) await attachFiles(files);
   }
 
   const selectedGoal = STUDY_GOALS.find(g => g.id === studyGoal);

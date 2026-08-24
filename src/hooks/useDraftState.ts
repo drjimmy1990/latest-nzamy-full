@@ -107,6 +107,7 @@ export function useDraftState(initialMode = "") {
     uploading,
     attachError,
     attachFile,
+    attachFiles,
     removeAttachment,
   } = useOrderAttachments();
 
@@ -226,15 +227,17 @@ export function useDraftState(initialMode = "") {
     if (step === "case" || step === "identify") {
       // Judgment data (judgmentNumber/Court/Date/plaintiffName/defendantName/
       // judgmentText/judgmentReasons) used to be silently mock-filled here for
-      // رد/طعن memo types. No reachable control ever writes to those seven
-      // fields — the only input for them, JudgmentHeader, is imported by
-      // StepCase.tsx but never rendered (dead, per "hide, do not delete").
-      // That meant fabricated court/party names/amounts were shipping inside
-      // real orders, invisible to both the client (no UI shows them) and the
+      // رد/طعن memo types: fabricated court/party names/amounts shipping inside
+      // real orders, invisible to both the client (no UI showed them) and the
       // admin fulfilling the order (no way to tell they weren't the client's
-      // own account). Removed per Task C6 — the fields stay declared and
-      // still flow into buildIntake()'s `judgment` object, just empty
-      // instead of fabricated, until a reachable input exists for them.
+      // own account). Removed per Task C6, and it is not coming back — the
+      // fields are client-supplied now: StepCase renders JudgmentHeader for the
+      // REQUIRES_JUDGMENT_HEADER memo types, so what the client types is what
+      // reaches buildIntake()'s `judgment` object. Five of the seven, at least
+      // — validateDraftIntake() rebuilds `judgment` from an allowlist of
+      // number/court/date/text/reasons (orderIntake.ts), so plaintiffName and
+      // defendantName are dropped on submit no matter what is put here. They
+      // need a slot in DraftIntakeV1 before buildIntake() can carry them.
 
       // Auto-extract or mock the case/reply facts summary when moving from step 2 to 3
       if (step === "case") {
@@ -279,7 +282,7 @@ export function useDraftState(initialMode = "") {
     // submit step
     submitNotes, setSubmitNotes, submitting, setSubmitting, submitErrors,
     uploadedAttachments, uploading, attachError,
-    buildSummary, submitOrder, attachFile, removeAttachment,
+    buildSummary, submitOrder, attachFile, attachFiles, removeAttachment,
     // sharing
     shareLink, setShareLink, sharePasscode, setSharePasscode,
     linkCopied, setLinkCopied, clientEmail, setClientEmail,
