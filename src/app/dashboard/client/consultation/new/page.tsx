@@ -173,16 +173,43 @@ export default function NewConsultationPage() {
   const activeTopic = path === "ai" ? aiQuestion : topic;
   const canGoStep3 = specialty !== null && activeTopic.trim().length > 5;
   const serviceId = path === "ai" ? "ai-consult" : getConsultationModeServiceId(mode);
-  const total = getClientServiceById(serviceId, catalog).basePrice;
+  const service = getClientServiceById(serviceId, catalog);
+  // `requiresPayment`, not the raw basePrice — the same rule quoteClientService()
+  // applies in pricingRepository.ts and the requests wizard applies at
+  // requests/new/page.tsx. Reading basePrice raw priced the free daily AI
+  // question at ٤٩, which made needsPayment true and left the only free service
+  // on the platform permanently stuck behind the disabled payment gate.
+  const total = service.requiresPayment ? service.basePrice : 0;
   const consultationLimit = subscription.tierRank >= 3 ? 5 : subscription.tierRank >= 2 ? 1 : 0;
   // TODO: derive consultationsUsed from a real consultations-count endpoint
   // (count of the user's consultation workflow requests). 0 is the honest
   // default until that endpoint exists — it does not fake a number.
   const consultationsUsed = 0;
-  const consultationIncluded = path === "lawyer" && consultationsUsed < consultationLimit;
+  // A service the catalog marks free carries its own allowance and is covered
+  // whatever the tier is; a paid one is covered only while the tier's
+  // consultation allowance lasts. The old `path === "lawyer" &&` guard sent
+  // every AI consultation down the «باقتك لا تشمل استشارات» branch even when it
+  // costs nothing.
+  //
+  // The allowance is a value and not a boolean because PlanBadge re-checks
+  // `used < limit` itself before it shows the covered branch: handing it the
+  // same expression this page decides on is what stops the two from disagreeing
+  // and dropping a free consultation into the «٠ ر.س» blue banner.
+  const includedAllowance = service.requiresPayment ? consultationLimit : 1;
+  const consultationIncluded = consultationsUsed < includedAllowance;
+  const payableTotal = consultationIncluded ? 0 : total;
   // Payment gate: when the admin has disabled the gateway, block paid submissions.
-  const needsPayment = !consultationIncluded && total > 0;
+  const needsPayment = payableTotal > 0;
   const paymentsBlocked = !payments.loading && payments.disabled && needsPayment;
+  // Step 1 has no type selected, so it can only name a floor: the cheapest
+  // amount this wizard is able to bill. That is the cheapest session mode —
+  // the AI path is free by catalog rule and bills ٠, so folding its ٤٩ in here
+  // would quote a figure no order on this page ever charges. Derived from the
+  // modes rather than pinned to written-opinion, so an admin catalog that
+  // reprices a mode moves the floor with it.
+  const lowestConsultationPrice = Math.min(
+    ...Object.values(modeConfig).map((cfg) => cfg.price),
+  );
 
   const confirmConsultation = async () => {
     if (!path) return;
@@ -194,7 +221,6 @@ export default function NewConsultationPage() {
     setSkippedNames([]);
     try {
       const newRequestId = createWorkflowId(path === "ai" ? "AIC" : "CON");
-      const payableTotal = path === "lawyer" && consultationIncluded ? 0 : total;
       const paymentIntent = await createPaymentIntentStub({
         amount: payableTotal,
         requestId: newRequestId,
@@ -217,10 +243,16 @@ export default function NewConsultationPage() {
           businessRole: user.businessRole,
         },
         receiver: path === "ai" ? "ai_workspace" : "lawyer",
-        status: path === "lawyer" && consultationIncluded ? "pending_assignment" : "pending_payment",
+        // Driven by what is actually owed, the same way requests/new/page.tsx
+        // decides it. Keyed off the path, a free AI question was born
+        // «بانتظار الدفع» priced ٤٩ — a charge it never owed, and one the
+        // client could not clear while the gateway is off.
+        status: payableTotal > 0 ? "pending_payment" : "pending_assignment",
         payment: {
           amount: payableTotal,
-          status: path === "lawyer" && consultationIncluded ? "included" : "pending",
+          status: service.requiresPayment
+            ? (payableTotal > 0 ? "pending" : "included")
+            : "not_required",
         },
         sourcePath: "/dashboard/client/consultation/new",
         metadata: {
@@ -291,6 +323,11 @@ export default function NewConsultationPage() {
   const card = isDark
     ? "rounded-2xl border border-white/[0.07] bg-zinc-900/60"
     : "rounded-2xl border border-slate-200 bg-white";
+
+  // One const for the submit button's wording because the notice above it
+  // quotes that wording back. The notice used to hardcode «تأكيد وادفع», which
+  // named a button that is not on screen whenever the consultation is covered.
+  const confirmLabel = consultationIncluded ? "تأكيد بدون رسوم" : "تأكيد وادفع";
 
   if (confirmed) {
     // The attachment outcome decides whether this is a success screen at all.
@@ -453,12 +490,17 @@ export default function NewConsultationPage() {
           {/* ── Step 1: Type ── */}
           {step === 1 && (
             <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              {/* The floor, not a price — no type is chosen yet. Same ٢٥٠ as
+                  before while written-opinion happens to be the cheapest mode,
+                  but read off the catalog instead of hardcoded, and it now
+                  matches the «من ٢٥٠» on the lawyer card below. */}
               <PlanBadge
                 isDark={isDark}
                 included={consultationIncluded}
                 used={consultationsUsed}
-                limit={consultationLimit}
-                basePrice={writtenOpinionPrice}
+                limit={includedAllowance}
+                basePrice={lowestConsultationPrice}
+                priceIsFrom={true}
               />
 
               <p className={`text-[13px] font-bold mb-4 ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
@@ -752,12 +794,14 @@ export default function NewConsultationPage() {
           {step === 3 && (
             <motion.div key="s3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
 
+              {/* The type is chosen by now, so the badge and «الإجمالي» below it
+                  have to quote the one same figure. */}
               <PlanBadge
                 isDark={isDark}
                 included={consultationIncluded}
                 used={consultationsUsed}
-                limit={consultationLimit}
-                basePrice={writtenOpinionPrice}
+                limit={includedAllowance}
+                basePrice={total}
               />
 
               {/* Summary card */}
@@ -811,7 +855,7 @@ export default function NewConsultationPage() {
                 <div className={`rounded-xl p-3.5 flex items-start gap-2.5 mb-5 text-[11px] ${isDark ? "bg-amber-900/15 border border-amber-700/20" : "bg-amber-50 border border-amber-200"}`}>
                   <Warning size={13} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-amber-400" : "text-amber-600"}`} weight="fill" />
                   <p className={isDark ? "text-amber-300/80" : "text-amber-700"}>
-                    بعد الضغط على «تأكيد وادفع» سيتم إنشاء طلب فعلي في طبقة الـ workflow مع payment intent تجريبي لحين ربط مزود الدفع النهائي.
+                    بعد الضغط على «{confirmLabel}» سيتم إنشاء طلب فعلي في طبقة الـ workflow مع payment intent تجريبي لحين ربط مزود الدفع النهائي.
                   </p>
                 </div>
               )}
@@ -860,11 +904,7 @@ export default function NewConsultationPage() {
                   }`}
                 >
                   <CreditCard size={15} />
-                  {submitting
-                    ? "جارٍ إرسال الطلب…"
-                    : consultationIncluded
-                      ? "تأكيد بدون رسوم"
-                      : "تأكيد وادفع"}
+                  {submitting ? "جارٍ إرسال الطلب…" : confirmLabel}
                 </motion.button>
               </div>
             </motion.div>

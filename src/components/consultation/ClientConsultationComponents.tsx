@@ -36,12 +36,15 @@ export function StepBar({ step }: { step: number }) {
   );
 }
 
-export function PlanBadge({ isDark, included, used, limit, basePrice }: {
+// `priceIsFrom` defaults to the exact-price wording, so a caller that only
+// knows a floor has to say so; existing call sites are unchanged.
+export function PlanBadge({ isDark, included, used, limit, basePrice, priceIsFrom = false }: {
   isDark: boolean;
   included: boolean;
   used: number;
   limit: number;
   basePrice: number;
+  priceIsFrom?: boolean;
 }) {
   if (included && used < limit) {
     return (
@@ -57,7 +60,9 @@ export function PlanBadge({ isDark, included, used, limit, basePrice }: {
     <div className={`flex items-center gap-2.5 p-3 rounded-xl mb-5 ${isDark ? "bg-blue-900/15 border border-blue-700/20" : "bg-blue-50 border border-blue-200"}`}>
       <Package size={14} className={isDark ? "text-blue-400 flex-shrink-0" : "text-blue-600 flex-shrink-0"} />
       <p className={`text-[12px] font-semibold ${isDark ? "text-blue-300" : "text-blue-700"}`}>
-        باقتك لا تشمل استشارات — السعر بالعمل القانوني:{" "}
+        {priceIsFrom
+          ? "باقتك لا تشمل استشارات — الأسعار بالعمل القانوني: من "
+          : "باقتك لا تشمل استشارات — السعر بالعمل القانوني: "}
         <strong>{basePrice.toLocaleString("ar-SA")} ر.س</strong>
         {" · أو "}
         <Link href="/dashboard/client/wallet" className="underline hover:opacity-80">ارقِّ الباقة ←</Link>
