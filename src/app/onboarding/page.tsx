@@ -32,6 +32,14 @@ import { useTheme } from "@/components/ThemeProvider";
 import { createClient } from "@/lib/supabase/client";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import {
+  buildNotificationPreferences,
+  getWizardCategories,
+  legalUpdateAudience,
+  readCategoryStates,
+  type NotifCategory,
+  type UserSettingsEnvelope,
+} from "@/app/settings/components/tabs/NotificationsTab";
+import {
   dashboardPathFor,
   isAssignableUserType,
   isDbUserType,
@@ -145,20 +153,80 @@ const specialtyOptions = [
 ];
 
 // ── Step 4: notifications pref ───────────────────────────────────────────────
-const notifOptions = {
-  ar: [
-    { id: "case",   icon: Gavel,    label: "تحديثات القضايا",       desc: "عند تغيير حالة قضية" },
-    { id: "lawyer", icon: Star,     label: "محامون موصى بهم",        desc: "عروض من المحامين" },
-    { id: "law",    icon: FileText, label: "أنظمة ولوائح جديدة",    desc: "تغييرات تشريعية" },
-    { id: "promo",  icon: Bell,     label: "عروض وخصومات",           desc: "باقات مخفّضة" },
-  ],
-  en: [
-    { id: "case",   icon: Gavel,    label: "Case Updates",         desc: "When a case status changes" },
-    { id: "lawyer", icon: Star,     label: "Recommended Lawyers",  desc: "Offers from lawyers" },
-    { id: "law",    icon: FileText, label: "New Laws & Regulations", desc: "Legislative changes" },
-    { id: "promo",  icon: Bell,     label: "Offers & Discounts",   desc: "Discounted packages" },
-  ],
+//
+// There is no option table here any more, and that is the point. This step used
+// to offer four ids of its own — `case`, `lawyer`, `law`, `promo` — that existed
+// nowhere else, while /settings offered a whole category matrix in a second
+// vocabulary. The user answered the same question twice, in two languages the
+// platform did not share, and neither answer was ever read back.
+// The categories now come from the settings tab, which owns the vocabulary
+// (`getWizardCategories`), and the answers are written to the same
+// `user_settings` row that tab reads. What stays local is presentation only:
+// an icon per category, and the English half of the copy — the settings tab is
+// Arabic-only, this wizard is not.
+//
+// `promo` is the one switch that is not a category: عروض وخصومات has a column
+// of its own (`user_settings.marketing_emails`), so it is answered there rather
+// than duplicated as a category key.
+const notifIcons: Record<string, typeof Gavel> = {
+  case_update:      Gavel,
+  new_case:         Gavel,
+  case_assign:      Gavel,
+  consultation:     Brain,
+  contract:         FileText,
+  hearing:          Bell,
+  team_activity:    Users,
+  approval_req:     CheckCircle,
+  compliance:       Shield,
+  gov_reports:      Bank,
+  circular:         FileText,
+  new_request:      Briefcase,
+  appointment:      Bell,
+  legal_update:     Scales,
+  platform_updates: Star,
+  reminders:        Bell,
 };
+
+/**
+ * The English half of the copy, for the categories this step can show.
+ *
+ * Keyed by category key, except التحديثات التشريعية: obs-24 gives it a
+ * different sentence per role, so its English follows the same audience split
+ * — `legalUpdateAudience` is imported rather than re-derived, so the role →
+ * audience table exists once.
+ */
+const notifCopyEn: Record<string, { label: string; desc: string }> = {
+  case_update:            { label: "Case Updates",          desc: "New hearings or replies from your lawyer" },
+  new_case:               { label: "New Case",              desc: "A case was assigned to you" },
+  case_assign:            { label: "Case Assignment",       desc: "A new case assigned to you" },
+  consultation:           { label: "Consultation Replies",  desc: "A reply arrived on your question" },
+  contract:               { label: "Contracts",             desc: "A new contract or an amendment request" },
+  hearing:                { label: "Hearing Dates",         desc: "An upcoming hearing" },
+  team_activity:          { label: "Team Activity",         desc: "Important actions by members" },
+  approval_req:           { label: "Approval Requests",     desc: "A request is waiting for your approval" },
+  compliance:             { label: "Compliance & Governance", desc: "A ZATCA, PDPL or SAMA alert" },
+  gov_reports:            { label: "Government Reports",    desc: "A periodic report due to the ministry" },
+  circular:               { label: "Official Circulars",    desc: "A new circular from your entity" },
+  new_request:            { label: "New Service Request",   desc: "A client requested your service" },
+  appointment:            { label: "Appointments",          desc: "An appointment was booked or changed" },
+  platform_updates:       { label: "Platform Updates",      desc: "New features and Nezamy bulletins" },
+  reminders:              { label: "General Reminders",     desc: "Important dates and deadlines" },
+  "legal_update:practitioner": { label: "📜 New laws, regulations and legislative decisions", desc: "A law, regulation or legislative decision is issued" },
+  "legal_update:individual":   { label: "⚖️ Alerts on your rights and the legal changes that touch you (labor, tenancy, family)", desc: "A change that touches your rights directly" },
+  "legal_update:business":     { label: "🏢 Regulatory updates, commercial compliance and ministerial decisions for business", desc: "A new ministerial decision or regulatory obligation" },
+};
+
+/** The Arabic/English pair to render for one category. */
+function notifCopy(cat: NotifCategory, userType: UserType, isAr: boolean) {
+  if (isAr) return { label: cat.label, desc: cat.description };
+  const key =
+    cat.key === "legal_update" ? `legal_update:${legalUpdateAudience(userType)}` : cat.key;
+  const en = notifCopyEn[key];
+  // Arabic is the fallback, never an untranslated key: every category
+  // `getWizardCategories` can return is listed above, and a new one showing its
+  // Arabic label in English mode is a far smaller failure than a blank row.
+  return en ? { label: en.label, desc: en.desc } : { label: cat.label, desc: cat.description };
+}
 
 // ── Phone ─────────────────────────────────────────────────────────────────────
 
@@ -258,7 +326,7 @@ function S1({
   const opts = isAr ? userTypeOptions.ar : userTypeOptions.en;
   return (
     <motion.div key="s1" initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -28 }} transition={{ type: "spring", stiffness: 280, damping: 26 }}>
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100 mb-1">
+      <h2 className="font-brand text-2xl font-bold text-ink mb-1">
         {isAr ? "أنت من تكون بالضبط؟" : "Who exactly are you?"}
       </h2>
       <p className="text-sm text-ink-muted dark:text-gray-400 mb-7">
@@ -289,7 +357,7 @@ function S1({
                 <Icon size={18} weight="duotone" />
               </span>
               <div>
-                <div className="text-sm font-semibold text-ink dark:text-gray-100">{o.label}</div>
+                <div className="text-sm font-semibold text-ink">{o.label}</div>
                 <div className="text-xs text-ink-muted dark:text-gray-400 mt-0.5">{o.desc}</div>
               </div>
             </motion.button>
@@ -355,7 +423,7 @@ function S2({
   const showLawyerQ = userType === "corporate" || userType === "micro";
   return (
     <motion.div key="s2" initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -28 }} transition={{ type: "spring", stiffness: 280, damping: 26 }}>
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100 mb-1">
+      <h2 className="font-brand text-2xl font-bold text-ink mb-1">
         {isAr ? "ما الذي تحتاجه غالباً؟" : "What do you usually need?"}
       </h2>
       <p className="text-sm text-ink-muted dark:text-gray-400 mb-7">
@@ -382,7 +450,7 @@ function S2({
               )}
               <Icon size={18} weight="duotone" className={active ? "text-royal dark:text-gold" : "text-ink-faint dark:text-gray-500"} />
               <div>
-                <div className="text-sm font-semibold text-ink dark:text-gray-100">{o.label}</div>
+                <div className="text-sm font-semibold text-ink">{o.label}</div>
                 <div className="text-xs text-ink-muted dark:text-gray-400">{o.desc}</div>
               </div>
             </motion.button>
@@ -403,7 +471,7 @@ function S2({
               <Scales size={18} weight="duotone" />
             </div>
             <div>
-              <div className="text-sm font-semibold text-ink dark:text-gray-100">
+              <div className="text-sm font-semibold text-ink">
                 {isAr ? "هل لديكم محامي داخلي / قسم قانوني؟" : "Do you have an in-house lawyer / legal department?"}
               </div>
               <div className="text-xs text-ink-muted dark:text-gray-400 mt-0.5">
@@ -458,12 +526,12 @@ function S3({
   onToggleSpec: (s: string) => void;
 }) {
   const isLegal = userType === "lawyer" || userType === "firm";
-  const inputCls = "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:text-gray-200 dark:focus:border-gold dark:focus:ring-gold/10";
+  const inputCls = "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:focus:border-gold dark:focus:ring-gold/10";
   const phoneTouched = phone.trim().length > 0;
   const phoneValid = normalizeSaudiMobile(phone) !== null;
   return (
     <motion.div key="s3" initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -28 }} transition={{ type: "spring", stiffness: 280, damping: 26 }}>
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100 mb-1">
+      <h2 className="font-brand text-2xl font-bold text-ink mb-1">
         {isAr
           ? (isLegal ? "تواصلك وتخصصاتك" : "بيانات التواصل")
           : (isLegal ? "Contact & Specialties" : "Contact Details")}
@@ -553,17 +621,48 @@ function S3({
 // ── Step 4: notifications ─────────────────────────────────────────────────────
 function S4({
   isAr,
-  selected,
+  userType,
+  states,
   onToggle,
+  marketing,
+  onToggleMarketing,
 }: {
   isAr: boolean;
-  selected: string[];
-  onToggle: (id: string) => void;
+  /** The role whose categories and wording this step shows (obs-24). */
+  userType: UserType;
+  /** Every category of the role, keyed the way the settings tab keys them. */
+  states: Record<string, boolean>;
+  onToggle: (key: string) => void;
+  marketing: boolean;
+  onToggleMarketing: () => void;
 }) {
-  const opts = isAr ? notifOptions.ar : notifOptions.en;
+  // The categories are the role's own — a جهة حكومية is asked about تعيين
+  // القضايا والتعاميم, not about «تحديثات القضايا» as though every account
+  // were the same one.
+  const opts = [
+    ...getWizardCategories(userType).map((cat) => {
+      const { label, desc } = notifCopy(cat, userType, isAr);
+      return {
+        id: cat.key,
+        icon: notifIcons[cat.key] ?? Bell,
+        label,
+        desc,
+        active: states[cat.key] ?? cat.defaultOn,
+        toggle: () => onToggle(cat.key),
+      };
+    }),
+    {
+      id: "promo",
+      icon: Storefront,
+      label: isAr ? "عروض وخصومات" : "Offers & Discounts",
+      desc: isAr ? "باقات مخفّضة" : "Discounted packages",
+      active: marketing,
+      toggle: onToggleMarketing,
+    },
+  ];
   return (
     <motion.div key="s4" initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -28 }} transition={{ type: "spring", stiffness: 280, damping: 26 }}>
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100 mb-1">
+      <h2 className="font-brand text-2xl font-bold text-ink mb-1">
         {isAr ? "أي إشعارات تريد؟" : "Which notifications do you want?"}
       </h2>
       <p className="text-sm text-ink-muted dark:text-gray-400 mb-7">
@@ -572,12 +671,12 @@ function S4({
       <div className="space-y-3">
         {opts.map((o) => {
           const Icon = o.icon;
-          const active = selected.includes(o.id);
+          const active = o.active;
           return (
             <motion.button
               key={o.id}
               whileTap={{ scale: 0.98 }}
-              onClick={() => onToggle(o.id)}
+              onClick={o.toggle}
               className={`flex w-full items-center gap-4 rounded-2xl border p-4 text-start transition-all ${
                 active ? "border-royal/30 bg-royal/5 dark:border-gold/30 dark:bg-royal/12" : "border-slate-200/70 bg-white dark:border-white/10 dark:bg-dark-card"
               }`}
@@ -586,7 +685,7 @@ function S4({
                 <Icon size={20} weight="duotone" />
               </div>
               <div className="flex-1">
-                <div className="text-sm font-semibold text-ink dark:text-gray-100">{o.label}</div>
+                <div className="text-sm font-semibold text-ink">{o.label}</div>
                 <div className="text-xs text-ink-muted dark:text-gray-400">{o.desc}</div>
               </div>
               <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all ${active ? "border-royal bg-royal dark:border-gold dark:bg-gold" : "border-slate-300 dark:border-white/20"}`}>
@@ -637,7 +736,7 @@ function S5({
       >
         <CheckCircle size={38} weight="bold" className="text-white" />
       </motion.div>
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100 mb-2">
+      <h2 className="font-brand text-2xl font-bold text-ink mb-2">
         {isAr ? "حسابك جاهز تماماً!" : "Your Account Is All Set!"}
       </h2>
       <p className="text-sm text-ink-muted dark:text-gray-400 max-w-[280px] mx-auto mb-8">
@@ -669,7 +768,7 @@ function S5({
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-royal/6 dark:bg-royal/15 text-royal dark:text-gold">
                 <Icon size={20} weight="duotone" />
               </span>
-              <span className="flex-1 text-sm font-medium text-ink dark:text-gray-100">{isAr ? link.ar : link.en}</span>
+              <span className="flex-1 text-sm font-medium text-ink">{isAr ? link.ar : link.en}</span>
               {isAr ? <ArrowLeft size={14} className="text-ink-faint" /> : <ArrowRight size={14} className="text-ink-faint" />}
             </motion.a>
           );
@@ -708,7 +807,20 @@ export default function OnboardingPage() {
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
   const [specialties, setSpecialties] = useState<string[]>([]);
-  const [notifs, setNotifs] = useState<string[]>(["case"]);
+  /**
+   * Every notification category of the role, on or off — not just the ones step
+   * 4 shows. The step asks about three; the rest ride along at their own
+   * defaults so that the settings tab, which shows all of them, opens on the
+   * same answers this wizard wrote instead of on a half-empty row.
+   *
+   * The seed is empty because the role is not known at mount: it arrives either
+   * from the picker in step 1 or from the profile read below. `["case"]` used
+   * to be the seed, which pre-ticked «تحديثات القضايا» for a جهة حكومية and a
+   * موثّق alike — the same role-blindness obs-24 is about, one line up.
+   */
+  const [notifs, setNotifs] = useState<Record<string, boolean>>({});
+  /** عروض وخصومات — `user_settings.marketing_emails`, off by default. */
+  const [marketing, setMarketing] = useState(false);
   const [hasLawyer, setHasLawyer] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -751,14 +863,24 @@ export default function OnboardingPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // The notification defaults follow the role, and are re-derived whenever the
+  // role changes — a user who goes back to step 1 and picks differently is
+  // answering a different set of questions, so keeping the old answers would
+  // carry a lawyer's switches onto a company's categories. `userType` only ever
+  // changes when the picker changes or when the profile read resolves, both of
+  // which happen before step 4 is reachable.
+  useEffect(() => {
+    setNotifs(readCategoryStates(userType, null));
+  }, [userType]);
+
   const toggleService = (id: string) =>
     setServices((prev) => prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]);
 
   const toggleSpec = (s: string) =>
     setSpecialties((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
 
-  const toggleNotif = (id: string) =>
-    setNotifs((prev) => prev.includes(id) ? prev.filter((n) => n !== id) : [...prev, id]);
+  const toggleNotif = (key: string) =>
+    setNotifs((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const canNext = () => {
     if (saving) return false;
@@ -776,7 +898,8 @@ export default function OnboardingPage() {
    *
    *   1. the phone, through PATCH /api/v1/profile
    *   2. the account type, through POST /api/v1/onboarding/account-type
-   *   3. `onboarding_completed`, through PATCH /api/v1/profile
+   *   3. the notification preferences, through PUT /api/v1/settings
+   *   4. `onboarding_completed`, through PATCH /api/v1/profile
    *
    * Why this order. `needsOnboarding` exempts `lawyer` and `firm`
    * unconditionally (src/lib/auth/onboardingGate.ts), and the claim endpoint
@@ -785,7 +908,10 @@ export default function OnboardingPage() {
    * from the gate, phone-less, with nothing left to bring them back. And
    * `onboarding_completed` written before the claim would make the claim
    * ineligible — the wizard would lock every non-individual out of their own
-   * account type.
+   * account type. The preferences go before the commit for the same reason: a
+   * failure there leaves `onboarding_completed` false, so the retry re-runs a
+   * sequence that is idempotent from the top instead of stranding the answers
+   * behind a wizard the user can no longer reach.
    *
    * Each step failing leaves a state the next attempt can recover from, and
    * every failure stops the wizard where it is with an Arabic message. It never
@@ -863,15 +989,31 @@ export default function OnboardingPage() {
       // database, not the picker.
       setResolvedUserType(finalType);
 
-      // ── 3. Commit: the wizard is finished ──────────────────────────────────
+      // ── 3. The notification preferences, where /settings reads them ────────
+      // The keys are the settings tab's own (`readCategoryStates`), so the two
+      // screens are answering into one row rather than two vocabularies. The
+      // existing `preferences` object is read first and carried through: PUT
+      // replaces the whole jsonb column, and this wizard owns one key of it.
+      const currentSettings = await apiGet<UserSettingsEnvelope>("/api/v1/settings");
+      await apiMutate("/api/v1/settings", "PUT", {
+        marketing_emails: marketing,
+        preferences: buildNotificationPreferences(
+          currentSettings.settings?.preferences,
+          notifs,
+        ),
+      });
+
+      // ── 4. Commit: the wizard is finished ──────────────────────────────────
       await apiMutate("/api/v1/profile", "PATCH", { onboarding_completed: true });
 
-      // ── 4. Mirror into user_metadata, for backwards compatibility only ─────
+      // ── 5. Mirror into user_metadata, for backwards compatibility only ─────
       // Nothing routes or authorizes on these values any more — `profiles` is
       // the source of truth — so a failure here is logged and not shown: it
       // costs the user nothing, and blocking a finished wizard on it would.
       // The preferences below have no profiles column today; user_metadata is
-      // still the only place they are kept.
+      // still the only place they are kept. The notification answers are no
+      // longer among them — they have a real home now (step 3), and mirroring
+      // them here would put the same question in two rows that can disagree.
       try {
         const supabase = createClient();
         const mirrored: Record<string, unknown> = {
@@ -879,7 +1021,6 @@ export default function OnboardingPage() {
           preferred_services: services,
           city: city || undefined,
           specialties: specialties.length > 0 ? specialties : undefined,
-          notification_preferences: notifs,
           has_in_house_lawyer: hasLawyer,
           phone: normalizedPhone,
         };
@@ -1017,7 +1158,7 @@ export default function OnboardingPage() {
                 {step === 1 && <S1 key="1" isAr={isAr} selected={pickerId} onSelect={(id) => { setPickerId(id); }} />}
                 {step === 2 && <S2 key="2" isAr={isAr} selected={services} onToggle={toggleService} userType={userType} hasLawyer={hasLawyer} onSetHasLawyer={setHasLawyer} />}
                 {step === 3 && <S3 key="3" isAr={isAr} userType={userType} phone={phone} setPhone={setPhone} city={city} setCity={setCity} specialties={specialties} onToggleSpec={toggleSpec} />}
-                {step === 4 && <S4 key="4" isAr={isAr} selected={notifs} onToggle={toggleNotif} />}
+                {step === 4 && <S4 key="4" isAr={isAr} userType={userType} states={notifs} onToggle={toggleNotif} marketing={marketing} onToggleMarketing={() => setMarketing((m) => !m)} />}
                 {step === 5 && (
                   <S5
                     key="5"
