@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 
+/** Shape `dashboard/lawyer/page.tsx` reads `recentActivity` as — keep it exact. */
+interface RecentActivityRow {
+  id: number;
+  event: string;
+  created_at: string;
+  request_id: string;
+}
+
 /**
  * GET /api/v1/lawyer/dashboard/summary
  * Auth required (lawyer/firm/admin). Returns aggregated dashboard data.
@@ -121,15 +129,35 @@ export async function GET() {
         .catch(() => []),
 
       // 7. Recent activity (from request_events)
+      // Same fix as /api/v1/lawyer/activity: filtering on actor_user_id alone
+      // hid every admin-performed event, because the admin console claims and
+      // delivers as the ADMIN — so a lawyer never saw his own order being
+      // picked up or delivered. Scope by the REQUEST instead. The predicate is
+      // an OR: `assigned_to` alone would be wrong (claiming reassigns it to
+      // the admin) and `requester_user_id` alone would drop work a lawyer
+      // receives rather than raises. It mirrors the "participants read request
+      // events" policy that RLS enforces on this same client anyway.
       Promise.resolve(
         supabase
           .from("request_events")
-          .select("id, event, created_at, request_id")
-          .eq("actor_user_id", uid)
+          // the embed is only here so PostgREST can filter on it; it is
+          // stripped below so the response shape stays exactly as before.
+          .select("id, event, created_at, request_id, service_requests!inner(id)")
+          .or(`requester_user_id.eq.${uid},assigned_to.eq.${uid}`, {
+            referencedTable: "service_requests",
+          })
           .order("created_at", { ascending: false })
-          .limit(8),
+          .limit(8)
+          .returns<RecentActivityRow[]>(),
       )
-        .then(({ data }) => data ?? [])
+        .then(({ data }) =>
+          (data ?? []).map((row) => ({
+            id: row.id,
+            event: row.event,
+            created_at: row.created_at,
+            request_id: row.request_id,
+          })),
+        )
         .catch(() => []),
     ]);
 

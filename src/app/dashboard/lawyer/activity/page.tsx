@@ -6,16 +6,19 @@ import {
   Clock, Robot, Gavel, CheckCircle, FileText, Receipt,
   User, Scales, ChatCircle, ArrowSquareOut, MagnifyingGlass,
   CalendarBlank, Download, Warning, Archive, X,
-  FunnelSimple, CaretDown,
+  FunnelSimple, CaretDown, ClipboardText, Package, XCircle, Bell,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import HijriDateWidget from "@/components/HijriDateWidget";
-import { getLawyerActivity } from "@/lib/services/lawyerActivityService";
-import { isSupabaseMode } from "@/lib/services/api";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
-type ActivityType = "hearing"|"task"|"document"|"ai"|"contract"|"client"|"case_update"|"deadline";
+// The first eight are the demo vocabulary; the last four are what real
+// request_events map to (see `describeRequestEvent` in src/lib/events.ts).
+type ActivityType =
+  |"hearing"|"task"|"document"|"ai"|"contract"|"client"|"case_update"|"deadline"
+  |"order"|"delivery"|"cancelled"|"notice";
 
 interface Activity {
   id: string;
@@ -43,6 +46,10 @@ const ACTIVITY_CONFIG: Record<ActivityType,{icon:React.ElementType;label:string;
   client:      {icon:User,         label:"موكل",          color:"#8b5cf6", bg:"bg-violet-500/10"},
   case_update: {icon:Scales,       label:"قضية",          color:"#0ea5e9", bg:"bg-sky-500/10"},
   deadline:    {icon:Warning,      label:"ميعاد",         color:"#ef4444", bg:"bg-red-500/10"},
+  order:       {icon:ClipboardText,label:"طلب",           color:"#C8A762", bg:"bg-amber-500/10"},
+  delivery:    {icon:Package,      label:"تسليم",         color:"#10b981", bg:"bg-emerald-500/10"},
+  cancelled:   {icon:XCircle,      label:"ملغى",          color:"#ef4444", bg:"bg-red-500/10"},
+  notice:      {icon:Bell,         label:"إشعار",         color:"#0ea5e9", bg:"bg-sky-500/10"},
 };
 
 // ─── Mock Activity Data ────────────────────────────────────────────────────────
@@ -70,6 +77,14 @@ const MOCK_ACTIVITIES: Activity[] = [
   {id:"a14",type:"case_update",title:"فتح قضية جديدة: نزاع تجاري — شركة الأفق",entityLabel:"نزاع تجاري",entityHref:"/dashboard/lawyer/cases/1",timestamp:"١ مارس",timeAgo:"منذ شهر",dayGroup:"older",caseId:"1"},
 ];
 
+// Filter chips read as plurals; the row badge stays singular. Types absent
+// here fall back to their badge label.
+const TYPE_FILTER_LABELS: Partial<Record<ActivityType,string>> = {
+  hearing:"جلسات", task:"مهام", document:"مستندات", ai:"ذكاء اصطناعي",
+  contract:"عقود", deadline:"مواعيد", client:"موكلين", case_update:"قضايا",
+  order:"طلبات", delivery:"تسليمات", cancelled:"ملغاة", notice:"إشعارات",
+};
+
 const DAY_GROUP_LABELS: Record<string,string> = {
   today:"اليوم",
   yesterday:"أمس",
@@ -78,12 +93,111 @@ const DAY_GROUP_LABELS: Record<string,string> = {
 };
 
 // ─── Stats ─────────────────────────────────────────────────────────────────────
+// Demo showcase values only — never shown in supabase mode.
 const STATS = [
   {label:"إجراء هذا الشهر",value:"٢٨",icon:Clock,         color:"text-[#C8A762]",  bg:"bg-amber-500/10"},
   {label:"استخدامات AI",   value:"١٢",icon:Robot,          color:"text-indigo-400", bg:"bg-indigo-500/10"},
   {label:"مواعيد اليوم",   value:"٣", icon:CalendarBlank,  color:"text-red-400",    bg:"bg-red-500/10"},
   {label:"مهام مكتملة",   value:"٩", icon:CheckCircle,    color:"text-emerald-400",bg:"bg-emerald-500/10"},
 ];
+
+// Supabase-mode cards. Each one is an exact head-count the route already runs,
+// so every label says precisely what is being counted. The demo pair
+// «استخدامات AI» / «مواعيد اليوم» has no honest equivalent here — AI tool usage
+// isn't recorded anywhere this route can read, and this user's appointments
+// live in `consultations` keyed by lawyer, not by requester — so they are
+// replaced rather than faked.
+const LIVE_STATS = [
+  {key:"ordersThisMonth" as const,label:"طلبات هذا الشهر",  icon:Clock,         color:"text-[#C8A762]",  bg:"bg-amber-500/10"},
+  {key:"ordersActive"    as const,label:"طلبات قيد التنفيذ",icon:ClipboardText, color:"text-blue-400",   bg:"bg-blue-500/10"},
+  {key:"ordersCompleted" as const,label:"طلبات مكتملة",     icon:CheckCircle,   color:"text-emerald-400",bg:"bg-emerald-500/10"},
+  {key:"ordersTotal"     as const,label:"إجمالي طلباتي",    icon:FileText,      color:"text-violet-400", bg:"bg-violet-500/10"},
+];
+
+// ─── Live feed shape (GET /api/v1/lawyer/activity) ─────────────────────────────
+interface ActivityApiItem {
+  id: string;
+  badge: ActivityType;
+  title: string;        // already Arabic — the route never returns raw tokens
+  description?: string;
+  requestId: string | null;
+  requestHref: string | null;   // null when the request has no page to open
+  requestTitle: string | null;
+  serviceTitleAr: string | null;
+  createdAt: string;
+}
+
+interface ActivityStats {
+  ordersThisMonth: number;
+  ordersActive: number;
+  ordersCompleted: number;
+  ordersTotal: number;
+}
+
+interface ActivityApiResponse {
+  items: ActivityApiItem[];
+  stats: ActivityStats | null;
+  nextCursor: string | null;
+}
+
+// ─── Formatting helpers ────────────────────────────────────────────────────────
+/** Arabic-Indic digits, matching the demo card values (٢٨ / ١٢ / ٣ / ٩). */
+const arNum = (n:number) => n.toLocaleString("ar-EG");
+
+const RELATIVE_AR = new Intl.RelativeTimeFormat("ar",{numeric:"auto"});
+
+/** "منذ ٣ ساعات" / "أمس" — the feed used to hardcode this to an empty string. */
+function relativeTimeAr(iso:string):string{
+  const mins = Math.round((Date.now()-new Date(iso).getTime())/60000);
+  if(mins<1)  return "الآن";
+  if(mins<60) return RELATIVE_AR.format(-mins,"minute");
+  const hours = Math.round(mins/60);
+  if(hours<24) return RELATIVE_AR.format(-hours,"hour");
+  const days = Math.round(hours/24);
+  if(days<30) return RELATIVE_AR.format(-days,"day");
+  const months = Math.round(days/30);
+  if(months<12) return RELATIVE_AR.format(-months,"month");
+  return RELATIVE_AR.format(-Math.round(months/12),"year");
+}
+
+/**
+ * Which day bucket a timestamp falls in. Compared at local midnight (and via a
+ * rounded day difference) so a DST shift can't push an item into the wrong
+ * group — the feed used to stamp every real row "today".
+ */
+function dayGroupOf(iso:string):Activity["dayGroup"]{
+  const midnight = (d:Date) => new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
+  const diff = Math.round((midnight(new Date())-midnight(new Date(iso)))/86_400_000);
+  if(diff<=0) return "today";
+  if(diff===1) return "yesterday";
+  if(diff<7)  return "this_week";
+  return "older";
+}
+
+function toActivity(d:ActivityApiItem):Activity{
+  const when = new Date(d.createdAt);
+  const dayGroup = dayGroupOf(d.createdAt);
+  return {
+    id: d.id,
+    type: d.badge,
+    title: d.title,
+    description: d.description,
+    // The request id was already in hand and thrown away — the row now opens
+    // the order page lawyers already reach from /ai/orders. The route only
+    // hands back an href when the request actually has one.
+    entityLabel: "عرض الطلب",
+    entityHref: d.requestHref ?? undefined,
+    timestamp: dayGroup==="today"||dayGroup==="yesterday"
+      ? when.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})
+      : when.toLocaleDateString("ar-SA",{day:"numeric",month:"long"}),
+    timeAgo: relativeTimeAr(d.createdAt),
+    dayGroup,
+    caseId: d.requestId ?? undefined,
+    // The title already carries the Arabic service name, so the subtitle shows
+    // the order's own title only when it adds something.
+    caseName: d.requestTitle && d.requestTitle!==d.serviceTitleAr ? d.requestTitle : undefined,
+  };
+}
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 export default function ActivityLogPage() {
@@ -95,30 +209,44 @@ export default function ActivityLogPage() {
   // In supabase mode start from [] so an empty feed shows the honest empty state
   // (no invented history); demo mode keeps MOCK_ACTIVITIES for the showcase.
   const [activities, setActivities] = useState<Activity[]>(isSupabaseMode ? [] : MOCK_ACTIVITIES);
+  const [stats, setStats] = useState<ActivityStats | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  // Fetch real activities from service; in supabase mode an empty result stays empty.
+  // Fetch the real feed; in supabase mode an empty result stays empty. Demo
+  // mode never calls the API at all, so MOCK_ACTIVITIES stands untouched.
   useEffect(() => {
-    getLawyerActivity()
-      .then((data) => {
-        if (data && data.length > 0) {
-          const mapped: Activity[] = data.map((d) => ({
-            id: d.id,
-            type: (d.type === "event" || d.type === "audit" ? "task" : d.type) as ActivityType,
-            title: d.action || "",
-            description: typeof d.payload === "string" ? d.payload : undefined,
-            timestamp: new Date(d.createdAt).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }),
-            timeAgo: "",
-            dayGroup: "today" as const,
-            caseId: d.entityId || undefined,
-          }));
-          setActivities(mapped);
-        }
-        // else keep MOCK_ACTIVITIES as fallback
+    if (!isSupabaseMode) return;
+    let cancelled = false;
+    apiGet<ActivityApiResponse>("/api/v1/lawyer/activity")
+      .then((res) => {
+        if (cancelled) return;
+        setActivities((res.items ?? []).map(toActivity));
+        setStats(res.stats);
+        setCursor(res.nextCursor);
       })
       .catch(() => {
-        // keep MOCK_ACTIVITIES as fallback
+        // honest empty state — no invented history
       });
+    return () => { cancelled = true; };
   }, []);
+
+  // "تحميل أنشطة أقدم" — pages backwards on the createdAt of the last row held.
+  const loadMore = () => {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    apiGet<ActivityApiResponse>("/api/v1/lawyer/activity", { before: cursor })
+      .then((res) => {
+        setActivities((prev) => {
+          const seen = new Set(prev.map((a) => a.id));
+          return [...prev, ...(res.items ?? []).filter((i) => !seen.has(i.id)).map(toActivity)];
+        });
+        setCursor(res.nextCursor);
+      })
+      // a failed page retires the button rather than leaving it looping
+      .catch(() => setCursor(null))
+      .finally(() => setLoadingMore(false));
+  };
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -146,17 +274,24 @@ export default function ActivityLogPage() {
     return order.filter(k=>groups[k]).map(k=>[k,groups[k]] as [string,Activity[]]);
   },[filtered]);
 
-  const TYPE_OPTIONS = [
-    {key:"all" as const,     label:"الكل"},
-    {key:"hearing" as const, label:"جلسات"},
-    {key:"task" as const,    label:"مهام"},
-    {key:"document" as const,label:"مستندات"},
-    {key:"ai" as const,      label:"ذكاء اصطناعي"},
-    {key:"contract" as const,label:"عقود"},
-    {key:"deadline" as const,label:"مواعيد"},
-    {key:"client" as const,  label:"موكلين"},
-    {key:"case_update" as const,label:"قضايا"},
-  ];
+  // Only offer a chip for a type the feed actually contains — the vocabulary
+  // now spans both the demo set and the live one, and listing all twelve would
+  // hand the user ten filters that can only ever return nothing.
+  const TYPE_OPTIONS = useMemo(()=>{
+    const present = new Set(activities.map(a=>a.type));
+    return [
+      {key:"all" as ActivityType|"all", label:"الكل"},
+      ...(Object.keys(ACTIVITY_CONFIG) as ActivityType[])
+        .filter(t=>present.has(t))
+        .map(t=>({key:t as ActivityType|"all", label:TYPE_FILTER_LABELS[t] ?? ACTIVITY_CONFIG[t].label})),
+    ];
+  },[activities]);
+
+  // Demo keeps its showcase numbers; supabase mode shows the real counts, and
+  // an em-dash only while they are still loading (or if the call failed).
+  const statCards = isSupabaseMode
+    ? LIVE_STATS.map(c=>({...c, value: stats ? arNum(stats[c.key]) : "—"}))
+    : STATS;
 
   return (
     <div className="max-w-[900px] mx-auto space-y-6" dir="rtl">
@@ -197,14 +332,14 @@ export default function ActivityLogPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {STATS.map((s,i)=>(
+        {statCards.map((s,i)=>(
           <motion.div key={i} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
             className={`${card} p-4 flex items-center gap-3`}>
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.bg}`}>
               <s.icon size={18} weight="duotone" className={s.color}/>
             </div>
             <div>
-              <p className={`text-xl font-black ${isDark?"text-white":"text-slate-800"}`}>{isSupabaseMode ? "—" : s.value}</p>
+              <p className={`text-xl font-black ${isDark?"text-white":"text-slate-800"}`}>{s.value}</p>
               <p className={`text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}>{s.label}</p>
             </div>
           </motion.div>
@@ -292,13 +427,15 @@ export default function ActivityLogPage() {
             <div className={`${card} divide-y ${isDark?"divide-white/[0.04]":"divide-slate-50"}`}>
               <AnimatePresence>
                 {activities.map((act,i)=>{
-                  const cfg = ACTIVITY_CONFIG[act.type];
+                  // Fall back rather than crash if a future event maps to a
+                  // badge this page doesn't know yet.
+                  const cfg = ACTIVITY_CONFIG[act.type] ?? ACTIVITY_CONFIG.order;
                   const Icon = cfg.icon;
-                  return (
-                    <motion.div key={act.id}
-                      initial={{opacity:0,x:-8}} animate={{opacity:1,x:0}} exit={{opacity:0}}
-                      transition={{delay:i*0.03}}
-                      className="flex items-start gap-4 px-4 py-3.5 hover:bg-slate-50/50 dark:hover:bg-white/[0.02] transition-colors">
+                  const rowClass = "flex items-start gap-4 px-4 py-3.5 hover:bg-slate-50/50 dark:hover:bg-white/[0.02] transition-colors";
+                  // The whole row is the link now, so the entity label below is
+                  // a plain span — a Link nested inside a Link is invalid.
+                  const row = (
+                    <>
                       {/* Icon */}
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${cfg.bg}`}>
                         <Icon size={16} weight="duotone" style={{color:cfg.color}}/>
@@ -320,10 +457,9 @@ export default function ActivityLogPage() {
                               <p className={`text-[12px] mt-0.5 ${isDark?"text-zinc-500":"text-slate-400"}`}>{act.description}</p>
                             )}
                             {act.entityHref&&(
-                              <Link href={act.entityHref}
-                                className={`inline-flex items-center gap-1 mt-1 text-[11px] font-semibold transition-colors ${isDark?"text-zinc-600 hover:text-zinc-400":"text-slate-400 hover:text-slate-600"}`}>
+                              <span className={`inline-flex items-center gap-1 mt-1 text-[11px] font-semibold ${isDark?"text-zinc-600":"text-slate-400"}`}>
                                 {act.entityLabel}<ArrowSquareOut size={9}/>
-                              </Link>
+                              </span>
                             )}
                           </div>
                           <div className="text-start flex-shrink-0">
@@ -332,6 +468,15 @@ export default function ActivityLogPage() {
                           </div>
                         </div>
                       </div>
+                    </>
+                  );
+                  return (
+                    <motion.div key={act.id}
+                      initial={{opacity:0,x:-8}} animate={{opacity:1,x:0}} exit={{opacity:0}}
+                      transition={{delay:i*0.03}}>
+                      {act.entityHref
+                        ? <Link href={act.entityHref} className={rowClass}>{row}</Link>
+                        : <div className={rowClass}>{row}</div>}
                     </motion.div>
                   );
                 })}
@@ -341,11 +486,13 @@ export default function ActivityLogPage() {
         ))}
       </div>
 
-      {/* Load more */}
-      {filtered.length>0&&(
+      {/* Load more — only when the API says there is another page. Demo mode
+          has no server to page against, so the button stays hidden there. */}
+      {cursor&&(
         <div className="text-center pb-4">
-          <button className={`px-6 py-2.5 rounded-2xl text-[12px] font-semibold border transition-colors ${isDark?"border-white/[0.06] text-zinc-500 hover:text-zinc-300 hover:border-white/[0.12]":"border-slate-200 text-slate-400 hover:text-slate-600"}`}>
-            تحميل أنشطة أقدم
+          <button onClick={loadMore} disabled={loadingMore}
+            className={`px-6 py-2.5 rounded-2xl text-[12px] font-semibold border transition-colors disabled:opacity-50 ${isDark?"border-white/[0.06] text-zinc-500 hover:text-zinc-300 hover:border-white/[0.12]":"border-slate-200 text-slate-400 hover:text-slate-600"}`}>
+            {loadingMore?"جارٍ التحميل...":"تحميل أنشطة أقدم"}
           </button>
         </div>
       )}

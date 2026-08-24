@@ -41,6 +41,7 @@ import AddTaskModal from "./_components/AddTaskModal";
 import { AI_QUICK, ACTIVITY_TYPE_CONFIG } from "./_data/mockData";
 import { getLawyerDashboardSummary, type LawyerDashboardSummary } from "@/lib/services/lawyerDashboardService";
 import { isSupabaseMode } from "@/lib/services/api";
+import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -66,13 +67,28 @@ function daysUntil(iso: string): number {
   return Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000));
 }
 
-/** Map event_type to an activity type for the icon config */
-function mapEventType(eventType: string): string {
-  if (eventType.includes("ai")) return "ai";
-  if (eventType.includes("urgent") || eventType.includes("overdue")) return "urgent";
-  if (eventType.includes("complet") || eventType.includes("success")) return "success";
-  if (eventType.includes("warn") || eventType.includes("reject")) return "warning";
-  return "info";
+/**
+ * Map the badge `describeRequestEvent()` returns onto this page's icon config.
+ *
+ * The previous version substring-matched the raw event token, which was wrong
+ * twice over: it never matched anything real (no `request_events` token
+ * contains "urgent", "overdue", "success" or "reject", so every row fell to
+ * "info"), and the one match it did make was accidental — `email` contains
+ * "ai", so `notification.email_sent` was painted as AI activity.
+ */
+function badgeToActivityType(badge: ActivityBadge): keyof typeof ACTIVITY_TYPE_CONFIG {
+  switch (badge) {
+    case "delivery":  return "success";
+    // Amber «تنبيه» rather than red «عاجل»: a cancellation is a closed outcome,
+    // not something the lawyer has to act on right now.
+    case "cancelled": return "warning";
+    default:          return "info";
+  }
+}
+
+/** Short order reference — the same one the activity log and admin console quote. */
+function shortRequestRef(requestId: string | undefined): string {
+  return requestId ? `طلب #${requestId.slice(0, 8)}` : "—";
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -166,16 +182,43 @@ export default function LawyerDashboardPage() {
   // ─── Computed activity timeline ───────────────────────────────────────────
   const activityTimeline = useMemo(() => {
     if (!dashboardData) return [];
-    // API returns { event, created_at, request_id } — no event_type/payload.
+    // API returns { id, event, created_at, request_id } — nothing else.
+    // `event` is a raw namespaced token (`service_request.status_changed`), and
+    // it used to be rendered verbatim, so this card showed English to the
+    // lawyer. Since the summary route stopped filtering `request_events` by
+    // actor, admin-performed claims/deliveries/cancellations land here too —
+    // i.e. MORE raw tokens than before. Translate with the same helper the
+    // activity log uses so both surfaces read identically.
+    //
+    // The route hands back neither the request's status nor its Arabic service
+    // name, so describeRequestEvent() degrades to its generic line («طلب خدمة»)
+    // and a coarse `status_changed` can't be resolved into claim/deliver/cancel
+    // here — still Arabic, still accurate, just less specific than the activity
+    // log. Widening the route would fix that, but it is not this page's to edit.
+    //
+    // `requestId` is deliberately not passed: the short reference is rendered
+    // once in `caseRef` below, and passing it here would repeat it inside the
+    // title of every «تم قيد طلبكم» row.
     const events = dashboardData.recentActivity as Array<{ id: string; event: string; created_at: string; request_id?: string }>;
-    return events.map((e, i) => ({
-      id: i + 1,
-      time: relativeTime(e.created_at),
-      action: e.event || "نشاط",
-      type: mapEventType(e.event) as "warning" | "success" | "info" | "urgent" | "ai",
-      caseRef: e.request_id || "—",
-      category: (e.event?.includes("ai") ? "ai" : "manual") as "ai" | "manual" | "system",
-    }));
+    return events.map((e, i) => {
+      const described = describeRequestEvent({ event: e.event });
+      return {
+        id: i + 1,
+        time: relativeTime(e.created_at),
+        action: described.title,
+        type: badgeToActivityType(described.badge),
+        caseRef: shortRequestRef(e.request_id),
+        // Nothing in `request_events` records AI-tool usage, so no row can
+        // honestly claim it. The old test matched `includes("ai")`, which only
+        // ever fired on the "ai" inside `notification.email_sent` — the «نشاط
+        // AI» tab was really an email-notice tab. It now shows its empty state
+        // until something actually records AI usage.
+        // The widening cast is load-bearing, not ceremony: without it this
+        // infers the literal "manual" and `item.category === "ai"` in
+        // `filteredTimeline` below stops compiling.
+        category: "manual" as "ai" | "manual" | "system",
+      };
+    });
   }, [dashboardData]);
 
   // ─── Computed deadlines ───────────────────────────────────────────────────
