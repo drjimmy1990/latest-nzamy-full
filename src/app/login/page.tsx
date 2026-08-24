@@ -444,7 +444,7 @@ export default function LoginPage() {
               >
                 {/* Heading */}
                 <motion.div variants={itemVariants} className="mb-8">
-                  <h2 className="font-heading text-3xl font-bold text-ink dark:text-gray-100 mb-2">
+                  <h2 className="font-heading text-3xl font-bold text-ink mb-2">
                     {txt.welcome}
                   </h2>
                   <p className="text-ink-muted dark:text-gray-400 text-sm">
@@ -513,7 +513,7 @@ export default function LoginPage() {
                       onChange={(e) => setIdentifier(e.target.value)}
                       placeholder={inputMode === "email" ? txt.emailPlaceholder : txt.phonePlaceholder}
                       dir={inputMode === "phone" ? "ltr" : dir}
-                      className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink dark:text-gray-200 placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
+                      className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
                     />
                   </div>
                 </motion.div>
@@ -540,7 +540,7 @@ export default function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={txt.passwordPlaceholder}
-                      className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink dark:text-gray-200 placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-10" : "pl-10 pr-10"}`}
+                      className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-10" : "pl-10 pr-10"}`}
                     />
                     <button
                       type="button"
@@ -626,7 +626,7 @@ export default function LoginPage() {
                   whileTap={{ scale: 0.985 }}
                   type="button"
                   onClick={handleGoogleSignIn}
-                  className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3.5 text-sm font-semibold text-ink dark:text-gray-200 shadow-sm hover:border-slate-300 dark:hover:border-gray-600 transition-all duration-200"
+                  className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3.5 text-sm font-semibold text-ink shadow-sm hover:border-slate-300 dark:hover:border-gray-600 transition-all duration-200"
                 >
                   <GoogleIcon />
                   <span>{txt.google}</span>

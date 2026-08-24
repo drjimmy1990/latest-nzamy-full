@@ -35,7 +35,7 @@ export function PaymentsTab() {
               VISA
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Visa •••• 4242</p>
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-300">Visa •••• 4242</p>
               <p className="text-xs text-gray-500 dark:text-gray-400">تنتهي ٠٦/٢٧</p>
             </div>
             <button
@@ -78,8 +78,8 @@ export function PaymentsTab() {
               {transactions.map((tx) => (
                 <tr key={tx.date + tx.desc} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
                   <td className="px-5 py-3.5 text-gray-500 dark:text-gray-400 text-xs">{tx.date}</td>
-                  <td className="px-5 py-3.5 text-gray-800 dark:text-gray-200 font-medium">{tx.desc}</td>
-                  <td className="px-5 py-3.5 text-end text-gray-800 dark:text-gray-200 font-semibold">{tx.amount}</td>
+                  <td className="px-5 py-3.5 text-gray-800 dark:text-gray-300 font-medium">{tx.desc}</td>
+                  <td className="px-5 py-3.5 text-end text-gray-800 dark:text-gray-300 font-semibold">{tx.amount}</td>
                   <td className="px-5 py-3.5 text-end">
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusColor[tx.status]}`}>
                        {tx.status}

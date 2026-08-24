@@ -37,7 +37,7 @@ export function HelpTab() {
               {card.icon}
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{card.title}</p>
+              <p className="text-sm font-semibold text-gray-800 dark:text-gray-300">{card.title}</p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{card.desc}</p>
             </div>
           </button>
@@ -55,7 +55,7 @@ export function HelpTab() {
               value={ticketSubject}
               onChange={(e) => setTicketSubject(e.target.value)}
               required
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-dark-bg text-gray-800 dark:text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-royal/40 focus:border-royal transition-colors"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-dark-bg text-gray-800 dark:text-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-royal/40 focus:border-royal transition-colors"
             />
           </div>
           <div>
@@ -66,7 +66,7 @@ export function HelpTab() {
               value={ticketMsg}
               onChange={(e) => setTicketMsg(e.target.value)}
               required
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-dark-bg text-gray-800 dark:text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-royal/40 focus:border-royal transition-colors resize-none"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-dark-bg text-gray-800 dark:text-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-royal/40 focus:border-royal transition-colors resize-none"
             />
           </div>
           <div>
@@ -74,7 +74,7 @@ export function HelpTab() {
             <select
               value={priority}
               onChange={(e) => setPriority(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-dark-bg text-gray-800 dark:text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-royal/40 focus:border-royal transition-colors"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-dark-bg text-gray-800 dark:text-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-royal/40 focus:border-royal transition-colors"
             >
               <option value="low">منخفضة</option>
               <option value="medium">متوسطة</option>

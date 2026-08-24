@@ -29,7 +29,7 @@ export function StepScheduling({
 }: StepSchedulingProps) {
   return (
     <div>
-      <h2 className="mb-1 font-brand text-lg font-bold text-ink dark:text-gray-100">
+      <h2 className="mb-1 font-brand text-lg font-bold text-ink">
         {isAr ? "نوع الاستشارة والموعد" : "Consultation Type & Timing"}
       </h2>
       <p className="mb-5 text-sm text-ink-muted dark:text-gray-400">
@@ -64,7 +64,7 @@ export function StepScheduling({
                 <Icon size={20} weight="duotone" className={isSelected ? "text-white" : "text-royal dark:text-gold"} />
               </span>
               <div>
-                <div className={`text-xs font-bold ${isSelected ? "text-white" : "text-ink dark:text-gray-200"}`}>{t.label}</div>
+                <div className={`text-xs font-bold ${isSelected ? "text-white" : "text-ink"}`}>{t.label}</div>
                 <div className={`text-[10px] ${isSelected ? "text-white/70" : "text-ink-faint dark:text-gray-500"}`}>{t.price}</div>
               </div>
             </motion.button>
@@ -82,7 +82,7 @@ export function StepScheduling({
             className="overflow-hidden"
           >
             <div className="mb-4 border-t border-slate-100 pt-5 dark:border-white/10">
-              <p className="mb-3 text-sm font-semibold text-ink dark:text-gray-200">
+              <p className="mb-3 text-sm font-semibold text-ink">
                 {isAr ? "متى تريد الاستشارة؟" : "When do you want the consultation?"}
               </p>
 
@@ -102,7 +102,7 @@ export function StepScheduling({
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-royal/10 text-royal dark:text-gold">
                     <Lightning size={20} weight="duotone" />
                   </span>
-                  <div className="font-brand text-sm font-bold text-ink dark:text-gray-100">
+                  <div className="font-brand text-sm font-bold text-ink">
                     {isAr ? "🟢 الآن فوري" : "🟢 Right Now"}
                   </div>
                   <div className="text-[11px] leading-relaxed text-ink-muted dark:text-gray-400">
@@ -124,7 +124,7 @@ export function StepScheduling({
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-500/20">
                     <Bell size={20} weight="duotone" />
                   </span>
-                  <div className="font-brand text-sm font-bold text-ink dark:text-gray-100">
+                  <div className="font-brand text-sm font-bold text-ink">
                     {isAr ? "⚡ أقرب وقت متاح" : "⚡ Next Available Slot"}
                   </div>
                   <div className="text-[11px] leading-relaxed text-ink-muted dark:text-gray-400">
@@ -146,7 +146,7 @@ export function StepScheduling({
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/20">
                     <CalendarBlank size={20} weight="duotone" />
                   </span>
-                  <div className="font-brand text-sm font-bold text-ink dark:text-gray-100">
+                  <div className="font-brand text-sm font-bold text-ink">
                     {isAr ? "📅 اختار من المتاح" : "📅 Pick from Calendar"}
                   </div>
                   <div className="text-[11px] leading-relaxed text-ink-muted dark:text-gray-400">
@@ -175,7 +175,7 @@ export function StepScheduling({
                             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
                               <Spinner size={28} className="text-royal dark:text-gold" />
                             </motion.div>
-                            <p className="text-sm font-medium text-ink dark:text-gray-200">{isAr ? "نبحث عن محامٍ متاح الآن..." : "Searching for an available lawyer..."}</p>
+                            <p className="text-sm font-medium text-ink">{isAr ? "نبحث عن محامٍ متاح الآن..." : "Searching for an available lawyer..."}</p>
                             <p className="text-xs text-ink-muted dark:text-gray-400">{isAr ? "عادةً خلال ١٥–٢٠ دقيقة" : "Usually within 15–20 minutes"}</p>
                           </>
                         ) : (
@@ -235,7 +235,7 @@ export function StepScheduling({
                               "bg-slate-50 hover:bg-royal/5 dark:bg-white/5 dark:hover:bg-royal/10"
                             }`}>
                             <span className={`text-[9px] ${isActive ? "text-white/70" : "text-ink-faint dark:text-gray-500"}`}>{isAr ? d.dayAr.slice(0, 2) : d.dayEn}</span>
-                            <span className={`text-xs font-bold ${isActive ? "text-white" : "text-ink dark:text-gray-200"}`}>{d.date.split(" ")[0]}</span>
+                            <span className={`text-xs font-bold ${isActive ? "text-white" : "text-ink"}`}>{d.date.split(" ")[0]}</span>
                             {hasFree && <span className={`h-1 w-1 rounded-full ${isActive ? "bg-white/50" : "bg-emerald-400"}`} />}
                           </motion.button>
                         );
@@ -250,7 +250,7 @@ export function StepScheduling({
                             {(calendarSlots.find(d => (isAr ? d.dayAr : d.dayEn) === calDay)?.times ?? []).map(t => (
                               <motion.button key={t} whileTap={{ scale: 0.95 }} onClick={() => setCalTime(t)}
                                 className={`rounded-xl px-4 py-2 text-sm font-medium transition-all ${
-                                  calTime === t ? "bg-[#C8A762] text-white shadow-sm" : "border border-slate-200 bg-white hover:border-[#C8A762]/50 dark:border-white/10 dark:bg-dark-bg dark:hover:border-gold/30 text-ink dark:text-gray-200"
+                                  calTime === t ? "bg-[#C8A762] text-white shadow-sm" : "border border-slate-200 bg-white hover:border-[#C8A762]/50 dark:border-white/10 dark:bg-dark-bg dark:hover:border-gold/30 text-ink"
                                 }`}>{t}</motion.button>
                             ))}
                           </div>

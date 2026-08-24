@@ -235,7 +235,7 @@ export default function TrackingPage() {
                     {entity.short}
                   </span>
                 </div>
-                <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                <span className="text-sm font-semibold text-gray-800 dark:text-gray-300">
                   {isRTL ? entity.ar : entity.en}
                 </span>
               </motion.div>

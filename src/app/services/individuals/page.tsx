@@ -174,7 +174,7 @@ export default function IndividualsPage() {
                       <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${item.color}`}>
                         <Icon size={22} weight="duotone" />
                       </span>
-                      <div className="mt-4 text-sm font-semibold text-ink dark:text-gray-100">{item.label}</div>
+                      <div className="mt-4 text-sm font-semibold text-ink">{item.label}</div>
                       <div className="mt-1 text-xs text-ink-muted dark:text-gray-400">{item.desc}</div>
                     </motion.div>
                   );
@@ -226,7 +226,7 @@ export default function IndividualsPage() {
                   <div className="mt-6 rounded-[2rem] border border-royal/15 bg-white p-8 dark:border-white/10 dark:bg-dark-card md:p-10">
                     <div className="grid gap-8 md:grid-cols-2">
                       <div>
-                        <h3 className="font-brand text-xl font-bold text-ink dark:text-gray-100">{selected.label}</h3>
+                        <h3 className="font-brand text-xl font-bold text-ink">{selected.label}</h3>
                         <p className="mt-2 text-sm leading-relaxed text-ink-muted dark:text-gray-400">{selected.desc}</p>
                         <ul className="mt-6 space-y-3">
                           {selected.features.map((f, i) => (
@@ -332,7 +332,7 @@ export default function IndividualsPage() {
                         <Icon size={24} weight="duotone" />
                       </span>
                     </div>
-                    <h3 className="font-brand text-lg font-bold text-ink dark:text-gray-100">
+                    <h3 className="font-brand text-lg font-bold text-ink">
                       {isAr ? step.labelAr : step.labelEn}
                     </h3>
                     <p className="mt-2 text-sm leading-relaxed text-ink-muted dark:text-gray-400">
@@ -357,7 +357,7 @@ export default function IndividualsPage() {
               <div className="grid gap-8 md:grid-cols-2 md:items-center">
                 <div>
                   <span className="text-sm font-medium text-gold-dark">{isAr ? "هل أنت شركة؟" : "Are you a business?"}</span>
-                  <h2 className="font-brand mt-2 text-2xl font-bold text-ink dark:text-gray-100 md:text-3xl">
+                  <h2 className="font-brand mt-2 text-2xl font-bold text-ink md:text-3xl">
                     {isAr ? "لدينا خدمات مخصصة للشركات والمؤسسات" : "We have services for companies & enterprises"}
                   </h2>
                   <p className="mt-3 text-sm leading-relaxed text-ink-muted dark:text-gray-400">

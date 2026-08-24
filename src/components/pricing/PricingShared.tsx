@@ -14,7 +14,7 @@ export function FAQItem({ q, a, index }: { q: string; a: string; index: number }
       className="overflow-hidden rounded-2xl border border-slate-200/50 bg-white dark:border-white/10 dark:bg-dark-card"
     >
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-4 px-6 py-5 text-start">
-        <span className="text-sm font-semibold text-ink dark:text-gray-100">{q}</span>
+        <span className="text-sm font-semibold text-ink">{q}</span>
         <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
           <CaretDown size={16} className="shrink-0 text-ink-faint dark:text-gray-500" />
         </motion.span>

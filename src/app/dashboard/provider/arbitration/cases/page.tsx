@@ -44,8 +44,8 @@ function KpiCard({ icon: Icon, label, value, sub, color }: { icon: React.Element
       <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${color}`}>
         <Icon size={20} weight="duotone" />
       </div>
-      <div className="text-2xl font-bold text-ink dark:text-gray-100">{value}</div>
-      <div className="text-xs font-medium text-ink dark:text-gray-200 mt-0.5">{label}</div>
+      <div className="text-2xl font-bold text-ink">{value}</div>
+      <div className="text-xs font-medium text-ink mt-0.5">{label}</div>
       <div className="text-xs text-ink-faint dark:text-gray-500 mt-1">{sub}</div>
     </motion.div>
   );
@@ -84,7 +84,7 @@ export default function ArbitrationCasesPage() {
               {isAr ? "محكّم معتمد" : "Certified Arbitrator"}
             </span>
           </div>
-          <h1 className="font-heading text-2xl font-bold text-ink dark:text-gray-100">
+          <h1 className="font-heading text-2xl font-bold text-ink">
             {isAr ? "قضايا التحكيم" : "Arbitration Cases"}
           </h1>
           <p className="text-sm text-ink-muted dark:text-gray-400">
@@ -118,7 +118,7 @@ export default function ArbitrationCasesPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder={isAr ? "ابحث بالرقم أو الأطراف..." : "Search by ID or parties..."}
-            className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-2.5 text-sm text-ink dark:text-gray-200 outline-none focus:border-royal dark:focus:border-gold placeholder:text-ink-faint dark:placeholder:text-gray-600 ${isAr ? "pr-9 pl-4" : "pl-9 pr-4"}`}
+            className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-2.5 text-sm text-ink outline-none focus:border-royal dark:focus:border-gold placeholder:text-ink-faint dark:placeholder:text-gray-600 ${isAr ? "pr-9 pl-4" : "pl-9 pr-4"}`}
           />
         </div>
         <div className="flex items-center gap-2">
@@ -171,7 +171,7 @@ export default function ArbitrationCasesPage() {
                   >
                     <td className="px-4 py-3.5 text-xs font-mono font-semibold text-ink-muted dark:text-gray-400">{c.id}</td>
                     <td className="px-4 py-3.5">
-                      <div className="text-sm font-semibold text-ink dark:text-gray-100 line-clamp-1">{isAr ? c.title : c.titleEn}</div>
+                      <div className="text-sm font-semibold text-ink line-clamp-1">{isAr ? c.title : c.titleEn}</div>
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex flex-col gap-0.5">
@@ -183,12 +183,12 @@ export default function ArbitrationCasesPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3.5 text-sm font-semibold text-ink dark:text-gray-200 whitespace-nowrap" dir="ltr">{c.value}</td>
+                    <td className="px-4 py-3.5 text-sm font-semibold text-ink whitespace-nowrap" dir="ltr">{c.value}</td>
                     <td className="px-4 py-3.5">
                       <span className={`rounded-lg px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[c.type] ?? ""}`}>{c.type}</span>
                     </td>
                     <td className="px-4 py-3.5">
-                      <div className="text-xs font-medium text-ink dark:text-gray-200">{c.stage}</div>
+                      <div className="text-xs font-medium text-ink">{c.stage}</div>
                       {c.nextHearing !== "—" && (
                         <div className="text-[10px] text-ink-faint dark:text-gray-500 mt-0.5 flex items-center gap-1">
                           <Clock size={9} /> {c.nextHearing}
@@ -235,7 +235,7 @@ export default function ArbitrationCasesPage() {
             <FileText size={22} weight="duotone" />
           </div>
           <div>
-            <div className="text-sm font-semibold text-ink dark:text-gray-100">
+            <div className="text-sm font-semibold text-ink">
               {isAr ? "صائغ حكم التحكيم (AI)" : "AI Arbitration Award Drafter"}
             </div>
             <div className="text-xs text-ink-muted dark:text-gray-400">

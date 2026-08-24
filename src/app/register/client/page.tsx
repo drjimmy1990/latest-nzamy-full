@@ -343,7 +343,7 @@ export default function RegisterClientPage() {
                         });
                       }
                     }}
-                    className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-3.5 text-sm font-semibold text-ink transition-all hover:border-slate-300 dark:border-white/10 dark:bg-dark-card dark:text-gray-200"
+                    className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-3.5 text-sm font-semibold text-ink transition-all hover:border-slate-300 dark:border-white/10 dark:bg-dark-card"
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                       <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>

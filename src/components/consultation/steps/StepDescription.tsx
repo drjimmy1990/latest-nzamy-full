@@ -15,7 +15,7 @@ export function StepDescription({ isAr, selectedSpecialty, description, setDescr
 
   return (
     <div>
-      <h2 className="mb-1 font-brand text-lg font-bold text-ink dark:text-gray-100">
+      <h2 className="mb-1 font-brand text-lg font-bold text-ink">
         {isAr ? "اشرح مشكلتك" : "Describe your issue"}
       </h2>
       <p className="mb-5 text-sm text-ink-muted dark:text-gray-400">
@@ -44,7 +44,7 @@ export function StepDescription({ isAr, selectedSpecialty, description, setDescr
           description.length >= 20
             ? "border-emerald-300 focus:border-emerald-400 dark:border-emerald-500/40"
             : "border-slate-200 focus:border-royal/40 dark:border-white/10"
-        } bg-surface dark:bg-dark-bg text-ink placeholder:text-slate-400 dark:text-gray-200 dark:placeholder:text-gray-600`}
+        } bg-surface dark:bg-dark-bg text-ink placeholder:text-slate-400 dark:placeholder:text-gray-600`}
       />
       <div className="mt-2 flex items-center justify-between">
         <span className={`text-xs ${description.length >= 20 ? "text-emerald-600" : "text-ink-faint dark:text-gray-600"}`}>

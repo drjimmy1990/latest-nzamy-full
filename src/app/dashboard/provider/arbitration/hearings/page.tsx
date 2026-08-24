@@ -39,7 +39,7 @@ export default function ArbitrationHearingsPage() {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-ink dark:text-gray-100">
+          <h1 className="font-heading text-2xl font-bold text-ink">
             {isAr ? "جلسات التحكيم" : "Arbitration Hearings"}
           </h1>
           <p className="text-sm text-ink-muted dark:text-gray-400">
@@ -66,7 +66,7 @@ export default function ArbitrationHearingsPage() {
                 <Icon size={20} weight="duotone" />
               </div>
               <div>
-                <div className="text-xl font-bold text-ink dark:text-gray-100">{k.value}</div>
+                <div className="text-xl font-bold text-ink">{k.value}</div>
                 <div className="text-xs text-ink-muted dark:text-gray-400">{k.label}</div>
               </div>
             </motion.div>
@@ -105,7 +105,7 @@ export default function ArbitrationHearingsPage() {
               {/* Date column */}
               <div className={`flex shrink-0 flex-col items-center justify-center rounded-2xl p-3 w-20 text-center ${h.status === "done" ? "bg-slate-50 dark:bg-dark-bg/40" : "bg-amber-50 dark:bg-amber-500/10"}`}>
                 <CalendarCheck size={18} className={h.status === "done" ? "text-ink-faint dark:text-gray-500" : "text-amber-600 dark:text-amber-400"} weight="duotone" />
-                <span className="mt-1 text-xs font-bold text-ink dark:text-gray-200 leading-tight">{h.date}</span>
+                <span className="mt-1 text-xs font-bold text-ink leading-tight">{h.date}</span>
                 <span className="text-[10px] text-ink-muted dark:text-gray-400">{h.time}</span>
               </div>
 
@@ -120,7 +120,7 @@ export default function ArbitrationHearingsPage() {
                     {h.stage}
                   </span>
                 </div>
-                <h3 className="text-sm font-semibold text-ink dark:text-gray-100 truncate">{h.subject}</h3>
+                <h3 className="text-sm font-semibold text-ink truncate">{h.subject}</h3>
                 <div className="mt-1.5 flex flex-wrap gap-3">
                   <span className="flex items-center gap-1 text-xs text-ink-muted dark:text-gray-400">
                     <Buildings size={11} /> {h.parties[0]}
@@ -160,7 +160,7 @@ export default function ArbitrationHearingsPage() {
           <CaretRight size={14} className={isAr ? "" : "rotate-180"} />
           {isAr ? "الشهر السابق" : "Prev Month"}
         </button>
-        <span className="text-sm font-semibold text-ink dark:text-gray-200">{isAr ? "مايو ٢٠٢٥" : "May 2025"}</span>
+        <span className="text-sm font-semibold text-ink">{isAr ? "مايو ٢٠٢٥" : "May 2025"}</span>
         <button className="flex items-center gap-1 text-sm text-ink-muted dark:text-gray-400 hover:text-royal dark:hover:text-gold transition-colors">
           {isAr ? "الشهر القادم" : "Next Month"}
           <CaretLeft size={14} className={isAr ? "" : "rotate-180"} />

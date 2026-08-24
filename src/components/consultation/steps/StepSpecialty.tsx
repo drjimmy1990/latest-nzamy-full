@@ -11,7 +11,7 @@ interface StepSpecialtyProps {
 export function StepSpecialty({ isAr, specialtyList, specialty, setSpecialty }: StepSpecialtyProps) {
   return (
     <div>
-      <h2 className="mb-1 font-brand text-lg font-bold text-ink dark:text-gray-100">
+      <h2 className="mb-1 font-brand text-lg font-bold text-ink">
         {isAr ? "ما تخصص قضيتك؟" : "What's your case specialty?"}
       </h2>
       <p className="mb-6 text-sm text-ink-muted dark:text-gray-400">

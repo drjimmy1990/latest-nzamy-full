@@ -374,7 +374,7 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
 
             {/* Preview Section */}
             <div className="mb-6">
-              <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 flex items-center gap-1.5">
+              <h3 className="text-sm font-bold text-gray-800 dark:text-gray-300 mb-3 flex items-center gap-1.5">
                 <FileText size={16} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
                 {/*
                   This used to read "معاينة مسودة العقد" for every ai_draft
@@ -449,7 +449,7 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
                 nothing here may promise one. */}
             {(req.auditTrail?.length ?? 0) > 0 && (
             <div className="mb-6">
-              <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-1.5">
+              <h3 className="text-sm font-bold text-gray-800 dark:text-gray-300 mb-4 flex items-center gap-1.5">
                 <CalendarCheck size={16} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
                 سجل النشاط والتحديثات
               </h3>

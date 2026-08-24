@@ -80,7 +80,7 @@ export function ToggleRow({
   return (
     <div className="flex items-center justify-between gap-4 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0">
       <div>
-        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{label}</p>
+        <p className="text-sm font-medium text-gray-800 dark:text-gray-300">{label}</p>
         {description && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{description}</p>}
       </div>
       <Toggle checked={checked} onChange={onChange} />

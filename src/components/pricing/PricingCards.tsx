@@ -145,7 +145,7 @@ function SpotlightCard({
 
         {/* Name */}
         <h3 className={`font-brand text-2xl font-extrabold leading-tight ${
-          isHighlighted ? "text-white" : "text-ink dark:text-gray-100"
+          isHighlighted ? "text-white" : "text-ink"
         }`}>
           {plan.name}
         </h3>
@@ -475,7 +475,7 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
                   <Buildings size={24} weight="duotone" className="text-gold-dark" />
                 </span>
                 <div>
-                  <div className="font-brand text-lg font-bold text-ink dark:text-gray-100">
+                  <div className="font-brand text-lg font-bold text-ink">
                     {isAr ? "نظامي مؤسسي" : "Nezamy Enterprise"}
                   </div>
                   <div className="mt-0.5 text-sm text-ink-muted dark:text-gray-400">
@@ -512,7 +512,7 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
                     <Buildings size={22} weight="duotone" className="text-emerald-600 dark:text-emerald-400" />
                   </span>
                   <div>
-                    <div className="font-brand text-lg font-bold text-ink dark:text-gray-100">
+                    <div className="font-brand text-lg font-bold text-ink">
                       {isAr ? "أصحاب المشاريع الصغيرة" : "Small Business Owners"}
                     </div>
                     <div className="mt-0.5 text-sm text-ink-muted dark:text-gray-400">

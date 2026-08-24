@@ -43,14 +43,14 @@ export function StepIndicator({ step, total }: { step: Step; total: number }) {
   );
 }
 
-const inputBase = "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
+const inputBase = "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
 
 // ─── Step 1: Provider type ────────────────────────────────────────────────────
 export function Step1({ isAr, selected, onSelect }: { isAr: boolean; selected: ProviderType; onSelect: (t: ProviderType) => void }) {
   const types = isAr ? providerTypes.ar : providerTypes.en;
   return (
     <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="font-brand text-2xl font-bold text-ink">
         {isAr ? "ما دورك في المنصة؟" : "What is your role on the platform?"}
       </h2>
       <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
@@ -79,7 +79,7 @@ export function Step1({ isAr, selected, onSelect }: { isAr: boolean; selected: P
                 <Icon size={22} weight="duotone" />
               </span>
               <div>
-                <div className="text-sm font-semibold text-ink dark:text-gray-100">{type.label}</div>
+                <div className="text-sm font-semibold text-ink">{type.label}</div>
                 <div className="mt-0.5 text-xs text-ink-muted dark:text-gray-400">{type.desc}</div>
               </div>
             </motion.button>
@@ -117,7 +117,7 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
 
   return (
     <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="font-brand text-2xl font-bold text-ink">
         {isAr ? "معلوماتك المهنية" : "Your Professional Information"}
       </h2>
       <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
@@ -274,7 +274,7 @@ export function Step3({ isAr, data, onChange }: { isAr: boolean; data: Record<st
 
   return (
     <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="font-brand text-2xl font-bold text-ink">
         {isAr ? "بيانات الحساب والوثائق" : "Account & Documents"}
       </h2>
       <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
@@ -350,7 +350,7 @@ export function Step4({ isAr, selectedPlan, onSelect }: { isAr: boolean; selecte
   const planList = isAr ? plans.ar : plans.en;
   return (
     <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="font-brand text-2xl font-bold text-ink">
         {isAr ? "اختر باقتك" : "Choose Your Plan"}
       </h2>
       <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
@@ -383,7 +383,7 @@ export function Step4({ isAr, selectedPlan, onSelect }: { isAr: boolean; selecte
               )}
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
-                  <div className={`text-sm font-bold ${isActive && plan.highlighted ? "text-white" : "text-ink dark:text-gray-100"}`}>{plan.name}</div>
+                  <div className={`text-sm font-bold ${isActive && plan.highlighted ? "text-white" : "text-ink"}`}>{plan.name}</div>
                   <div className={`mt-0.5 text-xs ${isActive && plan.highlighted ? "text-white/70" : "text-ink-muted dark:text-gray-400"}`}>{plan.desc}</div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {plan.features.slice(0, 3).map(f => (
@@ -453,7 +453,7 @@ export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; pro
         <Check size={36} weight="bold" className="text-white" />
       </motion.div>
 
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="font-brand text-2xl font-bold text-ink">
         {isAr ? "طلبك قيد المراجعة!" : "Your Application Is Under Review!"}
       </h2>
       <p className="mt-3 text-sm text-ink-muted dark:text-gray-400">
@@ -476,7 +476,7 @@ export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; pro
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-royal/5 text-royal dark:bg-royal/20">
                 <Icon size={20} weight="duotone" />
               </span>
-              <div className="flex-1 text-sm font-medium text-ink dark:text-gray-100">{isAr ? item.labelAr : item.labelEn}</div>
+              <div className="flex-1 text-sm font-medium text-ink">{isAr ? item.labelAr : item.labelEn}</div>
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
                 {isAr ? "قريباً" : "Soon"}
               </span>

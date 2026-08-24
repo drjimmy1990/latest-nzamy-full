@@ -196,7 +196,7 @@ function TypeCard({ type, txt, isAr, isHovered, onHover, href, index }: CardProp
           </div>
 
           {/* Title & description */}
-          <h3 className="font-heading text-2xl font-bold text-ink dark:text-gray-100 mb-2">
+          <h3 className="font-heading text-2xl font-bold text-ink mb-2">
             {title}
           </h3>
           <p className="text-ink-muted dark:text-gray-400 text-sm leading-relaxed mb-6">
@@ -350,7 +350,7 @@ export default function RegisterPage() {
             </span>
           </motion.div>
 
-          <h1 className="font-heading text-3xl md:text-4xl font-bold text-ink dark:text-gray-100 mb-3">
+          <h1 className="font-heading text-3xl md:text-4xl font-bold text-ink mb-3">
             {txt.pageTitle}
           </h1>
           <p className="text-ink-muted dark:text-gray-400 text-base md:text-lg">
@@ -407,7 +407,7 @@ export default function RegisterPage() {
                     className="group flex items-center gap-2 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card/60 hover:border-royal/30 dark:hover:border-royal/30 px-3.5 py-2 transition-all hover:shadow-sm"
                   >
                     <Icon size={14} weight="duotone" className="text-zinc-400 group-hover:text-royal dark:group-hover:text-emerald-400 transition-colors flex-shrink-0" />
-                    <p className="text-[12px] font-semibold text-ink dark:text-gray-200 group-hover:text-royal dark:group-hover:text-emerald-400 transition-colors">{p.label}</p>
+                    <p className="text-[12px] font-semibold text-ink group-hover:text-royal dark:group-hover:text-emerald-400 transition-colors">{p.label}</p>
                     <CaretLeft size={10} className={`text-zinc-300 group-hover:text-royal dark:group-hover:text-emerald-400 transition-colors flex-shrink-0 ms-auto ${!isAr ? "rotate-180" : ""}`} />
                   </a>
                 );
@@ -441,7 +441,7 @@ export default function RegisterPage() {
             ))}
           </div>
           <div className="flex items-center gap-1.5 text-sm text-ink-muted dark:text-gray-400">
-            <span className="font-bold text-ink dark:text-gray-200">{txt.trustedCount}</span>
+            <span className="font-bold text-ink">{txt.trustedCount}</span>
             <span>{txt.trustedBy}</span>
             <span>{txt.trustedLabel}</span>
           </div>

@@ -138,7 +138,7 @@ export default function PartnersPage() {
   };
 
   const partnerInputClass =
-    "w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-4 py-3 text-sm text-ink dark:text-gray-100 placeholder:text-ink-muted/60 dark:placeholder:text-gray-500 outline-none transition focus:border-royal/50 focus:ring-2 focus:ring-royal/15";
+    "w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-4 py-3 text-sm text-ink placeholder:text-ink-muted/60 dark:placeholder:text-gray-500 outline-none transition focus:border-royal/50 focus:ring-2 focus:ring-royal/15";
 
   return (
     <div dir={dir} className="min-h-screen bg-surface font-body dark:bg-dark-bg">
@@ -166,7 +166,7 @@ export default function PartnersPage() {
               </span>
             </motion.div>
 
-            <motion.h1 variants={item} className="font-brand text-4xl md:text-5xl lg:text-6xl font-bold text-ink dark:text-gray-100 leading-tight tracking-tight mb-5">
+            <motion.h1 variants={item} className="font-brand text-4xl md:text-5xl lg:text-6xl font-bold text-ink leading-tight tracking-tight mb-5">
               {isAr
                 ? (<>انمُ معنا.<br /><span className="text-royal dark:text-gold">شراكة تُبنى على النتائج</span></>)
                 : (<>Grow With Us.<br /><span className="text-royal dark:text-gold">Partnership Built on Results</span></>)
@@ -228,7 +228,7 @@ export default function PartnersPage() {
             transition={{ type: "spring", stiffness: 200, damping: 20 }}
             className="mb-12 text-center"
           >
-            <h2 className="font-brand text-3xl md:text-4xl font-bold text-ink dark:text-gray-100 mb-3">
+            <h2 className="font-brand text-3xl md:text-4xl font-bold text-ink mb-3">
               {isAr ? "أنواع الشراكات المتاحة" : "Available Partnership Types"}
             </h2>
             <p className="text-ink-muted dark:text-gray-400 text-base max-w-[50ch] mx-auto">
@@ -251,7 +251,7 @@ export default function PartnersPage() {
                   <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white dark:bg-dark-card shadow-sm ${type.accent}`}>
                     <Icon size={24} weight="duotone" />
                   </div>
-                  <h3 className={`font-brand text-lg font-bold mb-2 text-ink dark:text-gray-100`}>
+                  <h3 className={`font-brand text-lg font-bold mb-2 text-ink`}>
                     {isAr ? type.titleAr : type.titleEn}
                   </h3>
                   <p className="text-sm text-ink-muted dark:text-gray-400 leading-relaxed">
@@ -278,7 +278,7 @@ export default function PartnersPage() {
               viewport={{ once: true }}
               transition={{ type: "spring", stiffness: 200, damping: 22 }}
             >
-              <h2 className="font-brand text-3xl md:text-4xl font-bold text-ink dark:text-gray-100 mb-4">
+              <h2 className="font-brand text-3xl md:text-4xl font-bold text-ink mb-4">
                 {isAr ? "لماذا تختار الشراكة مع نظامي؟" : "Why Partner With Nezamy?"}
               </h2>
               <p className="text-ink-muted dark:text-gray-400 text-base mb-8 leading-relaxed max-w-[48ch]">
@@ -318,7 +318,7 @@ export default function PartnersPage() {
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-royal/6 dark:bg-royal/15 text-royal dark:text-gold">
                       <Icon size={20} weight="duotone" />
                     </div>
-                    <span className="text-sm font-medium text-ink dark:text-gray-200">
+                    <span className="text-sm font-medium text-ink">
                       {isAr ? b.ar : b.en}
                     </span>
                     <CheckCircle size={18} className="ms-auto shrink-0 text-emerald-500" weight="fill" />
@@ -383,7 +383,7 @@ export default function PartnersPage() {
                 <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10">
                   <CheckCircle size={32} weight="fill" className="text-emerald-500" />
                 </div>
-                <h3 className="font-brand text-xl font-bold text-ink dark:text-gray-100">
+                <h3 className="font-brand text-xl font-bold text-ink">
                   {isAr ? "تم استلام طلبك!" : "Application Received!"}
                 </h3>
                 <p className="mt-2 text-sm text-ink-muted dark:text-gray-400 max-w-[40ch]">
@@ -401,7 +401,7 @@ export default function PartnersPage() {
             ) : (
               <form onSubmit={handleApply} className="space-y-4">
                 <div className="text-center mb-2">
-                  <h3 className="font-brand text-xl font-bold text-ink dark:text-gray-100">
+                  <h3 className="font-brand text-xl font-bold text-ink">
                     {isAr ? "قدّم طلب شراكة" : "Apply for Partnership"}
                   </h3>
                   <p className="mt-1.5 text-sm text-ink-muted dark:text-gray-400">

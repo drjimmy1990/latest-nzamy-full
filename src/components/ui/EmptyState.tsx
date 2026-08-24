@@ -60,7 +60,7 @@ export default function EmptyState({
       </div>
 
       {/* Text */}
-      <h3 className={`font-semibold text-ink dark:text-gray-200 ${s.title} mb-1.5`}>
+      <h3 className={`font-semibold text-ink ${s.title} mb-1.5`}>
         {title}
       </h3>
       {description && (

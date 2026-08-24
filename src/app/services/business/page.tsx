@@ -97,7 +97,7 @@ export default function BusinessPage() {
                       <Buildings size={20} weight="duotone" className="text-gold-dark" />
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-ink dark:text-gray-100">{isAr ? "لوحة الشركة" : "Company Dashboard"}</div>
+                      <div className="text-sm font-semibold text-ink">{isAr ? "لوحة الشركة" : "Company Dashboard"}</div>
                       <div className="text-xs text-ink-muted dark:text-gray-400">{isAr ? "عرض حي للمنصة" : "Live platform preview"}</div>
                     </div>
                   </div>
@@ -152,7 +152,7 @@ export default function BusinessPage() {
                 <motion.div key={i} initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.07 }}
                   className="flex flex-col gap-2 rounded-2xl border border-slate-200/50 bg-white p-4 dark:border-white/10 dark:bg-dark-card">
                   <span className="text-2xl">{cat.emoji}</span>
-                  <div className="font-brand text-sm font-bold text-ink dark:text-gray-100">{isAr ? cat.labelAr : cat.labelEn}</div>
+                  <div className="font-brand text-sm font-bold text-ink">{isAr ? cat.labelAr : cat.labelEn}</div>
                   <div className="text-[11px] text-ink-muted dark:text-gray-500">{isAr ? cat.descAr : cat.descEn}</div>
                 </motion.div>
               ))}
@@ -179,7 +179,7 @@ export default function BusinessPage() {
                   <div className="mt-6 rounded-[2rem] border border-royal/15 bg-white p-8 dark:border-white/10 dark:bg-dark-card md:p-10">
                     <div className="grid gap-8 md:grid-cols-2">
                       <div>
-                        <h3 className="font-brand text-xl font-bold text-ink dark:text-gray-100">{selected.label}</h3>
+                        <h3 className="font-brand text-xl font-bold text-ink">{selected.label}</h3>
                         <p className="mt-2 text-sm leading-relaxed text-ink-muted dark:text-gray-400">{selected.desc}</p>
                         <ul className="mt-6 space-y-3">
                           {selected.features.map((f, i) => (

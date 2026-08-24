@@ -27,7 +27,7 @@ export function StepConfirm({
           className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-emerald-50 dark:bg-emerald-500/10">
           <CheckCircle size={44} weight="fill" className="text-emerald-500" />
         </motion.div>
-        <h2 className="font-brand text-2xl font-extrabold text-ink dark:text-gray-100">
+        <h2 className="font-brand text-2xl font-extrabold text-ink">
           {isAr ? "تم الحجز بنجاح!" : "Booking Confirmed!"}
         </h2>
         <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
@@ -61,7 +61,7 @@ export function StepConfirm({
 
   return (
     <div>
-      <h2 className="mb-5 font-brand text-lg font-bold text-ink dark:text-gray-100">
+      <h2 className="mb-5 font-brand text-lg font-bold text-ink">
         {isAr ? "مراجعة وتأكيد" : "Review & Confirm"}
       </h2>
       <div className="space-y-3">
@@ -86,7 +86,7 @@ export function StepConfirm({
             </span>
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint dark:text-gray-600">{isAr ? row.labelAr : row.labelEn}</div>
-              <div className="text-sm text-ink dark:text-gray-200">{row.value}</div>
+              <div className="text-sm text-ink">{row.value}</div>
             </div>
           </div>
         ))}

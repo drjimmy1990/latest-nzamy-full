@@ -382,7 +382,7 @@ export default function NotificationsPage() {
                         {/* Content */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
-                            <p className={`text-sm font-semibold truncate ${!notification.isRead ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-200"}`}>
+                            <p className={`text-sm font-semibold truncate ${!notification.isRead ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300"}`}>
                               {notification.title}
                             </p>
                             <span className="flex-shrink-0 text-xs text-gray-400 dark:text-gray-500 mt-0.5">
