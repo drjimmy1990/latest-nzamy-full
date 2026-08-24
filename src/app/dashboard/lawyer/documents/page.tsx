@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FolderOpen, MagnifyingGlass, Plus, UploadSimple,
@@ -19,8 +19,10 @@ import {
 } from "./_taxonomy";
 import { SmartTemplateModal } from "./SmartTemplateModal";
 import { TYPE_ICON, TYPE_COLOR, TMPL_CAT_CONFIG_ICONS } from "./_ui-config";
-import { getDocuments } from "@/lib/services/documentService";
+import { getDocuments, uploadDocumentFile, isUploadTimeoutError } from "@/lib/services/documentService";
 import type { Document } from "@/lib/services/documentService";
+import { partitionUploadFiles } from "@/lib/services/fileValidation";
+import { isSupabaseMode } from "@/lib/services/api";
 
 // Page
 
@@ -62,19 +64,97 @@ export default function DocumentsPage() {
   const [advancedOpen,  setAdvancedOpen]  = useState(false);
   const [smartTmpl,     setSmartTmpl]     = useState<Template | null>(null);
 
-  useEffect(() => {
-    const fetchDocs = async () => {
-      try {
-        const apiDocs = await getDocuments();
-        setDocs(apiDocs.map(apiDocToDoc));
-      } catch {
-        setDocs([]);
-      } finally {
-        setDocsLoading(false);
-      }
-    };
-    fetchDocs();
+  const [uploading,     setUploading]     = useState(false);
+  const [uploadError,   setUploadError]   = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadDocs = useCallback(async () => {
+    setDocsLoading(true);
+    try {
+      const apiDocs = await getDocuments();
+      setDocs(apiDocs.map(apiDocToDoc));
+      return true;
+    } catch {
+      setDocs([]);
+      return false;
+    } finally {
+      setDocsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadDocs();
+  }, [loadDocs]);
+
+  /**
+   * «رفع مستند» used to open the picker and drop the selection on the floor —
+   * the input had no onChange at all. Same shape as the client documents page:
+   * every file gets its own try so one failure does not abandon the rest, and
+   * only a timeout ends the batch, since it means the link is not carrying
+   * data and the remaining files would each spend another minute proving it.
+   */
+  const handleFiles = useCallback(async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    if (!isSupabaseMode) {
+      setUploadError("الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات.");
+      return;
+    }
+
+    // Size and extension are checked before anything is sent, through the same
+    // gate every other upload surface uses.
+    const { accepted, rejectedMessage } = partitionUploadFiles(Array.from(fileList));
+    // Clearing the input is what lets the same file be picked again after a
+    // correction — an unchanged value fires no change event.
+    const resetInput = () => { if (fileInputRef.current) fileInputRef.current.value = ""; };
+    if (accepted.length === 0) {
+      setUploadError(rejectedMessage);
+      resetInput();
+      return;
+    }
+
+    const problems: string[] = rejectedMessage ? [rejectedMessage] : [];
+    const uploaded: string[] = [];
+    setUploading(true);
+    setUploadError(rejectedMessage);
+    try {
+      for (let i = 0; i < accepted.length; i++) {
+        const file = accepted[i];
+        try {
+          await uploadDocumentFile(file);
+          uploaded.push(file.name);
+        } catch (err) {
+          console.error("[lawyer-documents] upload failed:", err);
+          problems.push(
+            isUploadTimeoutError(err)
+              ? `${file.name}: ${err.message}`
+              : `${file.name}: تعذّر رفع الملف — تحقق من الاتصال وحاول مجدداً.`,
+          );
+          if (isUploadTimeoutError(err)) {
+            const untried = accepted.slice(i + 1).map(f => f.name);
+            if (untried.length > 0) {
+              problems.push(`لم تتم محاولة رفع: ${untried.join("، ")} — توقّف الرفع بعد انتهاء المهلة.`);
+            }
+            setUploadError(problems.join("\n"));
+            break;
+          }
+          setUploadError(problems.join("\n"));
+        }
+      }
+    } finally {
+      setUploading(false);
+      resetInput();
+    }
+
+    if (uploaded.length === 0) return;
+
+    // The files are on the server whatever the refresh does, so a failed
+    // reload must not be reported as a failed upload.
+    const refreshed = await loadDocs();
+    if (!refreshed) {
+      problems.push(`تم رفع: ${uploaded.join("، ")} — لكن تعذّر تحديث القائمة. حدّث الصفحة لعرض ما تم رفعه.`);
+      setUploadError(problems.join("\n"));
+    }
+  }, [loadDocs]);
 
   // ─ Appeals 3-level state ─
   const [appealType,    setAppealType]    = useState<string>("all");
@@ -144,15 +224,36 @@ export default function DocumentsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border cursor-pointer transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            <UploadSimple size={15} />رفع مستند
-            <input type="file" className="hidden" />
+          <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
+            isSupabaseMode && !uploading
+              ? isDark ? "border-white/10 text-zinc-300 hover:bg-white/5 cursor-pointer" : "border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+              : isDark ? "border-white/5 text-zinc-600 cursor-not-allowed" : "border-slate-100 text-slate-300 cursor-not-allowed"
+          }`}>
+            <UploadSimple size={15} />{uploading ? "جاري الرفع…" : "رفع مستند"}
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              multiple
+              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+              disabled={!isSupabaseMode || uploading}
+              onChange={e => handleFiles(e.target.files)}
+            />
           </label>
           <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
             <Plus size={15} weight="bold" />جديد
           </button>
         </div>
       </motion.div>
+
+      {/* Upload failures — one line per file, so a batch says which file it is
+          talking about (whitespace-pre-line keeps them apart). */}
+      {uploadError && (
+        <div className={`flex items-start gap-3 p-4 rounded-2xl border text-sm ${isDark ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+          <Warning size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
+          <span className="whitespace-pre-line">{uploadError}</span>
+        </div>
+      )}
 
       {/* Main Tab Switch */}
       <div className={`flex rounded-2xl p-1 ${isDark ? "bg-zinc-800/80 border border-white/[0.06]" : "bg-slate-100/80 border border-slate-200"}`}>

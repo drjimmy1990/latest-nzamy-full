@@ -9,6 +9,14 @@ import {
   MapPin, Image, Stamp, Notebook, Warning,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { MAX_UPLOAD_BYTES } from "@/lib/services/fileValidation";
+
+// The per-file ceiling the platform actually enforces, in Arabic megabytes,
+// read off the constant rather than typed here — the client documents page was
+// typed by hand and drifted to ١٠٠.
+const MAX_UPLOAD_MB_AR = (MAX_UPLOAD_BYTES / (1024 * 1024)).toLocaleString("ar-EG", {
+  maximumFractionDigits: 0,
+});
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -51,7 +59,6 @@ const VAULT_TABS: { key: VaultTab; label: string; icon: typeof Vault }[] = [
 export default function AIVaultPage() {
   const { isDark } = useTheme();
   const [items, setItems] = useState(INITIAL_ITEMS);
-  const [dragging, setDragging] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<VaultTab>("documents");
 
@@ -73,7 +80,7 @@ export default function AIVaultPage() {
             <span className="rounded-full bg-purple-500/15 border border-purple-500/30 px-2.5 py-0.5 text-[10px] font-bold text-purple-400">MAX فقط</span>
           </div>
           <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            ارفع وثائق شركتك/مكتبك — AI ينزّل البيانات تلقائياً في كل عقد ومذكرة
+            خزنة وثائق شركتك/مكتبك — AI ينزّل البيانات تلقائياً في كل عقد ومذكرة
           </p>
         </div>
         <div className={`hidden sm:flex items-center gap-1.5 rounded-xl px-3 py-2 border ${isDark ? "border-white/[0.06] bg-zinc-800" : "border-zinc-200 bg-zinc-50"}`}>
@@ -108,35 +115,37 @@ export default function AIVaultPage() {
           <div className={`rounded-2xl p-4 border ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
             <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
               <span className="font-bold text-[#C8A762] me-1">كيف تعمل الخزنة؟</span>
-              ارفع وثائق شركتك (سجل تجاري، عقد تأسيس، ترويسة...) — عند صياغة أي وثيقة، AI ينزّل بيانات الشركة تلقائياً.
+              ستحفظ الخزنة وثائق شركتك (سجل تجاري، عقد تأسيس، ترويسة...) — وعند صياغة أي وثيقة، ينزّل AI بيانات الشركة تلقائياً. الخزنة قيد التجهيز، والمستندات المعروضة أدناه نموذج توضيحي.
             </p>
           </div>
 
-          {/* Upload zone */}
+          {/* Upload zone — inert, and now says so. The vault has no backend:
+              nothing on this page reads or writes a server, and the drop
+              handler pushed the dropped file straight into local state, so a
+              file "uploaded" here looked saved and was gone on the next
+              reload. The box also carried cursor-pointer with no onClick, and
+              said «الملفات» while taking files[0] only. Wiring it to the real
+              documentService would file company papers into the client
+              documents list, which is not what this vault is for, so it stays
+              closed until it has somewhere of its own to put them. */}
           <div
-            onDragOver={e => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={e => {
-              e.preventDefault(); setDragging(false);
-              const f = e.dataTransfer.files[0];
-              if (f) setItems(prev => [{ id: Date.now().toString(), name: f.name, type: "other", date: "الآن", size: `${(f.size / 1024).toFixed(0)} ك.ب`, icon: FileText, daysLeft: null }, ...prev]);
-            }}
-            className={`cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition-all ${dragging
-              ? isDark ? "border-[#C8A762]/60 bg-[#C8A762]/5" : "border-amber-400/60 bg-amber-50"
-              : isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-amber-300"
-            }`}
+            aria-disabled
+            className={`rounded-2xl border-2 border-dashed p-8 text-center ${isDark ? "border-white/[0.08]" : "border-zinc-200"}`}
           >
-            <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl ${dragging ? "bg-[#C8A762]/20" : isDark ? "bg-white/[0.05]" : "bg-zinc-100"}`}>
-              <CloudArrowUp size={22} className={dragging ? "text-[#C8A762]" : isDark ? "text-zinc-500" : "text-zinc-400"} />
+            <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl ${isDark ? "bg-white/[0.05]" : "bg-zinc-100"}`}>
+              <CloudArrowUp size={22} className={isDark ? "text-zinc-600" : "text-zinc-400"} />
             </div>
-            <p className={`text-[13px] font-semibold mb-1 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-              {dragging ? "أفلت الملف للرفع" : "اسحب وأفلت الملفات هنا"}
+            <p className={`text-[13px] font-semibold mb-1 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+              رفع المستندات غير متاح بعد
             </p>
-            <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>PDF · Word · PNG/JPG — حد أقصى ٢٠ م.ب/ملف</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>PDF · Word · PNG/JPG — حد أقصى {MAX_UPLOAD_MB_AR} م.ب/ملف عند التفعيل</p>
             <div className="flex flex-wrap gap-2 justify-center mt-3">
               {["سجل تجاري", "عقد تأسيس", "ترويسة", "لوائح", "وكالات", "صكوك"].map(t => (
                 <span key={t} className={`rounded-full px-2.5 py-1 text-[10px] border ${isDark ? "border-white/[0.06] text-zinc-600" : "border-zinc-200 text-zinc-400"}`}>{t}</span>
               ))}
+            </div>
+            <div className={`inline-block rounded-xl px-4 py-2 border text-[11px] mt-4 ${isDark ? "border-[#C8A762]/20 text-[#C8A762]" : "border-amber-200 text-amber-600"}`}>
+              قريباً — الخزنة قيد التجهيز
             </div>
           </div>
 
@@ -154,7 +163,7 @@ export default function AIVaultPage() {
               {items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Vault size={32} className={isDark ? "text-zinc-700 mb-3" : "text-zinc-300 mb-3"} />
-                  <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>الخزنة فارغة — ارفع مستنداتك للبدء</p>
+                  <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>الخزنة فارغة — ستظهر مستنداتك هنا عند تفعيل الرفع</p>
                 </div>
               ) : (
                 <div className={`divide-y ${isDark ? "divide-white/[0.04]" : "divide-zinc-50"}`}>

@@ -15,6 +15,7 @@ import {
   type Document as ApiDocument,
 } from '@/lib/services';
 import { isUploadTimeoutError, isDocumentTimeoutError } from '@/lib/services/documentService';
+import { MAX_UPLOAD_BYTES, partitionUploadFiles } from '@/lib/services/fileValidation';
 import { isSupabaseMode } from '@/lib/services/api';
 import { SkeletonList } from '../_components/DashboardSkeleton';
 
@@ -26,6 +27,9 @@ interface Doc {
   caseRef: string;
   type: DocType;
   size: string;
+  // The raw byte count as well as the formatted string: the storage total at
+  // the foot of the page has to add these up, and «١.٢ MB» does not add.
+  sizeBytes: number;
   uploadedAt: string;
   format: 'pdf' | 'docx' | 'other';
   storagePath?: string;
@@ -44,6 +48,30 @@ function formatBytes(bytes: number | null | undefined): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/**
+ * The same size in Arabic, for the storage panel — which has always spoken
+ * Arabic, while formatBytes() feeds a mono-spaced column in every row and is
+ * left as it is.
+ */
+function formatBytesAr(bytes: number): string {
+  const ar = (n: number, digits: number) =>
+    n.toLocaleString('ar-EG', { maximumFractionDigits: digits });
+  if (bytes < 1024) return `${ar(bytes, 0)} بايت`;
+  if (bytes < 1024 * 1024) return `${ar(bytes / 1024, 0)} كيلوبايت`;
+  return `${ar(bytes / (1024 * 1024), 1)} ميجابايت`;
+}
+
+/**
+ * The per-file ceiling, in Arabic megabytes, read off the constant that
+ * actually refuses the file (MAX_UPLOAD_BYTES in fileValidation.ts) instead of
+ * typed under the drop zone by hand. It was typed by hand once and said ١٠٠
+ * while the limit was ٢٠, so a client could be promised five times what the
+ * page would accept; deriving it is what stops that from happening again.
+ */
+const MAX_UPLOAD_MB_AR = (MAX_UPLOAD_BYTES / (1024 * 1024)).toLocaleString('ar-EG', {
+  maximumFractionDigits: 0,
+});
 
 function docTypeFromName(name: string): DocType {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
@@ -67,6 +95,7 @@ function apiDocToDoc(d: ApiDocument): Doc {
     caseRef: d.request_id || '',
     type: docTypeFromName(d.file_name),
     size: formatBytes(d.size_bytes),
+    sizeBytes: d.size_bytes ?? 0,
     uploadedAt: d.created_at ? new Date(d.created_at).toLocaleDateString('ar-SA') : '',
     format: docFormatFromName(d.file_name),
     storagePath: d.storage_path,
@@ -178,7 +207,10 @@ function DocRow({
         <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{doc.caseRef || '—'}</p>
       </div>
 
-      <span className={`hidden sm:inline-flex text-[10px] px-2.5 py-1 rounded-full font-bold border flex-shrink-0 ${
+      {/* Visible on a phone too: the size and date column beside it is already
+          hidden below md, so on a narrow screen this tag is the only thing
+          that says what kind of document the row is. */}
+      <span className={`inline-flex text-[10px] px-2.5 py-1 rounded-full font-bold border flex-shrink-0 ${
         isDark ? typeConfig[doc.type].dark : typeConfig[doc.type].light
       }`}>
         {typeConfig[doc.type].label}
@@ -292,17 +324,34 @@ export default function ClientDocumentsPage() {
       setActionError('الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات (NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase).');
       return;
     }
+    // The ceiling and the allowed extensions are checked before a byte leaves
+    // the machine, through the same batch gate attachFiles() uses in
+    // src/hooks/useOrderAttachments.ts — so both surfaces refuse the same file
+    // with the same Arabic sentence. The drop zone needs it more than the
+    // button does: the input's `accept` filters the picker only, and a file
+    // dragged onto the page never passes through it.
+    //
     // Indexed rather than for-of: on a timeout we need the tail of the
     // selection by position, to name what was never attempted.
-    const files = Array.from(fileList);
+    const { accepted: files, rejectedMessage } = partitionUploadFiles(Array.from(fileList));
+    if (files.length === 0) {
+      setActionError(rejectedMessage);
+      // Without this the client cannot pick the same file twice — an unchanged
+      // value fires no change event, so a corrected file of the same name
+      // would land on a dead input.
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     const uploaded: string[] = [];
     // Each problem is its own line. Joining with «، » would run the timeout
     // sentence's full stop straight into the next clause («…حاول مجدداً.، لم
     // تتم محاولة رفع…»), which reads as a typo on screen.
-    const problems: string[] = [];
+    // A part-refused selection carries both stories at once, so the rejection
+    // opens the banner and every upload failure is added under it.
+    const problems: string[] = rejectedMessage ? [rejectedMessage] : [];
 
     setUploading(true);
-    setActionError(null);
+    setActionError(rejectedMessage);
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -416,6 +465,32 @@ export default function ClientDocumentsPage() {
     );
   }, [docs, search]);
 
+  /** Everything stored, not everything matching the search box. */
+  const usedBytes = useMemo(
+    () => docs.reduce((total, d) => total + d.sizeBytes, 0),
+    [docs],
+  );
+
+  /**
+   * The same rule the empty state follows: a list we could not read means "we
+   * do not know", not "nothing". «٠ بايت» printed under the red banner would
+   * be a false total about files that are on the server.
+   */
+  const storageKnown = !loading && !(error && docs.length === 0);
+
+  const uploadReady = isSupabaseMode && !uploading;
+
+  /**
+   * The drop zone and the header button drive the one hidden input, so there
+   * is a single upload path and a single place where `multiple` and `accept`
+   * are declared. The input is `disabled` whenever `uploadReady` is false and
+   * a disabled input ignores .click(), so demo mode and an upload in flight
+   * both hold here without a second guard.
+   */
+  const openFilePicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
   return (
     <div className={`p-6 md:p-8 max-w-[1000px] mx-auto ${isDark ? "text-white" : "text-zinc-900"}`} dir="rtl" suppressHydrationWarning>
 
@@ -478,8 +553,25 @@ export default function ClientDocumentsPage() {
         </div>
       )}
 
-      {/* Upload Drop Zone */}
+      {/* Upload Drop Zone — the whole box opens the picker, not only the small
+          button in the header. It is the largest control on the page and it
+          says «اسحب وأفلت», so a client presses it; pressing it used to do
+          nothing at all, and nothing on screen sent them back up to the
+          header. Keyboard reaches it for the same reason. */}
       <motion.div
+        role="button"
+        tabIndex={uploadReady ? 0 : -1}
+        aria-disabled={!uploadReady}
+        aria-label="اختر ملفات للرفع"
+        onClick={openFilePicker}
+        onKeyDown={(e) => {
+          // Space as well as Enter: role="button" promises both, and a native
+          // button gives both.
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openFilePicker();
+          }
+        }}
         onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={(e) => {
@@ -491,7 +583,9 @@ export default function ClientDocumentsPage() {
           borderColor: isDragOver ? (isDark ? 'rgba(52, 211, 153, 0.5)' : 'rgba(11,61,46,0.5)') : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(228,228,231,1)'),
           backgroundColor: isDragOver ? (isDark ? 'rgba(52, 211, 153, 0.05)' : 'rgba(11,61,46,0.04)') : (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(250,250,250,1)')
         }}
-        className="border-2 border-dashed rounded-[2rem] p-10 text-center mb-8 transition-colors"
+        className={`border-2 border-dashed rounded-[2rem] p-10 text-center mb-8 transition-colors outline-none focus-visible:ring-4 focus-visible:ring-[#0B3D2E]/10 ${
+          uploadReady ? "cursor-pointer" : "cursor-not-allowed"
+        }`}
       >
         <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 transition-colors ${
           isDragOver
@@ -501,9 +595,9 @@ export default function ClientDocumentsPage() {
           {uploading ? <SpinnerGap size={28} weight="bold" className="animate-spin" /> : <UploadSimple size={28} weight={isDragOver ? "fill" : "regular"} />}
         </div>
         <p className={`text-[15px] font-bold mb-1.5 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
-          {uploading ? "جاري الرفع…" : "اسحب وأفلت الملفات هنا"}
+          {uploading ? "جاري الرفع…" : "اسحب وأفلت الملفات هنا أو اضغط للاختيار"}
         </p>
-        <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>PDF، Word، صور — حتى ١٠٠ ميجابايت لكل ملف</p>
+        <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>PDF، Word، صور — حتى {MAX_UPLOAD_MB_AR} ميجابايت لكل ملف</p>
       </motion.div>
 
       {/* Search + Sort */}
@@ -583,23 +677,33 @@ export default function ClientDocumentsPage() {
       </AnimatePresence>
       )}
 
-      {/* Storage indicator */}
+      {/* Storage indicator — the real total, added up from the rows above.
+          It used to print «١٠.٣ / ٥٠٠ ميجا», animate the bar to a literal
+          2.1% and end on «٤٨٩ ميجا متاحة», all of it fixed text: a client with
+          four hundred megabytes stored and a client with none read the same
+          three numbers.
+
+          The quota went with them rather than being corrected, because there
+          is no quota to correct — nothing on the server holds a client to a
+          total (the `documents` bucket sets a per-object limit and no more),
+          so a ratio and a «متاحة» line would be promising a ceiling that does
+          not exist. What is left is what is true: how much is stored, and how
+          many files it is. The bar went too — a bar with no denominator is a
+          shape, not a measurement. */}
       <div className={`mt-10 p-6 rounded-[2rem] border transition-colors ${
         isDark ? "bg-zinc-900/50 border-white/10" : "bg-white border-zinc-200"
       }`}>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between">
           <span className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>مساحة التخزين المشفرة</span>
-          <span className={`text-[13px] font-mono font-bold ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>١٠.٣ / ٥٠٠ ميجا</span>
+          <span className={`text-[13px] font-mono font-bold ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+            {storageKnown ? formatBytesAr(usedBytes) : '—'}
+          </span>
         </div>
-        <div className={`h-2.5 rounded-full overflow-hidden ${isDark ? "bg-white/10" : "bg-zinc-100"}`}>
-          <motion.div
-            className="h-full rounded-full bg-gradient-to-l from-[#0B3D2E] to-emerald-500"
-            initial={{ width: 0 }}
-            animate={{ width: '2.1%' }}
-            transition={{ delay: 0.5, duration: 1, type: "spring" }}
-          />
-        </div>
-        <p className={`text-[11px] font-bold mt-2 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>٤٨٩ ميجا متاحة — أنت في السليم!</p>
+        {storageKnown && (
+          <p className={`text-[11px] font-bold mt-2 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>
+            {docs.length.toLocaleString('ar-EG')} مستند محفوظ
+          </p>
+        )}
       </div>
 
     </div>
