@@ -19,7 +19,7 @@ const PAYMENT_METHODS = [
   { label: "مدى", sub: "بطاقة مصرفية سعودية", icon: Bank, val: "mada", border: "border-green-200 dark:border-green-800/40", badge: "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400", badgeLabel: "الأكثر شيوعاً" },
   { label: "Visa / Mastercard", sub: "بطاقة ائتمانية دولية", icon: CreditCard, val: "visa", border: "border-blue-200 dark:border-blue-800/40", badge: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", badgeLabel: "دولي" },
   { label: "STC Pay", sub: "محفظة STC", icon: DeviceMobile, val: "stc", border: "border-purple-200 dark:border-purple-800/40", badge: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400", badgeLabel: "محلي" },
-  { label: "Apple Pay", sub: "ادفع بـ Apple Pay", icon: AppleLogo, val: "apple", border: "border-gray-200 dark:border-white/10", badge: "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300", badgeLabel: "سريع" },
+  { label: "Apple Pay", sub: "محفظة Apple", icon: AppleLogo, val: "apple", border: "border-gray-200 dark:border-white/10", badge: "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300", badgeLabel: "سريع" },
 ];
 
 export default function StepPayment({ step, isDark, history, selections, onNavigate, onSelect, onPaymentComplete }: Props) {
@@ -85,7 +85,7 @@ export default function StepPayment({ step, isDark, history, selections, onNavig
           }}
           className="w-full mt-1 py-3.5 rounded-[1.25rem] bg-[#0B3D2E] text-white text-[13px] font-bold hover:bg-[#0d4d39] active:scale-[0.98] transition-all shadow-lg shadow-[#0B3D2E]/20"
         >
-          {requiresPaymentChoice ? "اختر طريقة الدفع" : "تأكيد الطلب والمتابعة"}
+          {requiresPaymentChoice ? "اختر طريقة الدفع المفضلة" : "تأكيد الطلب والمتابعة"}
         </motion.button>
       </motion.div>
     );
@@ -95,7 +95,7 @@ export default function StepPayment({ step, isDark, history, selections, onNavig
   if (step === "payment-method") {
     return (
       <motion.div variants={staggerListVariants} initial="hidden" animate="show" className="flex flex-col gap-3 relative">
-        <motion.p variants={staggerItemVariants} className={`text-xs font-medium text-center ${isDark ? "text-gray-400" : "text-gray-500"}`}>جميع المدفوعات محمية بنظام Escrow</motion.p>
+        <motion.p variants={staggerItemVariants} className={`text-xs font-medium text-center ${isDark ? "text-gray-400" : "text-gray-500"}`}>لن يتم تحصيل أي مبلغ الآن — الدفع الإلكتروني غير مفعّل، ويرتّب الفريق الدفع معك مباشرة</motion.p>
         {PAYMENT_METHODS.map(({ label, sub, icon: PaymentIcon, val, border, badge, badgeLabel }) => (
           <motion.button
             variants={staggerItemVariants}
