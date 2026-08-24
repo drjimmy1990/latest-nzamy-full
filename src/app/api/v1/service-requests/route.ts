@@ -6,6 +6,7 @@ import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
+import { checkOrderIntake, intakeErrorMessageAr } from "@/lib/services/intakeGuard";
 
 /**
  * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
@@ -151,7 +152,16 @@ export async function POST(request: NextRequest) {
     // B12 — payment-gateway gate: if a paid request is being created, ensure the
     // payments gateway is enabled. Free requests (amount === 0 / not_required)
     // are unaffected.
-    const payment = body.payment;
+    //
+    // Read off `requestData`, NOT `body`: the row's own `payment` column is
+    // written from `requestData.payment` below, and the payments-table insert
+    // reads this same object — so the gate has to look at exactly the object
+    // that gets persisted. Reading `body.payment` here while the insert read
+    // `requestData.payment` meant a wrapped `{ request: { payment: {...} } }`
+    // payload skipped the gate and still wrote a paid row. Latent — every
+    // current caller posts flat — but the two must stay in sync by
+    // construction, not by coincidence.
+    const payment = requestData.payment;
     const isPaidRequest =
       payment && typeof payment === "object" && Number(payment.amount) > 0;
 
@@ -163,6 +173,27 @@ export async function POST(request: NextRequest) {
           { status: 402 },
         );
       }
+    }
+
+    // Server-side intake contract. The four AI wizards each validate before
+    // submitting, but that check lived only in the browser: `metadata` was
+    // stored verbatim below, so a direct POST could persist a contracts draft
+    // with unnamed parties, a review with no contract file, or a wargaming
+    // critique with no memo — an order the admin has no way to fulfil.
+    // checkOrderIntake re-runs the very same validators the wizard ran (see
+    // src/lib/services/intakeGuard.ts). Anything that is not one of the four AI
+    // services — consultation bookings, case requests, contract requests, every
+    // other createWorkflowRequest caller — carries no `metadata.intake` and
+    // passes through untouched.
+    const intakeCheck = checkOrderIntake(requestData.metadata);
+    if (intakeCheck.kind === "invalid") {
+      console.error(
+        `[service-requests POST] intake rejected: service=${intakeCheck.service} errors=${intakeCheck.errors.join(" | ")}`,
+      );
+      return NextResponse.json(
+        { error: intakeErrorMessageAr(intakeCheck.errors) },
+        { status: 400 },
+      );
     }
 
     // Task 6d follow-up — clamp the creation-time status. Without this, a
