@@ -24,7 +24,11 @@ export const ADMIN_BACKEND_READINESS: AdminBackendReadinessSurface[] = [
     route: "/dashboard/admin/team",
     status: "Backend-ready",
     contract: "AdminTeamMember",
-    note: "إدارة RBAC مرئية ومحلية، والدعوات/التعليق تنتظر Auth/RBAC backend.",
+    // The old screen advertised a five-level RBAC matrix that nothing enforced.
+    // It was replaced with an honest state: every admin account currently holds
+    // full authority (assertRole.ts treats `admin` as a blanket bypass), so
+    // there are no tiers to render until that changes.
+    note: "الدعوات والتعليق تعمل عبر /api/v1/admin/teams. لا توجد مستويات صلاحية — كل حساب أدمن يملك صلاحية كاملة.",
   },
   {
     id: "business-profiles",

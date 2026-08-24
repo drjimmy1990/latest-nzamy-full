@@ -87,8 +87,13 @@ export default function TeamTab() {
 
   const toggleStatus = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "active" ? "suspended" : "active";
-    const actionLabel = newStatus === "active" ? "تنشيط" : "تعليق";
-    if (!confirm(`هل أنت متأكد من ${actionLabel} عضو الفريق هذا؟`)) return;
+    // The status is a label on profiles.metadata; nothing in the auth path reads it, so
+    // "تعليق" does not revoke anything. Say so before the owner assumes otherwise.
+    const confirmText =
+      newStatus === "suspended"
+        ? "التعليق وسم إداري فقط ولا يمنع العضو من الدخول إلى لوحة الإدارة. هل تريد المتابعة؟"
+        : "هل أنت متأكد من تنشيط وسم عضو الفريق هذا؟";
+    if (!confirm(confirmText)) return;
     try {
       const res = await fetch("/api/v1/admin/teams", {
         method: "PATCH",
@@ -116,7 +121,7 @@ export default function TeamTab() {
 
   const getKpiText = (m: any) => {
     if (m.status === "invited") return "بانتظار قبول الدعوة";
-    if (m.status === "suspended") return "تم تعليق الحساب";
+    if (m.status === "suspended") return "موسوم كمعلّق — الوصول لم يُسحب";
     return m.email || "حساب نشط";
   };
 
@@ -139,6 +144,24 @@ export default function TeamTab() {
       {showInviteForm && (
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className={`${card} p-5 border border-amber-500/20`}>
           <h3 className="text-[13px] font-bold text-white mb-4">دعوة عضو فريق جديد</h3>
+
+          {/* The invite creates a user_type "admin" account — full platform authority.
+              assertRole.ts:46 and UserTypeGuard.tsx:32 let 'admin' through everything,
+              and the role/department below are descriptive labels, not permissions. */}
+          <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/[0.08] p-4">
+            <div className="flex items-start gap-2">
+              <Shield size={16} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-[12px] font-black text-red-300 mb-1.5">تنبيه: الدعوة تمنح صلاحية إدارية كاملة</p>
+                <p className="text-[11px] text-red-200/80 leading-relaxed">
+                  العضو المدعو يصبح «مدير» بصلاحية كاملة على المنصة: إعدادات المنصة، خطط الأسعار، الاشتراكات،
+                  منح الصلاحيات، الكوبونات، الإيرادات، وبيانات كل المستخدمين. لا يوجد مستوى صلاحية أقل من ذلك،
+                  والمسمى الوظيفي والقسم أدناه وصف تنظيمي فقط ولا يُقيّدان ما يستطيع العضو فعله.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <form onSubmit={handleInvite} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] text-zinc-500 mb-1">الاسم</label>
@@ -163,7 +186,7 @@ export default function TeamTab() {
               />
             </div>
             <div>
-              <label className="block text-[10px] text-zinc-500 mb-1">الدور الوظيفي</label>
+              <label className="block text-[10px] text-zinc-500 mb-1">المسمى الوظيفي (وصف فقط — لا يمنح ولا يقيّد صلاحية)</label>
               <input
                 required
                 type="text"
@@ -174,7 +197,7 @@ export default function TeamTab() {
               />
             </div>
             <div>
-              <label className="block text-[10px] text-zinc-500 mb-1">القسم</label>
+              <label className="block text-[10px] text-zinc-500 mb-1">القسم (وصف فقط — لا يقيّد الوصول)</label>
               <select
                 value={inviteDept}
                 onChange={(e) => setInviteDept(e.target.value)}
@@ -200,7 +223,7 @@ export default function TeamTab() {
                 disabled={inviting}
                 className="px-4 py-2 rounded-xl bg-[#C8A762] text-[11px] font-bold text-black hover:bg-amber-400 transition-all disabled:opacity-50"
               >
-                {inviting ? "جاري الإرسال..." : "إرسال الدعوة"}
+                {inviting ? "جاري الإرسال..." : "إرسال الدعوة ومنح صلاحية كاملة"}
               </button>
             </div>
           </form>
@@ -237,7 +260,7 @@ export default function TeamTab() {
                             ? "bg-red-500/15 border-red-500/30 text-red-400"
                             : "bg-amber-500/15 border-amber-500/30 text-amber-400"
                         }`}>
-                          {m.status === "active" ? "نشط" : m.status === "suspended" ? "معلق" : "مدعو"}
+                          {m.status === "active" ? "نشط" : m.status === "suspended" ? "معلق (وسم إداري)" : "مدعو"}
                         </span>
                       </div>
                       <p className={`text-[11px] font-semibold ${style.color}`}>{m.role}</p>
@@ -253,7 +276,7 @@ export default function TeamTab() {
                             m.status === "active" ? "text-red-400 hover:text-red-300" : "text-emerald-400 hover:text-emerald-300"
                           }`}
                         >
-                          {m.status === "active" ? "تعليق" : "تنشيط"}
+                          {m.status === "active" ? "وسم كمعلّق" : "إلغاء الوسم"}
                         </button>
                       )}
                     </div>
@@ -268,22 +291,13 @@ export default function TeamTab() {
                     </div>
                   </div>
 
-                  {/* Dashboard Tabs */}
-                  {m.dashboardTabs && m.dashboardTabs.length > 0 && (
-                    <div>
-                      <p className="text-[9px] text-zinc-600 mb-1.5">يمكنه الوصول لتبويبات:</p>
-                      <div className="flex flex-wrap gap-1">
-                        {m.dashboardTabs.map((tab: string) => (
-                          <span
-                            key={tab}
-                            className="text-[9px] font-semibold bg-white/[0.04] text-zinc-400 px-2 py-0.5 rounded-md"
-                          >
-                            {tab}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {/* Actual authority. Every member listed here is user_type "admin", which
+                      passes every allow-list (assertRole.ts:46) and every UI guard
+                      (UserTypeGuard.tsx:32) — there is no narrower level to display. */}
+                  <div className="flex items-center gap-1.5">
+                    <Shield size={11} weight="fill" className="text-red-400" />
+                    <p className="text-[10px] font-bold text-red-400">صلاحية إدارية كاملة على المنصة</p>
+                  </div>
                 </div>
               </div>
             </motion.div>
