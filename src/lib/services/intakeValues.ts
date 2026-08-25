@@ -294,16 +294,25 @@ export const INTAKE_VALUE_AR: Record<string, string> = {
   // (src/app/ai/legal-opinion/_components/LetterWorkflow.tsx).
   // Every id in LETTER_TYPES must appear below: valueLabelAr falls back to the
   // raw stored value, so a missing key prints the English id in the admin brief.
+  // Wording follows LETTER_TYPES in src/app/ai/legal-opinion/_constants.ts —
+  // the owner's own list, which covers the Saudi families he asked for
+  // (government/grievance, real estate, commercial). Change one, change the other.
   "letterType:warning": "إنذار قانوني",
+  "letterType:termination": "إخطار بفسخ عقد / إنهاء علاقة",
+  "letterType:demand": "مطالبة مالية وسداد مستحقات",
+  "letterType:eviction": "إشعار إخلاء عقار",
+  "letterType:settlement": "عرض تسوية ودية",
   "letterType:notice": "إخطار رسمي",
-  "letterType:request": "طلب مستند / معلومة",
-  "letterType:demand": "مطالبة مالية",
-  "letterType:complaint": "شكوى",
-  "letterType:objection": "اعتراض على قرار",
-  "letterType:release": "طلب إفراج عن مستند",
-  "letterType:proxy": "توكيل",
-  "letterType:settlement": "طلب تسوية ودية",
+  "letterType:objection": "تظلم / اعتراض إداري",
+  "letterType:request": "طلب مستند / إفادة رسمية",
+  "letterType:proxy": "تفويض / إقرار رسمي",
+  "letterType:release": "طلب إفراج عن مستند / كفالة",
   "letterType:other": "أخرى",
+  // Retired from the picker, KEPT here on purpose. Orders placed before the list
+  // was reworked still carry these ids in metadata.intake, and valueLabelAr falls
+  // back to the raw stored value — so deleting these lines would print «complaint»
+  // in English to the team on every one of those older letters.
+  "letterType:complaint": "شكوى",
   // src/app/ai/legal-opinion/_components/LetterWorkflow.tsx:346 and :361 —
   // these two pickers say "شركة / مؤسسة" where the party-type picker says
   // plain "شركة", so they need the field scope to win over it.

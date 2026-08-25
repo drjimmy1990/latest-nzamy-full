@@ -91,17 +91,23 @@ test("every letter type the picker offers has an Arabic label", () => {
   // key is missing, so a tile added without a `letterType:<id>` entry prints
   // its English id in the admin brief instead of failing loudly.
   const LETTER_TYPE_IDS = [
-    "warning", "notice", "request", "demand", "complaint",
-    "objection", "release", "proxy", "settlement", "other",
+    "warning", "termination", "demand", "eviction", "settlement",
+    "notice", "objection", "request", "proxy", "release", "other",
+    // Retired from the picker, still stored on older orders — the dictionary
+    // must keep resolving them or those letters print English to the team.
+    "complaint",
   ];
   for (const id of LETTER_TYPE_IDS) {
     const ar = valueLabelAr("letterType", id);
     assert.notEqual(ar, id, `letterType:${id} has no label — the admin brief would print «${id}»`);
     assert.match(ar, /[؀-ۿ]/, `letterType:${id} resolved to «${ar}», which is not Arabic`);
   }
-  // The tenth tile, added on the owner's 25 August note, spelled out so a
-  // silent rewording of the label is caught too.
-  assert.equal(valueLabelAr("letterType", "settlement"), "طلب تسوية ودية");
+  // Three spelled out so a silent rewording is caught too. The wording is the
+  // owner's own, from LETTER_TYPES — «عرض» تسوية, not «طلب», and the two Saudi
+  // families he asked for that the earlier list had no tile for at all.
+  assert.equal(valueLabelAr("letterType", "settlement"), "عرض تسوية ودية");
+  assert.equal(valueLabelAr("letterType", "eviction"), "إشعار إخلاء عقار");
+  assert.equal(valueLabelAr("letterType", "termination"), "إخطار بفسخ عقد / إنهاء علاقة");
 });
 
 test("the tenth letter type reaches the admin brief in Arabic, not as «settlement»", () => {
@@ -111,7 +117,7 @@ test("the tenth letter type reaches the admin brief in Arabic, not as «settleme
   const letterRow = summaryLines(LEGAL_OPINION_LETTER_SETTLEMENT_ORDER)
     .find((l) => l.startsWith("بيانات الخطاب:"));
   assert.ok(letterRow, "the letter sub-object should render");
-  assert.ok(letterRow.includes("نوع الخطاب: طلب تسوية ودية"), letterRow);
+  assert.ok(letterRow.includes("نوع الخطاب: عرض تسوية ودية"), letterRow);
   assert.ok(!letterRow.includes("settlement"), letterRow);
   // …and the annex names arrive under a label that says they are not files.
   assert.ok(letterRow.includes("مرفقات ذيل الخطاب (أسماء فقط — غير مرفوعة): صورة العقد، كشف المستخلصات"), letterRow);
