@@ -1,61 +1,60 @@
 import type { SidebarGroup } from "./navigation.types";
 
-// ── Corporate Sidebar (شركة) ──────────────────────────────────────────────────
+// ── Corporate Sidebar (شركة) ──────────────────────────────────────
+//
+// 2026-08-26 — the owner's consolidated ruling §3أ. Every entry removed below
+// linked to a screen that renders invented data: hardcoded arrays of cases,
+// departments, employees, invoices and "reports" that belong to no real company,
+// or an "AI tool" whose only asynchronous work is a setTimeout followed by a
+// canned answer. His reason, in his words: a paying company opening the
+// dashboard and seeing cases that are not its own is worse than an empty screen.
+//
+// The pages themselves are NOT deleted — they stay in the tree for the wave that
+// builds each one for real. Only the links are gone, plus a guard in
+// src/app/dashboard/business/layout.tsx so a bookmarked URL does not walk past
+// the hidden link straight back into the fabricated screen.
+//
+// Removed, with the evidence (file:line of the invented data):
+//   إدارة القضايا          → constants/businessCasesData.ts:34   MOCK_CASES
+//   الدوائر والإيميلات    → business/circuits-emails/page.tsx:25   INITIAL_CIRCUITS
+//   الأقسام               → business/departments/page.tsx:43       MOCK_DEPTS
+//   إدارة الفريق           → business/team/page.tsx:72             MEMBERS (+ a fake invite link, :141)
+//   لوحة المهام            → business/kanban/page.tsx:67           MOCK_CARDS
+//   عقود الموظفين         → business/employee-contracts/page.tsx:34  CONTRACTS
+//   التقارير               → business/reports/page.tsx:14          DEPT_REPORTS / MONTHLY_TREND
+//   باقتنا                 → business/wallet/page.tsx:12,21,28     invented plan, usage log and two PAID invoices
+//   الفحص القانوني ٣٦٠°    → constants/healthCheckData.ts:16,42   MOCK_FILES / MOCK_FINDINGS
+//   الحوكمة + الموافقات     → business/governance/page.tsx:33      MOCK_RULES
+//   مراجعات الإدارات       → business/reviews/page.tsx:48         MOCK_DOCS
+//   إرسال للمراجعة         → business/reviews/new/page.tsx:14     writes to localStorage, never to service_requests
+//   المستشار المنتدب        → business/seconded-counsel/page.tsx:16,41  COUNSEL / TASKS
+//   طلباتي في السوق        → components/marketplace/MyMarketplaceDashboardData  MY_REQUESTS
+//   تصفح السوق / انشر طلباً → the marketplace is not part of the manual-fulfilment model
+//   the 11 «أدوات AI للشركات»  → ai/corp/contracts:89, ai/corp/advisor:70, ai/corp/hr:67,
+//                                 ai/corp/deal-intel:88, ai/corp/corpmind:246 — setTimeout, then a canned answer
+//
+// Kept because each one resolves to something that is really there today:
+// the overview shell, the blog, notifications and settings.
+//
+// NOT re-added yet, and each is somebody else's file — see the cluster report:
+//   «طلب خدمة جديدة» / «متابعة الطلبات»  — the real intake lives under /dashboard/client/*,
+//        which src/proxy.ts:16 refuses to a corporate account.
+//   «خزنة وثائق الشركة»        — no route exists yet.
+//   «باقتنا والاشتراك»          — no destination that is not fabricated.
 export const CORPORATE_SIDEBAR: SidebarGroup[] = [
   {
     items: [
-      { label: "نظرة عامة",     labelEn: "Overview",     href: "/dashboard/business",                      icon: "SquaresFour" },
-      { label: "إدارة القضايا",  labelEn: "All Cases",    href: "/dashboard/business/cases",               icon: "Gavel", gateKey: "business-litigation" },
-      { label: "الدوائر والإيميلات", labelEn: "Circuits & Emails", href: "/dashboard/business/circuits-emails", icon: "Envelope", gateKey: "business-litigation" },
-      { label: "الأقسام",        labelEn: "Departments",  href: "/dashboard/business/departments",          icon: "Buildings", gateKey: "departments" },
-      { label: "إدارة الفريق",   labelEn: "Team",         href: "/dashboard/business/team",                icon: "Users", gateKey: "team-manage" },
-      { label: "لوحة المهام",    labelEn: "Kanban",       href: "/dashboard/business/kanban",              icon: "Kanban", gateKey: "kanban" },
-      { label: "عقود الموظفين",  labelEn: "HR Contracts", href: "/dashboard/business/employee-contracts", icon: "FileText", gateKey: "hr-contracts" },
-      { label: "التقارير",       labelEn: "Reports",      href: "/dashboard/business/reports",             icon: "ChartBar", gateKey: "reports" },
-      { label: "باقتنا",         labelEn: "Our Plan",     href: "/dashboard/business/wallet",              icon: "Crown", gateKey: "finance" },
-    ],
-  },
-  {
-    title: "أدوات AI للشركات", titleEn: "Corporate AI Tools",
-    collapsible: true,
-    defaultOpen: true,
-    items: [
-      { label: "صائغ العقود",            labelEn: "Contract Drafter",    href: "/ai/corp/contracts",           icon: "FileText", badge: "جديد" },
-      { label: "محلل الصفقات والفرص",   labelEn: "Deal Intelligence",   href: "/ai/corp/deal-intel",          icon: "Briefcase",    badge: "جديد", gateKey: "ai-corp" },
-      { label: "المستشار التجاري",      labelEn: "Corp Advisor",        href: "/ai/corp/advisor",             icon: "Buildings", gateKey: "ai-corp" },
-      { label: "مراقب الامتثال",        labelEn: "Compliance",          href: "/ai/corp/compliance-monitor",  icon: "ShieldCheck", gateKey: "ai-corp" },
-      { label: "تحليل مخاطر الأطراف",   labelEn: "Risk Assessment",     href: "/ai/corp/risk-assessment",     icon: "ShieldWarning", gateKey: "ai-corp" },
-      { label: "التحصيل القانوني",      labelEn: "Debt Collection",     href: "/ai/debt-collection",          icon: "Money" },
-      { label: "LegalMail",             labelEn: "LegalMail",           href: "/ai/mail-advisor",             icon: "Envelope",     badge: "جديد" },
-      { label: "مستشار الموارد البشرية",labelEn: "HR Advisor",         href: "/ai/corp/hr",                  icon: "Users", gateKey: "hr-contracts" },
-      { label: "CorpMind وكيل الشركة",  labelEn: "CorpMind",            href: "/ai/corp/corpmind",            icon: "Robot",        badge: "مُحسّن", gateKey: "ai-corp" },
-      { label: "راصد التشريعات",        labelEn: "Law Monitor",         href: "/ai/monitor",                  icon: "Bell" },
-      { label: "فاحص المستندات",        labelEn: "Doc Analyzer",        href: "/ai/analyze?source=business",                  icon: "Scan",         badge: "للمستشار" },
-    ],
-  },
-  {
-    title: "الحوكمة والمراجعات", titleEn: "Governance & Reviews",
-    items: [
-      { label: "الفحص القانوني ٣٦٠°", labelEn: "Health Check 360°",  href: "/dashboard/business/health-check",     icon: "MagnifyingGlass", badge: "جديد",   gateKey: "health-check" },
-      { label: "الحوكمة المؤسسية",   labelEn: "Governance",         href: "/dashboard/business/governance",            icon: "ShieldCheck", badge: "جديد",        gateKey: "governance" },
-      { label: "الموافقات والقواعد",  labelEn: "Governance Matrix",  href: "/dashboard/business/governance?tab=matrix",  icon: "ListChecks",                       gateKey: "governance" },
-      { label: "إرسال للمراجعة",      labelEn: "New Review",         href: "/dashboard/business/reviews/new",      icon: "FileArrowUp", gateKey: "dept-reviews" },
-      { label: "مراجعات الإدارات",    labelEn: "Dept Reviews",       href: "/dashboard/business/reviews",          icon: "ClipboardText", gateKey: "dept-reviews" },
-      { label: "المستشار المنتدب",    labelEn: "Seconded Counsel",   href: "/dashboard/business/seconded-counsel", icon: "UserCircle", badge: "جديد", gateKey: "seconded-counsel" },
-    ],
-  },
-  {
-    title: "سوق المهنيين", titleEn: "Marketplace",
-    items: [
-      { label: "طلباتي في السوق",  labelEn: "My Requests",   href: "/dashboard/business/marketplace",  icon: "Storefront", badge: "جديد", gateKey: "marketplace" },
-      { label: "تصفح السوق",       labelEn: "Browse Market", href: "/marketplace",                      icon: "MagnifyingGlass", gateKey: "marketplace" },
-      { label: "انشر طلباً",       labelEn: "Post Request",  href: "/marketplace/post",                 icon: "PencilSimple", gateKey: "marketplace" },
+      { label: "نظرة عامة", labelEn: "Overview", href: "/dashboard/business", icon: "SquaresFour" },
     ],
   },
   {
     items: [
-      { label: "المدونة القانونية", labelEn: "Legal Blog", href: "/blog", icon: "Article", divider: true },
-      { label: "الإشعارات", labelEn: "Notifications", href: "/notifications", icon: "Bell" },
+      // The divider sits on الإشعارات, not on the blog: CORP_ROLE_ALLOWED_ITEMS
+      // (navigation.sidebars.ts:281) withholds "Legal Blog" from five of the nine
+      // business roles, and a separator attached to a filtered-out item vanishes
+      // with it. الإشعارات is in all nine lists.
+      { label: "الإشعارات", labelEn: "Notifications", href: "/notifications", icon: "Bell", divider: true },
+      { label: "المدونة القانونية", labelEn: "Legal Blog", href: "/blog", icon: "Article" },
       { label: "الإعدادات",  labelEn: "Settings",      href: "/settings",      icon: "GearSix" },
     ],
   },
@@ -257,3 +256,54 @@ export const NGO_SIDEBAR: SidebarGroup[] = [
     ],
   },
 ];
+
+// ── Which /dashboard/business/* routes are still reachable ────────────────
+//
+// Removing a sidebar link hides a section from anyone browsing. It does nothing
+// for the company that bookmarked /dashboard/business/kanban last week — that
+// URL still renders the invented kanban. So the visible set is derived from
+// CORPORATE_SIDEBAR itself (it cannot drift from the links above) and the
+// business layout renders a plain notice for anything outside it.
+//
+// This is a UX guard, not a security boundary: it runs in the browser, and the
+// pages it covers hold no real data to protect — that is precisely the problem
+// it exists to hide. The server-side rules for these routes are unchanged and
+// still live in src/constants/entityRouteAccess.ts and src/proxy.ts.
+
+const BUSINESS_ROOT = "/dashboard/business";
+
+/** Strip the query, the hash and any trailing slashes. "" normalises to "/". */
+function normalisePath(value: string): string {
+  const withoutQuery = value.split("?")[0].split("#")[0];
+  const trimmed = withoutQuery.replace(/\/+$/, "");
+  return trimmed === "" ? "/" : trimmed;
+}
+
+/**
+ * Every /dashboard/business route the corporate sidebar still links to.
+ * Derived from CORPORATE_SIDEBAR so that re-adding a link automatically
+ * re-opens its route, and hiding one closes it.
+ */
+export const VISIBLE_BUSINESS_ROUTES: readonly string[] = CORPORATE_SIDEBAR
+  .flatMap((group) => group.items)
+  .map((item) => normalisePath(item.href))
+  .filter((href) => href === BUSINESS_ROOT || href.startsWith(`${BUSINESS_ROOT}/`));
+
+/**
+ * True when `pathname` is one of the corporate sections that survived the
+ * 26 August ruling — or a sub-page of one.
+ *
+ * The dashboard root is matched exactly and never as a prefix: it is the parent
+ * of every hidden section, so prefix-matching it would let all of them through.
+ */
+export function isVisibleBusinessRoute(
+  pathname: string,
+  visibleRoutes: readonly string[] = VISIBLE_BUSINESS_ROUTES,
+): boolean {
+  const path = normalisePath(pathname);
+  return visibleRoutes.some((route) => {
+    const allowed = normalisePath(route);
+    if (allowed === BUSINESS_ROOT) return path === BUSINESS_ROOT;
+    return path === allowed || path.startsWith(`${allowed}/`);
+  });
+}

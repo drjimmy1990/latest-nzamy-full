@@ -411,6 +411,26 @@ export const INTAKE_LABELS: Record<string, string> = {
   // wording for the thing is "المذكرة المراد نقضها"
   // (src/app/ai/wargaming/page.tsx:648).
   memoAttachmentIds: "أرقام مستندات المذكرة المراد نقضها",
+  // ── Client + corporate intake (owner's ruling, 26 August) ──────────────────
+  // Three surfaces now write a generic intake instead of one of the four AI
+  // schemas: the client request form, the corporate «التقييم القانوني المجاني»
+  // lead, and the public consultation booking. labelFor() falls back to the raw
+  // key, so a field without an entry here reaches the fulfilment team as its
+  // English name — the defect fixed in a879f6e, and adding a field is exactly
+  // how it comes back.
+  subject: "موضوع الطلب",
+  // `companyName` is NOT repeated here — it already exists further down for the
+  // letter wizard's party fields («اسم الشركة»), and that wording serves the
+  // corporate lead just as well. A second entry is a duplicate-key compile error.
+  companySize: "حجم الشركة",
+  legalNeeds: "الاحتياجات القانونية",
+  contactName: "اسم مسؤول التواصل",
+  contactPhone: "رقم الجوال",
+  contactEmail: "البريد الإلكتروني",
+  notes: "ملاحظات العميل",
+  consultationType: "نوع الاستشارة",
+  preferredTiming: "التوقيت المطلوب",
+  estimatedPrice: "السعر التقديري",
   // legal_opinion (الرأي الفصل)
   outputType: "نوع الطلب",
   topicArea: "مجال الموضوع",

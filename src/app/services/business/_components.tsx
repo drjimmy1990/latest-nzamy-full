@@ -5,7 +5,19 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Buildings, Scales, FileText, ShieldCheck, Gavel, Warning,
   Check, Clock, CurrencyDollar, CheckCircle, XCircle, ArrowLeft,
+  SpinnerGap, WarningCircle,
 } from "@phosphor-icons/react";
+// The pickers below and the public endpoint that stores their answers read ONE
+// list of company sizes and ONE list of legal needs, from the endpoint's own
+// module. Two copies would drift, and the first sign of the drift would be
+// leads silently failing validation with nobody watching.
+// The module is pure (no Supabase, no next/*) precisely so it can be imported
+// here, into the browser bundle.
+import {
+  COMPANY_SIZES, HONEYPOT_FIELD, LEGAL_NEEDS, LIMITS,
+  validateBusinessLead,
+  type CompanySizeId, type LegalNeedId,
+} from "@/app/api/v1/leads/business-assessment/lead";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -70,35 +82,135 @@ export function ServiceCard({ service, index, isAr, isSelected, onSelect }: {
 
 // ─── AssessmentModal ──────────────────────────────────────────────────────────
 
-const LEGAL_NEEDS_AR = [
-  "عقود ومراجعة وثائق", "قضايا عمالية ونزاعات", "امتثال تنظيمي وغرامات", "تحصيل ديون تجارية",
-  "تأسيس شركة أو هيكلة", "عقود مقاولات وإنشاء", "ملكية فكرية وعلامات تجارية", "نزاعات العقارات والإيجارات",
-];
+/**
+ * The free-assessment form — the primary call to action on this page, offered
+ * twice on it (hero + closing CTA).
+ *
+ * WHAT CHANGED, AND WHY THE OLD SCREEN COULD NOT STAY
+ * It used to collect the company name, size and legal needs and then throw all
+ * of it away: there was no POST anywhere in this file. Step 3 span a spinner
+ * captioned «نظامي AI يحلل احتياجاتك...» for exactly 1200ms and then showed a
+ * subscription plan as though it were the analysis result. Nothing was
+ * analysed, nothing was sent, and nobody was ever going to call the visitor
+ * back.
+ *
+ * It now submits to POST /api/v1/leads/business-assessment — a public endpoint,
+ * because a visitor to a marketing page is not signed in and «سجّل أولاً»
+ * would kill the lead this form exists to capture. The three screen states are
+ * real: «جارٍ الإرسال» while the request is in flight, an Arabic error with a
+ * retry when the server says no, and the confirmation ONLY after a 2xx, showing
+ * the reference the server actually wrote.
+ *
+ * The lists of company sizes and legal needs are imported from the endpoint's
+ * own module so the pickers and the validator cannot drift apart.
+ */
 
-const RECOMMENDED_PLANS: Record<number, { nameAr: string; price: string; features: string[]; badge: string }> = {
-  1: { nameAr: "الخطة AI", price: "٤٩٩ ر.س/شهر", badge: "مناسب لحجمك", features: ["استشارات AI غير محدودة", "مراجعة حتى ١٠ عقود/شهر", "تنبيهات الامتثال التلقائية", "دعم ٢٤/٧"] },
-  2: { nameAr: "الخطة PRO", price: "٩٩٩ ر.س/شهر", badge: "الأكثر شيوعاً", features: ["كل مزايا AI", "مراقب الأنظمة التلقائي", "مستشار HR + عمالي", "تقارير الامتثال الشهرية", "محامٍ مخصص على الطلب"] },
-  3: { nameAr: "خطة CORP", price: "٢,٤٩٩ ر.س/شهر", badge: "للمؤسسات الكبيرة", features: ["كل مزايا PRO", "CLM كامل + أرشيف ذكي", "لوحة تحليلات مخصصة", "SLA ٤ ساعات", "مدير حساب مخصص", "API integration"] },
-};
+type SubmitState = "idle" | "submitting" | "error";
 
 export function AssessmentModal({ onClose, isAr }: { onClose: () => void; isAr: boolean }) {
   const [step, setStep]                   = useState(1);
   const [companyName, setCompanyName]     = useState("");
-  const [companySize, setCompanySize]     = useState<number | null>(null);
-  const [selectedNeeds, setSelectedNeeds] = useState<string[]>([]);
-  const [done, setDone]                   = useState(false);
+  const [companySize, setCompanySize]     = useState<CompanySizeId | null>(null);
+  const [selectedNeeds, setSelectedNeeds] = useState<LegalNeedId[]>([]);
+  const [contactName, setContactName]     = useState("");
+  const [contactPhone, setContactPhone]   = useState("");
+  const [contactEmail, setContactEmail]   = useState("");
+  const [notes, setNotes]                 = useState("");
+  // Never filled by a human: the input is off-screen, unlabelled and
+  // tabIndex={-1}. An autofilling bot fills it, and the server rejects that
+  // submission.
+  const [honeypot, setHoneypot]           = useState("");
+  const [submitState, setSubmitState]     = useState<SubmitState>("idle");
+  const [errorMessage, setErrorMessage]   = useState("");
+  // Set from the server's response only. While it is null there is no
+  // confirmation screen, which is what makes a false success unreachable.
+  const [reference, setReference]         = useState<string | null>(null);
 
-  const toggleNeed = (need: string) =>
+  const done = reference !== null;
+  const submitting = submitState === "submitting";
+
+  const toggleNeed = (need: LegalNeedId) =>
     setSelectedNeeds(prev => prev.includes(need) ? prev.filter(n => n !== need) : [...prev, need]);
 
-  const planKey = companySize === 3 ? 3 : companySize === 2 ? 2 : 1;
-  const plan    = RECOMMENDED_PLANS[planKey];
+  const handleSubmit = async () => {
+    if (submitting) return;
+
+    const payload = {
+      companyName,
+      companySize,
+      needs: selectedNeeds,
+      contactName,
+      contactPhone,
+      contactEmail,
+      notes,
+      [HONEYPOT_FIELD]: honeypot,
+    };
+
+    // Run the server's own validator first, so a fixable mistake is named in
+    // exactly the words the server would have used — one dictionary of Arabic
+    // messages, not two that slowly disagree.
+    const check = validateBusinessLead(payload);
+    if (!check.ok) {
+      setErrorMessage(check.errors.join(" "));
+      setSubmitState("error");
+      return;
+    }
+
+    setSubmitState("submitting");
+    setErrorMessage("");
+
+    try {
+      const res = await fetch("/api/v1/leads/business-assessment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => null) as { success?: boolean; reference?: string; error?: string } | null;
+
+      if (!res.ok) {
+        setErrorMessage(data?.error || "تعذّر إرسال طلبك، حاول مرة أخرى.");
+        setSubmitState("error");
+        return;
+      }
+
+      // `res.ok` alone is NOT enough to show a confirmation. A 200 carrying an
+      // HTML body — a proxy or edge error page, a redirect to a login wall —
+      // parses to null here, and treating that as success would put the
+      // «تم استلام طلبك» screen in front of a visitor whose lead was never
+      // written. The route answers a real write with `{ success: true }` and
+      // nothing else does, so that is what the screen is gated on.
+      if (data?.success !== true) {
+        setErrorMessage("لم نتمكّن من تأكيد استلام طلبك. حاول مرة أخرى أو تواصل معنا مباشرة.");
+        setSubmitState("error");
+        return;
+      }
+
+      setReference(typeof data.reference === "string" ? data.reference : "");
+      setSubmitState("idle");
+    } catch {
+      setErrorMessage("تعذّر الاتصال بالخادم. تحقّق من اتصالك ثم حاول مرة أخرى.");
+      setSubmitState("error");
+    }
+  };
+
+  const canSubmit =
+    contactName.trim().length >= 2 &&
+    (contactPhone.trim().length > 0 || contactEmail.trim().length > 0);
+
+  const inputClass =
+    "w-full rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-800 px-4 py-3 text-sm text-slate-800 dark:text-zinc-200 outline-none focus:border-[#0B3D2E]";
+  const labelClass = "block text-sm font-semibold text-slate-700 dark:text-zinc-300 mb-1.5";
+
+  // While a submission is in flight the modal stays put: closing it mid-write
+  // would leave the visitor unable to tell whether their request was saved.
+  const requestClose = () => { if (!submitting) onClose(); };
 
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={e => { if (e.target === e.currentTarget) requestClose(); }}
     >
       <motion.div
         initial={{ scale: 0.94, opacity: 0, y: 16 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.94, opacity: 0, y: 16 }}
@@ -111,10 +223,14 @@ export function AssessmentModal({ onClose, isAr }: { onClose: () => void; isAr: 
               {isAr ? "تقييم مجاني لاحتياجاتك القانونية" : "Free Legal Needs Assessment"}
             </h3>
             <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
-              {isAr ? `الخطوة ${step} من 3` : `Step ${step} of 3`}
+              {done
+                ? (isAr ? "تم إرسال الطلب" : "Request submitted")
+                : (isAr ? `الخطوة ${step} من 3` : `Step ${step} of 3`)}
             </p>
           </div>
-          <button onClick={onClose} className="w-7 h-7 rounded-full bg-slate-100 dark:bg-white/[0.07] flex items-center justify-center text-slate-400 hover:text-slate-600">
+          <button onClick={requestClose} disabled={submitting}
+            aria-label={isAr ? "إغلاق" : "Close"}
+            className="w-7 h-7 rounded-full bg-slate-100 dark:bg-white/[0.07] flex items-center justify-center text-slate-400 hover:text-slate-600 disabled:opacity-40">
             <XCircle size={15} />
           </button>
         </div>
@@ -126,28 +242,25 @@ export function AssessmentModal({ onClose, isAr }: { onClose: () => void; isAr: 
 
         <div className="px-6 py-6">
           <AnimatePresence mode="wait">
-            {/* Step 1 */}
+            {/* Step 1 — company */}
             {step === 1 && !done && (
               <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">
+                  <label className={labelClass}>
                     {isAr ? "اسم الشركة أو المنشأة" : "Company Name"}
                   </label>
                   <input value={companyName} onChange={e => setCompanyName(e.target.value)}
+                    maxLength={LIMITS.companyName}
                     placeholder={isAr ? "مثال: شركة النخيل التجارية" : "E.g. Al Nakheel Trading Co."}
-                    className="w-full rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-800 px-4 py-3 text-sm text-slate-800 dark:text-zinc-200 outline-none focus:border-[#0B3D2E]" />
+                    className={inputClass} />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-zinc-300 mb-2">
+                  <label className={labelClass}>
                     {isAr ? "حجم الشركة" : "Company Size"}
                   </label>
                   <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: 1, labelAr: "صغيرة", labelEn: "Small", subAr: "أقل من ٢٠ موظف", subEn: "< 20 employees" },
-                      { id: 2, labelAr: "متوسطة", labelEn: "Medium", subAr: "٢٠–٢٠٠ موظف", subEn: "20–200 employees" },
-                      { id: 3, labelAr: "كبيرة", labelEn: "Large", subAr: "أكثر من ٢٠٠", subEn: "200+ employees" },
-                    ].map(s => (
-                      <button key={s.id} onClick={() => setCompanySize(s.id)}
+                    {COMPANY_SIZES.map(s => (
+                      <button key={s.id} type="button" onClick={() => setCompanySize(s.id)}
                         className={`rounded-xl p-3 border text-center transition-all ${companySize === s.id ? "border-[#0B3D2E] bg-[#0B3D2E]/5 dark:bg-[#0B3D2E]/20" : "border-slate-200 dark:border-white/[0.08] hover:border-[#0B3D2E]/30"}`}>
                         <div className="text-sm font-bold text-slate-800 dark:text-zinc-200">{isAr ? s.labelAr : s.labelEn}</div>
                         <div className="text-[10px] text-slate-400 dark:text-zinc-500 mt-0.5">{isAr ? s.subAr : s.subEn}</div>
@@ -155,87 +268,193 @@ export function AssessmentModal({ onClose, isAr }: { onClose: () => void; isAr: 
                     ))}
                   </div>
                 </div>
-                <button disabled={!companyName || !companySize} onClick={() => setStep(2)}
+                <button type="button" disabled={companyName.trim().length < 2 || !companySize} onClick={() => setStep(2)}
                   className="w-full rounded-xl bg-[#0B3D2E] disabled:opacity-40 py-3 text-sm font-bold text-white transition mt-2">
                   {isAr ? "التالي ←" : "Next →"}
                 </button>
               </motion.div>
             )}
 
-            {/* Step 2 */}
+            {/* Step 2 — legal needs */}
             {step === 2 && !done && (
               <motion.div key="s2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
                 <p className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
                   {isAr ? "ما هي أبرز احتياجاتك القانونية؟ (اختر ما ينطبق)" : "What are your main legal needs? (select all that apply)"}
                 </p>
                 <div className="grid grid-cols-2 gap-2">
-                  {LEGAL_NEEDS_AR.map(need => (
-                    <button key={need} onClick={() => toggleNeed(need)}
+                  {LEGAL_NEEDS.map(need => (
+                    <button key={need.id} type="button" onClick={() => toggleNeed(need.id)}
                       className={`flex items-center gap-2 rounded-xl px-3 py-2.5 border text-right text-[12px] font-medium transition-all ${
-                        selectedNeeds.includes(need)
+                        selectedNeeds.includes(need.id)
                           ? "border-[#0B3D2E] bg-[#0B3D2E]/5 dark:bg-[#0B3D2E]/20 text-[#0B3D2E] dark:text-emerald-400"
                           : "border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-zinc-400 hover:border-[#0B3D2E]/20"
                       }`}>
-                      <span className={`w-4 h-4 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${selectedNeeds.includes(need) ? "border-[#0B3D2E] bg-[#0B3D2E]" : "border-slate-300 dark:border-zinc-600"}`}>
-                        {selectedNeeds.includes(need) && <Check size={9} weight="bold" className="text-white" />}
+                      <span className={`w-4 h-4 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${selectedNeeds.includes(need.id) ? "border-[#0B3D2E] bg-[#0B3D2E]" : "border-slate-300 dark:border-zinc-600"}`}>
+                        {selectedNeeds.includes(need.id) && <Check size={9} weight="bold" className="text-white" />}
                       </span>
-                      {need}
+                      {need.labelAr}
                     </button>
                   ))}
                 </div>
                 <div className="flex gap-2 mt-2">
-                  <button onClick={() => setStep(1)} className="flex-1 rounded-xl py-2.5 text-sm font-semibold bg-slate-100 dark:bg-white/[0.07] text-slate-600 dark:text-zinc-300">
+                  <button type="button" onClick={() => setStep(1)} className="flex-1 rounded-xl py-2.5 text-sm font-semibold bg-slate-100 dark:bg-white/[0.07] text-slate-600 dark:text-zinc-300">
                     {isAr ? "رجوع" : "Back"}
                   </button>
-                  <button disabled={selectedNeeds.length === 0} onClick={() => { setStep(3); setTimeout(() => setDone(true), 1200); }}
+                  <button type="button" disabled={selectedNeeds.length === 0} onClick={() => setStep(3)}
                     className="flex-1 rounded-xl py-2.5 text-sm font-bold bg-[#0B3D2E] text-white disabled:opacity-40 transition">
-                    {isAr ? "تحليل الاحتياجات" : "Analyze Needs"}
+                    {isAr ? "التالي ←" : "Next →"}
                   </button>
                 </div>
               </motion.div>
             )}
 
-            {/* Step 3 — Analyzing */}
+            {/* Step 3 — how the team reaches you, then the real submit */}
             {step === 3 && !done && (
-              <motion.div key="s3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-8 text-center">
-                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
-                  className="w-12 h-12 rounded-full border-4 border-[#0B3D2E]/20 border-t-[#0B3D2E] mx-auto mb-4" />
-                <p className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
-                  {isAr ? "نظامي AI يحلل احتياجاتك..." : "Nezamy AI analyzing your needs..."}
+              <motion.div key="s3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
+                    {isAr ? "كيف يتواصل معك الفريق؟" : "How should the team reach you?"}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
+                    {isAr
+                      ? "يراجع فريق نظامي طلبك ويتواصل معك بعرض السعر. التقييم مجاني ولا يُطلب منك أي دفع الآن."
+                      : "The Nezamy team reviews your request and gets back to you with a quote. The assessment is free — no payment is requested now."}
+                  </p>
+                </div>
+
+                {/* Honeypot. `sr-only` rather than a negative offset: an
+                    absolutely-positioned element at left:-9999px can push the
+                    document's own scroll width in an RTL layout, and `hidden`
+                    is what a bot checks for. aria-hidden + tabIndex={-1} keep
+                    it away from screen readers and the keyboard, so no real
+                    visitor can reach it by any route. */}
+                <input type="text" name={HONEYPOT_FIELD} value={honeypot} onChange={e => setHoneypot(e.target.value)}
+                  tabIndex={-1} autoComplete="off" aria-hidden="true"
+                  className="sr-only pointer-events-none" />
+
+                <div>
+                  <label className={labelClass}>{isAr ? "اسم مسؤول التواصل" : "Contact Person"}</label>
+                  <input value={contactName} onChange={e => setContactName(e.target.value)}
+                    maxLength={LIMITS.contactName} autoComplete="name"
+                    placeholder={isAr ? "مثال: أحمد العتيبي" : "E.g. Ahmed Al-Otaibi"}
+                    className={inputClass} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={labelClass}>{isAr ? "رقم الجوال" : "Mobile"}</label>
+                    <input value={contactPhone} onChange={e => setContactPhone(e.target.value)}
+                      inputMode="tel" dir="ltr" maxLength={LIMITS.contactPhone} autoComplete="tel"
+                      placeholder="05XXXXXXXX"
+                      className={`${inputClass} text-start`} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>{isAr ? "البريد الإلكتروني" : "Email"}</label>
+                    <input value={contactEmail} onChange={e => setContactEmail(e.target.value)}
+                      type="email" inputMode="email" dir="ltr" maxLength={LIMITS.contactEmail} autoComplete="email"
+                      placeholder="name@company.com"
+                      className={`${inputClass} text-start`} />
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 dark:text-zinc-500 -mt-2">
+                  {isAr ? "يكفي أحدهما — جوال أو بريد إلكتروني." : "Either one is enough — mobile or email."}
                 </p>
+
+                <div>
+                  <label className={labelClass}>{isAr ? "ملاحظات إضافية (اختياري)" : "Additional notes (optional)"}</label>
+                  <textarea value={notes} onChange={e => setNotes(e.target.value)}
+                    rows={3} maxLength={LIMITS.notes}
+                    placeholder={isAr ? "اكتب أي تفاصيل تساعد الفريق على فهم وضعك." : "Anything that helps the team understand your situation."}
+                    className={`${inputClass} resize-none`} />
+                </div>
+
+                {submitState === "error" && errorMessage && (
+                  <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2.5">
+                    <WarningCircle size={16} weight="fill" className="text-red-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs font-medium text-red-700 dark:text-red-300">{errorMessage}</p>
+                  </div>
+                )}
+
+                <div className="flex gap-2 mt-2">
+                  <button type="button" onClick={() => setStep(2)} disabled={submitting}
+                    className="flex-1 rounded-xl py-2.5 text-sm font-semibold bg-slate-100 dark:bg-white/[0.07] text-slate-600 dark:text-zinc-300 disabled:opacity-40">
+                    {isAr ? "رجوع" : "Back"}
+                  </button>
+                  <button type="button" disabled={!canSubmit || submitting} onClick={handleSubmit}
+                    className="flex-[2] inline-flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold bg-[#0B3D2E] text-white disabled:opacity-40 transition">
+                    {submitting && (
+                      <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="inline-flex">
+                        <SpinnerGap size={15} weight="bold" />
+                      </motion.span>
+                    )}
+                    {submitting
+                      ? (isAr ? "جارٍ إرسال طلبك..." : "Sending your request...")
+                      : (isAr ? "إرسال الطلب" : "Submit Request")}
+                  </button>
+                </div>
               </motion.div>
             )}
 
-            {/* Result */}
+            {/* Confirmation — reachable only after the server confirmed the write */}
             {done && (
               <motion.div key="result" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-                <div className="text-center mb-2">
+                <div className="text-center">
                   <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-3">
                     <CheckCircle size={26} weight="fill" className="text-emerald-500" />
                   </div>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white">{isAr ? `مرحباً ${companyName}!` : `Hello, ${companyName}!`}</p>
-                  <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">{isAr ? "بناءً على احتياجاتك، نوصيك بـ:" : "Based on your needs, we recommend:"}</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">
+                    {isAr ? "تم استلام طلبك" : "Your request has been received"}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
+                    {isAr ? `شكراً لك، ${companyName}.` : `Thank you, ${companyName}.`}
+                  </p>
                 </div>
-                <div className="rounded-2xl border-2 border-[#0B3D2E]/20 bg-[#0B3D2E]/[0.03] dark:bg-[#0B3D2E]/10 p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#0B3D2E] text-white">{plan.badge}</span>
-                    <span className="text-lg font-extrabold text-[#0B3D2E] dark:text-emerald-400">{plan.price}</span>
+
+                {reference && (
+                  <div className="rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-zinc-800/60 px-4 py-3 text-center">
+                    <div className="text-[11px] text-slate-400 dark:text-zinc-500">{isAr ? "رقم المرجع" : "Reference"}</div>
+                    <div className="font-mono text-base font-bold tracking-widest text-[#0B3D2E] dark:text-emerald-400" dir="ltr">{reference}</div>
                   </div>
-                  <p className="text-base font-bold text-slate-900 dark:text-white mb-3">{plan.nameAr}</p>
-                  <ul className="space-y-1.5">
-                    {plan.features.map((f, i) => (
-                      <li key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-zinc-400">
-                        <Check size={11} weight="bold" className="text-[#0B3D2E] flex-shrink-0" />{f}
+                )}
+
+                <div className="rounded-2xl border border-[#0B3D2E]/20 bg-[#0B3D2E]/[0.03] dark:bg-[#0B3D2E]/10 p-5 space-y-2.5">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">{isAr ? "ما الذي يحدث الآن؟" : "What happens next?"}</p>
+                  <ul className="space-y-2">
+                    {/* No response-time promise is made here on purpose:
+                        nothing in the platform commits to one, and inventing a
+                        window the team never agreed to is the same class of
+                        untrue statement as the fake analysis this screen
+                        replaced. */}
+                    {(isAr
+                      ? [
+                          "يراجع فريق نظامي احتياجات شركتك.",
+                          "سيتواصل معك الفريق على وسيلة التواصل التي أدخلتها.",
+                          "تحصل على عرض سعر مكتوب قبل بدء أي عمل — والتقييم نفسه مجاني.",
+                        ]
+                      : [
+                          "The Nezamy team reviews your company's needs.",
+                          "The team will contact you on the details you provided.",
+                          "You get a written quote before any work starts — the assessment itself is free.",
+                        ]
+                    ).map((line, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-slate-600 dark:text-zinc-300">
+                        <Check size={11} weight="bold" className="text-[#0B3D2E] dark:text-emerald-400 flex-shrink-0 mt-1" />{line}
                       </li>
                     ))}
                   </ul>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 pt-1 border-t border-[#0B3D2E]/10">
+                    {isAr
+                      ? "الأسعار المعروضة على هذه الصفحة تقديرية — يحدد الفريق السعر النهائي بعد مراجعة طلبك."
+                      : "Prices shown on this page are estimates — the team sets the final price after reviewing your request."}
+                  </p>
                 </div>
+
                 <div className="flex gap-2">
-                  <a href="/register" className="flex-1 text-center rounded-xl bg-[#0B3D2E] py-3 text-sm font-bold text-[#C8A762]">
-                    {isAr ? "ابدأ الآن مجاناً" : "Start Free Now"}
-                  </a>
+                  <button type="button" onClick={onClose} className="flex-1 text-center rounded-xl bg-[#0B3D2E] py-3 text-sm font-bold text-[#C8A762]">
+                    {isAr ? "إغلاق" : "Close"}
+                  </button>
                   <a href="/contact" className="flex-1 text-center rounded-xl border border-slate-200 dark:border-white/[0.08] py-3 text-sm font-semibold text-slate-600 dark:text-zinc-300">
-                    {isAr ? "تحدث مع مستشار" : "Talk to Advisor"}
+                    {isAr ? "تواصل مع الفريق" : "Contact the Team"}
                   </a>
                 </div>
               </motion.div>
