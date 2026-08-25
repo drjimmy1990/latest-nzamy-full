@@ -1,6 +1,28 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Lightning, Bell, CalendarBlank, CheckCircle, Star, Spinner } from "@phosphor-icons/react";
+import { Lightning, Bell, CalendarBlank, CheckCircle } from "@phosphor-icons/react";
 import { TypeDef, ConsultationType, ScheduleMode, calendarSlots } from "@/components/consultation/constants";
+
+/**
+ * WHAT CHANGED HERE, AND WHY
+ *
+ * 1. The «الآن فوري» card ran a 2200 ms sleep behind a spinner reading «نبحث
+ *    عن محامٍ متاح» and then announced «تم العثور على محامٍ متاح! أ. أحمد
+ *    الغامدي — خبرة ١٢ عاماً — متاح الآن», five gold stars included. No search
+ *    existed, and neither did that lawyer. It is now a plain timing preference
+ *    the client confirms — which is the only thing this step was ever able to
+ *    collect, since fulfilment is manual from the admin queue.
+ * 2. Every «١٥–٢٠ دقيقة» is gone. Nothing in the system can hold the team to
+ *    an interval, so quoting one on the booking screen was a promise the app
+ *    had no way to keep.
+ * 3. The weekly grid is labelled as PREFERRED times, not available ones.
+ *    `calendarSlots` in ./constants is a hardcoded April table with no
+ *    connection to any lawyer's calendar; presenting it as availability told
+ *    the client a slot was held for them. Reported in `skipped` — replacing it
+ *    needs an availability source that does not exist yet.
+ * 4. Prices read «تقديري» and no longer carry ×1.75 / ×1.25 multipliers.
+ *    Per the owner's ruling of 26 August the client submits free and the team
+ *    quotes afterwards, so no multiplier is ever applied at booking.
+ */
 
 interface StepSchedulingProps {
   isAr: boolean;
@@ -15,17 +37,15 @@ interface StepSchedulingProps {
   setCalTime: (t: string | null) => void;
   asapDone: boolean;
   setAsapDone: (b: boolean) => void;
-  instantSearching: boolean;
-  setInstantSearching: (b: boolean) => void;
-  instantFound: boolean;
-  setInstantFound: (b: boolean) => void;
-  handleInstantSearch: () => void;
+  /** The client confirmed «الأسرع الممكن» as their preference. */
+  instantConfirmed: boolean;
+  setInstantConfirmed: (b: boolean) => void;
 }
 
 export function StepScheduling({
   isAr, typeList, consultType, setConsultType, scheduleMode, setScheduleMode,
   calDay, setCalDay, calTime, setCalTime, asapDone, setAsapDone,
-  instantSearching, setInstantSearching, instantFound, setInstantFound, handleInstantSearch
+  instantConfirmed, setInstantConfirmed,
 }: StepSchedulingProps) {
   return (
     <div>
@@ -46,7 +66,7 @@ export function StepScheduling({
               key={t.id}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => { setConsultType(t.id); setScheduleMode(null); setCalDay(null); setCalTime(null); setInstantFound(false); setInstantSearching(false); setAsapDone(false); }}
+              onClick={() => { setConsultType(t.id); setScheduleMode(null); setCalDay(null); setCalTime(null); setInstantConfirmed(false); setAsapDone(false); }}
               className={`relative flex flex-col items-center gap-2 rounded-2xl border p-4 text-center transition-all ${
                 isSelected
                   ? "border-royal bg-royal text-white shadow-[0_4px_20px_-4px_rgba(11,61,46,0.25)]"
@@ -65,7 +85,12 @@ export function StepScheduling({
               </span>
               <div>
                 <div className={`text-xs font-bold ${isSelected ? "text-white" : "text-ink"}`}>{t.label}</div>
-                <div className={`text-[10px] ${isSelected ? "text-white/70" : "text-ink-faint dark:text-gray-500"}`}>{t.price}</div>
+                {/* Labelled an estimate at the point of choice, not only on the
+                    review step: this is where the client decides, and a bare
+                    figure here reads as the price they are about to be charged. */}
+                <div className={`text-[10px] ${isSelected ? "text-white/70" : "text-ink-faint dark:text-gray-500"}`}>
+                  {isAr ? `تقديري: ${t.price}` : `Est. ${t.price}`}
+                </div>
               </div>
             </motion.button>
           );
@@ -82,8 +107,13 @@ export function StepScheduling({
             className="overflow-hidden"
           >
             <div className="mb-4 border-t border-slate-100 pt-5 dark:border-white/10">
-              <p className="mb-3 text-sm font-semibold text-ink">
-                {isAr ? "متى تريد الاستشارة؟" : "When do you want the consultation?"}
+              <p className="mb-1 text-sm font-semibold text-ink">
+                {isAr ? "متى تفضّل الاستشارة؟" : "When would you prefer the consultation?"}
+              </p>
+              <p className="mb-3 text-[11px] text-ink-faint dark:text-gray-500">
+                {isAr
+                  ? "هذا تفضيل يصل مع طلبك — يؤكّده فريق نظامي عند التواصل معك."
+                  : "This is a preference sent with your request — the Nezamy team confirms it when they contact you."}
               </p>
 
               {/* 3 big cards */}
@@ -92,7 +122,7 @@ export function StepScheduling({
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => { setScheduleMode("instant"); setCalDay(null); setCalTime(null); setAsapDone(false); }}
+                  onClick={() => { setScheduleMode("instant"); setCalDay(null); setCalTime(null); setAsapDone(false); setInstantConfirmed(false); }}
                   className={`flex flex-col gap-2 rounded-2xl border-2 p-4 text-start transition-all ${
                     scheduleMode === "instant"
                       ? "border-royal bg-royal/5 dark:bg-royal/10"
@@ -103,10 +133,10 @@ export function StepScheduling({
                     <Lightning size={20} weight="duotone" />
                   </span>
                   <div className="font-brand text-sm font-bold text-ink">
-                    {isAr ? "🟢 الآن فوري" : "🟢 Right Now"}
+                    {isAr ? "🟢 الأسرع الممكن" : "🟢 As Soon As Possible"}
                   </div>
                   <div className="text-[11px] leading-relaxed text-ink-muted dark:text-gray-400">
-                    {isAr ? "خلال ١٥–٢٠ دقيقة — ×١.٧٥ من السعر" : "Within 15–20 min — ×1.75 price"}
+                    {isAr ? "يُعطى طلبك أولوية في قائمة الفريق" : "Your request is prioritised in the team's queue"}
                   </div>
                 </motion.button>
 
@@ -114,7 +144,7 @@ export function StepScheduling({
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => { setScheduleMode("asap"); setCalDay(null); setCalTime(null); setInstantFound(false); setInstantSearching(false); }}
+                  onClick={() => { setScheduleMode("asap"); setCalDay(null); setCalTime(null); setInstantConfirmed(false); }}
                   className={`flex flex-col gap-2 rounded-2xl border-2 p-4 text-start transition-all ${
                     scheduleMode === "asap"
                       ? "border-amber-400 bg-amber-50 dark:bg-amber-500/10"
@@ -125,10 +155,10 @@ export function StepScheduling({
                     <Bell size={20} weight="duotone" />
                   </span>
                   <div className="font-brand text-sm font-bold text-ink">
-                    {isAr ? "⚡ أقرب وقت متاح" : "⚡ Next Available Slot"}
+                    {isAr ? "⚡ أول وقت يتوفر" : "⚡ First Available Time"}
                   </div>
                   <div className="text-[11px] leading-relaxed text-ink-muted dark:text-gray-400">
-                    {isAr ? "نخبرك فوراً عند توفر محامٍ — ×١.٢٥" : "We notify you when a lawyer is free — ×1.25"}
+                    {isAr ? "نخبرك عند تحديد موعد مناسب لتخصصك" : "We notify you once a suitable time is set"}
                   </div>
                 </motion.button>
 
@@ -136,7 +166,7 @@ export function StepScheduling({
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => { setScheduleMode("calendar"); setInstantFound(false); setInstantSearching(false); setAsapDone(false); }}
+                  onClick={() => { setScheduleMode("calendar"); setInstantConfirmed(false); setAsapDone(false); }}
                   className={`flex flex-col gap-2 rounded-2xl border-2 p-4 text-start transition-all ${
                     scheduleMode === "calendar"
                       ? "border-emerald-400 bg-emerald-50 dark:bg-emerald-500/10"
@@ -147,10 +177,10 @@ export function StepScheduling({
                     <CalendarBlank size={20} weight="duotone" />
                   </span>
                   <div className="font-brand text-sm font-bold text-ink">
-                    {isAr ? "📅 اختار من المتاح" : "📅 Pick from Calendar"}
+                    {isAr ? "📅 حدّد وقتاً تفضّله" : "📅 Suggest a Time"}
                   </div>
                   <div className="text-[11px] leading-relaxed text-ink-muted dark:text-gray-400">
-                    {isAr ? "تقويم أسبوعي — السعر الأساسي ×١.٠" : "Weekly calendar — base price ×1.0"}
+                    {isAr ? "اقترح يوماً ووقتاً يناسبك خلال الأسبوع" : "Suggest a day and time that suits you this week"}
                   </div>
                 </motion.button>
               </div>
@@ -159,34 +189,36 @@ export function StepScheduling({
               <AnimatePresence>
                 {scheduleMode === "instant" && (
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="mt-4">
-                    {instantFound ? (
+                    {instantConfirmed ? (
                       <div className="flex items-center gap-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-500/20 dark:bg-emerald-500/10">
                         <CheckCircle size={32} weight="fill" className="shrink-0 text-emerald-500" />
                         <div>
-                          <div className="font-bold text-emerald-800 dark:text-emerald-300">{isAr ? "تم العثور على محامٍ متاح!" : "Available lawyer found!"}</div>
-                          <div className="text-sm text-emerald-600 dark:text-emerald-400">{isAr ? "أ. أحمد الغامدي — خبرة ١٢ عاماً — متاح الآن" : "Ahmed Al-Ghamdi — 12 yrs exp — Available now"}</div>
-                          <div className="mt-1 flex gap-1">{[1,2,3,4,5].map(s => <Star key={s} size={11} weight="fill" className="text-gold" />)}</div>
+                          <div className="font-bold text-emerald-800 dark:text-emerald-300">{isAr ? "سُجِّل تفضيلك" : "Preference recorded"}</div>
+                          {/* States what will be sent, and nothing about who
+                              will take it — no lawyer has been assigned at this
+                              point and no code path assigns one. */}
+                          <div className="text-sm text-emerald-600 dark:text-emerald-400">
+                            {isAr
+                              ? "سيصل طلبك لفريق نظامي بعلامة «الأسرع الممكن»."
+                              : "Your request reaches the Nezamy team marked “as soon as possible”."}
+                          </div>
                         </div>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-3 rounded-2xl border border-royal/20 bg-royal/5 p-6 text-center dark:bg-royal/10">
-                        {instantSearching ? (
-                          <>
-                            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-                              <Spinner size={28} className="text-royal dark:text-gold" />
-                            </motion.div>
-                            <p className="text-sm font-medium text-ink">{isAr ? "نبحث عن محامٍ متاح الآن..." : "Searching for an available lawyer..."}</p>
-                            <p className="text-xs text-ink-muted dark:text-gray-400">{isAr ? "عادةً خلال ١٥–٢٠ دقيقة" : "Usually within 15–20 minutes"}</p>
-                          </>
-                        ) : (
-                          <>
-                            <Lightning size={28} weight="duotone" className="text-royal dark:text-gold" />
-                            <p className="text-sm text-ink-muted dark:text-gray-400">{isAr ? "سيتم البحث عن محامٍ متاح فور تأكيد الطلب" : "We'll search for an available lawyer upon booking confirmation"}</p>
-                            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={handleInstantSearch} className="rounded-xl bg-royal px-5 py-2 text-sm font-bold text-white">
-                              {isAr ? "ابحث الآن" : "Search Now"}
-                            </motion.button>
-                          </>
-                        )}
+                        <Lightning size={28} weight="duotone" className="text-royal dark:text-gold" />
+                        <p className="text-sm text-ink-muted dark:text-gray-400">
+                          {isAr
+                            ? "يُراجع فريق نظامي الطلبات يدوياً ويتواصل معك لتأكيد الموعد والسعر."
+                            : "The Nezamy team reviews requests manually and contacts you to confirm the time and price."}
+                        </p>
+                        <motion.button
+                          whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                          onClick={() => setInstantConfirmed(true)}
+                          className="rounded-xl bg-royal px-5 py-2 text-sm font-bold text-white"
+                        >
+                          {isAr ? "أفضّل الأسرع الممكن" : "I prefer the soonest"}
+                        </motion.button>
                       </div>
                     )}
                   </motion.div>
@@ -201,16 +233,19 @@ export function StepScheduling({
                       <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
                         <Bell size={24} weight="fill" className="shrink-0 text-amber-500" />
                         <div>
-                          <div className="font-bold text-amber-800 dark:text-amber-300">{isAr ? "تم تسجيل طلبك!" : "Request registered!"}</div>
-                          <div className="text-sm text-amber-600 dark:text-amber-400">{isAr ? "سنرسل لك إشعاراً فور توفر محامٍ في تخصصك" : "We'll notify you as soon as a lawyer is available in your specialty"}</div>
+                          {/* «تم تسجيل طلبك» here was the second false claim on
+                              this step: nothing was registered — the request is
+                              only created on the last step, by submitBooking(). */}
+                          <div className="font-bold text-amber-800 dark:text-amber-300">{isAr ? "سُجِّل تفضيلك" : "Preference recorded"}</div>
+                          <div className="text-sm text-amber-600 dark:text-amber-400">{isAr ? "سيصل طلبك بعلامة «أول وقت يتوفر»" : "Your request will be marked “first available time”"}</div>
                         </div>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center dark:border-amber-500/20 dark:bg-amber-500/10">
                         <Bell size={28} weight="duotone" className="text-amber-500" />
-                        <p className="text-sm text-amber-700 dark:text-amber-300">{isAr ? "سنتواصل معك فور توفر موعد في تخصصك. الإشعار عبر الواتساب والمنصة." : "We'll contact you when a slot opens in your specialty. Notification via WhatsApp and platform."}</p>
+                        <p className="text-sm text-amber-700 dark:text-amber-300">{isAr ? "يتواصل معك فريق نظامي عند تحديد موعد يناسب تخصص قضيتك." : "The Nezamy team contacts you once a time is set for your case type."}</p>
                         <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={() => setAsapDone(true)} className="rounded-xl bg-amber-500 px-5 py-2 text-sm font-bold text-white">
-                          {isAr ? "سجّل طلب الإشعار" : "Register for Notification"}
+                          {isAr ? "أفضّل أول وقت يتوفر" : "I prefer the first available"}
                         </motion.button>
                       </div>
                     )}
@@ -245,7 +280,11 @@ export function StepScheduling({
                     <AnimatePresence>
                       {calDay && (
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-3 overflow-hidden">
-                          <p className="mb-2 text-xs font-semibold text-ink-muted dark:text-gray-400">{isAr ? `المواعيد المتاحة — ${calDay}` : `Available slots — ${calDay}`}</p>
+                          {/* «المواعيد المتاحة» said a slot was held. `calendarSlots`
+                              is a fixed table in ./constants with no link to any
+                              lawyer's calendar, so this can only be the time the
+                              client would prefer — see the note at the top. */}
+                          <p className="mb-2 text-xs font-semibold text-ink-muted dark:text-gray-400">{isAr ? `اختر وقتاً تفضّله — ${calDay}` : `Pick a preferred time — ${calDay}`}</p>
                           <div className="flex flex-wrap gap-2">
                             {(calendarSlots.find(d => (isAr ? d.dayAr : d.dayEn) === calDay)?.times ?? []).map(t => (
                               <motion.button key={t} whileTap={{ scale: 0.95 }} onClick={() => setCalTime(t)}

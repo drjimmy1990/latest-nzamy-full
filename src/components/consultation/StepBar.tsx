@@ -7,8 +7,10 @@ interface StepBarProps {
 
 export function StepBar({ step, isAr }: StepBarProps) {
   const labels = isAr
-    ? ["التخصص", "وصف المشكلة", "النوع والموعد", "التأكيد"]
-    : ["Specialty", "Describe Issue", "Type & Timing", "Confirm"];
+    // Step 4 is «الإرسال», not «التأكيد»: it is where the request is created.
+    // Under the old flow it confirmed nothing and sent nothing.
+    ? ["التخصص", "وصف المشكلة", "النوع والموعد", "الإرسال"]
+    : ["Specialty", "Describe Issue", "Type & Timing", "Send"];
 
   return (
     <div className="flex items-center gap-0">
