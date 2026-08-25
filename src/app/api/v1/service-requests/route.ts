@@ -55,8 +55,24 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
+    // When filtering by receiver, also include rows the current user created
+    // themselves (requester_user_id = auth.uid()), so a lawyer who adds their
+    // own cases via AddCaseModal can see them in /dashboard/lawyer/cases.
+    // Without this OR, cases with receiver = "lawyer" that were inserted by
+    // the lawyer's own uid were invisible: the RLS allowed them but the
+    // query's WHERE receiver = ? alone matched, yet the page got back 0 rows
+    // because RLS then added AND (requester_user_id = uid OR assigned_to = uid)
+    // correctly — the real root was the INSERT writing requester_user_id from
+    // auth (correct), but GetByReceiver never scoped to the user's own uid.
     if (receiver) {
-      query = query.eq("receiver", receiver);
+      query = query.or(
+        `receiver.eq.${receiver},requester_user_id.eq.${user.id}`
+      );
+    } else {
+      // No receiver filter: scope to requests owned by or assigned to this user
+      query = query.or(
+        `requester_user_id.eq.${user.id},assigned_to.eq.${user.id}`
+      );
     }
 
     if (requesterUserId) {
