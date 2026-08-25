@@ -47,7 +47,7 @@ export function ServiceCard({
             </span>
           )}
         </div>
-        <h3 className={`font-brand mt-4 text-lg font-bold ${isSelected ? "text-white" : "text-ink dark:text-gray-100"}`}>
+        <h3 className={`font-brand mt-4 text-lg font-bold ${isSelected ? "text-white" : "text-ink"}`}>
           {service.label}
         </h3>
         <p className={`mt-1 text-xs font-medium ${isSelected ? "text-white/70" : "text-gold-dark"}`}>
@@ -85,7 +85,7 @@ export function FAQItem({ q, a, index }: { q: string; a: string; index: number }
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between gap-4 px-6 py-5 text-start"
       >
-        <span className="text-sm font-semibold text-ink dark:text-gray-100">{q}</span>
+        <span className="text-sm font-semibold text-ink">{q}</span>
         <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
           <CaretDown size={16} className="shrink-0 text-ink-faint dark:text-gray-500" />
         </motion.span>

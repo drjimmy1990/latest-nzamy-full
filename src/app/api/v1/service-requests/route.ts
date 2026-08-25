@@ -5,6 +5,8 @@ import { recordEvent, RequestEvent } from "@/lib/events";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
+import { stripInternalNotes } from "@/lib/services/internalNotes";
+import { checkOrderIntake, intakeErrorMessageAr } from "@/lib/services/intakeGuard";
 
 /**
  * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
@@ -98,7 +100,37 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ data: [], total: 0, degraded: true });
     }
 
-    const mapped = (data ?? []).map((row) => toWorkflowRequest(row as Record<string, unknown>));
+    // Critical fix (review round 2) — this list is exactly what
+    // listMyServiceOrders() / طلباتي (src/app/ai/orders/page.tsx) reads for a
+    // client's own orders, and `toWorkflowRequest` used to spread `row`
+    // wholesale, metadata.internalNotes included. Closing that leak only in
+    // the [id] detail route left it wide open here. Same admin-vs-not
+    // resolution as that route (profiles.user_type, not RLS/participation,
+    // since an admin who claimed an ai_workspace order legitimately sees
+    // their own note), but resolved ONCE for the whole page instead of once
+    // per row — a per-row profile lookup would turn one list fetch into
+    // N+1 queries. Only pays for that one lookup when at least one row on
+    // this page actually carries the field.
+    const rows = (data ?? []) as Record<string, unknown>[];
+    const anyInternalNotes = rows.some((row) => {
+      const m = row.metadata;
+      return !!m && typeof m === "object" && "internalNotes" in (m as Record<string, unknown>);
+    });
+    let isAdmin = false;
+    if (anyInternalNotes) {
+      const { data: callerProfile } = await supabase
+        .from("profiles")
+        .select("user_type")
+        .eq("id", user.id)
+        .maybeSingle();
+      isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
+    }
+    const mapped = rows.map((row) =>
+      toWorkflowRequest({
+        ...row,
+        metadata: stripInternalNotes(row.metadata as Record<string, unknown> | null | undefined, isAdmin),
+      }),
+    );
     return NextResponse.json({ data: mapped, total: count ?? 0 });
   } catch (err) {
     console.error("[service-requests GET] Unexpected error:", err);
@@ -136,7 +168,16 @@ export async function POST(request: NextRequest) {
     // B12 — payment-gateway gate: if a paid request is being created, ensure the
     // payments gateway is enabled. Free requests (amount === 0 / not_required)
     // are unaffected.
-    const payment = body.payment;
+    //
+    // Read off `requestData`, NOT `body`: the row's own `payment` column is
+    // written from `requestData.payment` below, and the payments-table insert
+    // reads this same object — so the gate has to look at exactly the object
+    // that gets persisted. Reading `body.payment` here while the insert read
+    // `requestData.payment` meant a wrapped `{ request: { payment: {...} } }`
+    // payload skipped the gate and still wrote a paid row. Latent — every
+    // current caller posts flat — but the two must stay in sync by
+    // construction, not by coincidence.
+    const payment = requestData.payment;
     const isPaidRequest =
       payment && typeof payment === "object" && Number(payment.amount) > 0;
 
@@ -148,6 +189,27 @@ export async function POST(request: NextRequest) {
           { status: 402 },
         );
       }
+    }
+
+    // Server-side intake contract. The four AI wizards each validate before
+    // submitting, but that check lived only in the browser: `metadata` was
+    // stored verbatim below, so a direct POST could persist a contracts draft
+    // with unnamed parties, a review with no contract file, or a wargaming
+    // critique with no memo — an order the admin has no way to fulfil.
+    // checkOrderIntake re-runs the very same validators the wizard ran (see
+    // src/lib/services/intakeGuard.ts). Anything that is not one of the four AI
+    // services — consultation bookings, case requests, contract requests, every
+    // other createWorkflowRequest caller — carries no `metadata.intake` and
+    // passes through untouched.
+    const intakeCheck = checkOrderIntake(requestData.metadata);
+    if (intakeCheck.kind === "invalid") {
+      console.error(
+        `[service-requests POST] intake rejected: service=${intakeCheck.service} errors=${intakeCheck.errors.join(" | ")}`,
+      );
+      return NextResponse.json(
+        { error: intakeErrorMessageAr(intakeCheck.errors) },
+        { status: 400 },
+      );
     }
 
     // Task 6d follow-up — clamp the creation-time status. Without this, a

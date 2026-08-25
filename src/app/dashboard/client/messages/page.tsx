@@ -163,7 +163,7 @@ function ClosedBanner({ caseId, reason }: { caseId: string; reason?: string }) {
             <Archive size={18} className="text-gray-400" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">هذه المحادثة مؤرشفة</p>
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">هذه المحادثة مؤرشفة</p>
             {reason && <p className="text-xs text-gray-400 mt-0.5">{reason}</p>}
           </div>
         </div>
@@ -508,7 +508,7 @@ export default function MessagesPage() {
                       className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                         msg.sender === "client"
                           ? "bg-[#0B3D2E] text-white rounded-tr-sm"
-                          : "bg-white dark:bg-[#1e2530] text-gray-800 dark:text-gray-100 border border-gray-100 dark:border-white/8 rounded-tl-sm shadow-sm"
+                          : "bg-white dark:bg-[#1e2530] text-gray-800 dark:text-gray-300 border border-gray-100 dark:border-white/8 rounded-tl-sm shadow-sm"
                       }`}
                     >
                       {msg.text}

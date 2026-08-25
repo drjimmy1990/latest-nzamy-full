@@ -68,7 +68,7 @@ export function Step1({
       exit={{ opacity: 0, x: -30 }}
       transition={{ type: "spring", stiffness: 300, damping: 28 }}
     >
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="font-brand text-2xl font-bold text-ink">
         {isAr ? "كيف تصف نفسك؟" : "How would you describe yourself?"}
       </h2>
       <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
@@ -99,7 +99,7 @@ export function Step1({
                 <Icon size={20} weight="duotone" />
               </span>
               <div>
-                <div className="text-sm font-semibold text-ink dark:text-gray-100">{type.label}</div>
+                <div className="text-sm font-semibold text-ink">{type.label}</div>
                 <div className="mt-0.5 text-xs text-ink-muted dark:text-gray-400">{type.desc}</div>
               </div>
             </motion.button>
@@ -125,7 +125,7 @@ export function Step2({
   const isCompany = clientType === "company" || clientType === "micro";
   const isGov = clientType === "government";
   const isNGO = clientType === "ngo";
-  const inputCls = "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
+  const inputCls = "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
   const GOV_ROLES = isAr
     ? [{ v: "judge", l: "قاضٍ" }, { v: "prosecutor", l: "عضو نيابة" }, { v: "officer", l: "ضابط" }, { v: "gov_counsel", l: "مستشار قانوني" }]
     : [{ v: "judge", l: "Judge" }, { v: "prosecutor", l: "Prosecutor" }, { v: "officer", l: "Officer" }, { v: "gov_counsel", l: "Legal Counsel" }];
@@ -140,7 +140,7 @@ export function Step2({
       exit={{ opacity: 0, x: -30 }}
       transition={{ type: "spring", stiffness: 300, damping: 28 }}
     >
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="font-brand text-2xl font-bold text-ink">
         {isAr ? "معلوماتك الأساسية" : "Your Basic Information"}
       </h2>
       <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
@@ -395,7 +395,7 @@ export function Step3({
 }) {
   const [show, setShow] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const inputCls = "w-full rounded-xl border border-slate-200 bg-white py-3 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
+  const inputCls = "w-full rounded-xl border border-slate-200 bg-white py-3 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
 
   const strength = (() => {
     const pw = data.password || "";
@@ -419,7 +419,7 @@ export function Step3({
       exit={{ opacity: 0, x: -30 }}
       transition={{ type: "spring", stiffness: 300, damping: 28 }}
     >
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="font-brand text-2xl font-bold text-ink">
         {isAr ? "أنشئ كلمة مرور آمنة" : "Create a Secure Password"}
       </h2>
       <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
@@ -543,7 +543,7 @@ export function Step4({ isAr, clientType }: { isAr: boolean; clientType: ClientT
       >
         <Check size={36} weight="bold" className="text-white" />
       </motion.div>
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="font-brand text-2xl font-bold text-ink">
         {isAr ? "تم إنشاء حسابك بنجاح!" : "Your Account Has Been Created!"}
       </h2>
       <p className="mt-3 text-sm text-ink-muted dark:text-gray-400">
@@ -571,7 +571,7 @@ export function Step4({ isAr, clientType }: { isAr: boolean; clientType: ClientT
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-royal/5 text-royal dark:bg-royal/20">
                 <Icon size={20} weight="duotone" />
               </span>
-              <div className="text-sm font-medium text-ink dark:text-gray-100">
+              <div className="text-sm font-medium text-ink">
                 {isAr ? item.labelAr : item.labelEn}
               </div>
               <ArrowLeft size={14} className="mr-auto text-ink-faint dark:text-gray-500" />

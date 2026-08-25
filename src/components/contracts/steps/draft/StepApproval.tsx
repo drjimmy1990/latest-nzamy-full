@@ -1,5 +1,12 @@
 "use client";
 
+// Task C2: no longer rendered from src/app/ai/contracts/page.tsx —
+// "approval" was removed from STEPS_DRAFT / STEPS_DRAFT_SIMPLE (replaced by
+// the real "submit" step) because its voice recorder had no MediaRecorder/
+// mic access (just a setInterval stopwatch) and AI_SUMMARY_POINTS was a
+// fixed five-line array describing a lawyer-engagement contract regardless
+// of what was drafted. Kept, not deleted, for when real AI summarisation
+// lands.
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {

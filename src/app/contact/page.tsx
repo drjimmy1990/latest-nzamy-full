@@ -198,7 +198,11 @@ export default function ContactPage() {
                     { icon: TwitterLogo, href: "https://x.com/nezamy", color: "hover:text-sky-400" },
                     { icon: LinkedinLogo, href: "https://linkedin.com/company/nezamy", color: "hover:text-blue-500" },
                     { icon: InstagramLogo, href: "https://instagram.com/nezamy", color: "hover:text-pink-500" },
-                    { icon: YoutubeLogo, href: "https://youtube.com/@nezamy", color: "hover:text-red-500" },
+                    // @Nzamylaw is the firm's channel — the one that hosts the intro
+                    // video in Hero.tsx. @nezamy belongs to an unrelated person
+                    // ("Sherif Elnezamy") and @nzamy to another ("Nzam Y"); both were
+                    // live on the site, sending visitors to strangers.
+                    { icon: YoutubeLogo, href: "https://youtube.com/@Nzamylaw", color: "hover:text-red-500" },
                   ].map((s, i) => (
                     <a key={i} href={s.href} target="_blank" rel="noopener noreferrer" className={`rounded-xl border p-3 transition ${isDark ? "border-white/10 text-gray-400" : "border-slate-200 text-slate-500"} ${s.color}`}>
                       <s.icon size={20} weight="bold" />

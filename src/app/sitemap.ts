@@ -17,7 +17,10 @@ const publicRoutes: SitemapRoute[] = [
   { url: "/academy/my-courses", priority: 0.45, changeFrequency: "monthly" },
   { url: "/academy/quiz", priority: 0.45, changeFrequency: "monthly" },
   { url: "/blog", priority: 0.8, changeFrequency: "weekly" },
-  { url: "/blog/wrongful-termination-rights", priority: 0.7, changeFrequency: "monthly" },
+  // No per-article entries here: article slugs come from the `articles` table and
+  // change with every reseed. A hardcoded one (wrongful-termination-rights) was
+  // advertising a 404 after the corpus was cleared. Emit them from the DB instead
+  // — see REMAINING_WORK / خطة_المقالات for the pending dynamic-sitemap item.
   { url: "/community", priority: 0.75, changeFrequency: "weekly" },
   { url: "/community/ask", priority: 0.7, changeFrequency: "weekly" },
   { url: "/community/public", priority: 0.7, changeFrequency: "weekly" },

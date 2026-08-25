@@ -6,7 +6,7 @@ import {
   Receipt, CheckCircle, Clock, Warning, Plus, MagnifyingGlass,
   ChartLine, Wallet, TrendUp, CurrencyCircleDollar,
   ShoppingCart, ChartBar, Scales, ArrowUpRight, ArrowDownRight,
-  Sparkle, Microphone, X, Coins, FileText, CalendarBlank
+  Sparkle, Microphone, X, Coins, FileText, CalendarBlank, Bank
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import confetti from "canvas-confetti";
@@ -15,6 +15,35 @@ import { type FinanceTab, type InvoiceStatus, type FeeType, type Period, type Ex
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { AreaBarChart, DonutChart } from "@/components/dashboard/lawyer/FinanceCharts";
+
+// ── تحصيل الفاتورة ──
+// لا توجد بوابة دفع بعد، فالتحصيل يدوي: نقداً أو تحويل بنكي فقط.
+type CollectMethod = "cash" | "bank_transfer";
+
+const COLLECT_METHODS = [
+  { key: "cash" as CollectMethod,          label: "نقداً",        icon: Coins, hint: "استلمت المبلغ نقداً من العميل" },
+  { key: "bank_transfer" as CollectMethod, label: "تحويل بنكي", icon: Bank,  hint: "وصل المبلغ إلى حساب المكتب البنكي" },
+] as const;
+
+/**
+ * PATCH /api/v1/lawyer/finance لا يقبل إلا صف دفع حالته `requires_payment`،
+ * وهي الحالة التي تُعرض هنا «معلقة» أو «مسدّدة جزئياً». أما «مسدّدة كاملاً»
+ * فقد حُصّلت، و«متأخرة» تعني failed/refunded في قاعدة البيانات ويردّها الخادم بـ 409.
+ */
+const isCollectable = (inv: any) =>
+  (inv?.status === "pending" || inv?.status === "partial") &&
+  (Number(inv?.paidAmount) || 0) < (Number(inv?.totalFee) || 0);
+
+/** رسائل الخادم إنجليزية — نعرضها للمحامي بالعربية. */
+const COLLECT_ERROR_AR: Record<string, string> = {
+  "Invoice not found": "لم يُعثر على هذه الفاتورة — قد تكون حُذفت.",
+  "Forbidden": "لا تملك صلاحية تحصيل هذه الفاتورة.",
+  "Invoice is not collectable": "هذه الفاتورة لم تعد قابلة للتحصيل — قد تكون حُصّلت بالفعل. حدّث الصفحة.",
+  "paymentId required": "تعذّر تحديد الفاتورة المطلوبة.",
+  "method must be cash or bank_transfer": "طريقة التحصيل غير صالحة.",
+  "paidAmount must be greater than 0 and at most the invoice total":
+    "المبلغ المحصّل يجب أن يكون أكبر من صفر وألا يتجاوز إجمالي الفاتورة.",
+};
 
 export default function FinancePage() {
   const { isDark } = useTheme();
@@ -55,6 +84,13 @@ export default function FinancePage() {
   const [newInvType, setNewInvType] = useState<FeeType>("full");
   const [newInvCase, setNewInvCase] = useState("");
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
+
+  // نافذة تسجيل التحصيل (نقداً أو تحويل بنكي) — الفاتورة المستهدفة وحالتها
+  const [collectTarget, setCollectTarget] = useState<any | null>(null);
+  const [collectMethod, setCollectMethod] = useState<CollectMethod>("cash");
+  const [collectAmount, setCollectAmount] = useState("");
+  const [collectError, setCollectError] = useState<string | null>(null);
+  const [isCollecting, setIsCollecting] = useState(false);
 
   const cardCls = isDark
     ? "rounded-[2rem] border border-white/[0.06] bg-zinc-900/60 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
@@ -243,6 +279,80 @@ export default function FinancePage() {
 
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
       }, 1200);
+    }
+  };
+
+  // ── فتح نافذة تأكيد التحصيل ──
+  const openCollectModal = (inv: any) => {
+    setCollectTarget(inv);
+    setCollectMethod("cash");
+    setCollectAmount("");
+    setCollectError(null);
+  };
+
+  // ── تسجيل تحصيل فاتورة (نقداً / تحويل بنكي) ──
+  // الخادم يتوقع `paidAmount` كإجمالي محصّل تراكمي، بينما يُدخل المحامي هنا
+  // المبلغ المستلم الآن — فنجمعه على ما سبق تحصيله قبل الإرسال.
+  const handleCollect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!collectTarget || isCollecting) return;
+
+    const inv = collectTarget;
+    const alreadyCollected = Number(inv.paidAmount) || 0;
+    const totalFee = Number(inv.totalFee) || 0;
+    const remaining = totalFee - alreadyCollected;
+
+    if (remaining <= 0) {
+      setCollectError("لا يوجد مبلغ متبقٍ على هذه الفاتورة.");
+      return;
+    }
+
+    let collectedNow = remaining;
+    if (collectAmount.trim()) {
+      collectedNow = parseFloat(collectAmount);
+      if (!Number.isFinite(collectedNow) || collectedNow <= 0) {
+        setCollectError("أدخل مبلغاً صحيحاً أكبر من صفر.");
+        return;
+      }
+      if (collectedNow > remaining) {
+        setCollectError(`المبلغ يتجاوز المتبقي على الفاتورة (${remaining.toLocaleString()} ﷼).`);
+        return;
+      }
+    }
+
+    const cumulative = alreadyCollected + collectedNow;
+
+    setCollectError(null);
+    setIsCollecting(true);
+
+    if (isSupabaseMode) {
+      try {
+        const res = await apiMutate<{ data: any }>("/api/v1/lawyer/finance", "PATCH", {
+          paymentId: inv.id,
+          method: collectMethod,
+          paidAmount: cumulative,
+        });
+        const d = res?.data;
+        // نستبدل الصف بما أعاده الخادم حتى تبقى المجاميع مطابقة لقاعدة البيانات
+        if (d) setInvoices(prev => prev.map(x => (x.id === d.id ? d : x)));
+        setIsCollecting(false);
+        setCollectTarget(null);
+        window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
+        confetti({ particleCount: 80, spread: 70, origin: { y: 0.7 } });
+      } catch (err: any) {
+        console.error("[finance] collect invoice failed:", err);
+        const raw = err?.message || "";
+        setCollectError(COLLECT_ERROR_AR[raw] || "تعذّر تسجيل التحصيل. حاول مرة أخرى.");
+        setIsCollecting(false);
+      }
+    } else {
+      // وضع العرض التجريبي: التحديث محلي فقط بنفس منطق الخادم
+      setInvoices(prev => prev.map(x => x.id === inv.id
+        ? { ...x, paidAmount: cumulative, status: cumulative >= totalFee ? "paid" : "partial" }
+        : x));
+      setIsCollecting(false);
+      setCollectTarget(null);
+      confetti({ particleCount: 80, spread: 70, origin: { y: 0.7 } });
     }
   };
 
@@ -711,6 +821,20 @@ export default function FinancePage() {
                                 {inv.totalFee.toLocaleString()} <span className="text-xs font-normal font-sans">﷼</span>
                               </p>
                               {inv.status === "partial" && <span className="text-[10px] font-black text-blue-500 mt-1">{payPct}% محصّل</span>}
+                              {isCollectable(inv) && (
+                                <motion.button
+                                  whileHover={{ scale: 1.04 }}
+                                  whileTap={{ scale: 0.96 }}
+                                  onClick={() => openCollectModal(inv)}
+                                  className={`mt-2 flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black border transition-all cursor-pointer ${
+                                    isDark
+                                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
+                                      : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                                  }`}
+                                >
+                                  <CheckCircle size={11} weight="fill" /> تم التحصيل
+                                </motion.button>
+                              )}
                               {inv.status === "overdue" && (
                                 <motion.button
                                   whileHover={{ scale: 1.05 }}
@@ -1126,6 +1250,181 @@ export default function FinancePage() {
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
+
+      {/* ── 5. نافذة تأكيد تحصيل الفاتورة (نقداً / تحويل بنكي) ── */}
+      <AnimatePresence>
+        {collectTarget && (() => {
+          const alreadyCollected = Number(collectTarget.paidAmount) || 0;
+          const totalFee = Number(collectTarget.totalFee) || 0;
+          const remaining = totalFee - alreadyCollected;
+          const closeCollect = () => { if (!isCollecting) setCollectTarget(null); };
+
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+
+              {/* الخلفية المعتمة */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={closeCollect}
+                className="absolute inset-0 bg-black/60 backdrop-blur-md"
+              />
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                className={`relative z-10 w-full max-w-md p-6 md:p-7 rounded-[2.5rem] border text-right shadow-2xl ${
+                  isDark
+                    ? "bg-zinc-950/90 border-white/10 text-zinc-100"
+                    : "bg-white border-slate-200 text-slate-800"
+                }`}
+              >
+                {/* إغلاق */}
+                <button
+                  onClick={closeCollect}
+                  disabled={isCollecting}
+                  className="absolute top-6 left-6 p-2 rounded-2xl bg-black/[0.04] dark:bg-white/[0.04] hover:bg-black/[0.08] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <X size={14} className={isDark ? "text-zinc-400" : "text-slate-500"} />
+                </button>
+
+                <div className="flex items-center gap-2 mb-5">
+                  <span className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-500">
+                    <CheckCircle size={18} weight="duotone" />
+                  </span>
+                  <h2 className="text-lg font-extrabold tracking-tight">تسجيل تحصيل الفاتورة</h2>
+                </div>
+
+                <form onSubmit={handleCollect} className="space-y-4">
+
+                  {/* ملخص الفاتورة المستهدفة */}
+                  <div className={`rounded-2xl border p-4 space-y-2 ${isDark ? "border-white/[0.06] bg-zinc-900/50" : "border-slate-200 bg-slate-50"}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className={`text-[12px] font-black truncate ${isDark ? "text-zinc-200" : "text-slate-800"}`}>{collectTarget.client}</span>
+                      <span className={`text-[9px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{collectTarget.id}</span>
+                    </div>
+                    <div className={`flex items-center justify-between text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                      <span>إجمالي الفاتورة</span>
+                      <span className="font-mono font-bold text-slate-700 dark:text-zinc-300">{totalFee.toLocaleString()} ﷼</span>
+                    </div>
+                    {alreadyCollected > 0 && (
+                      <div className={`flex items-center justify-between text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                        <span>محصّل سابقاً</span>
+                        <span className="font-mono font-bold text-blue-500">{alreadyCollected.toLocaleString()} ﷼</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span className={isDark ? "text-zinc-400" : "text-slate-600"}>المتبقي للتحصيل</span>
+                      <span className="font-mono font-black text-emerald-500">{remaining.toLocaleString()} ﷼</span>
+                    </div>
+                  </div>
+
+                  {/* طريقة استلام المبلغ */}
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">كيف استلمت المبلغ؟</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {COLLECT_METHODS.map(m => {
+                        const MIcon = m.icon;
+                        const isActive = collectMethod === m.key;
+                        return (
+                          <button
+                            key={m.key}
+                            type="button"
+                            onClick={() => setCollectMethod(m.key)}
+                            disabled={isCollecting}
+                            className={`rounded-2xl border p-3 text-right transition-all cursor-pointer disabled:cursor-not-allowed ${
+                              isActive
+                                ? "border-[#C8A762] bg-[#C8A762]/10"
+                                : isDark ? "border-white/[0.08] bg-zinc-900/60 hover:border-white/20" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                            }`}
+                          >
+                            <MIcon size={18} weight="duotone" className={isActive ? "text-[#C8A762]" : isDark ? "text-zinc-500" : "text-slate-400"} />
+                            <p className={`text-[12px] font-black mt-1.5 ${isActive ? "text-[#C8A762]" : isDark ? "text-zinc-300" : "text-slate-700"}`}>{m.label}</p>
+                            <p className={`text-[9px] leading-relaxed mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{m.hint}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* المبلغ المستلم الآن (اختياري) */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">
+                      المبلغ المستلم الآن (﷼) — اتركه فارغاً لتحصيل المتبقي كاملاً:
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={collectAmount}
+                      onChange={(e) => setCollectAmount(e.target.value)}
+                      disabled={isCollecting}
+                      placeholder={remaining.toLocaleString()}
+                      className={`w-full rounded-2xl border px-4 py-3 text-[12px] outline-none focus:border-[#C8A762]/50 transition-all text-right font-semibold font-mono disabled:opacity-60 ${
+                        isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"
+                      }`}
+                    />
+                  </div>
+
+                  {/* تنبيه: القيد نهائي ولا يمكن التراجع عنه من هنا */}
+                  <div className={`p-3 rounded-xl border flex items-start gap-2 text-[10px] leading-relaxed ${
+                    isDark ? "border-amber-500/20 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"
+                  }`}>
+                    <Warning size={13} weight="fill" className="flex-shrink-0 mt-0.5" />
+                    <span>
+                      هذا قيد محاسبي يدوي لمبلغ استلمته خارج المنصة، وليس عملية دفع إلكتروني.
+                      لا يمكن التراجع عنه من هذه الصفحة بعد التأكيد.
+                    </span>
+                  </div>
+
+                  {collectError && (
+                    <div className={`p-3 rounded-xl flex items-center gap-2 text-[11px] font-semibold ${isDark ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-red-50 border border-red-200 text-red-700"}`}>
+                      <Warning size={14} weight="fill" className="flex-shrink-0" />
+                      <span>{collectError}</span>
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex gap-3">
+                    <motion.button
+                      whileHover={isCollecting ? undefined : { scale: 1.02 }}
+                      whileTap={isCollecting ? undefined : { scale: 0.98 }}
+                      type="submit"
+                      disabled={isCollecting}
+                      className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-black bg-[#0B3D2E] text-[#C8A762] hover:bg-[#07241b] shadow-lg shadow-[#0B3D2E]/10 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      {isCollecting ? (
+                        <>
+                          <motion.span
+                            className="w-3.5 h-3.5 rounded-full border-2 border-[#C8A762]/30 border-t-[#C8A762]"
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                          />
+                          جارٍ تسجيل التحصيل...
+                        </>
+                      ) : "تأكيد التحصيل"}
+                    </motion.button>
+                    <motion.button
+                      whileHover={isCollecting ? undefined : { scale: 1.02 }}
+                      whileTap={isCollecting ? undefined : { scale: 0.98 }}
+                      type="button"
+                      onClick={closeCollect}
+                      disabled={isCollecting}
+                      className={`px-6 py-3 rounded-2xl text-xs font-black border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                        isDark ? "border-white/[0.08] bg-zinc-900 text-zinc-400" : "border-slate-200 bg-slate-50 text-slate-500"
+                      }`}
+                    >
+                      إلغاء
+                    </motion.button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
     </div>
   );

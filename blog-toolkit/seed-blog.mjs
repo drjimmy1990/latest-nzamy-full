@@ -2,7 +2,7 @@
 /**
  * seed-blog.mjs — seed the `articles` table (Blog CMS) from ./blog_final (next to this script).
  * ─────────────────────────────────────────────────────────────────────────────
- * 31 category folders (sec_00_* … sec_30_*). Each *.md is one article: YAML
+ * 30 category folders (sec_00_* … sec_29_*). Each *.md is one article: YAML
  * frontmatter (up to 31 fields, incl. lists + aeo_pairs Q/A objects) + markdown
  * body. Reads them all and UPSERTs into public.articles (conflict on slug → update),
  * so it is safe to re-run. Handles the mixed-schema corpus (12-field legacy rows
@@ -36,42 +36,58 @@ const DRY = process.argv.includes("--dry");
 const BATCH = 100;
 const BUCKET = "blog-covers";
 
-const sectionsArg = process.argv.find((a) => a.startsWith("--sections="));
-const SECTIONS = sectionsArg ? sectionsArg.slice("--sections=".length).split(",").map((s) => s.trim()).filter(Boolean) : [];
+// Accept both `--sections=a,b` and `--sections a,b` (the guide documents the
+// space form; the equals-only parser used to swallow it and seed everything).
+function argList(name) {
+  const eq = process.argv.find((a) => a.startsWith(`--${name}=`));
+  const raw = eq
+    ? eq.slice(name.length + 3)
+    : (() => {
+        const i = process.argv.indexOf(`--${name}`);
+        const next = i === -1 ? null : process.argv[i + 1];
+        return next && !next.startsWith("--") ? next : null;
+      })();
+  return raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+}
+
+const SECTIONS = argList("sections");
 
 // ── Category code → Arabic label (folder name is the source of truth) ──────────
+// The 30 sections of the V8.2 golden spec, mapped 1:1 onto the legal library's
+// subject folders (00–29). Labels are the official display names from
+// `08_دليل_المطور_لهيكلة_وعرض_المقالات_برمجيا_V8.md` — keep them in sync with
+// the `blog_sections` table.
 const CATEGORY_AR = {
-  sec_00_procedural: "الإجراءات والمرافعات",
-  sec_01_criminal: "القانون الجنائي",
-  sec_02_admin: "القضاء الإداري",
-  sec_03_execution: "التنفيذ",
-  sec_04_civil: "القانون المدني",
-  sec_05_commercial: "القانون التجاري",
-  sec_06_ip: "الملكية الفكرية",
-  sec_07_labor: "قانون العمل",
-  sec_08_real_estate: "العقار والإيجار",
-  sec_09_financial: "القانون المالي والمصرفي",
-  sec_10_tax: "الضرائب والزكاة",
-  sec_11_health: "القانون الصحي",
-  sec_12_environment: "البيئة",
-  sec_13_tech: "التقنية والبيانات",
-  sec_14_transport: "النقل",
-  sec_15_energy: "الطاقة",
-  sec_16_media: "الإعلام",
-  sec_17_construction: "المقاولات والتشييد",
-  sec_18_investment: "الاستثمار",
-  sec_19_education: "التعليم",
-  sec_20_sports: "الرياضة",
-  sec_21_hajj: "الحج والعمرة",
-  sec_22_defense: "الدفاع والأمن",
-  sec_23_social: "الأحوال الاجتماعية",
-  sec_24_tourism: "السياحة",
-  sec_25_municipal: "الشؤون البلدية",
-  sec_26_arbitration: "التحكيم",
-  sec_27_international: "القانون الدولي",
-  sec_28_industry: "الصناعة",
-  sec_29_constitutional: "القانون الدستوري",
-  sec_30_culture: "الثقافة",
+  sec_00_procedural: "أنظمة المرافعات والإجراءات القضائية والتنفيذ",
+  sec_01_criminal: "الأنظمة الجزائية والجرائم الجنائية",
+  sec_02_admin: "القضاء الإداري ومنازعات ديوان المظالم",
+  sec_03_civil: "المعاملات المدنية والأحوال الشخصية والعقود",
+  sec_04_commercial: "الأنظمة التجارية والشركات والإفلاس",
+  sec_05_ip: "الملكية الفكرية وبراءات الاختراع والعلامات التجارية",
+  sec_06_labor: "أنظمة العمل والعمال والخدمة المدنية",
+  sec_07_real_estate_construction: "الأنظمة العقارية والبناء والمقاولات",
+  sec_08_financial: "الأنظمة المالية والمصرفية والتمويل",
+  sec_09_tax: "الأنظمة الضريبية والزكوية والجمركية",
+  sec_10_health: "الأنظمة الصحية والدوائية ومزاولة المهن",
+  sec_11_environment: "الأنظمة البيئية والأرصاد وحماية البيئة",
+  sec_12_tech: "أنظمة التقنية والاتصالات والأمن السيبراني والذكاء الاصطناعي",
+  sec_13_logistics: "الأنظمة اللوجستية والنقل والموانئ والطيران",
+  sec_14_energy: "أنظمة الطاقة والتعدين والكهرباء والغاز",
+  sec_15_media: "أنظمة الإعلام والنشر والمحتوى الإلكتروني",
+  sec_16_industry: "الأنظمة الصناعية والمصانع ومناطق مدن",
+  sec_17_constitutional: "الأنظمة الدستورية والإدارية والسيادية",
+  sec_18_agriculture_food: "الأنظمة الغذائية والزراعية والمياه والثروة الحيوانية",
+  sec_19_investment: "أنظمة الاستثمار الأجنبي والخصخصة والتنافسية",
+  sec_20_education: "أنظمة التعليم والجامعات والتدريب",
+  sec_21_sports: "أنظمة الرياضة والترفيه والفعاليات",
+  sec_22_hajj: "أنظمة الحج والعمرة والخدمات الدينية",
+  sec_23_defense: "الأنظمة العسكرية والأمنية والدفاع الوطني",
+  sec_24_social: "أنظمة الرعاية الاجتماعية والأسرة والأوقاف",
+  sec_25_tourism: "أنظمة السياحة والآثار والفنادق والضيافة",
+  sec_26_municipal: "الأنظمة البلدية والتخطيط العمراني وتراخيص البناء",
+  sec_27_culture: "الأنظمة الثقافية والتراث الوطني والفنون",
+  sec_28_arbitration: "أنظمة التحكيم والوساطة وفض المنازعات البديلة",
+  sec_29_international: "الأنظمة والمعاهدات والتحكيم والقضايا الدولية",
 };
 
 // Forbidden character classes (ENCODING_SAFETY.md) — hard reject.

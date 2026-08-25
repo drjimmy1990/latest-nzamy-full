@@ -1,3 +1,9 @@
+// Task C2: no longer rendered from src/app/ai/contracts/page.tsx — "drafting"
+// was removed from STEPS_DRAFT / STEPS_DRAFT_SIMPLE because it rendered one
+// fixed CONTRACT_PARAGRAPHS template regardless of contractType/clauses/
+// parties/description, and handleCopy() never read paraEdits/generalEdits
+// (the user's own edits). Kept, not deleted, for when real AI drafting
+// lands.
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PencilSimple, Copy, CheckCircle, Sparkle, ChatCircleDots, PencilLine, X } from "@phosphor-icons/react";

@@ -14,7 +14,12 @@ import EmptyState from "@/components/ui/EmptyState";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { CasePicker } from "@/components/ui/CasePicker";
 import { getActiveCases } from "@/lib/services/casesService";
-import { getLawyerTasks, updateLawyerTaskStatus } from "@/lib/services/lawyerTasksService";
+import {
+  getLawyerTasks,
+  updateLawyerTaskStatus,
+  updateLawyerTask,
+  updateLawyerTaskSubtasks,
+} from "@/lib/services/lawyerTasksService";
 import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { SHARED_CASES } from "@/lib/casesStore";
 import { useUser } from "@/hooks/useUser";
@@ -52,6 +57,9 @@ export default function LawyerTasksPage() {
   const [showPomodoro, setShowPomodoro] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  // A write that the server refused must say so — every handler below is
+  // optimistic, so a silent failure looks exactly like a save.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [pomodoroBonus, setPomodoroBonus] = useState(0);
   const [filter, setFilter] = useState<TaskStatus | "all" | "archived">("all");
@@ -183,16 +191,29 @@ export default function LawyerTasksPage() {
       });
 
   // Actions
+  //
+  // Every handler here is optimistic and follows one rule, because the two that
+  // did not were silently broken: capture the PREVIOUS value inside the state
+  // updater, then restore THAT if the server refuses. Reading `t.status` in the
+  // rollback restores the value the optimistic write just put there, i.e.
+  // nothing. And the service functions resolve `false` on failure rather than
+  // rejecting, so a `.catch()` on them never runs — the check has to be on the
+  // resolved boolean.
   const onToggle = useCallback((id: string) => {
     let newStatus: TaskStatus = "done";
+    let previous: TaskStatus | undefined;
     setTasks(prev => {
       const current = prev.find(t => t.id === id);
+      previous = current?.status;
       newStatus = current?.status === "done" ? "todo" : "done";
       return prev.map(t => (t.id === id ? { ...t, status: newStatus } : t));
     });
     // Persist the toggle (optimistic; rollback on failure). Map to DB enum.
-    updateLawyerTaskStatus(id, taskStatusToDb(newStatus)).catch(() => {
-      setTasks(prev => prev.map(t => (t.id === id ? { ...t, status: t.status === "done" ? "todo" : "done" } : t)));
+    updateLawyerTaskStatus(id, taskStatusToDb(newStatus)).then(ok => {
+      if (ok || !previous) return;
+      const revertTo: TaskStatus = previous;
+      setTasks(prev => prev.map(t => (t.id === id ? { ...t, status: revertTo } : t)));
+      setSaveError("تعذّر تحديث حالة المهمة. أعد المحاولة.");
     });
     if (newStatus === "done") {
       playSuccessBeep();
@@ -207,37 +228,136 @@ export default function LawyerTasksPage() {
 
   const onDelete = useCallback((id: string) => {
     // L7: persist as cancelled (DB enum) alongside local removal.
-    setTasks(prev => prev.filter(t => t.id !== id));
-    updateLawyerTaskStatus(id, taskStatusToDb("archived")).catch((e) =>
-      console.error("[tasks] delete (cancel) failed:", e),
-    );
+    let removed: Task | undefined;
+    let removedAt = 0;
+    setTasks(prev => {
+      removedAt = prev.findIndex(t => t.id === id);
+      removed = removedAt >= 0 ? prev[removedAt] : undefined;
+      return prev.filter(t => t.id !== id);
+    });
+    updateLawyerTaskStatus(id, taskStatusToDb("archived")).then(ok => {
+      if (ok || !removed) return;
+      const restored: Task = removed;
+      const at = removedAt;
+      // Put the row back where it was — the list must not claim a deletion the
+      // server refused.
+      setTasks(prev => {
+        if (prev.some(t => t.id === id)) return prev;
+        const next = [...prev];
+        next.splice(Math.max(0, Math.min(at, next.length)), 0, restored);
+        return next;
+      });
+      setSaveError("تعذّر حذف المهمة. أعد المحاولة.");
+    });
   }, []);
   const onArchive = useCallback((id: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, status: "archived" } : t));
-    updateLawyerTaskStatus(id, taskStatusToDb("archived")).catch((e) => console.error("[tasks] archive failed:", e));
+    let previous: TaskStatus | undefined;
+    setTasks(prev => {
+      previous = prev.find(t => t.id === id)?.status;
+      return prev.map(t => t.id === id ? { ...t, status: "archived" } : t);
+    });
+    updateLawyerTaskStatus(id, taskStatusToDb("archived")).then(ok => {
+      if (ok || !previous) return;
+      const revertTo: TaskStatus = previous;
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status: revertTo } : t));
+      setSaveError("تعذّرت أرشفة المهمة. أعد المحاولة.");
+    });
   }, []);
   const onRestore = useCallback((id: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, status: "todo" } : t));
-    updateLawyerTaskStatus(id, taskStatusToDb("todo")).catch((e) => console.error("[tasks] restore failed:", e));
+    let previous: TaskStatus | undefined;
+    setTasks(prev => {
+      previous = prev.find(t => t.id === id)?.status;
+      return prev.map(t => t.id === id ? { ...t, status: "todo" } : t);
+    });
+    updateLawyerTaskStatus(id, taskStatusToDb("todo")).then(ok => {
+      if (ok || !previous) return;
+      const revertTo: TaskStatus = previous;
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status: revertTo } : t));
+      setSaveError("تعذّرت استعادة المهمة. أعد المحاولة.");
+    });
   }, []);
   const onStatusChange = useCallback((id: string, s: TaskStatus) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, status: s } : t));
+    let previous: TaskStatus | undefined;
+    setTasks(prev => {
+      previous = prev.find(t => t.id === id)?.status;
+      return prev.map(t => t.id === id ? { ...t, status: s } : t);
+    });
     // Persist status change to backend (mapped to DB enum)
-    updateLawyerTaskStatus(id, taskStatusToDb(s)).catch(() => {
-      // Revert on failure (optimistic update rollback)
-      setTasks(prev => prev.map(t => t.id === id ? { ...t, status: t.status } : t));
+    updateLawyerTaskStatus(id, taskStatusToDb(s)).then(ok => {
+      if (ok || !previous) return;
+      // Revert to the status the task actually had before this click.
+      const revertTo: TaskStatus = previous;
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status: revertTo } : t));
+      setSaveError("تعذّر تحديث حالة المهمة. أعد المحاولة.");
     });
   }, []);
 
+  // Ticking a step used to be pure setState: it survived until the next reload.
+  // The whole checklist is one metadata.subtasks array, so a tick sends the
+  // array back whole; the server merges it over the task's other metadata keys
+  // instead of replacing them.
   const onSubtaskToggle = useCallback((taskId: string, subtaskId: string) => {
-    setTasks(prev => prev.map(t =>
-      t.id !== taskId ? t :
-      { ...t, subtasks: t.subtasks?.map(s => s.id === subtaskId ? { ...s, done: !s.done } : s) }
-    ));
+    let previous: Task["subtasks"];
+    let next: Task["subtasks"];
+    setTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+      previous = t.subtasks;
+      next = (t.subtasks ?? []).map(s => s.id === subtaskId ? { ...s, done: !s.done } : s);
+      return { ...t, subtasks: next };
+    }));
+    if (!next) return;
+    const sent = next;
+    updateLawyerTaskSubtasks(taskId, sent).then(ok => {
+      if (ok) return;
+      const revertTo = previous;
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, subtasks: revertTo } : t));
+      setSaveError("تعذّر حفظ خطوة العمل. أعد المحاولة.");
+    });
   }, []);
 
+  // Same defect as the subtask toggle: the edit modal's «حفظ التعديلات» only
+  // ever touched local state. Only the keys the modal actually sent are
+  // persisted, and only those are rolled back.
   const onEditSave = useCallback((taskId: string, patch: Partial<Task>) => {
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t));
+    let previous: Task | undefined;
+    setTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+      previous = t;
+      return { ...t, ...patch };
+    }));
+
+    updateLawyerTask(taskId, {
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+      ...(patch.category !== undefined ? { category: patch.category } : {}),
+      ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate } : {}),
+      ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+      ...(patch.subtasks !== undefined ? { subtasks: patch.subtasks } : {}),
+    }).then(res => {
+      if (!previous) return;
+      const before: Task = previous;
+
+      // Saved, except the title: the row is a client's own request and its
+      // title is what the client sees. Revert that one field only — the
+      // priority/notes/checklist edit did land.
+      if (res.ok) {
+        if (res.titleSkipped) {
+          setTasks(prev => prev.map(t => t.id === taskId ? { ...t, title: before.title } : t));
+          setSaveError("تم حفظ التعديلات، لكن عنوان طلب العميل لا يمكن تغييره من لوحة المهام.");
+        }
+        return;
+      }
+
+      const revert: Partial<Task> = {};
+      if (patch.title !== undefined) revert.title = before.title;
+      if (patch.priority !== undefined) revert.priority = before.priority;
+      if (patch.category !== undefined) revert.category = before.category;
+      if (patch.dueDate !== undefined) revert.dueDate = before.dueDate;
+      if (patch.notes !== undefined) revert.notes = before.notes;
+      if (patch.subtasks !== undefined) revert.subtasks = before.subtasks;
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...revert } : t));
+      setSaveError("تعذّر حفظ تعديلات المهمة. أعد المحاولة.");
+    });
   }, []);
 
   const addTask = async () => {
@@ -336,6 +456,16 @@ export default function LawyerTasksPage() {
           </div>
         </motion.div>
       )}
+      {/* Save error — an optimistic write the server refused, rolled back */}
+      {saveError && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-[12px] font-semibold text-red-500">
+          <Warning size={14} weight="fill" className="mt-0.5 flex-shrink-0" />
+          <span className="flex-1">{saveError}</span>
+          <button onClick={() => setSaveError(null)} className="opacity-70 hover:opacity-100">إخفاء</button>
+        </motion.div>
+      )}
+
       {/* Confetti */}
       {showConfetti && (
         <div className="fixed inset-0 z-[10000] pointer-events-none">

@@ -241,7 +241,7 @@ export default function AiDisclaimerPage() {
                   <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-500/10">
                     <CheckCircle size={22} weight="duotone" className="text-emerald-600 dark:text-emerald-400" />
                   </span>
-                  <h2 className="font-brand text-lg font-bold text-ink dark:text-gray-100">
+                  <h2 className="font-brand text-lg font-bold text-ink">
                     {isAr ? "ما يستطيع نظامي AI فعله" : "What Nezamy AI Can Do"}
                   </h2>
                 </div>
@@ -276,7 +276,7 @@ export default function AiDisclaimerPage() {
                   <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-50 dark:bg-red-500/10">
                     <XCircle size={22} weight="duotone" className="text-red-500 dark:text-red-400" />
                   </span>
-                  <h2 className="font-brand text-lg font-bold text-ink dark:text-gray-100">
+                  <h2 className="font-brand text-lg font-bold text-ink">
                     {isAr ? "ما لا يستطيع نظامي AI فعله" : "What Nezamy AI Cannot Do"}
                   </h2>
                 </div>
@@ -334,7 +334,7 @@ export default function AiDisclaimerPage() {
                         <Icon size={20} weight="duotone" className={sec.color.split(" ")[1]} />
                       </span>
                       <div>
-                        <h3 className="font-brand text-base font-bold text-ink dark:text-gray-100">{sec.title}</h3>
+                        <h3 className="font-brand text-base font-bold text-ink">{sec.title}</h3>
                         <p className="mt-2 text-sm leading-relaxed text-ink-muted dark:text-gray-400">{sec.body}</p>
                       </div>
                     </div>

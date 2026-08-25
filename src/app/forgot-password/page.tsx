@@ -20,7 +20,7 @@ import { useTheme } from "@/components/ThemeProvider";
 type Step = "method" | "otp" | "newpass" | "success";
 
 const inputCls =
-  "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
+  "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
 
 function StepMethod({
   isAr,
@@ -48,7 +48,7 @@ function StepMethod({
       <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-royal/8 dark:bg-royal/20">
         <LockKey size={28} weight="duotone" className="text-royal dark:text-gold" />
       </div>
-      <h1 className="mt-5 font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h1 className="mt-5 font-brand text-2xl font-bold text-ink">
         {isAr ? "استعادة كلمة المرور" : "Reset Your Password"}
       </h1>
       <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
@@ -149,12 +149,12 @@ function StepOTP({
       <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-gold/10 dark:bg-gold/15">
         <ShieldCheck size={28} weight="duotone" className="text-gold-dark dark:text-gold" />
       </div>
-      <h2 className="mt-5 font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="mt-5 font-brand text-2xl font-bold text-ink">
         {isAr ? "أدخل رمز التحقق" : "Enter Verification Code"}
       </h2>
       <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
         {isAr ? `أرسلنا رمزاً مكوّناً من 6 أرقام إلى` : `We sent a 6-digit code to`}{" "}
-        <span className="font-semibold text-ink dark:text-gray-200">{contact}</span>
+        <span className="font-semibold text-ink">{contact}</span>
       </p>
 
       {/* OTP boxes */}
@@ -172,7 +172,7 @@ function StepOTP({
             className={`h-13 w-full rounded-xl border text-center text-xl font-bold transition-all outline-none ${
               digit
                 ? "border-royal bg-royal/5 text-royal dark:border-gold dark:bg-gold/10 dark:text-gold"
-                : "border-slate-200 bg-white text-ink dark:border-white/10 dark:bg-dark-card dark:text-gray-200"
+                : "border-slate-200 bg-white text-ink dark:border-white/10 dark:bg-dark-card"
             } focus:border-royal focus:ring-2 focus:ring-royal/15 dark:focus:border-gold dark:focus:ring-gold/15`}
           />
         ))}
@@ -246,7 +246,7 @@ function StepNewPass({
       <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-900/20">
         <LockKey size={28} weight="duotone" className="text-emerald-600 dark:text-emerald-400" />
       </div>
-      <h2 className="mt-5 font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="mt-5 font-brand text-2xl font-bold text-ink">
         {isAr ? "كلمة مرور جديدة" : "Create New Password"}
       </h2>
       <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
@@ -348,7 +348,7 @@ function StepSuccess({ isAr }: { isAr: boolean }) {
       >
         <CheckCircle size={38} weight="bold" className="text-white" />
       </motion.div>
-      <h2 className="font-brand text-2xl font-bold text-ink dark:text-gray-100">
+      <h2 className="font-brand text-2xl font-bold text-ink">
         {isAr ? "تم تغيير كلمة المرور!" : "Password Changed Successfully!"}
       </h2>
       <p className="mt-3 text-sm text-ink-muted dark:text-gray-400 max-w-[300px] mx-auto">

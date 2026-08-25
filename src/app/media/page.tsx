@@ -399,7 +399,7 @@ export default function MediaPage() {
             </h2>
           </div>
           <div className="flex flex-col gap-3">
-            <a href="https://youtube.com/@nzamy" target="_blank" rel="noopener noreferrer"
+            <a href="https://youtube.com/@Nzamylaw" target="_blank" rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 rounded-2xl bg-red-600 hover:bg-red-700 px-6 py-3.5 text-[13px] font-bold text-white transition-colors active:scale-[.98]">
               <YoutubeLogo size={15} weight="fill"/> اشترك في القناة
             </a>

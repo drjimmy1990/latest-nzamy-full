@@ -14,6 +14,8 @@ import {
   deleteDocument,
   type Document as ApiDocument,
 } from '@/lib/services';
+import { isUploadTimeoutError, isDocumentTimeoutError } from '@/lib/services/documentService';
+import { MAX_UPLOAD_BYTES, partitionUploadFiles } from '@/lib/services/fileValidation';
 import { isSupabaseMode } from '@/lib/services/api';
 import { SkeletonList } from '../_components/DashboardSkeleton';
 
@@ -25,6 +27,9 @@ interface Doc {
   caseRef: string;
   type: DocType;
   size: string;
+  // The raw byte count as well as the formatted string: the storage total at
+  // the foot of the page has to add these up, and «١.٢ MB» does not add.
+  sizeBytes: number;
   uploadedAt: string;
   format: 'pdf' | 'docx' | 'other';
   storagePath?: string;
@@ -43,6 +48,30 @@ function formatBytes(bytes: number | null | undefined): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/**
+ * The same size in Arabic, for the storage panel — which has always spoken
+ * Arabic, while formatBytes() feeds a mono-spaced column in every row and is
+ * left as it is.
+ */
+function formatBytesAr(bytes: number): string {
+  const ar = (n: number, digits: number) =>
+    n.toLocaleString('ar-EG', { maximumFractionDigits: digits });
+  if (bytes < 1024) return `${ar(bytes, 0)} بايت`;
+  if (bytes < 1024 * 1024) return `${ar(bytes / 1024, 0)} كيلوبايت`;
+  return `${ar(bytes / (1024 * 1024), 1)} ميجابايت`;
+}
+
+/**
+ * The per-file ceiling, in Arabic megabytes, read off the constant that
+ * actually refuses the file (MAX_UPLOAD_BYTES in fileValidation.ts) instead of
+ * typed under the drop zone by hand. It was typed by hand once and said ١٠٠
+ * while the limit was ٢٠, so a client could be promised five times what the
+ * page would accept; deriving it is what stops that from happening again.
+ */
+const MAX_UPLOAD_MB_AR = (MAX_UPLOAD_BYTES / (1024 * 1024)).toLocaleString('ar-EG', {
+  maximumFractionDigits: 0,
+});
 
 function docTypeFromName(name: string): DocType {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
@@ -66,10 +95,65 @@ function apiDocToDoc(d: ApiDocument): Doc {
     caseRef: d.request_id || '',
     type: docTypeFromName(d.file_name),
     size: formatBytes(d.size_bytes),
+    sizeBytes: d.size_bytes ?? 0,
     uploadedAt: d.created_at ? new Date(d.created_at).toLocaleDateString('ar-SA') : '',
     format: docFormatFromName(d.file_name),
     storagePath: d.storage_path,
   };
+}
+
+// ─── Arabic failure copy ──────────────────────────────────────────────────────
+
+/**
+ * Arabic copy for one file that did not upload.
+ *
+ * The banner used to read «فشل رفع الملف: » + err.message, which since
+ * UploadTimeoutError started carrying Arabic prose produced «فشل رفع الملف:
+ * تعذّر الرفع — استغرق وقتاً طويلاً…» — two ways of saying the upload failed,
+ * one after the other. The timeout's own sentence is complete, so it is read
+ * back off `.message` unprefixed and stays the single source of that wording
+ * (UploadTimeoutError in documentService.ts). Everything else gets a fixed
+ * Arabic sentence rather than a raw Supabase/HTTP message, which would put
+ * English in front of a client.
+ *
+ * This mirrors attachErrorMessageAr() in src/hooks/useOrderAttachments.ts and
+ * attachmentErrorAr() in dashboard/client/consultation/new/page.tsx. Both are
+ * module-private where they live and this page uses neither the hook nor that
+ * wizard, so the third copy is deliberate, not an oversight.
+ *
+ * The caller prefixes each line with the file's own name, so a batch says
+ * which file it is talking about.
+ */
+function uploadFailureAr(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  // Log the machine code beside the raw text: a timeout's message is Arabic
+  // prose and on its own no longer identifies the error in a console.
+  const code = err instanceof Error ? (err as { code?: unknown }).code : undefined;
+  console.error('[documents] upload failed:', code ?? raw, raw);
+  if (isUploadTimeoutError(err)) return err.message;
+  if (raw === 'upload_unavailable_demo') {
+    return 'رفع المستندات غير متاح في الوضع التجريبي.';
+  }
+  if (raw === 'Unauthorized') {
+    return 'انتهت جلستك — سجّل الدخول مجدداً ثم أعد المحاولة.';
+  }
+  return 'تعذّر رفع الملف — تحقق من الاتصال وحاول مجدداً.';
+}
+
+/**
+ * Arabic copy for a «عرض» or «تنزيل» press that produced no link. Both used to
+ * fail in complete silence — `if (url) window.open(...)` with a console.error
+ * catch — so a client could press either button and get nothing back, forever
+ * on a hung request and instantly on a rejected one.
+ *
+ * A timeout is named as one rather than folded into a generic failure: after
+ * fifteen seconds of nothing, "try again" alone does not tell the client
+ * whether the file is gone or the line is bad.
+ */
+function fileLinkFailureAr(action: 'عرض' | 'تنزيل', name: string, err: unknown): string {
+  return isDocumentTimeoutError(err)
+    ? `تعذّر ${action} «${name}» — استغرق إنشاء الرابط وقتاً طويلاً. تحقق من اتصالك وحاول مجدداً.`
+    : `تعذّر ${action} «${name}» — حاول مرة أخرى.`;
 }
 
 const FormatIcon = ({ format, isDark }: { format: Doc['format']; isDark: boolean }) => {
@@ -123,7 +207,10 @@ function DocRow({
         <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{doc.caseRef || '—'}</p>
       </div>
 
-      <span className={`hidden sm:inline-flex text-[10px] px-2.5 py-1 rounded-full font-bold border flex-shrink-0 ${
+      {/* Visible on a phone too: the size and date column beside it is already
+          hidden below md, so on a narrow screen this tag is the only thing
+          that says what kind of document the row is. */}
+      <span className={`inline-flex text-[10px] px-2.5 py-1 rounded-full font-bold border flex-shrink-0 ${
         isDark ? typeConfig[doc.type].dark : typeConfig[doc.type].light
       }`}>
         {typeConfig[doc.type].label}
@@ -176,18 +263,29 @@ export default function ClientDocumentsPage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  // One banner for every action that can fail on this page — upload, view,
+  // download, delete. Renamed from `uploadError` when view/download/delete
+  // stopped failing silently, so the name still describes what it holds.
+  const [actionError, setActionError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadDocs = useCallback(async () => {
+  /**
+   * Reload the list. Returns whether it succeeded, because handleFiles() has
+   * to tell two different stories: a list that would not load on its own, and
+   * a list that would not refresh *after* files were already uploaded. Only
+   * the caller knows which one this is.
+   */
+  const loadDocs = useCallback(async (): Promise<boolean> => {
     setLoading(true);
     setError(null);
     try {
       const data = await getDocuments();
       setDocs(data.map(apiDocToDoc));
+      return true;
     } catch (err) {
       console.error('[documents] failed to load:', err);
       setError('تعذر تحميل المستندات. حاول مرة أخرى لاحقاً.');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -197,63 +295,167 @@ export default function ClientDocumentsPage() {
     loadDocs();
   }, [loadDocs]);
 
+  /**
+   * Upload a whole selection, then refresh the list.
+   *
+   * THREE RULES, the same ones attachFiles() in src/hooks/useOrderAttachments.ts
+   * settled on, because this input is `multiple` too and each file carries its
+   * own independent 60-second ceiling:
+   *   1. Every file gets its own try. One failure used to abandon the entire
+   *      remainder of the selection and put up a banner that named no file at
+   *      all, so a client could not tell which of five documents had landed.
+   *   2. Report as we go. setActionError() runs the moment a file fails, so
+   *      something is on screen at 60 seconds rather than at N × 60.
+   *   3. A timeout — and only a timeout — ends the batch, and the files that
+   *      were never attempted are named. A timeout means the link is not
+   *      carrying data, so spending another four minutes proving it is itself
+   *      the freeze. Every other failure belongs to one file and must not
+   *      cancel the rest.
+   *
+   * The refresh sits AFTER the `finally`, on purpose: the spinner is released
+   * the moment the last upload settles, so nothing about the list refresh can
+   * hold it. loadDocs() also never throws, and getDocuments() is bounded now
+   * (DOCUMENT_OP_TIMEOUT_MS), so neither the spinner nor the skeleton can
+   * outlast a hung GET.
+   */
   const handleFiles = useCallback(async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     if (!isSupabaseMode) {
-      setUploadError('الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات (NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase).');
+      setActionError('الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات (NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase).');
       return;
     }
+    // The ceiling and the allowed extensions are checked before a byte leaves
+    // the machine, through the same batch gate attachFiles() uses in
+    // src/hooks/useOrderAttachments.ts — so both surfaces refuse the same file
+    // with the same Arabic sentence. The drop zone needs it more than the
+    // button does: the input's `accept` filters the picker only, and a file
+    // dragged onto the page never passes through it.
+    //
+    // Indexed rather than for-of: on a timeout we need the tail of the
+    // selection by position, to name what was never attempted.
+    const { accepted: files, rejectedMessage } = partitionUploadFiles(Array.from(fileList));
+    if (files.length === 0) {
+      setActionError(rejectedMessage);
+      // Without this the client cannot pick the same file twice — an unchanged
+      // value fires no change event, so a corrected file of the same name
+      // would land on a dead input.
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+    const uploaded: string[] = [];
+    // Each problem is its own line. Joining with «، » would run the timeout
+    // sentence's full stop straight into the next clause («…حاول مجدداً.، لم
+    // تتم محاولة رفع…»), which reads as a typo on screen.
+    // A part-refused selection carries both stories at once, so the rejection
+    // opens the banner and every upload failure is added under it.
+    const problems: string[] = rejectedMessage ? [rejectedMessage] : [];
+
     setUploading(true);
-    setUploadError(null);
+    setActionError(rejectedMessage);
     try {
-      for (const file of Array.from(fileList)) {
-        await uploadDocumentFile(file);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+          await uploadDocumentFile(file);
+          uploaded.push(file.name);
+        } catch (err) {
+          problems.push(`${file.name}: ${uploadFailureAr(err)}`);
+          if (isUploadTimeoutError(err)) {
+            const untried = files.slice(i + 1).map((f) => f.name);
+            // If the timeout hit the last file there is no tail, and claiming
+            // there is one would be a false sentence on screen.
+            if (untried.length > 0) {
+              problems.push(`لم تتم محاولة رفع: ${untried.join('، ')} — توقّف الرفع بعد انتهاء المهلة.`);
+            }
+            setActionError(problems.join('\n'));
+            break;
+          }
+          setActionError(problems.join('\n'));
+        }
       }
-      await loadDocs();
-    } catch (err) {
-      console.error('[documents] upload failed:', err);
-      const msg = err instanceof Error ? err.message : 'فشل رفع الملف.';
-      setUploadError(`فشل رفع الملف: ${msg}`);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+
+    if (uploaded.length === 0) return;
+
+    // The files are on the server whatever happens next, so a failed refresh
+    // must not be reported as a failed upload. loadDocs() has already put its
+    // own «تعذر تحميل المستندات» in `error`; replace it with the sentence that
+    // is actually true here, and name what was saved so the client knows the
+    // work was not lost. The next successful load clears it.
+    const refreshed = await loadDocs();
+    if (!refreshed) {
+      setError(`تم رفع: ${uploaded.join('، ')} — لكن تعذّر تحديث قائمة المستندات. حدّث الصفحة لعرض ما تم رفعه.`);
+    }
   }, [loadDocs]);
 
-  const handleView = useCallback(async (d: Doc) => {
+  /**
+   * Both «عرض» and «تنزيل» need the same signed URL and used to swallow every
+   * way of not getting one: `if (url) …` with a console-only catch meant the
+   * button did nothing and said nothing. A missing storage_path is separated
+   * out from a failed request, so a row that was never stored properly is not
+   * reported as a bad connection.
+   */
+  const resolveFileUrl = useCallback(async (d: Doc, action: 'عرض' | 'تنزيل'): Promise<string | null> => {
+    setActionError(null);
+    if (!d.storagePath) {
+      setActionError(`تعذّر ${action} «${d.name}» — مسار الملف غير متوفر.`);
+      return null;
+    }
     try {
-      const url = await getDocumentFileUrl(d.storagePath ?? '');
-      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      const url = await getDocumentFileUrl(d.storagePath);
+      if (!url) {
+        setActionError(fileLinkFailureAr(action, d.name, null));
+        return null;
+      }
+      return url;
     } catch (err) {
-      console.error('[documents] view failed:', err);
+      // Log key stays English and constant so it is greppable; the Arabic verb
+      // is for the banner, not the console.
+      console.error('[documents] signed url failed:', d.storagePath, err);
+      setActionError(fileLinkFailureAr(action, d.name, err));
+      return null;
     }
   }, []);
 
+  const handleView = useCallback(async (d: Doc) => {
+    const url = await resolveFileUrl(d, 'عرض');
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, [resolveFileUrl]);
+
   const handleDownload = useCallback(async (d: Doc) => {
-    try {
-      const url = await getDocumentFileUrl(d.storagePath ?? '');
-      if (!url) return;
-      const a = window.document.createElement('a');
-      a.href = url;
-      a.download = d.name;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      window.document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (err) {
-      console.error('[documents] download failed:', err);
-    }
-  }, []);
+    const url = await resolveFileUrl(d, 'تنزيل');
+    if (!url) return;
+    const a = window.document.createElement('a');
+    a.href = url;
+    a.download = d.name;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    window.document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }, [resolveFileUrl]);
 
   const handleDelete = useCallback(async (d: Doc) => {
     if (!confirm(`حذف المستند «${d.name}»؟ لا يمكن التراجع.`)) return;
+    setActionError(null);
     try {
       await deleteDocument(d.id, d.storagePath);
       setDocs((prev) => prev.filter((x) => x.id !== d.id));
     } catch (err) {
       console.error('[documents] delete failed:', err);
-      setUploadError('فشل حذف المستند. حاول مرة أخرى.');
+      // A timeout is not a failure: the DELETE may still have been executed
+      // after we stopped waiting (see deleteDocument in documentService.ts), so
+      // the row is left on screen and the client is told to check rather than
+      // told something that may be untrue.
+      setActionError(
+        isDocumentTimeoutError(err)
+          ? `تعذّر تأكيد حذف «${d.name}» — انتهت المهلة قبل وصول ردّ الخادم، وقد يكون الحذف قد تم فعلاً. حدّث الصفحة للتحقق.`
+          : `فشل حذف «${d.name}». حاول مرة أخرى.`,
+      );
     }
   }, []);
 
@@ -262,6 +464,32 @@ export default function ClientDocumentsPage() {
       (d) => d.name.includes(search) || d.caseRef.includes(search)
     );
   }, [docs, search]);
+
+  /** Everything stored, not everything matching the search box. */
+  const usedBytes = useMemo(
+    () => docs.reduce((total, d) => total + d.sizeBytes, 0),
+    [docs],
+  );
+
+  /**
+   * The same rule the empty state follows: a list we could not read means "we
+   * do not know", not "nothing". «٠ بايت» printed under the red banner would
+   * be a false total about files that are on the server.
+   */
+  const storageKnown = !loading && !(error && docs.length === 0);
+
+  const uploadReady = isSupabaseMode && !uploading;
+
+  /**
+   * The drop zone and the header button drive the one hidden input, so there
+   * is a single upload path and a single place where `multiple` and `accept`
+   * are declared. The input is `disabled` whenever `uploadReady` is false and
+   * a disabled input ignores .click(), so demo mode and an upload in flight
+   * both hold here without a second guard.
+   */
+  const openFilePicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
 
   return (
     <div className={`p-6 md:p-8 max-w-[1000px] mx-auto ${isDark ? "text-white" : "text-zinc-900"}`} dir="rtl" suppressHydrationWarning>
@@ -291,16 +519,26 @@ export default function ClientDocumentsPage() {
         </label>
       </div>
 
-      {/* Demo-mode gate / upload error */}
-      {(!isSupabaseMode || uploadError) && (
+      {/* Demo-mode gate / failed action (upload, view, download, delete) */}
+      {(!isSupabaseMode || actionError) && (
         <div className={`flex items-start gap-3 p-4 mb-6 rounded-2xl border text-sm ${
           isDark ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"
         }`}>
           <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
-          <span>
-            {!isSupabaseMode
-              ? "الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات (NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase)."
-              : uploadError}
+          {/* whitespace-pre-line: a multi-file batch reports one file per line
+              (see handleFiles), and without this they would run together.
+
+              actionError WINS over the standing demo-mode notice. The arms used
+              to be the other way round, which was harmless while this banner
+              only ever carried upload failures — demo mode refuses those before
+              they happen. Now that «عرض», «تنزيل» and «حذف» write here too, the
+              old order would have shown the demo sentence while silently
+              dropping the failure the client just caused, which is exactly the
+              invisible failure this page is being fixed for. With no
+              actionError the notice still explains why the upload button is
+              disabled. */}
+          <span className="whitespace-pre-line">
+            {actionError ?? "الوضع التجريبي — رفع المستندات يتطلب ربط قاعدة البيانات (NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase)."}
           </span>
         </div>
       )}
@@ -315,8 +553,25 @@ export default function ClientDocumentsPage() {
         </div>
       )}
 
-      {/* Upload Drop Zone */}
+      {/* Upload Drop Zone — the whole box opens the picker, not only the small
+          button in the header. It is the largest control on the page and it
+          says «اسحب وأفلت», so a client presses it; pressing it used to do
+          nothing at all, and nothing on screen sent them back up to the
+          header. Keyboard reaches it for the same reason. */}
       <motion.div
+        role="button"
+        tabIndex={uploadReady ? 0 : -1}
+        aria-disabled={!uploadReady}
+        aria-label="اختر ملفات للرفع"
+        onClick={openFilePicker}
+        onKeyDown={(e) => {
+          // Space as well as Enter: role="button" promises both, and a native
+          // button gives both.
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openFilePicker();
+          }
+        }}
         onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={(e) => {
@@ -328,7 +583,9 @@ export default function ClientDocumentsPage() {
           borderColor: isDragOver ? (isDark ? 'rgba(52, 211, 153, 0.5)' : 'rgba(11,61,46,0.5)') : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(228,228,231,1)'),
           backgroundColor: isDragOver ? (isDark ? 'rgba(52, 211, 153, 0.05)' : 'rgba(11,61,46,0.04)') : (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(250,250,250,1)')
         }}
-        className="border-2 border-dashed rounded-[2rem] p-10 text-center mb-8 transition-colors"
+        className={`border-2 border-dashed rounded-[2rem] p-10 text-center mb-8 transition-colors outline-none focus-visible:ring-4 focus-visible:ring-[#0B3D2E]/10 ${
+          uploadReady ? "cursor-pointer" : "cursor-not-allowed"
+        }`}
       >
         <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 transition-colors ${
           isDragOver
@@ -338,9 +595,9 @@ export default function ClientDocumentsPage() {
           {uploading ? <SpinnerGap size={28} weight="bold" className="animate-spin" /> : <UploadSimple size={28} weight={isDragOver ? "fill" : "regular"} />}
         </div>
         <p className={`text-[15px] font-bold mb-1.5 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
-          {uploading ? "جاري الرفع…" : "اسحب وأفلت الملفات هنا"}
+          {uploading ? "جاري الرفع…" : "اسحب وأفلت الملفات هنا أو اضغط للاختيار"}
         </p>
-        <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>PDF، Word، صور — حتى ١٠٠ ميجابايت لكل ملف</p>
+        <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>PDF، Word، صور — حتى {MAX_UPLOAD_MB_AR} ميجابايت لكل ملف</p>
       </motion.div>
 
       {/* Search + Sort */}
@@ -388,6 +645,15 @@ export default function ClientDocumentsPage() {
               />
             ))}
           </motion.div>
+        ) : error && docs.length === 0 ? (
+          // The list could not be read, so an empty `docs` means "we do not
+          // know", not "you have none". Printing «لا توجد مستندات» under the
+          // red banner would be a false sentence about files that are on the
+          // server — including, after a failed post-upload refresh, files the
+          // client just watched upload. The banner above says why the list is
+          // missing. Guarded on `docs`, not `filtered`, so a search that
+          // matches nothing still gets its own empty state.
+          null
         ) : (
           <motion.div
             key="empty"
@@ -411,23 +677,33 @@ export default function ClientDocumentsPage() {
       </AnimatePresence>
       )}
 
-      {/* Storage indicator */}
+      {/* Storage indicator — the real total, added up from the rows above.
+          It used to print «١٠.٣ / ٥٠٠ ميجا», animate the bar to a literal
+          2.1% and end on «٤٨٩ ميجا متاحة», all of it fixed text: a client with
+          four hundred megabytes stored and a client with none read the same
+          three numbers.
+
+          The quota went with them rather than being corrected, because there
+          is no quota to correct — nothing on the server holds a client to a
+          total (the `documents` bucket sets a per-object limit and no more),
+          so a ratio and a «متاحة» line would be promising a ceiling that does
+          not exist. What is left is what is true: how much is stored, and how
+          many files it is. The bar went too — a bar with no denominator is a
+          shape, not a measurement. */}
       <div className={`mt-10 p-6 rounded-[2rem] border transition-colors ${
         isDark ? "bg-zinc-900/50 border-white/10" : "bg-white border-zinc-200"
       }`}>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between">
           <span className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>مساحة التخزين المشفرة</span>
-          <span className={`text-[13px] font-mono font-bold ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>١٠.٣ / ٥٠٠ ميجا</span>
+          <span className={`text-[13px] font-mono font-bold ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+            {storageKnown ? formatBytesAr(usedBytes) : '—'}
+          </span>
         </div>
-        <div className={`h-2.5 rounded-full overflow-hidden ${isDark ? "bg-white/10" : "bg-zinc-100"}`}>
-          <motion.div
-            className="h-full rounded-full bg-gradient-to-l from-[#0B3D2E] to-emerald-500"
-            initial={{ width: 0 }}
-            animate={{ width: '2.1%' }}
-            transition={{ delay: 0.5, duration: 1, type: "spring" }}
-          />
-        </div>
-        <p className={`text-[11px] font-bold mt-2 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>٤٨٩ ميجا متاحة — أنت في السليم!</p>
+        {storageKnown && (
+          <p className={`text-[11px] font-bold mt-2 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>
+            {docs.length.toLocaleString('ar-EG')} مستند محفوظ
+          </p>
+        )}
       </div>
 
     </div>

@@ -28,12 +28,12 @@ export function PricingComparison({ planList, comparisonList, isAr }: PricingCom
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-white/10 dark:bg-dark-card">
-                <th className="px-6 py-4 text-start text-sm font-semibold text-ink dark:text-gray-100 w-[40%]">
+                <th className="px-6 py-4 text-start text-sm font-semibold text-ink w-[40%]">
                   {isAr ? "الميزة" : "Feature"}
                 </th>
                 {planList.map(plan => (
                   <th key={plan.id} className="px-4 py-4 text-center text-sm font-semibold">
-                    <span className={plan.highlighted ? "text-royal dark:text-gold" : "text-ink dark:text-gray-100"}>{plan.name}</span>
+                    <span className={plan.highlighted ? "text-royal dark:text-gold" : "text-ink"}>{plan.name}</span>
                   </th>
                 ))}
               </tr>

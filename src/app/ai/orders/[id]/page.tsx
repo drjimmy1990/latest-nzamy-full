@@ -1,13 +1,33 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import { DownloadSimple } from "@phosphor-icons/react";
+import Link from "next/link";
+import { ArrowRight, DownloadSimple, WhatsappLogo } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import {
   getServiceOrder, ORDER_STATUS_AR, type ServiceOrder,
 } from "@/lib/services/serviceOrders";
+// Reuse the codebase's one real support WhatsApp number (also used by
+// src/app/contact/page.tsx and the floating WhatsApp widget) rather than
+// inventing a second one for this page. NOT src/lib/betaConfig.ts's
+// BETA_WHATSAPP_NUMBER / BetaReviewGate's inline "966XXXXXXXXX" — those are
+// explicitly still placeholders ("Update with real number").
+import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
+import { OrderTimeline } from "./_components/OrderTimeline";
+import { OrderSummary } from "./_components/OrderSummary";
+import { OrderActions } from "./_components/OrderActions";
+import { RevisionPanel } from "./_components/RevisionPanel";
+import { OPEN_ORDER_STATUSES } from "./_components/openOrderStatuses";
 
 type LoadState = "loading" | "error" | "not_found" | "loaded";
+
+// Statuses for which the three-stage progress strip (OrderTimeline) makes
+// sense to show at all — the shared OPEN_ORDER_STATUSES set plus
+// "completed" (every status ServiceOrder["status"] models except
+// "cancelled" — a cancelled order never finishes this journey; it gets its
+// own panel below, unchanged). The page's fifth, catch-all branch handles
+// status values outside this union entirely and never gets a timeline.
+const TIMELINE_STATUSES = new Set([...OPEN_ORDER_STATUSES, "completed"]);
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -15,6 +35,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [order, setOrder] = useState<ServiceOrder | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [downloadErr, setDownloadErr] = useState("");
+  const [idCopied, setIdCopied] = useState(false);
+  const [copyErr, setCopyErr] = useState("");
 
   const load = () => {
     setState("loading");
@@ -53,6 +75,21 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       // feedback. This is a distinct message from the endpoint's own
       // (deliberately non-distinguishing) 404 body above.
       setDownloadErr("تعذّر التحميل. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.");
+    }
+  }
+
+  async function copyId() {
+    setCopyErr("");
+    try {
+      // navigator.clipboard throws on insecure origins (plain HTTP,
+      // non-localhost) — never let the button look dead with no feedback.
+      // Copies order.id, not the route param `id`, so what's copied is
+      // provably the same value the header displays (#order.id).
+      await navigator.clipboard.writeText(order?.id ?? id);
+      setIdCopied(true);
+      setTimeout(() => setIdCopied(false), 2000);
+    } catch {
+      setCopyErr("تعذّر النسخ تلقائياً — انسخ الرقم يدوياً.");
     }
   }
 
@@ -96,171 +133,75 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   const s = ORDER_STATUS_AR[order.status] ?? ORDER_STATUS_AR.pending_assignment;
   const deliverable = order.metadata?.deliverable;
-
-  // Revisions SLA calculation: max 2 revisions, within 48h of completion
-  const completedAt = order.metadata?.completedAt || order.metadata?.deliveredAt || order.created_at;
-  const rawCompletedTime = completedAt ? new Date(completedAt).getTime() : Date.now();
-  const completedTime = Number.isNaN(rawCompletedTime) ? Date.now() : rawCompletedTime;
-  const now = Date.now();
-  const hoursSinceDelivery = Math.max(0, Math.floor((now - completedTime) / (1000 * 60 * 60)));
-  const isWithin48h = hoursSinceDelivery <= 48;
-  const revisionsCount = Array.isArray(order.metadata?.revisions) ? (order.metadata.revisions as any[]).length : 0;
-  const maxRevisions = 2;
-  const remainingRevisions = Math.max(0, maxRevisions - revisionsCount);
-  const canRequestRevision = order.status === "completed" && isWithin48h && remainingRevisions > 0;
-
-
-  const [showRevisionForm, setShowRevisionForm] = useState(false);
-  const [revisionNotes, setRevisionNotes] = useState("");
-  const [submittingRevision, setSubmittingRevision] = useState(false);
-  const [revisionSuccess, setRevisionSuccess] = useState(false);
-
-  const handleRevisionSubmit = async () => {
-    if (!revisionNotes.trim()) return;
-    setSubmittingRevision(true);
-    try {
-      const res = await fetch(`/api/v1/service-requests/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "request_revision",
-          revisionNotes: revisionNotes.trim(),
-          revisionNumber: revisionsCount + 1,
-        }),
-      });
-      if (res.ok) {
-        setRevisionSuccess(true);
-        setShowRevisionForm(false);
-        setRevisionNotes("");
-        load();
-      }
-    } catch {
-      // ignore
-    } finally {
-      setSubmittingRevision(false);
-    }
-  };
+  // An order the client has sent back for a revision: the server moves it from
+  // `completed` to `in_review` and records the request at
+  // `metadata.revisions` (see RevisionPanel.tsx and the PATCH route's
+  // `request_revision` branch). Read only to decide which panel to show — the
+  // policy itself is enforced server-side and re-derived there on every call.
+  //
+  // The cast is because `ServiceOrder["metadata"]` does not model `revisions`
+  // yet and src/lib/services/serviceOrders.ts belongs to another agent this
+  // wave; the field addition is in this round's hand-off.
+  const revisionCount = (() => {
+    const raw = (order.metadata as unknown as Record<string, unknown> | null)?.revisions;
+    return Array.isArray(raw) ? raw.length : 0;
+  })();
+  const underRevision = order.status === "in_review" && revisionCount > 0;
+  const supportHref = buildWhatsAppHref(
+    `مرحباً فريق نظامي، أحتاج مساعدة بخصوص طلبي رقم ${order.id} (${order.metadata?.serviceTitleAr ?? order.title}).`,
+  );
 
   return (
     <div className="p-5 md:p-7 max-w-3xl mx-auto space-y-4" dir="rtl">
-      <div>
+      <div className="space-y-1.5">
+        {/* Task 6, Step 1 — a reference the client can quote. The order id
+            is already the primary key (service_requests.id); this doesn't
+            invent a second, parallel numbering scheme. */}
+        <div className="flex items-center gap-2">
+          <span className={`text-[11px] font-mono ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>#{order.id}</span>
+          <button onClick={copyId} className="text-[11px] font-semibold text-[#0B3D2E]">
+            {idCopied ? "تم النسخ ✓" : "نسخ رقم الطلب"}
+          </button>
+        </div>
+        {copyErr && <p className="text-[10px] text-red-500">{copyErr}</p>}
+
         <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{order.title}</h1>
         <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
           {order.metadata?.serviceTitleAr} · الحالة: {s.label}
         </p>
       </div>
 
-      {order.status === "completed" && deliverable ? (
-        <div className={`${card} p-5 space-y-4`}>
-          <div className="flex items-center justify-between">
-            <p className={`text-[14px] font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
-              ✓ تم تسليم المستند بنجاح
-            </p>
-            <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${
-              isDark ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-emerald-200 bg-emerald-50 text-emerald-700"
-            }`}>
-              النسخة النهائية
-            </span>
-          </div>
+      {/* Task 6, Step 2 — progress strip + (on open orders only) the
+          owner-ruled delivery-time card. Not shown for "cancelled" (its own
+          panel below covers that) or for any status outside the five this
+          page knows about (the catch-all branch at the bottom). */}
+      {TIMELINE_STATUSES.has(order.status) && (
+        <div className={`${card} p-5`}>
+          <OrderTimeline status={order.status} isDark={isDark} />
+        </div>
+      )}
 
-          {/* Delivery notes from team */}
+      {/* `underRevision` joins "completed" here on purpose. A revision sends
+          the order back to `in_review`, but `metadata.deliverable` survives
+          that write and the deliverable endpoint does not gate on status
+          (deliverable/route.ts checks participation, then
+          metadata.deliverable) — so the previously delivered version is still
+          downloadable, and taking it away while the team reworks it would
+          leave the client with nothing in hand mid-revision. Without this the
+          order would also fall into the generic «طلبك قيد التنفيذ» panel
+          below and lose every trace of the delivery. */}
+      {(order.status === "completed" || underRevision) && deliverable ? (
+        <div className={`${card} p-5 space-y-3`}>
+          <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+            {underRevision ? "النسخة المسلَّمة (قيد التعديل)" : "المستند جاهز"}
+          </p>
           {deliverable.notes && (
-            <div className={`p-3.5 rounded-xl border ${isDark ? "bg-white/[0.03] border-white/[0.06]" : "bg-slate-50 border-slate-100"}`}>
-              <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                ملاحظات وتوجيهات الفريق:
-              </p>
-              <p className={`text-[12px] leading-[1.9] ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{deliverable.notes}</p>
-            </div>
+            <p className={`text-[12px] leading-[1.9] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{deliverable.notes}</p>
           )}
-
-          {/* Download button */}
-          <div className="flex flex-wrap gap-2">
-            <button onClick={download} className="flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-6 py-2.5 text-[12px] font-bold text-[#C8A762] hover:bg-[#092e22] shadow transition">
-              <DownloadSimple size={15} /> تحميل {deliverable.fileName || "المستند"}
-            </button>
-          </div>
+          <button onClick={download} className="flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[12px] font-bold text-white">
+            <DownloadSimple size={14} /> تحميل {deliverable.fileName}
+          </button>
           {downloadErr && <p className="text-[11px] text-red-500">{downloadErr}</p>}
-
-          {/* SLA Revisions Policy Box */}
-          <div className={`p-4 rounded-2xl border ${isDark ? "border-white/[0.08] bg-zinc-950/50" : "border-slate-200 bg-slate-50/70"}`}>
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
-                  سياسة التعديلات والاستفسارات
-                </p>
-                <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                  {canRequestRevision ? (
-                    <>متاح لك <span className="font-bold text-amber-500">{remainingRevisions} تعديل مجاني</span> خلال 48 ساعة من الاستلام (مضى {hoursSinceDelivery} ساعة).</>
-                  ) : (
-                    <>انتهت فترة التعديلات المباشرة (48 ساعة أو استُهلكت التعديلات).</>
-                  )}
-                </p>
-              </div>
-
-              {canRequestRevision ? (
-                <button
-                  onClick={() => setShowRevisionForm(v => !v)}
-                  className={`px-4 py-2 rounded-xl text-[11px] font-bold border transition ${
-                    showRevisionForm
-                      ? "bg-amber-500 text-white border-amber-500"
-                      : isDark ? "border-amber-500/30 text-amber-400 hover:bg-amber-500/10" : "border-amber-300 text-amber-700 hover:bg-amber-50"
-                  }`}
-                >
-                  {showRevisionForm ? "إلغاء" : "طلب تعديل على المسودة"}
-                </button>
-              ) : (
-                <a
-                  href="/dashboard/lawyer/consultations"
-                  className={`px-4 py-2 rounded-xl text-[11px] font-bold border transition ${
-                    isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  فتح تذكرة دعم / شكوى
-                </a>
-              )}
-            </div>
-
-            {/* Revision Request Form */}
-            {showRevisionForm && (
-              <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-3">
-                <p className={`text-[11px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                  اكتب ملاحظات التعديل المطلوب بدقة:
-                </p>
-                <textarea
-                  rows={3}
-                  value={revisionNotes}
-                  onChange={e => setRevisionNotes(e.target.value)}
-                  placeholder="مثال: يرجى إضافة فقرة تتعلق بالشرط الجزائي وتعديل قيمة المطالبة..."
-                  className={`w-full rounded-xl p-3 text-[12px] outline-none border transition ${
-                    isDark ? "bg-zinc-900 border-white/[0.08] text-zinc-200 focus:border-[#C8A762]" : "bg-white border-zinc-200 text-zinc-800 focus:border-[#0B3D2E]"
-                  }`}
-                />
-                <div className="flex gap-2">
-                  <button
-                    disabled={submittingRevision || !revisionNotes.trim()}
-                    onClick={handleRevisionSubmit}
-                    className="rounded-xl bg-[#0B3D2E] px-5 py-2 text-[12px] font-bold text-[#C8A762] hover:bg-[#092e22] disabled:opacity-40 transition"
-                  >
-                    {submittingRevision ? "جارٍ الإرسال..." : "إرسال طلب التعديل"}
-                  </button>
-                  <button
-                    onClick={() => setShowRevisionForm(false)}
-                    className={`rounded-xl px-4 py-2 text-[12px] font-semibold border ${
-                      isDark ? "border-white/[0.08] text-zinc-400" : "border-slate-200 text-zinc-500"
-                    }`}
-                  >
-                    إلغاء
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {revisionSuccess && (
-              <p className="text-[11px] text-emerald-400 mt-2 font-semibold">
-                ✓ تم إرسال طلب التعديل لفريق نظامي بنجاح، وسنقوم بمراجعته وإعادة التسليم.
-              </p>
-            )}
-          </div>
         </div>
       ) : order.status === "completed" ? (
         // Reachable: the status flip to "completed" and the metadata.deliverable
@@ -295,6 +236,42 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </p>
         </div>
       )}
+
+      {/* «سياسة التعديلات: ٤٨ ساعة / تعديلان» plus the support-ticket
+          escalation once that window closes. Self-guarding: it renders
+          nothing at all until the team has actually delivered (no
+          `metadata.deliverable.deliveredAt`, no policy to describe). The
+          countdown and the counter it shows are display only — the server
+          re-derives both from the persisted row on every request. */}
+      <RevisionPanel order={order} isDark={isDark} supportHref={supportHref} onChanged={load} />
+
+      {/* Task 6, Step 3 — what the client actually sent: intake answers
+          rendered generically (differs per service) plus their own
+          attachments with working download links. Shown regardless of
+          status — it's a record of what was submitted, not a status
+          indicator, so it stays visible on delivered/cancelled orders too. */}
+      <OrderSummary order={order} isDark={isDark} />
+
+      {/* Task 6, Step 4 — always-available actions, plus Task 7's cancel
+          control (self-guarded: renders nothing once the order is no
+          longer cancellable). */}
+      <div className={`${card} p-5 flex flex-wrap items-center gap-3`}>
+        <Link
+          href="/ai/orders"
+          className={`flex items-center gap-1.5 text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}
+        >
+          <ArrowRight size={14} /> رجوع إلى طلباتي
+        </Link>
+        <a
+          href={supportHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 text-[12px] font-semibold text-emerald-600"
+        >
+          <WhatsappLogo size={14} weight="fill" /> تواصل مع الدعم
+        </a>
+        <OrderActions order={order} isDark={isDark} onCancelled={load} />
+      </div>
     </div>
   );
 }

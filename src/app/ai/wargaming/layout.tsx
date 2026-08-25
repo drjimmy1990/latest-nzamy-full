@@ -3,8 +3,8 @@
 export const metadata = buildMetadata({
   titleAr: "محاكاة القضايا القانونية",
   titleEn: "Legal Case Simulation",
-  descriptionAr: "حاكِ سير قضيتك القانونية وتوقّع النتائج المحتملة بالذكاء الاصطناعي",
-  descriptionEn: "Simulate your legal case trajectory and predict possible outcomes with AI",
+  descriptionAr: "حاكِ سير قضيتك القانونية — يراجع فريق نظامي بيانات قضيتك يدوياً ويُعدّ لك تحليلاً مكتوباً",
+  descriptionEn: "Simulate your legal case trajectory — reviewed and prepared manually by the Nazamy team",
   path: "/ai/wargaming",
   keywords: ["محاكاة قضائية","توقع نتيجة","استراتيجية قانونية"],
 });

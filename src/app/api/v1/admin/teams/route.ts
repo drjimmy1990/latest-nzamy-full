@@ -78,6 +78,13 @@ export async function POST(request: NextRequest) {
     let userId = "";
 
     // Create the user in auth.users
+    // WARNING: user_type "admin" is FULL platform authority, not a team seat.
+    // src/lib/auth/assertRole.ts:46 short-circuits every allow-list for 'admin', and
+    // src/components/dashboard/UserTypeGuard.tsx:32 lets 'admin' bypass every UI guard —
+    // so an invited member reaches settings, pricing, entitlement grants, coupons and revenue.
+    // The role/department captured below are descriptive labels only; nothing reads them as
+    // permissions. Narrowing this grant needs a real admin-tier model first, otherwise the
+    // admins who already exist lose access.
     const { data: authUser, error: authError } = await adminClient.auth.admin.createUser({
       email,
       email_confirm: true,
@@ -116,6 +123,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Upsert the profile to set the user details and metadata
+    // Same full-authority grant as the auth user above — see the warning at createUser.
     const { error: profileError } = await adminClient
       .from("profiles")
       .upsert({
@@ -187,6 +195,9 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    // NOTE: this writes metadata.status only — a display label. user_type stays "admin", and the
+    // auth path reads user_type alone (assertRole.ts:46, UserTypeGuard.tsx:32), so "suspended"
+    // does NOT revoke a member's access. Real suspension needs the admin-tier model.
     const currentMetadata = profile.metadata && typeof profile.metadata === "object" ? profile.metadata : {};
     const updatedMetadata = {
       ...currentMetadata,

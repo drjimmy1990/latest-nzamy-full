@@ -296,7 +296,7 @@ function ToolCard({
           <Icon size={24} weight="duotone" className={isSelected ? "text-white" : "text-royal"} />
         </span>
 
-        <h3 className={`font-brand mt-4 text-lg font-bold ${isSelected ? "text-white" : "text-ink dark:text-gray-100"}`}>
+        <h3 className={`font-brand mt-4 text-lg font-bold ${isSelected ? "text-white" : "text-ink"}`}>
           {tool.labelAr}
         </h3>
 
@@ -527,7 +527,7 @@ export default function LawyersPage() {
                                 <span className="w-10 h-10 rounded-xl bg-royal/8 flex items-center justify-center">
                                   <Icon size={20} weight="duotone" className="text-royal" />
                                 </span>
-                                <h3 className="font-brand text-xl font-bold text-ink dark:text-gray-100">{tool.labelAr}</h3>
+                                <h3 className="font-brand text-xl font-bold text-ink">{tool.labelAr}</h3>
                               </div>
                               <p className="text-sm leading-relaxed text-ink-muted dark:text-gray-400">{tool.descAr}</p>
                               <ul className="mt-6 space-y-2.5">

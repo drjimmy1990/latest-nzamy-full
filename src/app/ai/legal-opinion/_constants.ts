@@ -5,6 +5,7 @@ import {
   ChartBar, Envelope, UserFocus,
   // Letter type icons
   Bell, FolderOpen, Coins, MegaphoneSimple, Prohibit, LockKeyOpen, PenNib,
+  Handshake,
 } from "@phosphor-icons/react";
 import type { OutputType, SearchDepth, StepKey } from "./_types";
 
@@ -18,41 +19,51 @@ export const OUTPUT_TYPES: {
   {
     id: "consult", icon: Lightbulb, title: "استشارة قانونية", titleEn: "Legal Consultation",
     desc: "سؤال محدد — إجابة واضحة مع المرجع النظامي",
-    depth: "quick", steps: ["type", "context", "processing", "result"],
+    // Task C4: "processing"/"result" replaced by a real "submit" step — the
+    // request becomes an order a human admin fulfils, not a simulated result.
+    depth: "quick", steps: ["type", "context", "submit"],
     credits: 5, color: "text-emerald-500", bg: "bg-emerald-500/10", border: "border-emerald-500/30",
     audience: "أفراد · عملاء · محامون",
   },
   {
     id: "study", icon: BookOpen, title: "دراسة قانونية", titleEn: "Legal Study",
     desc: "بحث معمّق في موضوع قانوني مع تحليل الأنظمة والسوابق",
-    depth: "deep", steps: ["type", "context", "settings", "processing", "result"],
+    depth: "deep", steps: ["type", "context", "settings", "submit"],
     credits: 12, color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/30",
     audience: "محامون · مستشارون · شركات",
   },
   {
     id: "legal-memo", icon: Scales, title: "مذكرة رأي", titleEn: "Legal Memo",
     desc: "Legal Memo رسمية مع التوصيات والأساس النظامي الكامل",
-    depth: "deep", steps: ["type", "context", "settings", "processing", "result"],
+    depth: "deep", steps: ["type", "context", "settings", "submit"],
     credits: 10, color: "text-[#C8A762]", bg: "bg-[#C8A762]/10", border: "border-[#C8A762]/30",
     audience: "محامون · مستشارون قانونيون",
   },
   {
     id: "research", icon: MagnifyingGlass, title: "بحث قانوني", titleEn: "Legal Research",
     desc: "بحث متخصص في المصادر المتعددة مع تجميع المراجع · يشمل دور الباحث القانوني",
-    depth: "deep", steps: ["type", "context", "settings", "processing", "result"],
+    depth: "deep", steps: ["type", "context", "settings", "submit"],
     credits: 8, color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/30",
     audience: "محامون · متدربون · أكاديميون",
   },
   {
     id: "due-diligence", icon: ChartBar, title: "تقرير العناية الواجبة", titleEn: "Due Diligence",
     desc: "فحص قانوني شامل لصفقة أو كيان — Due Diligence",
-    depth: "comprehensive", steps: ["type", "context", "settings", "processing", "result"],
+    // No "settings" step: due-diligence's SettingsStep panel had nothing
+    // type-specific to show (only the now-hidden agent-preview card), so
+    // routing through it would land the client on a blank screen.
+    depth: "comprehensive", steps: ["type", "context", "submit"],
     credits: 18, color: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/30",
     audience: "شركات · M&A · مستثمرون",
   },
   {
     id: "letter", icon: Envelope, title: "خطاب رسمي", titleEn: "Official Letter",
-    desc: "إنذار قانوني · إخطار رسمي · مطالبة مالية · طلب مستند — خطاب جاهز في ١ دقيقة",
+    // "— خطاب جاهز في ١ دقيقة" removed (Task C4 fix pass): asserted a
+    // turnaround the system doesn't enforce and contradicted this flow's
+    // own step-4 copy admitting manual review (LetterWorkflow.tsx).
+    desc: "إنذار قانوني · إخطار رسمي · مطالبة مالية · طلب مستند",
+    // Unused at runtime once isLetterMode is true (LetterWorkflow drives its
+    // own internal letterStep 1-4 instead) — left as-is, out of scope.
     depth: "quick", steps: ["type", "context", "processing", "result"],
     credits: 4, color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/30",
     audience: "محامون · أفراد · شركات",
@@ -60,7 +71,7 @@ export const OUTPUT_TYPES: {
   {
     id: "cross-exam", icon: UserFocus, title: "مُولّد أسئلة الاستجواب", titleEn: "Cross-Examination",
     desc: "حلّل شهادة الخصم أو شاهده — وأنتج أسئلة تأسيسية وفخاخ وإغلاق تُفقده التماسك",
-    depth: "deep", steps: ["type", "context", "processing", "result"],
+    depth: "deep", steps: ["type", "context", "submit"],
     credits: 8, color: "text-rose-500", bg: "bg-rose-500/10", border: "border-rose-500/30",
     audience: "محامون · مرافعون",
   },
@@ -166,22 +177,27 @@ export const MOCK_RESULT = {
 // ─── Letter Constants ───────────────────────────────────────────────────────────
 
 export const LETTER_TYPES: { id: string; label: string; Icon: React.ElementType }[] = [
-  { id: "warning",     label: "إنذار قانوني",                 Icon: Scales },
-  { id: "termination", label: "إخطار بفسخ عقد / إنهاء علاقة", Icon: Prohibit },
-  { id: "demand",      label: "مطالبة مالية وسداد مستحقات",  Icon: Coins },
-  { id: "eviction",    label: "إشعار إخلاء عقار",             Icon: Warning },
-  { id: "settlement",  label: "عرض تسوية ودية",               Icon: Sparkle },
-  { id: "notice",      label: "إخطار رسمي",                    Icon: Bell },
-  { id: "objection",   label: "تظلم / اعتراض إداري",           Icon: MegaphoneSimple },
-  { id: "request",     label: "طلب مستند / إفادة رسمية",       Icon: FolderOpen },
-  { id: "proxy",       label: "تفويض / إقرار رسمي",            Icon: PenNib },
-  { id: "release",     label: "طلب إفراج عن مستند / كفالة",   Icon: LockKeyOpen },
+  { id: "warning",   label: "إنذار قانوني",         Icon: Scales },
+  { id: "notice",    label: "إخطار رسمي",            Icon: Bell },
+  { id: "request",   label: "طلب مستند / معلومة",   Icon: FolderOpen },
+  { id: "demand",    label: "مطالبة مالية",          Icon: Coins },
+  { id: "complaint", label: "شكوى",                 Icon: MegaphoneSimple },
+  { id: "objection", label: "اعتراض على قرار",       Icon: Prohibit },
+  { id: "release",   label: "طلب إفراج عن مستند",   Icon: LockKeyOpen },
+  { id: "proxy",     label: "توكيل",                 Icon: PenNib },
+  // كل الأنواع أعلاه إمّا خصومية (إنذار / مطالبة / شكوى / اعتراض) وإمّا إدارية
+  // (إخطار / طلب مستند / إفراج / توكيل) — ولا يوجد فيها خطاب يعرض حلّاً ودّياً.
+  // التسوية الودية مرحلة نظامية سابقة للتقاضي في المنازعات العمالية (الودّي عبر
+  // «قوى») وتُشجَّع تجارياً وعقارياً عبر «تراضي»، فهي الأوسع استخداماً بين ما
+  // طلبه المالك. أي إضافة جديدة هنا تستلزم مفتاح `letterType:<id>` في
+  // src/lib/services/intakeValues.ts وإلا طُبع المعرّف الإنجليزي الخام في ملخص
+  // الإدارة (valueLabelAr يُرجِع القيمة كما هي عند غياب المفتاح).
+  { id: "settlement", label: "طلب تسوية ودية",       Icon: Handshake },
 ];
 
 export const GOV_ENTITIES = [
-  "وزارة الموارد البشرية والتنمية الاجتماعية", "وزارة التجارة", "وزارة العدل",
-  "هيئة الزكاة والضريبة والجمارك", "هيئة السوق المالية", "الهيئة العامة للعقار",
-  "ديوان المظالم", "النيابة العامة", "رئاسة المحكمة العامة",
-  "المؤسسة العامة للتأمينات الاجتماعية", "أمانة / بلدية المنطقة", "المركز السعودي للتحكيم التجاري", "أخرى",
+  "وزارة الموارد البشرية", "وزارة التجارة", "وزارة العدل",
+  "هيئة المحاكم الإدارية", "هيئة السوق المالية", "هيئة الزكاة والضريبة والجمارك",
+  "النيابة العامة", "رئاسة المحكمة العليا", "ديوان المظالم",
+  "البلدية", "التأمينات الاجتماعية", "أخرى",
 ];
-

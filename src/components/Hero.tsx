@@ -109,9 +109,14 @@ export default function Hero() {
               >
                 <X size={20} weight="bold" />
               </button>
+              {/* NZAMY's own intro video. What was here before was
+                  M7lc1UVf-VE — YouTube's API sample clip, a placeholder nobody
+                  swapped out. youtube-nocookie.com so a visitor who never opens
+                  the modal is not tracked; `rel=0` keeps the end screen from
+                  suggesting other channels' videos. */}
               <iframe
                 className="h-full w-full"
-                src="https://www.youtube.com/embed/M7lc1UVf-VE?autoplay=1"
+                src="https://www.youtube-nocookie.com/embed/6_d3HuQlj84?autoplay=1&rel=0"
                 title={isAr ? "مقطع نظامي التعريفي" : "Nezamy Introduction Video"}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen

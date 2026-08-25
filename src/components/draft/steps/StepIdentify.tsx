@@ -2,7 +2,7 @@
 
 import { Dispatch, SetStateAction, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CloudArrowUp, ImageSquare, Warning, CheckCircle, Circle } from "@phosphor-icons/react";
+import { Warning, CheckCircle, Circle } from "@phosphor-icons/react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import {
   MEMO_MAIN_TYPES, MEMO_SUB_TYPES_REGULAR, MEMO_SUB_TYPES_COMMITTEES,
@@ -181,20 +181,16 @@ export function StepIdentify({
         <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>ملاحظات ومرئيات (اختياري)</p>
         <div className="relative">
           <textarea value={notesText} onChange={e => setNotesText(e.target.value)}
-            placeholder="أضف ملاحظاتك هنا: نقاط تريد التركيز عليها، تعليمات للـ AI، أو أي تفاصيل إضافية..." rows={3}
+            placeholder="أضف ملاحظاتك هنا: نقاط تريد التركيز عليها، أو أي تفاصيل إضافية يطّلع عليها فريق نظامي..." rows={3}
             className={`w-full resize-none rounded-xl border p-4 pe-12 text-[13px] outline-none leading-relaxed ${isDark ? "border-white/[0.07] bg-zinc-800/50 text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/40" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-[#0B3D2E]/40"}`} />
           <div className="absolute start-3 top-3">
             <VoiceInput onTranscript={(t) => setNotesText(notesText ? `${notesText} ${t}` : t)} compact />
           </div>
         </div>
-        <div className="flex items-center gap-2 mt-2">
-          <button className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-semibold border ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-400" : "border-zinc-200 bg-white text-zinc-500"}`}>
-            <ImageSquare size={13} /> أضف صور
-          </button>
-          <button className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-semibold border ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-400" : "border-zinc-200 bg-white text-zinc-500"}`}>
-            <CloudArrowUp size={13} /> أضف ملف
-          </button>
-        </div>
+        {/* "أضف صور" / "أضف ملف" buttons removed — neither had an onClick,
+            same class of defect as the fake VoiceBtn dictation control
+            (Task C6). Attachments are handled in StepCase, as the reminder
+            below already tells reply/appeal clients. */}
         {/* Reminder for reply/appeal — no upload here, handled in StepCase */}
         {needsPriorDocs && (
           <p className={`mt-3 text-[10px] flex items-center gap-1.5 ${

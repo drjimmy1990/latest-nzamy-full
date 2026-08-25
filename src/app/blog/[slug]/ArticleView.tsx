@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import {
-  Clock, Eye, Share, BookmarkSimple, CheckCircle, ArrowRight,
+  Clock, Eye, Share, BookmarkSimple, ArrowRight,
   Newspaper, ChatCircle, Star, SealCheck, Scales, ThumbsUp,
   FacebookLogo, TwitterLogo, WhatsappLogo, ArrowLeft,
 } from "@phosphor-icons/react";
@@ -33,13 +33,89 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, ""); // trim leading/trailing hyphens
 }
 
-function RenderContent({ md, isDark }: { md: string; isDark: boolean }) {
+/**
+ * The in-article TOC ships hand-generated anchors, and that generator drops
+ * Arabic diacritics ("…بمضي 60 يوماً" → "…-60-يوما") while slugify keeps them,
+ * so those links land nowhere. Return the diacritic-free variant so the heading
+ * can carry it as a second id — additive, so anchors that already match are
+ * untouched.
+ */
+function altAnchor(text: string, id: string): string | null {
+  const stripped = slugify(text.replace(/[ً-ْـٰ]/g, ""));
+  return stripped && stripped !== id ? stripped : null;
+}
+
+interface TocItem { text: string; href: string; }
+interface Toc { items: TocItem[]; start: number; end: number; }
+
+/**
+ * Every article in the corpus ships its own "## جدول المحتويات (TOC)" list. On
+ * desktop we lift it into the sticky sidebar, so the inline copy is hidden
+ * there and shown only on mobile (where the sidebar itself is hidden).
+ *
+ * Returns the parsed links plus the [start, end) line range of the block, so
+ * RenderContent can wrap exactly those lines. `end` swallows the closing `---`
+ * when present — otherwise desktop would render two rules back to back with
+ * nothing between them.
+ *
+ * Splits with the same `md.trim().split("\n")` RenderContent uses, so the
+ * indices line up.
+ */
+function findToc(md: string): Toc | null {
+  const lines = md.trim().split("\n");
+  const start = lines.findIndex((l) => /^##\s+.*جدول المحتويات/.test(l));
+  if (start === -1) return null;
+
+  const items: TocItem[] = [];
+  let end = start + 1;
+  for (; end < lines.length; end++) {
+    if (lines[end].trim() === "") continue;
+    const m = /^\s*[-*]\s+\[([^\]]+)\]\(#([^)]+)\)\s*$/.exec(lines[end]);
+    if (!m) break;
+    items.push({ text: m[1].trim(), href: m[2].trim() });
+  }
+  if (/^-{3,}$/.test((lines[end] ?? "").trim())) end++;
+
+  return items.length ? { items, start, end } : null;
+}
+
+function RenderContent({ md, isDark, toc }: { md: string; isDark: boolean; toc: Toc | null }) {
   const lines = md.trim().split("\n");
   const out: React.ReactNode[] = [];
   let i = 0;
   let key = 0;
 
+  /** Emit an empty anchor carrying the heading's diacritic-free id, when it differs. */
+  const pushAltAnchor = (text: string, id: string) => {
+    const alt = altAnchor(text, id);
+    if (alt) out.push(<span key={key++} id={alt} className="block scroll-mt-24" aria-hidden="true" />);
+  };
+
   while (i < lines.length) {
+    // The TOC block, rendered as one unit and hidden on desktop — the sidebar
+    // carries it there. Mobile keeps it inline, where it has always been.
+    if (toc && i === toc.start) {
+      out.push(
+        <div key={key++} className="lg:hidden">
+          <h2 className={`text-lg font-bold mt-8 mb-3 ${isDark ? "text-white" : "text-gray-900"}`}>
+            {lines[toc.start].replace(/^##\s+/, "")}
+          </h2>
+          <ul className="mb-6 space-y-1.5">
+            {toc.items.map((t, j) => (
+              <li key={j} className="flex items-start gap-2">
+                <span className="text-[#C8A762] mt-0.5">•</span>
+                <a href={`#${t.href}`} className={`text-sm leading-snug hover:text-[#C8A762] transition ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+                  {t.text}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>,
+      );
+      i = toc.end;
+      continue;
+    }
+
     const line = lines[i];
     const alertMatch = /^>\s*\[!(WARNING|IMPORTANT|NOTE|TIP|CAUTION)\]/.exec(line);
     if (alertMatch) {
@@ -69,34 +145,62 @@ function RenderContent({ md, isDark }: { md: string; isDark: boolean }) {
     if (line.startsWith("# ") && !line.startsWith("## ")) {
       const text = line.slice(2);
       const id = slugify(text);
+      pushAltAnchor(text, id);
       out.push(<h1 key={key++} id={id} className={`text-xl font-bold mt-10 mb-4 scroll-mt-24 ${isDark ? "text-white" : "text-gray-900"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(text) }} />);
       i++; continue;
     }
     if (line.startsWith("## ")) {
       const text = line.slice(3);
       const id = slugify(text);
+      pushAltAnchor(text, id);
       out.push(<h2 key={key++} id={id} className={`text-lg font-bold mt-8 mb-3 scroll-mt-24 ${isDark ? "text-white" : "text-gray-900"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(text) }} />);
       i++; continue;
     }
     if (line.startsWith("### ")) {
       const text = line.slice(4);
       const id = slugify(text);
-      out.push(<h3 key={key++} id={id} className={`text-base font-bold mt-6 mb-2 scroll-mt-24 ${isDark ? "text-gray-100" : "text-gray-800"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(text) }} />);
+      // text-gray-100 is a dark *surface* token in dark mode (globals.css remaps
+      // --color-gray-100 to #1c2128), so it rendered near-black on the near-black
+      // article card. h1/h2 already use text-white — match them.
+      out.push(<h3 key={key++} id={id} className={`text-base font-bold mt-6 mb-2 scroll-mt-24 ${isDark ? "text-white" : "text-gray-800"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(text) }} />);
       i++; continue;
     }
 
     // Numbered lists
     if (line.match(/^\d+\. /)) { out.push(<p key={key++} className={`ms-4 mb-1 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line) }} />); i++; continue; }
 
-    // Bullet lists (- or *)
-    if (line.startsWith("- ") || line.startsWith("* ")) {
-      const text = line.startsWith("- ") ? line.slice(2) : line.slice(2);
-      out.push(<p key={key++} className={`ms-4 mb-1 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: "• " + markdownBoldToSafeHtml(text) }} />);
+    // Bullet lists (- or *), including indented sub-levels. The corpus nests
+    // statutory citations two levels deep ("    *   **المادة (429):** …"); those
+    // lines must not fall through to the paragraph branch, which would print the
+    // raw "*" marker with no indent.
+    const bullet = /^(\s*)[-*]\s+(.*)$/.exec(line);
+    if (bullet) {
+      const depth = Math.min(2, Math.floor(bullet[1].length / 2));
+      const marker = ["•", "◦", "▪"][depth];
+      const indent = ["ms-4", "ms-9", "ms-14"][depth];
+      out.push(<p key={key++} className={`${indent} mb-1 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: `${marker} ` + markdownBoldToSafeHtml(bullet[2]) }} />);
       i++; continue;
     }
 
-    // Blockquotes (not GFM alerts — those are caught above)
-    if (line.startsWith("> ")) { out.push(<blockquote key={key++} className={`border-s-4 border-[#C8A762] ps-4 my-1 text-sm italic ${isDark ? "text-gray-300" : "text-gray-600"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line.slice(2)) }} />); i++; continue; }
+    // Blockquotes (not GFM alerts — those are caught above). Consecutive "> "
+    // lines are one quote: statutory texts run over several lines wrapped in a
+    // single *…* italic pair, so rendering line-by-line left an unpaired "*"
+    // printed literally at the start and end of the quote.
+    if (line.startsWith("> ")) {
+      const body: string[] = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) {
+        body.push(lines[i].replace(/^>\s?/, ""));
+        i++;
+      }
+      let text = body.join("\n").trim();
+      // Drop the wrapping italic markers — the blockquote is already italic.
+      if (text.startsWith("*") && text.endsWith("*") && !text.startsWith("**") && !text.endsWith("**")) {
+        text = text.slice(1, -1);
+      }
+      const html = text.split("\n").map((l) => markdownBoldToSafeHtml(l)).join("<br>");
+      out.push(<blockquote key={key++} className={`border-s-4 border-[#C8A762] ps-4 my-3 text-sm italic ${isDark ? "text-gray-300" : "text-gray-600"}`} dangerouslySetInnerHTML={{ __html: html }} />);
+      continue;
+    }
 
     // Empty lines
     if (line.trim() === "") { out.push(<br key={key++} />); i++; continue; }
@@ -135,9 +239,7 @@ export default function ArticleView({
   const muted = isDark ? "text-gray-400" : "text-gray-500";
   const card = `rounded-2xl border p-6 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
   const authorUrl = article.author.url || null;
-  const keyPoints = Array.isArray(article.aeo_pairs) && article.aeo_pairs.length
-    ? article.aeo_pairs.map((p) => p.question)
-    : ["مكافأة نهاية الخدمة مكفولة", "عبء الإثبات على صاحب العمل", "التقاضي خلال ٣٦٥ يوماً", "مكتب العمل أول خطوة"];
+  const toc = findToc(article.content);
 
   const AuthorCtaLink = () => {
     if (authorUrl) {
@@ -234,7 +336,7 @@ export default function ArticleView({
 
             {/* Content */}
             <div className={`${card} mb-6`}>
-              <RenderContent md={article.content} isDark={isDark} />
+              <RenderContent md={article.content} isDark={isDark} toc={toc} />
             </div>
 
             {/* Like + Share + Save */}
@@ -277,19 +379,28 @@ export default function ArticleView({
           </article>
 
           {/* ── Sidebar ── */}
-          <aside className="hidden lg:flex flex-col gap-5 w-64 shrink-0 sticky top-6">
-            {/* Key points */}
-            <div className={`rounded-2xl border p-5 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
-              <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${muted}`}>{isRTL ? "النقاط الرئيسية" : "Key Points"}</p>
-              <ul className="space-y-2">
-                {keyPoints.map((p, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <CheckCircle size={14} color="#22c55e" weight="fill" className="mt-0.5 flex-shrink-0" />
-                    <span className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"}`}>{p}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {/* top-24 (96px), not top-6: the site nav is `fixed` and 82px tall, so a
+              24px offset parked the card's header underneath it while scrolling.
+              Same 6rem the headings use for scroll-mt. max-h keeps the column
+              inside the viewport on short laptop screens instead of clipping the
+              related-articles card off the bottom. */}
+          <aside className="hidden lg:flex flex-col gap-5 w-64 shrink-0 sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto">
+            {/* Table of contents — the article's own list, lifted out of the body.
+                Overflow is handled by the <aside>, so a long TOC scrolls the whole
+                column rather than nesting a second scrollbar inside this card. */}
+            {toc && (
+              <div className={`rounded-2xl border p-5 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
+                <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${muted}`}>{isRTL ? "جدول المحتويات" : "Contents"}</p>
+                <nav className="space-y-2">
+                  {toc.items.map((t, i) => (
+                    <a key={i} href={`#${t.href}`} className="flex items-start gap-2 group">
+                      <span className="text-[#C8A762] text-xs mt-px flex-shrink-0">•</span>
+                      <span className={`text-xs leading-snug group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition ${isDark ? "text-gray-300" : "text-gray-700"}`}>{t.text}</span>
+                    </a>
+                  ))}
+                </nav>
+              </div>
+            )}
 
             {/* Related */}
             <div className={`rounded-2xl border p-5 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>

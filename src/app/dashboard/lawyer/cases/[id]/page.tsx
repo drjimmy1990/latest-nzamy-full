@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   Gavel, ArrowRight, CalendarCheck, Clock, User, Buildings,
@@ -24,8 +24,15 @@ import {
   uploadDocumentFile,
   getDocumentFileUrl,
 } from "@/lib/services/documentService";
-import { getLawyerTasksByCaseId } from "@/lib/services/lawyerTasksService";
-import { apiMutate, isSupabaseMode } from "@/lib/services/api";
+import {
+  getLawyerTasks,
+  createLawyerTask,
+  updateLawyerTaskStatus,
+  updateLawyerTaskSubtasks,
+  taskStatusToDbStatus,
+  type LawyerTask,
+  type LawyerSubtask,
+} from "@/lib/services/lawyerTasksService";
 
 const CaseGraphView = dynamic(
   () => import("@/app/dashboard/business/kanban/CaseGraphView"),
@@ -70,6 +77,53 @@ const TASK_STATUS: Record<TaskStatus, { label: string; color: string; dot: strin
   inprogress: { label: "قيد التنفيذ", color: "text-blue-600 bg-blue-500/10",       dot: "bg-blue-400 animate-pulse" },
   done:       { label: "مكتملة",     color: "text-emerald-600 bg-emerald-500/10", dot: "bg-emerald-400" },
 };
+
+// The tasks API speaks the Kanban's status vocabulary (todo/in_progress/done/
+// archived); this page's TASK_STATUS keys are todo/inprogress/done. Normalise
+// on the way in, and use taskStatusToDbStatus() on the way out.
+function toPageTaskStatus(apiStatus: string): TaskStatus {
+  if (apiStatus === "in_progress") return "inprogress";
+  if (apiStatus === "done") return "done";
+  return "todo";
+}
+const PAGE_TO_API_STATUS: Record<TaskStatus, string> = {
+  todo: "todo",
+  inprogress: "in_progress",
+  done: "done",
+};
+// Clicking a task's dot walks it forward through the three columns.
+const NEXT_TASK_STATUS: Record<TaskStatus, TaskStatus> = {
+  todo: "inprogress",
+  inprogress: "done",
+  done: "todo",
+};
+
+interface CaseTask {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  priority: string;
+  dueDate?: string | null;
+  notes?: string;
+  /** metadata.subtasks — the checklist shown and ticked under the task here. */
+  subtasks: LawyerSubtask[];
+}
+
+function toCaseTask(t: LawyerTask): CaseTask {
+  return {
+    id: t.id,
+    title: t.title || "مهمة بدون عنوان",
+    status: toPageTaskStatus(t.status),
+    priority: t.priority || "normal",
+    dueDate: t.dueDate ?? null,
+    notes: t.notes,
+    subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
+  };
+}
+
+// «٢ من ٣» — the progress indicator the owner asked for, in Arabic-Indic digits.
+const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
+const toArabicDigits = (n: number) => String(n).replace(/\d/g, d => AR_DIGITS[Number(d)]);
 
 const TABS = [
   { id: "overview",  label: "نظرة عامة",  icon: Gavel },
@@ -174,7 +228,15 @@ export default function CaseDetailPage() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState("overview");
+  // `?tab=` makes every tab linkable — the dashboard's «جراف القضايا» shortcut
+  // is a link straight to ?tab=graph. Validated against TABS rather than trusted:
+  // an unknown or absent value falls back to the overview instead of rendering a
+  // blank panel.
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(
+    TABS.some(t => t.id === requestedTab) ? (requestedTab as string) : "overview",
+  );
   const [noteInput, setNoteInput] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
@@ -182,6 +244,14 @@ export default function CaseDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [fileInputEl, setFileInputEl] = useState<HTMLInputElement | null>(null);
+
+  // Tasks tab
+  const [tasks, setTasks] = useState<CaseTask[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
+  const [taskFilter, setTaskFilter] = useState<TaskStatus | "all">("all");
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [addingTask, setAddingTask] = useState(false);
+  const [taskError, setTaskError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -292,48 +362,77 @@ export default function CaseDetailPage() {
     return members;
   }, [caseData]);
 
-  // ── Tasks: fetch tasks linked to this case ──
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [addingTask, setAddingTask] = useState(false);
-  const [showAddTask, setShowAddTask] = useState(false);
-
-  useEffect(() => {
+  // ── Tasks linked to this case ──
+  // A task is a service_requests row whose metadata.caseId points here, so the
+  // whole tab is GET /api/v1/lawyer/tasks?caseId=<this case>. Archived
+  // (cancelled) tasks are dropped — this tab has no archive column to put them
+  // in, and folding them into "لم تبدأ" would overstate the open workload.
+  const loadCaseTasks = useCallback(() => {
     if (!id) return;
     setTasksLoading(true);
-    getLawyerTasksByCaseId(id)
-      .then((data) => setTasks(data ?? []))
+    getLawyerTasks({ caseId: id })
+      .then(rows => setTasks((rows ?? []).filter(t => t.status !== "archived").map(toCaseTask)))
       .catch(() => setTasks([]))
       .finally(() => setTasksLoading(false));
   }, [id]);
 
+  useEffect(() => { loadCaseTasks(); }, [loadCaseTasks]);
+
   const taskStats = {
     done:       tasks.filter(t => t.status === "done").length,
-    inprogress: tasks.filter(t => t.status === "in_progress").length,
+    inprogress: tasks.filter(t => t.status === "inprogress").length,
     todo:       tasks.filter(t => t.status === "todo").length,
   };
 
-  const handleAddTask = async () => {
-    if (!newTaskTitle.trim() || !isSupabaseMode) return;
+  const visibleTasks = taskFilter === "all" ? tasks : tasks.filter(t => t.status === taskFilter);
+
+  const addCaseTask = async () => {
+    const title = newTaskTitle.trim();
+    if (!title || addingTask) return;
     setAddingTask(true);
+    setTaskError(null);
     try {
-      const res = await apiMutate<{ data: any }>("/api/v1/lawyer/tasks", "POST", {
-        title: newTaskTitle.trim(),
+      const created = await createLawyerTask({
+        title,
         category: "case",
         priority: "normal",
         caseId: id,
-        caseRef: caseData?.title ?? "",
+        caseRef: caseData?.title || undefined,
       });
-      if (res?.data) {
-        setTasks(prev => [res.data, ...prev]);
-        setNewTaskTitle("");
-        setShowAddTask(false);
-      }
+      setTasks(prev => [toCaseTask(created), ...prev]);
+      setNewTaskTitle("");
     } catch (e) {
-      console.error("[case detail] addTask failed:", e);
+      console.error("[lawyer case detail] addTask failed:", e);
+      setTaskError(e instanceof Error && e.message ? e.message : "تعذّر إضافة المهمة.");
     } finally {
       setAddingTask(false);
+    }
+  };
+
+  // Optimistic, with a real revert — the counts above must never claim a move
+  // the server refused.
+  const cycleTaskStatus = async (task: CaseTask) => {
+    const next = NEXT_TASK_STATUS[task.status];
+    const previous = task.status;
+    setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: next } : t)));
+    const ok = await updateLawyerTaskStatus(task.id, taskStatusToDbStatus(PAGE_TO_API_STATUS[next]));
+    if (!ok) {
+      setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: previous } : t)));
+      setTaskError("تعذّر تحديث حالة المهمة.");
+    }
+  };
+
+  // The checklist is one metadata.subtasks array on the task row, so a tick
+  // sends the array back whole and the server merges it over the task's other
+  // metadata (caseId, dueDate, …). Optimistic with a real revert, like above.
+  const toggleCaseSubtask = async (task: CaseTask, subtaskId: string) => {
+    const previous = task.subtasks;
+    const next = previous.map(s => (s.id === subtaskId ? { ...s, done: !s.done } : s));
+    setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, subtasks: next } : t)));
+    const ok = await updateLawyerTaskSubtasks(task.id, next);
+    if (!ok) {
+      setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, subtasks: previous } : t)));
+      setTaskError("تعذّر حفظ خطوة العمل.");
     }
   };
 
@@ -611,117 +710,171 @@ export default function CaseDetailPage() {
             </div>
           )}
 
-          {/* ── Tasks ── */}
+          {/* ── Tasks — service_requests rows carrying metadata.caseId === this case ── */}
           {activeTab === "tasks" && (
             <div className="space-y-4">
-              {/* Header row */}
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex gap-1.5">
-                  {([
-                    { key: "all",        label: "الكل",        count: tasks.length },
-                    { key: "todo",       label: "لم تبدأ",    count: taskStats.todo },
-                    { key: "in_progress",label: "قيد التنفيذ", count: taskStats.inprogress },
-                    { key: "done",       label: "مكتملة",     count: taskStats.done },
-                  ] as const).map(s => (
-                    <span key={s.key}
-                      className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border flex items-center gap-1.5 ${isDark ? "border-white/[0.06] text-zinc-400 bg-zinc-800/40" : "border-slate-100 text-slate-500 bg-white"}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${s.key === "done" ? "bg-emerald-400" : s.key === "in_progress" ? "bg-blue-400" : s.key === "todo" ? "bg-slate-300" : "bg-royal"}`} />
-                      {s.label}
-                      <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                        {s.count}
-                      </span>
-                    </span>
-                  ))}
+                  {(["all", "todo", "inprogress", "done"] as const).map(s => {
+                    const count = s === "all" ? tasks.length : taskStats[s];
+                    const on = taskFilter === s;
+                    return (
+                      <button key={s} onClick={() => setTaskFilter(s)}
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all flex items-center gap-1.5 ${
+                          on
+                            ? "border-[#0B3D2E]/30 bg-[#0B3D2E]/10 text-[#0B3D2E] dark:text-emerald-300"
+                            : isDark ? "border-white/[0.06] text-zinc-400 hover:text-zinc-200" : "border-slate-100 text-slate-500 hover:text-slate-700"
+                        }`}>
+                        {s !== "all" && <span className={`w-1.5 h-1.5 rounded-full ${TASK_STATUS[s].dot}`} />}
+                        {s === "all" ? "الكل" : TASK_STATUS[s].label}
+                        <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <button onClick={() => setShowAddTask(v => !v)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all ${showAddTask ? "bg-[#0B3D2E] text-[#C8A762] border-[#0B3D2E]" : isDark ? "border-white/[0.06] text-zinc-400 hover:text-zinc-200" : "border-slate-200 text-slate-500 hover:text-[#0B3D2E] hover:border-[#0B3D2E]/20"}`}>
-                  <Plus size={12} weight="bold" />
-                  {showAddTask ? "إلغاء" : "إضافة مهمة"}
+              </div>
+
+              {/* Quick-add — the case id is passed through so the task comes
+                  back on this tab, and on the lawyer's Kanban, without a
+                  second step. */}
+              <div className={`${card} p-3 flex items-center gap-2`}>
+                <input
+                  value={newTaskTitle}
+                  onChange={e => setNewTaskTitle(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") addCaseTask(); }}
+                  disabled={addingTask}
+                  placeholder="أضف مهمة لهذه القضية..."
+                  className={`flex-1 rounded-xl border px-3 py-2 text-[12px] outline-none disabled:opacity-50 ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200 placeholder:text-zinc-600" : "border-slate-200 bg-slate-50 text-slate-800 placeholder:text-slate-400"}`}
+                />
+                <button onClick={addCaseTask} disabled={addingTask || !newTaskTitle.trim()}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
+                  {addingTask
+                    ? <Spinner size={12} className="animate-spin" />
+                    : <Plus size={12} weight="bold" />}
+                  {addingTask ? "جارٍ الإضافة..." : "إضافة مهمة"}
                 </button>
               </div>
 
-              {/* Add task inline form */}
-              {showAddTask && (
-                <div className={`${card} p-4 flex gap-3 items-center`}>
-                  <input
-                    autoFocus
-                    value={newTaskTitle}
-                    onChange={e => setNewTaskTitle(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && handleAddTask()}
-                    placeholder="عنوان المهمة... (Enter للإضافة)"
-                    className={`flex-1 rounded-xl border px-3 py-2 text-[13px] outline-none transition-colors ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200 focus:border-[#C8A762]" : "border-slate-200 bg-slate-50 text-slate-800 focus:border-[#0B3D2E]"}`}
-                  />
-                  <button onClick={handleAddTask} disabled={addingTask || !newTaskTitle.trim()}
-                    className="px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] disabled:opacity-40 transition-colors">
-                    {addingTask ? "..." : "إضافة"}
-                  </button>
+              {taskError && (
+                <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-[11px] font-semibold text-red-500">
+                  <Warning size={13} weight="fill" className="mt-0.5 flex-shrink-0" />
+                  <span className="flex-1">{taskError}</span>
+                  <button onClick={() => setTaskError(null)} className="opacity-70 hover:opacity-100">إخفاء</button>
                 </div>
               )}
 
-              {/* Tasks list */}
               {tasksLoading ? (
-                <div className={`${card} p-10 flex items-center justify-center`}>
-                  <Spinner size={24} className="text-royal animate-spin" />
+                <div className={`${card} p-10 flex items-center justify-center gap-2`}>
+                  <Spinner size={20} className="text-royal animate-spin" />
+                  <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جاري تحميل المهام...</span>
                 </div>
-              ) : tasks.length === 0 ? (
+              ) : visibleTasks.length === 0 ? (
                 <div className={`${card} p-10 flex flex-col items-center justify-center`}>
                   <CheckSquare size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
-                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد مهام لهذه القضية بعد</p>
-                  <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>أضف مهمة باستخدام الزر أعلاه.</p>
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
+                    {tasks.length === 0 ? "لا توجد مهام لهذه القضية بعد" : "لا توجد مهام بهذه الحالة"}
+                  </p>
+                  <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                    {tasks.length === 0 ? "أضف أول مهمة من الحقل أعلاه." : "جرّب تبويباً آخر."}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {tasks.map((t, i) => {
-                    const subtasks: any[] = Array.isArray(t.subtasks) ? t.subtasks : [];
-                    const doneSubs = subtasks.filter((s: any) => s.done).length;
-                    const statusColor =
-                      t.status === "done" ? "text-emerald-500 bg-emerald-500/10" :
-                      t.status === "in_progress" ? "text-blue-500 bg-blue-500/10" :
-                      isDark ? "text-zinc-500 bg-white/[0.04]" : "text-slate-400 bg-slate-100";
-                    const statusLabel =
-                      t.status === "done" ? "مكتملة" :
-                      t.status === "in_progress" ? "قيد التنفيذ" : "لم تبدأ";
+                  {visibleTasks.map((t, i) => {
+                    const conf = TASK_STATUS[t.status];
                     return (
                       <motion.div key={t.id}
-                        initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                        className={`${card} p-4`}>
-                        <div className="flex items-start gap-3">
-                          {/* Status dot */}
-                          <span className={`mt-1 inline-flex w-2 h-2 rounded-full flex-shrink-0 ${t.status === "done" ? "bg-emerald-400" : t.status === "in_progress" ? "bg-blue-400 animate-pulse" : isDark ? "bg-zinc-600" : "bg-slate-300"}`} />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className={`text-[13px] font-semibold ${t.status === "done" ? "line-through opacity-50" : isDark ? "text-zinc-200" : "text-slate-700"}`}>
-                                {t.title}
-                              </p>
-                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${statusColor}`}>{statusLabel}</span>
-                              {t.priority === "urgent" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-500">عاجل</span>}
-                              {t.priority === "high" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-500">عالية</span>}
-                            </div>
-                            {/* Subtasks */}
-                            {subtasks.length > 0 && (
-                              <div className="mt-2 space-y-1 pr-2 border-r-2 border-dashed border-royal/20">
-                                {subtasks.map((s: any, si: number) => (
-                                  <div key={si} className={`flex items-center gap-2 text-[11px] ${s.done ? "opacity-50 line-through" : isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                                    <CheckCircle size={10} weight={s.done ? "fill" : "regular"} className={s.done ? "text-emerald-500" : isDark ? "text-zinc-600" : "text-slate-300"} />
-                                    {s.title}
-                                  </div>
-                                ))}
-                                <p className={`text-[9px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                                  {doneSubs}/{subtasks.length} مكتمل
-                                </p>
-                              </div>
-                            )}
-                            {t.notes && (
-                              <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{t.notes}</p>
-                            )}
+                        initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+                        className={`${card} p-4 flex items-start gap-3`}>
+                        <button onClick={() => cycleTaskStatus(t)}
+                          title="تغيير حالة المهمة"
+                          className={`mt-0.5 w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center border transition-colors ${
+                            t.status === "done"
+                              ? "border-emerald-400 bg-emerald-500/20"
+                              : isDark ? "border-white/[0.14] hover:border-royal" : "border-slate-300 hover:border-royal"
+                          }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${conf.dot}`} />
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className={`text-[13px] font-semibold ${t.status === "done" ? "line-through opacity-50" : ""} ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                              {t.title}
+                            </p>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${conf.color}`}>{conf.label}</span>
+                            {t.priority === "urgent" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-500">عاجلة</span>}
+                            {t.priority === "high" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-500">عالية</span>}
                           </div>
-                          {/* Link to full task in tasks page */}
-                          <Link href={`/dashboard/lawyer/tasks`}
-                            title="عرض في صفحة المهام"
-                            className={`flex-shrink-0 p-1.5 rounded-lg transition-colors ${isDark ? "text-zinc-600 hover:text-zinc-300 hover:bg-white/[0.06]" : "text-slate-300 hover:text-slate-600 hover:bg-slate-100"}`}>
-                            <Eye size={14} />
-                          </Link>
+                          {t.notes && (
+                            <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{t.notes}</p>
+                          )}
+                          {t.dueDate && (
+                            <p className={`text-[10px] mt-1 flex items-center gap-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                              <CalendarCheck size={11} />تاريخ التسليم: {t.dueDate}
+                            </p>
+                          )}
+
+                          {/* Subtasks — «المهام والـ Subtasks المرتبطة بالقضية».
+                              Tickable here as well as on the Kanban; both write
+                              the same metadata.subtasks array. */}
+                          {t.subtasks.length > 0 && (() => {
+                            const doneCount = t.subtasks.filter(s => s.done).length;
+                            const total = t.subtasks.length;
+                            return (
+                              <div className={`mt-2.5 pt-2.5 border-t border-dashed ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <span className={`text-[10px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                                    خطوات العمل
+                                  </span>
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                                    doneCount === total
+                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                                      : isDark ? "bg-white/[0.06] text-zinc-400" : "bg-slate-100 text-slate-500"
+                                  }`}>
+                                    {toArabicDigits(doneCount)} من {toArabicDigits(total)}
+                                  </span>
+                                  <div className={`flex-1 h-1 rounded-full overflow-hidden ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
+                                    <motion.div
+                                      className="h-full rounded-full bg-[#0B3D2E] dark:bg-emerald-400"
+                                      initial={false}
+                                      animate={{ width: `${(doneCount / total) * 100}%` }}
+                                      transition={{ type: "spring", stiffness: 120, damping: 20 }}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  {t.subtasks.map(sub => (
+                                    <button key={sub.id} onClick={() => toggleCaseSubtask(t, sub.id)}
+                                      title="تغيير حالة الخطوة"
+                                      className={`w-full flex items-center gap-2 rounded-lg px-1.5 py-1 text-start transition-colors ${
+                                        isDark ? "hover:bg-white/[0.04]" : "hover:bg-slate-50"
+                                      }`}>
+                                      <span className={`w-3.5 h-3.5 rounded flex-shrink-0 flex items-center justify-center border transition-colors ${
+                                        sub.done
+                                          ? "border-emerald-400 bg-emerald-500"
+                                          : isDark ? "border-white/[0.16]" : "border-slate-300"
+                                      }`}>
+                                        {sub.done && <CheckCircle size={9} weight="fill" className="text-white" />}
+                                      </span>
+                                      <span className={`text-[11px] leading-tight ${
+                                        sub.done
+                                          ? isDark ? "line-through text-zinc-600" : "line-through text-slate-400"
+                                          : isDark ? "text-zinc-300" : "text-slate-600"
+                                      }`}>
+                                        {sub.title}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
+                        <Link href="/dashboard/lawyer/tasks" title="عرض في لوحة المهام"
+                          className={`flex-shrink-0 p-1.5 rounded-lg transition-colors ${isDark ? "text-zinc-600 hover:text-zinc-300 hover:bg-white/[0.06]" : "text-slate-300 hover:text-slate-600 hover:bg-slate-100"}`}>
+                          <Eye size={14} />
+                        </Link>
                       </motion.div>
                     );
                   })}

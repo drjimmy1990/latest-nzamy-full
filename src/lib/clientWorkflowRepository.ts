@@ -15,6 +15,70 @@ type WorkflowListOptions = {
 const STORAGE_KEY = "nzamy_workflow_requests_v1";
 const BACKEND_ENABLED = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND === "supabase";
 
+/**
+ * How many rows the client request lists ask the server for.
+ *
+ * GET /api/v1/service-requests defaults to `limit=20` and slices with
+ * `.range(offset, offset + limit - 1)`. Nothing here used to send a limit, so
+ * every client list was silently capped at the 20 newest rows. That was
+ * survivable while AI service orders were filtered out of these pages
+ * entirely; now that they are included they compete for the same slots, and a
+ * client with more than 20 requests would silently lose the oldest ones from
+ * «طلباتي».
+ *
+ * 100 is a deliberate, *stated* cap rather than a silent one: the server also
+ * returns `total`, and `listClientWorkflowRequestsPage` hands that back so the
+ * page can say on screen that older requests were not loaded. There is no
+ * pagination UI in this codebase to build on, so raising the ceiling and
+ * declaring it is the honest fix; a client past 100 requests needs real
+ * paging, which is a separate piece of work.
+ */
+export const CLIENT_REQUESTS_FETCH_LIMIT = 100;
+
+/**
+ * A non-ok HTTP response from the workflow API.
+ *
+ * The message is internal and must never be shown to a user — it is English,
+ * and the route's own `error` strings are a mix of Arabic ("غير مسموح بتنفيذ
+ * هذا الإجراء") and English ("Unauthorized", "Service request not found", raw
+ * Postgres messages). `status` is carried so callers can map the code to
+ * their own Arabic copy instead of echoing whatever the server said.
+ */
+export class WorkflowApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`Workflow API failed: ${status}`);
+    this.name = "WorkflowApiError";
+    this.status = status;
+  }
+}
+
+/**
+ * Whose request is this?
+ *
+ * Two shapes reach this module and only one of them is authoritative:
+ *
+ *  - `requester_user_id` — the server-set column, written from the session by
+ *    POST /api/v1/service-requests and spread verbatim onto every row the GET
+ *    route returns. Trust this.
+ *  - `requester.userId` — a client-supplied jsonb blob. The dashboard wizards
+ *    fill it in; `createServiceOrder` (src/lib/services/serviceOrders.ts) does
+ *    NOT — it sends `{ name, phone, email }` and nothing else. Matching on it
+ *    alone therefore dropped every AI service order from the client's lists,
+ *    which is exactly the defect that kept «طلباتي» from being the single
+ *    centre the owner asked for.
+ *
+ * The jsonb stays as a fallback only for the localStorage/demo path, whose
+ * rows never carry the column.
+ */
+function requesterUserIdOf(request: WorkflowRequest): string | undefined {
+  const column = request.requester_user_id;
+  if (typeof column === "string" && column.length > 0) return column;
+  const fromJson = request.requester?.userId;
+  return typeof fromJson === "string" && fromJson.length > 0 ? fromJson : undefined;
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -109,18 +173,45 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`Workflow API failed: ${response.status}`);
+    throw new WorkflowApiError(response.status);
   }
 
   return response.json() as Promise<T>;
 }
 
-export async function listWorkflowRequests(options: WorkflowListOptions = {}): Promise<WorkflowRequest[]> {
+/**
+ * What a list fetch actually knows, as opposed to what it returns.
+ *
+ * `listWorkflowRequests` throws all of this away and hands back a bare array,
+ * which is why a failed load and a genuinely empty list have been
+ * indistinguishable on every page that calls it.
+ */
+type WorkflowFetchResult = {
+  /** Rows as the server returned them — before any client-side requester filtering. */
+  requests: WorkflowRequest[];
+  /**
+   * The server's exact count of rows matching the query *before* the limit
+   * slice, or `null` when there is no such number (the localStorage path, or
+   * a response that did not carry one).
+   */
+  total: number | null;
+  /**
+   * True when the rows are a failure standing in for data: either the route
+   * answered `200 { degraded: true }` (its Supabase-error shape) or the fetch
+   * itself failed and we fell back to localStorage. Callers that care can say
+   * so instead of rendering "no requests yet" over a broken query.
+   */
+  degraded: boolean;
+};
+
+async function fetchWorkflowRequests(
+  options: WorkflowListOptions & { limit?: number } = {},
+): Promise<WorkflowFetchResult> {
   const localRequests = readWorkflowRequestsLocal()
     .filter((request) => !options.receiver || request.receiver === options.receiver)
-    .filter((request) => !options.requesterUserId || request.requester.userId === options.requesterUserId);
+    .filter((request) => !options.requesterUserId || requesterUserIdOf(request) === options.requesterUserId);
 
-  if (!BACKEND_ENABLED) return localRequests;
+  if (!BACKEND_ENABLED) return { requests: localRequests, total: null, degraded: false };
   try {
     // Repointed to the authed, RLS-scoped /api/v1/service-requests endpoint. The
     // old /api/client-workflow path used the service-role key with a
@@ -128,24 +219,103 @@ export async function listWorkflowRequests(options: WorkflowListOptions = {}): P
     // v1 derives the requester from the session, so only `receiver` is forwarded
     // and results are already scoped to the caller by RLS. Rows are wrapped in
     // { data: [...] }.
+    //
+    // `requester_user_id` is deliberately still NOT forwarded, even though the
+    // route accepts it and RLS would make it safe: re-adding a client-supplied
+    // owner parameter here would undo the very change documented above. The
+    // requester filter stays on this side, in listClientWorkflowRequestsPage.
     const params = new URLSearchParams();
     if (options.receiver) params.set("receiver", options.receiver);
+    if (options.limit) params.set("limit", String(options.limit));
     const query = params.toString();
-    const res = await apiRequest<{ data: WorkflowRequest[] }>(
+    const res = await apiRequest<{ data: WorkflowRequest[]; total?: number; degraded?: boolean }>(
       `/api/v1/service-requests${query ? `?${query}` : ""}`,
     );
-    return res.data ?? [];
+    if (res.degraded) {
+      return { requests: res.data ?? [], total: null, degraded: true };
+    }
+    return {
+      requests: res.data ?? [],
+      total: typeof res.total === "number" ? res.total : null,
+      degraded: false,
+    };
   } catch {
-    return localRequests;
+    return { requests: localRequests, total: null, degraded: true };
   }
 }
 
-export async function listClientWorkflowRequests(options: Pick<WorkflowListOptions, "requesterUserId"> = {}): Promise<WorkflowRequest[]> {
-  const requests = await listWorkflowRequests(options);
-  return requests.filter((request) => {
-    if (options.requesterUserId) return request.requester.userId === options.requesterUserId;
-    return request.requester.role === "individual";
+export async function listWorkflowRequests(options: WorkflowListOptions = {}): Promise<WorkflowRequest[]> {
+  return (await fetchWorkflowRequests({ ...options, limit: CLIENT_REQUESTS_FETCH_LIMIT })).requests;
+}
+
+/**
+ * Only requests belonging to this client, plus the two facts a list page needs
+ * to be honest about what it is showing.
+ *
+ * `listClientWorkflowRequests` is the thin array-returning wrapper the other
+ * client pages already use; this is the same query with `total`/`degraded`
+ * kept, so «طلباتي» can state a cap instead of truncating in silence and can
+ * say a load failed instead of claiming the client has no requests.
+ */
+export type ClientWorkflowRequestsPage = {
+  requests: WorkflowRequest[];
+  /** Rows the server handed back, before the requester filter below. */
+  fetched: number;
+  /** See WorkflowFetchResult.total. */
+  total: number | null;
+  /** The limit this call asked for, so the caller can name it on screen. */
+  limit: number;
+  degraded: boolean;
+};
+
+export async function listClientWorkflowRequestsPage(
+  options: Pick<WorkflowListOptions, "requesterUserId"> = {},
+  limit: number = CLIENT_REQUESTS_FETCH_LIMIT,
+): Promise<ClientWorkflowRequestsPage> {
+  const result = await fetchWorkflowRequests({ ...options, limit });
+  const requests = result.requests.filter((request) => {
+    if (options.requesterUserId) return requesterUserIdOf(request) === options.requesterUserId;
+
+    // No id to match on. This happens on the first render of every client page
+    // that calls without one, and while useUser() is still resolving the
+    // session, so it must not become a way to see somebody else's row.
+    //
+    // Any row that carries `requester_user_id` belongs to a specific user, and
+    // if that user were the caller we would have taken the branch above. RLS
+    // does NOT make the remainder the caller's own: the SELECT policy's
+    // `OR assigned_to = auth.uid()` clause returns rows the caller was
+    // assigned, and an admin who claims an ai_workspace order becomes its
+    // `assigned_to` (see src/app/api/v1/service-requests/[id]/route.ts). So
+    // reject the whole class first — no server row belongs on a page headed
+    // «طلباتي» unless we positively know it is the caller's.
+    //
+    // (An earlier version of this comment cited
+    // supabase/migrations/20260815_marketplace_excludes_ai_workspace.sql as
+    // proof that only the caller's own ai_workspace rows could arrive. That
+    // was wrong: the migration adds `receiver <> 'ai_workspace'` to the
+    // verified-lawyer marketplace-browse clause only, and leaves
+    // `assigned_to = auth.uid()` untouched.)
+    if (request.requester_user_id) return false;
+
+    // What is left is the localStorage/demo path, whose rows never have the
+    // column. The historical test here was `requester.role === "individual"`,
+    // and a service order has no `role` at all (createServiceOrder sends only
+    // name/phone/email), so it dropped AI orders for the same reason the id
+    // branch did — hence the `ai_workspace` acceptance, which is what keeps
+    // the locally-written /ai/contract-drafter rows visible in demo mode.
+    return request.requester?.role === "individual" || request.receiver === "ai_workspace";
   });
+  return {
+    requests,
+    fetched: result.requests.length,
+    total: result.total,
+    limit,
+    degraded: result.degraded,
+  };
+}
+
+export async function listClientWorkflowRequests(options: Pick<WorkflowListOptions, "requesterUserId"> = {}): Promise<WorkflowRequest[]> {
+  return (await listClientWorkflowRequestsPage(options)).requests;
 }
 
 export async function listWorkflowRequestsByReceiver(

@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { UserFocus } from "@phosphor-icons/react";
-import { VoiceBtn } from "@/components/contracts/SharedComponents";
+import { VoiceInput } from "@/components/ui/VoiceInput";
 
 interface StepRIdentityProps {
   isDark: boolean;
@@ -32,7 +32,7 @@ export function StepRIdentity({ isDark, rPartyFocus, setRPartyFocus, rFears, set
             <label className={`block text-[12px] font-bold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>أنت تمثل أي طرف في العقد؟</label>
             <div className="relative">
               <textarea value={rPartyFocus} onChange={e => setRPartyFocus(e.target.value)} placeholder="مثال: أنا أمثل الشركة المطورة (الطرف الأول)..." rows={2} className={`${inputCls} resize-none pe-12`} />
-              <div className="absolute top-2.5 end-2"><VoiceBtn /></div>
+              <div className="absolute top-2.5 end-2"><VoiceInput onTranscript={t => setRPartyFocus(rPartyFocus ? `${rPartyFocus} ${t}` : t)} compact /></div>
             </div>
           </div>
 
@@ -40,7 +40,7 @@ export function StepRIdentity({ isDark, rPartyFocus, setRPartyFocus, rFears, set
             <label className={`block text-[12px] font-bold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>ما المخاطر التي تخشاها أو نقطة تركيزك؟</label>
             <div className="relative">
               <textarea value={rFears} onChange={e => setRFears(e.target.value)} placeholder="مثال: أخشى من الشروط الجزائية القاسية وعدم وضوح تاريخ التسليم..." rows={3} className={`${inputCls} resize-none pe-12`} />
-              <div className="absolute top-2.5 end-2"><VoiceBtn /></div>
+              <div className="absolute top-2.5 end-2"><VoiceInput onTranscript={t => setRFears(rFears ? `${rFears} ${t}` : t)} compact /></div>
             </div>
           </div>
 

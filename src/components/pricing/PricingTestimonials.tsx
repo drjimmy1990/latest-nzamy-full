@@ -54,7 +54,7 @@ export function PricingTestimonials({ isAr, planList }: PricingTestimonialsProps
                   {t.name[0]}
                 </div>
                 <div>
-                  <div className="text-sm font-semibold text-ink dark:text-gray-100">{t.name}</div>
+                  <div className="text-sm font-semibold text-ink">{t.name}</div>
                   <div className="text-xs text-ink-muted dark:text-gray-400">{t.role}</div>
                 </div>
                 <span className={`ms-auto rounded-full px-2.5 py-1 text-[10px] font-bold ${

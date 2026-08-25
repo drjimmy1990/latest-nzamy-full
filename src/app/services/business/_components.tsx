@@ -56,7 +56,7 @@ export function ServiceCard({ service, index, isAr, isSelected, onSelect }: {
         <span className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ${isSelected ? "bg-white/10" : service.color}`}>
           <Icon size={24} weight="duotone" />
         </span>
-        <h3 className={`font-brand mt-4 text-lg font-bold ${isSelected ? "text-white" : "text-ink dark:text-gray-100"}`}>{service.label}</h3>
+        <h3 className={`font-brand mt-4 text-lg font-bold ${isSelected ? "text-white" : "text-ink"}`}>{service.label}</h3>
         <p className={`mt-1 text-xs font-medium ${isSelected ? "text-white/70" : "text-gold-dark"}`}>{service.tagline}</p>
         <p className={`mt-3 text-sm leading-relaxed ${isSelected ? "text-white/80" : "text-ink-muted dark:text-gray-400"}`}>{service.desc}</p>
         <div className={`mt-4 flex items-center gap-4 text-xs ${isSelected ? "text-white/60" : "text-ink-faint dark:text-gray-500"}`}>

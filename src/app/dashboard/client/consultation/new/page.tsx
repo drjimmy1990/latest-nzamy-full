@@ -21,7 +21,7 @@ import { createPaymentIntentStub } from "@/lib/paymentAdapter";
 import { getClientServiceById, getConsultationModeServiceId } from "@/lib/pricingRepository";
 import { LEGAL_BRANCHES_REGULAR } from "@/components/draft/draftConstants";
 import { getLawyerById, type LawyerProfile } from "@/lib/services/lawyerService";
-import { uploadDocumentFile } from "@/lib/services/documentService";
+import { uploadDocumentFile, isUploadTimeoutError } from "@/lib/services/documentService";
 
 import {
   type ConsultPath,
@@ -30,6 +30,43 @@ import {
   IS_BETA,
 } from "@/constants/clientConsultationData";
 import { StepBar, PlanBadge } from "@/components/consultation/ClientConsultationComponents";
+
+// ─── Attachment failure reporting ─────────────────────────────────────────────
+
+/** One file that did not become an attachment on the created request. */
+type AttachFailure = { name: string; reason: string };
+
+/**
+ * Arabic copy for one attachment upload that failed.
+ *
+ * This duplicates attachErrorMessageAr() in src/hooks/useOrderAttachments.ts on
+ * purpose: that helper is module-private there, and this wizard cannot use the
+ * hook at all. The hook uploads at *selection* time and owns the resulting
+ * OrderAttachment list; this page deliberately holds raw File[] and uploads
+ * once, at submit, after the request row exists — see the comment on the loop
+ * in confirmConsultation().
+ *
+ * The timeout's own Arabic sentence is read back off `.message` rather than
+ * retyped, so UploadTimeoutError in documentService.ts stays the single source
+ * of that wording. The machine `.code` is logged next to the raw message
+ * because an UploadTimeoutError's message is Arabic prose and no longer
+ * identifies the error in a developer console.
+ */
+function attachmentErrorAr(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const code = err instanceof Error ? (err as { code?: unknown }).code : undefined;
+  console.error("[consultation] attachment upload failed:", code ?? raw, raw);
+  if (isUploadTimeoutError(err)) {
+    return err.message;
+  }
+  if (raw === "upload_unavailable_demo") {
+    return "رفع المرفقات غير متاح في وضع العرض التجريبي.";
+  }
+  if (raw === "Unauthorized") {
+    return "انتهت جلستك — يرجى تسجيل الدخول مجدداً.";
+  }
+  return "تعذّر رفع الملف — تحقق من الاتصال وحاول مجدداً.";
+}
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
@@ -68,6 +105,18 @@ export default function NewConsultationPage() {
   const [mode, setMode] = useState<LawyerMode>("video");
   const [confirmed, setConfirmed] = useState(false);
   const [requestId, setRequestId] = useState<string | null>(null);
+  // ── Attachment outcome, decided during submit and read by the confirmation
+  // screen. These two are what stop that screen from claiming a complete
+  // submission when part of it never arrived.
+  const [attachFailures, setAttachFailures] = useState<AttachFailure[]>([]);
+  const [skippedNames, setSkippedNames] = useState<string[]>([]);
+  // ── Submit state. The confirm button used to stay live for the whole
+  // request + upload sequence, which since the 60s upload ceiling landed can
+  // be a full minute per file with nothing on screen: a second click would
+  // have minted a second workflow id, a second payment intent and a second
+  // request.
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   // ── Resolve the selected lawyer from the real DB when a lawyer id is in the URL ──
@@ -124,88 +173,170 @@ export default function NewConsultationPage() {
   const activeTopic = path === "ai" ? aiQuestion : topic;
   const canGoStep3 = specialty !== null && activeTopic.trim().length > 5;
   const serviceId = path === "ai" ? "ai-consult" : getConsultationModeServiceId(mode);
-  const total = getClientServiceById(serviceId, catalog).basePrice;
+  const service = getClientServiceById(serviceId, catalog);
+  // `requiresPayment`, not the raw basePrice — the same rule quoteClientService()
+  // applies in pricingRepository.ts and the requests wizard applies at
+  // requests/new/page.tsx. Reading basePrice raw priced the free daily AI
+  // question at ٤٩, which made needsPayment true and left the only free service
+  // on the platform permanently stuck behind the disabled payment gate.
+  const total = service.requiresPayment ? service.basePrice : 0;
   const consultationLimit = subscription.tierRank >= 3 ? 5 : subscription.tierRank >= 2 ? 1 : 0;
   // TODO: derive consultationsUsed from a real consultations-count endpoint
   // (count of the user's consultation workflow requests). 0 is the honest
   // default until that endpoint exists — it does not fake a number.
   const consultationsUsed = 0;
-  const consultationIncluded = path === "lawyer" && consultationsUsed < consultationLimit;
+  // A service the catalog marks free carries its own allowance and is covered
+  // whatever the tier is; a paid one is covered only while the tier's
+  // consultation allowance lasts. The old `path === "lawyer" &&` guard sent
+  // every AI consultation down the «باقتك لا تشمل استشارات» branch even when it
+  // costs nothing.
+  //
+  // The allowance is a value and not a boolean because PlanBadge re-checks
+  // `used < limit` itself before it shows the covered branch: handing it the
+  // same expression this page decides on is what stops the two from disagreeing
+  // and dropping a free consultation into the «٠ ر.س» blue banner.
+  const includedAllowance = service.requiresPayment ? consultationLimit : 1;
+  const consultationIncluded = consultationsUsed < includedAllowance;
+  const payableTotal = consultationIncluded ? 0 : total;
   // Payment gate: when the admin has disabled the gateway, block paid submissions.
-  const needsPayment = !consultationIncluded && total > 0;
+  const needsPayment = payableTotal > 0;
   const paymentsBlocked = !payments.loading && payments.disabled && needsPayment;
+  // Step 1 has no type selected, so it can only name a floor: the cheapest
+  // amount this wizard is able to bill. That is the cheapest session mode —
+  // the AI path is free by catalog rule and bills ٠, so folding its ٤٩ in here
+  // would quote a figure no order on this page ever charges. Derived from the
+  // modes rather than pinned to written-opinion, so an admin catalog that
+  // reprices a mode moves the floor with it.
+  const lowestConsultationPrice = Math.min(
+    ...Object.values(modeConfig).map((cfg) => cfg.price),
+  );
 
   const confirmConsultation = async () => {
     if (!path) return;
     if (paymentsBlocked) return; // do not create a request when payments are disabled
-    const requestId = createWorkflowId(path === "ai" ? "AIC" : "CON");
-    const payableTotal = path === "lawyer" && consultationIncluded ? 0 : total;
-    const paymentIntent = await createPaymentIntentStub({
-      amount: payableTotal,
-      requestId,
-      serviceId,
-    });
-    const request = await createWorkflowRequest({
-      id: requestId,
-      type: "consultation",
-      title: path === "ai"
-        ? `استشارة AI - ${specialty}`
-        : selectedLawyer
-          ? `حجز استشارة مع ${selectedLawyer.name}`
-          : `حجز استشارة — ${specialty}`,
-      description: activeTopic,
-      requester: {
-        userId: user.userId,
-        name: user.name,
-        role: user.userType,
-        tier: user.tier,
-        businessRole: user.businessRole,
-      },
-      receiver: path === "ai" ? "ai_workspace" : "lawyer",
-      status: path === "lawyer" && consultationIncluded ? "pending_assignment" : "pending_payment",
-      payment: {
+    if (submitting) return;      // one click, one request — see `submitting` above
+    setSubmitting(true);
+    setSubmitError("");
+    setAttachFailures([]);
+    setSkippedNames([]);
+    try {
+      const newRequestId = createWorkflowId(path === "ai" ? "AIC" : "CON");
+      const paymentIntent = await createPaymentIntentStub({
         amount: payableTotal,
-        status: path === "lawyer" && consultationIncluded ? "included" : "pending",
-      },
-      sourcePath: "/dashboard/client/consultation/new",
-      metadata: {
-        path,
-        specialty,
-        mode: path === "lawyer" ? mode : "ai",
+        requestId: newRequestId,
         serviceId,
-        quoteSource: pricingSource,
-        lawyerId: selectedLawyer?.id ?? null,
-        lawyerName: selectedLawyer?.name ?? null,
-        paymentIntentId: paymentIntent.id,
-        paymentProvider: paymentIntent.provider,
-        attachmentCount: attachments.length,
-      },
-      auditEvent: "client_consultation_created",
-    });
-    // Upload attachments AFTER the request is created. createWorkflowRequest now
-    // throws on API failure, so files are never uploaded against a request that
-    // doesn't exist (no orphaned blobs). Best-effort: on failure the request
-    // still exists and the user can attach documents later from the documents
-    // page. Previously these File[] were collected but never uploaded — silent
-    // data loss on navigation.
-    if (attachments.length > 0) {
-      try {
-        for (const file of attachments) {
+      });
+      const request = await createWorkflowRequest({
+        id: newRequestId,
+        type: "consultation",
+        title: path === "ai"
+          ? `استشارة AI - ${specialty}`
+          : selectedLawyer
+            ? `حجز استشارة مع ${selectedLawyer.name}`
+            : `حجز استشارة — ${specialty}`,
+        description: activeTopic,
+        requester: {
+          userId: user.userId,
+          name: user.name,
+          role: user.userType,
+          tier: user.tier,
+          businessRole: user.businessRole,
+        },
+        receiver: path === "ai" ? "ai_workspace" : "lawyer",
+        // Driven by what is actually owed, the same way requests/new/page.tsx
+        // decides it. Keyed off the path, a free AI question was born
+        // «بانتظار الدفع» priced ٤٩ — a charge it never owed, and one the
+        // client could not clear while the gateway is off.
+        status: payableTotal > 0 ? "pending_payment" : "pending_assignment",
+        payment: {
+          amount: payableTotal,
+          status: service.requiresPayment
+            ? (payableTotal > 0 ? "pending" : "included")
+            : "not_required",
+        },
+        sourcePath: "/dashboard/client/consultation/new",
+        metadata: {
+          path,
+          specialty,
+          mode: path === "lawyer" ? mode : "ai",
+          serviceId,
+          quoteSource: pricingSource,
+          lawyerId: selectedLawyer?.id ?? null,
+          lawyerName: selectedLawyer?.name ?? null,
+          paymentIntentId: paymentIntent.id,
+          paymentProvider: paymentIntent.provider,
+          attachmentCount: attachments.length,
+        },
+        auditEvent: "client_consultation_created",
+      });
+      // Upload attachments AFTER the request is created. createWorkflowRequest
+      // throws on API failure, so files are never uploaded against a request that
+      // doesn't exist (no orphaned blobs).
+      //
+      // A failed upload must NOT fail the consultation: the request row and the
+      // payment intent both already exist, and throwing them away over one file
+      // would be the worse outcome. But it must not be invisible either — every
+      // file that did not become an attachment is collected here and named on the
+      // confirmation screen, which changes from a success screen into a
+      // partial-success one when this list is non-empty.
+      //
+      // WHEN THE BATCH STOPS — the same split attachFiles() settled on in
+      // useOrderAttachments.ts: a per-file error is specific to that file and the
+      // rest of the selection still deserves its try, while a TIMEOUT means the
+      // link is not carrying data and every remaining file would burn another
+      // 60 s proving it. The argument is stronger here than in the hook: the
+      // hook's batch runs while the client can still see and use the page,
+      // whereas this loop runs behind a disabled submit button, so N × 60 s is a
+      // frozen screen rather than a slow background upload. Indexed rather than
+      // for-of so the untried tail can be named by position.
+      const failures: AttachFailure[] = [];
+      let skipped: string[] = [];
+      for (let i = 0; i < attachments.length; i++) {
+        const file = attachments[i];
+        try {
           await uploadDocumentFile(file, { requestId: request.id });
+        } catch (err) {
+          failures.push({ name: file.name, reason: attachmentErrorAr(err) });
+          if (isUploadTimeoutError(err)) {
+            // Name what was never attempted. If the timeout hit the last file
+            // there is no tail, and claiming there is one would put a false
+            // sentence on screen.
+            skipped = attachments.slice(i + 1).map((f) => f.name);
+            break;
+          }
         }
-      } catch (err) {
-        console.error("[consultation] attachment upload failed:", err);
       }
+      setAttachFailures(failures);
+      setSkippedNames(skipped);
+      setRequestId(request.id);
+      setConfirmed(true);
+    } catch (err) {
+      // createPaymentIntentStub / createWorkflowRequest. Before this catch the
+      // handler simply rejected and the button did nothing visible at all.
+      console.error("[consultation] submit failed:", err);
+      setSubmitError("تعذّر تسجيل الطلب — تحقق من اتصالك وحاول مجدداً. لم يتم خصم أي مبلغ.");
+    } finally {
+      setSubmitting(false);
     }
-    setRequestId(request.id);
-    setConfirmed(true);
   };
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.07] bg-zinc-900/60"
     : "rounded-2xl border border-slate-200 bg-white";
 
+  // One const for the submit button's wording because the notice above it
+  // quotes that wording back. The notice used to hardcode «تأكيد وادفع», which
+  // named a button that is not on screen whenever the consultation is covered.
+  const confirmLabel = consultationIncluded ? "تأكيد بدون رسوم" : "تأكيد وادفع";
+
   if (confirmed) {
+    // The attachment outcome decides whether this is a success screen at all.
+    // A warning box underneath a green tick and the word «تم» still reads as
+    // "everything went through", so when anything failed to attach the mark and
+    // the heading change too — that, not the box, is what stops the screen from
+    // making a claim the submission did not earn.
+    const notAttachedCount = attachFailures.length + skippedNames.length;
+    const attachmentsIncomplete = notAttachedCount > 0;
     return (
       <div className={`min-h-screen flex items-center justify-center ${isDark ? "bg-[#0d1117]" : "bg-slate-50"}`} dir="rtl">
         <motion.div
@@ -217,12 +348,20 @@ export default function NewConsultationPage() {
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ type: "spring", stiffness: 300, damping: 20, delay: 0.1 }}
-            className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mx-auto mb-5"
+            className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5 ${
+              attachmentsIncomplete
+                ? "bg-amber-100 dark:bg-amber-900/40"
+                : "bg-emerald-100 dark:bg-emerald-900/40"
+            }`}
           >
-            <CheckCircle size={40} className="text-emerald-500" weight="fill" />
+            {attachmentsIncomplete
+              ? <Warning size={40} className="text-amber-500" weight="fill" />
+              : <CheckCircle size={40} className="text-emerald-500" weight="fill" />}
           </motion.div>
           <h2 className={`text-[22px] font-black mb-2 ${isDark ? "text-white" : "text-zinc-900"}`}>
-            {path === "ai" ? "جاهز لتشغيل المساعد" : "تم تجهيز معاينة الحجز"}
+            {attachmentsIncomplete
+              ? "تم تسجيل الطلب — لكن بعض المرفقات لم تُرفق"
+              : path === "ai" ? "جاهز لتشغيل المساعد" : "تم تجهيز معاينة الحجز"}
           </h2>
           <p className={`text-[13px] mb-2 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
             {path === "ai"
@@ -232,6 +371,60 @@ export default function NewConsultationPage() {
                 : `تم تسجيل طلبك. سيتم تعيين محام متخصص والتواصل معك لترتيب الموعد.`
             }
           </p>
+          {/* Deliberately outside the `path === "lawyer"` gate below: an AI
+              client is one click away from /ai/consult without the documents
+              they attached, and needs to know just as much. */}
+          {attachmentsIncomplete && (
+            <div className={`mt-4 mb-1 p-3.5 rounded-xl text-right text-[11px] leading-relaxed ${
+              isDark
+                ? "bg-amber-900/20 border border-amber-700/30 text-amber-300"
+                : "bg-amber-50 border border-amber-200 text-amber-800"
+            }`}>
+              {/* A single attachment gets its own sentence: "١ من أصل ١" is not
+                  Arabic anyone writes. Digits are ar-SA (٢/٣), matching the
+                  prices elsewhere on this wizard. */}
+              <p className="font-bold mb-2">
+                {attachments.length === 1
+                  ? "لم يُرفق الملف التالي بهذا الطلب:"
+                  : `لم تُرفق ${notAttachedCount.toLocaleString("ar-SA")} من أصل ${attachments.length.toLocaleString("ar-SA")} من الملفات بهذا الطلب:`}
+              </p>
+              {/* Keyed by position, not by name: two selected files may carry the
+                  same filename, and the list never reorders after submit. */}
+              <ul className="space-y-1.5 mb-2.5">
+                {attachFailures.map((f, i) => (
+                  <li key={`f-${i}`} className="flex items-start gap-1.5">
+                    <span className="mt-[6px] w-1 h-1 rounded-full bg-current flex-shrink-0" />
+                    <span><strong className="font-bold break-all">{f.name}</strong> — {f.reason}</span>
+                  </li>
+                ))}
+                {/* Only ever non-empty after a timeout ended the batch early. */}
+                {skippedNames.map((name, i) => (
+                  <li key={`s-${i}`} className="flex items-start gap-1.5">
+                    <span className="mt-[6px] w-1 h-1 rounded-full bg-current flex-shrink-0" />
+                    <span><strong className="font-bold break-all">{name}</strong> — لم تتم محاولة الرفع؛ توقّف الرفع بعد انتهاء المهلة.</span>
+                  </li>
+                ))}
+              </ul>
+              {/* The timeout row above ends in «حاول مجدداً» because it is
+                  UploadTimeoutError's own copy, read back verbatim. There is no
+                  retry control on this screen, so the first clause here says so
+                  outright rather than leaving the client hunting for one. The
+                  documents page uploads with no requestId (handleFiles there
+                  calls uploadDocumentFile(file) with no opts), so the last
+                  clause is the truth about what that remedy does and does not
+                  do — it must not promise an automatic re-attach. */}
+              <p>
+                الطلب نفسه مسجَّل ولم يتأثر، ولا يمكن إعادة إرفاق هذه الملفات به من هذه الصفحة. لإرسالها ارفعها من صفحة «مستنداتي»، ثم اذكر رقم الطلب <strong>{requestId}</strong> عند التواصل — الملفات المرفوعة هناك تُحفظ في حسابك ولا تُربط بهذا الطلب تلقائياً.
+              </p>
+              <Link
+                href="/dashboard/client/documents"
+                className={`mt-2.5 inline-flex items-center gap-1.5 font-bold underline underline-offset-2 ${isDark ? "text-amber-200 hover:text-amber-100" : "text-amber-900 hover:text-amber-950"}`}
+              >
+                <Paperclip size={12} />
+                رفع الملفات من «مستنداتي»
+              </Link>
+            </div>
+          )}
           {path === "lawyer" && (
             <div className={`mt-4 mb-5 p-3 rounded-xl text-[11px] flex items-start gap-2 ${isDark ? "bg-amber-900/20 border border-amber-700/20 text-amber-400" : "bg-amber-50 border border-amber-200 text-amber-700"}`}>
               <Info size={13} className="flex-shrink-0 mt-0.5" />
@@ -297,12 +490,17 @@ export default function NewConsultationPage() {
           {/* ── Step 1: Type ── */}
           {step === 1 && (
             <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              {/* The floor, not a price — no type is chosen yet. Same ٢٥٠ as
+                  before while written-opinion happens to be the cheapest mode,
+                  but read off the catalog instead of hardcoded, and it now
+                  matches the «من ٢٥٠» on the lawyer card below. */}
               <PlanBadge
                 isDark={isDark}
                 included={consultationIncluded}
                 used={consultationsUsed}
-                limit={consultationLimit}
-                basePrice={writtenOpinionPrice}
+                limit={includedAllowance}
+                basePrice={lowestConsultationPrice}
+                priceIsFrom={true}
               />
 
               <p className={`text-[13px] font-bold mb-4 ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
@@ -596,12 +794,14 @@ export default function NewConsultationPage() {
           {step === 3 && (
             <motion.div key="s3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
 
+              {/* The type is chosen by now, so the badge and «الإجمالي» below it
+                  have to quote the one same figure. */}
               <PlanBadge
                 isDark={isDark}
                 included={consultationIncluded}
                 used={consultationsUsed}
-                limit={consultationLimit}
-                basePrice={writtenOpinionPrice}
+                limit={includedAllowance}
+                basePrice={total}
               />
 
               {/* Summary card */}
@@ -655,32 +855,56 @@ export default function NewConsultationPage() {
                 <div className={`rounded-xl p-3.5 flex items-start gap-2.5 mb-5 text-[11px] ${isDark ? "bg-amber-900/15 border border-amber-700/20" : "bg-amber-50 border border-amber-200"}`}>
                   <Warning size={13} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-amber-400" : "text-amber-600"}`} weight="fill" />
                   <p className={isDark ? "text-amber-300/80" : "text-amber-700"}>
-                    بعد الضغط على «تأكيد وادفع» سيتم إنشاء طلب فعلي في طبقة الـ workflow مع payment intent تجريبي لحين ربط مزود الدفع النهائي.
+                    بعد الضغط على «{confirmLabel}» سيتم إنشاء طلب فعلي في طبقة الـ workflow مع payment intent تجريبي لحين ربط مزود الدفع النهائي.
                   </p>
+                </div>
+              )}
+
+              {/* The submit can now take a minute per attachment (the 60s upload
+                  ceiling in documentService.ts), so say so instead of leaving a
+                  still screen. It names both stages because `submitting` flips
+                  before createWorkflowRequest, which has no ceiling of its own:
+                  saying only «جارٍ رفع المرفقات» would be a false sentence for
+                  as long as that call is the one running. */}
+              {submitting && attachments.length > 0 && (
+                <div className={`rounded-xl p-3.5 flex items-start gap-2.5 mb-5 text-[11px] ${isDark ? "bg-white/[0.03] border border-white/[0.06]" : "bg-slate-50 border border-slate-200"}`}>
+                  <Paperclip size={13} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`} />
+                  <p className={isDark ? "text-zinc-400" : "text-slate-600"}>
+                    جارٍ تسجيل الطلب ورفع المرفقات… قد يستغرق كل ملف حتى دقيقة على اتصال بطيء. لا تغلق الصفحة.
+                  </p>
+                </div>
+              )}
+
+              {submitError && (
+                <div className={`rounded-xl p-3.5 flex items-start gap-2.5 mb-5 text-[11px] ${isDark ? "bg-red-900/15 border border-red-700/25" : "bg-red-50 border border-red-200"}`}>
+                  <Warning size={13} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-red-400" : "text-red-600"}`} weight="fill" />
+                  <p className={isDark ? "text-red-300/80" : "text-red-700"}>{submitError}</p>
                 </div>
               )}
 
               <div className="flex justify-between">
                 <button
-                  onClick={() => setStep(2)}
-                  className={`flex items-center gap-1.5 text-[12px] px-4 py-2 rounded-xl border font-semibold ${isDark ? "border-white/10 text-zinc-400" : "border-gray-200 text-gray-500"}`}
+                  // Clear the failure banner on the way out, so returning to
+                  // this step does not show a message about an attempt the
+                  // client has since changed.
+                  onClick={() => { setSubmitError(""); setStep(2); }}
+                  disabled={submitting}
+                  className={`flex items-center gap-1.5 text-[12px] px-4 py-2 rounded-xl border font-semibold disabled:opacity-40 disabled:cursor-not-allowed ${isDark ? "border-white/10 text-zinc-400" : "border-gray-200 text-gray-500"}`}
                 >
                   <ArrowRight size={13} /> رجوع
                 </button>
                 <motion.button
-                  whileHover={{ scale: !paymentsBlocked ? 1.02 : 1 }} whileTap={{ scale: !paymentsBlocked ? 0.98 : 1 }}
+                  whileHover={{ scale: !paymentsBlocked && !submitting ? 1.02 : 1 }} whileTap={{ scale: !paymentsBlocked && !submitting ? 0.98 : 1 }}
                   onClick={confirmConsultation}
-                  disabled={paymentsBlocked}
+                  disabled={paymentsBlocked || submitting}
                   className={`flex items-center gap-2 px-6 py-3 text-white text-[13px] font-black rounded-xl transition-colors shadow-lg shadow-[#0B3D2E]/20 ${
-                    paymentsBlocked
+                    paymentsBlocked || submitting
                       ? "bg-zinc-400/60 cursor-not-allowed shadow-none"
                       : "bg-[#0B3D2E] hover:bg-[#0d4d39]"
                   }`}
                 >
                   <CreditCard size={15} />
-                  {consultationIncluded
-                    ? "تأكيد بدون رسوم"
-                    : "تأكيد وادفع"}
+                  {submitting ? "جارٍ إرسال الطلب…" : confirmLabel}
                 </motion.button>
               </div>
             </motion.div>

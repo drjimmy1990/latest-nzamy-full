@@ -12,7 +12,7 @@ export function StepProgress({ steps, currentStep, isDark, onStepClick }: {
 }) {
   const LABELS: Record<StepKey, string> = {
     type: "النوع", context: "السياق", settings: "الإعدادات",
-    processing: "المعالجة", result: "النتيجة",
+    processing: "المعالجة", result: "النتيجة", submit: "مراجعة وإرسال",
   };
   const ci = steps.indexOf(currentStep);
   return (

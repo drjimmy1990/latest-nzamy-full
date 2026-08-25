@@ -12,10 +12,18 @@ export const metadata = buildMetadata({
 });
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  // During the single-firm beta (BETA_MONOPOLY_MODE) the multi-vendor lawyer
-  // directory is not offered — /lawyers, /lawyers/browse and /lawyers/[slug]
-  // render demo/mock "licensed" lawyers, which contradicts monopoly mode.
-  // Redirect the whole subtree to the real single-firm intake.
+  // During the single-firm beta (BETA_MONOPOLY_MODE) NZAMY operates as one
+  // firm, so a multi-vendor lawyer directory is not part of the offer. The
+  // whole subtree — /lawyers, /lawyers/browse and /lawyers/[slug] — redirects
+  // to the real single-firm intake.
+  //
+  // This comment used to justify the redirect with "those pages render
+  // demo/mock 'licensed' lawyers". That was true and is being fixed:
+  // /lawyers/[slug] now renders the real lawyer behind the same
+  // verified + marketplace_visible gate as the public API, and /lawyers/browse
+  // is being de-mocked separately. The fabrication is no longer the reason —
+  // the beta business model is. Whether the directory should now OPEN is an
+  // owner decision, not a code cleanup, so the redirect stays as it is.
   if (BETA_MONOPOLY_MODE) redirect("/services/lawyers");
   return <>{children}</>;
 }

@@ -103,9 +103,9 @@ const faqData: FAQItem[] = [
     questionAr: "ماذا لو لم أرضَ عن الخدمة المقدّمة؟",
     questionEn: "What if I am not satisfied with the service?",
     answerAr:
-      "يمكنك رفع نزاع عبر المنصة خلال ٧ أيام من استلام الخدمة. يراجع فريق الدعم النزاع ويتخذ قراراً خلال ٧٢ ساعة. في حالات معينة يمكن استرداد المبلغ المدفوع.",
+      "تواصل مع فريق دعم نظامي مباشرةً عبر البريد support@nezamy.sa أو رقم الدعم الموضّح في هذه الصفحة، مع ذكر تفاصيل الخدمة وما لم يكن مطابقاً لما اتُّفق عليه. يراجع الفريق الحالة يدوياً ويتابعها معك ومع مزود الخدمة.",
     answerEn:
-      "You can raise a dispute through the platform within 7 days of receiving the service. The support team reviews the dispute and makes a decision within 72 hours. In certain cases, the amount paid can be refunded.",
+      "Contact the Nezamy support team directly at support@nezamy.sa or via the support number shown on this page, describing the service and what did not match what was agreed. The team reviews the case manually and follows it up with you and the service provider.",
   },
   {
     id: 9,
@@ -144,19 +144,9 @@ const faqData: FAQItem[] = [
     questionAr: "متى يتم تحويل المدفوعات إليّ؟",
     questionEn: "When are payments transferred to me?",
     answerAr:
-      "يُحرَّر المبلغ من الـ Escrow بعد ٤٨ ساعة من تأكيد العميل لاستلام الخدمة، أو بعد ٧ أيام تلقائياً في غياب أي نزاع. تُحوَّل المبالغ إلى حسابك البنكي خلال يوم عمل واحد.",
+      "لا يوجد تحويل مدفوعات عبر المنصة حالياً، إذ لم تُفعَّل بوابة الدفع الإلكتروني بعد. يتم الاتفاق على الأتعاب وترتيب تحصيلها مباشرة مع فريق نظامي.",
     answerEn:
-      "The amount is released from Escrow 48 hours after the client confirms service receipt, or automatically after 7 days in the absence of any dispute. Funds are transferred to your bank account within one business day.",
-  },
-  {
-    id: 13,
-    category: "providers",
-    questionAr: "ماذا يحدث إذا رفض العميل قبول الخدمة؟",
-    questionEn: "What happens if the client refuses to accept the service?",
-    answerAr:
-      "يُفتح نزاع ويراجعه فريق الدعم المتخصص. إذا أُثبت أنك قدّمت الخدمة وفق المتطلبات المتفق عليها، يُحرَّر المبلغ كاملاً لصالحك خلال ٧٢ ساعة.",
-    answerEn:
-      "A dispute is opened and reviewed by the specialized support team. If it is proven that you provided the service according to the agreed requirements, the full amount is released in your favor within 72 hours.",
+      "There are no payment transfers through the platform at the moment, as the electronic payment gateway is not enabled yet. Fees are agreed upon and collected directly in coordination with the Nezamy team.",
   },
   // Payment
   {
@@ -165,39 +155,19 @@ const faqData: FAQItem[] = [
     questionAr: "ما طرق الدفع المتاحة؟",
     questionEn: "What payment methods are available?",
     answerAr:
-      "نقبل بطاقات مدى وVisa وMastercard، وكذلك Apple Pay وSTC Pay. يمكن للشركات الدفع عن طريق التحويل البنكي.",
+      "لم يُفعَّل الدفع الإلكتروني على المنصة حتى الآن، ولا نستقبل أي مدفوعات عبر الموقع. بعد تأكيد طلبك يتواصل معك فريق نظامي لترتيب الدفع مباشرة.",
     answerEn:
-      "We accept Mada, Visa, and Mastercard, as well as Apple Pay and STC Pay. Companies can pay via bank transfer.",
-  },
-  {
-    id: 15,
-    category: "payment",
-    questionAr: "هل يوجد نظام Escrow؟",
-    questionEn: "Is there an Escrow system?",
-    answerAr:
-      "نعم، تُودَع جميع المدفوعات في حساب ضمان (Escrow) محمي ولا تُحوَّل للمزود إلا بعد تأكيد العميل على استلام الخدمة أو انقضاء مدة النزاع.",
-    answerEn:
-      "Yes, all payments are deposited in a protected Escrow account and are not transferred to the provider until the client confirms service receipt or the dispute period expires.",
-  },
-  {
-    id: 16,
-    category: "payment",
-    questionAr: "هل يمكن استرداد المبلغ؟",
-    questionEn: "Is a refund possible?",
-    answerAr:
-      "يمكن الاسترداد الكامل إذا لم يبدأ المزود في الخدمة. بعد بدء الخدمة، يُحدَّد الاسترداد وفق سياسة الاسترداد الجزئي بناءً على النسبة المنجزة وقرار فريق الدعم.",
-    answerEn:
-      "A full refund is possible if the provider has not started the service. After the service starts, the refund is determined according to the partial refund policy based on the completed percentage and the support team's decision.",
+      "Electronic payment is not enabled on the platform yet, and we do not accept any payments through the site. After your request is confirmed, the Nezamy team contacts you to arrange payment directly.",
   },
   {
     id: 17,
     category: "payment",
-    questionAr: "هل الدفع على نظامي آمن؟",
-    questionEn: "Is payment on Nezamy secure?",
+    questionAr: "هل تطلب المنصة بيانات بطاقتي؟",
+    questionEn: "Does the platform ask for my card details?",
     answerAr:
-      "نعم، جميع معاملات الدفع مشفّرة بمعيار TLS 1.3 وتمر عبر بوابات دفع معتمدة خاضعة لإشراف مؤسسة النقد العربي السعودي (ساما). لا نخزّن بيانات بطاقتك على خوادمنا.",
+      "لا. لا يتوفر الدفع الإلكتروني على المنصة حالياً، لذا لا نطلب بيانات بطاقتك ولا نخزّنها. تصفّحك للموقع يتم عبر اتصال مشفّر (HTTPS)، وترتيب الأتعاب يتم مباشرةً مع فريق نظامي.",
     answerEn:
-      "Yes, all payment transactions are encrypted with TLS 1.3 standard and pass through accredited payment gateways supervised by the Saudi Central Bank (SAMA). We do not store your card data on our servers.",
+      "No. Electronic payment is not available on the platform at the moment, so we neither ask for nor store your card details. The site is served over an encrypted connection (HTTPS), and fees are arranged directly with the Nezamy team.",
   },
   // Tech / Security
   {
@@ -223,12 +193,12 @@ const faqData: FAQItem[] = [
   {
     id: 20,
     category: "tech",
-    questionAr: "هل المنصة تخضع لأنظمة ساما؟",
-    questionEn: "Does the platform comply with SAMA regulations?",
+    questionAr: "ما الأنظمة التي تلتزم بها المنصة؟",
+    questionEn: "Which regulations does the platform comply with?",
     answerAr:
-      "نعم، نلتزم بتعليمات مؤسسة النقد العربي السعودي (ساما) المتعلقة بالمدفوعات الإلكترونية والأمن السيبراني وحماية المستهلك. كما نخضع لإشراف وزارة العدل للخدمات القانونية.",
+      "نخضع لإشراف وزارة العدل للخدمات القانونية، ونلتزم بنظام حماية البيانات الشخصية السعودي (PDPL). ولا تُستقبل أي مدفوعات إلكترونية عبر المنصة حالياً.",
     answerEn:
-      "Yes, we comply with the Saudi Central Bank (SAMA) instructions related to electronic payments, cybersecurity, and consumer protection. We are also subject to the Ministry of Justice's oversight for legal services.",
+      "We are subject to the Ministry of Justice's oversight for legal services and comply with the Saudi Personal Data Protection Law (PDPL). No electronic payments are received through the platform at this time.",
   },
 ];
 

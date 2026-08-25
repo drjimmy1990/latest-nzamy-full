@@ -1,3 +1,8 @@
+// Task C2: no longer rendered from src/app/ai/contracts/page.tsx — "bestprac"
+// was removed from STEPS_DRAFT / STEPS_DRAFT_SIMPLE because startBPSearch()
+// was a bare 2.2s timer with no network call, and the list it "found" was
+// hardcoded to []. Kept, not deleted, for when a real best-practice search
+// lands (see constants.ts's still-unused BEST_PRACTICES).
 import { motion } from "framer-motion";
 import { BookOpen, MagnifyingGlass, CheckCircle, Lightning, Check } from "@phosphor-icons/react";
 import { CONTRACT_TYPES } from "@/components/contracts/constants";

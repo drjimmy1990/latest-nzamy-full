@@ -27,9 +27,13 @@ const BASE_URL = "https://nezamy.sa";
 
 export function ArticleJsonLd({ article }: { article: ArticleLdData }) {
   const url = article.canonical_url || `${BASE_URL}/blog/${article.slug}`;
+  // The V8.2 corpus declares `schema_type: LegalArticle` on every article; keep
+  // it rather than flattening it to Article (schema.org LegalArticle is a valid
+  // Article subtype and is what the content spec requires).
   const schemaType =
     article.schema_type === "FAQPage" ? "FAQPage"
     : article.schema_type === "HowTo" ? "HowTo"
+    : article.schema_type === "LegalArticle" ? "LegalArticle"
     : "Article";
 
   const author = {

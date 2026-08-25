@@ -2,10 +2,10 @@ import { useState, useRef } from "react";
 import {
   CLIENT_VISIBLE_STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc, MEMO_MAIN_TYPES,
 } from "@/components/draft/draftConstants";
-import { validateDraftIntake, type OrderAttachment } from "@/lib/services/orderIntake";
+import { validateDraftIntake } from "@/lib/services/orderIntake";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
-import { uploadDocumentFile } from "@/lib/services/documentService";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 
 /**
  * Resolve a raw memoType id (e.g. "case") to its Arabic label ("تحرير دعوى")
@@ -32,24 +32,6 @@ function submitErrorMessageAr(err: unknown): string {
     return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
   }
   return "تعذّر إرسال الطلب — حاول مجدداً";
-}
-
-/**
- * Map a thrown attachFile error to Arabic user-facing copy. Same rules as
- * submitErrorMessageAr: the underlying message (which may be an internal
- * token like "upload_unavailable_demo" or a raw Postgres/storage error) is
- * logged for developers but never shown to the user.
- */
-function attachErrorMessageAr(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  console.error("[useDraftState] attachFile failed:", raw);
-  if (raw === "upload_unavailable_demo") {
-    return "رفع المرفقات غير متاح في وضع العرض التجريبي — تواصل مع الفريق لتفعيل الحساب.";
-  }
-  if (raw === "Unauthorized") {
-    return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
-  }
-  return "تعذّر رفع الملف — تحقق من الاتصال وحاول مجدداً";
 }
 
 export function useDraftState(initialMode = "") {
@@ -115,9 +97,19 @@ export function useDraftState(initialMode = "") {
   const [submitNotes, setSubmitNotes]   = useState("");
   const [submitting, setSubmitting]     = useState(false);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
-  const [uploadedAttachments, setUploadedAttachments] = useState<OrderAttachment[]>([]);
-  const [uploading, setUploading]     = useState(false);
-  const [attachError, setAttachError] = useState("");
+
+  // Real file uploads — extracted into useOrderAttachments() so the other
+  // three AI services can reuse the same implementation. `attachments` is
+  // re-exposed here as `uploadedAttachments` to keep this hook's public
+  // surface unchanged for /ai/draft's components.
+  const {
+    attachments: uploadedAttachments,
+    uploading,
+    attachError,
+    attachFile,
+    attachFiles,
+    removeAttachment,
+  } = useOrderAttachments();
 
   function buildSummary(): { label: string; value: string }[] {
     return [
@@ -139,7 +131,11 @@ export function useDraftState(initialMode = "") {
         number: judgmentNumber, court: judgmentCourt, date: judgmentDate,
         text: judgmentText, reasons: judgmentReasons,
       },
-      lawyerNotes: [lawyerNotes, submitNotes].filter(Boolean).join("\n\n"),
+      // notesText (StepIdentify's "ملاحظات ومرئيات") used to be collected on
+      // screen and then silently dropped here — never reaching the admin.
+      // Folded into the same free-text field lawyerNotes/submitNotes already
+      // join, rather than dropping it (Task C6).
+      lawyerNotes: [notesText, lawyerNotes, submitNotes].filter(Boolean).join("\n\n"),
       attachments: uploadedAttachments,
     };
   }
@@ -176,35 +172,6 @@ export function useDraftState(initialMode = "") {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  /**
-   * Upload a file and record it as an attachment. Returns the created
-   * OrderAttachment (with the real documentId) so callers — e.g. StepCase —
-   * can associate it with the UI row that triggered the upload, for later
-   * removal via removeAttachment(). Throws on failure; callers are expected
-   * to revert whatever optimistic UI state (a display filename) they set.
-   */
-  async function attachFile(file: File): Promise<OrderAttachment> {
-    setAttachError("");
-    setUploading(true);
-    try {
-      const doc = await uploadDocumentFile(file);
-      const attachment: OrderAttachment = {
-        documentId: doc.id, name: doc.file_name, size: doc.size_bytes ?? 0,
-      };
-      setUploadedAttachments((prev) => [...prev, attachment]);
-      return attachment;
-    } catch (err) {
-      setAttachError(attachErrorMessageAr(err));
-      throw err;
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  function removeAttachment(documentId: string): void {
-    setUploadedAttachments((prev) => prev.filter((a) => a.documentId !== documentId));
   }
 
   // Refs
@@ -258,16 +225,19 @@ export function useDraftState(initialMode = "") {
     // Auto-extract/mock data between steps (no real processing delay any more —
     // there is nothing between these steps to wait on).
     if (step === "case" || step === "identify") {
-      // Auto-extract judgment data mock if moving from step 2 to 3 for appeal/reply
-      if (step === "case" && (memoType === "appeal" || memoType === "reply")) {
-        if (!judgmentNumber) setJudgmentNumber("٣٤٢/ع/١٤٤٥");
-        if (!judgmentCourt)   setJudgmentCourt("المحكمة العمالية بالرياض");
-        if (!judgmentDate)    setJudgmentDate("12/04/2024");
-        if (!plaintiffName)   setPlaintiffName("شركة الأفق الحديثة");
-        if (!defendantName)   setDefendantName("أحمد عبد الله المرزوقي");
-        if (!judgmentText)    setJudgmentText("حكمت المحكمة غيابياً بإلزام المدعى عليه بدفع مبلغ ٤٥,٠٠٠ ريال سعودي للمدعي، ورفض ما عدا ذلك من طلبات لعدم كفاية الأدلة.");
-        if (!judgmentReasons) setJudgmentReasons("عولت المحكمة على إقرار المدعى عليه بصحة العقد في الجلسة الأولى، وثبوت التحويلات البنكية الناقصة عن المستحقات الثابتة في النظام.");
-      }
+      // Judgment data (judgmentNumber/Court/Date/plaintiffName/defendantName/
+      // judgmentText/judgmentReasons) used to be silently mock-filled here for
+      // رد/طعن memo types: fabricated court/party names/amounts shipping inside
+      // real orders, invisible to both the client (no UI showed them) and the
+      // admin fulfilling the order (no way to tell they weren't the client's
+      // own account). Removed per Task C6, and it is not coming back — the
+      // fields are client-supplied now: StepCase renders JudgmentHeader for the
+      // REQUIRES_JUDGMENT_HEADER memo types, so what the client types is what
+      // reaches buildIntake()'s `judgment` object. Five of the seven, at least
+      // — validateDraftIntake() rebuilds `judgment` from an allowlist of
+      // number/court/date/text/reasons (orderIntake.ts), so plaintiffName and
+      // defendantName are dropped on submit no matter what is put here. They
+      // need a slot in DraftIntakeV1 before buildIntake() can carry them.
 
       // Auto-extract or mock the case/reply facts summary when moving from step 2 to 3
       if (step === "case") {
@@ -311,9 +281,8 @@ export function useDraftState(initialMode = "") {
     reviewPhase, setReviewPhase,
     // submit step
     submitNotes, setSubmitNotes, submitting, setSubmitting, submitErrors,
-    uploadedAttachments, setUploadedAttachments,
-    uploading, attachError, setAttachError,
-    buildSummary, submitOrder, attachFile, removeAttachment,
+    uploadedAttachments, uploading, attachError,
+    buildSummary, submitOrder, attachFile, attachFiles, removeAttachment,
     // sharing
     shareLink, setShareLink, sharePasscode, setSharePasscode,
     linkCopied, setLinkCopied, clientEmail, setClientEmail,

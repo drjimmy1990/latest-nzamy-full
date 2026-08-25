@@ -77,7 +77,7 @@ supabase/.branches/
 
 # ─── Blog content (owner drops into blog-toolkit/blog_final/; not shipped in git) ──
 blog_final/
-blog-toolkit/blog_final/
+blog-toolkit/blog_final*/
 blog-toolkit/_blog-seed-rejects.log
 
 # ─── Test / source content (owner data — too large for git) ───────────────
@@ -89,3 +89,4 @@ library-toolkit/output/
 # ─── Library source files (owner data — too large for git) ────────────────
 library_last/
 last_owner/
+blog-toolkit/_articles-backup-*.json

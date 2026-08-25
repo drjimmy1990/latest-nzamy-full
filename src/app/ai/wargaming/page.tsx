@@ -7,7 +7,7 @@ import {
   Buildings, User, UserFocus, Briefcase, Notebook, ArrowLeft, Pencil,
   Plus, PencilSimple, Trash, Check, Copy, CaretDown, Lightbulb,
   Eye, CheckFat, DownloadSimple, Warning, ArrowsCounterClockwise,
-  Robot, Microphone, Spinner,
+  Robot, Microphone, Spinner, PaperPlaneTilt,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
@@ -15,6 +15,13 @@ import { useUser } from "@/hooks/useUser";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
+import { useOrderAttachments } from "@/hooks/useOrderAttachments";
+import { createServiceOrder } from "@/lib/services/serviceOrders";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import {
+  validateWargamingIntake, WARGAMING_CRITIQUE_TARGET,
+} from "@/lib/services/orderIntake.wargaming";
+import type { OrderAttachment } from "@/lib/services/orderIntake";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type SimTarget  = "opponent" | "court" | "critique" | "plea";
@@ -26,7 +33,6 @@ interface CaseContext {
   role: CaseRole | "";
   area: CaseArea | "";
   summary: string;
-  file: string | null;
 }
 
 interface SimPoint {
@@ -70,9 +76,13 @@ const CASE_AREAS: { id: CaseArea; label: string }[] = [
   { id:"admin",       label:"إداري"          },
 ];
 
+// Kept for when real AI simulation lands — currently unreachable, no live
+// caller substitutes this into an order (Task C1).
 const MOCK_MEMO_BASE = `بسم الله الرحمن الرحيم\n\nأصحاب الفضيلة / قضاة الدائرة المختصة حفظهم الله\n\nالموضوع: صحيفة دعوى\n\nأولاً: الوقائع\nالتحق موكلنا بالعمل لدى المدعى عليها، وقد فوجئ بإنهاء خدماته دون مسوّغ نظامي.\n\nثانياً: الأسانيد\nالدفع الأول: بطلان الإنهاء\nالدفع الثاني: مكافأة نهاية الخدمة\n\nثالثاً: الطلبات\n١. أجر الإشعار  ٢. المكافأة كاملة  ٣. التعويض`;
 
 // ─── Mock data generator ────────────────────────────────────────────────────────
+// Kept for when real AI simulation lands — unreachable since runSim() is no
+// longer called (Task C1: this page submits a real order instead).
 function buildPoints(targets: Set<SimTarget>, area: CaseArea | ""): SimPoint[] {
   const pts: SimPoint[] = [];
 
@@ -168,6 +178,10 @@ function SourceChip({ src, isDark }: { src: SimTarget; isDark: boolean }) {
 }
 
 // ─── Unified ActionCard ────────────────────────────────────────────────────────
+// Kept for when real AI simulation lands — unreachable (only rendered from
+// Results, itself unreachable). Its edit textarea was a dead end even when
+// this was live (editText was never read outside this component) — do not
+// resurrect that pattern anywhere reachable (Task C1).
 function ActionCard({
   point, isDark, action, onAction,
 }: {
@@ -246,6 +260,8 @@ function ActionCard({
 }
 
 // ─── Polish panel (memo preview after apply) ───────────────────────────────────
+// Kept for when real AI simulation lands — unreachable (only rendered from
+// Results, itself unreachable) (Task C1).
 function PolishPanel({ isDark, points, actions }: { isDark:boolean; points:SimPoint[]; actions:Record<string,ItemAction> }) {
   const applied = points.filter(p => actions[p.id]==="add" || actions[p.id]==="edit");
   const fullText = MOCK_MEMO_BASE + "\n\n" + applied.map(p=>p.counter).join("\n");
@@ -313,15 +329,21 @@ function PolishPanel({ isDark, points, actions }: { isDark:boolean; points:SimPo
 }
 
 // ─── Case Setup ────────────────────────────────────────────────────────────────
-function CaseSetup({ D, ctx, setCtx, onNext, user }: {
+function CaseSetup({
+  D, ctx, setCtx, onNext, user,
+  attachments, uploading, attachError, attachFile, removeAttachment,
+}: {
   D:boolean; ctx:CaseContext; setCtx:(c:CaseContext)=>void; onNext:()=>void;
   user: ReturnType<typeof useUser>;
+  attachments: OrderAttachment[]; uploading: boolean; attachError: string;
+  attachFile: (file: File) => Promise<OrderAttachment>;
+  removeAttachment: (documentId: string) => void;
 }) {
   const inp = `w-full rounded-xl border px-4 py-3 text-[13px] outline-none resize-none ${D?"border-white/[0.08] bg-zinc-800/60 text-zinc-100 placeholder:text-zinc-600":"border-zinc-200 bg-zinc-50/80 text-zinc-800 placeholder:text-zinc-400"}`;
   const card = `rounded-2xl border ${D?"bg-zinc-900 border-white/[0.07]":"bg-white border-zinc-200/70"}`;
   const fRef = useRef<HTMLInputElement>(null);
   const UserIcon = user.userType==="firm"?Buildings:user.userType==="lawyer"?UserFocus:User;
-  const canNext = ctx.role!==""&&ctx.area!==""&&ctx.summary.trim().length>=20;
+  const canNext = ctx.role!==""&&ctx.area!==""&&ctx.summary.trim().length>=20&&!uploading;
 
   return (
     <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="space-y-4">
@@ -364,19 +386,38 @@ function CaseSetup({ D, ctx, setCtx, onNext, user }: {
       {/* Summary */}
       <div className={`${card} p-5 space-y-3`}>
         <p className={`text-[12px] font-bold ${D?"text-zinc-400":"text-zinc-500"}`}>ملخص القضية والوقائع</p>
-        {ctx.file?(
+        {attachments.length>0?(
           <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 border ${D?"border-emerald-700/30 bg-emerald-900/10":"border-emerald-200 bg-emerald-50"}`}>
             <FileText size={14} className="text-emerald-500"/>
-            <span className={`flex-1 truncate text-[12px] ${D?"text-emerald-300":"text-emerald-700"}`}>{ctx.file}</span>
-            <button onClick={()=>setCtx({...ctx,file:null})}><X size={13} className="text-emerald-500"/></button>
+            <span className={`flex-1 truncate text-[12px] ${D?"text-emerald-300":"text-emerald-700"}`}>{attachments[0].name}</span>
+            <button onClick={()=>removeAttachment(attachments[0].documentId)}><X size={13} className="text-emerald-500"/></button>
           </div>
         ):(
-          <div onClick={()=>fRef.current?.click()}
-            className={`cursor-pointer rounded-xl border-2 border-dashed p-3 flex items-center gap-3 ${D?"border-white/[0.08] hover:border-[#C8A762]/30":"border-zinc-200 hover:border-[#C8A762]/40"}`}>
-            <input ref={fRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png" onChange={e=>{const f=e.target.files?.[0];if(f)setCtx({...ctx,file:f.name});}}/>
-            <FileArrowUp size={18} className={D?"text-zinc-600":"text-zinc-400"}/>
-            <div><p className={`text-[12px] font-semibold ${D?"text-zinc-400":"text-zinc-600"}`}>ارفع ملف القضية (اختياري)</p><p className={`text-[10px] ${D?"text-zinc-600":"text-zinc-400"}`}>PDF · Word · صور</p></div>
+          <div onClick={()=>{if(!uploading)fRef.current?.click();}}
+            className={`rounded-xl border-2 border-dashed p-3 flex items-center gap-3 ${uploading?"opacity-60":"cursor-pointer"} ${D?"border-white/[0.08] hover:border-[#C8A762]/30":"border-zinc-200 hover:border-[#C8A762]/40"}`}>
+            <input ref={fRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png" disabled={uploading}
+              onChange={async e=>{
+                const f=e.target.files?.[0];
+                if(!f)return;
+                try { await attachFile(f); } catch { /* attachError is set inside the hook and rendered below */ }
+              }}/>
+            {uploading ? (
+              <motion.div animate={{rotate:360}} transition={{duration:1,repeat:Infinity,ease:"linear"}}>
+                <Spinner size={18} className={D?"text-zinc-500":"text-zinc-400"}/>
+              </motion.div>
+            ) : (
+              <FileArrowUp size={18} className={D?"text-zinc-600":"text-zinc-400"}/>
+            )}
+            <div>
+              <p className={`text-[12px] font-semibold ${D?"text-zinc-400":"text-zinc-600"}`}>{uploading?"جارٍ رفع الملف...":"ارفع ملف القضية (اختياري)"}</p>
+              <p className={`text-[10px] ${D?"text-zinc-600":"text-zinc-400"}`}>PDF · Word · صور</p>
+            </div>
           </div>
+        )}
+        {attachError && (
+          <p className="flex items-center gap-1.5 text-[11px] text-red-500">
+            <Warning size={12}/>{attachError}
+          </p>
         )}
         <div className="relative">
           <textarea value={ctx.summary} onChange={e=>setCtx({...ctx,summary:e.target.value})}
@@ -398,13 +439,31 @@ function CaseSetup({ D, ctx, setCtx, onNext, user }: {
 }
 
 // ─── Target Selection (Step 2) ─────────────────────────────────────────────────
-function TargetSelect({ D, ctx, targets, setTargets, onRun, onBack }: {
+function TargetSelect({
+  D, ctx, targets, setTargets, onRun, onBack,
+  attachments, memoText, setMemoText,
+  memoAttachmentIds, uploading, attachError, attachMemoFile, removeMemoAttachment,
+}: {
   D:boolean; ctx:CaseContext;
   targets:Set<SimTarget>; setTargets:(t:Set<SimTarget>)=>void;
   onRun:()=>void; onBack:()=>void;
+  attachments: OrderAttachment[];
+  memoText: string; setMemoText: (v:string)=>void;
+  // memoAttachmentIds is the subset of documentIds (from the shared
+  // attachments list) that the client tagged specifically as the memo via
+  // this section's own dropzone — NOT every attachment on the order. A case
+  // file uploaded in step 1 must not silently satisfy "provide the memo".
+  memoAttachmentIds: string[];
+  uploading: boolean; attachError: string;
+  attachMemoFile: (file: File) => Promise<OrderAttachment>;
+  removeMemoAttachment: (documentId: string) => void;
 }) {
   const areaLabel = CASE_AREAS.find(a=>a.id===ctx.area)?.label??"";
   const roleLabel  = CASE_ROLES.find(r=>r.id===ctx.role)?.label??"";
+  const hasCritique = targets.has(WARGAMING_CRITIQUE_TARGET);
+  const memoFileRef = useRef<HTMLInputElement>(null);
+  const memoFiles = attachments.filter(a => memoAttachmentIds.includes(a.documentId));
+  const memoSatisfied = memoText.trim().length>0 || memoAttachmentIds.length>0;
 
   function toggle(t:SimTarget) {
     const n = new Set(targets);
@@ -419,13 +478,13 @@ function TargetSelect({ D, ctx, targets, setTargets, onRun, onBack }: {
         <Briefcase size={14} className="text-[#C8A762] flex-shrink-0"/>
         <p className={`text-[12px] flex-1 ${D?"text-zinc-300":"text-zinc-600"}`}>
           <span className="font-bold text-[#C8A762]">{areaLabel}</span> · {roleLabel}
-          {ctx.file && <span className="ms-1 opacity-60">· {ctx.file}</span>}
+          {attachments.length>0 && <span className="ms-1 opacity-60">· {attachments[0].name}</span>}
         </p>
         <button onClick={onBack} className={`text-[10px] font-semibold ${D?"text-zinc-500 hover:text-zinc-300":"text-slate-400 hover:text-slate-600"}`}>← تعديل</button>
       </div>
 
       <p className={`text-[13px] font-bold ${D?"text-zinc-200":"text-zinc-700"}`}>اختر ما تريد محاكاته:</p>
-      <p className={`text-[11px] -mt-2 ${D?"text-zinc-500":"text-slate-400"}`}>يمكنك اختيار أكثر من هدف — ستُجمع النتائج في قائمة واحدة مرتّبة حسب الأهمية</p>
+      <p className={`text-[11px] -mt-2 ${D?"text-zinc-500":"text-slate-400"}`}>يمكنك اختيار أكثر من هدف — سيراجع الفريق كل هدف تختاره على حدة</p>
 
       {/* Target chips grid */}
       <div className="grid grid-cols-2 gap-3">
@@ -461,15 +520,190 @@ function TargetSelect({ D, ctx, targets, setTargets, onRun, onBack }: {
         <span className="ms-auto">{targets.size} من {SIM_TARGETS.length} محددة</span>
       </div>
 
+      {/* Memo — required only when نقض المذكرة is selected; the target
+          implies the client supplies the memo being critiqued. Either pasted
+          text or an uploaded file satisfies it (owners field-tested the
+          text-only textarea and found clients hold the memo as a PDF, not
+          text they can paste) — both feed the same shared attachments list
+          from useOrderAttachments() up in AIWargamingPage, so a file
+          attached here reaches the order payload exactly like the case-file
+          upload in step 1 does. */}
+      {hasCritique && (
+        <motion.div initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} className="overflow-hidden">
+          <div className={`rounded-2xl border p-4 space-y-2 ${D?"border-purple-700/25 bg-purple-900/8":"border-purple-200 bg-purple-50/60"}`}>
+            <div className="flex items-center gap-2">
+              <Notebook size={14} className="text-purple-400"/>
+              <p className={`text-[12px] font-bold ${D?"text-zinc-200":"text-zinc-700"}`}>المذكرة المراد نقضها</p>
+            </div>
+            <p className={`text-[11px] ${D?"text-zinc-500":"text-slate-500"}`}>
+              الصق نص المذكرة، أو ارفع ملفها — يكفي أحدهما.
+            </p>
+            <textarea value={memoText} onChange={e=>setMemoText(e.target.value)}
+              placeholder="الصق نص المذكرة كاملاً هنا..." rows={6}
+              className={`w-full resize-none rounded-xl border px-3 py-2.5 text-[12px] outline-none ${D?"border-white/[0.07] bg-zinc-800/60 text-zinc-200 placeholder:text-zinc-600":"border-purple-200 bg-white text-zinc-800 placeholder:text-zinc-400"}`}/>
+
+            {memoFiles.length>0 && (
+              <div className="space-y-1.5">
+                {memoFiles.map(a=>(
+                  <div key={a.documentId} className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${D?"border-emerald-700/30 bg-emerald-900/10":"border-emerald-200 bg-emerald-50"}`}>
+                    <FileText size={13} className="text-emerald-500"/>
+                    <span className={`flex-1 truncate text-[11px] ${D?"text-emerald-300":"text-emerald-700"}`}>{a.name}</span>
+                    <button onClick={()=>removeMemoAttachment(a.documentId)}><X size={12} className="text-emerald-500"/></button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div onClick={()=>{if(!uploading)memoFileRef.current?.click();}}
+              className={`rounded-xl border-2 border-dashed p-2.5 flex items-center gap-2.5 ${uploading?"opacity-60":"cursor-pointer"} ${D?"border-white/[0.08] hover:border-[#C8A762]/30":"border-zinc-200 hover:border-[#C8A762]/40"}`}>
+              <input ref={memoFileRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png" disabled={uploading}
+                onChange={async e=>{
+                  const f=e.target.files?.[0];
+                  if(!f)return;
+                  try { await attachMemoFile(f); } catch { /* attachError is set inside the hook and rendered below */ }
+                  e.target.value = "";
+                }}/>
+              {uploading ? (
+                <motion.div animate={{rotate:360}} transition={{duration:1,repeat:Infinity,ease:"linear"}}>
+                  <Spinner size={15} className={D?"text-zinc-500":"text-zinc-400"}/>
+                </motion.div>
+              ) : (
+                <FileArrowUp size={15} className={D?"text-zinc-600":"text-zinc-400"}/>
+              )}
+              <p className={`text-[11px] font-semibold ${D?"text-zinc-400":"text-zinc-600"}`}>{uploading?"جارٍ رفع الملف...":"أو ارفع ملف المذكرة (PDF · Word · صورة)"}</p>
+            </div>
+
+            {attachError && (
+              <p className="flex items-center gap-1.5 text-[11px] text-red-500">
+                <Warning size={12}/>{attachError}
+              </p>
+            )}
+            {!memoSatisfied && (
+              <p className="flex items-center gap-1.5 text-[11px] text-amber-500">
+                <Warning size={12}/>المذكرة المراد نقضها غير موجودة — أدخل نصها أو ارفع ملفها هنا تحديداً
+              </p>
+            )}
+          </div>
+        </motion.div>
+      )}
+
       <motion.button whileHover={{scale:1.02}} whileTap={{scale:0.98}} onClick={onRun} disabled={targets.size===0}
         className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] py-3.5 text-[13px] font-bold text-white disabled:opacity-40 shadow-lg">
-        <Sword size={15} weight="duotone"/>ابدأ المحاكاة الشاملة
+        <PaperPlaneTilt size={15} weight="duotone"/>مراجعة الطلب وإرساله
       </motion.button>
     </motion.div>
   );
 }
 
+// ─── Submit step (Step 3) ───────────────────────────────────────────────────────
+// The real replacement for the old "simulating → results" theatre. Every row
+// below is a read-only recap of a value already collected in steps 1–2 and
+// included verbatim in buildIntake() — nothing here is a control whose value
+// fails to reach the order payload.
+function SubmitReview({
+  D, ctx, areaLabel, roleLabel, targets, memoText, memoAttachmentIds, attachments,
+  submitting, submitErrors, onBack, onSubmit,
+}: {
+  D:boolean; ctx:CaseContext; areaLabel:string; roleLabel:string;
+  targets:Set<SimTarget>; memoText:string; memoAttachmentIds:string[]; attachments:OrderAttachment[];
+  submitting:boolean; submitErrors:string[];
+  onBack:()=>void; onSubmit:()=>void;
+}) {
+  const [confirmed, setConfirmed] = useState(false);
+  const card = D ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
+  const hasCritique = targets.has(WARGAMING_CRITIQUE_TARGET);
+  const selectedTargets = SIM_TARGETS.filter(t => targets.has(t.id));
+
+  return (
+    <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="space-y-4">
+      <div className={`${card} p-5 space-y-5`}>
+        <div>
+          <h2 className={`text-[15px] font-bold ${D?"text-white":"text-zinc-900"}`}>مراجعة الطلب وإرساله</h2>
+          <p className={`text-[12px] ${D?"text-zinc-500":"text-zinc-400"}`}>
+            سيراجع فريق نظامي بيانات القضية والأهداف المحددة يدوياً ويُعدّ لك تحليلاً مكتوباً، وسيصلك إشعار عند جهوزيته.
+          </p>
+        </div>
+
+        <dl className="space-y-2">
+          <div className="flex gap-3 text-[12px]">
+            <dt className={D?"text-zinc-500 w-32 shrink-0":"text-zinc-400 w-32 shrink-0"}>صفة الموكل</dt>
+            <dd className={D?"text-zinc-200":"text-zinc-800"}>{roleLabel || "—"}</dd>
+          </div>
+          <div className="flex gap-3 text-[12px]">
+            <dt className={D?"text-zinc-500 w-32 shrink-0":"text-zinc-400 w-32 shrink-0"}>تخصص القضية</dt>
+            <dd className={D?"text-zinc-200":"text-zinc-800"}>{areaLabel || "—"}</dd>
+          </div>
+          <div className="flex gap-3 text-[12px]">
+            <dt className={D?"text-zinc-500 w-32 shrink-0":"text-zinc-400 w-32 shrink-0"}>ملخص القضية</dt>
+            <dd className={D?"text-zinc-200":"text-zinc-800"}>{ctx.summary.slice(0,150)}{ctx.summary.length>150?"…":""}</dd>
+          </div>
+          <div className="flex gap-3 text-[12px]">
+            <dt className={D?"text-zinc-500 w-32 shrink-0":"text-zinc-400 w-32 shrink-0"}>أهداف المحاكاة</dt>
+            <dd className={D?"text-zinc-200":"text-zinc-800"}>
+              {selectedTargets.length>0 ? selectedTargets.map(t=>t.label).join(" · ") : "—"}
+            </dd>
+          </div>
+          {hasCritique && (
+            <div className="flex gap-3 text-[12px]">
+              <dt className={D?"text-zinc-500 w-32 shrink-0":"text-zinc-400 w-32 shrink-0"}>المذكرة المراد نقضها</dt>
+              <dd className={(memoText.trim() || memoAttachmentIds.length>0) ? (D?"text-zinc-200":"text-zinc-800") : "text-amber-500"}>
+                {memoText.trim()
+                  ? `${memoText.trim().slice(0,150)}${memoText.trim().length>150?"…":""}`
+                  : memoAttachmentIds.length>0
+                    ? "أُرفق ملف المذكرة — راجع المرفقات أدناه"
+                    : "لم تُدرِج نص المذكرة ولم ترفق ملفها بعد — عد للخطوة السابقة لإضافة إحداهما قبل الإرسال"}
+              </dd>
+            </div>
+          )}
+        </dl>
+
+        {attachments.length>0 && (
+          <div className="space-y-1.5">
+            <p className={`text-[12px] font-semibold ${D?"text-zinc-300":"text-zinc-700"}`}>المرفقات ({attachments.length})</p>
+            {attachments.map(a=>(
+              <div key={a.documentId} className={`flex items-center gap-2 text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>
+                <FileText size={12}/>{a.name}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {submitErrors.length>0 && (
+          <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 space-y-1">
+            {submitErrors.map(e=>(
+              <p key={e} className="flex items-center gap-1.5 text-[11px] text-red-500">
+                <Warning size={12}/>{e}
+              </p>
+            ))}
+          </div>
+        )}
+
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} className="mt-0.5"/>
+          <span className={`text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>
+            أقر بأن البيانات المدخلة صحيحة، وأوافق على إرسالها لفريق نظامي لإعداد التحليل.
+          </span>
+        </label>
+
+        <div className="flex items-center gap-3">
+          <button onClick={onBack}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px] font-semibold border transition-colors ${D?"border-white/[0.07] bg-zinc-800 text-zinc-300":"border-zinc-200 bg-white text-zinc-600"}`}>
+            <ArrowLeft size={13} className="rotate-180"/>السابق
+          </button>
+          <motion.button whileHover={{scale:1.02}} whileTap={{scale:0.98}} onClick={onSubmit} disabled={!confirmed||submitting}
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] py-3 text-[13px] font-bold text-white disabled:opacity-40 shadow-lg">
+            <PaperPlaneTilt size={15}/>{submitting?"جارٍ الإرسال...":"إرسال الطلب"}
+          </motion.button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── Results (Step 3) ──────────────────────────────────────────────────────────
+// Kept for when real AI simulation lands — unreachable, step "results" is no
+// longer set from anywhere (Task C1: this page submits a real order instead
+// of simulating one).
 function Results({ D, ctx, targets, points, onReset }: {
   D:boolean; ctx:CaseContext; targets:Set<SimTarget>;
   points:SimPoint[]; onReset:()=>void;
@@ -546,6 +780,8 @@ function Results({ D, ctx, targets, points, onReset }: {
 }
 
 // ─── Simulating animation ──────────────────────────────────────────────────────
+// Kept for when real AI simulation lands — unreachable, step "simulating" is
+// no longer set from anywhere (Task C1).
 function SimulatingLoader({ D, targets }: { D:boolean; targets:Set<SimTarget> }) {
   const steps = [
     ...(targets.has("opponent") ? ["محاكاة دفوع الخصم وهجماته"] : []),
@@ -579,17 +815,68 @@ function SimulatingLoader({ D, targets }: { D:boolean; targets:Set<SimTarget> })
   );
 }
 
+/**
+ * Map a thrown submitOrder error to Arabic user-facing copy. The underlying
+ * message (which may be English — "Unauthorized", a raw Postgres error,
+ * etc.) is logged for developers via console.error but never shown to the
+ * user. Mirrors useDraftState.ts's submitErrorMessageAr.
+ */
+function submitErrorMessageAr(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  console.error("[AIWargamingPage] submitOrder failed:", raw);
+  if (raw === "Unauthorized") {
+    return "انتهت جلستك — يرجى تسجيل الدخول مجدداً ثم إعادة المحاولة.";
+  }
+  return "تعذّر إرسال الطلب — حاول مجدداً";
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function AIWargamingPage() {
   const { isDark:D } = useTheme();
   const user = useUser();
 
-  type PageStep = "setup" | "targets" | "simulating" | "results";
+  // "simulating" and "results" are kept in the union (and in stepLabels /
+  // stepNums below) only because SimulatingLoader / Results stay in the file
+  // unreachable, per "hide, do not delete" — nothing ever calls setStep with
+  // either value any more. "submit" is the real replacement.
+  type PageStep = "setup" | "targets" | "simulating" | "submit" | "results";
   const [step,    setStep]    = useState<PageStep>("setup");
-  const [ctx,     setCtx]     = useState<CaseContext>({ role:"", area:"", summary:"", file:null });
+  const [ctx,     setCtx]     = useState<CaseContext>({ role:"", area:"", summary:"" });
   const [targets, setTargets] = useState<Set<SimTarget>>(new Set(["opponent","court"]));
   const [points,  setPoints]  = useState<SimPoint[]>([]);
+  const [memoText, setMemoText] = useState("");
+  // documentIds from the shared attachments list that were uploaded via the
+  // memo-specific dropzone in TargetSelect — distinct from "any attachment
+  // on the order" so an unrelated case file from step 1 can never silently
+  // satisfy "the client supplied the memo".
+  const [memoAttachmentIds, setMemoAttachmentIds] = useState<string[]>([]);
+  const [submitting,    setSubmitting]    = useState(false);
+  const [submitErrors,  setSubmitErrors]  = useState<string[]>([]);
 
+  const {
+    attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError,
+  } = useOrderAttachments();
+
+  // Wraps the single shared attachFile/removeAttachment from
+  // useOrderAttachments() — still one hook instance, one attachments array —
+  // so a file uploaded specifically as the memo is also tagged in
+  // memoAttachmentIds, and removing it drops the tag too (otherwise a
+  // removed file would keep satisfying the critique gate, the same class of
+  // stale-state bug memoText had when critique was deselected).
+  async function attachMemoFile(file: File): Promise<OrderAttachment> {
+    const attachment = await attachFile(file);
+    setMemoAttachmentIds(prev => [...prev, attachment.documentId]);
+    return attachment;
+  }
+
+  function removeMemoAttachment(documentId: string): void {
+    removeAttachment(documentId);
+    setMemoAttachmentIds(prev => prev.filter(id => id !== documentId));
+  }
+
+  // Kept defined but uncalled — the button that used to fire this now goes
+  // to "submit" instead (Task C1). Left in place along with buildPoints() so
+  // real AI simulation can be wired back in later without re-deriving this.
   async function runSim() {
     setStep("simulating");
     await new Promise(r => setTimeout(r, 2000 + targets.size * 400));
@@ -597,16 +884,85 @@ export default function AIWargamingPage() {
     setStep("results");
   }
 
+  // Only reachable from the (now-hidden) Results component's "إعادة" button
+  // — kept pointed at a still-reachable step regardless.
   function reset() { setStep("targets"); setPoints([]); }
-  function fullReset() { setStep("setup"); setCtx({role:"",area:"",summary:"",file:null}); setTargets(new Set(["opponent","court"])); setPoints([]); }
+
+  function fullReset() {
+    setStep("setup");
+    setCtx({role:"",area:"",summary:""});
+    setTargets(new Set(["opponent","court"]));
+    setPoints([]);
+    setMemoText("");
+    setMemoAttachmentIds([]);
+    setSubmitErrors([]);
+    clearAttachError();
+    attachments.forEach(a => removeAttachment(a.documentId));
+  }
 
   const areaLabel = CASE_AREAS.find(a=>a.id===ctx.area)?.label??"";
   const roleLabel  = CASE_ROLES.find(r=>r.id===ctx.role)?.label??"";
 
+  function buildIntake(): Record<string, unknown> {
+    return {
+      schemaVersion: 1,
+      service: "wargaming",
+      role: ctx.role,
+      area: ctx.area,
+      caseSummary: ctx.summary,
+      targets: Array.from(targets),
+      // Only send memoText/memoAttachmentIds when critique is actually
+      // selected — otherwise a memo typed or attached while critique was
+      // toggled on, then left behind after deselecting it, would ship
+      // silently in an order that never asked for a memo critique, and the
+      // submit-step recap (which only shows this row when critique is
+      // selected) would disagree with the payload.
+      ...(targets.has(WARGAMING_CRITIQUE_TARGET) && memoText.trim()
+        ? { memoText: memoText.trim() } : {}),
+      ...(targets.has(WARGAMING_CRITIQUE_TARGET) && memoAttachmentIds.length > 0
+        ? { memoAttachmentIds } : {}),
+      attachments,
+    };
+  }
+
+  async function submitOrder() {
+    setSubmitErrors([]);
+    const intake = buildIntake();
+    const check = validateWargamingIntake(intake);
+    if (!check.ok) { setSubmitErrors(check.errors); return; }
+
+    setSubmitting(true);
+    try {
+      const supabase = createBrowserClient();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const { data: profile } = authUser
+        ? await supabase.from("profiles").select("display_name, phone, email").eq("id", authUser.id).single()
+        : { data: null };
+
+      const order = await createServiceOrder({
+        service: "wargaming",
+        title: `المحاكي الشامل — ${areaLabel || "عام"}`,
+        description: ctx.summary.slice(0, 200),
+        intake: check.value as unknown as Record<string, unknown>,
+        attachments,
+        requester: {
+          name: profile?.display_name ?? undefined,
+          phone: profile?.phone ?? undefined,
+          email: profile?.email ?? undefined,
+        },
+      });
+      window.location.href = `/ai/orders/${order.id}`;
+    } catch (err) {
+      setSubmitErrors([submitErrorMessageAr(err)]);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const stepLabels: Record<PageStep,string> = {
-    setup:"بيانات القضية", targets:"أهداف المحاكاة", simulating:"جارٍ المحاكاة", results:"النتائج والتطبيق"
+    setup:"بيانات القضية", targets:"أهداف المحاكاة", simulating:"جارٍ المحاكاة", submit:"مراجعة وإرسال", results:"النتائج والتطبيق"
   };
-  const stepNums: Record<PageStep,number> = { setup:1, targets:2, simulating:3, results:3 };
+  const stepNums: Record<PageStep,number> = { setup:1, targets:2, simulating:3, submit:3, results:3 };
 
   return (
     <div className={`p-5 md:p-7 max-w-3xl mx-auto space-y-5 ${D?"text-zinc-100":"text-zinc-900"}`} dir="rtl">
@@ -617,23 +973,37 @@ export default function AIWargamingPage() {
           <h1 className={`text-xl font-bold ${D?"text-white":"text-zinc-900"}`}>المحاكي الشامل</h1>
           <span className="rounded-full bg-purple-500/15 border border-purple-500/30 px-2.5 py-0.5 text-[10px] font-bold text-purple-400">MAX فقط</span>
         </div>
-        <p className={`text-[12px] ${D?"text-zinc-500":"text-zinc-400"}`}>حدد القضية → اختر الأهداف → شغّل المحاكاة → طبّق</p>
+        <p className={`text-[12px] ${D?"text-zinc-500":"text-zinc-400"}`}>حدد القضية → اختر الأهداف → راجع الطلب وأرسله</p>
       </div>
 
       {/* Progress steps */}
       <div className={`flex items-center gap-1 p-3 rounded-2xl border ${D?"border-white/[0.05] bg-white/[0.02]":"border-slate-100 bg-slate-50/60"}`}>
-        {(["setup","targets","results"] as const).map((s,i,arr)=>{
+        {(["setup","targets","submit"] as const).map((s,i,arr)=>{
           const num = i+1;
           const active = stepNums[step]===num||step==="simulating"&&num===3;
           const done   = stepNums[step]>num;
           return (
             <React.Fragment key={s}>
-              <div className="flex items-center gap-1.5 flex-1">
+              {/* A completed step is a way back. The other three wizards
+                  (/ai/draft, /ai/contracts and the legal-opinion sub-flows)
+                  already do this; wargaming was the one indicator still built
+                  from plain divs, so a client who mistyped the case summary had
+                  to abandon the order. `done` is the gate — never `active`, and
+                  never a later step, so this can only ever go backwards and no
+                  entered data is discarded. */}
+              <button
+                type="button"
+                onClick={() => { if (done) setStep(s); }}
+                disabled={!done}
+                aria-current={active ? "step" : undefined}
+                aria-label={done ? `الرجوع إلى خطوة ${stepLabels[s]}` : stepLabels[s]}
+                className={`flex items-center gap-1.5 flex-1 rounded-lg text-right transition-all ${done?"cursor-pointer hover:opacity-80":"cursor-default"}`}
+              >
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 transition-all ${ done?"bg-emerald-500 text-white":active?`bg-gradient-to-br ${s==="setup"?"from-[#0B3D2E] to-[#1a6b50]":s==="targets"?"from-amber-600 to-amber-400":"from-purple-700 to-purple-500"} text-white`:D?"bg-zinc-800 text-zinc-500":"bg-slate-200 text-slate-400"}`}>
                   {done?<Check size={10} weight="bold"/>:num}
                 </div>
                 <p className={`text-[10px] font-semibold hidden sm:block ${active||done?D?"text-zinc-200":"text-zinc-700":D?"text-zinc-600":"text-slate-400"}`}>{stepLabels[s]}</p>
-              </div>
+              </button>
               {i<arr.length-1&&<div className={`w-6 h-px flex-shrink-0 ${done?D?"bg-emerald-700/60":"bg-emerald-300":D?"bg-zinc-700":"bg-slate-200"}`}/>}
             </React.Fragment>
           );
@@ -650,19 +1020,35 @@ export default function AIWargamingPage() {
       <AnimatePresence mode="wait">
         {step==="setup" && (
           <motion.div key="setup" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-            <CaseSetup D={D} ctx={ctx} setCtx={setCtx} user={user} onNext={()=>setStep("targets")}/>
+            <CaseSetup D={D} ctx={ctx} setCtx={setCtx} user={user} onNext={()=>setStep("targets")}
+              attachments={attachments} uploading={uploading} attachError={attachError}
+              attachFile={attachFile} removeAttachment={removeAttachment}/>
           </motion.div>
         )}
 
         {step==="targets" && (
           <motion.div key="targets" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
-            <TargetSelect D={D} ctx={ctx} targets={targets} setTargets={setTargets} onRun={runSim} onBack={()=>setStep("setup")}/>
+            <TargetSelect D={D} ctx={ctx} targets={targets} setTargets={setTargets}
+              onRun={()=>setStep("submit")} onBack={()=>setStep("setup")}
+              attachments={attachments} memoText={memoText} setMemoText={setMemoText}
+              memoAttachmentIds={memoAttachmentIds}
+              uploading={uploading} attachError={attachError}
+              attachMemoFile={attachMemoFile} removeMemoAttachment={removeMemoAttachment}/>
           </motion.div>
         )}
 
         {step==="simulating" && (
           <motion.div key="sim" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
             <SimulatingLoader D={D} targets={targets}/>
+          </motion.div>
+        )}
+
+        {step==="submit" && (
+          <motion.div key="submit" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
+            <SubmitReview D={D} ctx={ctx} areaLabel={areaLabel} roleLabel={roleLabel}
+              targets={targets} memoText={memoText} memoAttachmentIds={memoAttachmentIds} attachments={attachments}
+              submitting={submitting} submitErrors={submitErrors}
+              onBack={()=>{setSubmitErrors([]);setStep("targets");}} onSubmit={submitOrder}/>
           </motion.div>
         )}
 

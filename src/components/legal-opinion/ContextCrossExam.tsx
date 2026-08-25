@@ -14,15 +14,27 @@ import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   UserFocus, Warning, Question, ArrowRight, CheckCircle,
-  FileText, Target, Funnel, UploadSimple, TextT, Paperclip, X,
+  FileText, Target, Funnel, TextT, Paperclip, X, Spinner,
 } from "@phosphor-icons/react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
+import type { OrderAttachment } from "@/lib/services/orderIntake";
 
 interface Props {
   description: string;
   setDescription: (v: string) => void;
   isDark: boolean;
   card: string;
+  attachments: OrderAttachment[];
+  uploading: boolean;
+  attachError: string;
+  attachFiles: (files: FileList | File[]) => Promise<OrderAttachment[]>;
+  removeAttachment: (documentId: string) => void;
+  // Fired once confirmReady() composes the final text block, carrying the
+  // two structured picks (witnessRole/destroyGoal) up to page.tsx — used to
+  // (a) gate the shared "next" button so a client can't skip straight to
+  // submit without ever answering the dynamic questions, and (b) build a
+  // real order title/recap instead of parsing them back out of description.
+  onReadyInfo: (info: { witnessRole: string; destroyGoal: string }) => void;
 }
 
 type ScanPhase = "input" | "scanning" | "questions" | "ready";
@@ -48,21 +60,28 @@ const DESTROY_GOALS = [
   "إثبات التعارض مع مستندات رسمية",
 ];
 
-export function ContextCrossExam({ description, setDescription, isDark, card }: Props) {
+export function ContextCrossExam({
+  description, setDescription, isDark, card,
+  attachments, uploading, attachError, attachFiles, removeAttachment, onReadyInfo,
+}: Props) {
   const [phase, setPhase] = useState<ScanPhase>("input");
   const [dynQuestions, setDynQuestions] = useState<DynQ[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
   const [witnessRole, setWitnessRole] = useState("");
   const [destroyGoal, setDestroyGoal] = useState("");
   const [inputMode, setInputMode] = useState<"text" | "file">("text");
-  const [uploadedFiles, setUploadedFiles] = useState<{ name: string; size: string }[]>([]);
-  const [dragging, setDragging] = useState(false);
+  // `dragging` was declared here but never set by any handler (no drag/drop
+  // zone was ever wired up in this file) and never read outside its own
+  // useState line — removed rather than lifted, since there is no control
+  // producing a value to lift (Task C4 recon flagged it as dying local
+  // alongside uploadedFiles; unlike uploadedFiles it never held a real value
+  // to begin with).
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Combined validity: has content (text OR files) + role + goal
   const hasContent = inputMode === "text"
     ? description.trim().length >= 20
-    : uploadedFiles.length > 0;
+    : attachments.length > 0;
 
   const ts = isDark ? "text-zinc-500" : "text-zinc-400";
   const border = isDark ? "border-white/[0.07]" : "border-slate-200";
@@ -106,30 +125,36 @@ export function ContextCrossExam({ description, setDescription, isDark, card }: 
     return qs;
   }
 
-  function handleFiles(fileList: FileList) {
-    const newFiles = Array.from(fileList).map(f => ({
-      name: f.name,
-      size: f.size > 1024 * 1024
-        ? `${(f.size / 1024 / 1024).toFixed(1)} MB`
-        : `${(f.size / 1024).toFixed(0)} KB`,
-    }));
-    setUploadedFiles(prev => [...prev, ...newFiles]);
-    // Set a placeholder description for downstream processing
-    if (!description) setDescription(`[ملفات مرفوعة: ${newFiles.map(f => f.name).join("، ")}]`);
+  // Real uploads (Task C4) — previously kept f.name + a formatted size
+  // string, into local uploadedFiles that never left the component (only
+  // the name escaped, folded into description as text). Now wired to
+  // useOrderAttachments(); no more folding filenames into description — see
+  // startScan()'s note below.
+  async function handleFiles(fileList: FileList | File[]) {
+    // One batch call, not a loop of single attachFile() calls — attachFiles
+    // validates and uploads the whole selection together, so a rejection
+    // earlier in the batch survives a later file's success instead of being
+    // cleared by it (see useOrderAttachments.ts).
+    await attachFiles(fileList);
   }
 
   async function startScan() {
     if (!hasContent) return;
-    // Build text context from files if in file mode
-    if (inputMode === "file" && uploadedFiles.length > 0 && !description.includes("===")) {
-      setDescription(
-        `=== مستندات الشهادة ===\n${uploadedFiles.map((f, i) => `المستند ${i + 1}: ${f.name}`).join("\n")}`
-      );
+    // File mode used to fold every filename into `description` as a
+    // "=== مستندات الشهادة ===" text block. That block is now redundant —
+    // the admin queue lists+downloads real attachments separately (Task
+    // C4) — so this only leaves a short pointer rather than re-itemising
+    // filenames the admin can already see and open.
+    if (inputMode === "file" && attachments.length > 0 && !description.trim()) {
+      setDescription("(تم رفع مستندات الشهادة كمرفقات — راجع المرفقات المرفقة بالطلب)");
     }
     setPhase("scanning");
     await new Promise(r => setTimeout(r, 1600));
+    // Real filenames are still a legitimate signal for this client-side
+    // keyword heuristic (buildDynQuestions) even though they no longer get
+    // written into the admin-facing description text above.
     const textForAnalysis = inputMode === "file"
-      ? uploadedFiles.map(f => f.name).join(" ")
+      ? attachments.map(a => a.name).join(" ")
       : description;
     setDynQuestions(buildDynQuestions(textForAnalysis));
     setAnswers(Array(buildDynQuestions(textForAnalysis).length).fill(""));
@@ -147,6 +172,11 @@ export function ContextCrossExam({ description, setDescription, isDark, card }: 
       ...dynQuestions.map((q, i) => `=== ${q.q} ===\n${answers[i] || "—"}`),
     ].join("\n\n");
     setDescription(enrichedDesc);
+    // Surface witnessRole/destroyGoal to page.tsx — it needs them to gate
+    // the shared "next" button (a client must not be able to skip straight
+    // to submit before this composed block exists) and to build the order
+    // title/recap without re-parsing them back out of enrichedDesc.
+    onReadyInfo({ witnessRole, destroyGoal });
     setPhase("ready");
   }
 
@@ -206,6 +236,62 @@ export function ContextCrossExam({ description, setDescription, isDark, card }: 
                 <VoiceInput onTranscript={t => setDescription(description ? `${description}\n${t}` : t)} compact />
                 <p className={`text-[10px] ${ts}`}>{description.length} حرف</p>
               </div>
+            </div>
+          )}
+          {/* FILE MODE — Task C4: this tab existed (the mode switcher above
+              has always offered it) but rendered nothing at all — no
+              dropzone, no file input, fileRef/handleFiles were unreachable
+              dead code. Real attachment UI added here so "رفع ملف" finally
+              does something, wired straight to useOrderAttachments(). */}
+          {inputMode === "file" && (
+            <div className={`${card} p-4 space-y-3`}>
+              <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                مستندات الشهادة (محضر، تسجيل مفرغ، مستند مكتوب...)
+              </p>
+              {/* Array.from() before the reset: e.target.files is a live
+                  FileList, and the `e.target.value = ""` that lets the same
+                  filename be re-picked empties it in place — reading length
+                  after the reset always saw zero, so nothing was uploaded. */}
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+                className="hidden"
+                disabled={uploading}
+                onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; if (files.length) handleFiles(files); }}
+              />
+              {attachError && (
+                <p className="flex items-center gap-1.5 text-[11px] text-red-500">
+                  <Warning size={12} />{attachError}
+                </p>
+              )}
+              {attachments.length > 0 && (
+                <div className="space-y-1.5">
+                  {attachments.map(a => (
+                    <div key={a.documentId} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[12px] ${isDark ? "border-white/[0.07] bg-zinc-800/40 text-zinc-300" : "border-slate-200 bg-slate-50 text-zinc-700"}`}>
+                      <FileText size={14} className="text-rose-500 flex-shrink-0" />
+                      <span className="flex-1 truncate">{a.name}</span>
+                      <button onClick={() => removeAttachment(a.documentId)} className="text-red-400 hover:text-red-500"><X size={12} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={() => { if (!uploading) fileRef.current?.click(); }}
+                disabled={uploading}
+                className={`w-full flex items-center justify-center gap-2 py-4 rounded-xl border-2 border-dashed text-[12px] transition-colors disabled:opacity-60 ${
+                  isDark ? "border-white/[0.07] text-zinc-500 hover:border-rose-500/30 hover:text-zinc-300" : "border-slate-200 text-slate-400 hover:border-rose-300 hover:text-slate-600"
+                }`}>
+                {uploading ? (
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                    <Spinner size={16} />
+                  </motion.div>
+                ) : (
+                  <Paperclip size={16} />
+                )}
+                {uploading ? "جارٍ رفع الملف..." : "ارفع مستندات الشهادة (متعدد)"}
+              </button>
             </div>
           )}
           {/* Witness role selector */}
@@ -330,8 +416,8 @@ export function ContextCrossExam({ description, setDescription, isDark, card }: 
               <CheckCircle size={20} weight="fill" className="text-rose-500" />
             </div>
             <div>
-              <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>السياق جاهز — انتقل لتحليل الشهادة</p>
-              <p className={`text-[11px] ${ts}`}>اضغط "ابدأ التحليل" أدناه لبناء بطارية الأسئلة</p>
+              <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>السياق جاهز — تابع لمراجعة الطلب وإرساله</p>
+              <p className={`text-[11px] ${ts}`}>اضغط زر المتابعة أدناه</p>
             </div>
           </div>
 
