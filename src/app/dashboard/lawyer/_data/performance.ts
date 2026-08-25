@@ -14,6 +14,8 @@ export interface PerformanceSnapshot {
   range: StatRange;
   hours: number;
   tasks: number;
+  tasksDone: number;
+  tasksOverdue: number;
   cases: number;
   pomodoros: number;
   productivity: number;
@@ -23,6 +25,10 @@ export interface PerformanceSnapshot {
   previousPomodoros: number;
   streak: number;
   level: PerformanceLevel;
+  /** true = computed from real task data; false = unavailable (show "—") */
+  isLive: boolean;
+  /** work distribution computed from real task categories */
+  distribution: { label: string; pct: number; color: string }[];
 }
 
 export interface BenchmarkItem {
@@ -42,85 +48,135 @@ export const PERFORMANCE_RANGE_LABELS: Record<StatRange, string> = {
   year: "سنة",
 };
 
-const BASE_STATS: Record<StatRange, Omit<PerformanceSnapshot, "range" | "level">> = {
-  today: {
-    hours: 4.7,
-    tasks: 3,
-    cases: 2,
-    pomodoros: 6,
-    productivity: 75,
-    previousHours: 3.9,
-    previousTasks: 2,
-    previousCases: 1,
-    previousPomodoros: 5,
-    streak: 5,
-  },
-  week: {
-    hours: 23.3,
-    tasks: 12,
-    cases: 5,
-    pomodoros: 31,
-    productivity: 78,
-    previousHours: 20.4,
-    previousTasks: 9,
-    previousCases: 4,
-    previousPomodoros: 26,
-    streak: 5,
-  },
-  month: {
-    hours: 89.1,
-    tasks: 47,
-    cases: 11,
-    pomodoros: 98,
-    productivity: 82,
-    previousHours: 77.6,
-    previousTasks: 39,
-    previousCases: 9,
-    previousPomodoros: 84,
-    streak: 5,
-  },
-  quarter: {
-    hours: 241.6,
-    tasks: 134,
-    cases: 29,
-    pomodoros: 287,
-    productivity: 84,
-    previousHours: 218.2,
-    previousTasks: 121,
-    previousCases: 25,
-    previousPomodoros: 249,
-    streak: 5,
-  },
-  year: {
-    hours: 712.4,
-    tasks: 389,
-    cases: 73,
-    pomodoros: 841,
-    productivity: 80,
-    previousHours: 641.5,
-    previousTasks: 344,
-    previousCases: 66,
-    previousPomodoros: 758,
-    streak: 5,
-  },
-};
+// ─── Minimal task shape needed for performance computation ───────────────────
+export interface TaskForPerf {
+  status: "todo" | "in_progress" | "done" | "archived";
+  category: "case" | "document" | "admin" | "deadline" | "client";
+  dueDate?: string;
+  createdAt?: string;
+}
+
+/**
+ * Compute a PerformanceSnapshot from REAL task data.
+ * Hours and streak are intentionally 0 (no time-tracking in the system yet).
+ * The UI should render "—" wherever isLive=true but the value is 0.
+ */
+export function buildLiveSnapshot(
+  range: StatRange,
+  tasks: TaskForPerf[],
+  live?: { pomodoroBonus?: number }
+): PerformanceSnapshot {
+  const today = new Date().toISOString().slice(0, 10);
+  const rangeStart = getRangeStart(range);
+
+  // Filter to the selected time range (by createdAt if available, else include all)
+  const inRange = tasks.filter(t => {
+    if (!t.createdAt) return true; // no date → always include
+    return t.createdAt.slice(0, 10) >= rangeStart;
+  });
+
+  const active   = inRange.filter(t => t.status !== "archived");
+  const done     = active.filter(t => t.status === "done");
+  const overdue  = active.filter(t =>
+    t.dueDate && t.dueDate < today && t.status !== "done"
+  );
+  const cases    = active.filter(t => t.category === "case").length;
+
+  const totalActive = active.length;
+  const donePct  = totalActive > 0 ? Math.round((done.length / totalActive) * 100) : 0;
+
+  const pomodoros = live?.pomodoroBonus ?? 0;
+
+  // Work distribution — computed from real categories
+  const dist = computeDistribution(active);
+
+  return {
+    range,
+    hours:            0,       // not tracked — UI shows "—"
+    tasks:            totalActive,
+    tasksDone:        done.length,
+    tasksOverdue:     overdue.length,
+    cases,
+    pomodoros,
+    productivity:     donePct,
+    previousHours:    0,
+    previousTasks:    0,
+    previousCases:    0,
+    previousPomodoros: 0,
+    streak:           0,       // not tracked — UI shows "—"
+    level:            getPerformanceLevel(donePct),
+    isLive:           true,
+    distribution:     dist,
+  };
+}
+
+function getRangeStart(range: StatRange): string {
+  const d = new Date();
+  if (range === "today")   return d.toISOString().slice(0, 10);
+  if (range === "week")    { d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); }
+  if (range === "month")   { d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 10); }
+  if (range === "quarter") { d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); }
+  if (range === "year")    { d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); }
+  return "1970-01-01";
+}
+
+function computeDistribution(tasks: TaskForPerf[]): { label: string; pct: number; color: string }[] {
+  const total = tasks.length;
+  if (total === 0) return [];
+  const counts: Record<string, number> = {};
+  tasks.forEach(t => { counts[t.category] = (counts[t.category] ?? 0) + 1; });
+  const MAP: Record<string, { label: string; color: string }> = {
+    case:     { label: "قضايا",    color: "#0B3D2E" },
+    document: { label: "مستندات", color: "#10b981" },
+    client:   { label: "عملاء",   color: "#C8A762" },
+    admin:    { label: "إداري",   color: "#94a3b8" },
+    deadline: { label: "مواعيد",  color: "#ef4444" },
+  };
+  return Object.entries(counts)
+    .map(([k, v]) => ({ label: MAP[k]?.label ?? k, pct: Math.round((v / total) * 100), color: MAP[k]?.color ?? "#94a3b8" }))
+    .filter(x => x.pct > 0)
+    .sort((a, b) => b.pct - a.pct);
+}
+
+// ─── Legacy export kept for backward compatibility ────────────────────────────
+// Used in pages that don't yet pass real task data.
+// Returns isLive=false so the UI knows to show "—" for unavailable metrics.
+export function getPerformanceSnapshot(
+  range: StatRange,
+  live?: { pomodoroBonus?: number; taskBonus?: number }
+): PerformanceSnapshot {
+  const pomodoros = live?.pomodoroBonus ?? 0;
+  return {
+    range,
+    hours:            0,
+    tasks:            0,
+    tasksDone:        0,
+    tasksOverdue:     0,
+    cases:            0,
+    pomodoros,
+    productivity:     0,
+    previousHours:    0,
+    previousTasks:    0,
+    previousCases:    0,
+    previousPomodoros: 0,
+    streak:           0,
+    level:            getPerformanceLevel(0),
+    isLive:           false,
+    distribution:     [],
+  };
+}
 
 export const WEEK_ACTIVITY = [
-  { day: "أح", hours: 4.1 },
-  { day: "إث", hours: 6.2 },
-  { day: "ث", hours: 3.8 },
-  { day: "أر", hours: 5.9 },
-  { day: "خ", hours: 2.6 },
-  { day: "ج", hours: 1.3 },
-  { day: "س", hours: 0 },
+  { day: "أح", hours: 0 },
+  { day: "إث", hours: 0 },
+  { day: "ث",  hours: 0 },
+  { day: "أر", hours: 0 },
+  { day: "خ",  hours: 0 },
+  { day: "ج",  hours: 0 },
+  { day: "س",  hours: 0 },
 ];
 
-export const WORK_DISTRIBUTION = [
-  { label: "قضايا", pct: 41, color: "#0B3D2E" },
-  { label: "مستندات", pct: 28, color: "#10b981" },
-  { label: "عملاء", pct: 17, color: "#C8A762" },
-  { label: "إداري", pct: 14, color: "#94a3b8" },
-];
+export const WORK_DISTRIBUTION: { label: string; pct: number; color: string }[] = [];
 
 export function getPerformanceLevel(productivity: number): PerformanceLevel {
   if (productivity >= 85) {
@@ -132,28 +188,10 @@ export function getPerformanceLevel(productivity: number): PerformanceLevel {
   if (productivity >= 50) {
     return { label: "مستقر", description: "إيقاع جيد يحتاج تثبيتاً", color: "#10b981" };
   }
+  if (productivity === 0) {
+    return { label: "—", description: "أضف مهام لتفعيل الملخص", color: "#94a3b8" };
+  }
   return { label: "يحتاج متابعة", description: "يفضل مراجعة توزيع الوقت", color: "#ef4444" };
-}
-
-export function getPerformanceSnapshot(
-  range: StatRange,
-  live?: { pomodoroBonus?: number; taskBonus?: number }
-): PerformanceSnapshot {
-  const base = BASE_STATS[range];
-  const pomodoroBonus = range === "today" ? live?.pomodoroBonus ?? 0 : 0;
-  const taskBonus = range === "today" ? live?.taskBonus ?? 0 : 0;
-  const pomodoros = base.pomodoros + pomodoroBonus;
-  const tasks = base.tasks + taskBonus;
-  const productivity = Math.min(100, Math.round(base.productivity + pomodoroBonus * 2 + taskBonus * 1.5));
-
-  return {
-    range,
-    ...base,
-    tasks,
-    pomodoros,
-    productivity,
-    level: getPerformanceLevel(productivity),
-  };
 }
 
 export function getPerformanceContext(user: Pick<UserSession, "userType" | "affiliation">): PerformanceContext {
@@ -197,8 +235,9 @@ export function getBenchmarks(
 }
 
 export function getBenchmarkSummary(snapshot: PerformanceSnapshot, benchmarks: BenchmarkItem[]): string {
+  if (!snapshot.isLive || snapshot.tasks === 0) return "أضف مهام لعرض المقارنة";
   const country = benchmarks.find(item => item.scope === "country") ?? benchmarks[benchmarks.length - 1];
   if (!country) return "لا توجد مقارنة كافية حالياً";
-  const percentile = Math.max(1, Math.min(99, Math.round(((snapshot.hours - country.avgHours) / country.avgHours) * 45 + 55)));
-  return `أنت في أعلى ${percentile}% ضمن ${country.label}`;
+  const percentile = Math.max(1, Math.min(99, Math.round(((snapshot.tasksDone - country.avgTasks) / country.avgTasks) * 45 + 55)));
+  return `أنجزت ${snapshot.tasksDone} مهمة من أصل ${snapshot.tasks} — أنت في شريحة المنتجين`;
 }

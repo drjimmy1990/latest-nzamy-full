@@ -25,7 +25,7 @@ import type { Task, TaskStatus, TaskCategory, ViewMode, TimeRange, KanbanGroupBy
 import { KANBAN_COLS, CATEGORY_CONFIG, PRIORITY_CONFIG, today, playSuccessBeep } from "./_data";
 import { TaskCard, TaskGamification } from "./_components/TaskCard";
 import PomodoroPanel from "./_components/PomodoroPanel";
-import { getBenchmarks, getPerformanceContext, getPerformanceSnapshot } from "../_data/performance";
+import { getBenchmarks, getPerformanceContext, getPerformanceSnapshot, buildLiveSnapshot } from "../_data/performance";
 
 // ─── Solo+ Team Members Mock ──────────────────────────────────────────────────
 const TEAM_MEMBERS = [
@@ -311,11 +311,12 @@ export default function LawyerTasksPage() {
   }, []);
 
   const performanceContext = getPerformanceContext(user);
-  const performanceSnapshot = getPerformanceSnapshot("today", { pomodoroBonus });
+  const performanceSnapshot = buildLiveSnapshot("today", tasks, { pomodoroBonus });
   const performanceBenchmarks = getBenchmarks(performanceContext, {
     city: "الرياض",
     firmName: user.affiliation?.entityName,
   });
+
   const onPomodoroComplete = useCallback(() => {
     setPomodoroBonus(count => count + 1);
   }, []);

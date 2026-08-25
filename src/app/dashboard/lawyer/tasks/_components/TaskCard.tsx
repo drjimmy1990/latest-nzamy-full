@@ -360,8 +360,6 @@ export function TaskCard({
 
 // ─── TaskGamification ─────────────────────────────────────────────────────────
 
-const formatDelta = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}س`;
-
 export function TaskGamification({
   snapshot, benchmarks, context, isDark,
 }: {
@@ -376,16 +374,41 @@ export function TaskGamification({
   const subtleBorder = isDark ? "border-white/[0.06]" : "border-slate-100";
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
   const text = isDark ? "text-zinc-100" : "text-slate-800";
-  const maxHours = Math.max(snapshot.hours, ...benchmarks.map(item => item.avgHours), 1);
-  const hourDelta = snapshot.hours - snapshot.previousHours;
-  const trendUp = hourDelta >= 0;
+
+  // Use tasks (done vs total) for benchmark bars since hours are not tracked
+  const maxTasks = Math.max(snapshot.tasksDone ?? snapshot.tasks, ...benchmarks.map(b => b.avgTasks), 1);
   const summary = getBenchmarkSummary(snapshot, benchmarks);
 
   const kpis = [
-    { label: "ساعات العمل",    value: snapshot.hours.toFixed(1), unit: "س",     icon: Clock,        color: "#0B3D2E" },
-    { label: "المهام المنجزة", value: String(snapshot.tasks),    unit: "مهمة",  icon: CheckCircle,  color: "#10b981" },
-    { label: "القضايا النشطة", value: String(snapshot.cases),    unit: "قضية",  icon: Briefcase,    color: "#C8A762" },
-    { label: "جلسات بومودورو", value: String(snapshot.pomodoros),unit: "جلسة",  icon: Timer,        color: "#6366f1" },
+    {
+      label: "ساعات العمل",
+      value: snapshot.isLive ? "—" : "—",
+      unit: "",
+      icon: Clock,
+      color: "#94a3b8",
+      note: "غير محسوب",
+    },
+    {
+      label: "مهام مكتملة",
+      value: snapshot.isLive ? String(snapshot.tasksDone ?? 0) : "—",
+      unit: "مهمة",
+      icon: CheckCircle,
+      color: "#10b981",
+    },
+    {
+      label: "القضايا النشطة",
+      value: snapshot.isLive ? String(snapshot.cases) : "—",
+      unit: "قضية",
+      icon: Briefcase,
+      color: "#C8A762",
+    },
+    {
+      label: "جلسات بومودورو",
+      value: String(snapshot.pomodoros),
+      unit: "جلسة",
+      icon: Timer,
+      color: "#6366f1",
+    },
   ];
 
   return (
@@ -403,25 +426,34 @@ export function TaskGamification({
               <h3 className={`mt-1 text-[17px] font-bold ${text}`}>ملخص الإنتاجية</h3>
               <p className={`mt-1 text-[11px] ${muted}`}>{getPerformanceContextLabel(context)}</p>
             </div>
-            <div className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold ${trendUp ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}`}>
-              {trendUp ? <TrendUp size={11} weight="bold" /> : <TrendDown size={11} weight="bold" />}
-              <span className="font-mono">{formatDelta(hourDelta)}</span>
-            </div>
+            {/* overdue badge — only show when real data */}
+            {snapshot.isLive && (snapshot.tasksOverdue ?? 0) > 0 && (
+              <div className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold bg-red-500/10 text-red-500">
+                <Warning size={11} weight="bold" />
+                <span>{snapshot.tasksOverdue} متأخرة</span>
+              </div>
+            )}
           </div>
           <div className="mt-4">
             <div className="flex items-end gap-2">
-              <span className={`font-mono text-[38px] font-black leading-none ${text}`}>{snapshot.productivity}</span>
-              <span className={`pb-1 text-[13px] font-bold ${muted}`}>%</span>
+              <span className={`font-mono text-[38px] font-black leading-none ${text}`}>
+                {snapshot.isLive && snapshot.tasks > 0 ? snapshot.productivity : "—"}
+              </span>
+              {snapshot.isLive && snapshot.tasks > 0 && (
+                <span className={`pb-1 text-[13px] font-bold ${muted}`}>%</span>
+              )}
             </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-zinc-800">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${snapshot.productivity}%` }}
-                transition={{ type: "spring", stiffness: 80, damping: 18 }}
-                className="h-full rounded-full"
-                style={{ backgroundColor: snapshot.level.color }}
-              />
-            </div>
+            {snapshot.isLive && snapshot.tasks > 0 && (
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-zinc-800">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${snapshot.productivity}%` }}
+                  transition={{ type: "spring", stiffness: 80, damping: 18 }}
+                  className="h-full rounded-full"
+                  style={{ backgroundColor: snapshot.level.color }}
+                />
+              </div>
+            )}
             <div className="mt-3 flex items-center gap-2">
               <Target size={14} weight="duotone" style={{ color: snapshot.level.color }} />
               <div>
@@ -433,7 +465,7 @@ export function TaskGamification({
         </div>
 
         <div className={`grid flex-1 grid-cols-2 overflow-hidden rounded-2xl border md:grid-cols-4 ${subtleBorder}`}>
-          {kpis.map(({ label, value, unit, icon: Icon, color }, index) => (
+          {kpis.map(({ label, value, unit, icon: Icon, color, note }, index) => (
             <div key={label} className={`p-4 ${index !== 0 ? `border-r ${subtleBorder}` : ""} ${index > 1 ? `border-t md:border-t-0 ${subtleBorder}` : ""}`}>
               <div className="mb-2 flex items-center gap-1.5">
                 <Icon size={14} weight="duotone" style={{ color }} />
@@ -441,8 +473,13 @@ export function TaskGamification({
               </div>
               <div className="flex items-end gap-1">
                 <span className={`font-mono text-[24px] font-black leading-none ${text}`}>{value}</span>
-                <span className={`pb-0.5 text-[11px] font-bold ${muted}`}>{unit}</span>
+                {unit && value !== "—" && (
+                  <span className={`pb-0.5 text-[11px] font-bold ${muted}`}>{unit}</span>
+                )}
               </div>
+              {note && (
+                <p className={`text-[9px] mt-1 ${muted}`}>{note}</p>
+              )}
             </div>
           ))}
         </div>
@@ -460,32 +497,36 @@ export function TaskGamification({
             عرض التحليل الكامل
             <ArrowLeft size={13} weight="bold" />
           </Link>
-          <div className="space-y-2.5">
-            {benchmarks.map(item => {
-              const userPct = Math.min((snapshot.hours / maxHours) * 100, 100);
-              const avgPct  = Math.min((item.avgHours / maxHours) * 100, 100);
-              const ahead   = snapshot.hours >= item.avgHours;
-              return (
-                <div key={item.id}>
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className={`text-[11px] font-semibold ${text}`}>{item.label}</span>
-                    <span className={`font-mono text-[10px] font-bold ${ahead ? "text-emerald-500" : "text-red-500"}`}>
-                      {formatDelta(snapshot.hours - item.avgHours)}
-                    </span>
+          {snapshot.isLive && snapshot.tasks > 0 ? (
+            <div className="space-y-2.5">
+              {benchmarks.map(item => {
+                const userPct = Math.min((( snapshot.tasksDone ?? 0) / maxTasks) * 100, 100);
+                const avgPct  = Math.min((item.avgTasks / maxTasks) * 100, 100);
+                const ahead   = (snapshot.tasksDone ?? 0) >= item.avgTasks;
+                return (
+                  <div key={item.id}>
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className={`text-[11px] font-semibold ${text}`}>{item.label}</span>
+                      <span className={`font-mono text-[10px] font-bold ${ahead ? "text-emerald-500" : "text-red-500"}`}>
+                        {(snapshot.tasksDone ?? 0) - item.avgTasks >= 0 ? "+" : ""}{(snapshot.tasksDone ?? 0) - item.avgTasks} مهمة
+                      </span>
+                    </div>
+                    <div className={`relative h-2 overflow-hidden rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
+                      <motion.div initial={{ width: 0 }} animate={{ width: `${avgPct}%` }}
+                        transition={{ type: "spring", stiffness: 70, damping: 18 }}
+                        className={`absolute inset-y-0 right-0 rounded-full ${isDark ? "bg-zinc-700" : "bg-slate-300"}`} />
+                      <motion.div initial={{ width: 0 }} animate={{ width: `${userPct}%` }}
+                        transition={{ type: "spring", stiffness: 70, damping: 18, delay: 0.08 }}
+                        className="absolute inset-y-0 right-0 rounded-full"
+                        style={{ backgroundColor: ahead ? "#0B3D2E" : "#ef4444" }} />
+                    </div>
                   </div>
-                  <div className={`relative h-2 overflow-hidden rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${avgPct}%` }}
-                      transition={{ type: "spring", stiffness: 70, damping: 18 }}
-                      className={`absolute inset-y-0 right-0 rounded-full ${isDark ? "bg-zinc-700" : "bg-slate-300"}`} />
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${userPct}%` }}
-                      transition={{ type: "spring", stiffness: 70, damping: 18, delay: 0.08 }}
-                      className="absolute inset-y-0 right-0 rounded-full"
-                      style={{ backgroundColor: ahead ? "#0B3D2E" : "#ef4444" }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className={`text-[12px] ${muted}`}>أضف مهام لعرض مقارنة الأداء</p>
+          )}
         </div>
       </div>
     </motion.section>
