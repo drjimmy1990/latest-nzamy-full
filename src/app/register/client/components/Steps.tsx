@@ -17,9 +17,11 @@ import {
   Buildings,
   ArrowLeft,
   Globe,
+  User,
 } from "@phosphor-icons/react";
 import { ClientType, Step } from "../types";
 import { clientTypes } from "../data";
+import { LEGAL_REP_CAPACITIES, crNumberHint } from "./_corporateIdentity";
 
 export function StepIndicator({ step, total }: { step: Step; total: number }) {
   return (
@@ -123,6 +125,11 @@ export function Step2({
   onChange: (key: string, val: string) => void;
 }) {
   const isCompany = clientType === "company" || clientType === "micro";
+  // Owner ruling §3ج — the legal representative is a CORPORATE requirement.
+  // `isCompany` above deliberately also covers micro (بقالة / منشأة صغيرة),
+  // which shares the name + CR fields but has no legal representative, so the
+  // rep block below is gated on this narrower flag instead.
+  const isCorporate = clientType === "company";
   const isGov = clientType === "government";
   const isNGO = clientType === "ngo";
   const inputCls = "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
@@ -218,26 +225,76 @@ export function Step2({
           <>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
-                {isAr ? "اسم الشركة / الجهة" : "Company / Entity Name"}
+                {isAr ? "الاسم التجاري كما في السجل" : "Trading name as registered"}
+                <span className="text-red-500"> *</span>
               </label>
               <div className="relative">
                 <Buildings size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
-                <input type="text" placeholder={isAr ? "اسم الشركة" : "Company name"}
+                <input type="text" placeholder={isAr ? "شركة الأفق للمقاولات" : "Company name"}
                   value={data.companyName || ""} onChange={(e) => onChange("companyName", e.target.value)}
                   className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`} />
               </div>
+              <p className="mt-1.5 text-xs text-ink-faint dark:text-gray-500">
+                {isAr
+                  ? "هذا الاسم هو ما سيظهر لفريق نظامي على طلباتك ومراسلاتك."
+                  : "This is the name the Nezamy team will see on your requests."}
+              </p>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
                 {isAr ? "رقم السجل التجاري" : "Commercial Registration Number"}
+                <span className="text-red-500"> *</span>
               </label>
               <div className="relative">
                 <IdentificationCard size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
-                <input type="text" dir="ltr" placeholder="1010XXXXXX"
+                <input type="text" dir="ltr" inputMode="numeric" placeholder="1010XXXXXX"
                   value={data.crNumber || ""} onChange={(e) => onChange("crNumber", e.target.value)}
                   className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`} />
               </div>
+              {/* Advisory only — never blocks «التالي». The country selector
+                  below offers non-Saudi countries whose registration numbers
+                  have a different shape, so the length rule is Saudi-only. */}
+              {crNumberHint(data.crNumber, data.country, isAr) && (
+                <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
+                  {crNumberHint(data.crNumber, data.country, isAr)}
+                </p>
+              )}
             </div>
+            {/* Legal representative — corporate only (owner ruling §3ج) */}
+            {isCorporate && (
+              <>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
+                    {isAr ? "اسم الممثل النظامي" : "Legal representative's name"}
+                    <span className="text-red-500"> *</span>
+                  </label>
+                  <div className="relative">
+                    <User size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
+                    <input type="text" placeholder={isAr ? "عبدالعزيز محمد القرني" : "Full name"}
+                      value={data.legalRepName || ""} onChange={(e) => onChange("legalRepName", e.target.value)}
+                      className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
+                    {isAr ? "صفته" : "Capacity"}
+                    <span className="text-red-500"> *</span>
+                  </label>
+                  <select value={data.legalRepCapacity || ""} onChange={(e) => onChange("legalRepCapacity", e.target.value)}
+                    className={`${inputCls} cursor-pointer`}>
+                    <option value="">{isAr ? "اختر الصفة" : "Select capacity"}</option>
+                    {LEGAL_REP_CAPACITIES.map((c) => (
+                      <option key={c.value} value={c.value}>{isAr ? c.ar : c.en}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-xs text-ink-faint dark:text-gray-500">
+                    {isAr
+                      ? "صفة من يتعامل مع نظامي نيابةً عن الشركة."
+                      : "The capacity in which this person deals with Nezamy on the company's behalf."}
+                  </p>
+                </div>
+              </>
+            )}
           </>
         )}
         {/* Individual Fields */}

@@ -28,6 +28,11 @@ import { StepIndicator, Step1, Step2, Step3, Step4 } from "./components/Steps";
 import { setDemoSession, getPermissions } from "@/hooks/useUser";
 import type { UserSession, UserType } from "@/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
+import {
+  isCorporateIdentityComplete,
+  corporateSignupMetadata,
+  microSignupMetadata,
+} from "./components/_corporateIdentity";
 
 const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
 
@@ -47,7 +52,11 @@ export default function RegisterClientPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const type = params.get("type") as ClientType;
-    if (type && ["individual", "company", "government", "ngo"].includes(type)) {
+    // "micro" was missing from this list while being a live option in Step1
+    // (data.ts) and a live branch in the signup metadata below — so
+    // ?type=micro silently dropped the visitor back to step 1. Every ClientType
+    // that Step1 renders belongs here.
+    if (type && ["individual", "company", "micro", "government", "ngo"].includes(type)) {
       setClientType(type);
       setStep(2);
     }
@@ -58,7 +67,18 @@ export default function RegisterClientPage() {
 
   const canNext = () => {
     if (step === 1) return clientType !== null;
-    if (step === 2) return !!(formData.email && formData.phone);
+    if (step === 2) {
+      if (!(formData.email && formData.phone)) return false;
+      // Owner ruling §3ج. Before this gate, «التالي» advanced with every
+      // corporate field blank — which is how a company row reaches the
+      // database carrying nothing but the «شركة جديدة» placeholder.
+      if (clientType === "company" && !isCorporateIdentityComplete(formData)) return false;
+      // A micro registrant is asked for the trading name only; there is no
+      // legal representative for a بقالة, and micro_profiles has no column for
+      // the CR, so the CR stays optional here.
+      if (clientType === "micro" && !(formData.companyName || "").trim()) return false;
+      return true;
+    }
     if (step === 3) return !!(formData.password && formData.password === formData.confirmPassword && formData.password.length >= 8);
     return true;
   };
@@ -219,7 +239,11 @@ export default function RegisterClientPage() {
                       if (!canNext()) return;
                       if (step === 3) {
                         const userType: UserType = clientType === "individual" ? "individual" : clientType === "company" ? "corporate" : clientType === "micro" ? "micro" : clientType === "government" ? "government" : clientType === "ngo" ? "ngo" : "individual";
-                        const displayName = formData.companyName || formData.entityName || formData.ngoName || `${formData.firstName || ""} ${formData.lastName || ""}`.trim() || "عميل نظامي";
+                        // Trimmed: a name of pure whitespace is truthy, and this
+                        // value becomes profiles.display_name — which, for every
+                        // corporate account created before 20260826, is the ONLY
+                        // place the real trading name was ever written.
+                        const displayName = formData.companyName?.trim() || formData.entityName?.trim() || formData.ngoName?.trim() || `${formData.firstName || ""} ${formData.lastName || ""}`.trim() || "عميل نظامي";
 
                         // ── Supabase Mode ──
                         if (BACKEND_MODE === "supabase") {
@@ -248,14 +272,16 @@ export default function RegisterClientPage() {
                                   ...(clientType === "individual" && {
                                     id_number: formData.idNumber,
                                   }),
-                                  ...(clientType === "company" && {
-                                    business_type: "corporate",
-                                    cr_number: formData.crNumber,
-                                  }),
-                                  ...(clientType === "micro" && {
-                                    business_type: "micro",
-                                    cr_number: formData.crNumber,
-                                  }),
+                                  // The whole form→trigger contract lives in
+                                  // ./components/_corporateIdentity.ts. `company_name`
+                                  // and `business_name` are the keys
+                                  // public.handle_new_user() actually reads
+                                  // (supabase/migrations/20260826_corporate_identity_persisted.sql);
+                                  // sending only `full_name`, as this form used to, is
+                                  // why every corporate row in production reads
+                                  // «شركة جديدة» with no commercial registration number.
+                                  ...(clientType === "company" && corporateSignupMetadata(formData)),
+                                  ...(clientType === "micro" && microSignupMetadata(formData)),
                                   ...(clientType === "government" && {
                                     government_role: formData.governmentRole || "gov_counsel",
                                     officer_specialty: formData.officerSpecialty || null,
