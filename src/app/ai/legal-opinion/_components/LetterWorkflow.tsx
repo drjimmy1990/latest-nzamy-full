@@ -98,9 +98,13 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
     const recipientLine = recipientType === "government"
       ? `معالي / سعادة رئيس ${govEntity || recipientName}`
       : `السيد / ${recipientName}`;
-    const intro = letterType === "warning"   ? "يُنذركم موكلنا / " :
-                  letterType === "complaint" ? "يتقدم بهذه الشكوى / " :
-                  letterType === "objection" ? "يتظلم ويعترض / " :
+    // "settlement" opens conciliatory, not adversarial — «يُحيطكم علماً» would
+    // have been the wrong register for a letter whose whole point is to offer
+    // a way out before litigation.
+    const intro = letterType === "warning"    ? "يُنذركم موكلنا / " :
+                  letterType === "complaint"  ? "يتقدم بهذه الشكوى / " :
+                  letterType === "objection"  ? "يتظلم ويعترض / " :
+                  letterType === "settlement" ? "يعرض تسوية ودية / " :
                   "يُحيطكم علماً / ";
     const lines = [
       "بسم الله الرحمن الرحيم",
@@ -216,7 +220,18 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
       {/* Step indicator — always shown now (Task C4): the old `!letterDone`
           guard hid it once the fake "ready" view appeared; that view is
           unreachable now, and the real step 4 (review & submit) still wants
-          the indicator visible like every other step. */}
+          the indicator visible like every other step.
+
+          Each COMPLETED step is a real <button> that returns to it (owner
+          request, 25 August): every field lives in this component's state and
+          nothing here resets it, so going back and forward again keeps
+          everything the client typed. Only earlier steps are clickable — the
+          current step and the ones ahead of it are `disabled`, which is what
+          keeps a client from skipping a validation gate by clicking step 4.
+          The circle + label form the button (the step's identity); the
+          connector line stays outside it, matching how محترف العقود
+          (contracts/page.tsx) and الصائغ (draft/page.tsx) build the same
+          indicator. */}
       <div className={`${card} p-3 mb-4`}>
         <div className="flex items-center gap-1">
           {["نوع الخطاب", "الأطراف", "الموضوع", "مراجعة وإرسال"].map((l, i) => {
@@ -225,12 +240,27 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
             const isDone = letterStep > n;
             return (
               <div key={n} className="flex items-center gap-1 flex-1">
-                <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0 transition-all ${
-                  isDone ? "bg-emerald-500 text-white" : isActive ? "bg-blue-600 text-white" : isDark ? "bg-zinc-800 text-zinc-500" : "bg-zinc-100 text-zinc-400"
-                }`}>
-                  {isDone ? <CheckCircle size={12} weight="fill" /> : n}
-                </div>
-                <span className={`text-[10px] hidden sm:block truncate font-medium ${isActive ? (isDark ? "text-white" : "text-zinc-800") : isDark ? "text-zinc-600" : "text-zinc-400"}`}>{l}</span>
+                <button
+                  type="button"
+                  // setSubmitErrors([]) mirrors the step-4 «رجوع» button: a
+                  // stale validation error from a submit attempt must not
+                  // follow the client back onto an earlier step.
+                  onClick={() => { if (isDone) { setSubmitErrors([]); setLetterStep(n); } }}
+                  disabled={!isDone}
+                  aria-current={isActive ? "step" : undefined}
+                  aria-label={isDone ? `الرجوع إلى خطوة ${l}` : l}
+                  title={isDone ? `الرجوع إلى خطوة ${l}` : undefined}
+                  className={`flex min-w-0 items-center gap-1 text-start transition-all ${
+                    isDone ? "cursor-pointer hover:opacity-80 active:scale-95" : "cursor-default"
+                  }`}
+                >
+                  <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0 transition-all ${
+                    isDone ? "bg-emerald-500 text-white" : isActive ? "bg-blue-600 text-white" : isDark ? "bg-zinc-800 text-zinc-500" : "bg-zinc-100 text-zinc-400"
+                  }`}>
+                    {isDone ? <CheckCircle size={12} weight="fill" /> : n}
+                  </div>
+                  <span className={`text-[10px] hidden sm:block truncate font-medium ${isActive ? (isDark ? "text-white" : "text-zinc-800") : isDone ? "text-emerald-500" : isDark ? "text-zinc-600" : "text-zinc-400"}`}>{l}</span>
+                </button>
                 {i < 3 && <div className={`flex-1 h-px mx-1 ${isDone ? "bg-emerald-500/40" : isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />}
               </div>
             );
@@ -499,7 +529,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <p className={`text-[10px] font-bold ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-                الملفات المرفقة <span className="opacity-60 font-normal">(اختياري — ملفات حقيقية يمكن للفريق فتحها وتنزيلها)</span>
+                ١ · ملفات تُرفَع إلى الفريق <span className="opacity-60 font-normal">(اختياري)</span>
               </p>
               {attachments.length > 0 && !uploading && (
                 <button
@@ -513,6 +543,13 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
                 </button>
               )}
             </div>
+
+            {/* Helper line (owner request, 25 August): clients were mixing
+                this box up with the typed-names list below it. Each block now
+                says in one sentence what it does and what it does NOT do. */}
+            <p className={`text-[10px] leading-relaxed mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+              مستندات فعلية تُرسَل مع الطلب ويفتحها فريق نظامي ويُنزّلها. لا تظهر أسماؤها في نص الخطاب.
+            </p>
 
             <input
               ref={fileRef}
@@ -572,10 +609,19 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               above (Task 11): a client may want to name an enclosure
               they'll bring in person, or one that exists only on paper.
               Copy says so explicitly so this can't be mistaken for the
-              real upload control above (Task C4 / Task 11). */}
+              real upload control above (Task C4 / Task 11).
+
+              Wording sharpened on the owner's 25 August note: these names are
+              ANNEXES — fullLetterText above prints them verbatim as a numbered
+              «المرفقات:» list immediately before the «مقدمه،» signature block,
+              which the client can verify in the step-4 preview. Nothing is
+              uploaded here. */}
           <div>
             <p className={`text-[10px] font-bold mb-1.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-              أسماء مرفقات إضافية (بدون رفع ملف) <span className="opacity-60 font-normal">(اختياري — نص فقط، لعناصر لن تُرفق كملف هنا)</span>
+              ٢ · مرفقات تُذكر في ذيل الخطاب <span className="opacity-60 font-normal">(اختياري — أسماء فقط)</span>
+            </p>
+            <p className={`text-[10px] leading-relaxed mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+              أسماء تُطبع كقائمة «المرفقات» أسفل نص الخطاب قبل التوقيع — كما في المعاينة بالخطوة التالية. لا يُرفع أي ملف من هنا؛ للرفع استخدم الحقل رقم ١ أعلاه.
             </p>
             <div className="flex gap-2">
               <input value={attachmentInput} onChange={e => setAttachmentInput(e.target.value)}
@@ -586,7 +632,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
                     setAttachmentInput("");
                   }
                 }}
-                placeholder="اسم المرفق ثم Enter..."
+                placeholder="اكتب اسم المرفق ثم Enter — مثال: صورة الهوية الوطنية"
                 className={`flex-1 rounded-xl border px-3.5 py-2 text-[12px] outline-none ${
                   isDark ? "border-white/[0.08] bg-zinc-800/60 text-zinc-200 placeholder:text-zinc-600" : "border-slate-200 bg-slate-50 text-zinc-800 placeholder:text-zinc-400"
                 }`} />
@@ -700,17 +746,21 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
                 isn't shown" -- a hidden row and an empty one look identical
                 otherwise. Review finding, Task 11 follow-up. */}
             <div className="flex gap-3 text-[12px]">
-              <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>الملفات المرفقة</dt>
+              <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>ملفات مرفوعة للفريق</dt>
               <dd className={attachments.length > 0 ? (isDark ? "text-zinc-200" : "text-zinc-800") : (isDark ? "text-zinc-600" : "text-zinc-400")}>
                 {attachments.length > 0 ? attachments.map(a => a.name).join("، ") : "لا يوجد"}
               </dd>
             </div>
-            {letterAttachments.length > 0 && (
-              <div className="flex gap-3 text-[12px]">
-                <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>أسماء مرفقات (نص فقط)</dt>
-                <dd className={isDark ? "text-zinc-200" : "text-zinc-800"}>{letterAttachments.join("، ")}</dd>
-              </div>
-            )}
+            {/* Always rendered for the same reason as the row above, and next
+                to it on purpose: the two rows side by side are the clearest
+                statement of the annex-vs-upload distinction the client just
+                filled in (owner note, 25 August). */}
+            <div className="flex gap-3 text-[12px]">
+              <dt className={isDark ? "text-zinc-500 w-28 shrink-0" : "text-zinc-400 w-28 shrink-0"}>مرفقات ذيل الخطاب</dt>
+              <dd className={letterAttachments.length > 0 ? (isDark ? "text-zinc-200" : "text-zinc-800") : (isDark ? "text-zinc-600" : "text-zinc-400")}>
+                {letterAttachments.length > 0 ? letterAttachments.join("، ") : "لا يوجد"}
+              </dd>
+            </div>
           </dl>
 
           {/* attachError was previously rendered only inside letterStep 3 --

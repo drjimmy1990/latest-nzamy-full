@@ -5,6 +5,7 @@ import {
   ChartBar, Envelope, UserFocus,
   // Letter type icons
   Bell, FolderOpen, Coins, MegaphoneSimple, Prohibit, LockKeyOpen, PenNib,
+  Handshake,
 } from "@phosphor-icons/react";
 import type { OutputType, SearchDepth, StepKey } from "./_types";
 
@@ -184,6 +185,14 @@ export const LETTER_TYPES: { id: string; label: string; Icon: React.ElementType 
   { id: "objection", label: "اعتراض على قرار",       Icon: Prohibit },
   { id: "release",   label: "طلب إفراج عن مستند",   Icon: LockKeyOpen },
   { id: "proxy",     label: "توكيل",                 Icon: PenNib },
+  // كل الأنواع أعلاه إمّا خصومية (إنذار / مطالبة / شكوى / اعتراض) وإمّا إدارية
+  // (إخطار / طلب مستند / إفراج / توكيل) — ولا يوجد فيها خطاب يعرض حلّاً ودّياً.
+  // التسوية الودية مرحلة نظامية سابقة للتقاضي في المنازعات العمالية (الودّي عبر
+  // «قوى») وتُشجَّع تجارياً وعقارياً عبر «تراضي»، فهي الأوسع استخداماً بين ما
+  // طلبه المالك. أي إضافة جديدة هنا تستلزم مفتاح `letterType:<id>` في
+  // src/lib/services/intakeValues.ts وإلا طُبع المعرّف الإنجليزي الخام في ملخص
+  // الإدارة (valueLabelAr يُرجِع القيمة كما هي عند غياب المفتاح).
+  { id: "settlement", label: "طلب تسوية ودية",       Icon: Handshake },
 ];
 
 export const GOV_ENTITIES = [

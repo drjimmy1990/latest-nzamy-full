@@ -80,6 +80,43 @@ test("the owner's four worked examples render in Arabic", () => {
   assert.equal(valueLabelAr("targets", "critique"), "نقض المذكرة");
 });
 
+test("every letter type the picker offers has an Arabic label", () => {
+  // The ids are written out rather than imported from
+  // src/app/ai/legal-opinion/_constants.ts on purpose: LETTER_TYPES carries an
+  // `Icon` per entry from @phosphor-icons/react, and this suite runs under
+  // `node --test` with no React and no JSX pipeline. Keep this list in step
+  // with LETTER_TYPES plus the "other" tile LetterWorkflow.tsx appends inline.
+  //
+  // What this guards: valueLabelAr falls back to the RAW stored value when a
+  // key is missing, so a tile added without a `letterType:<id>` entry prints
+  // its English id in the admin brief instead of failing loudly.
+  const LETTER_TYPE_IDS = [
+    "warning", "notice", "request", "demand", "complaint",
+    "objection", "release", "proxy", "settlement", "other",
+  ];
+  for (const id of LETTER_TYPE_IDS) {
+    const ar = valueLabelAr("letterType", id);
+    assert.notEqual(ar, id, `letterType:${id} has no label — the admin brief would print «${id}»`);
+    assert.match(ar, /[؀-ۿ]/, `letterType:${id} resolved to «${ar}», which is not Arabic`);
+  }
+  // The tenth tile, added on the owner's 25 August note, spelled out so a
+  // silent rewording of the label is caught too.
+  assert.equal(valueLabelAr("letterType", "settlement"), "طلب تسوية ودية");
+});
+
+test("the tenth letter type reaches the admin brief in Arabic, not as «settlement»", () => {
+  // The regression this repeats: a tile added to LETTER_TYPES without a
+  // dictionary key printed its raw English id here, because valueLabelAr
+  // returns the stored value unchanged on a miss.
+  const letterRow = summaryLines(LEGAL_OPINION_LETTER_SETTLEMENT_ORDER)
+    .find((l) => l.startsWith("بيانات الخطاب:"));
+  assert.ok(letterRow, "the letter sub-object should render");
+  assert.ok(letterRow.includes("نوع الخطاب: طلب تسوية ودية"), letterRow);
+  assert.ok(!letterRow.includes("settlement"), letterRow);
+  // …and the annex names arrive under a label that says they are not files.
+  assert.ok(letterRow.includes("مرفقات ذيل الخطاب (أسماء فقط — غير مرفوعة): صورة العقد، كشف المستخلصات"), letterRow);
+});
+
 test("the same id reads differently per field, exactly as each picker words it", () => {
   assert.equal(valueLabelAr("clientRole", "plaintiff"), "مُدَّعِي");
   assert.equal(valueLabelAr("role", "plaintiff"), "مدّعٍ / موكلي مدّعٍ");
@@ -286,26 +323,55 @@ export const LEGAL_OPINION_LETTER_ORDER = validated(validateLegalOpinionIntake({
   attachments: [],
 }), "legal_opinion/letter");
 
-/** The same letter with the "other" type, where the client names it himself. */
+/** The same letter with the "other" type, where the client names it himself.
+ *  The custom wording must stay something LETTER_TYPES does NOT cover, or this
+ *  fixture stops testing "other" at all. «خطاب تسوية ودية» used to sit here and
+ *  was retired once `settlement` («طلب تسوية ودية») became a built-in type;
+ *  «خطاب تزكية» is one of step 1's own placeholder examples and has no tile. */
 export const LEGAL_OPINION_LETTER_OTHER_ORDER = validated(validateLegalOpinionIntake({
   schemaVersion: 1,
   service: "legal_opinion",
   outputType: "letter",
   letter: {
     letterType: "other",
-    letterTypeCustom: "خطاب تسوية ودية",
-    letterTypeLabel: "خطاب تسوية ودية",
+    letterTypeCustom: "خطاب تزكية موظف",
+    letterTypeLabel: "خطاب تزكية موظف",
     senderName: "شركة الأفق للمقاولات",
     senderRole: "company",
     recipientName: "ماجد بن علي الشهري",
     recipientType: "individual",
-    letterSubject: "عرض تسوية ودية",
+    letterSubject: "تزكية زميل سابق لدى جهة توظيف",
     letterLegalRef: "",
     attachmentLabels: [],
-    fullLetterText: "السيد / ماجد بن علي الشهري\n\nالموضوع: عرض تسوية ودية",
+    fullLetterText: "السيد / ماجد بن علي الشهري\n\nالموضوع: تزكية زميل سابق لدى جهة توظيف",
   },
   attachments: [],
 }), "legal_opinion/letter-other");
+
+/** The tenth letter type (owner request, 25 August), carried through the real
+ *  validator and both dictionary sweeps below — a new tile whose id never
+ *  reaches validateLegalOpinionIntake in a test is a tile nothing proves is
+ *  submittable. `attachmentLabels` is populated here on purpose: it is the one
+ *  fixture that exercises the annex row's own label. */
+export const LEGAL_OPINION_LETTER_SETTLEMENT_ORDER = validated(validateLegalOpinionIntake({
+  schemaVersion: 1,
+  service: "legal_opinion",
+  outputType: "letter",
+  letter: {
+    letterType: "settlement",
+    letterTypeCustom: undefined,
+    letterTypeLabel: "طلب تسوية ودية",
+    senderName: "شركة الأفق للمقاولات",
+    senderRole: "company",
+    recipientName: "ماجد بن علي الشهري",
+    recipientType: "individual",
+    letterSubject: "عرض إنهاء الخلاف على مستخلصات المشروع ودّياً قبل اللجوء للقضاء",
+    letterLegalRef: "",
+    attachmentLabels: ["صورة العقد", "كشف المستخلصات"],
+    fullLetterText: "السيد / ماجد بن علي الشهري\n\nيعرض تسوية ودية / شركة الأفق للمقاولات",
+  },
+  attachments: [],
+}), "legal_opinion/letter-settlement");
 
 /** الرأي الفصل — the remaining sub-flows, for the English-key sweep. */
 export const LEGAL_OPINION_RESEARCH_ORDER = validated(validateLegalOpinionIntake({
@@ -380,6 +446,7 @@ export const ALL_ORDERS: [string, Record<string, unknown>][] = [
   ["الرأي الفصل — مذكرة رأي", LEGAL_OPINION_MEMO_ORDER],
   ["الرأي الفصل — خطاب رسمي", LEGAL_OPINION_LETTER_ORDER],
   ["الرأي الفصل — خطاب مخصص", LEGAL_OPINION_LETTER_OTHER_ORDER],
+  ["الرأي الفصل — طلب تسوية ودية", LEGAL_OPINION_LETTER_SETTLEMENT_ORDER],
   ["الرأي الفصل — بحث قانوني", LEGAL_OPINION_RESEARCH_ORDER],
   ["الرأي الفصل — العناية الواجبة", LEGAL_OPINION_DD_ORDER],
   ["الرأي الفصل — دراسة قانونية", LEGAL_OPINION_STUDY_ORDER],
@@ -435,9 +502,9 @@ test("a custom letter type still reaches the screen after letterTypeLabel is sup
     .find((l) => l.startsWith("بيانات الخطاب:"));
   assert.ok(letterRow);
   assert.ok(letterRow.includes("نوع الخطاب: أخرى"), letterRow);
-  assert.ok(letterRow.includes("نوع الخطاب (مخصص): خطاب تسوية ودية"), letterRow);
+  assert.ok(letterRow.includes("نوع الخطاب (مخصص): خطاب تزكية موظف"), letterRow);
   // …and the client's wording is printed once, not twice.
-  assert.equal(letterRow.split("خطاب تسوية ودية").length - 1, 1, letterRow);
+  assert.equal(letterRow.split("خطاب تزكية موظف").length - 1, 1, letterRow);
 });
 
 // ─── Defect 2: English keys inside nested objects ─────────────────────────────

@@ -984,12 +984,26 @@ export default function AIWargamingPage() {
           const done   = stepNums[step]>num;
           return (
             <React.Fragment key={s}>
-              <div className="flex items-center gap-1.5 flex-1">
+              {/* A completed step is a way back. The other three wizards
+                  (/ai/draft, /ai/contracts and the legal-opinion sub-flows)
+                  already do this; wargaming was the one indicator still built
+                  from plain divs, so a client who mistyped the case summary had
+                  to abandon the order. `done` is the gate — never `active`, and
+                  never a later step, so this can only ever go backwards and no
+                  entered data is discarded. */}
+              <button
+                type="button"
+                onClick={() => { if (done) setStep(s); }}
+                disabled={!done}
+                aria-current={active ? "step" : undefined}
+                aria-label={done ? `الرجوع إلى خطوة ${stepLabels[s]}` : stepLabels[s]}
+                className={`flex items-center gap-1.5 flex-1 rounded-lg text-right transition-all ${done?"cursor-pointer hover:opacity-80":"cursor-default"}`}
+              >
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 transition-all ${ done?"bg-emerald-500 text-white":active?`bg-gradient-to-br ${s==="setup"?"from-[#0B3D2E] to-[#1a6b50]":s==="targets"?"from-amber-600 to-amber-400":"from-purple-700 to-purple-500"} text-white`:D?"bg-zinc-800 text-zinc-500":"bg-slate-200 text-slate-400"}`}>
                   {done?<Check size={10} weight="bold"/>:num}
                 </div>
                 <p className={`text-[10px] font-semibold hidden sm:block ${active||done?D?"text-zinc-200":"text-zinc-700":D?"text-zinc-600":"text-slate-400"}`}>{stepLabels[s]}</p>
-              </div>
+              </button>
               {i<arr.length-1&&<div className={`w-6 h-px flex-shrink-0 ${done?D?"bg-emerald-700/60":"bg-emerald-300":D?"bg-zinc-700":"bg-slate-200"}`}/>}
             </React.Fragment>
           );

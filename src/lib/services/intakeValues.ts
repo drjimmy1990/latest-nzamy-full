@@ -289,9 +289,11 @@ export const INTAKE_VALUE_AR: Record<string, string> = {
   "goal:dispute": "تسوية نزاع",
 
   // ─── الرأي الفصل — letter ──────────────────────────────────────────────────
-  // src/app/ai/legal-opinion/_constants.ts:179-186 (LETTER_TYPES) plus the
-  // "other" tile the picker appends inline
-  // (src/app/ai/legal-opinion/_components/LetterWorkflow.tsx:243).
+  // src/app/ai/legal-opinion/_constants.ts (LETTER_TYPES) plus the "other" tile
+  // the picker appends inline
+  // (src/app/ai/legal-opinion/_components/LetterWorkflow.tsx).
+  // Every id in LETTER_TYPES must appear below: valueLabelAr falls back to the
+  // raw stored value, so a missing key prints the English id in the admin brief.
   "letterType:warning": "إنذار قانوني",
   "letterType:notice": "إخطار رسمي",
   "letterType:request": "طلب مستند / معلومة",
@@ -300,6 +302,7 @@ export const INTAKE_VALUE_AR: Record<string, string> = {
   "letterType:objection": "اعتراض على قرار",
   "letterType:release": "طلب إفراج عن مستند",
   "letterType:proxy": "توكيل",
+  "letterType:settlement": "طلب تسوية ودية",
   "letterType:other": "أخرى",
   // src/app/ai/legal-opinion/_components/LetterWorkflow.tsx:346 and :361 —
   // these two pickers say "شركة / مؤسسة" where the party-type picker says
@@ -449,7 +452,10 @@ export const INTAKE_LABELS: Record<string, string> = {
   deadlineDays: "عدد أيام المهلة",
   letterSubject: "موضوع الخطاب",
   letterLegalRef: "السند النظامي",
-  attachmentLabels: "المرفقات المذكورة (غير مرفوعة)",
+  // أسماء يكتبها العميل لتُدرَج في قائمة «المرفقات» أسفل نص الخطاب — وليست
+  // ملفات مرفوعة. الملفات الحقيقية تصل في `attachments` على مستوى الطلب، لا
+  // هنا، والتسمية تقولها صراحةً كي لا يبحث الفريق عن ملف لا وجود له.
+  attachmentLabels: "مرفقات ذيل الخطاب (أسماء فقط — غير مرفوعة)",
   fullLetterText: "نص الخطاب",
   // legal_opinion `settings` sub-fields — the six non-letter sub-flows
   // (consult/study/legal-memo/research/due-diligence/cross-exam). Sourced from
