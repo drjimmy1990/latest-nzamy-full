@@ -87,15 +87,28 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("[service-requests GET] Supabase error:", error.message, error.details, error.hint, error.code);
-      // Return empty data so frontend falls back to local store gracefully
-      return NextResponse.json({ data: [], total: 0 });
+      // Keep the 200 and the empty data — existing callers rely on this
+      // graceful fallback and only ever read `data`/`total`. `degraded: true`
+      // is purely additive: it says plainly that this empty list is a
+      // failure, not a genuine absence, for any caller that opts in to
+      // checking it (see listMyServiceOrders in
+      // src/lib/services/serviceOrders.ts). Named `degraded`, not `error`,
+      // so it can never collide with an `.error` key a caller might already
+      // destructure off a *failed* (non-200) response elsewhere.
+      return NextResponse.json({ data: [], total: 0, degraded: true });
     }
 
     const mapped = (data ?? []).map((row) => toWorkflowRequest(row as Record<string, unknown>));
     return NextResponse.json({ data: mapped, total: count ?? 0 });
   } catch (err) {
     console.error("[service-requests GET] Unexpected error:", err);
-    return NextResponse.json({ data: [], total: 0 });
+    // Same failure shape as the Supabase-error branch above (an empty list
+    // standing in for a real error, kept at 200 for the same existing-caller
+    // reasons) — so it gets the same `degraded: true` marker. Leaving this
+    // branch unflagged while the other one was flagged would read as "this
+    // path is known-benign," which it isn't: it's the identical defect on a
+    // rarer trigger (anything that throws outside the Supabase query itself).
+    return NextResponse.json({ data: [], total: 0, degraded: true });
   }
 }
 
@@ -137,6 +150,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Task 6d follow-up — clamp the creation-time status. Without this, a
+    // client could POST a row already `status: "completed"` and it would
+    // never touch the PATCH gate at all: invisible to the status-filtered
+    // admin queue from birth. (This is a queue-visibility bug only — the
+    // "تم إكمال طلبك" notification and the /request-completed n8n dispatch
+    // live exclusively in PATCH's status-transition branch, so a
+    // pre-completed row does not also send a false completion notice.)
+    // Every real caller was enumerated (workflowService.ts/
+    // clientWorkflowRepository.ts create wrappers, called from
+    // AddHearingModal.tsx, AddCaseModal.tsx, lawyer/contracts/page.tsx,
+    // lawyer/consultations/page.tsx, client/requests/new/page.tsx,
+    // client/find-lawyer/page.tsx, client/consultation/new/page.tsx) and
+    // none of them ever sends `completed`, `assigned`, or `cancelled` at
+    // creation — the full observed set is exactly this allowlist.
+    const CREATE_STATUS_ALLOWLIST = new Set([
+      "draft",
+      "in_review",
+      "pending_payment",
+      "pending_assignment",
+    ]);
+    const requestedStatus =
+      typeof requestData.status === "string" ? requestData.status : undefined;
+    const status =
+      requestedStatus && CREATE_STATUS_ALLOWLIST.has(requestedStatus)
+        ? requestedStatus
+        : "pending_assignment";
+
     // Create the service request
     // Only include columns that exist in the service_requests table:
     // id, requester_user_id, type, title, description, requester, receiver,
@@ -149,7 +189,7 @@ export async function POST(request: NextRequest) {
         title: requestData.title,
         description: requestData.description ?? '',
         type: requestData.type ?? 'service',
-        status: requestData.status ?? 'pending_assignment',
+        status,
         requester_user_id: user.id,
         source_path: requestData.sourcePath ?? requestData.source_path ?? '',
         assigned_to: requestData.assignedTo ?? requestData.assigned_to ?? null,
@@ -164,6 +204,82 @@ export async function POST(request: NextRequest) {
     if (reqError) {
       console.error("[service-requests POST] Supabase error:", reqError.message, reqError.details, reqError.hint, reqError.code);
       return NextResponse.json({ error: reqError.message, code: reqError.code, hint: reqError.hint }, { status: 500 });
+    }
+
+    // Task 9b — bind intake attachments (uploaded via uploadDocumentFile(file)
+    // with no requestId — see useDraftState.ts attachFile) to the order that
+    // was just created, so the admin fulfillment routes (which check
+    // attachment.request_id === order.id, deliberately, to close a
+    // cross-tenant leak) can actually see them.
+    //
+    // Read the ids off the persisted row (serviceRequest.metadata), not the
+    // raw request body, so this can never drift from what the order actually
+    // stores. `attachments` has SELECT and INSERT RLS policies only (no
+    // UPDATE policy exists anywhere in supabase/migrations/*.sql) — the
+    // RLS-scoped `supabase` client cannot write this column at all, so the
+    // service-role client is required, exactly as the payments insert below
+    // already does for the same reason.
+    //
+    // Because the service-role client bypasses RLS entirely, ownership must
+    // be enforced here in the query itself:
+    //   - owner_user_id = auth.uid() — never trust the documentId's implied
+    //     ownership; an attacker who guesses/enumerates someone else's
+    //     attachment id must not get it bound to their own order.
+    //   - request_id IS NULL — never let an already-bound attachment be
+    //     re-bound. Without this, resubmitting a documentId that belongs to
+    //     a PRIOR order (e.g. that order's now-delivered deliverable) would
+    //     silently move it here, 404-ing the original client's download
+    //     forever (deliverable/route.ts requires request_id === order.id)
+    //     with no way back once that order is completed/cancelled.
+    // Best-effort: a binding failure must not fail the order creation — the
+    // client would otherwise lose their whole submission over an attachment.
+    // `documentId` is typed as `string` throughout (OrderAttachment,
+    // Document.id) but that's a TS-level promise, not a runtime one:
+    // attachments.id is a Postgres bigserial, and PostgREST serialises int8
+    // as a JSON *number*. POST /api/v1/documents returns `data` straight
+    // from Supabase with no cast, so `doc.id` (and therefore this
+    // `documentId`) may arrive here as a number despite its declared type.
+    // Accept both and coerce, rather than type-guarding on `string` alone —
+    // deliverable/route.ts's `/^\d+$/.test(...)` already tolerates this
+    // silently via JS's implicit ToString() coercion; do the same explicitly
+    // here so a numeric documentId doesn't get silently dropped before the
+    // regex ever runs.
+    const orderMetadata = (serviceRequest.metadata ?? {}) as Record<string, unknown>;
+    const metaAttachments = Array.isArray(orderMetadata.attachments) ? orderMetadata.attachments : [];
+    const documentIds = metaAttachments
+      .map((a) => (a && typeof a === "object" ? (a as Record<string, unknown>).documentId : undefined))
+      .filter((v) => typeof v === "string" || typeof v === "number")
+      .map((v) => String(v))
+      .filter((v) => /^\d+$/.test(v));
+
+    if (documentIds.length > 0) {
+      try {
+        const adminClient = await createServiceClient();
+        const { data: bound, error: bindError } = await adminClient
+          .from("attachments")
+          .update({ request_id: serviceRequest.id })
+          .in("id", documentIds)
+          .eq("owner_user_id", user.id)
+          .is("request_id", null)
+          .select("id");
+
+        if (bindError) {
+          console.error(
+            "[service-requests POST] attachment binding failed:",
+            bindError.message, bindError.details, bindError.hint, bindError.code,
+          );
+        } else if ((bound?.length ?? 0) !== documentIds.length) {
+          // Not necessarily a bug: a documentId the caller doesn't own, or
+          // one already bound to another order, is silently excluded by the
+          // filters above rather than erroring — this just makes that
+          // otherwise-invisible drop visible in logs.
+          console.error(
+            `[service-requests POST] attachment binding partial: order=${serviceRequest.id} requested=${documentIds.length} bound=${bound?.length ?? 0}`,
+          );
+        }
+      } catch (bindErr) {
+        console.error("[service-requests POST] attachment binding error:", bindErr);
+      }
     }
 
     // Create the initial event (namespaced vocabulary via recordEvent).

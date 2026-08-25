@@ -2,13 +2,14 @@
 
 import { useState, RefObject, MutableRefObject, Dispatch, SetStateAction } from "react";
 import { motion } from "framer-motion";
-import { CloudArrowUp, PaperclipHorizontal, BookOpen, UploadSimple, FileArrowUp, X, Plus, MagnifyingGlass, FolderOpen, ArrowRight } from "@phosphor-icons/react";
+import { CloudArrowUp, PaperclipHorizontal, BookOpen, UploadSimple, FileArrowUp, X, Plus, MagnifyingGlass, FolderOpen, ArrowRight, Warning } from "@phosphor-icons/react";
 import { AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { DraftPartyForm } from "@/components/draft/DraftPartyForm";
 import { JudgmentHeader } from "@/components/draft/JudgmentHeader";
 import { COMMITTEE_BRANCH_IDS, PartyData, SupportDoc, REQUIRES_JUDGMENT_HEADER } from "@/components/draft/draftConstants";
+import type { OrderAttachment } from "@/lib/services/orderIntake";
 
 interface StepCaseProps {
   isDark: boolean;
@@ -35,6 +36,11 @@ interface StepCaseProps {
   setPartyTwo: (fn: (p: PartyData) => PartyData) => void;
   caseFileRef: RefObject<HTMLInputElement | null>;
   attachRefs: MutableRefObject<(HTMLInputElement | null)[]>;
+  // attachment upload state (Task 5b)
+  uploading: boolean;
+  attachError: string;
+  attachFile: (file: File) => Promise<OrderAttachment>;
+  removeAttachment: (documentId: string) => void;
   // judgment header props
   plaintiffName: string;    setPlaintiffName: (v: string) => void;
   defendantName: string;    setDefendantName: (v: string) => void;
@@ -52,6 +58,7 @@ export function StepCase({
   lawyerNotes, setLawyerNotes, useFirmMemory, setUseFirmMemory,
   bulkUpload, setBulkUpload, partyOne, setPartyOne, partyTwo, setPartyTwo,
   caseFileRef, attachRefs,
+  uploading, attachError, attachFile, removeAttachment,
   plaintiffName, setPlaintiffName, defendantName, setDefendantName,
   judgmentCourt, setJudgmentCourt, judgmentNumber, setJudgmentNumber,
   judgmentDate, setJudgmentDate, judgmentText, setJudgmentText,
@@ -66,6 +73,14 @@ export function StepCase({
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [firmModalStep, setFirmModalStep] = useState<"departments" | "templates">("departments");
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
+
+  // Tracks which uploaded documentId belongs to the main case file and to
+  // each support-doc row, so the remove buttons can call removeAttachment()
+  // with the right id. Keyed by SupportDoc.id (a stable Date.now() value set
+  // at row creation), never by array index — index would drift as rows are
+  // added/removed.
+  const [caseFileDocId, setCaseFileDocId] = useState<string | null>(null);
+  const [docAttachmentIds, setDocAttachmentIds] = useState<Record<number, string>>({});
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -106,6 +121,15 @@ export function StepCase({
         </div>
       )}
 
+      {/* خطأ رفع المرفقات */}
+      {attachError && (
+        <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3">
+          <p className="flex items-center gap-1.5 text-[11px] text-red-500">
+            <Warning size={12} /> {attachError}
+          </p>
+        </div>
+      )}
+
       {/* رفع ملف القضية */}
       <div className={`${card} p-5 shadow-sm`}>
         <div className="flex items-center gap-2 mb-1">
@@ -118,15 +142,29 @@ export function StepCase({
             </span>
           )}
         </div>
-        <div className={`rounded-xl border-2 border-dashed p-5 text-center mt-3 cursor-pointer transition-colors ${caseFile ? isDark ? "border-emerald-700/30 bg-emerald-900/8" : "border-emerald-200 bg-emerald-50" : isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#C8A762]/40"}`}
-          onClick={() => caseFileRef.current?.click()}>
+        <div className={`rounded-xl border-2 border-dashed p-5 text-center mt-3 transition-colors ${caseFile ? isDark ? "border-emerald-700/30 bg-emerald-900/8" : "border-emerald-200 bg-emerald-50" : `cursor-pointer ${isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#C8A762]/40"}`}`}
+          onClick={() => { if (!uploading && !caseFile) caseFileRef.current?.click(); }}>
           <input ref={caseFileRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png"
-            onChange={e => { const f = e.target.files?.[0]; if (f) setCaseFile(f.name); }} />
+            onChange={async e => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              setCaseFile(f.name);
+              try {
+                const attachment = await attachFile(f);
+                setCaseFileDocId(attachment.documentId);
+              } catch {
+                setCaseFile(null);
+              }
+            }} />
           {caseFile ? (
             <div className="flex items-center justify-center gap-2">
               <UploadSimple size={14} className="text-emerald-500" />
               <span className={`text-[12px] font-medium truncate ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{caseFile}</span>
-              <button onClick={e => { e.stopPropagation(); setCaseFile(null); }}><X size={13} className="text-emerald-500" /></button>
+              <button onClick={e => {
+                e.stopPropagation();
+                setCaseFile(null);
+                if (caseFileDocId) { removeAttachment(caseFileDocId); setCaseFileDocId(null); }
+              }}><X size={13} className="text-emerald-500" /></button>
             </div>
           ) : (
             <>
@@ -170,7 +208,14 @@ export function StepCase({
                     <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${isDark ? "bg-[#C8A762]/20 text-[#C8A762]" : "bg-amber-200 text-amber-800"}`}>{idx + 1}</span>
                     <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>المرفق رقم {idx + 1}</p>
                   </div>
-                  <button onClick={() => removeDoc(doc.id)}><X size={14} className={isDark ? "text-zinc-600 hover:text-zinc-400" : "text-zinc-400 hover:text-zinc-600"} /></button>
+                  <button onClick={() => {
+                    const docId = docAttachmentIds[doc.id];
+                    if (docId) {
+                      removeAttachment(docId);
+                      setDocAttachmentIds(prev => { const next = { ...prev }; delete next[doc.id]; return next; });
+                    }
+                    removeDoc(doc.id);
+                  }}><X size={14} className={isDark ? "text-zinc-600 hover:text-zinc-400" : "text-zinc-400 hover:text-zinc-600"} /></button>
                 </div>
                 <div className="relative">
                   <textarea value={doc.description} onChange={e => updateDoc(doc.id, "description", e.target.value)}
@@ -184,24 +229,36 @@ export function StepCase({
                   <div className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px] ${isDark ? "bg-emerald-900/15 border border-emerald-700/25" : "bg-emerald-50 border border-emerald-200"}`}>
                     <UploadSimple size={11} className="text-emerald-500" />
                     <span className={`flex-1 truncate ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{doc.file}</span>
-                    <button onClick={() => updateDoc(doc.id, "file", null)}><X size={11} /></button>
+                    <button onClick={() => {
+                      updateDoc(doc.id, "file", null);
+                      const docId = docAttachmentIds[doc.id];
+                      if (docId) {
+                        removeAttachment(docId);
+                        setDocAttachmentIds(prev => { const next = { ...prev }; delete next[doc.id]; return next; });
+                      }
+                    }}><X size={11} /></button>
                   </div>
                 ) : (
-                  <button onClick={() => attachRefs.current[idx]?.click()}
-                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold border transition-colors ${isDark ? "border-white/[0.08] text-zinc-500 hover:border-[#C8A762]/30 hover:text-[#C8A762]" : "border-zinc-200 text-zinc-400 hover:border-amber-400 hover:text-amber-600"}`}>
+                  <button onClick={() => attachRefs.current[idx]?.click()} disabled={uploading}
+                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${isDark ? "border-white/[0.08] text-zinc-500 hover:border-[#C8A762]/30 hover:text-[#C8A762]" : "border-zinc-200 text-zinc-400 hover:border-amber-400 hover:text-amber-600"}`}>
                     <PaperclipHorizontal size={13} /> 📎 ارفع الملف المرتبط
                   </button>
                 )}
                 <input ref={el => { attachRefs.current[idx] = el; }} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png"
-                  onChange={e => { 
-                    const f = e.target.files?.[0]; 
-                    if (f) {
-                      updateDoc(doc.id, "file", f.name);
-                      // Simulate large files (> 500KB = roughly > 8 pages of PDF)
-                      if (f.size > 500 * 1024) {
-                        updateDoc(doc.id, "isLargeFile", true);
-                      }
-                    } 
+                  onChange={async e => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    updateDoc(doc.id, "file", f.name);
+                    // Simulate large files (> 500KB = roughly > 8 pages of PDF)
+                    if (f.size > 500 * 1024) {
+                      updateDoc(doc.id, "isLargeFile", true);
+                    }
+                    try {
+                      const attachment = await attachFile(f);
+                      setDocAttachmentIds(prev => ({ ...prev, [doc.id]: attachment.documentId }));
+                    } catch {
+                      updateDoc(doc.id, "file", null);
+                    }
                   }} />
               </motion.div>
             ))}

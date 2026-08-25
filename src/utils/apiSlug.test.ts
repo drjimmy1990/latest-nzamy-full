@@ -1,10 +1,10 @@
 /**
  * apiSlug.test.ts — pins the double-encoding bug that 404'd all 144 fiqh books.
  *
- * Run: npx tsx src/utils/apiSlug.test.ts
+ * Run: npm run test:unit
  */
 import assert from 'node:assert/strict';
-import { apiSlug } from './apiSlug';
+import { apiSlug } from './apiSlug.ts';
 
 let passed = 0;
 const test = (name: string, fn: () => void) => {

@@ -2,14 +2,14 @@
  * _citation.test.ts — pins the two defects the citation module exists to fix,
  * so a future edit cannot quietly reintroduce them.
  *
- * Run: npx tsx "src/app/laws/[slug]/_citation.test.ts"
+ * Run: npm run test:unit
  *
  * Arabic literals are written as \u escapes wherever a bidi-rendered string
  * would be ambiguous to read in a diff. Where a whole phrase is clearer inline
  * it is written inline and compared against a computed value, never eyeballed.
  */
 import assert from "node:assert/strict";
-import { buildCitation, isPageLocator, LOCATOR_NOUNS } from "./_citation";
+import { buildCitation, isPageLocator, LOCATOR_NOUNS } from "./_citation.ts";
 
 let passed = 0;
 const test = (name: string, fn: () => void) => {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { recordEvent, RequestEvent } from "@/lib/events";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
@@ -117,10 +117,125 @@ export async function PATCH(
     assignedTo: 'assigned_to',
     auditEvent: '__skip__',
   };
+  // Column allowlist — a participant (requester or assignee) may only move a
+  // request's status through this endpoint. `metadata`, `assigned_to`,
+  // `payment`, `type`, and `receiver` are deliberately excluded: RLS lets any
+  // participant write ANY column on their own row, and this was half of a
+  // cross-tenant document leak (a client could point metadata.deliverable at
+  // another tenant's attachment). No real caller sends anything beyond
+  // `status` today (verified against every call site behind
+  // workflowService.ts and clientWorkflowRepository.ts). Keys not on this
+  // list are silently dropped (not 400'd), matching the existing
+  // `auditEvent` skip below.
+  const ALLOWED_PATCH_FIELDS = new Set<string>(['status']);
   const patch: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(rawPatch)) {
     if (keyMap[k] === '__skip__') continue;
-    patch[keyMap[k] ?? k] = v;
+    const mapped = keyMap[k] ?? k;
+    if (!ALLOWED_PATCH_FIELDS.has(mapped)) continue;
+    patch[mapped] = v;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json(
+      { error: "لا توجد حقول صالحة للتحديث" },
+      { status: 400 },
+    );
+  }
+
+  // Task 6d — gate status transitions by role. RLS's UPDATE policy is
+  // `requester_user_id = auth.uid() or assigned_to = auth.uid()`, which lets a
+  // requester PATCH their own order's status to ANYTHING, including
+  // `completed` — sending themselves a false completion notification/n8n
+  // dispatch and pulling their own order out of the admin queue. Guard on the
+  // *target* status only (not the current one): a requester may only cancel
+  // their own order; every other target requires the assignee or an admin.
+  if ("status" in patch) {
+    // Gate on presence, not on being a string: a non-string status (e.g.
+    // `{status: 0}`) still passes the Task 6b allowlist and must not slip
+    // past this check unexamined — it can never equal "cancelled" below, so
+    // a bare requester correctly gets refused rather than silently writing
+    // an unrecognized status that would vanish from the status-filtered
+    // admin queue.
+    const targetStatus = patch.status;
+
+    const { data: existing, error: existingError } = await supabase
+      .from("service_requests")
+      .select("requester_user_id, assigned_to, receiver")
+      .eq("id", id)
+      .single();
+
+    if (existingError || !existing) {
+      return NextResponse.json(
+        { error: "Service request not found" },
+        { status: 404 },
+      );
+    }
+
+    const requesterId = (existing.requester_user_id as string | null) ?? null;
+    const assigneeId = (existing.assigned_to as string | null) ?? null;
+    const receiver = (existing.receiver as string | null) ?? null;
+    const isRequester = requesterId === user.id;
+    const isAssignee = assigneeId != null && assigneeId === user.id;
+
+    let permitted: boolean;
+
+    if (receiver === "ai_workspace") {
+      // Follow-up to the original Task 6d fix: `assigned_to` is client-
+      // supplied at POST with no server-side check (only `requester_user_id`
+      // is RLS-constrained on insert), so a requester could self-assign at
+      // creation and satisfy `isAssignee` below on their own order — the
+      // exact "self-assign then self-complete" bypass a security review
+      // caught. Rather than weaken `isAssignee` in a way that also 403s the
+      // lawyer dashboard's legitimate self-tracking of its own
+      // contracts/cases (same person is intentionally both requester and
+      // assignee there — see the `else` branch), the four AI-fulfillment
+      // services (`receiver='ai_workspace'`) get their own, stricter rule:
+      // through this RLS-scoped handler, the ONLY allowed move is the
+      // requester cancelling their own order. Every other transition for
+      // these orders belongs to Task 8's admin route, which uses
+      // `createServiceClient()` and never reaches this handler — so there is
+      // no legitimate `isAssignee`/`isAdmin` case to preserve here.
+      //
+      // This holds even though `receiver` is itself client-supplied at POST:
+      // Task 8's admin queue filters on `receiver='ai_workspace'`, the same
+      // field this gate keys on. A requester who lies about `receiver` to
+      // dodge this branch has simultaneously pulled their order out of the
+      // only queue an admin will ever look at — self-completing an order no
+      // admin was ever going to fulfil, with no real deliverable behind it.
+      // Dodging the gate means dodging the prize, so `receiver` does not
+      // need to be locked down at POST for this to hold.
+      permitted = isRequester && targetStatus === "cancelled";
+    } else {
+      // Unchanged from the original Task 6d rule. Covers lawyer/firm
+      // self-tracking (contracts, cases, hearings) where the same person is
+      // legitimately both requester and assignee of their own record —
+      // `assigned_to` is null until an admin claims an order (Task 8), so an
+      // admin acting on an unclaimed order is NOT the assignee; resolve
+      // admin-ness from `profiles.user_type` directly rather than assuming
+      // either implies the other.
+      let isAdmin = false;
+      if (!isAssignee) {
+        const { data: callerProfile } = await supabase
+          .from("profiles")
+          .select("user_type")
+          .eq("id", user.id)
+          .single();
+        isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
+      }
+      permitted =
+        isAssignee || isAdmin || (isRequester && targetStatus === "cancelled");
+    }
+
+    if (!permitted) {
+      console.error(
+        `[service-requests PATCH] refused status transition: order=${id} caller=${user.id} target=${targetStatus}`,
+      );
+      return NextResponse.json(
+        { error: "غير مسموح بتنفيذ هذا الإجراء" },
+        { status: 403 },
+      );
+    }
   }
 
   const { data, error } = await supabase
@@ -153,6 +268,25 @@ export async function PATCH(
       .select("id, display_name, user_type")
       .eq("id", user.id)
       .single();
+
+    // Task 3 added `requesterProfile` to buildWebhookPayload so completion
+    // events carry the requester's phone for outbound channels (WhatsApp).
+    // This route is generic: the caller completing/cancelling the order is
+    // often the ASSIGNEE (lawyer/firm/admin), not the requester, so the
+    // requester's profile must be looked up separately. The RLS-scoped
+    // `supabase` client cannot be used for this lookup — `profiles` only has
+    // "read own profile" and "admins read all profiles" SELECT policies, so
+    // a non-admin assignee reading a different user's row would silently get
+    // null, defeating the fix on exactly the path it exists for. Use the
+    // service-role client for this one read; it's still inside this
+    // best-effort try and never blocks or fails the parent update.
+    const svc = await createServiceClient();
+    const { data: requesterProfile } = await svc
+      .from("profiles")
+      .select("id, display_name, phone, email, user_type")
+      .eq("id", data.requester_user_id as string)
+      .maybeSingle();
+
     await dispatchToN8n(
       eventName,
       buildWebhookPayload({
@@ -160,6 +294,7 @@ export async function PATCH(
         timestamp: new Date().toISOString(),
         request: data as unknown as Record<string, unknown>,
         actor: actorProfile as unknown as Record<string, unknown> | null,
+        requesterProfile: requesterProfile as unknown as Record<string, unknown> | null,
       }),
     );
   } catch (e) {

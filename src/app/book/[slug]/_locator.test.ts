@@ -2,10 +2,10 @@
  * _locator.test.ts — proves a fiqh block's locator never renders a fabricated
  * or literal-"null" value.
  *
- * Run: npx tsx "src/app/book/[slug]/_locator.test.ts"
+ * Run: npm run test:unit
  */
 import assert from 'node:assert/strict';
-import { formatLocator, matchesLocator, pageToken, volumeToken } from './_locator';
+import { formatLocator, matchesLocator, pageToken, volumeToken } from './_locator.ts';
 
 let passed = 0;
 const test = (name: string, fn: () => void) => {

@@ -7,7 +7,10 @@
  * and reused from workflow scripts where `Date` may be unavailable.
  *
  * `recipient` is derived from the request's `receiver` (the role the request is
- * routed to) plus `assigned_to` / `requester_user_id` when present.
+ * routed to) plus `assigned_to` / `requester_user_id` when present. On
+ * `service_request.completed` / `.cancelled` it always addresses the
+ * requester (never the assignee) and, given `requesterProfile`, carries
+ * their name/phone/email for outbound channels like WhatsApp.
  */
 
 export interface WebhookPayload {
@@ -25,6 +28,9 @@ export interface WebhookPayload {
   recipient: {
     id?: string;
     role?: string;
+    name?: string;
+    phone?: string;
+    email?: string;
   };
   payment: {
     amount: number;
@@ -43,38 +49,53 @@ export interface BuildWebhookPayloadOpts {
   request: Record<string, unknown>;
   /** Actor profile row from `profiles` (id, display_name, user_type). */
   actor?: Record<string, unknown> | null;
+  /** Requester's profile row — supplies name/phone/email for outbound channels. */
+  requesterProfile?: Record<string, unknown> | null;
   /** Override the event name; falls back to `request.status`-derived default. */
 }
 
 /**
- * Derive a recipient descriptor from a service_requests row.
- * Prefers an explicit assignee; otherwise falls back to the receiver role and
- * the requester (useful for status callbacks to the client).
+ * Derive the recipient for an event.
+ *
+ * Completion is addressed to the REQUESTER: on an AI service order the
+ * assignee is the admin who did the work, so returning the assignee here
+ * would message the wrong person.
  */
-function deriveRecipient(request: Record<string, unknown>): {
-  id?: string;
-  role?: string;
-} {
-  const assignedTo =
-    typeof request.assigned_to === "string" ? request.assigned_to : undefined;
-  const receiver =
-    typeof request.receiver === "string" ? request.receiver : undefined;
+function deriveRecipient(
+  request: Record<string, unknown>,
+  event: string,
+  requesterProfile?: Record<string, unknown> | null,
+): WebhookPayload["recipient"] {
+  const assignedTo = typeof request.assigned_to === "string" ? request.assigned_to : undefined;
+  const receiver = typeof request.receiver === "string" ? request.receiver : undefined;
   const requesterUserId =
-    typeof request.requester_user_id === "string"
-      ? request.requester_user_id
-      : undefined;
+    typeof request.requester_user_id === "string" ? request.requester_user_id : undefined;
 
-  // If someone is assigned, they are the active recipient (the lawyer/firm
-  // handling the request). Otherwise the receiver role describes the queue.
-  if (assignedTo) {
-    return { id: assignedTo, role: receiver };
-  }
-  if (receiver) {
-    return { role: receiver };
-  }
-  if (requesterUserId) {
-    return { id: requesterUserId };
-  }
+  const contact = (id?: string): WebhookPayload["recipient"] => {
+    const base: WebhookPayload["recipient"] = {};
+    if (id) base.id = id;
+    if (receiver) base.role = receiver;
+    if (requesterProfile && id && requesterProfile.id === id) {
+      const name = typeof requesterProfile.display_name === "string" ? requesterProfile.display_name : undefined;
+      const phone = typeof requesterProfile.phone === "string" ? requesterProfile.phone : undefined;
+      const email = typeof requesterProfile.email === "string" ? requesterProfile.email : undefined;
+      const role = typeof requesterProfile.user_type === "string" ? requesterProfile.user_type : undefined;
+      if (name) base.name = name;
+      if (phone) base.phone = phone;
+      if (email) base.email = email;
+      if (role) base.role = role;
+    }
+    return base;
+  };
+
+  const addressesRequester =
+    event === "service_request.completed" ||
+    event === "service_request.cancelled";
+
+  if (addressesRequester && requesterUserId) return contact(requesterUserId);
+  if (assignedTo) return contact(assignedTo);
+  if (receiver) return { role: receiver };
+  if (requesterUserId) return contact(requesterUserId);
   return {};
 }
 
@@ -135,7 +156,7 @@ export function buildWebhookPayload(
       ...(actorName ? { name: actorName } : {}),
       ...(actorRole ? { role: actorRole } : {}),
     },
-    recipient: deriveRecipient(request),
+    recipient: deriveRecipient(request, opts.event, opts.requesterProfile ?? null),
     payment: coercePayment(request.payment),
     timestamp,
     data: {
@@ -146,8 +167,9 @@ export function buildWebhookPayload(
       receiver: request.receiver ?? null,
       assignedTo: request.assigned_to ?? null,
       requester: request.requester ?? null,
-      // requesterUserId lets n8n target the CLIENT on assigned/completed
-      // notifications (recipient.id resolves to the assignee once assigned).
+      // requesterUserId always identifies the client, regardless of who
+      // `recipient` above resolves to (the assignee on non-completion
+      // events, the requester on completed/cancelled events).
       requesterUserId: request.requester_user_id ?? null,
       createdAt: request.created_at ?? null,
     },
