@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell,
@@ -10,16 +10,13 @@ import {
   CheckCircle,
   Trash,
   Eye,
-  WarningCircle,
+  X,
 } from "@phosphor-icons/react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 
-import { isSupabaseMode, apiGet, apiMutate } from "@/lib/services/api";
-import { useUser } from "@/hooks/useUser";
+import { isSupabaseMode } from "@/lib/services/api";
 
 type NotificationType = "system" | "cases" | "payments" | "appointments" | "completed";
 type FilterType = "all" | "unread" | "cases" | "payments" | "system";
@@ -32,8 +29,6 @@ interface Notification {
   timestamp: string;
   dateGroup: "today" | "yesterday" | "week" | "older";
   isRead: boolean;
-  /** Deep link — populated for real (supabase-mode) rows only; demo rows have none and never navigate. */
-  href?: string | null;
 }
 
 // Demo-only seed data — NEVER shown in production (supabase) mode.
@@ -176,68 +171,6 @@ const DEMO_NOTIFICATIONS: Notification[] = [
   },
 ];
 
-// ─── Supabase (real) mode — DB row shape + helpers ─────────────────────────────
-// The `notifications` table only has: id, user_id, title, body, href, read_at,
-// created_at (see src/lib/notify.ts + src/app/api/v1/notifications/route.ts).
-// There is no type/severity/time column — those are demo-only concepts. We also
-// deliberately do NOT go through useNotifications()/notificationService.ts here:
-// that service silently falls back to fabricated local demo rows on ANY fetch
-// failure (see notificationService.getNotifications' catch block), which would
-// make a real backend error look like real data. Calling the same real
-// GET/PATCH endpoints directly (via apiGet/apiMutate) keeps errors honest.
-interface SupabaseNotificationRow {
-  id: string | number;
-  user_id: string;
-  title: string;
-  body: string | null;
-  href: string | null;
-  read_at: string | null;
-  created_at: string;
-}
-
-interface RealNotification extends Omit<SupabaseNotificationRow, "id"> {
-  id: string;
-}
-
-interface RealNotificationListResponse {
-  notifications: SupabaseNotificationRow[];
-  total: number;
-  unread_count: number;
-}
-
-const ARABIC_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-function toArabicDigits(n: number): string {
-  return String(n).replace(/[0-9]/g, (d) => ARABIC_DIGITS[Number(d)]);
-}
-
-function computeDateGroup(iso: string): "today" | "yesterday" | "week" | "older" {
-  const date = new Date(iso);
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfYesterday = new Date(startOfToday.getTime() - 86_400_000);
-  const startOfWeek = new Date(startOfToday.getTime() - 6 * 86_400_000);
-  if (date >= startOfToday) return "today";
-  if (date >= startOfYesterday) return "yesterday";
-  if (date >= startOfWeek) return "week";
-  return "older";
-}
-
-function formatRelativeArabic(iso: string): string {
-  const date = new Date(iso);
-  const now = new Date();
-  const diffMs = Math.max(0, now.getTime() - date.getTime());
-  const diffMin = Math.floor(diffMs / 60_000);
-  const diffHour = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHour / 24);
-
-  if (diffMin < 1) return "الآن";
-  if (diffMin < 60) return `منذ ${toArabicDigits(diffMin)} ${diffMin === 1 ? "دقيقة" : "دقائق"}`;
-  if (diffHour < 24) return `منذ ${toArabicDigits(diffHour)} ${diffHour === 1 ? "ساعة" : "ساعات"}`;
-  if (diffDay === 1) return `أمس ${date.toLocaleTimeString("ar-SA", { hour: "numeric", minute: "2-digit" })}`;
-  if (diffDay < 7) return `منذ ${toArabicDigits(diffDay)} ${diffDay === 1 ? "يوم" : "أيام"}`;
-  return date.toLocaleDateString("ar-SA", { day: "numeric", month: "long" });
-}
-
 const typeIcon: Record<NotificationType, React.ReactNode> = {
   system: <Bell size={20} weight="fill" />,
   cases: <Scales size={20} weight="fill" />,
@@ -277,177 +210,29 @@ const filterTabs: { id: FilterType; label: string; count: number }[] = [
   { id: "system", label: "النظام", count: 4 },
 ];
 
-// ─── Supabase mode: not-authenticated prompt ───────────────────────────────────
-function LoginPromptCard() {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="flex flex-col items-center justify-center py-20 text-center"
-    >
-      <div className="w-20 h-20 mb-5 rounded-full bg-gray-100 dark:bg-dark-card flex items-center justify-center">
-        <Bell size={36} className="text-gray-300 dark:text-gray-600" />
-      </div>
-      <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
-        سجّل الدخول لعرض إشعاراتك
-      </h3>
-      <p className="text-sm text-gray-500 dark:text-gray-500 max-w-xs mb-6">
-        إشعاراتك الحقيقية تظهر هنا بعد تسجيل الدخول لحسابك
-      </p>
-      <Link
-        href="/login"
-        className="inline-flex items-center px-6 py-2.5 rounded-xl bg-royal text-white font-semibold text-sm hover:opacity-90 transition-opacity shadow-md"
-      >
-        تسجيل الدخول
-      </Link>
-    </motion.div>
-  );
-}
-
-// ─── Supabase mode: loading skeleton ────────────────────────────────────────────
-function NotificationsSkeleton() {
-  return (
-    <div className="space-y-2">
-      {[...Array(6)].map((_, i) => (
-        <div
-          key={i}
-          className="flex items-start gap-4 p-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-dark-card animate-pulse"
-        >
-          <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-700" />
-          <div className="flex-1 min-w-0 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="h-3.5 w-2/5 rounded bg-gray-100 dark:bg-gray-700" />
-              <div className="h-3 w-10 rounded bg-gray-100 dark:bg-gray-700" />
-            </div>
-            <div className="h-3 w-4/5 rounded bg-gray-100 dark:bg-gray-700" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function NotificationsPage() {
-  const { isRTL } = useTheme();
-  const router = useRouter();
+  const { isRTL, isDark } = useTheme();
   const [filter, setFilter] = useState<FilterType>("all");
+  const [notifications, setNotifications] = useState<Notification[]>(isSupabaseMode ? [] : DEMO_NOTIFICATIONS);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  // ── Demo mode (unchanged behavior) ──────────────────────────────────────────
-  const [demoNotifications, setDemoNotifications] = useState<Notification[]>(DEMO_NOTIFICATIONS);
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
 
-  const markDemoRead = (id: string) => {
-    setDemoNotifications((prev) =>
+  const markAsRead = (id: string) => {
+    setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
     );
   };
 
-  const markAllDemoRead = () => {
-    setDemoNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+  const markAllRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
-  const deleteDemoNotification = (id: string) => {
-    setDemoNotifications((prev) => prev.filter((n) => n.id !== id));
+  const deleteNotification = (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  // ── Supabase mode: real data ────────────────────────────────────────────────
-  const { isLoggedIn, loading: userLoading } = useUser();
-  const [realNotifications, setRealNotifications] = useState<RealNotification[]>([]);
-  const [realLoading, setRealLoading] = useState(true);
-  const [realError, setRealError] = useState(false);
-
-  const loadReal = useCallback(async () => {
-    // (react-hooks/set-state-in-effect fires on this regardless of where the
-    // setState calls sit in the async body — same pre-existing warning as the
-    // identical fetch-on-mount pattern in dashboard/admin/broadcasts/page.tsx.
-    // Resetting loading/error up front gives the retry button an honest
-    // "reloading" state instead of leaving the stale error on screen.)
-    setRealLoading(true);
-    setRealError(false);
-    try {
-      const res = await apiGet<RealNotificationListResponse>("/api/v1/notifications", { limit: 50 });
-      const rows: RealNotification[] = (res.notifications ?? []).map((row) => ({
-        ...row,
-        id: String(row.id),
-      }));
-      setRealNotifications(rows);
-    } catch {
-      // Honest failure state — no mock fallback. The empty-state block below
-      // distinguishes "failed to load" (realError) from "genuinely no
-      // notifications yet".
-      setRealNotifications([]);
-      setRealError(true);
-    } finally {
-      setRealLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isSupabaseMode || userLoading || !isLoggedIn) return;
-    void loadReal();
-  }, [userLoading, isLoggedIn, loadReal]);
-
-  const markRealRead = useCallback(async (id: string) => {
-    setRealNotifications((prev) =>
-      prev.map((n) => (n.id === id && n.read_at === null ? { ...n, read_at: new Date().toISOString() } : n))
-    );
-    try {
-      await apiMutate("/api/v1/notifications", "PATCH", { ids: [id] });
-    } catch {
-      // Best-effort — optimistic UI already applied; next load reconciles.
-    }
-  }, []);
-
-  const markAllRealRead = useCallback(async () => {
-    const now = new Date().toISOString();
-    setRealNotifications((prev) => prev.map((n) => (n.read_at === null ? { ...n, read_at: now } : n)));
-    try {
-      await apiMutate("/api/v1/notifications", "PATCH", { mark_all: true });
-    } catch {
-      // Best-effort
-    }
-  }, []);
-
-  // ── Unified view: normalize real rows into the same shape demo rows use ────
-  const displayList: Notification[] = isSupabaseMode
-    ? realNotifications.map((n) => ({
-        id: n.id,
-        type: "system" as NotificationType,
-        title: n.title,
-        description: n.body ?? "",
-        timestamp: formatRelativeArabic(n.created_at),
-        dateGroup: computeDateGroup(n.created_at),
-        isRead: n.read_at !== null,
-        href: n.href,
-      }))
-    : demoNotifications;
-
-  const unreadCount = displayList.filter((n) => !n.isRead).length;
-
-  const markOneRead = (id: string) => {
-    if (isSupabaseMode) void markRealRead(id);
-    else markDemoRead(id);
-  };
-
-  const handleMarkAllRead = () => {
-    if (isSupabaseMode) void markAllRealRead();
-    else markAllDemoRead();
-  };
-
-  const handleNotificationClick = (n: Notification) => {
-    markOneRead(n.id);
-    if (isSupabaseMode && n.href) router.push(n.href);
-  };
-
-  // Real rows have no `type` column, so per-type chips (القضايا/المدفوعات/النظام)
-  // aren't meaningful in supabase mode — show only الكل/غير مقروء, with live counts.
-  const realFilterTabs: { id: FilterType; label: string; count: number }[] = [
-    { id: "all", label: "الكل", count: displayList.length },
-    { id: "unread", label: "غير مقروء", count: unreadCount },
-  ];
-  const visibleFilterTabs = isSupabaseMode ? realFilterTabs : filterTabs;
-
-  const filtered = displayList.filter((n) => {
+  const filtered = notifications.filter((n) => {
     if (filter === "all") return true;
     if (filter === "unread") return !n.isRead;
     if (filter === "cases") return n.type === "cases" || n.type === "completed" || n.type === "appointments";
@@ -460,9 +245,6 @@ export default function NotificationsPage() {
     group,
     items: filtered.filter((n) => n.dateGroup === group),
   })).filter((g) => g.items.length > 0);
-
-  const showLoginPrompt = isSupabaseMode && !userLoading && !isLoggedIn;
-  const showLoading = isSupabaseMode && (userLoading || (isLoggedIn && realLoading));
 
   return (
     <div
@@ -496,7 +278,7 @@ export default function NotificationsPage() {
           </div>
           {unreadCount > 0 && (
             <button
-              onClick={handleMarkAllRead}
+              onClick={markAllRead}
               className="text-sm text-royal dark:text-gold font-medium hover:underline transition-colors"
             >
               تعليم الكل كمقروء
@@ -504,40 +286,131 @@ export default function NotificationsPage() {
           )}
         </motion.div>
 
-        {showLoginPrompt ? (
-          <LoginPromptCard />
-        ) : showLoading ? (
-          <NotificationsSkeleton />
-        ) : (
-          <>
-            {/* Filter Tabs */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.1 }}
-              className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide"
+        {/* Filter Tabs */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+          className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide"
+        >
+          {filterTabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setFilter(tab.id)}
+              className={`flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                filter === tab.id
+                  ? "bg-royal text-white shadow-md"
+                  : "bg-white dark:bg-dark-card text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-royal dark:hover:border-gold"
+              }`}
             >
-              {visibleFilterTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setFilter(tab.id)}
-                  className={`flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
-                    filter === tab.id
-                      ? "bg-royal text-white shadow-md"
-                      : "bg-white dark:bg-dark-card text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-royal dark:hover:border-gold"
-                  }`}
-                >
-                  {tab.label}
-                  <span
-                    className={`text-xs px-1.5 py-0.5 rounded-full ${
-                      filter === tab.id
-                        ? "bg-white/20 text-white"
-                        : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                    }`}
-                  >
-                    {tab.id === "unread" ? unreadCount : tab.count}
-                  </span>
-                </button>
+              {tab.label}
+              <span
+                className={`text-xs px-1.5 py-0.5 rounded-full ${
+                  filter === tab.id
+                    ? "bg-white/20 text-white"
+                    : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                }`}
+              >
+                {tab.id === "unread" ? unreadCount : tab.count}
+              </span>
+            </button>
+          ))}
+        </motion.div>
+
+        {/* Notifications List */}
+        <AnimatePresence mode="wait">
+          {filtered.length === 0 ? (
+            <motion.div
+              key="empty"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="flex flex-col items-center justify-center py-20 text-center"
+            >
+              <div className="w-20 h-20 mb-5 rounded-full bg-gray-100 dark:bg-dark-card flex items-center justify-center">
+                <Bell size={36} className="text-gray-300 dark:text-gray-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                لا توجد إشعارات
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-500 max-w-xs">
+                لم يتم العثور على إشعارات تطابق هذا الفلتر
+              </p>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="list"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-6"
+            >
+              {groupedNotifications.map(({ group, items }) => (
+                <div key={group}>
+                  <h2 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3 px-1">
+                    {dateGroupLabel[group]}
+                  </h2>
+                  <div className="space-y-2">
+                    {items.map((notification, idx) => (
+                      <motion.div
+                        key={notification.id}
+                        initial={{ opacity: 0, x: isRTL ? 20 : -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: isRTL ? -20 : 20 }}
+                        transition={{ duration: 0.25, delay: idx * 0.04 }}
+                        onMouseEnter={() => setHoveredId(notification.id)}
+                        onMouseLeave={() => setHoveredId(null)}
+                        onClick={() => markAsRead(notification.id)}
+                        className={`relative flex items-start gap-4 p-4 rounded-xl cursor-pointer transition-all duration-200 border ${
+                          !notification.isRead
+                            ? "bg-royal/5 dark:bg-royal/10 border-royal/20 dark:border-royal/30"
+                            : "bg-white dark:bg-dark-card border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
+                        } hover:shadow-md`}
+                      >
+                        {/* Unread dot */}
+                        {!notification.isRead && (
+                          <span
+                            className={`absolute top-4 ${isRTL ? "left-4" : "right-4"} w-2 h-2 rounded-full ${dotColor[notification.type]}`}
+                          />
+                        )}
+
+                        {/* Icon */}
+                        <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${typeColor[notification.type]}`}>
+                          {typeIcon[notification.type]}
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className={`text-sm font-semibold truncate ${!notification.isRead ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300"}`}>
+                              {notification.title}
+                            </p>
+                            <span className="flex-shrink-0 text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                              {notification.timestamp}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">
+                            {notification.description}
+                          </p>
+                        </div>
+
+                        {/* Hover actions */}
+                        <AnimatePresence>
+                          {hoveredId === notification.id && (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.9 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.9 }}
+                              transition={{ duration: 0.15 }}
+                              className={`absolute top-3 ${isRTL ? "left-12" : "right-12"} flex items-center gap-1`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {!notification.isRead && (
+                                <button
+                                  onClick={() => markAsRead(notification.id)}
+                                  title="تعليم كمقروء"
+                                  className="w-7 h-7 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex items-center justify-center text-gray-500 dark:text-gray-300 hover:text-royal dark:hover:text-gold hover:border-royal dark:hover:border-gold transition-colors shadow-sm"
+                                >
                                   <Eye size={14} />
                                 </button>
                               )}
@@ -555,154 +428,13 @@ export default function NotificationsPage() {
                     ))}
                   </div>
                 </div>
->>>>>>> 23448dacb88753811453ad58194cf6eab12eebe1
               ))}
             </motion.div>
-
-            {/* Notifications List */}
-            <AnimatePresence mode="wait">
-              {filtered.length === 0 ? (
-                <motion.div
-                  key="empty"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="flex flex-col items-center justify-center py-20 text-center"
-                >
-                  <div className="w-20 h-20 mb-5 rounded-full bg-gray-100 dark:bg-dark-card flex items-center justify-center">
-                    {isSupabaseMode && realError ? (
-                      <WarningCircle size={36} className="text-gray-300 dark:text-gray-600" />
-                    ) : (
-                      <Bell size={36} className="text-gray-300 dark:text-gray-600" />
-                    )}
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                    {isSupabaseMode && realError
-                      ? "تعذر تحميل الإشعارات"
-                      : isSupabaseMode && realNotifications.length === 0
-                        ? "لا توجد إشعارات بعد"
-                        : "لا توجد إشعارات"}
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-500 max-w-xs">
-                    {isSupabaseMode && realError
-                      ? "تحقق من الاتصال وحاول مرة أخرى"
-                      : isSupabaseMode && realNotifications.length === 0
-                        ? "ستظهر إشعاراتك هنا فور وصولها"
-                        : "لم يتم العثور على إشعارات تطابق هذا الفلتر"}
-                  </p>
-                  {isSupabaseMode && realError && (
-                    <button
-                      onClick={() => void loadReal()}
-                      className="mt-4 text-sm text-royal dark:text-gold font-medium hover:underline transition-colors"
-                    >
-                      إعادة المحاولة
-                    </button>
-                  )}
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="list"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="space-y-6"
-                >
-                  {groupedNotifications.map(({ group, items }) => (
-                    <div key={group}>
-                      <h2 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3 px-1">
-                        {dateGroupLabel[group]}
-                      </h2>
-                      <div className="space-y-2">
-                        {items.map((notification, idx) => (
-                          <motion.div
-                            key={notification.id}
-                            initial={{ opacity: 0, x: isRTL ? 20 : -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: isRTL ? -20 : 20 }}
-                            transition={{ duration: 0.25, delay: idx * 0.04 }}
-                            onMouseEnter={() => setHoveredId(notification.id)}
-                            onMouseLeave={() => setHoveredId(null)}
-                            onClick={() => handleNotificationClick(notification)}
-                            className={`relative flex items-start gap-4 p-4 rounded-xl cursor-pointer transition-all duration-200 border ${
-                              !notification.isRead
-                                ? "bg-royal/5 dark:bg-royal/10 border-royal/20 dark:border-royal/30"
-                                : "bg-white dark:bg-dark-card border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
-                            } hover:shadow-md`}
-                          >
-                            {/* Unread dot */}
-                            {!notification.isRead && (
-                              <span
-                                className={`absolute top-4 ${isRTL ? "left-4" : "right-4"} w-2 h-2 rounded-full ${dotColor[notification.type]}`}
-                              />
-                            )}
-
-                            {/* Icon */}
-                            <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${typeColor[notification.type]}`}>
-                              {typeIcon[notification.type]}
-                            </div>
-
-                            {/* Content */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-2">
-                                <p className={`text-sm font-semibold truncate ${!notification.isRead ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-200"}`}>
-                                  {notification.title}
-                                </p>
-                                <span className="flex-shrink-0 text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                                  {notification.timestamp}
-                                </span>
-                              </div>
-                              {notification.description && (
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">
-                                  {notification.description}
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Hover actions */}
-                            <AnimatePresence>
-                              {hoveredId === notification.id && (
-                                <motion.div
-                                  initial={{ opacity: 0, scale: 0.9 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.9 }}
-                                  transition={{ duration: 0.15 }}
-                                  className={`absolute top-3 ${isRTL ? "left-12" : "right-12"} flex items-center gap-1`}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {!notification.isRead && (
-                                    <button
-                                      onClick={() => markOneRead(notification.id)}
-                                      title="تعليم كمقروء"
-                                      className="w-7 h-7 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex items-center justify-center text-gray-500 dark:text-gray-300 hover:text-royal dark:hover:text-gold hover:border-royal dark:hover:border-gold transition-colors shadow-sm"
-                                    >
-                                      <Eye size={14} />
-                                    </button>
-                                  )}
-                                  {!isSupabaseMode && (
-                                    <button
-                                      onClick={() => deleteDemoNotification(notification.id)}
-                                      title="حذف"
-                                      className="w-7 h-7 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex items-center justify-center text-gray-500 dark:text-gray-300 hover:text-red-500 hover:border-red-300 dark:hover:border-red-500 transition-colors shadow-sm"
-                                    >
-                                      <Trash size={14} />
-                                    </button>
-                                  )}
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </motion.div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </>
-        )}
+          )}
+        </AnimatePresence>
       </div>
 
       <Footer />
-    </div>
+          </div>
   );
 }
