@@ -248,12 +248,12 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
             </div>
             {/* Links Row */}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
-              {ev.caseId&&ev.caseName&&(
-                <Link href={`/dashboard/lawyer/cases/${ev.caseId}`}
-                  className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors ${isDark?"bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20":"bg-indigo-50 text-indigo-600 hover:bg-indigo-100"}`}>
-                  <Scales size={9}/>{ev.caseName}<ArrowSquareOut size={8}/>
-                </Link>
-              )}
+              {/* Always-visible link to service request detail (cases/[id]) */}
+              <Link href={`/dashboard/lawyer/cases/${ev.id}`}
+                className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors ${isDark?"bg-[#0B3D2E]/40 text-[#C8A762] hover:bg-[#0B3D2E]/70":"bg-[#0B3D2E]/10 text-[#0B3D2E] hover:bg-[#0B3D2E]/20"}`}>
+                <Scales size={9}/>{ev.caseName ? ev.caseName : "عرض الطلب"}<ArrowSquareOut size={8}/>
+              </Link>
+
               {linkedTasks.length>0&&(
                 <Link href="/dashboard/lawyer/tasks"
                   className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors ${isDark?"bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20":"bg-emerald-50 text-emerald-600 hover:bg-emerald-100"}`}>
