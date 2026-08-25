@@ -2,13 +2,15 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import {
-  PaperPlaneTilt, Microphone, Robot, User, Sparkle,
-  Lightning, Books, Paperclip, X, CaretDown,
-  ClockCountdown, MagicWand, Warning, Copy, ThumbsUp, ThumbsDown,
+  PaperPlaneTilt, Microphone, Robot, User,
+  Lightning, Books, Paperclip,
+  MagicWand, Warning, Copy, ThumbsUp, ThumbsDown,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { useUser } from "@/hooks/useUser";
 import EscalationFlow from "@/components/EscalationFlow";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -52,7 +54,7 @@ function detectLegalArea(text: string): string | undefined {
 
 // ─── Mock AI response generator ──────────────────────────────────────────
 
-function getMockResponse(question: string): { text: string; sources: string[] } {
+function getMockResponse(): { text: string; sources: string[] } {
   return {
     text: `بناءً على نظام العمل السعودي وأحدث لوائحه التنفيذية، إليك الإجابة التفصيلية حول سؤالك:\n\n**أولاً: الإطار النظامي**\nيُعدّ هذا الموضوع من المسائل التي تناولها نظام العمل الصادر بالمرسوم الملكي رقم م/51 بتاريخ 1426/8/23هـ، في المواد من (73) إلى (81) منه.\n\n**ثانياً: الشروط والضوابط**\n• يجب توافر ثلاثة عناصر أساسية: الركن المادي، والركن المعنوي، والإضرار بالطرف الآخر.\n• تُقدَّر الأضرار من قِبل المحكمة العمالية وفق ملابسات كل قضية.\n• مدة التقادم: لا تُسمع الدعوى بعد مرور 12 شهراً من تاريخ انتهاء العقد.\n\n**ثالثاً: توصيتي**\nيُنصح بتوثيق جميع المراسلات وجمع الإثباتات قبل رفع الدعوى. هل تودّ أن أساعدك في صياغة مذكرة مبدئية؟`,
     sources: ["نظام العمل م/51 • المادة 77", "لائحة العمل التنفيذية • الباب الخامس", "قرار وزارة الموارد البشرية رقم 4786"],
@@ -165,6 +167,8 @@ function AIMessageBubble({ msg, isDark, isLatest }: { msg: Message; isDark: bool
 export default function AIConsultPage() {
   const { isDark, lang } = useTheme();
   const isRTL = lang === "ar";
+  const router = useRouter();
+  const { userType } = useUser();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "sys-1",
@@ -184,6 +188,13 @@ export default function AIConsultPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
+  // Lawyers get a dedicated advanced assistant — keep them off the client-facing consult chat.
+  useEffect(() => {
+    if (userType === "lawyer") {
+      router.replace("/ai/assistant");
+    }
+  }, [userType, router]);
+
   function now() {
     const d = new Date();
     return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -200,7 +211,7 @@ export default function AIConsultPage() {
 
     await new Promise(r => setTimeout(r, 1800));
 
-    const { text: aiText, sources } = getMockResponse(q);
+    const { text: aiText, sources } = getMockResponse();
     const aiMsg: Message = {
       id: (Date.now() + 1).toString(),
       role: "ai",
@@ -219,6 +230,9 @@ export default function AIConsultPage() {
 
   const bg = isDark ? "bg-zinc-950" : "bg-zinc-50/50";
   const hasMessages = messages.some(m => m.role !== "system");
+
+  // Redirect is in-flight — render nothing to avoid a flash of the client chat UI.
+  if (userType === "lawyer") return null;
 
   return (
     <div className={`flex flex-col h-[100dvh] md:h-[100dvh] ${bg}`} dir={isRTL ? "rtl" : "ltr"}>

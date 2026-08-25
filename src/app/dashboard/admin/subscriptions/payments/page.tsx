@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Money, ArrowDown, ArrowUp, MagnifyingGlass, DownloadSimple } from "@phosphor-icons/react";
+import { Money, MagnifyingGlass, DownloadSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
 interface PaymentRow {
@@ -13,15 +13,6 @@ interface PaymentRow {
   method: string;
   status: string;
 }
-
-const PAYMENTS: PaymentRow[] = [
-  { id: "PAY-041", user: "أ. خالد الجهني",    plan: "MAX",    amount: "٣٩٩",  date: "٢٦ أبريل ٢٠٢٦", method: "بطاقة", status: "ناجح" },
-  { id: "PAY-040", user: "شركة المستقبل",     plan: "CORP",   amount: "٢٩٩٩", date: "٢٥ أبريل ٢٠٢٦", method: "تحويل", status: "ناجح" },
-  { id: "PAY-039", user: "جمعية البيئة",       plan: "PRO",    amount: "١٩٩",  date: "٢٤ أبريل ٢٠٢٦", method: "بطاقة", status: "ناجح" },
-  { id: "PAY-038", user: "م. نورة القحطاني",  plan: "SHIELD", amount: "٩٩",   date: "٢٣ أبريل ٢٠٢٦", method: "بطاقة", status: "مسترجع" },
-  { id: "PAY-037", user: "مكتب السلمي",        plan: "PRO",    amount: "١٩٩",  date: "٢٢ أبريل ٢٠٢٦", method: "بطاقة", status: "ناجح" },
-  { id: "PAY-036", user: "أ. عبدالرحمن",       plan: "AI",     amount: "١٤٩",  date: "٢١ أبريل ٢٠٢٦", method: "بطاقة", status: "فشل" },
-];
 
 // Ledger entry returned by GET /api/v1/admin/payments (unified across
 // payments / wallet_transactions / credit_transactions).
@@ -102,6 +93,7 @@ export default function AdminPaymentsPage() {
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState("");
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [loadError, setLoadError] = useState(false);
   useEffect(() => setMounted(true), []);
   useEffect(() => {
     let active = true;
@@ -111,10 +103,10 @@ export default function AdminPaymentsPage() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as { data?: LedgerEntry[] };
         const rows = (json.data ?? []).map(mapLedgerToRow);
-        if (active) setPayments(rows.length > 0 ? rows : PAYMENTS);
+        if (active) { setPayments(rows); setLoadError(false); }
       } catch {
-        // Fall back to the mock ledger if the API is unavailable.
-        if (active) setPayments(PAYMENTS);
+        // Honest failure state — no mock fallback.
+        if (active) { setPayments([]); setLoadError(true); }
       }
     })();
     return () => {
@@ -155,19 +147,30 @@ export default function AdminPaymentsPage() {
             <span className="col-span-1 text-center">الحالة</span>
             <span className="col-span-1 text-end">المبلغ</span>
           </div>
+          {payments.length === 0 && (
+            <div className="p-10 flex flex-col items-center text-center gap-2">
+              <Money size={30} weight="thin" className={muted} />
+              <p className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+                {loadError ? "تعذر تحميل سجل المدفوعات" : "لا توجد مدفوعات مسجلة بعد"}
+              </p>
+              <p className={`text-xs ${muted}`}>
+                {loadError ? "تحقق من الاتصال وحاول مرة أخرى" : "ستظهر هنا العمليات المالية فور تسجيلها"}
+              </p>
+            </div>
+          )}
           <div className={`divide-y ${isDark ? "divide-[#2d3748]" : "divide-gray-100"}`}>
             {filtered.map((p, i) => (
               <motion.div key={p.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
                 className={`grid grid-cols-12 items-center px-5 py-4 transition ${isDark ? "hover:bg-white/2" : "hover:bg-gray-50"}`}>
-                <span className={`col-span-2 text-[10px] font-mono font-bold ${isDark ? "text-[#C8A762]" : "text-amber-600"}`}>{p.id}</span>
-                <span className={`col-span-3 text-xs font-semibold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{p.user}</span>
-                <span className={`col-span-2 text-[10px] font-black px-2 py-0.5 rounded-full w-fit ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-700"}`}>{p.plan}</span>
-                <span className={`col-span-2 text-xs ${muted}`}>{p.date}</span>
-                <span className={`col-span-1 text-xs ${muted}`}>{p.method}</span>
-                <div className="col-span-1 text-center">
+                <span className={`col-span-2 min-w-0 truncate text-[10px] font-mono font-bold ${isDark ? "text-[#C8A762]" : "text-amber-600"}`}>{p.id}</span>
+                <span className={`col-span-3 min-w-0 truncate text-xs font-semibold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{p.user}</span>
+                <span className={`col-span-2 min-w-0 truncate max-w-full text-[10px] font-black px-2 py-0.5 rounded-full w-fit ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-700"}`}>{p.plan}</span>
+                <span className={`col-span-2 min-w-0 truncate text-xs ${muted}`}>{p.date}</span>
+                <span className={`col-span-1 min-w-0 truncate text-xs ${muted}`}>{p.method}</span>
+                <div className="col-span-1 min-w-0 truncate text-center">
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_COLOR[p.status]}`}>{p.status}</span>
                 </div>
-                <span className={`col-span-1 text-xs font-black text-end ${p.status === "مسترجع" ? "text-amber-500" : p.status === "فشل" ? "text-rose-500" : isDark ? "text-emerald-400" : "text-emerald-600"}`}>{p.amount}</span>
+                <span className={`col-span-1 min-w-0 truncate text-xs font-black text-end ${p.status === "مسترجع" ? "text-amber-500" : p.status === "فشل" ? "text-rose-500" : isDark ? "text-emerald-400" : "text-emerald-600"}`}>{p.amount}</span>
               </motion.div>
             ))}
           </div>

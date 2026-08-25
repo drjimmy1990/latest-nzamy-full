@@ -1,89 +1,69 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
   MagnifyingGlass, Star, SealCheck, MapPin, Briefcase,
-  FunnelSimple, ArrowLeft, ChatCircle, CalendarBlank,
-  Headset, UserCircle, CheckCircle, Clock,
+  ChatCircle,
+  Headset, UserCircle, Clock,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { getLawyers, type LawyerProfile } from "@/lib/services";
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-
-const SPECIALTIES = [
-  "الكل",
-  "عمالي",
-  "تجاري",
-  "عقاري",
-  "أحوال شخصية",
-  "جنائي",
-  "إداري",
+// ─── Specialty filter chips ────────────────────────────────────────────────
+// `key` matches LawyerProfile.specialtyKey from the real API. "administrative"
+// has no backing category in the taxonomy yet — kept for UI parity, matches
+// zero results (same no-op behavior it had back when data was hardcoded).
+const SPECIALTIES: { key: string; label: string }[] = [
+  { key: "all", label: "الكل" },
+  { key: "labor", label: "عمالي" },
+  { key: "commercial", label: "تجاري" },
+  { key: "real-estate", label: "عقاري" },
+  { key: "family", label: "أحوال شخصية" },
+  { key: "criminal", label: "جنائي" },
+  { key: "administrative", label: "إداري" },
 ];
 
-const LAWYERS = [
-  {
-    id: "L-001",
-    name: "خالد الحربي",
-    specialty: "عمالي",
-    city: "الرياض",
-    rating: 4.9,
-    reviewCount: 128,
-    experience: 12,
-    consultationPrice: 250,
-    verified: true,
-    available: true,
-    tags: ["عقود العمل", "فصل تعسفي", "نزاعات مهنية"],
-    bio: "محامٍ متخصص في نزاعات العمل والشؤون التجارية، خبرة 12 عاماً أمام المحاكم العمالية.",
-    responseTime: "خلال ساعة",
-  },
-  {
-    id: "L-002",
-    name: "نورة الزهراني",
-    specialty: "أحوال شخصية",
-    city: "جدة",
-    rating: 4.8,
-    reviewCount: 94,
-    experience: 9,
-    consultationPrice: 200,
-    verified: true,
-    available: true,
-    tags: ["الطلاق", "النفقة", "الحضانة"],
-    bio: "متخصصة في قضايا الأحوال الشخصية والأسرة، خبرة 9 سنوات في الفصل الودي والقضائي.",
-    responseTime: "خلال ساعتين",
-  },
-  {
-    id: "L-003",
-    name: "علي السعدي",
-    specialty: "تجاري",
-    city: "الرياض",
-    rating: 4.7,
-    reviewCount: 57,
-    experience: 7,
-    consultationPrice: 300,
-    verified: true,
-    available: false,
-    tags: ["العقود التجارية", "الشركات", "النزاعات التجارية"],
-    bio: "متخصص في القانون التجاري وعقود الشركات، خبرة 7 سنوات مع الشركات الصغيرة والمتوسطة.",
-    responseTime: "خلال 24 ساعة",
-  },
-  {
-    id: "L-004",
-    name: "ريم المطيري",
-    specialty: "عقاري",
-    city: "الدمام",
-    rating: 4.6,
-    reviewCount: 43,
-    experience: 6,
-    consultationPrice: 220,
-    verified: false,
-    available: true,
-    tags: ["عقود الإيجار", "النزاعات العقارية", "الصكوك"],
-    bio: "متخصصة في العقود العقارية ومنازعات الإيجار والتملك.",
-    responseTime: "خلال 3 ساعات",
-  },
-];
+// ─── Card shape rendered by this page (mapped from the real LawyerProfile) ─
+interface LawyerCard {
+  id: string;
+  name: string;
+  specialty: string;
+  specialtyKey: string;
+  city: string;
+  rating: number;
+  reviewCount: number;
+  experience: number;
+  consultationPrice: number;
+  verified: boolean;
+  available: boolean;
+  tags: string[];
+  bio: string;
+  responseTime: string;
+}
+
+// lawyerService.getLawyers() now guarantees every field below is a real,
+// correctly-typed value (see mapRawLawyerRow() in lawyerService.ts) — no
+// defensive fallbacks needed here anymore, this is a straight reshape.
+function toCard(l: LawyerProfile): LawyerCard {
+  return {
+    id: l.id,
+    name: l.name,
+    specialty: l.specialty,
+    specialtyKey: l.specialtyKey,
+    city: l.city,
+    rating: l.rating,
+    reviewCount: l.reviewCount,
+    experience: l.experienceYears,
+    consultationPrice: l.priceMin,
+    verified: l.verified,
+    available: l.available,
+    tags: l.expertise.slice(0, 3),
+    bio: l.bio,
+    responseTime: l.responseTime,
+  };
+}
 
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
@@ -108,15 +88,31 @@ function StarRating({ rating }: { rating: number }) {
 export default function MicroFindLawyerPage() {
   const { isDark } = useTheme();
   const [search, setSearch] = useState("");
-  const [specialty, setSpecialty] = useState("الكل");
-  const [selectedLawyer, setSelectedLawyer] = useState<typeof LAWYERS[0] | null>(null);
+  const [specialty, setSpecialty] = useState("all");
+  const [selectedLawyer, setSelectedLawyer] = useState<LawyerCard | null>(null);
+  const [lawyers, setLawyers] = useState<LawyerCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+
+  useEffect(() => {
+    getLawyers()
+      .then(data => {
+        setLawyers((data ?? []).map(toCard));
+        setFetchError(false);
+      })
+      .catch(() => {
+        setFetchError(true);
+        setLawyers([]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   const card = isDark
     ? "bg-zinc-900 border border-white/[0.07] rounded-2xl"
     : "bg-white border border-zinc-100 rounded-2xl shadow-sm";
 
-  const filtered = LAWYERS.filter(l =>
-    (specialty === "الكل" || l.specialty === specialty) &&
+  const filtered = lawyers.filter(l =>
+    (specialty === "all" || l.specialtyKey === specialty) &&
     (l.name.includes(search) || l.specialty.includes(search) || l.city.includes(search))
   );
 
@@ -145,21 +141,52 @@ export default function MicroFindLawyerPage() {
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
           {SPECIALTIES.map(s => (
             <button
-              key={s}
-              onClick={() => setSpecialty(s)}
+              key={s.key}
+              onClick={() => setSpecialty(s.key)}
               className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-[12px] font-bold transition-all cursor-pointer ${
-                specialty === s
+                specialty === s.key
                   ? "bg-[#0B3D2E] text-white"
                   : isDark ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"
               }`}
             >
-              {s}
+              {s.label}
             </button>
           ))}
         </div>
       </motion.div>
 
       {/* Results */}
+      {loading ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className={`${card} p-5 animate-pulse space-y-3`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-2xl ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`} />
+                <div className="flex-1 space-y-2">
+                  <div className={`h-3 w-1/2 rounded ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`} />
+                  <div className={`h-2.5 w-1/3 rounded ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`} />
+                </div>
+              </div>
+              <div className={`h-2.5 w-full rounded ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`} />
+              <div className={`h-2.5 w-4/5 rounded ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`} />
+            </div>
+          ))}
+        </div>
+      ) : lawyers.length === 0 ? (
+        /* Honest empty state — no lawyers returned by the API (or the fetch failed) */
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          className={`${card} p-12 text-center`}
+        >
+          <UserCircle size={36} className={`mx-auto mb-3 ${isDark ? "text-zinc-700" : "text-zinc-300"}`} />
+          <p className={`font-bold text-[15px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+            {fetchError ? "تعذّر تحميل قائمة المحامين" : "لا يوجد محامون متاحون حالياً"}
+          </p>
+          <p className={`text-[13px] mt-1 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+            {fetchError ? "حاول تحديث الصفحة أو المحاولة لاحقاً" : "يتم التحقق من المحامين قبل ظهورهم في الدليل — سيتوفر محامون قريباً"}
+          </p>
+        </motion.div>
+      ) : (
+      <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {filtered.map((lawyer, i) => (
           <motion.div
@@ -264,6 +291,8 @@ export default function MicroFindLawyerPage() {
           <p className={`font-bold text-[15px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>لا توجد نتائج</p>
           <p className={`text-[13px] mt-1 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>جرّب تخصصاً مختلفاً أو مدينة أخرى</p>
         </motion.div>
+      )}
+      </>
       )}
 
       {/* Lawyer Detail Modal */}

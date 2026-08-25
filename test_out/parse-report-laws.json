@@ -1,0 +1,23 @@
+{
+  "type": "laws",
+  "generated_at": "2026-08-20T00:11:17.892Z",
+  "input": "D:\\Data\\Data\\antigravity ai\\تجارب\\Raw_Vault\\01_المكتبة_القانونية\\أنظمة ولوائح\\02 - القسم الإداري\\نظام الخدمة المدنية\\نظام الخدمة المدنية_هيئة_الخبراء.md",
+  "counts": {
+    "laws": 1,
+    "articles": 44,
+    "excluded": 0,
+    "frontmatterWarnings": 1,
+    "slugCollisions": 0,
+    "failed": 0,
+    "emptyArticles": 0
+  },
+  "excluded": [],
+  "frontmatterWarnings": [
+    "D:\\Data\\Data\\antigravity ai\\تجارب\\Raw_Vault\\01_المكتبة_القانونية\\أنظمة ولوائح\\02 - القسم الإداري\\نظام الخدمة المدنية\\نظام الخدمة المدنية_هيئة_الخبراء.md: YAML parse failed (bad indentation of a mapping entry in \"D:\\Data\\Data\\antigravity ai\\تجارب\\Raw_Vault\\01_المكتبة_القانونية\\أنظمة ولوائح\\02 - القسم الإداري\\نظام الخدمة المدنية\\نظام الخدمة المدنية_هيئة_الخبراء.md\" (56:41)) — fell back to the legacy line parser; nested fields in this file are lost."
+  ],
+  "notes": {
+    "emptyArticles": []
+  },
+  "identityCollisions": [],
+  "failed": []
+}

@@ -33,6 +33,14 @@ import { filterMeta } from "./manifest";
 /** Collected per run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
 
+/**
+ * ك-05 (2026-08-24): same schema_version visibility parse-laws.ts has had
+ * since ب-112. Frontmatter is technically optional here (see the hand-rolled
+ * parser in parseSingleBook), but a real run shows 185/185 books at "4.0" —
+ * uniform, unlike laws/decrees/precedents where this field is fragmented.
+ */
+const schemaVersionCounts: Record<string, number> = {};
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
 // ══════════════════════════════════════════════════════════════════════════════
@@ -51,6 +59,11 @@ export interface FeqhPage {
   volume_label?: string | null;
   text: string;
   verses: FeqhVerse[];
+  /** ب-126: true only for the genuine fallback — no real locator has appeared
+   *  yet anywhere in this document (e.g. front matter before the first page
+   *  anchor, or a book with none at all). Never set for a heading that merely
+   *  falls in the middle of an already-located real page. */
+  is_synthetic_page?: boolean;
 }
 
 export interface FeqhSection {
@@ -316,6 +329,9 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
     }
   }
 
+  const schemaVersionKey = String(meta.schema_version ?? "").trim() || "(missing)";
+  schemaVersionCounts[schemaVersionKey] = (schemaVersionCounts[schemaVersionKey] || 0) + 1;
+
   // Extract TOC
   const { toc, bodyAfterToc } = extractToc(body);
 
@@ -355,7 +371,6 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
   let totalPages = 0;
 
   function flushPage() {
-    let emitted = false;
     // BUG (fixed 2026-07-20): this used to require `currentPage` to already be set
     // (only true right after a Shamela-style `#### صفحة N - ...` header matched).
     // Card-v2 campaign books (2026-07) either use a different page-anchor format
@@ -367,12 +382,20 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
     if (pageBuffer.length > 0) {
       const text = pageBuffer.join("\n").trim();
       if (text) {
-        const page: FeqhPage = currentPage || {
-          page_number: totalPages + 1,
-          volume: maxVolume,
-          text: "",
-          verses: [],
-        };
+        // ب-126: spread a COPY of currentPage rather than reusing the object
+        // reference — each heading-triggered flush is its own distinct FeqhPage
+        // in the output (attached to whichever section/chapter is current at
+        // that point), even when several of them share one real page identity
+        // because a heading fell in the middle of that physical page.
+        const page: FeqhPage = currentPage
+          ? { ...currentPage, text: "", verses: [] }
+          : {
+              page_number: totalPages + 1,
+              volume: maxVolume,
+              text: "",
+              verses: [],
+              is_synthetic_page: true,
+            };
         page.text = text;
         page.verses = extractVerses(text);
 
@@ -390,14 +413,19 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
           currentChapter.pages.push(page);
         }
         totalPages++;
-        emitted = true;
       }
     }
     pageBuffer = [];
-    // Only clear the pending locator if it was actually consumed. A locator is
-    // frequently followed immediately by a redundant heading; unconditionally
-    // nulling here threw away the real vol/page captured one line earlier.
-    if (emitted) currentPage = null;
+    // ب-126: currentPage's identity now PERSISTS across heading-triggered
+    // flushes — a chapter/section heading is not itself a real page boundary.
+    // This used to null currentPage here whenever its buffered text was
+    // emitted, so the FIRST heading after a real locator consumed that
+    // locator's identity correctly, but every SUBSEQUENT heading before the
+    // next real locator found currentPage null again and fabricated a brand
+    // new page_number for text that was still on the same physical page —
+    // confirmed on المغني ج1: 665/1,014 "pages" (66%) ended up with no real
+    // page_label. A real locator still replaces currentPage explicitly
+    // (assigned directly where `loc` is parsed, above); nothing else should.
   }
 
   // True while inside a "skip" heading's span (e.g. the identity card block) — its
@@ -626,6 +654,12 @@ export function parseFeqh(inputPath: string, reportDir?: string): FeqhParserOutp
 
   printCapped("⚠️  frontmatter warning(s)", frontmatterWarnings);
 
+  // ك-05 — schema_version distribution (see parse-laws.ts for the original).
+  const schemaVersionSummary = Object.entries(schemaVersionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([v, n]) => `${v}: ${n}`);
+  printCapped("ℹ️  schema_version distribution", schemaVersionSummary);
+
   if (failedFiles.length > 0) {
     console.error(`\n🛑 ${failedFiles.length} file(s) failed to parse and are MISSING from the output.`);
   }
@@ -644,7 +678,9 @@ export function parseFeqh(inputPath: string, reportDir?: string): FeqhParserOutp
         bookIdCollisions: idCollisions.length,
         emptyBooks: emptyBooks.length,
         failed: failedFiles.length,
+        schemaVersionVariants: Object.keys(schemaVersionCounts).length,
       },
+      schemaVersionCounts,
       excluded: excludedList,
       frontmatterWarnings,
       identityCollisions: idCollisions.map(([key, members]) => ({ key, members })),

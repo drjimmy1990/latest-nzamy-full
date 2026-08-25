@@ -25,7 +25,16 @@
     "library:baseline": "node library-toolkit/library-baseline.mjs",
     "library:reseed": "node library-toolkit/library-reseed.mjs",
     "library:reseed:wipe": "node library-toolkit/library-reseed.mjs --wipe",
-    "docs:check-drift": "node scripts/check-docs-drift.mjs"
+    "academy:status": "node academy-toolkit/academy-status.mjs",
+    "academy:verify": "node academy-toolkit/academy-verify.mjs",
+    "academy:seed": "node academy-toolkit/academy-seed.mjs",
+    "docs:check-drift": "node scripts/check-docs-drift.mjs",
+    "schema:check-drift": "node scripts/check-schema-manifest-drift.mjs",
+    "contract:check-drift": "npx tsx scripts/check-frontmatter-contract-drift.ts",
+    "library:check-repealed-active": "npx tsx scripts/check-repealed-shown-active.ts",
+    "library:check-h16-h17-h18-gate": "npx tsx scripts/check-h16-h17-h18-gate.ts",
+    "library:check-qadha-conventions": "npx tsx scripts/check-qadha-regulation-conventions.ts",
+    "library:verify-contract": "node scripts/verify-seeder-contract.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.7",

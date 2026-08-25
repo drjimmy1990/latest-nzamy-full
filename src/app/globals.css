@@ -18,10 +18,10 @@
   --color-dark-bg: #0c0f12;
   --color-dark-card: #161b22;
   --color-dark-border: rgba(255, 255, 255, 0.08);
-  --font-brand: "Cairo", "Outfit", "Geist", sans-serif;
-  --font-body: "IBM Plex Sans Arabic", "Readex Pro", "Geist", sans-serif;
-  --font-heading: "Cairo", "Outfit", "Geist", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-brand: var(--font-cairo), "Cairo", "Outfit", "Geist", sans-serif;
+  --font-body: var(--font-ibm-plex-sans-arabic), "IBM Plex Sans Arabic", "Readex Pro", "Geist", sans-serif;
+  --font-heading: var(--font-cairo), "Cairo", "Outfit", "Geist", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
   --font-serif: "Outfit", "Geist", serif;
 }
 
@@ -360,5 +360,11 @@ html[dir="rtl"] .text-left {
   .print-watermark-item * {
     color: rgba(120, 120, 120, 0.15) !important;
   }
+}
+
+/* ─── Mobile safe areas (notch / gesture bar) ─────────────────────────── */
+@supports (padding: env(safe-area-inset-top)) {
+  .safe-top { padding-top: env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 }
 

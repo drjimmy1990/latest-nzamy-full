@@ -130,6 +130,10 @@ function LawSystemPageContent() {
           issuanceDecree: data.issuanceDecree || '',
           issuanceDate: data.issuanceDate || '',
           source: data.source || '',
+          // ك-02 (2026-08-23): whitelist mapping — omitting a field here
+          // silently discards it (see the `originalText` note below this
+          // block from an earlier incident of the same kind).
+          law_status: data.law_status || 'active',
           preamble: data.preamble || '',
           chapters: (data.chapters || []).map((ch: { title: string; articles: LawArticle[] }) => ({
             title: ch.title,
@@ -282,13 +286,32 @@ function LawSystemPageContent() {
     };
   }, [slug, law]);
 
+  // ك-13: `executiveReg` كان الشكل الوحيد القديم (مادة واحدة = كتلة لائحة
+  // مدموجة واحدة). `regulations[]` (مصفوفة، مادة لائحة واحدة لكل عنصر مع
+  // regNum حقيقي) هو المصدر الحيّ الآن — route.ts ما زال يبني executiveReg
+  // بدمج نفس المصفوفة (ref مُفرَّق بفاصلة، text مدموج بسطرين فارغين) لأجل
+  // مستهلكين لم يُرحَّلوا بعد؛ هذه الدالة تُعيد بناء نفس الدمج محلياً بدل
+  // القراءة من executiveReg، فتحافظ حرفياً على سلوك كل الاستدلالات أدناه
+  // (extractRegFullName/extractRegNum) بلا أي تغيير بمنطقها الداخلي.
+  const getMergedReg = (art: any): { ref: string; text: string } | null => {
+    if (!art.regulations || art.regulations.length === 0) return null;
+    const distinctRefs = Array.from(
+      new Set(art.regulations.map((r: any) => String(r.ref || "")).filter(Boolean)),
+    );
+    return {
+      ref: distinctRefs.join(", "),
+      text: art.regulations.map((r: any) => String(r.text || "")).join("\n\n"),
+    };
+  };
+
   // ── كشف أسماء اللوائح المتعددة في النظام الواحد ──────────────────────────
   // ── كشف الأسماء الكاملة للتشريعات الفرعية (لوائح/قواعد/ضوابط/تعليمات) ──
   const extractRegFullName = (art: any): string => {
-    // 1) إذا كانت المادة مدمجة ولها executiveReg
-    if (art.executiveReg) {
-      const ref = (art.executiveReg.ref || "").trim();
-      const text = (art.executiveReg.text || "").trim();
+    // 1) إذا كانت المادة مدمجة ولها لائحة (regulations[])
+    const mergedReg = getMergedReg(art);
+    if (mergedReg) {
+      const ref = mergedReg.ref.trim();
+      const text = mergedReg.text.trim();
 
       // محاولة استخراج الاسم من أول خط عريض في متن نص اللائحة (وهي الطريقة الأدق والأسلم للوائح المدمجة)
       const boldMatch = text.match(/^\s*\*\*(.+?):\*\*/) || text.match(/^\s*\*\*(.+?)\*\*/);
@@ -350,7 +373,7 @@ function LawSystemPageContent() {
     if (!law?.chapters) return [];
     for (const ch of law.chapters) {
       for (const art of ch.articles) {
-        if (art.executiveReg || art.instrument === "لائحة" || art.instrument === "ملحق") {
+        if ((art.regulations && art.regulations.length > 0) || art.instrument === "لائحة" || art.instrument === "ملحق") {
           const regName = extractRegFullName(art);
           if (regName && regName !== "النظام الأساسي") {
             names.add(regName);
@@ -410,24 +433,28 @@ function LawSystemPageContent() {
       s.replace(/[أإآا]/g, "ا").replace(/[ةه]/g, "ه").replace(/[يى]/g, "ي").toLowerCase();
     const nq = normalize(q);
     return allArticles.filter(a => {
+      const mergedReg = getMergedReg(a);
       const haystack = normalize([
         a.num,
         a.title ?? "",
         a.text,
-        a.executiveReg?.text ?? "",
-        a.executiveReg?.ref  ?? "",
+        mergedReg?.text ?? "",
+        mergedReg?.ref  ?? "",
         a.id,
       ].join(" "));
       return haystack.includes(nq);
     });
   })();
 
-  const getOrCreateEntry = useCallback((a: LawArticle): CartEntry => ({
-    articleId: a.id, articleNum: a.num, articleTitle: a.title, articleText: a.text,
-    lawName: law?.title ?? "", lawSlug: law?.slug ?? slug,
-    execReg: a.executiveReg ? { ref: a.executiveReg.ref, text: a.executiveReg.text } : undefined,
-    principles: [], precedents: [], isArticleAdded: false, isExecRegAdded: false,
-  }), [law?.title, law?.slug, slug]);
+  const getOrCreateEntry = useCallback((a: LawArticle): CartEntry => {
+    const mergedReg = getMergedReg(a);
+    return {
+      articleId: a.id, articleNum: a.num, articleTitle: a.title, articleText: a.text,
+      lawName: law?.title ?? "", lawSlug: law?.slug ?? slug,
+      execReg: mergedReg ? { ref: mergedReg.ref, text: mergedReg.text } : undefined,
+      principles: [], precedents: [], isArticleAdded: false, isExecRegAdded: false,
+    };
+  }, [law?.title, law?.slug, slug]);
 
   const addArticle = useCallback((a: LawArticle) => {
     setCart(prev => {
@@ -727,7 +754,7 @@ function LawSystemPageContent() {
                 >
                   {isRTL ? "النظام فقط" : "Law Only"}
                 </button>
-                {law.chapters.some(ch => ch.articles.some(a => a.executiveReg)) && (
+                {law.chapters.some(ch => ch.articles.some(a => a.regulations && a.regulations.length > 0)) && (
                   <button
                     onClick={() => setViewMode("regulation")}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -953,11 +980,26 @@ function LawSystemPageContent() {
                     return 9_999;
                   };
 
-                  // ── استخراج رقم مادة اللائحة من حقل text أو من الترقيم اللفظي المباشر ──
+                  // ── استخراج رقم مادة اللائحة: regNum الحقيقي أولاً (ك-13، مصدر
+                  // موثوق من article_regulations.reg_num)، ثم الاستدلال النصي
+                  // القديم كشبكة أمان فقط حين regNum غائب/فارغ ──
+                  const parseRegNumString = (raw: string): number | null => {
+                    const slash = raw.match(/(\d+)\s*\/\s*(\d+)/);
+                    if (slash) return parseInt(slash[1], 10) * 1000 + parseInt(slash[2], 10);
+                    const plain = raw.match(/\d+/);
+                    if (plain) return parseInt(plain[0], 10) * 1000;
+                    return null;
+                  };
                   const extractRegNum = (art: any): number => {
-                    if (art.executiveReg) {
-                      const text = art.executiveReg.text || "";
-                      const ref  = art.executiveReg.ref  || "";
+                    const realRegNum = art.regulations?.[0]?.regNum;
+                    if (realRegNum) {
+                      const parsed = parseRegNumString(String(realRegNum));
+                      if (parsed !== null) return parsed;
+                    }
+                    const mergedReg = getMergedReg(art);
+                    if (mergedReg) {
+                      const text = mergedReg.text || "";
+                      const ref  = mergedReg.ref  || "";
                       // أولاً: نمط (X/Y) في التكست — مثل المادة (1/3) → أولوية X*1000+Y
                       const slashMatch = text.match(/#*\s*\u0627\u0644\u0645\u0627\u062f\u0629\s*\((\d+)\/(\d+)\)/);
                       if (slashMatch) return parseInt(slashMatch[1], 10) * 1000 + parseInt(slashMatch[2], 10);
@@ -995,7 +1037,7 @@ function LawSystemPageContent() {
 
                   const regArticles = law.chapters
                     .flatMap(ch => ch.articles)
-                    .filter(a => a.executiveReg || a.instrument === "لائحة" || a.instrument === "ملحق")
+                    .filter(a => (a.regulations && a.regulations.length > 0) || a.instrument === "لائحة" || a.instrument === "ملحق")
                     // ── فلترة اللائحة المختارة
                     .filter(a => {
                       if (!selectedRegName) return true;

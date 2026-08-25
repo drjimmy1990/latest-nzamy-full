@@ -29,6 +29,8 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("community_posts")
     .select("*, community_answers(count)", { count: "exact" })
+    .neq("status", "deleted")
+    .neq("status", "moderated")
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
 

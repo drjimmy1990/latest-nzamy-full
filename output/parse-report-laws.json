@@ -1,0 +1,35 @@
+{
+  "type": "laws",
+  "generated_at": "2026-08-21T20:13:41.373Z",
+  "input": "D:\\Data\\Data\\antigravity ai\\تجارب\\Raw_Vault\\01_المكتبة_القانونية\\أنظمة ولوائح\\01 - القسم الجنائي",
+  "counts": {
+    "laws": 45,
+    "articles": 1532,
+    "excluded": 0,
+    "frontmatterWarnings": 0,
+    "rejectedEnumValues": 0,
+    "schemaVersionVariants": 3,
+    "slugCollisions": 0,
+    "failed": 0,
+    "emptyArticles": 0,
+    "orphanRegulationAnchors": 0,
+    "syntheticWholeDocumentArticles": 0,
+    "malformedAnchorFiles": 0
+  },
+  "excluded": [],
+  "frontmatterWarnings": [],
+  "rejectedEnumValues": [],
+  "schemaVersionCounts": {
+    "4.0": 32,
+    "(missing)": 1,
+    "3.1": 12
+  },
+  "notes": {
+    "emptyArticles": [],
+    "orphanRegulationAnchors": [],
+    "syntheticWholeDocumentArticles": [],
+    "malformedAnchorFiles": []
+  },
+  "identityCollisions": [],
+  "failed": []
+}

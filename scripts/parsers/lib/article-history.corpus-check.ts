@@ -15,7 +15,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { extractArticleHistory, stripDetails, stripArticleHeading } from "./article-history";
+import { extractArticleHistory, stripDetails, stripArticleHeading, unwrapLiveAnnexes } from "./article-history";
 import { applyExclusions } from "./exclusions";
 
 const root =
@@ -78,7 +78,11 @@ for (const f of files) {
     {
       let anchorMeta: Record<string, unknown> = {};
       try { anchorMeta = JSON.parse(m[1]); } catch { /* checked elsewhere */ }
-      const base = stripDetails(m[2]).replace(/<!--[\s\S]*?-->/g, "").replace(/^>\s*/gm, "").trim();
+      // ك-03 (2026-08-23): unwrap ب-114's allowlisted live-annex blocks before
+      // stripping, so this tool measures the same reality parse-laws.ts does
+      // (see the ⚠️ note on ب-114 — this script previously used stripDetails()
+      // alone and under-reported live text for the 26 known live-annex cases).
+      const base = stripDetails(unwrapLiveAnnexes(m[2])).replace(/<!--[\s\S]*?-->/g, "").replace(/^>\s*/gm, "").trim();
       if (base) {
         const naive = base.replace(/^[ \t]*#{1,6}[ \t]+.*$/gm, "").trim();
         if (!naive) naiveWouldEmpty++;
@@ -112,7 +116,7 @@ for (const f of files) {
     // article whose body is just a struck-through heading). Uses the SAME
     // label-only heading strip the parser uses, so this measures reality.
     const live = stripArticleHeading(
-      stripDetails(body).replace(/<!--[\s\S]*?-->/g, ""),
+      stripDetails(unwrapLiveAnnexes(body)).replace(/<!--[\s\S]*?-->/g, ""),
       String(meta.number_text || ""),
     )
       .replace(/^>\s*/gm, "")

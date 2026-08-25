@@ -18,6 +18,7 @@ interface Manifest {
     section_code: string[];
   };
   type_normalization_map: Record<string, string>;
+  status_normalization_map?: Record<string, string>;
   conventions: {
     forbidden_in_frontmatter: string[];
     internal_fields_not_seeded?: string[];
@@ -31,13 +32,28 @@ interface Manifest {
 let cached: Manifest | null = null;
 
 function resolveManifestPath(): string {
+  // ب-112: SCHEMA_MANIFEST_PATH had top priority in `candidates` but no
+  // exclusivity — if set to a path that doesn't exist, the loop just fell
+  // through to the next candidate silently. Setting the var almost always
+  // means the caller wants to FORCE a specific contract (a test fixture, a
+  // pinned older version); silently loading something else instead is worse
+  // than failing loud, since it looks like the override worked.
+  if (process.env.SCHEMA_MANIFEST_PATH) {
+    const forced = path.resolve(process.env.SCHEMA_MANIFEST_PATH);
+    if (!fs.existsSync(forced)) {
+      throw new Error(
+        `SCHEMA_MANIFEST_PATH=${process.env.SCHEMA_MANIFEST_PATH} does not exist (resolved: ${forced}). ` +
+          `Unset it to use the vendored default, or point it at a real file.`,
+      );
+    }
+    return forced;
+  }
   // The vendored copy under scripts/parsers/ is the canonical one and is
   // TRACKED IN GIT. Earlier the only copy lived in test/, which .gitignore
   // excludes — so a fresh clone or CI runner had no manifest at all, every
   // parse threw, the per-file try/catch swallowed it, and the run printed
   // "Parsed 0 laws" and exited 0. Vendoring it removes that whole failure mode.
   const candidates = [
-    ...(process.env.SCHEMA_MANIFEST_PATH ? [path.resolve(process.env.SCHEMA_MANIFEST_PATH)] : []),
     path.resolve(__dirname, "schema_manifest.json"),
     path.resolve(process.cwd(), "scripts/parsers/schema_manifest.json"),
     // Legacy locations, kept so an existing working checkout keeps working.
@@ -49,6 +65,20 @@ function resolveManifestPath(): string {
     `schema_manifest.json not found. Looked in:\n  ${candidates.join("\n  ")}\n` +
       `Set SCHEMA_MANIFEST_PATH to override.`,
   );
+}
+
+// ب-112: the oldest manifest_version this codebase's parsers are known to work
+// correctly against. A vendored copy older than this is a silent-drift bug
+// (exactly how 1.2 sat in the repo for weeks while the governing contract
+// moved to 1.4), not a legitimate pin — refuse it rather than seed against a
+// stale enum/type_normalization_map.
+const MIN_SUPPORTED_MANIFEST_VERSION = "1.3";
+
+function isVersionAtLeast(version: string, min: string): boolean {
+  const toParts = (v: string) => v.split(".").map((n) => parseInt(n, 10) || 0);
+  const [vMaj, vMin] = toParts(version);
+  const [mMaj, mMin] = toParts(min);
+  return vMaj !== mMaj ? vMaj > mMaj : vMin >= mMin;
 }
 
 export function getManifest(): Manifest {
@@ -73,7 +103,31 @@ export function getManifest(): Manifest {
       );
     }
   }
+  // ب-112: three non-empty enum arrays is exactly the shape a stale vendored
+  // copy also has — 1.2 passed this same check for weeks while missing 5 of
+  // 21 `type` values and 11 of 51 type_normalization_map entries, all falling
+  // back to "نظام" with no error and no counter. Check the version and map too.
+  if (typeof parsed.manifest_version !== "string") {
+    throw new Error(`schema_manifest.json at ${p} has no manifest_version — refusing to trust an unversioned contract.`);
+  }
+  if (!isVersionAtLeast(parsed.manifest_version, MIN_SUPPORTED_MANIFEST_VERSION)) {
+    throw new Error(
+      `schema_manifest.json at ${p} is manifest_version ${parsed.manifest_version}, older than the minimum ` +
+        `supported ${MIN_SUPPORTED_MANIFEST_VERSION}. This is the exact drift pattern from ب-112 (repo vendored a ` +
+        `stale 1.2 copy while the governing contract at 00_عقل_القوانين/10_عقد_الاسكيما_والبذرة/schema_manifest.json ` +
+        `moved to 1.4). Sync the vendored file from the governing copy rather than bumping this minimum.`,
+    );
+  }
+  if (!parsed.type_normalization_map || Object.keys(parsed.type_normalization_map).length === 0) {
+    throw new Error(
+      `schema_manifest.json at ${p} has an empty type_normalization_map — every raw type value would pass ` +
+        `through unmapped instead of being canonicalized.`,
+    );
+  }
   cached = parsed;
+  // ب-112 item 2: print what actually loaded, every run — the cheapest possible
+  // guard against a silent version drift going unnoticed for weeks again.
+  console.log(`📄 schema_manifest.json v${parsed.manifest_version} loaded from ${p}`);
   return cached;
 }
 
@@ -93,12 +147,31 @@ export const TYPE_ENUM = (): string[] => getManifest().enums.type;
 export const STATUS_ENUM = (): string[] => getManifest().enums.status;
 export const SECTION_CODE_ENUM = (): string[] => getManifest().enums.section_code;
 
-/** Validate a value against an enum; return fallback if not present. */
-export function validateEnum(enumName: "type" | "status" | "section_code", value: unknown, fallback: string): string {
+// ب-112: a rejected enum value used to fall back to its default with zero
+// trace — "نظام" for an "أمر سامي" looks identical to a correctly-typed law
+// in the output. Collect every rejection so a parser's summary can print
+// them (same philosophy as parse-decrees.ts's `unknownInstruments`), instead
+// of this only being discoverable by re-deriving the count from scratch.
+const rejectedEnumValues: Array<{ enumName: string; value: string; file?: string }> = [];
+
+export function getRejectedEnumValues(): ReadonlyArray<{ enumName: string; value: string; file?: string }> {
+  return rejectedEnumValues;
+}
+
+/** Validate a value against an enum; return fallback if not present.
+ *  Pass `filePath` so a rejection can be traced back to its source file. */
+export function validateEnum(
+  enumName: "type" | "status" | "section_code",
+  value: unknown,
+  fallback: string,
+  filePath?: string,
+): string {
   const list = enumName === "type" ? TYPE_ENUM() : enumName === "status" ? STATUS_ENUM() : SECTION_CODE_ENUM();
   const v = value == null ? "" : String(value).trim();
   if (!v) return fallback;
-  return list.includes(v) ? v : fallback;
+  if (list.includes(v)) return v;
+  rejectedEnumValues.push({ enumName, value: v, file: filePath });
+  return fallback;
 }
 
 // ── type_normalization_map ────────────────────────────────────────────────────
@@ -109,9 +182,41 @@ export function normalizeType(raw: unknown): string {
   const v = raw == null ? "" : String(raw).trim();
   if (!v) return "نظام";
   const map = getManifest().type_normalization_map || {};
-  // Direct map hit (skip _-prefixed meta keys).
+  // Direct map hit (skip _-prefixed keys).
   if (map[v] && !v.startsWith("_")) return map[v];
   return v; // unknown — let enum validation handle it
+}
+
+// ── status_normalization_map ──────────────────────────────────────────────────
+/**
+ * ب-133-c: found 2026-08-22 alongside the type-enum gap — two raw `status`
+ * values were silently rejected by validateEnum and defaulted to "active",
+ * the same invisible-fallback failure mode as the type gap above, just on a
+ * different field. Both mappings were verified against real file content
+ * before being added here, not assumed from the label alone:
+ *   - "superseded": checked both files carrying it — one's own folder name is
+ *     literally "(ملغاة)" (repealed), the other carries a separate
+ *     `law_lifecycle_status: "ملغى — مُستبدَل بالكامل"` field already saying
+ *     the same thing. Both are genuinely dead law, not just "replaced" in some
+ *     softer sense — "repealed" is the correct existing enum value, not a new
+ *     one.
+ *   - "amended": checked both files carrying it — `article_status_summary` is
+ *     already correctly populated (9/16 and 6/12 articles respectively) and
+ *     already reaches the DB (ب-114, jsonb passthrough), so the per-article
+ *     detail is not lost by folding the LAW-level status into "active"; a
+ *     top-level "amended" status would be redundant with, not additive to,
+ *     that existing granular field.
+ * "merged" is NOT in this map deliberately — it is a library-dedup concept
+ * (this file's content was absorbed into a different document), handled by
+ * the isSupersededDuplicate check in parse-laws.ts BEFORE status validation
+ * ever runs, not a legal-status synonym.
+ */
+export function normalizeStatus(raw: unknown): string {
+  const v = raw == null ? "" : String(raw).trim();
+  if (!v) return "";
+  const map = getManifest().status_normalization_map || {};
+  if (map[v] && !v.startsWith("_")) return map[v];
+  return v;
 }
 
 // ── forbidden_in_frontmatter ──────────────────────────────────────────────────
@@ -165,8 +270,16 @@ export function filterMeta(meta: Record<string, unknown>): Record<string, unknow
 }
 
 export function isInternalField(key: string): boolean {
+  // ب-139: needs_human_review/review_reason removed 2026-08-22 (council
+  // review, Codex) — these two were never about the extraction PROCESS the
+  // way the rest of this list is (processing_pipeline, extraction_method,
+  // investigator, …); they are a reliability signal about the CONTENT
+  // itself, and filtering them out here silently defeated every downstream
+  // attempt to seed/surface them (confirmed: this was the actual reason a
+  // grep for both fields found zero references anywhere past this point in
+  // the pipeline, despite 337 source files carrying them).
   const list = getManifest().conventions?.internal_fields_not_seeded || [
-    "processing_pipeline", "needs_human_review", "review_reason", "tier",
+    "processing_pipeline", "tier",
     "extraction_method", "verification_status", "source_images",
     "last_page_extracted", "last_ruling_extracted", "investigator",
   ];

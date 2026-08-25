@@ -1,0 +1,21 @@
+{
+  "type": "feqh",
+  "generated_at": "2026-08-21T03:47:08.774Z",
+  "input": "D:\\Data\\Data\\antigravity ai\\تجارب\\Raw_Vault\\01_المكتبة_القانونية\\فقه ومراجع",
+  "counts": {
+    "books": 176,
+    "pages": 196472,
+    "excluded": 0,
+    "frontmatterWarnings": 0,
+    "bookIdCollisions": 0,
+    "emptyBooks": 0,
+    "failed": 0
+  },
+  "excluded": [],
+  "frontmatterWarnings": [],
+  "identityCollisions": [],
+  "failed": [],
+  "notes": {
+    "emptyBooks": []
+  }
+}

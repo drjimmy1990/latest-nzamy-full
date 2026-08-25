@@ -76,6 +76,25 @@ export const EXCLUSION_RULES: ExclusionRule[] = [
     test: (p) => /_report\.md$/i.test(norm(p)),
   },
   {
+    id: "task_tracker",
+    reason:
+      "TASK_TRACKER.md — extraction-progress working notes kept between OCR batches, " +
+      "same purpose as EXTRACTION_MEMORY_* but a different filename the existing rule " +
+      "doesn't match (confirmed 2026-08-21: one instance, 81,459 bytes, no judicial anchor).",
+    test: (p) => /\/TASK_TRACKER\.md$/i.test(norm(p)),
+  },
+  {
+    id: "temp_working_chunk",
+    reason:
+      "temp_chunk_*.md / temp_append.md — unreviewed intermediate extraction " +
+      "chunks, not final content. Confirmed 2026-08-21: both carry real " +
+      "PRINCIPLE_START/END anchors with genuine case data (not empty stubs), and " +
+      "temp_append.md's principle (قضية ٤١٦٧/٢/ق) is already present verbatim in " +
+      "the folder's own final consolidated file — parsing it too would silently " +
+      "collide/duplicate rather than add missing content.",
+    test: (p) => /\/temp_[^/]*\.md$/i.test(norm(p)),
+  },
+  {
     id: "empty_stub_folder",
     reason:
       "Folder is named 'ملفات_قوالب_فارغة' (empty template files) — the maintainers " +

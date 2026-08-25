@@ -21,6 +21,7 @@ import * as path from "path";
 import { slugifyArabic as sharedSlugify } from "./lib/slug";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
+import { buildEntityIndexFromCategoryInput, resolveCrossDomain } from "./lib/entity-prescan";
 import { filterMeta } from "./manifest";
 import { writeParseReport, printCapped } from "./lib/report";
 import { classifyInstrument, type InstrumentType } from "./lib/instrument";
@@ -30,6 +31,14 @@ const unknownInstruments: string[] = [];
 
 /** Collected per run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
+
+/**
+ * ك-05 (2026-08-24): same schema_version visibility parse-laws.ts has had
+ * since ب-112 — the field was never tracked here at all (no parser branches
+ * on it, which is exactly how something like this stays invisible for
+ * weeks). "(missing)" is the bucket key when the field is absent.
+ */
+const schemaVersionCounts: Record<string, number> = {};
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -62,6 +71,23 @@ export interface ParsedDecree {
   official_url: string;
   raw_pages: string[];
   metadata: Record<string, unknown>;
+  /**
+   * ب-137: same convention as ب-133 in parse-laws.ts, ported here after
+   * council review (2026-08-22) found it live and unhandled — `id` here is
+   * the FILENAME (see parseCircularMd), never the frontmatter `id`/
+   * `instrument_id`, so two decrees for the same instrument under different
+   * filenames never collide and the duplicate silently seeds as its own
+   * record. Internal-only, stripped before final output.
+   */
+  isSupersededDuplicate: boolean;
+  supersededBy: string;
+  /** The frontmatter's own declared id/instrument_id — separate from `id`
+   *  above (filename-derived), needed to verify supersededBy references. */
+  declaredId: string;
+  /** ب-139: see ParsedLaw's identical field for the full rationale — ported
+   *  here after the same council review found this domain equally unwired. */
+  needsHumanReview: boolean;
+  reviewReason: string;
 }
 
 export interface DecreesParserOutput {
@@ -154,6 +180,16 @@ function parseUnifiedIndex(filePath: string): ParsedDecree[] {
       official_url: String(entry.official_url || ""),
       raw_pages: rawPages,
       metadata: entry,
+      // ب-137: read the same way as parseCircularMd, on the chance a unified
+      // index entry ever carries this convention too — untested against a
+      // real case in this source format, but free to check and consistent
+      // with the same protection applying uniformly.
+      isSupersededDuplicate:
+        String(entry.status ?? "").trim() === "superseded_duplicate" || String(entry.status ?? "").trim() === "merged",
+      supersededBy: String(entry.superseded_by ?? "").trim(),
+      declaredId: String(entry.id ?? entry.instrument_id ?? "").trim(),
+      needsHumanReview: entry.needs_human_review === true || String(entry.needs_human_review ?? "").trim() === "true",
+      reviewReason: String(entry.review_reason ?? "").trim(),
     });
   }
 
@@ -177,6 +213,18 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
 
   const fileId = path.basename(filePath, ".md");
   const title = String(meta.title || fileId);
+
+  const schemaVersionKey = String(meta.schema_version ?? "").trim() || "(missing)";
+  schemaVersionCounts[schemaVersionKey] = (schemaVersionCounts[schemaVersionKey] || 0) + 1;
+
+  // ب-137: read independently of the id/slug logic below, which stays
+  // filename-derived on purpose (unrelated to this check).
+  const rawStatusForDup = String(meta.status ?? "").trim();
+  const isSupersededDuplicate = rawStatusForDup === "superseded_duplicate" || rawStatusForDup === "merged";
+  const supersededBy = String(meta.superseded_by ?? "").trim();
+  const declaredId = String(meta.id ?? meta.instrument_id ?? "").trim();
+  const needsHumanReview = meta.needs_human_review === true || String(meta.needs_human_review ?? "").trim() === "true";
+  const reviewReason = String(meta.review_reason ?? "").trim();
 
   // Real Saudi instrument type: exact-match on the frontmatter value, with the
   // ambiguous "قرار" bucket refined by issuing_instrument. Never guessed —
@@ -241,6 +289,11 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
     official_url: String(meta.official_url || meta.source || ""),
     raw_pages: [],
     metadata: meta,
+    isSupersededDuplicate,
+    supersededBy,
+    declaredId,
+    needsHumanReview,
+    reviewReason,
   };
 }
 
@@ -309,6 +362,90 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
     }
   }
 
+  // ── Verified superseded_duplicate exclusion (ب-137, ported from ب-133) ──────
+  // Council review (2026-08-22, Codex) found this domain completely unhandled:
+  // `d.id` is the FILENAME (see parseCircularMd), never the frontmatter
+  // `id`/`instrument_id`, so a decree explicitly marked superseded_duplicate
+  // with a superseded_by pointer was still seeded as its own independent
+  // record — the id-collision guard below can never catch it, because two
+  // different filenames never produce the same `id` in the first place.
+  //
+  // Matched by declaredId (the frontmatter's own id/instrument_id), NOT by
+  // filename-derived `id` — a different identity than the primary seeding
+  // key, deliberately, mirroring parse-laws.ts's id-based fallback path.
+  //
+  // Known limitation, not silently glossed over: at least one live case
+  // (قرار سامي دعم مراكز الوثائق → superseded_by: "LAW-96-0364") points to a
+  // survivor that is a LAW, not a decree — no decrees-only check can ever
+  // verify that, since the target never appears in this domain's output at
+  // all. That case surfaces below as unverified, not silently dropped and
+  // not silently kept — it needs a cross-domain check this function cannot
+  // perform alone.
+  const declaredIdIndex = new Map<string, ParsedDecree>();
+  for (const d of allDecrees) if (!d.isSupersededDuplicate) declaredIdIndex.set(d.declaredId, d);
+
+  // أولوية 2 (EntityPreScanner, 2026-08-23): built once, only if this domain
+  // actually has an unresolved tag to check — a decree superseded by an
+  // instrument this domain never sees at all (a LAW) can now be verified
+  // against the sibling category root's frontmatter, closing the exact known
+  // gap this comment block used to just document and give up on.
+  const entityIndex = allDecrees.some((d) => d.isSupersededDuplicate)
+    ? buildEntityIndexFromCategoryInput(resolvedPath)
+    : new Map();
+
+  const decreeToDrop = new Set<ParsedDecree>();
+  const decreeUnverifiedSupersededTags: string[] = [];
+  const decreeCrossDomainVerified: string[] = [];
+  for (const d of allDecrees) {
+    if (!d.isSupersededDuplicate) continue;
+    const target = d.supersededBy ? declaredIdIndex.get(d.supersededBy) : undefined;
+    if (target && target !== d) {
+      decreeToDrop.add(d);
+      continue;
+    }
+    if (!d.supersededBy) {
+      decreeUnverifiedSupersededTags.push(`${d.id} :: tagged superseded_duplicate/merged, no superseded_by pointer`);
+      continue;
+    }
+    const crossHit = resolveCrossDomain(entityIndex, d.supersededBy, "decree");
+    if (crossHit) {
+      decreeToDrop.add(d);
+      decreeCrossDomainVerified.push(
+        `${d.id} :: superseded_by="${d.supersededBy}" verified as a real, untagged ${crossHit.kind} ` +
+          `(${path.basename(crossHit.path)}) — resolved cross-domain (أولوية 2)`,
+      );
+      continue;
+    }
+    decreeUnverifiedSupersededTags.push(
+      `${d.id} :: superseded_by="${d.supersededBy}" does not resolve to any real, untagged decree or ` +
+        `law in this run — cannot verify`,
+    );
+  }
+  const decreeSupersededDuplicateSkipped: string[] = [];
+  if (decreeToDrop.size > 0) {
+    for (const d of decreeToDrop) decreeSupersededDuplicateSkipped.push(d.id);
+    for (let i = allDecrees.length - 1; i >= 0; i--) {
+      if (decreeToDrop.has(allDecrees[i])) allDecrees.splice(i, 1);
+    }
+    console.log(
+      `\nℹ️  ${decreeToDrop.size} decree(s) excluded — verified superseded_duplicate/merged (ب-137): ` +
+        `real untagged survivor confirmed for each` +
+        (decreeCrossDomainVerified.length > 0
+          ? ` (${decreeCrossDomainVerified.length} cross-domain, أولوية 2).`
+          : `.`),
+    );
+    if (decreeCrossDomainVerified.length > 0) {
+      for (const line of decreeCrossDomainVerified) console.log(`   • ${line}`);
+    }
+  }
+  if (decreeUnverifiedSupersededTags.length > 0) {
+    console.error(
+      `\n🛑 ${decreeUnverifiedSupersededTags.length} UNVERIFIED decree superseded_duplicate/merged tag(s) — ` +
+        `cannot confirm a real survivor within this domain:`,
+    );
+    for (const line of decreeUnverifiedSupersededTags) console.error(`   • ${line}`);
+  }
+
   const totalArticles = allDecrees.reduce((sum, d) => sum + d.articles.length, 0);
   console.log(`\n📜 Decree Parser Summary`);
   console.log(`  Total decrees: ${allDecrees.length}`);
@@ -344,6 +481,16 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
   }
 
   printCapped("⚠️  frontmatter warning(s)", frontmatterWarnings);
+  printCapped(
+    "ℹ️  decree(s) skipped — status: superseded_duplicate/merged (ب-137, already adjudicated)",
+    decreeSupersededDuplicateSkipped,
+  );
+
+  // ك-05 — schema_version distribution (see parse-laws.ts for the original).
+  const schemaVersionSummary = Object.entries(schemaVersionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([v, n]) => `${v}: ${n}`);
+  printCapped("ℹ️  schema_version distribution", schemaVersionSummary);
 
   if (failedFiles.length > 0) {
     console.error(`\n🛑 ${failedFiles.length} file(s) failed to parse and are MISSING from the output.`);
@@ -361,31 +508,49 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
         excluded: excludedTotal,
         frontmatterWarnings: frontmatterWarnings.length,
         idCollisions: idCollisions.length,
+        supersededDuplicateSkipped: decreeSupersededDuplicateSkipped.length,
+        crossDomainVerified: decreeCrossDomainVerified.length,
+        unverifiedSupersededTags: decreeUnverifiedSupersededTags.length,
         failed: failedFiles.length,
+        schemaVersionVariants: Object.keys(schemaVersionCounts).length,
       },
+      schemaVersionCounts,
       excluded: excludedList,
       frontmatterWarnings,
       identityCollisions: idCollisions.map(([key, members]) => ({ key, members })),
       failed: failedFiles,
+      notes: {
+        supersededDuplicateSkipped: decreeSupersededDuplicateSkipped,
+        crossDomainVerified: decreeCrossDomainVerified,
+        unverifiedSupersededTags: decreeUnverifiedSupersededTags,
+      },
     });
     if (p) console.log(`\n📄 Full parse report: ${p}`);
   }
 
   // Rule ق-3: a run that lost documents or would corrupt identity must not exit 0.
-  if (idCollisions.length > 0 || failedFiles.length > 0) {
+  // unverifiedSupersededTags gates too: a live, confirmed cross-domain duplicate
+  // (verified 2026-08-22) would otherwise seed silently as its own record.
+  if (idCollisions.length > 0 || failedFiles.length > 0 || decreeUnverifiedSupersededTags.length > 0) {
     console.error(
       `\n✗ Parse completed with unrecoverable problems ` +
-        `(${idCollisions.length} id collision(s), ${failedFiles.length} failed file(s)). Refusing to report success.`,
+        `(${idCollisions.length} id collision(s), ${failedFiles.length} failed file(s), ` +
+        `${decreeUnverifiedSupersededTags.length} unverified superseded_duplicate/merged tag(s)). ` +
+        `Refusing to report success.`,
     );
     process.exitCode = 1;
   }
 
+  const cleanedDecrees = allDecrees.map(
+    ({ isSupersededDuplicate: _u1, supersededBy: _u2, declaredId: _u3, ...rest }) => rest,
+  );
+
   return {
     type: "decrees",
     generated_at: new Date().toISOString(),
-    total_decrees: allDecrees.length,
+    total_decrees: cleanedDecrees.length,
     total_articles: totalArticles,
-    decrees: allDecrees,
+    decrees: cleanedDecrees as ParsedDecree[],
   };
 }
 

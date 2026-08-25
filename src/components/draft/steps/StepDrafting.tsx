@@ -6,9 +6,10 @@ import {
   MagicWand, DownloadSimple, ArrowCounterClockwise, ChatCenteredText,
   Gavel, Shield, BookOpen, Scales, ChatCircleDots, Sparkle, X,
 } from "@phosphor-icons/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import BetaReviewGate from "@/components/BetaReviewGate";
+import { PartyData, MainDefense } from "@/components/draft/draftConstants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface MemoSection {
@@ -22,58 +23,150 @@ interface MemoSection {
   lawRef?: string;       // e.g. "المادة ٧٧ — نظام العمل"
 }
 
-// ─── Mock structured memo ─────────────────────────────────────────────────────
-const MOCK_SECTIONS: MemoSection[] = [
-  {
+const PLACEHOLDER = "[أكمل هذا الجزء]";
+
+// ─── Mail-merge helpers — build memo sections from real wizard state ──────────
+// Deterministic, no LLM — mirrors src/app/ai/debt-collection/page.tsx's generateNotice():
+// structured state in, Arabic text out. Any field the lawyer hasn't filled in yet
+// renders as PLACEHOLDER; nothing here is an invented fact.
+
+function partyDisplayName(p?: PartyData | null): string {
+  if (!p) return "";
+  if (p.type === "company") return p.companyName.trim();
+  if (p.type === "government") return p.entityName.trim();
+  return p.fullName.trim();
+}
+
+interface BuildSectionsParams {
+  memoType: string;
+  clientRole: "plaintiff" | "defendant" | "";
+  partyOne: PartyData;
+  partyTwo: PartyData;
+  plaintiffName: string;
+  defendantName: string;
+  judgmentCourt: string;
+  judgmentNumber: string;
+  judgmentDate: string;
+  judgmentText: string;
+  judgmentReasons: string;
+  disputeSummary: string;
+  caseText: string;
+  customLegalTexts: string;
+  defenses: MainDefense[];
+}
+
+function buildMemoSections(params: BuildSectionsParams): MemoSection[] {
+  const {
+    memoType, clientRole, partyOne, partyTwo, plaintiffName, defendantName,
+    judgmentCourt, judgmentNumber, judgmentDate, judgmentText, judgmentReasons,
+    disputeSummary, caseText, customLegalTexts, defenses,
+  } = params;
+
+  const isAppeal = memoType === "appeal" || memoType === "reply";
+  const sections: MemoSection[] = [];
+
+  // ── Opening — formulaic judicial salutation (not case-specific) ──
+  sections.push({
     id: "header", type: "header",
-    content: "بسم الله الرحمن الرحيم\n\nأصحاب الفضيلة / قضاة الدائرة العمالية حفظهم الله\n\nالسلام عليكم ورحمة الله وبركاته",
-  },
-  {
+    content: "بسم الله الرحمن الرحيم\n\nأصحاب الفضيلة / السادة القضاة حفظهم الله\n\nالسلام عليكم ورحمة الله وبركاته",
+  });
+
+  // ── أطراف المذكرة ──
+  let partiesLine = PLACEHOLDER;
+  if (memoType === "case") {
+    const p1 = partyDisplayName(partyOne) || PLACEHOLDER;
+    const p2 = partyDisplayName(partyTwo) || PLACEHOLDER;
+    const plaintiff = clientRole === "defendant" ? p2 : p1;
+    const defendant = clientRole === "defendant" ? p1 : p2;
+    partiesLine = `المدعي: ${plaintiff}\nالمدعى عليه: ${defendant}`;
+  } else if (isAppeal) {
+    partiesLine = `الطاعن / المدعي: ${plaintiffName || PLACEHOLDER}\nالمطعون ضده / المدعى عليه: ${defendantName || PLACEHOLDER}`;
+  }
+  sections.push({
     id: "subject", type: "heading", heading: "الموضوع",
-    content: "صحيفة دعوى — فصل تعسفي",
-  },
-  {
+    content: partiesLine,
+  });
+
+  // ── أولاً: الوقائع — judgment refs (appeal/reply) + user's dispute summary ──
+  const factParts: string[] = [];
+  if (isAppeal) {
+    if (judgmentNumber || judgmentCourt || judgmentDate) {
+      factParts.push(`صدر الحكم المطعون فيه برقم (${judgmentNumber || PLACEHOLDER}) بتاريخ ${judgmentDate || PLACEHOLDER} عن ${judgmentCourt || PLACEHOLDER}.`);
+    }
+    if (judgmentText) factParts.push(`منطوق الحكم: ${judgmentText}`);
+    if (judgmentReasons) factParts.push(`أسباب الحكم: ${judgmentReasons}`);
+  }
+  if (disputeSummary.trim()) factParts.push(disputeSummary.trim());
+  else if (caseText.trim()) factParts.push(caseText.trim());
+
+  sections.push({
     id: "facts", type: "heading", heading: "أولاً: الوقائع",
-    content: "التحق موكلنا / [اسم الموكل] بالعمل لدى المدعى عليها / [اسم الشركة] بموجب عقد عمل محدد المدة مؤرخ في [التاريخ]، وقد فوجئ بإنهاء خدماته بتاريخ [التاريخ] دون إشعار مسبق كافٍ ودون مسوّغ نظامي مشروع.",
-  },
-  {
-    id: "d1", type: "defense",
-    label: "الدفع الأول", tag: "أساسي", tagColor: "red",
-    heading: "بطلان الإنهاء لعدم الإشعار المسبق",
-    content: "استناداً إلى المادة (٧٧) من نظام العمل الصادر بالمرسوم الملكي م/٥١، يلتزم صاحب العمل بإشعار العامل قبل الإنهاء بمدة لا تقل عن ثلاثين (٣٠) يوماً، وقد أخلّت المدعى عليها بهذا الالتزام مما يُرتّب فساد الإنهاء وبطلانه.",
-    lawRef: "المادة ٧٧ — نظام العمل",
-  },
-  {
-    id: "d1a", type: "sub-defense",
-    label: "الدفع الفرعي ١/أ",
-    heading: "عدم وجود إخطار خطي معتبر",
-    content: "لم يتسلّم الموكل أي إخطار خطي رسمي يُثبت تسليم إشعار الإنهاء بل جرى الإنهاء شفهياً وفجأةً، مما يجعل الإنهاء مجرداً من الركن الشكلي اللازم نظاماً.",
-  },
-  {
-    id: "d2", type: "defense",
-    label: "الدفع الثاني", tag: "أساسي", tagColor: "red",
-    heading: "استحقاق مكافأة نهاية الخدمة كاملة",
-    content: "وفقاً للمادتين (٨٤) و(٨٨) من نظام العمل، يستحق الموكل مكافأة نهاية الخدمة محسوبة على أساس آخر أجر شهري عن كل سنة خدمة، دون أي تخفيض بسبب الإنهاء التعسفي من قِبل صاحب العمل.",
-    lawRef: "المادتان ٨٤، ٨٨ — نظام العمل",
-  },
-  {
-    id: "d3", type: "defense",
-    label: "الدفع الثالث", tag: "إجرائي", tagColor: "blue",
-    heading: "بطلان الإنهاء لمخالفة ضوابط التأديب",
-    content: "أوجبت المادة (٨٩) من نظام العمل اتباع إجراءات تأديبية محددة قبل الإنهاء، ولم تُثبت المدعى عليها اتخاذ أي إجراء تأديبي مسبق، مما يُفقد قرار الإنهاء مشروعيته الإجرائية.",
-    lawRef: "المادة ٨٩ — نظام العمل",
-  },
-  {
-    id: "d3a", type: "sub-defense",
-    label: "الدفع الفرعي ٣/أ",
-    heading: "التعويض عن الفصل التعسفي",
-    content: "طبقاً لنص المادة (٨٠) من نظام العمل، يحق للموكل طلب التعويض عن الأضرار الجسيمة التي لحقت به نتيجة الفصل التعسفي، ويُقدّر هذا التعويض وفق الضرر الفعلي الثابت.",
-  },
-  {
-    id: "requests", type: "requests", heading: "ثالثاً: الطلبات",
-    content: "نلتمس من عدالتكم الحكم بما يلي:\n١. إلزام المدعى عليها بأجر الإشعار كاملاً عن مدة ثلاثين (٣٠) يوماً.\n٢. إلزام المدعى عليها بصرف مكافأة نهاية الخدمة الكاملة.\n٣. إلزام المدعى عليها بالتعويض عن الفصل التعسفي وفق ما تقدّره عدالتكم.\n٤. إلزام المدعى عليها بالمصروفات القضائية.",
-  },
-];
+    content: factParts.length ? factParts.join("\n\n") : PLACEHOLDER,
+  });
+
+  // ── ثانياً: الأسباب والاعتراضات — confirmed defenses + custom legal texts ──
+  const confirmed = defenses.filter(d => d.status === "confirmed");
+  if (confirmed.length === 0) {
+    sections.push({
+      id: "grounds-empty", type: "heading", heading: "ثانياً: الأسباب والاعتراضات",
+      content: PLACEHOLDER,
+    });
+  } else {
+    sections.push({
+      id: "grounds-title", type: "heading", heading: "ثانياً: الأسباب والاعتراضات",
+      content: `فيما يلي الدفوع التي أكّدها المحامي (${confirmed.length}):`,
+    });
+    confirmed.forEach((d, i) => {
+      sections.push({
+        id: `defense-${d.id}`, type: "defense",
+        label: `الدفع ${i + 1}`,
+        tag: d.isCore ? "أساسي" : undefined,
+        tagColor: d.isCore ? "red" : undefined,
+        heading: d.title,
+        content: d.summary,
+        lawRef: d.legalBase,
+      });
+      d.subDefenses.filter(sd => sd.status === "confirmed").forEach((sd, j) => {
+        sections.push({
+          id: `subdefense-${sd.id}`, type: "sub-defense",
+          label: `الدفع الفرعي ${i + 1}/${j + 1}`,
+          heading: sd.title,
+          content: sd.note?.trim() || sd.legalBase || sd.title,
+        });
+      });
+    });
+  }
+
+  if (customLegalTexts.trim()) {
+    sections.push({
+      id: "custom-laws", type: "text", heading: "نصوص نظامية إضافية",
+      content: customLegalTexts.trim(),
+    });
+  }
+
+  // ── ثالثاً: الطلبات — derived only from the lawyer's own confirmed grounds ──
+  if (confirmed.length > 0) {
+    const items = confirmed.map((d, i) => `${i + 1}. الحكم بما يقرره النظام بشأن: ${d.title}`);
+    items.push(`${items.length + 1}. إلزام الطرف الآخر بالمصروفات القضائية والرسوم.`);
+    sections.push({
+      id: "requests", type: "requests", heading: "ثالثاً: الطلبات",
+      content: `نلتمس من عدالتكم الحكم بما يلي:\n${items.join("\n")}`,
+    });
+  } else {
+    sections.push({
+      id: "requests", type: "requests", heading: "ثالثاً: الطلبات",
+      content: PLACEHOLDER,
+    });
+  }
+
+  // ── الخاتمة — formulaic closing ──
+  sections.push({
+    id: "closing", type: "text", heading: "الخاتمة",
+    content: "وتفضلوا بقبول فائق الاحترام والتقدير،\nوالله يحفظكم ويرعاكم.",
+  });
+
+  return sections;
+}
 
 // ─── Revision Panel ───────────────────────────────────────────────────────────
 function RevisionPanel({
@@ -140,9 +233,11 @@ function RevisionPanel({
 
 // ─── Single memo block ────────────────────────────────────────────────────────
 function MemoBlock({
-  section, isDark, index,
+  section, isDark, index, amendments, onApplyAmendment,
 }: {
   section: MemoSection; isDark: boolean; index: number;
+  amendments: string[];
+  onApplyAmendment: (sectionId: string, instruction: string) => void;
 }) {
   const [hover, setHover] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -248,6 +343,18 @@ function MemoBlock({
             <p className={`text-[12px] leading-[1.85] whitespace-pre-line ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
               {section.content}
             </p>
+
+            {/* Applied amendments — visible, honest result of "طبّق التعديل" (FIX 2) */}
+            {amendments.length > 0 && (
+              <div className="mt-2.5 space-y-1.5">
+                {amendments.map((a, i) => (
+                  <div key={i}
+                    className={`rounded-lg border-r-2 px-2.5 py-1.5 text-[11px] leading-relaxed ${isDark ? "border-[#C8A762] bg-[#C8A762]/[0.06] text-[#C8A762]" : "border-[#C8A762] bg-amber-50 text-amber-800"}`}>
+                    🖊 تعديل مطلوب: {a}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Hover actions */}
@@ -258,7 +365,10 @@ function MemoBlock({
                 className="flex items-center gap-1 flex-shrink-0"
               >
                 <button
-                  onClick={() => { navigator.clipboard.writeText(section.content); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+                  onClick={() => {
+                    const text = amendments.length ? `${section.content}\n${amendments.map(a => `🖊 تعديل مطلوب: ${a}`).join("\n")}` : section.content;
+                    navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500);
+                  }}
                   title="نسخ"
                   className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${isDark ? "border-white/[0.08] text-zinc-500 hover:text-zinc-300" : "border-slate-200 text-slate-400 hover:text-slate-600"}`}
                 >
@@ -293,7 +403,7 @@ function MemoBlock({
                 isDark={isDark}
                 sectionLabel={section.label ?? section.heading}
                 onClose={() => { setChatOpen(false); setHover(false); }}
-                onApply={() => { setChatOpen(false); setHover(false); }}
+                onApply={(inst) => { onApplyAmendment(section.id, inst); setChatOpen(false); setHover(false); }}
               />
             </div>
           </motion.div>
@@ -325,14 +435,87 @@ interface StepDraftingProps {
   isDark: boolean;
   memoType: string;
   memoSubType: string;
+  clientRole: "plaintiff" | "defendant" | "";
+  partyOne: PartyData;
+  partyTwo: PartyData;
+  plaintiffName: string;
+  defendantName: string;
+  judgmentCourt: string;
+  judgmentNumber: string;
+  judgmentDate: string;
+  judgmentText: string;
+  judgmentReasons: string;
+  disputeSummary: string;
+  caseText: string;
+  customLegalTexts: string;
+  defenses: MainDefense[];
 }
 
-export function StepDrafting({ isDark, memoType, memoSubType }: StepDraftingProps) {
+interface RevisionEntry {
+  scope: "global" | "section";
+  sectionId?: string;
+  instruction: string;
+}
+
+export function StepDrafting({
+  isDark, memoType, memoSubType, clientRole,
+  partyOne, partyTwo, plaintiffName, defendantName,
+  judgmentCourt, judgmentNumber, judgmentDate, judgmentText, judgmentReasons,
+  disputeSummary, caseText, customLegalTexts, defenses,
+}: StepDraftingProps) {
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const [copied, setCopied]               = useState(false);
   const [showRevision, setShowRevision]   = useState(false);
-  const [revisionHistory, setRevisionHistory] = useState<string[]>([]);
-  const visible = useStreamSections(MOCK_SECTIONS);
+  const [revisionHistory, setRevisionHistory] = useState<RevisionEntry[]>([]);
+  const [sectionAmendments, setSectionAmendments] = useState<Record<string, string[]>>({});
+  const [globalAmendments, setGlobalAmendments]   = useState<string[]>([]);
+
+  const sections = useMemo(() => buildMemoSections({
+    memoType, clientRole, partyOne, partyTwo, plaintiffName, defendantName,
+    judgmentCourt, judgmentNumber, judgmentDate, judgmentText, judgmentReasons,
+    disputeSummary, caseText, customLegalTexts, defenses,
+  }), [
+    memoType, clientRole, partyOne, partyTwo, plaintiffName, defendantName,
+    judgmentCourt, judgmentNumber, judgmentDate, judgmentText, judgmentReasons,
+    disputeSummary, caseText, customLegalTexts, defenses,
+  ]);
+
+  const visible = useStreamSections(sections);
+
+  function applySectionAmendment(sectionId: string, instruction: string) {
+    setSectionAmendments(prev => ({ ...prev, [sectionId]: [...(prev[sectionId] ?? []), instruction] }));
+    setRevisionHistory(prev => [...prev, { scope: "section", sectionId, instruction }]);
+  }
+
+  function applyGlobalAmendment(instruction: string) {
+    setGlobalAmendments(prev => [...prev, instruction]);
+    setRevisionHistory(prev => [...prev, { scope: "global", instruction }]);
+  }
+
+  function undoLastRevision() {
+    setRevisionHistory(prev => {
+      if (!prev.length) return prev;
+      const last = prev[prev.length - 1];
+      if (last.scope === "global") {
+        setGlobalAmendments(g => g.slice(0, -1));
+      } else if (last.sectionId) {
+        const sid = last.sectionId;
+        setSectionAmendments(s => ({ ...s, [sid]: (s[sid] ?? []).slice(0, -1) }));
+      }
+      return prev.slice(0, -1);
+    });
+  }
+
+  function getFullText(): string {
+    const body = sections.map(s => {
+      const own = sectionAmendments[s.id] ?? [];
+      return own.length ? `${s.content}\n${own.map(a => `🖊 تعديل مطلوب: ${a}`).join("\n")}` : s.content;
+    }).join("\n\n");
+    const globalBlock = globalAmendments.length
+      ? `\n\n${globalAmendments.map(a => `🖊 تعديل مطلوب: ${a}`).join("\n")}`
+      : "";
+    return body + globalBlock;
+  }
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
@@ -345,13 +528,13 @@ export function StepDrafting({ isDark, memoType, memoSubType }: StepDraftingProp
         </span>
         <div className="flex items-center gap-1.5">
           {revisionHistory.length > 0 && (
-            <button onClick={() => setRevisionHistory(prev => prev.slice(0, -1))}
+            <button onClick={undoLastRevision}
               className={`flex items-center gap-1 rounded-xl px-2 py-1 text-[11px] border ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-400" : "border-zinc-200 bg-zinc-50 text-zinc-500"}`}>
               <ArrowCounterClockwise size={11} />تراجع
             </button>
           )}
           <button
-            onClick={() => { const all = MOCK_SECTIONS.map(s => s.content).join("\n\n"); navigator.clipboard.writeText(all); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+            onClick={() => { navigator.clipboard.writeText(getFullText()); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
             className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-[11px] border ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-400" : "border-zinc-200 bg-zinc-50 text-zinc-500"}`}>
             {copied ? <CheckCircle size={11} className="text-emerald-500" /> : <Copy size={11} />}
             {copied ? "تم" : "نسخ الكل"}
@@ -371,7 +554,7 @@ export function StepDrafting({ isDark, memoType, memoSubType }: StepDraftingProp
             isDark={isDark}
             onClose={() => setShowRevision(false)}
             onApply={(inst) => {
-              setRevisionHistory(prev => [...prev, inst]);
+              applyGlobalAmendment(inst);
               setShowRevision(false);
             }}
           />
@@ -379,15 +562,40 @@ export function StepDrafting({ isDark, memoType, memoSubType }: StepDraftingProp
       </AnimatePresence>
 
       <BetaReviewGate toolId="draft.final" toolName={memoType === "contract" ? "صياغة العقد" : "الصائغ القانوني"} reviewScope="legal-data">
+        {/* Honesty disclaimer */}
+        <p className={`text-[10.5px] px-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+          مسودة أولية مبنية على مدخلاتك — راجعها قبل الاستخدام
+        </p>
+
         {/* Hint */}
         <p className={`text-[10px] px-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
           💡 اضغط على أي بند للتعديل بالذكاء الاصطناعي أو نسخه منفرداً
         </p>
 
+        {/* Global amendments — visible, honest result of the toolbar "تعديل AI" (FIX 2) */}
+        {globalAmendments.length > 0 && (
+          <div className={`${card} px-4 py-3 space-y-1.5`}>
+            <p className={`text-[11px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>تعديلات عامة مطبّقة</p>
+            {globalAmendments.map((a, i) => (
+              <div key={i}
+                className={`rounded-lg border-r-2 px-2.5 py-1.5 text-[11px] leading-relaxed ${isDark ? "border-[#C8A762] bg-[#C8A762]/[0.06] text-[#C8A762]" : "border-[#C8A762] bg-amber-50 text-amber-800"}`}>
+                🖊 تعديل مطلوب: {a}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Structured memo blocks */}
         <div className="space-y-2">
-          {MOCK_SECTIONS.slice(0, visible).map((section, i) => (
-            <MemoBlock key={section.id} section={section} isDark={isDark} index={i} />
+          {sections.slice(0, visible).map((section, i) => (
+            <MemoBlock
+              key={section.id}
+              section={section}
+              isDark={isDark}
+              index={i}
+              amendments={sectionAmendments[section.id] ?? []}
+              onApplyAmendment={applySectionAmendment}
+            />
           ))}
         </div>
 

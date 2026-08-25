@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/access-control";
+import { fanOutBroadcast } from "@/lib/broadcastFanout";
 
 /**
  * PATCH /api/v1/admin/broadcasts/[id] — Update a broadcast
@@ -89,6 +90,13 @@ export async function PATCH(
 
     if (!data) {
       return NextResponse.json({ error: "الرسالة غير موجودة" }, { status: 404 });
+    }
+
+    // Status flipped to 'sent' in this request (sent_at was stamped above) →
+    // fan out real notifications now. Best-effort: fanOutBroadcast never
+    // throws, so this cannot fail the admin's request.
+    if (body.status === "sent") {
+      await fanOutBroadcast(data);
     }
 
     return NextResponse.json({ success: true, data });

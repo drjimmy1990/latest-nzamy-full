@@ -1,17 +1,27 @@
 "use client";
 
-import { useCallback, useState, useEffect, useMemo } from "react";
+import { useCallback, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, Minus, Copy, Check, CaretDown, CaretUp,
   ClockCounterClockwise, FileText, BookOpen, Lock,
-  Stack, Trash, X, ArrowCounterClockwise, Scales,
-  Gavel, Sparkle, Highlighter, NotePencil, FloppyDisk, PushPin
+  Scales,
+  Gavel, Sparkle
 } from "@phosphor-icons/react";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import type { LawArticle, JudicialPrinciple, JudicialPrecedent } from "../data";
 import { buildCitation } from "./_citation";
 import { useSubscription } from "@/hooks/useSubscription";
+
+// ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx/_sidebar.tsx.
+function getMergedReg(a: LawArticle): { ref: string; text: string } | null {
+  if (!a.regulations || a.regulations.length === 0) return null;
+  const distinctRefs = Array.from(new Set(a.regulations.map((r) => r.ref || "").filter(Boolean)));
+  return {
+    ref: distinctRefs.join(", "),
+    text: a.regulations.map((r) => r.text || "").join("\n\n"),
+  };
+}
 
 interface ParseBlock {
   type: "paragraph" | "details" | "heading" | "blockquote" | "separator" | "list-item" | "num-list-item";
@@ -362,7 +372,7 @@ function PrincipleCard({ p, isDark, inCart, onToggle, locked, onLock, isRTL = tr
       <div className="flex items-start gap-2 mb-1.5">
         <div className="flex-1">
           <p className={`text-[10px] font-bold ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}>{p.source}</p>
-          <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{p.ref}</p>
+          <p className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{p.ref}</p>
         </div>
         <div className="flex gap-1">
           <button onClick={handleCopy} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-600" : "hover:bg-slate-200 text-slate-400"}`}>
@@ -395,7 +405,7 @@ function PrecedentCard({ pr, isDark, inCart, onToggle, locked, onLock, isRTL = t
       <div className="flex items-start gap-2 mb-1.5">
         <div className="flex-1">
           <p className={`text-[10px] font-bold ${isDark ? "text-purple-400" : "text-purple-700"}`}>{pr.court}</p>
-          <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{pr.caseNum} · {pr.year}</p>
+          <p className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{pr.caseNum} · {pr.year}</p>
         </div>
         <div className="flex gap-1">
           <button onClick={handleCopy} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-600" : "hover:bg-slate-200 text-slate-400"}`}>
@@ -407,7 +417,7 @@ function PrecedentCard({ pr, isDark, inCart, onToggle, locked, onLock, isRTL = t
         </div>
       </div>
       <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{pr.summary}</p>
-      <p className={`text-[10px] mt-1.5 font-semibold ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{isRTL ? "الصلة بالمادة" : "Article relevance"}: {pr.relevance}</p>
+      <p className={`text-[10px] mt-1.5 font-semibold ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{isRTL ? "الصلة بالمادة" : "Article relevance"}: {pr.relevance}</p>
     </div>
   );
 }
@@ -510,13 +520,12 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   isReadingMode?: boolean;
   viewMode?: "all" | "law" | "regulation";
 }) {
-  const [showAmendments, setShowAmendments] = useState(false);
   const [showRepealed,   setShowRepealed]   = useState(false);
-  const [showExecReg,    setShowExecReg]    = useState(false);
   const [copied, setCopied]                 = useState(false);
   const [copiedReg, setCopiedReg]           = useState(false);
   const isRepealed  = article.status === "repealed";
   const isAmended   = article.status === "amended";
+  const mergedReg   = getMergedReg(article);
     const { can }     = useSubscription();
   const hasLibraryAccess = can("library-full-access");
   const isLocked    = !article.free && !hasLibraryAccess;
@@ -559,15 +568,15 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
 
   const handleCopyReg = useCallback(() => {
     if (isLocked) { showPaywall(); return; }
-    if (!article.executiveReg) return;
-    const selectedText = getSelectedTextWithin(`exec-reg-${article.id}`, article.executiveReg.text);
-    const plainText = selectedText || article.executiveReg.text;
+    if (!mergedReg) return;
+    const selectedText = getSelectedTextWithin(`exec-reg-${article.id}`, mergedReg.text);
+    const plainText = selectedText || mergedReg.text;
 
     const citation = buildCitation(
       {
         docTitle: lawName,
         docType: lawType,
-        regulationRef: article.executiveReg.ref,
+        regulationRef: mergedReg.ref,
       },
       isRTL,
     );
@@ -576,15 +585,14 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
     const html  = `${citation.html}<br>“${md2html(plainText)}”`;
     copyRich(html, plain);
     setCopiedReg(true); setTimeout(() => setCopiedReg(false), 1800);
-  }, [article, isLocked, showPaywall, lawName, lawType, isRTL]);
+  }, [article, mergedReg, isLocked, showPaywall, lawName, lawType, isRTL]);
 
 
 
-
-  const mainBadgeText = viewMode === "regulation" && article.executiveReg ? article.executiveReg.ref : article.num;
+  const mainBadgeText = viewMode === "regulation" && mergedReg ? mergedReg.ref : article.num;
 
   // ── لون Badge حسب الحالة ──────────────────────────────────────────────────
-  const mainBadgeStyle = viewMode === "regulation" && article.executiveReg
+  const mainBadgeStyle = viewMode === "regulation" && mergedReg
     ? "bg-[#C8A762] text-[#0B3D2E] font-black"
     : isRepealed
       ? isDark
@@ -603,7 +611,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
       ? isDark ? "border-white/[0.04] bg-amber-950/20" : "border-amber-100 bg-amber-50/40"
       : isDark ? "border-white/[0.05] bg-zinc-800/50" : "border-slate-100 bg-slate-50/80";
 
-  const showExplainBtn = !isRepealed && (viewMode !== "regulation" || !!article.executiveReg);
+  const showExplainBtn = !isRepealed && (viewMode !== "regulation" || !!mergedReg);
   const mainInCart = viewMode === "regulation" ? regInCart : inCart;
   const mainOnToggleCart = () => {
     if (viewMode === "regulation") {
@@ -701,11 +709,11 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
 
       {/* Body */}
       <div className="px-4 py-3 space-y-3" onClick={e => e.stopPropagation()}>
-        {viewMode === "regulation" && article.executiveReg ? (
+        {viewMode === "regulation" && mergedReg ? (
           isLocked ? (
             <div className="relative">
               <div className="blur-[3px] opacity-60 pointer-events-none select-none">
-                <MD text={article.executiveReg.text.split("\n").slice(0, 2).join("\n") + "\n..."} isDark={isDark} isRTL={isRTL} />
+                <MD text={mergedReg.text.split("\n").slice(0, 2).join("\n") + "\n..."} isDark={isDark} isRTL={isRTL} />
               </div>
               <div className="absolute inset-0 flex items-center justify-center">
                 <button onClick={showPaywall} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0B3D2E] text-white text-[11px] font-bold shadow">
@@ -715,7 +723,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             </div>
           ) : (
             <div id={`exec-reg-${article.id}`} className="nzamy-reader-block">
-              <MD text={article.executiveReg.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+              <MD text={mergedReg.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
             </div>
           )
         ) : (
@@ -814,7 +822,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                     <div key={i} className={`p-3 rounded-xl border ${isDark ? "border-amber-700/10 bg-amber-900/5" : "border-amber-200 bg-amber-50/60"}`}>
                       <div className="flex gap-2 mb-1">
                         <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>{amend.source}</span>
-                        <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{amend.date}</span>
+                        <span className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{amend.date}</span>
                       </div>
                       <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{amend.summary}</p>
                       <p className={`text-[12px] leading-relaxed pt-2 border-t ${isDark ? "border-amber-700/15 text-zinc-400" : "border-amber-200 text-zinc-600"}`}>{amend.fullText}</p>
@@ -825,12 +833,12 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             )}
             
             {/* Executive Reg — Statically displayed as a shaded box (NOT COLLAPSIBLE) */}
-            {viewMode !== "law" && article.executiveReg && (
+            {viewMode !== "law" && mergedReg && (
               <div className={`rounded-xl border ${isRTL ? "border-r-4" : "border-l-4"} border-[#C8A762]/60 ${isDark ? "bg-[#C8A762]/5 border-r-[#C8A762]/70" : "bg-slate-50 border-r-[#0B3D2E]/40 border-l-slate-200 border-y-slate-200"} p-4 mt-3 space-y-2`}>
                 <div className="flex items-center gap-1.5 pb-2 border-b border-dashed border-zinc-200/20">
                   <FileText size={14} className={isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"} weight="duotone" />
                   <span className={`text-[12px] font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-                    {article.executiveReg.ref}
+                    {mergedReg.ref}
                   </span>
                   {!isReadingMode && (
                     <div className="flex gap-1.5 ms-auto print:hidden">
@@ -856,7 +864,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                   )}
                 </div>
                 <div id={`exec-reg-${article.id}`} className="nzamy-reader-block pt-1">
-                  <MD text={article.executiveReg.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                  <MD text={mergedReg.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
                 </div>
               </div>
             )}
@@ -883,7 +891,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             {/* Cart additions for this article */}
             {viewMode !== "regulation" && entry && (entry.principles.length > 0 || entry.precedents.length > 0) && (
               <div className={`space-y-1.5 pt-1.5 border-t ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
-                <p className={`text-[10px] font-bold ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{isRTL ? "مضاف للمسودة:" : "Added to draft:"}</p>
+                <p className={`text-[10px] font-bold ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{isRTL ? "مضاف للمسودة:" : "Added to draft:"}</p>
                 {entry.principles.map(p => (
                   <div key={p.id} className={`flex items-start gap-2 p-2 rounded-lg text-[11px] ${isDark ? "bg-[#C8A762]/5" : "bg-amber-50"}`}>
                     <Scales size={10} className={`mt-0.5 flex-shrink-0 ${isDark ? "text-[#C8A762]" : "text-amber-600"}`} />
@@ -953,8 +961,8 @@ export function PreambleBlock({
       <AnimatePresence>
         {open && (
           <motion.div key="preamble-content" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-            <div className={`px-4 pb-4 border-t text-[12px] leading-loose whitespace-pre-wrap ${isDark ? "border-white/[0.05] text-zinc-400" : "border-slate-100 text-slate-600"}`}>
-              {hasText && text && <p>{text}</p>}
+            <div className={`px-4 pb-4 border-t text-[12px] leading-loose ${isDark ? "border-white/[0.05] text-zinc-400" : "border-slate-100 text-slate-600"}`}>
+              {hasText && text && <MD text={text} isDark={isDark} isRTL={isRTL} fontClass="text-[12px] leading-loose" />}
               {hasText && hasReg && (
                 <div className={`my-3 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
               )}
@@ -965,7 +973,7 @@ export function PreambleBlock({
                       {isRTL ? "اللائحة التنفيذية" : "Executive Regulation"}
                     </p>
                   )}
-                  <p>{regulationPreamble}</p>
+                  <MD text={regulationPreamble} isDark={isDark} isRTL={isRTL} fontClass="text-[12px] leading-loose" />
                 </>
               )}
             </div>

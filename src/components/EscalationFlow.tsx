@@ -5,10 +5,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
   Gavel, Lightning, Scales, ArrowLeft, ArrowRight,
-  ChatCircle, ShieldCheck, Star, Clock, CurrencyDollar,
+  ChatCircle, ShieldCheck, Star, Clock,
   CheckCircle, X, User,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { useUser } from "@/hooks/useUser";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface EscalationProps {
@@ -108,13 +109,13 @@ const txt = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function EscalationFlow({
-  aiSummary,
   legalArea,
   complexityScore = 60,
   onDismiss,
   variant = "inline",
 }: EscalationProps) {
   const { isDark, lang } = useTheme();
+  const { userType } = useUser();
   const isAr = lang === "ar";
   const t = isAr ? txt.ar : txt.en;
   const specs = isAr ? SPECIALTIES.ar : SPECIALTIES.en;
@@ -135,6 +136,9 @@ export default function EscalationFlow({
   const [dismissed, setDismissed] = useState(false);
 
   if (dismissed) return null;
+  // Escalation-to-lawyer upsell is only relevant for individual clients —
+  // business/micro/lawyer dashboards must never render this card.
+  if (userType !== "individual") return null;
 
   const complexityMsg =
     complexityScore >= 70 ? t.complexHigh :

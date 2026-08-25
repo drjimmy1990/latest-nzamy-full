@@ -81,6 +81,9 @@ export function useDraftState(initialMode = "") {
   const [partyOne, setPartyOne] = useState<PartyData>({ ...EMPTY_PARTY });
   const [partyTwo, setPartyTwo] = useState<PartyData>({ ...EMPTY_PARTY });
 
+  // Step 4 — defenses/objection grounds (lifted so StepDrafting can mail-merge confirmed grounds)
+  const [defenses, setDefenses] = useState<MainDefense[]>(MOCK_DEFENSES);
+
   // بيانات الحكم المطعون فيه (for طعن / رد / استئناف)
   const [judgmentNumber,  setJudgmentNumber]  = useState("");
   const [judgmentCourt,   setJudgmentCourt]   = useState("");
@@ -277,6 +280,7 @@ export function useDraftState(initialMode = "") {
     bulkUpload, setBulkUpload, customLegalTexts, setCustomLegalTexts,
     disputeSummary, setDisputeSummary,
     partyOne, setPartyOne, partyTwo, setPartyTwo,
+    defenses, setDefenses,
     // step 7
     reviewPhase, setReviewPhase,
     // submit step

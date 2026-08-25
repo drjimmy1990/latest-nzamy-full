@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { motion, useMotionValue, useTransform, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   WhatsappLogo, WarningCircle, X,
   PaperPlaneRight, Phone, CheckCircle, Stack,
   Paperclip, FileText
 } from "@phosphor-icons/react";
-import { Image as ImageIcon } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
 import dynamic from "next/dynamic";
 const WhatsAppWidget = dynamic(() => import("./floating/WhatsAppWidget"), { ssr: false });
@@ -520,6 +519,8 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   const [aiModeActive, setAiModeActive] = useState(false);
   const [userCategory, setUserCategory] = useState<UserCategory>(null);
   const effectiveUserCategory = userCategory ?? autoCategory;
+  // Admins manage the platform, not client relationships — the WhatsApp FAB is noise for them.
+  const isAdmin = effectiveUserCategory === "admin";
 
   const openWa  = useCallback(() => setWaOpen(true),  []);
   const closeWa = useCallback(() => setWaOpen(false), []);
@@ -567,13 +568,15 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   return (
     <div ref={rootRef} data-nzamy-floating-root="true" className={`${isPrimaryInstance && !aiModeActive ? "" : "hidden"} print:hidden`}>
       {/* WhatsApp Panel */}
-      <WhatsAppWidget
-        open={waOpen} onClose={closeWa}
-        bottomPos={panelBottom} panelSide={waPanelSide}
-        onUserTypeSelected={setUserCategory}
-        isLoggedIn={isLoggedIn}
-        userCategory={effectiveUserCategory}
-      />
+      {!isAdmin && (
+        <WhatsAppWidget
+          open={waOpen} onClose={closeWa}
+          bottomPos={panelBottom} panelSide={waPanelSide}
+          onUserTypeSelected={setUserCategory}
+          isLoggedIn={isLoggedIn}
+          userCategory={effectiveUserCategory}
+        />
+      )}
 
       {/* Report Drawer — only rendered when reportConfig provided */}
       {reportConfig && (
@@ -585,7 +588,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
       )}
 
       {/* Speed-Dial container — stacks Report above WhatsApp */}
-      <div className={`fixed bottom-20 md:bottom-6 ${waBtnSide} z-[9999] flex flex-col items-center gap-2.5 print:hidden`}>
+      <div className={`fixed bottom-20 md:bottom-6 ${waBtnSide} z-[9999] flex flex-col items-center gap-2.5 print:hidden safe-bottom`}>
 
         {/* ── Orange Report mini-FAB (only on library pages) ── */}
         {reportConfig && (
@@ -625,40 +628,42 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
           </AnimatePresence>
         )}
 
-        {/* ── Green WhatsApp main FAB ── */}
-        <div className="relative group">
-          {/* Tooltip */}
-          <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold shadow-lg border border-white/10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">
-            {buttonTooltip}
+        {/* ── Green WhatsApp main FAB (hidden for admins) ── */}
+        {!isAdmin && (
+          <div className="relative group">
+            {/* Tooltip */}
+            <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold shadow-lg border border-white/10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">
+              {buttonTooltip}
+            </div>
+
+            {/* Pulse ring */}
+            {!waOpen && (
+              <motion.span
+                className="absolute inset-0 rounded-full bg-[#25D366] pointer-events-none"
+                animate={{ scale: [1, 1.4], opacity: [0.5, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeOut" }}
+              />
+            )}
+
+            <button
+              onClick={() => { waOpen ? closeWa() : openWa(); setReportOpen(false); }}
+              className={`relative w-14 h-14 rounded-full shadow-[0_8px_20px_rgba(37,211,102,0.3)] flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95
+                ${waOpen
+                  ? "bg-[#25D366] dark:bg-[#1fad55] ring-2 ring-white ring-offset-2"
+                  : "bg-[#25D366] hover:bg-[#1ebe5d] dark:bg-[#1fad55] dark:hover:bg-[#1a9e4d]"
+                }`}
+              aria-label={buttonTooltip}
+            >
+              <WhatsappLogo size={28} weight="fill" className="text-white drop-shadow-md" />
+            </button>
           </div>
-
-          {/* Pulse ring */}
-          {!waOpen && (
-            <motion.span
-              className="absolute inset-0 rounded-full bg-[#25D366] pointer-events-none"
-              animate={{ scale: [1, 1.4], opacity: [0.5, 0] }}
-              transition={{ duration: 3, repeat: Infinity, ease: "easeOut" }}
-            />
-          )}
-
-          <button
-            onClick={() => { waOpen ? closeWa() : openWa(); setReportOpen(false); }}
-            className={`relative w-14 h-14 rounded-full shadow-[0_8px_20px_rgba(37,211,102,0.3)] flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95
-              ${waOpen
-                ? "bg-[#25D366] dark:bg-[#1fad55] ring-2 ring-white ring-offset-2"
-                : "bg-[#25D366] hover:bg-[#1ebe5d] dark:bg-[#1fad55] dark:hover:bg-[#1a9e4d]"
-              }`}
-            aria-label={buttonTooltip}
-          >
-            <WhatsappLogo size={28} weight="fill" className="text-white drop-shadow-md" />
-          </button>
-        </div>
+        )}
 
       </div>
 
       {/* ── Floating Draft Cart FAB (Restricted to legal item detail pages) ── */}
       {showDraftFab && (
-        <div className={`fixed bottom-20 md:bottom-6 ${isRTL ? "left-[88px]" : "right-[88px]"} z-[9999] print:hidden`}>
+        <div className={`fixed bottom-20 md:bottom-6 ${isRTL ? "left-[88px]" : "right-[88px]"} z-[9999] print:hidden safe-bottom`}>
           <div className="relative group">
             {/* Tooltip */}
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold shadow-lg border border-white/10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">

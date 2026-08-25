@@ -97,9 +97,14 @@ export async function GET(
     let preamble = law.preamble || '';
     let regulationPreamble = '';
     if (preamble.includes('\n***\n')) {
+      // ب-88: the standard file template bakes in multiple decorative `***`
+      // separators before the first ARTICLE_START/CHAPTER_START anchor (after
+      // the AI-summary block, the info card, the H1...), so `split` can return
+      // 3-7 parts, not just 2. Rejoining everything past the first split keeps
+      // it all in regulationPreamble instead of silently dropping parts[2:].
       const parts = preamble.split('\n***\n');
       preamble = parts[0].trim();
-      regulationPreamble = parts[1].trim();
+      regulationPreamble = parts.slice(1).join('\n***\n').trim();
     }
 
     // ── Build the flat "اللائحة وحدها" view — one sorted list per secondary
@@ -142,6 +147,11 @@ export async function GET(
       issuanceDecree: law.issuing_instrument || '',
       issuanceDate: law.issue_date_hijri || '',
       source: law.boe_source_url || '',
+      // ك-02 (2026-08-23): library.laws.status is fetched (select('*') above)
+      // but was never copied into this response object, so the frontend's
+      // "cancelled/active" badge always fell back to a hardcoded static map
+      // (law-metadata-map.ts) that hand-lists "active" on every entry.
+      law_status: law.status || 'active',
       preamble: preamble,
       regulationPreamble: regulationPreamble,
       // Flat per-instrument view for the "اللائحة وحدها" tab — see build above.

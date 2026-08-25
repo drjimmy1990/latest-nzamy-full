@@ -9,7 +9,7 @@ import {
   CaretLeft, Robot, PencilSimple,
   CalendarCheck, Lightning,
   Warning, ArrowUp,
-  Bell, Hourglass, Plus,
+  Hourglass, Plus,
   Flag, Lock, Crown, ArrowRight, Storefront,
   Timer, Folder, Money, Briefcase, ShareNetwork, Graph,
 } from "@phosphor-icons/react";
@@ -536,7 +536,7 @@ export default function LawyerDashboardPage() {
             </p>
           </div>
           <Link
-            href="/pricing"
+            href="/settings?tab=subscription"
             className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-[#C8A762] hover:bg-[#155e41] transition-colors"
           >
             ترقية الباقة <ArrowRight size={12} />

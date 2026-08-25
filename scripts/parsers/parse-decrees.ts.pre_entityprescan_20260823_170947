@@ -1,0 +1,531 @@
+#!/usr/bin/env npx ts-node
+/**
+ * parse-decrees.ts
+ * ─────────────────────────────────────────────────────────────────────────
+ * Parses Saudi royal decrees, cabinet decisions, and circulars.
+ *
+ * Primary source:  UNIFIED_DECREE_INDEX.json — dictionary keyed by UUID
+ *   Each entry: {id, title, type, issuer, ref, date, summary, cat,
+ *                summary_brief, preamble, articles[], hashtags[], official_url}
+ *
+ * Secondary source: Circular .md files with YAML frontmatter + ARTICLE markers
+ *
+ * Usage:
+ *   npx ts-node scripts/parsers/parse-decrees.ts --input ./data/decrees
+ *   npx ts-node scripts/parsers/parse-decrees.ts --input ./data/UNIFIED_DECREE_INDEX.json
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
+import * as fs from "fs";
+import * as path from "path";
+import { slugifyArabic as sharedSlugify } from "./lib/slug";
+import { parseFrontmatter } from "./lib/frontmatter";
+import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
+import { filterMeta } from "./manifest";
+import { writeParseReport, printCapped } from "./lib/report";
+import { classifyInstrument, type InstrumentType } from "./lib/instrument";
+
+/** Documents whose instrument could not be determined — counted, never guessed. */
+const unknownInstruments: string[] = [];
+
+/** Collected per run so YAML problems are reported, never swallowed. */
+const frontmatterWarnings: string[] = [];
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Types
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** Superseded by InstrumentType in ./lib/instrument.ts. */
+export type DecreeType = InstrumentType;
+
+export interface DecreeArticle {
+  number: number;
+  text: string;
+}
+
+export interface ParsedDecree {
+  id: string;
+  slug: string;
+  title: string;
+  type: DecreeType;
+  /** Verbatim Arabic instrument name from the source. */
+  instrument_ar: string;
+  issuer: string;
+  ref: string;
+  date: string;
+  summary: string;
+  summary_brief: string;
+  preamble: string;
+  cat: string;
+  articles: DecreeArticle[];
+  hashtags: string[];
+  official_url: string;
+  raw_pages: string[];
+  metadata: Record<string, unknown>;
+  /**
+   * ب-137: same convention as ب-133 in parse-laws.ts, ported here after
+   * council review (2026-08-22) found it live and unhandled — `id` here is
+   * the FILENAME (see parseCircularMd), never the frontmatter `id`/
+   * `instrument_id`, so two decrees for the same instrument under different
+   * filenames never collide and the duplicate silently seeds as its own
+   * record. Internal-only, stripped before final output.
+   */
+  isSupersededDuplicate: boolean;
+  supersededBy: string;
+  /** The frontmatter's own declared id/instrument_id — separate from `id`
+   *  above (filename-derived), needed to verify supersededBy references. */
+  declaredId: string;
+  /** ب-139: see ParsedLaw's identical field for the full rationale — ported
+   *  here after the same council review found this domain equally unwired. */
+  needsHumanReview: boolean;
+  reviewReason: string;
+}
+
+export interface DecreesParserOutput {
+  type: "decrees";
+  generated_at: string;
+  total_decrees: number;
+  total_articles: number;
+  decrees: ParsedDecree[];
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Arabic → ASCII slug (shared logic)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Transliteration table + slug function moved to ./lib/slug.ts (was duplicated
+// verbatim in all four parsers). Aliased so existing call-sites are unchanged.
+const slugifyArabic = sharedSlugify;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// YAML frontmatter (minimal parser — same as parse-laws)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Frontmatter now parsed by js-yaml via ./lib/frontmatter.ts. The previous
+// line-by-line matcher silently dropped indented sub-keys, kept raw quote
+// characters from malformed scalars, and let broken YAML pass unnoticed.
+function parseYamlFrontmatter(
+  raw: string,
+  sourcePath = "<unknown>",
+): { meta: Record<string, unknown>; body: string } {
+  const { meta, body, warnings } = parseFrontmatter(raw, sourcePath);
+  if (warnings.length) frontmatterWarnings.push(...warnings);
+  return { meta: filterMeta(meta), body };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Parse from UNIFIED_DECREE_INDEX.json
+// ══════════════════════════════════════════════════════════════════════════════
+
+function parseUnifiedIndex(filePath: string): ParsedDecree[] {
+  console.log(`  📋 Reading unified decree index: ${path.basename(filePath)}`);
+  const raw = fs.readFileSync(filePath, "utf-8");
+  const index: Record<string, Record<string, unknown>> = JSON.parse(raw);
+
+  const decrees: ParsedDecree[] = [];
+
+  for (const [uuid, entry] of Object.entries(index)) {
+    const title = String(entry.title || "");
+    const rawArticles = (entry.articles || []) as string[];
+
+    // Parse articles: each entry in the array is a page of text
+    // Pages are separated by "---" within entries
+    const articles: DecreeArticle[] = [];
+    const rawPages: string[] = [];
+
+    for (let i = 0; i < rawArticles.length; i++) {
+      const pageText = rawArticles[i];
+      rawPages.push(pageText);
+
+      // Try to split pages that contain "---" separator
+      const subPages = pageText.split(/\n---\n/);
+      for (const subPage of subPages) {
+        const trimmed = subPage.trim();
+        if (trimmed) {
+          articles.push({
+            number: articles.length + 1,
+            text: trimmed,
+          });
+        }
+      }
+    }
+
+    const decreeType = classifyInstrument(entry as Record<string, unknown>).type;
+    const slug = String(entry.id || uuid);
+
+    decrees.push({
+      id: uuid,
+      slug,
+      title,
+      type: decreeType,
+      instrument_ar: String(entry.type || ""),
+      issuer: String(entry.issuer || ""),
+      ref: String(entry.ref || ""),
+      date: String(entry.date || ""),
+      summary: String(entry.summary || ""),
+      summary_brief: String(entry.summary_brief || ""),
+      preamble: String(entry.preamble || ""),
+      cat: String(entry.cat || ""),
+      articles,
+      hashtags: (entry.hashtags || []) as string[],
+      official_url: String(entry.official_url || ""),
+      raw_pages: rawPages,
+      metadata: entry,
+      // ب-137: read the same way as parseCircularMd, on the chance a unified
+      // index entry ever carries this convention too — untested against a
+      // real case in this source format, but free to check and consistent
+      // with the same protection applying uniformly.
+      isSupersededDuplicate:
+        String(entry.status ?? "").trim() === "superseded_duplicate" || String(entry.status ?? "").trim() === "merged",
+      supersededBy: String(entry.superseded_by ?? "").trim(),
+      declaredId: String(entry.id ?? entry.instrument_id ?? "").trim(),
+      needsHumanReview: entry.needs_human_review === true || String(entry.needs_human_review ?? "").trim() === "true",
+      reviewReason: String(entry.review_reason ?? "").trim(),
+    });
+  }
+
+  console.log(`    ✓ ${decrees.length} decrees from unified index`);
+  return decrees;
+}
+
+// detectDecreeType() removed. It was a chain of loose substring tests ending in
+// `return "cabinet"`, which asserted 207 unrecognised documents were Cabinet
+// Decisions and conflated أمر سامي with مرسوم ملكي. Replaced by the exact-match
+// table in ./lib/instrument.ts, which returns "unknown" rather than guessing.
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Parse circular markdown files
+// ══════════════════════════════════════════════════════════════════════════════
+
+function parseCircularMd(filePath: string): ParsedDecree | null {
+  console.log(`  📄 Parsing circular markdown: ${path.basename(filePath)}`);
+  const raw = fs.readFileSync(filePath, "utf-8");
+  const { meta, body } = parseYamlFrontmatter(raw, filePath);
+
+  const fileId = path.basename(filePath, ".md");
+  const title = String(meta.title || fileId);
+
+  // ب-137: read independently of the id/slug logic below, which stays
+  // filename-derived on purpose (unrelated to this check).
+  const rawStatusForDup = String(meta.status ?? "").trim();
+  const isSupersededDuplicate = rawStatusForDup === "superseded_duplicate" || rawStatusForDup === "merged";
+  const supersededBy = String(meta.superseded_by ?? "").trim();
+  const declaredId = String(meta.id ?? meta.instrument_id ?? "").trim();
+  const needsHumanReview = meta.needs_human_review === true || String(meta.needs_human_review ?? "").trim() === "true";
+  const reviewReason = String(meta.review_reason ?? "").trim();
+
+  // Real Saudi instrument type: exact-match on the frontmatter value, with the
+  // ambiguous "قرار" bucket refined by issuing_instrument. Never guessed —
+  // unrecognised values become "unknown" and are reported below.
+  const instrument = classifyInstrument(meta);
+  if (instrument.type === "unknown") {
+    unknownInstruments.push(
+      `${path.basename(filePath)} :: type=${JSON.stringify(instrument.instrumentAr)}`,
+    );
+  }
+
+  // Extract articles using ARTICLE_START/END markers
+  const articles: DecreeArticle[] = [];
+  const articleRe = /<!--\s*ARTICLE_START\s+(.*?)\s*-->([\s\S]*?)<!--\s*ARTICLE_END\s*-->/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = articleRe.exec(body)) !== null) {
+    let artMeta: Record<string, unknown> = {};
+    try {
+      artMeta = JSON.parse(match[1]);
+    } catch {
+      // Fall through with empty meta
+    }
+    const text = match[2].replace(/^>\s*/gm, "").trim();
+    articles.push({
+      number: Number(artMeta.number || articles.length + 1),
+      text,
+    });
+  }
+
+  // If no ARTICLE markers, treat the entire body as a single article
+  if (articles.length === 0 && body.trim().length > 0) {
+    articles.push({ number: 1, text: body.trim() });
+  }
+
+  // Extract preamble (text before first article marker)
+  let preamble = "";
+  const firstArt = body.indexOf("<!-- ARTICLE_START");
+  if (firstArt > 0) {
+    preamble = body.slice(0, firstArt).trim();
+  }
+
+  return {
+    id: fileId,
+    slug: slugifyArabic(title) || fileId,
+    title,
+    type: instrument.type,
+    instrument_ar: instrument.instrumentAr,
+    // Section 30 مراسيم/قرارات (2026-06 extraction round) use `issuing_authority`
+    // rather than `issuer`/`issuing_body`.
+    issuer: String(meta.issuer || meta.issuing_body || meta.issuing_authority || ""),
+    // Section 30 circulars (2026-07 card-v2 campaign) use `tameem_number`/`decree_number`
+    // rather than `ref`/`reference`; مراسيم use `decree_date`, circulars `issue_date_hijri`.
+    ref: String(meta.ref || meta.reference || meta.tameem_number || meta.decree_number || ""),
+    date: String(meta.date || meta.issue_date_hijri || meta.decree_date || ""),
+    summary: String(meta.summary || ""),
+    summary_brief: String(meta.summary_brief || ""),
+    preamble,
+    cat: String(meta.cat || meta.section_code || ""),
+    articles,
+    hashtags: ((meta.hashtags as string[]) || []),
+    official_url: String(meta.official_url || meta.source || ""),
+    raw_pages: [],
+    metadata: meta,
+    isSupersededDuplicate,
+    supersededBy,
+    declaredId,
+    needsHumanReview,
+    reviewReason,
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Public API
+// ══════════════════════════════════════════════════════════════════════════════
+
+export function parseDecrees(inputPath: string, reportDir?: string): DecreesParserOutput {
+  const resolvedPath = path.resolve(inputPath);
+  const stats = fs.statSync(resolvedPath);
+  const allDecrees: ParsedDecree[] = [];
+  const failedFiles: string[] = [];
+  let excludedTotal = 0;
+  let excludedList: Array<{ file: string; ruleId: string }> = [];
+
+  if (stats.isFile()) {
+    if (resolvedPath.endsWith(".json")) {
+      allDecrees.push(...parseUnifiedIndex(resolvedPath));
+    } else if (resolvedPath.endsWith(".md")) {
+      const d = parseCircularMd(resolvedPath);
+      if (d) allDecrees.push(d);
+    }
+  } else if (stats.isDirectory()) {
+    const entries = fs.readdirSync(resolvedPath, { recursive: true }) as string[];
+
+    // Process JSON indices first
+    for (const entry of entries) {
+      const full = path.join(resolvedPath, entry);
+      if (
+        full.endsWith(".json") &&
+        (entry.toLowerCase().includes("decree") || entry.toLowerCase().includes("index")) &&
+        fs.statSync(full).isFile()
+      ) {
+        try {
+          allDecrees.push(...parseUnifiedIndex(full));
+        } catch (err) {
+          console.error(`  ✗ Failed to parse JSON index ${full}: ${(err as Error).message}`);
+        }
+      }
+    }
+
+    // Then process markdown files, minus non-content artefacts.
+    const mdFiles = entries
+      .map((e) => path.join(resolvedPath, e))
+      .filter((f) => f.endsWith(".md") && fs.statSync(f).isFile());
+
+    const { kept, countsByRule, excluded } = applyExclusions(mdFiles);
+    const excludedCount = mdFiles.length - kept.length;
+    excludedTotal = excludedCount;
+    excludedList = excluded;
+    if (excludedCount > 0) {
+      console.log(`\n   ⊘ ${excludedCount} non-content file(s) excluded:`);
+      for (const line of formatExclusionSummary(countsByRule)) console.log(`      • ${line}`);
+      console.log("");
+    }
+
+    for (const full of kept) {
+      try {
+        const d = parseCircularMd(full);
+        if (d) allDecrees.push(d);
+      } catch (err) {
+        // Recorded, not swallowed — see the failure report below.
+        console.error(`  ✗ Failed to parse circular ${full}: ${(err as Error).message}`);
+        failedFiles.push(full);
+      }
+    }
+  }
+
+  // ── Verified superseded_duplicate exclusion (ب-137, ported from ب-133) ──────
+  // Council review (2026-08-22, Codex) found this domain completely unhandled:
+  // `d.id` is the FILENAME (see parseCircularMd), never the frontmatter
+  // `id`/`instrument_id`, so a decree explicitly marked superseded_duplicate
+  // with a superseded_by pointer was still seeded as its own independent
+  // record — the id-collision guard below can never catch it, because two
+  // different filenames never produce the same `id` in the first place.
+  //
+  // Matched by declaredId (the frontmatter's own id/instrument_id), NOT by
+  // filename-derived `id` — a different identity than the primary seeding
+  // key, deliberately, mirroring parse-laws.ts's id-based fallback path.
+  //
+  // Known limitation, not silently glossed over: at least one live case
+  // (قرار سامي دعم مراكز الوثائق → superseded_by: "LAW-96-0364") points to a
+  // survivor that is a LAW, not a decree — no decrees-only check can ever
+  // verify that, since the target never appears in this domain's output at
+  // all. That case surfaces below as unverified, not silently dropped and
+  // not silently kept — it needs a cross-domain check this function cannot
+  // perform alone.
+  const declaredIdIndex = new Map<string, ParsedDecree>();
+  for (const d of allDecrees) if (!d.isSupersededDuplicate) declaredIdIndex.set(d.declaredId, d);
+  const decreeToDrop = new Set<ParsedDecree>();
+  const decreeUnverifiedSupersededTags: string[] = [];
+  for (const d of allDecrees) {
+    if (!d.isSupersededDuplicate) continue;
+    const target = d.supersededBy ? declaredIdIndex.get(d.supersededBy) : undefined;
+    if (target && target !== d) {
+      decreeToDrop.add(d);
+    } else if (d.supersededBy) {
+      decreeUnverifiedSupersededTags.push(
+        `${d.id} :: superseded_by="${d.supersededBy}" does not resolve to any other decree in ` +
+          `this run — likely a cross-domain reference (verify manually against laws/precedents)`,
+      );
+    } else {
+      decreeUnverifiedSupersededTags.push(`${d.id} :: tagged superseded_duplicate/merged, no superseded_by pointer`);
+    }
+  }
+  const decreeSupersededDuplicateSkipped: string[] = [];
+  if (decreeToDrop.size > 0) {
+    for (const d of decreeToDrop) decreeSupersededDuplicateSkipped.push(d.id);
+    for (let i = allDecrees.length - 1; i >= 0; i--) {
+      if (decreeToDrop.has(allDecrees[i])) allDecrees.splice(i, 1);
+    }
+    console.log(
+      `\nℹ️  ${decreeToDrop.size} decree(s) excluded — verified superseded_duplicate/merged (ب-137): ` +
+        `real untagged survivor confirmed for each.`,
+    );
+  }
+  if (decreeUnverifiedSupersededTags.length > 0) {
+    console.error(
+      `\n🛑 ${decreeUnverifiedSupersededTags.length} UNVERIFIED decree superseded_duplicate/merged tag(s) — ` +
+        `cannot confirm a real survivor within this domain:`,
+    );
+    for (const line of decreeUnverifiedSupersededTags) console.error(`   • ${line}`);
+  }
+
+  const totalArticles = allDecrees.reduce((sum, d) => sum + d.articles.length, 0);
+  console.log(`\n📜 Decree Parser Summary`);
+  console.log(`  Total decrees: ${allDecrees.length}`);
+  console.log(`  Total articles: ${totalArticles}`);
+  // Full histogram, not three hardcoded buckets — the taxonomy now has ~21
+  // instrument types and a fixed three-way count would hide the rest.
+  const typeHistogram = new Map<string, number>();
+  for (const d of allDecrees) typeHistogram.set(d.type, (typeHistogram.get(d.type) || 0) + 1);
+  console.log(`  By instrument type:`);
+  for (const [t, n] of [...typeHistogram.entries()].sort((a, b) => b[1] - a[1])) {
+    console.log(`     ${String(n).padStart(6)}  ${t}`);
+  }
+  console.log(``);
+
+  // ── Identity guard ──────────────────────────────────────────────────────────
+  // seed-library.ts derives decrees_circulars.id from this `id` via toUuid(), so
+  // two decrees sharing an id collapse to one row on upsert and the other is
+  // silently discarded. Fail before anything is written.
+  const byId = new Map<string, string[]>();
+  for (const d of allDecrees) {
+    const list = byId.get(d.id);
+    if (list) list.push(d.title);
+    else byId.set(d.id, [d.title]);
+  }
+  const idCollisions = [...byId.entries()].filter(([, v]) => v.length > 1);
+  if (idCollisions.length > 0) {
+    console.error(`\n🛑 ${idCollisions.length} DECREE ID COLLISION(S) — distinct decrees sharing one key:`);
+    for (const [id, titles] of idCollisions.slice(0, 20)) {
+      console.error(`   "${id}"`);
+      for (const t of titles) console.error(`      ← ${t}`);
+    }
+    if (idCollisions.length > 20) console.error(`   … and ${idCollisions.length - 20} more`);
+  }
+
+  printCapped("⚠️  frontmatter warning(s)", frontmatterWarnings);
+  printCapped(
+    "ℹ️  decree(s) skipped — status: superseded_duplicate/merged (ب-137, already adjudicated)",
+    decreeSupersededDuplicateSkipped,
+  );
+
+  if (failedFiles.length > 0) {
+    console.error(`\n🛑 ${failedFiles.length} file(s) failed to parse and are MISSING from the output.`);
+  }
+
+  // Complete, uncapped record — the console preview above is truncated on purpose.
+  if (reportDir) {
+    const p = writeParseReport(reportDir, {
+      type: "decrees",
+      generated_at: new Date().toISOString(),
+      input: resolvedPath,
+      counts: {
+        decrees: allDecrees.length,
+        articles: totalArticles,
+        excluded: excludedTotal,
+        frontmatterWarnings: frontmatterWarnings.length,
+        idCollisions: idCollisions.length,
+        supersededDuplicateSkipped: decreeSupersededDuplicateSkipped.length,
+        unverifiedSupersededTags: decreeUnverifiedSupersededTags.length,
+        failed: failedFiles.length,
+      },
+      excluded: excludedList,
+      frontmatterWarnings,
+      identityCollisions: idCollisions.map(([key, members]) => ({ key, members })),
+      failed: failedFiles,
+      notes: {
+        supersededDuplicateSkipped: decreeSupersededDuplicateSkipped,
+        unverifiedSupersededTags: decreeUnverifiedSupersededTags,
+      },
+    });
+    if (p) console.log(`\n📄 Full parse report: ${p}`);
+  }
+
+  // Rule ق-3: a run that lost documents or would corrupt identity must not exit 0.
+  // unverifiedSupersededTags gates too: a live, confirmed cross-domain duplicate
+  // (verified 2026-08-22) would otherwise seed silently as its own record.
+  if (idCollisions.length > 0 || failedFiles.length > 0 || decreeUnverifiedSupersededTags.length > 0) {
+    console.error(
+      `\n✗ Parse completed with unrecoverable problems ` +
+        `(${idCollisions.length} id collision(s), ${failedFiles.length} failed file(s), ` +
+        `${decreeUnverifiedSupersededTags.length} unverified superseded_duplicate/merged tag(s)). ` +
+        `Refusing to report success.`,
+    );
+    process.exitCode = 1;
+  }
+
+  const cleanedDecrees = allDecrees.map(
+    ({ isSupersededDuplicate: _u1, supersededBy: _u2, declaredId: _u3, ...rest }) => rest,
+  );
+
+  return {
+    type: "decrees",
+    generated_at: new Date().toISOString(),
+    total_decrees: cleanedDecrees.length,
+    total_articles: totalArticles,
+    decrees: cleanedDecrees as ParsedDecree[],
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CLI entry point
+// ══════════════════════════════════════════════════════════════════════════════
+
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  const inputIdx = args.indexOf("--input");
+  const outputIdx = args.indexOf("--output");
+
+  const inputPath = inputIdx >= 0 ? args[inputIdx + 1] : args[0];
+  const outputDir = outputIdx >= 0 ? args[outputIdx + 1] : "./output";
+
+  if (!inputPath) {
+    console.error("Usage: npx ts-node parse-decrees.ts --input <path> [--output <dir>]");
+    process.exit(1);
+  }
+
+  console.log(`\n📋 Decree Parser — processing: ${inputPath}\n`);
+  const result = parseDecrees(inputPath, outputDir);
+
+  fs.mkdirSync(path.resolve(outputDir), { recursive: true });
+  const outFile = path.join(path.resolve(outputDir), "decrees.json");
+  fs.writeFileSync(outFile, JSON.stringify(result, null, 2), "utf-8");
+  console.log(`📁 Output written to: ${outFile}`);
+}

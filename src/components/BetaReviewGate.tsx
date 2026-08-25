@@ -371,6 +371,13 @@ export default function BetaReviewGate({
           {submitting ? "جارٍ الإرسال…" : "إرسال للمراجعة الذكية"}
         </motion.button>
 
+        {/* Honest error state — no fake confirmation on failure */}
+        {submitError && (
+          <p className="text-xs font-semibold text-red-500">
+            تعذر إرسال الطلب — تحقق من اتصالك وحاول مجدداً
+          </p>
+        )}
+
         {/* Time estimate */}
         <p className={`text-xs flex items-center justify-center gap-1
           ${isDark ? "text-gray-500" : "text-gray-400"}`}

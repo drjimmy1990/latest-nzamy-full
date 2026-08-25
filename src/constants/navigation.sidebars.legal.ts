@@ -29,7 +29,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     items: [
       // ١: الخطوة صفر — فهم الملف أولاً
       { label: "ParaLegal",           labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",     icon: "Scan",         badge: "جديد" },
-      { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/quick-answer",  icon: "ChatCircle",   badge: "جديد" },
+      { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/assistant",  icon: "ChatCircle",   badge: "جديد" },
       // ٢: الصياغة — العمل اليومي الأكثر تكراراً
       { label: "الصائغ القانوني",  labelEn: "Legal Drafter",            href: "/ai/draft",         icon: "PencilSimple", divider: true },
       { label: "المجمّع البحثي",   labelEn: "Research Collector",       href: "/ai/collector",    icon: "Tray",         badge: "جديد" },
@@ -163,7 +163,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
     defaultOpen: true,
     items: [
       { label: "ParaLegal",           labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",     icon: "Scan",         badge: "جديد" },
-      { label: "سؤال قانوني سريع",  labelEn: "Quick Q&A",       href: "/ai/quick-answer",  icon: "ChatCircle",   badge: "جديد" },
+      { label: "سؤال قانوني سريع",  labelEn: "Quick Q&A",       href: "/ai/assistant",  icon: "ChatCircle",   badge: "جديد" },
       { label: "الصائغ القانوني",   labelEn: "Legal Drafter",   href: "/ai/draft",         icon: "PencilSimple", divider: true },
       { label: "محترف العقود",      labelEn: "Contract Pro",    href: "/ai/contracts",     icon: "FileText" },
       { label: "الرأي الفصل",       labelEn: "Legal Opinion",   href: "/ai/legal-opinion", icon: "Lightbulb" },

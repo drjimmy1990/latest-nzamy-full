@@ -19,9 +19,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Globe, ArrowLeft, ArrowRight, PaperPlaneTilt,
   CheckCircle, Warning, CaretDown, Scales, ShieldCheck,
-  Bank, Books, Scroll, Storefront, GraduationCap, Link as LinkIcon,
+  Link as LinkIcon,
   ClockCounterClockwise, UserCircleCheck, Sparkle, Scan, Quotes,
-  Check, Clock,
+  Clock,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
@@ -30,7 +30,6 @@ import Link from "next/link";
 import {
   JURISDICTIONS, PILOT_JURISDICTION_IDS, SOURCE_TIER_META, READINESS_META,
   GLOBAL_DISCLAIMER_AR, getJurisdiction,
-  type Jurisdiction, type SourceTier, type SubJurisdiction,
 } from "@/constants/globalJurisdictions";
 
 import {
@@ -128,11 +127,11 @@ export default function GlobalResearchPage() {
           </div>
           <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>نظامي عالمي</h1>
           <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#C8A762]/15 text-[#C8A762] border border-[#C8A762]/30">
-            بحث حي · متعدد الدول
+            نسخة تجريبية · متعدد الدول
           </span>
         </div>
         <p className={`text-[13px] ${sub2}`}>
-          اسأل عن قانون أي دولة — نبحث حياً في المصادر الرسمية، نوثّق كل معلومة، ونصارحك بمستوى الثقة.
+          اسأل عن قانون أي دولة — محرك بحث تجريبي في المصادر الرسمية، نوثّق كل معلومة، ونصارحك بمستوى الثقة. التفعيل الكامل قريباً.
         </p>
       </div>
 

@@ -3,11 +3,10 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Robot, SealCheck, VideoCamera, ArrowRight, ArrowLeft,
+  Robot, SealCheck, ArrowRight, ArrowLeft,
   Check, Warning, CreditCard, Sparkle,
-  Buildings, ChatsCircle, Info, CheckCircle, Phone,
+  Info, CheckCircle,
   Paperclip, X, Lightning, Clock, FileText,
-  Package,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -757,19 +756,6 @@ export default function NewConsultationPage() {
                   </span>
                 </button>
               </div>
-
-              {/* Beta notice (lawyer only) */}
-              {path === "lawyer" && IS_BETA && !selectedLawyer && (
-                <div className={`flex items-start gap-2.5 p-4 rounded-xl border ${isDark ? "bg-amber-900/10 border-amber-900/30" : "bg-amber-50 border-amber-200"}`}>
-                  <Info size={15} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-amber-500" : "text-amber-600"}`} weight="fill" />
-                  <div>
-                    <p className={`text-[12px] font-bold mb-0.5 ${isDark ? "text-amber-400" : "text-amber-800"}`}>مرحلة البيتا</p>
-                    <p className={`text-[11px] leading-relaxed ${isDark ? "text-amber-300/70" : "text-amber-700"}`}>
-                      تقوم المنصة بتعيين أفضل محام متخصص تلقائيا. سيتواصل معك لتأكيد الموعد.
-                    </p>
-                  </div>
-                </div>
-              )}
 
               <div className="flex justify-between pt-1">
                 <button

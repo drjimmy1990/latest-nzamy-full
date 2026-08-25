@@ -1,5 +1,6 @@
 import { MetadataRoute } from "next";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
+import { createServiceClient } from "@/lib/supabase/server";
 
 const BASE_URL = "https://nezamy.sa";
 
@@ -95,7 +96,45 @@ const publicRoutes: SitemapRoute[] = [
   { url: "/ai/wargaming", priority: 0.75, changeFrequency: "monthly" },
 ];
 
-export default function sitemap(): MetadataRoute.Sitemap {
+interface PublishedArticleRow {
+  slug: string;
+  updated_at: string | null;
+  published_at: string | null;
+  date_modified: string | null;
+}
+
+/**
+ * Published blog article slugs, server-side, for the sitemap. Mirrors the
+ * `articles` table query used by src/app/blog/[slug]/page.tsx (status =
+ * 'published'). Never throws — any Supabase error/exception is caught and
+ * results in an empty list, so the sitemap always renders (falls back to
+ * just the static `/blog` entry above) instead of 500ing.
+ */
+async function getBlogSitemapEntries(): Promise<MetadataRoute.Sitemap> {
+  try {
+    const supabase = await createServiceClient();
+    const { data, error } = await supabase
+      .from("articles")
+      .select("slug, updated_at, published_at, date_modified")
+      .eq("status", "published");
+
+    if (error || !data) return [];
+
+    return (data as PublishedArticleRow[])
+      .filter((row) => Boolean(row.slug))
+      .map((row) => ({
+        url: `${BASE_URL}/blog/${row.slug}`,
+        lastModified: row.date_modified || row.updated_at || row.published_at || undefined,
+        changeFrequency: "monthly" as const,
+        priority: 0.7,
+      }));
+  } catch (err) {
+    console.error("[sitemap] blog article fetch failed:", err);
+    return [];
+  }
+}
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const today = new Date().toISOString().split("T")[0];
 
   // The multi-vendor lawyer directory is hidden during single-firm beta.
@@ -103,10 +142,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ? publicRoutes.filter((r) => r.url !== "/lawyers" && r.url !== "/lawyers/browse")
     : publicRoutes;
 
-  return routes.map(({ url, priority, changeFrequency }) => ({
+  const staticEntries: MetadataRoute.Sitemap = routes.map(({ url, priority, changeFrequency }) => ({
     url: `${BASE_URL}${url}`,
     lastModified: today,
     changeFrequency,
     priority,
   }));
+
+  const blogEntries = await getBlogSitemapEntries();
+
+  return [...staticEntries, ...blogEntries];
 }

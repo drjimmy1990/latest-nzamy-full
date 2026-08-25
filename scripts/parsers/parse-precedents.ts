@@ -34,6 +34,18 @@ import { classifyCourt, type JudicialTrack } from "./lib/court";
 /** Collected per run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
 
+/**
+ * ك-05 (2026-08-24): same schema_version visibility parse-laws.ts has had
+ * since ب-112, extended here — this file has THREE per-file frontmatter
+ * entry points (collections, individual precedents, containers), all fed
+ * into one shared counter. "(missing)" is the bucket key when absent.
+ */
+const schemaVersionCounts: Record<string, number> = {};
+function trackSchemaVersion(meta: Record<string, unknown>): void {
+  const key = String(meta.schema_version ?? "").trim() || "(missing)";
+  schemaVersionCounts[key] = (schemaVersionCounts[key] || 0) + 1;
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
 // ══════════════════════════════════════════════════════════════════════════════
@@ -82,6 +94,21 @@ export interface ParsedPrincipleCollection {
   total_principles: number;
   principles: ParsedPrinciple[];
   metadata: Record<string, unknown>;
+  /**
+   * The source's own `collection_id` frontmatter value, when present — a
+   * SERIES label shared by every volume of a multi-part work (e.g. every
+   * موج-rulings-1434 volume file carries the same one). Grouping/display
+   * only; never used as `id`/`slug` (see parsePrecedentContainer). Absent
+   * for parsePrincipleCollection() output, which has no such series concept.
+   */
+  series_id?: string;
+  /** ب-139: container/collection-level flag — the source's `needs_human_review`
+   *  frontmatter is a per-FILE signal (one flag for the whole volume), never a
+   *  per-principle one (PRINCIPLE_START/ARTICLE_START JSON blocks carry no such
+   *  key in any known source file). seed-library.ts propagates this down to
+   *  every principle row generated from this collection. */
+  needs_human_review: boolean;
+  review_reason: string;
 }
 
 export interface ParsedCourtPrecedent {
@@ -108,6 +135,10 @@ export interface ParsedCourtPrecedent {
   hashtags: string[];
   is_redacted: boolean;
   metadata: Record<string, unknown>;
+  /** ب-139: see parse-laws.ts's ParsedLaw.needsHumanReview for the full
+   *  rationale — same council review found this domain equally unwired. */
+  needs_human_review: boolean;
+  review_reason: string;
 }
 
 export interface PrecedentsParserOutput {
@@ -218,12 +249,33 @@ function extractDetails(text: string): PrincipleDetail {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Safe identity derivation
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * A document's own `slug`/`id` frontmatter field, when present, is always the
+ * safe choice — but the last-resort fallback must NOT be the bare filename
+ * alone. Confirmed on the real corpus (2026-08-21): several documents each
+ * sit in their own distinctly-named folder but share one generic filename
+ * inside it (e.g. every "…/<distinct-folder>/_اللجان_شبه_القضائية.md" — the
+ * folder is what's actually unique; the filename is a repeated category
+ * label). `fileId` alone collapsed 11 such documents onto 2 shared ids at
+ * seed time. Every id/slug fallback chain in this file must end here, never
+ * at bare `fileId`.
+ */
+function safeFallbackId(filePath: string, fileId: string): string {
+  const parentFolder = path.basename(path.dirname(filePath));
+  return `${parentFolder}__${fileId}`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Parse principle collection files
 // ══════════════════════════════════════════════════════════════════════════════
 
 function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection | null {
   const raw = fs.readFileSync(filePath, "utf-8");
   const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  trackSchemaVersion(meta);
   // Judicial branch: derived from the folder first (the strongest signal, and
   // the only one present for files carrying no court field), then the court name.
   // Never defaulted to a real branch — see lib/court.ts.
@@ -308,8 +360,13 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
   console.log(`    ✓ ${principles.length} principles extracted`);
 
   return {
-    id: fileId,
-    slug: (meta.slug as string) || slugifyArabic(title) || fileId,
+    // council review 2026-08-21 (Codex + Antigravity): id previously
+    // hardcoded to bare fileId regardless of a perfectly good meta.slug/
+    // meta.id — and seed-library.ts's collection upsert keys on
+    // `coll.id || coll.slug`, checking id FIRST, so a safe slug never even
+    // got consulted. Both fields now share one safe fallback chain.
+    id: String(meta.id || meta.slug || slugifyArabic(title) || safeFallbackId(filePath, fileId)),
+    slug: (meta.slug as string) || slugifyArabic(title) || safeFallbackId(filePath, fileId),
     title,
     court: courtInfo.court || "",
     court_type: courtInfo.court || "",
@@ -320,6 +377,8 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
     total_principles: principles.length,
     principles,
     metadata: meta,
+    needs_human_review: meta.needs_human_review === true || String(meta.needs_human_review ?? "").trim() === "true",
+    review_reason: String(meta.review_reason ?? "").trim(),
   };
 }
 
@@ -330,6 +389,7 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
 function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
   const raw = fs.readFileSync(filePath, "utf-8");
   const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  trackSchemaVersion(meta);
   // Judicial branch: derived from the folder first (the strongest signal, and
   // the only one present for files carrying no court field), then the court name.
   // Never defaulted to a real branch — see lib/court.ts.
@@ -418,8 +478,10 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
   }
 
   return {
-    id: fileId,
-    slug: (meta.slug as string) || slugifyArabic(title) || fileId,
+    // Same fix as parsePrincipleCollection() above — id must not default to
+    // bare fileId ahead of a good meta.id/meta.slug.
+    id: String(meta.id || meta.slug || slugifyArabic(title) || safeFallbackId(filePath, fileId)),
+    slug: (meta.slug as string) || slugifyArabic(title) || safeFallbackId(filePath, fileId),
     title,
     court: courtInfo.court || "",
     court_type: courtInfo.court || "",
@@ -439,6 +501,8 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
     hashtags,
     is_redacted: Boolean(meta.is_redacted || meta.isRedacted),
     metadata: meta,
+    needs_human_review: meta.needs_human_review === true || String(meta.needs_human_review ?? "").trim() === "true",
+    review_reason: String(meta.review_reason ?? "").trim(),
   };
 }
 
@@ -467,6 +531,7 @@ function extractRulingSection(body: string, synonyms: string[]): string {
 function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | null {
   const raw = fs.readFileSync(filePath, "utf-8");
   const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  trackSchemaVersion(meta);
   // Judicial branch: derived from the folder first (the strongest signal, and
   // the only one present for files carrying no court field), then the court name.
   // Never defaulted to a real branch — see lib/court.ts.
@@ -489,11 +554,28 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
   const title = String(meta.collection_title || meta.title || fileId);
   console.log(`  📚 Parsing precedent container (unbundling): ${title}`);
 
+  // 2026-08-21: `meta.collection_id` is a SERIES label shared by every volume
+  // of a multi-part work (confirmed on real source files: every one of the 30
+  // موج-rulings-1434 volumes carries the identical `collection_id:
+  // moj-rulings-collection-1434`, while EACH already has its own unique
+  // `slug`/`id`, e.g. moj-rulings-1434-v01, v02, …). Using collection_id as
+  // the container's own identity collapsed every volume onto one row at seed
+  // time (`Map`-based dedup in seed-library.ts keeps only the last-processed
+  // volume) — measured directly: 4 collision groups, 4,676 principles
+  // silently dropped corpus-wide. Fix (council-reviewed: Codex + Antigravity,
+  // both independently proposed the same ordering, matching how the sibling
+  // function parsePrincipleCollection already derives its slug correctly):
+  // the per-file unique value is the container's identity; the shared label
+  // survives separately as `series_id`, for grouping/display only — never as
+  // a primary key.
+  const containerId = String(meta.slug || meta.id || safeFallbackId(filePath, fileId));
+  const seriesId = meta.collection_id ? String(meta.collection_id) : undefined;
+
   const inherited = {
     issuing_body: String(meta.issuing_body || ""),
     source: String(meta.source || ""),
     section_code: String(meta.section_code || ""),
-    collection_id: String(meta.collection_id || meta.slug || fileId),
+    collection_id: containerId,
     collection_title: String(meta.collection_title || meta.title || fileId),
     part_label: String(meta.part_label || meta.part || ""),
   };
@@ -549,6 +631,9 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
     total_principles: principles.length,
     principles,
     metadata: { ...meta, _container: true, _inherited: inherited },
+    series_id: seriesId,
+    needs_human_review: meta.needs_human_review === true || String(meta.needs_human_review ?? "").trim() === "true",
+    review_reason: String(meta.review_reason ?? "").trim(),
   };
 }
 
@@ -589,6 +674,24 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
   const failedFiles: string[] = [];
   /** Matched none of the three classifiers — previously vanished with no trace. */
   const unclassified: string[] = [];
+  /**
+   * ب-136: matched none of the three classifiers, but is STRUCTURALLY
+   * guaranteed to be content-free — contains neither ARTICLE_START nor
+   * PRINCIPLE_START anywhere, the only two anchor types any classifier here
+   * recognizes. Found 2026-08-22: موج_العدل_المجموعة_1435_المجلد_14.md is the
+   * "comprehensive index" volume of a 14-volume ruling collection — a
+   * table-of-contents stub for volumes 1-13, self-documented in its own body
+   * as "لا يحتوي على أحكام قضائية. حالة الاستخراج: معلّق" (contains no
+   * rulings, extraction pending). This is not the same failure `unclassified`
+   * exists to catch (a real file whose content the classifiers failed to
+   * recognize) — it is a real placeholder with genuinely nothing to extract,
+   * and treating it as a hard failure would block the other ~20,000 correctly
+   * parsed collections/principles/precedents in the same run over one file
+   * that was never going to yield content. Checked by anchor absence, not by
+   * this file's specific prose (which could read differently for a future
+   * pending volume) — structurally verified emptiness, not a text match.
+   */
+  const emptyPlaceholders: string[] = [];
 
   for (const file of contentFiles) {
     try {
@@ -617,6 +720,11 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
       // No classifier matched. The cascade previously ended here with no `else`,
       // so the file was dropped with no warning, no counter and no exit code —
       // indistinguishable from a file that simply did not exist.
+      const rawBody = fs.readFileSync(file, "utf-8");
+      if (!rawBody.includes("ARTICLE_START") && !rawBody.includes("PRINCIPLE_START")) {
+        emptyPlaceholders.push(file);
+        continue;
+      }
       unclassified.push(file);
     } catch (err) {
       console.error(`  ✗ Failed to parse ${file}: ${(err as Error).message}`);
@@ -656,7 +764,21 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
     if (unclassified.length > 20) console.error(`   … and ${unclassified.length - 20} more`);
   }
 
+  // ب-136: informational only — verified content-free (no ARTICLE_START/
+  // PRINCIPLE_START anywhere), so does not gate the exit code the way
+  // unclassified does.
+  printCapped(
+    "ℹ️  file(s) skipped — verified content-free placeholder (ب-136, no anchors of any kind)",
+    emptyPlaceholders,
+  );
+
   printCapped("⚠️  frontmatter warning(s)", frontmatterWarnings);
+
+  // ك-05 — schema_version distribution (see parse-laws.ts for the original).
+  const schemaVersionSummary = Object.entries(schemaVersionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([v, n]) => `${v}: ${n}`);
+  printCapped("ℹ️  schema_version distribution", schemaVersionSummary);
 
   if (failedFiles.length > 0) {
     console.error(`\n🛑 ${failedFiles.length} file(s) failed to parse and are MISSING from the output.`);
@@ -676,13 +798,17 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
         frontmatterWarnings: frontmatterWarnings.length,
         collectionIdCollisions: collCollisions.length,
         unclassified: unclassified.length,
+        emptyPlaceholders: emptyPlaceholders.length,
         failed: failedFiles.length,
+        schemaVersionVariants: Object.keys(schemaVersionCounts).length,
       },
+      schemaVersionCounts,
       excluded: excludedList,
       frontmatterWarnings,
       identityCollisions: collCollisions.map(([key, members]) => ({ key, members })),
       unclassified,
       failed: failedFiles,
+      notes: { emptyPlaceholders },
     });
     if (p) console.log(`\n📄 Full parse report: ${p}`);
   }

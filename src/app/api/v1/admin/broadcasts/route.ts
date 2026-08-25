@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/access-control";
+import { fanOutBroadcast } from "@/lib/broadcastFanout";
 
 /**
  * GET /api/v1/admin/broadcasts — List all broadcasts (newest first)
@@ -102,6 +103,12 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error("[admin/broadcasts POST] Supabase error:", error.message, error.details, error.hint, error.code);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Created directly as 'sent' → fan out real notifications now. Best-effort:
+    // fanOutBroadcast never throws, so this cannot fail the admin's request.
+    if (status === "sent" && data) {
+      await fanOutBroadcast(data);
     }
 
     return NextResponse.json({ success: true, data }, { status: 201 });

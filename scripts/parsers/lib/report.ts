@@ -22,6 +22,10 @@ export interface ParseReport {
   excluded?: Array<{ file: string; ruleId: string }>;
   /** Every frontmatter warning, uncapped. */
   frontmatterWarnings?: string[];
+  /** ب-112: every rejected type/status/section_code enum value, uncapped. */
+  rejectedEnumValues?: string[];
+  /** Frontmatter `schema_version` → file count for this run (ب-88 sibling finding). */
+  schemaVersionCounts?: Record<string, number>;
   /** Distinct records mapping to the same primary key. */
   identityCollisions?: Array<{ key: string; members: string[] }>;
   /** Files that matched no parser branch. */

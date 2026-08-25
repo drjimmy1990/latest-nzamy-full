@@ -296,17 +296,65 @@ async function seedLaws(
       issuing_instrument: String(law.issuance_decree || "").substring(0, 200),
       issue_date_hijri: String(law.issuance_date || "").substring(0, 20),
       issue_date_gregorian: String(law.issue_date_gregorian || "").substring(0, 20),
+      // ك-12 (2026-08-24): the parser now extracts all 5 effective-date-family
+      // fields (see ParsedLaw in parse-laws.ts), but only 2 of the 5 have a
+      // real DB column today — publication_date_hijri/effective_date_hijri
+      // (20260626_legal_library_schema.sql:83-84). The other 3
+      // (*_gregorian, effective_date_note) are written by migration
+      // 20260824_laws_effective_date_gregorian_columns.sql, NOT YET APPLIED
+      // — do not map them here until that migration lands, or every law row
+      // fails to upsert (unknown column). `null` here means "not stated in
+      // the source" (rule ق-2), so it's passed through as-is, not `|| ""`.
+      publication_date_hijri: law.publication_date_hijri ?? null,
+      effective_date_hijri: law.effective_date_hijri ?? null,
       total_articles: law.total_articles || 0,
       preamble: (law.preamble || "") + (law.regulation_preamble ? `\n***\n${law.regulation_preamble}` : ""),
       has_merged_regulation: law.has_executive_reg || false,
       status: (law.law_status || "active").substring(0, 30),
       boe_source_url: String(law.boe_source_url || law.boe_url || "").substring(0, 500),
       official_source_url: String(law.official_source_url || "").substring(0, 500),
-      article_status_summary: String(law.article_status_summary || "").substring(0, 500),
+      // ب-114: jsonb column — pass the structured object through as-is. The prior
+      // String(...).substring(500) both stringified it to "[object Object]" and could
+      // truncate mid-structure, corrupting the JSON; article_status_summary is only
+      // ever a small per-status count map, so no length cap is needed.
+      article_status_summary: (law.article_status_summary && typeof law.article_status_summary === "object")
+        ? law.article_status_summary
+        : {},
+      // ب-127: same jsonb-passthrough idiom as article_status_summary above — column
+      // already existed on library.laws (latest_update jsonb), just never populated.
+      latest_update: (law.latest_update && typeof law.latest_update === "object")
+        ? law.latest_update
+        : null,
       law_guid: String(law.law_guid || "").substring(0, 100),
+      // ب-139: always write the CURRENT value, never conditionally — a file
+      // whose flag was cleared must see needs_human_review flip back to
+      // false on the next reseed, not stay stuck true forever.
+      needs_human_review: Boolean(law.needsHumanReview),
+      // Council review (Codex, 2026-08-22) suggested a CHECK constraint
+      // requiring a non-empty reason whenever the flag is true — but 3 known
+      // live files carry the flag with no review_reason recorded in source
+      // at all. Rather than relax the constraint (losing its real value: a
+      // future seeder bug that sets the flag without ever assigning a
+      // reason), record that gap honestly instead of leaving it null.
+      review_reason: law.needsHumanReview
+        ? String(law.reviewReason || "").trim() || "(بلا سبب مسجَّل بالمصدر — العلم موجود بالفرونت-ماتر بلا review_reason)"
+        : null,
     });
 
     const chapters = (law.chapters || []) as any[];
+    // ب-128: some files legitimately merge a repealed prior regulation's full text
+    // below the active one (documented repo convention — see review_reason on e.g.
+    // money-exchange-business-rules), each half independently numbered 1..N. Without
+    // this, an active/repealed pair sharing a number collided and the Map-dedup below
+    // silently let the repealed (superseded) text overwrite the active one (council
+    // review: Codex + Antigravity, 2026-08-21 — Antigravity's separate-row design,
+    // Codex's truncation-order and query-filtering warnings).
+    const seenArtIds = new Set<string>();
+    const buildArtId = (core: string) => {
+      const full = `${lawId}${core}`;
+      if (full.length <= 150) return full;
+      return `${lawId.substring(0, Math.max(0, 150 - core.length))}${core}`;
+    };
     for (const ch of chapters) {
       // chapters.id is `uuid` on the live schema → hash the derived key.
       const chapterId = toUuid(`${lawId}__ch-${ch.number ?? chapters.indexOf(ch)}`);
@@ -320,7 +368,29 @@ async function seedLaws(
 
       const articles = (ch.articles || []) as any[];
       for (const art of articles) {
-        const artId = `${lawId}__art-${art.number ?? `i${articles.indexOf(art)}`}`.substring(0, 150);
+        // `??` only substitutes on null/undefined — but parse-laws.ts's own
+        // `Number(artMeta.number || 0)` uses 0 as ITS "no real number"
+        // sentinel, so `art.number ?? fallback` let every "no number"
+        // article through as the literal number 0 instead of falling back to
+        // the index. Confirmed on the real corpus (2026-08-21): 1,321
+        // articles carry number:0, 15 laws have more than one — up to 368 in
+        // a single file — so `art-0` collided repeatedly and the Map-based
+        // dedup below kept only the last one (council review: Antigravity).
+        const hasRealNumber = art.number !== null && art.number !== undefined && art.number !== 0;
+        const baseNum = hasRealNumber ? art.number : `i${articles.indexOf(art)}`;
+        // Distinguish a repealed/amended sibling from its active counterpart so
+        // neither overwrites the other; only non-"active" statuses get a suffix, so
+        // the ~99.9% of articles that are plain-active keep the unchanged clean id.
+        const statusSuffix = art.status && art.status !== "active" ? `-${art.status}` : "";
+        let artCore = `__art-${baseNum}${statusSuffix}`;
+        let artId = buildArtId(artCore);
+        if (seenArtIds.has(artId)) {
+          // Same number AND same status colliding (e.g. two active articles restart
+          // numbering across an annex/appendix) — disambiguate by chapter + position.
+          artCore = `${artCore}__ch${ch.number ?? "x"}_i${articles.indexOf(art)}`;
+          artId = buildArtId(artCore);
+        }
+        seenArtIds.add(artId);
 
         const regs = (art.regulations || []) as any[];
         const amends = (art.amendments || []) as any[];
@@ -349,6 +419,12 @@ async function seedLaws(
           // Quarantine only: excluded from the fts index by the migration and
           // never returned by any API route.
           unparsed_details: art.unparsed_details || null,
+          // English courtesy translation — never authoritative, never
+          // indexed into `fts`. NULL (not "") so "no English source" stays
+          // distinguishable from "an empty one".
+          title_en: art.title_en || null,
+          text_en: art.text_en || null,
+          english_text_status: art.text_en ? "unverified" : null,
         });
 
         for (let ai = 0; ai < amends.length; ai++) {
@@ -488,6 +564,11 @@ async function seedDecrees(
       preamble: dec.preamble || "",
       hashtags: dec.hashtags || [],
       official_url: dec.official_url || "",
+      // ب-139: same convention as lawRows above — always the current value.
+      needs_human_review: Boolean(dec.needsHumanReview),
+      review_reason: dec.needsHumanReview
+        ? String(dec.reviewReason || "").trim() || "(بلا سبب مسجَّل بالمصدر — العلم موجود بالفرونت-ماتر بلا review_reason)"
+        : null,
     });
 
     const arts = (dec.articles || []) as any[];
@@ -616,6 +697,14 @@ async function seedPrecedents(
       ruling_count: coll.total_principles || 0,
       free: coll.free !== false,
       progress: 100,
+      // Grouping/display label only (e.g. all volumes of one year's ministry
+      // collection) — never the row's identity. See parse-precedents.ts
+      // parsePrecedentContainer for why id/slug must never be this value.
+      series_id: coll.series_id ? String(coll.series_id).substring(0, 150) : null,
+      // Previously dropped entirely even though parsePrincipleCollection()
+      // already returns the full source frontmatter here (see ب-88 sibling
+      // finding, 06 §"إصلاحات مصاحبة بالسيدر" item 5).
+      metadata: coll.metadata || {},
     });
 
     const principles = (coll.principles || []) as any[];
@@ -638,6 +727,22 @@ async function seedPrecedents(
         ruling: pr.details?.ruling || "",
         year_hijri: safeInt(pr.year_hijri, null),
         order_index: safeInt(pr.number, 0),
+        // Parser already extracts these from bracketed text (parse-precedents.ts
+        // parsePrincipleCollection) — only the seeder was dropping them.
+        classification_keywords: pr.classification_keywords || [],
+        // ب-139 (corrected): confirmed by direct read of the 3 known-flagged
+        // source files that `needs_human_review` is a CONTAINER/file-level
+        // frontmatter flag (one per volume), never a per-PRINCIPLE_START or
+        // per-ARTICLE_START JSON key — no source file has ever carried it at
+        // that level. The original per-principle read here (`pr.needs_human_
+        // review`) was always false and is why the seeder dry-run showed 0
+        // flagged precedents despite 3 real flagged files. Fixed: propagate
+        // the collection's own flag to every principle unbundled from it.
+        needs_human_review: Boolean(coll.needs_human_review),
+        review_reason: coll.needs_human_review
+          ? String(coll.review_reason || "").trim() ||
+            "(بلا سبب مسجَّل بالمصدر — العلم موجود بالفرونت-ماتر بلا review_reason)"
+          : null,
       });
 
       const subs = (pr.sub_principles || []) as any[];
@@ -676,6 +781,18 @@ async function seedPrecedents(
       ruling: prec.ruling || "",
       year_hijri: safeInt(prec.year, null),
       order_index: pi,
+      // parseCourtPrecedent() already extracts these (meta.hashtags/body
+      // #tags, meta.is_redacted, full frontmatter) — only the seeder dropped
+      // them (ب-88 sibling finding).
+      hashtags: prec.hashtags || [],
+      is_redacted: Boolean(prec.is_redacted),
+      metadata: prec.metadata || {},
+      // ب-139: same convention as lawRows/decreeRows above.
+      needs_human_review: Boolean(prec.needs_human_review),
+      review_reason: prec.needs_human_review
+        ? String(prec.review_reason || "").trim() ||
+          "(بلا سبب مسجَّل بالمصدر — العلم موجود بالفرونت-ماتر بلا review_reason)"
+        : null,
     });
   }
 
@@ -798,6 +915,10 @@ async function seedFeqh(
             // "None") is shown as the source wrote it, not coerced to a number.
             page_label: pg.page_label ?? null,
             volume_label: pg.volume_label ?? null,
+            // ب-126: true only for the genuine no-locator-available fallback —
+            // never for a heading that fell mid-page (that reuses the real page's
+            // own identity now, see parse-feqh.ts flushPage()).
+            is_synthetic_page: pg.is_synthetic_page === true,
             matn: pg.text || "",
             sharh: null,
             hashiyah: {},
@@ -839,6 +960,10 @@ async function seedFeqh(
             // "None") is shown as the source wrote it, not coerced to a number.
             page_label: pg.page_label ?? null,
             volume_label: pg.volume_label ?? null,
+            // ب-126: true only for the genuine no-locator-available fallback —
+            // never for a heading that fell mid-page (that reuses the real page's
+            // own identity now, see parse-feqh.ts flushPage()).
+            is_synthetic_page: pg.is_synthetic_page === true,
             matn: pg.text || "",
             sharh: null,
             hashiyah: {},
@@ -897,6 +1022,15 @@ export async function seedLibrary(options: {
   const startedAt = new Date();
   const allStats: SeedStats[] = [];
   const errors: string[] = [];
+  // ب-139: council-mandated (Codex, 2026-08-22) — needs_human_review is now
+  // written to the database (see the companion migration), but is EXPLICITLY
+  // not used to exclude anything from seeding: an unknown fraction of the
+  // 337 flagged files are stale (issue fixed elsewhere without clearing the
+  // flag). Printing this report on every run — instead of requiring someone
+  // to remember to query for it — is the safeguard against the flag going
+  // invisible for a second time, this time behind "you'd have to think to
+  // look for it" instead of "it was never wired at all."
+  const reviewFlagged: Array<{ table: string; id: string; reason: string }> = [];
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -962,6 +1096,45 @@ export async function seedLibrary(options: {
     }
 
     allStats.push(...stats);
+
+    // ب-139: scan the SOURCE data directly, independent of row-building —
+    // this must keep working even if a future refactor changes how rows are
+    // assembled inside seedLaws/seedDecrees/seedPrecedents.
+    const flagOf = (o: Record<string, unknown>): boolean =>
+      o.needsHumanReview === true || o.needs_human_review === true;
+    const reasonOf = (o: Record<string, unknown>): string =>
+      String(o.reviewReason ?? o.review_reason ?? "").trim() || "(بلا سبب مسجَّل)";
+    if (type === "laws") {
+      for (const law of (data.laws || []) as Record<string, unknown>[]) {
+        if (flagOf(law)) reviewFlagged.push({ table: "laws", id: String(law.slug || law.id || ""), reason: reasonOf(law) });
+      }
+    } else if (type === "decrees") {
+      for (const dec of (data.decrees || []) as Record<string, unknown>[]) {
+        if (flagOf(dec)) reviewFlagged.push({ table: "decrees_circulars", id: String(dec.id || ""), reason: reasonOf(dec) });
+      }
+    } else if (type === "precedents") {
+      for (const coll of (data.collections || []) as Record<string, unknown>[]) {
+        // ب-139 (corrected): the flag lives on the CONTAINER (coll), never on
+        // individual principles — see the matching fix + rationale in
+        // seedPrecedents' principleRows.push above. A collection-level flag
+        // is reported once per unbundled principle so the report's id column
+        // stays queryable the same way the "principles" table now is.
+        const collFlagged = flagOf(coll);
+        const collReason = reasonOf(coll);
+        for (const pr of (coll.principles || []) as Record<string, unknown>[]) {
+          if (collFlagged) {
+            reviewFlagged.push({
+              table: "principles",
+              id: `${String(coll.id || coll.slug || "")}__pr-${String(pr.number ?? "")}`,
+              reason: collReason,
+            });
+          }
+        }
+      }
+      for (const prec of (data.court_precedents || []) as Record<string, unknown>[]) {
+        if (flagOf(prec)) reviewFlagged.push({ table: "principles", id: String(prec.slug || prec.id || ""), reason: reasonOf(prec) });
+      }
+    }
   }
 
   const finishedAt = new Date();
@@ -988,6 +1161,29 @@ export async function seedLibrary(options: {
   console.log(`  Total errors:   ${totalErrors}`);
   console.log(`  Duration:       ${(durationMs / 1000).toFixed(1)}s`);
   console.log("╚══════════════════════════════════════════════════╝\n");
+
+  // ب-139: mandatory, not opt-in (council requirement, Codex 2026-08-22) —
+  // printed on every run regardless of dry-run/live, so this is never the
+  // kind of thing someone has to remember to go check.
+  console.log("╔══════════════════════════════════════════════════╗");
+  console.log("║   ⚠️  needs_human_review — INTERNAL AUDIT ONLY   ║");
+  console.log("╠══════════════════════════════════════════════════╣");
+  console.log(`  ${reviewFlagged.length} flagged record(s) this run.`);
+  console.log(`  This does NOT block seeding or publication — an unknown`);
+  console.log(`  fraction of these are stale (fixed elsewhere, flag never`);
+  console.log(`  cleared). Triage before any exclusion/UI-warning decision.`);
+  console.log("╚══════════════════════════════════════════════════╝");
+  const reviewReportPath = path.join(path.resolve(options.dir), "needs-human-review-report.json");
+  try {
+    fs.writeFileSync(
+      reviewReportPath,
+      JSON.stringify({ generated_at: finishedAt.toISOString(), count: reviewFlagged.length, items: reviewFlagged }, null, 2),
+      "utf-8",
+    );
+    console.log(`  Full list (comparable across runs): ${reviewReportPath}\n`);
+  } catch (e) {
+    console.error(`  ⚠ could not write needs_human_review report: ${(e as Error).message}\n`);
+  }
 
   if (errors.length > 0) {
     console.log("📝 Errors:\n");

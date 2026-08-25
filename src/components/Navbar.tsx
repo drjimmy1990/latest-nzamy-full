@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, useMotionValue } from "framer-motion";
 import {
   List, X, CaretDown, Scales, Moon, Sun, Globe, Flag,
-  User, ChartBar, Layout, SignOut, GearSix, Bell,
+  ChartBar, Layout, SignOut, GearSix, Bell,
   Buildings,
 } from "@phosphor-icons/react";
 import * as PhosphorIcons from "@phosphor-icons/react";
@@ -15,7 +15,6 @@ import { useUser, logout } from "@/hooks/useUser";
 import { getNavByUserType, getDashboardRoute, getRoleLabel, type NavItem } from "@/constants/navigation";
 import Link from "next/link";
 import { useNotifications } from "@/hooks/useNotifications";
-import type { Notification } from "@/lib/services/notificationService";
 
 // ─── Icon resolver (phosphor icon names → components) ─────────────────────────
 const ICON_MAP = PhosphorIcons as unknown as Record<string, ElementType>;
@@ -295,7 +294,7 @@ export default function Navbar() {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const { theme, lang, toggleTheme, toggleLang } = useTheme();
-  const { isLoggedIn, userType, name, credits, creditsMax, affiliation } = useUser();
+  const { isLoggedIn, userType, name, affiliation } = useUser();
   const isAr = lang === "ar";
 
   // ── Select proper nav based on userType ──
@@ -327,7 +326,7 @@ export default function Navbar() {
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ type: "spring", stiffness: 80, damping: 20 }}
-      className="fixed top-0 right-0 left-0 z-50"
+      className="fixed top-0 right-0 left-0 z-50 safe-top"
     >
       <div className="mx-auto max-w-[1400px] px-4 pt-4">
         <div className="rounded-[1.25rem] border border-white/60 bg-white/80 px-6 py-3 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-dark-card/90">

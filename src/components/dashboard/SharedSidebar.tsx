@@ -93,6 +93,9 @@ export default function SharedSidebar() {
               <p className={`text-sm font-bold truncate ${isDark ? "text-white" : "text-slate-800"}`}>{name}</p>
               <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
                 {/* Show multi-role badge if active_roles exist */}
+                {/* Role label only — the explicit "الإعدادات" nav item below is the
+                    single Settings entry point; repeating the word here read as
+                    a duplicate "Settings" link to users. */}
                 {active_roles && active_roles.length > 0
                   ? (<span className="text-[#C8A762]">
                       {active_roles.map(r =>
@@ -101,9 +104,9 @@ export default function SharedSidebar() {
                         r === "arbitrator" ? "محكّم" : r
                       ).join(" + ")}
                       {" • "}
-                      {userType ? (isAr ? `إعدادات ${getRoleLabel(userType, true)}` : `${getRoleLabel(userType, false)} Settings`) : ""}
+                      {userType ? getRoleLabel(userType, isAr) : ""}
                     </span>)
-                  : userType ? (isAr ? `إعدادات ${getRoleLabel(userType, true)}` : `${getRoleLabel(userType, false)} Settings`) : ""
+                  : userType ? getRoleLabel(userType, isAr) : ""
                 }
               </p>
             </div>

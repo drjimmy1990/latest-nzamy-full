@@ -12,15 +12,14 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Gift, X, Copy, CheckCircle, ShareNetwork,
+  Gift, X, Copy, CheckCircle,
   WhatsappLogo, Clock, Users,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import {
   getLibrarySubscription,
+  syncInvitationCodes,
   type Invitation,
-  TRIAL_DAYS_BY_PLAN,
-  PLAN_LABELS,
 } from "@/lib/invitationStore";
 
 // ── Props ──────────────────────────────────────────────────────────────────
@@ -174,15 +173,25 @@ export default function InvitationModal({
   const { isDark, isRTL } = useTheme();
   const [showWelcome, setShowWelcome] = useState(isPostSubscription);
   const sub = getLibrarySubscription();
+  const invitations = sub?.invitations ?? [];
 
   useEffect(() => {
     setShowWelcome(isPostSubscription);
   }, [isPostSubscription, open]);
 
+  // Every time this modal surfaces codes to the user, re-sync them
+  // server-side (best-effort, idempotent). Covers codes generated while the
+  // visitor was still a guest — this retries once they're logged in.
+  useEffect(() => {
+    if (open && invitations.length > 0) {
+      syncInvitationCodes(invitations.map((inv) => inv.code));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   if (!open) return null;
 
-  const invitations = sub?.invitations ?? [];
-  const trialDays   = sub?.trialDaysPerInvite ?? 30;
+  const trialDays = sub?.trialDaysPerInvite ?? 30;
 
   return (
     <AnimatePresence>

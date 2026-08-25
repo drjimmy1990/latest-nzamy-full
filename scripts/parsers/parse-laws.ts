@@ -25,21 +25,132 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   normalizeType,
+  normalizeStatus,
   validateEnum,
   nullIfForbidden,
   filterMeta,
   assertManifestLoadable,
+  getRejectedEnumValues,
 } from "./manifest";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { slugifyArabic as sharedSlugify, findSlugCollisions } from "./lib/slug";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
-import { extractArticleHistory, stripDetails, stripArticleHeading } from "./lib/article-history";
+import { buildEntityIndexFromCategoryInput, resolveCrossDomain } from "./lib/entity-prescan";
+import { extractArticleHistory, stripDetails, stripArticleHeading, unwrapLiveAnnexes } from "./lib/article-history";
 import { writeParseReport, printCapped } from "./lib/report";
 
 /** Collected across a whole run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
+/**
+ * Distribution of frontmatter `schema_version` across a run — was completely
+ * invisible before (nothing reads/branches on this field anywhere in the
+ * pipeline, confirmed by grep, so no functional bug from the fragmentation
+ * itself; but 6 real variants across the library, incl. 1,409 files with no
+ * field at all, went undocumented for weeks because no run ever surfaced it).
+ * "(missing)" is the bucket key when the field is absent.
+ */
+const schemaVersionCounts: Record<string, number> = {};
 /** Articles that carry neither live text nor recovered historical text. */
 const emptyArticles: string[] = [];
+const verifiedEmptyArticles: string[] = [];
+/**
+ * ب-115: a REGULATION anchor found before any article has opened in its
+ * chapter — no preceding article to attach it to. Collected (not thrown)
+ * so a full run surfaces every occurrence at once instead of aborting on the
+ * first one; gates the exit code at the end, same as slug collisions below.
+ */
+const orphanRegulationAnchors: string[] = [];
+/**
+ * ب-133: `status: superseded_duplicate` is a LIBRARY DEDUP bookkeeping flag,
+ * not a legal status — correctly absent from the manifest's `status` enum
+ * (active/partially_active/deferred_effective/issued_publication_unverified/
+ * suspended/repealed all describe a law's legal force; this describes a
+ * FILE's relationship to another file). Before this fix, `validateEnum`
+ * rejected it as unrecognized and silently fell back to "active" — so the
+ * file kept competing for its slug exactly like the file that superseded it.
+ *
+ * `library.laws.slug` is the PRIMARY KEY and seed-library.ts collapses
+ * duplicate slugs via `new Map(rows.map(r => [r.slug, r]))` — last-processed
+ * silently wins. Whether the correct or the superseded text reached the DB
+ * depended on directory-iteration order, not on which file was right.
+ *
+ * Caught 2026-08-22 running the full-library stress test findSlugCollisions()
+ * is designed to catch (see the "Never auto-disambiguate" comment below) —
+ * 3 of the library's collisions were NOT unresolved duplicates needing a
+ * judgment call: a prior session (2026-08-20, registry note on LAW-17-0084)
+ * had already done that judgment call and recorded it in both the file's own
+ * frontmatter and the registry. The pipeline just never had code that acted
+ * on it. Most severe instance: النظام الأساسي للحكم (Basic Law of Governance)
+ * — the superseded copy predates two real constitutional amendments to the
+ * royal-succession article (Royal Orders أ/135 1427H and أ/256 1438H).
+ *
+ * Skipping here (before slug/collision bookkeeping even sees the file) is
+ * NOT the auto-disambiguation the comment below warns against — that warning
+ * is about a machine GUESSING which duplicate wins. Here a human judgment
+ * already happened and was already written into the source file; this only
+ * makes the parser stop ignoring it.
+ */
+const supersededDuplicateSkipped: string[] = [];
+/**
+ * ب-134: files carrying `gate_zero_status` — a prior review already
+ * determined these are not legislative/regulatory text at all (an internal
+ * org chart, an ISO quality policy, a description of an internal process).
+ * See parseSingleLaw's early-return for why this needs to actually exclude
+ * the file, not just document the finding.
+ */
+const gateZeroExcluded: string[] = [];
+/**
+ * ب-135: per-file extraction coverage — captured characters (preamble +
+ * every article's text/original_text/unparsed_details/historic_regulation_text
+ * + every nested regulation's text) vs. the body length after frontmatter is
+ * stripped. Built INSIDE the real parser deliberately, reusing its actual
+ * extraction results — NOT a standalone reimplementation.
+ *
+ * Why this matters: investigating ب-120 (GACAR) 2026-08-22, an external
+ * Python script attempting the same measurement went through three rounds of
+ * self-correction (missed frontmatter stripping, missed the trailing-gap
+ * REGULATION mechanism, produced at least one full false positive — نظام
+ * الاستثمار التعديني looked catastrophically broken until direct reading
+ * showed its "gap" was legitimate REGULATION content the script just didn't
+ * know how to recognize) before its numbers were trustworthy even for the
+ * worst outliers. Measuring coverage by re-deriving the parser's own logic
+ * externally is fragile by construction; this does the same computation
+ * from inside the one place that already has the real, correct answer.
+ */
+const lowCoverageFiles: Array<{ file: string; bodyLen: number; capturedLen: number; coveragePct: number }> = [];
+
+function sumCapturedChars(chapters: ParsedChapter[]): number {
+  let total = 0;
+  for (const ch of chapters) {
+    for (const art of ch.articles) {
+      total += art.text.length;
+      total += art.original_text?.length ?? 0;
+      total += art.unparsed_details?.length ?? 0;
+      total += art.historic_regulation_text?.length ?? 0;
+      for (const reg of art.regulations) total += reg.text.length;
+    }
+  }
+  return total;
+}
+/**
+ * 2026-08-21 (تعاميم audit): a document with ZERO `ARTICLE_START` anchors
+ * anywhere in its body — 513/515 مجلس الوزراء decisions + 498/703 SAMA
+ * circulars measured with real, complete legal text sitting in plain
+ * markdown, parsed into 0 articles because nothing marks it up. A single
+ * synthetic whole-document article is substituted (council-reviewed: Codex +
+ * Antigravity, both explicitly rejected auto-splitting by "أولاً/ثانياً" as
+ * too risky — a decision's own internal enumeration is not a reliable
+ * article boundary). Tracked here so a full run reports how many documents
+ * relied on the fallback instead of proper per-article anchoring.
+ */
+const syntheticWholeDocumentArticles: string[] = [];
+/**
+ * A document has an `ARTICLE_END` with no matching `ARTICLE_START` (or vice
+ * versa) — the fallback above must NOT fire here, since that would mask
+ * genuine corruption/encoding damage instead of surfacing it (council review:
+ * Codex). Collected and gates the exit code like the other invariants.
+ */
+const malformedAnchorFiles: string[] = [];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -65,6 +176,17 @@ export interface AmendmentEntry {
   decree: string;
   summary: string;
   original_text?: string;
+  /**
+   * The amendment's real kind (e.g. "تعديل"/"إلغاء"/"إضافة"/"دمج") — either
+   * read verbatim from a real `<!-- AMENDMENT {"type": ...} -->` anchor, or
+   * mapped from a recovered HistoryEntry.kind ("amended"/"repealed") when no
+   * anchor exists. Was silently dropped before this field existed: anchors
+   * carry a real `type` in the source (measured: إلغاء 242، تعديل 178،
+   * إضافة 24، دمج 2، + 2 rarer values) that nothing ever read, and every
+   * article_amendments.type in the database was the same hardcoded
+   * seed-library.ts fallback regardless of the amendment's actual nature.
+   */
+  type?: string;
 }
 
 export interface ExecutiveRegulation {
@@ -97,6 +219,28 @@ export interface ParsedArticle {
   unparsed_details?: string;
   /** Historic executive-regulation text found inside the article's details. */
   historic_regulation_text?: string;
+  /**
+   * English title, read directly from the ARTICLE_START anchor's own
+   * `title_en` field (2026-08-21) — confirmed present per-article in at
+   * least one bilingual regulation's source (e-waste management, all 17
+   * articles). Independent of `ParsedLaw.title_en`, which only ever reflects
+   * the LAW's frontmatter, not each article's own anchor metadata.
+   */
+  title_en?: string;
+  /**
+   * English courtesy translation of `text`, recovered from a `<details>`
+   * block (see HistoryResult.englishText). Never the authoritative text —
+   * Arabic remains authoritative per Art. 1 of the Basic Law of Governance —
+   * and never indexed into the Arabic `fts` column.
+   */
+  text_en?: string;
+  /**
+   * Provenance flag for `text_en`: whether its status as an official vs.
+   * unofficial translation has been verified against the primary source.
+   * Always "unverified" until a dedicated verification pass runs — never
+   * "official" or "unofficial" on an unproven guess (council review: Codex).
+   */
+  english_text_status?: "unverified";
   chapter_title: string;
   chapter_number?: number;
   regulations: ExecutiveRegulation[];
@@ -122,6 +266,7 @@ export interface ParsedLaw {
   issuing_body: string;
   issuance_decree: string;
   issuance_date: string;
+  latest_update: Record<string, unknown> | null;
   total_articles: number;
   has_executive_reg: boolean;
   regulation_decree: string;
@@ -133,14 +278,59 @@ export interface ParsedLaw {
   // New (manifest v1.2) fields — emitted via alias resolution below.
   issue_date_hijri: string;
   issue_date_gregorian: string;
+  /**
+   * ك-12 (2026-08-24): the manifest (schema_manifest.json:522-544, rule ق-15)
+   * has documented these four fields since before this parser existed, and
+   * `laws.publication_date_hijri`/`effective_date_hijri` are real DB columns
+   * — but nothing here ever read them from frontmatter into ParsedLaw, so
+   * the seeder had nothing to write (COLUMN_UNWRITTEN, confirmed by
+   * verify-contract). Same class of bug as ب-114/ب-127 (issuing_instrument,
+   * latest_update): a real source field, silently never promoted.
+   */
+  publication_date_hijri: string | null;
+  publication_date_gregorian: string | null;
+  effective_date_hijri: string | null;
+  effective_date_gregorian: string | null;
+  effective_date_note: string | null;
   boe_source_url: string;
   official_source_url: string;
   has_merged_regulation: boolean;
-  article_status_summary: string;
+  /** Structured per-status article counts, e.g. {"active":40,"repealed":3}. DB column is jsonb. */
+  article_status_summary: Record<string, unknown> | null;
   law_guid: string;
   variant: "boe" | "qadha";
   chapters: ParsedChapter[];
   metadata: Record<string, unknown>;
+  /**
+   * ب-133: raw `status: superseded_duplicate` flag, read independently of
+   * `law_status` (which runs the value through the LEGAL-status enum and
+   * would already have rejected/defaulted it). Internal to this parser run —
+   * used to verify-then-exclude in the main loop below, never written to
+   * laws.json (stripped before the final array is returned).
+   */
+  isSupersededDuplicate: boolean;
+  /**
+   * ب-133: raw `superseded_by` frontmatter value, when present — a structured
+   * pointer to the surviving document's `id`/`instrument_id`, distinct from
+   * the slug-based verification path (some duplicates share a slug with their
+   * survivor; others were fully absorbed into an unrelated document with its
+   * own different slug, and can only be verified by this id pointer instead).
+   * Internal-only, stripped before the final output — see isSupersededDuplicate.
+   */
+  supersededBy: string;
+  /**
+   * ب-139: mirrors the source .md frontmatter flag — see the migration
+   * comment (20260822_needs_human_review_columns.sql) for why this is
+   * seeded as a plain internal audit signal and does NOT exclude the file
+   * or gate the exit code. 337 files carry this across the library; an
+   * unknown fraction are stale (issue already fixed elsewhere without
+   * clearing the flag), so treating it as a hard block risks removing
+   * fine content, not just flagged content. Unlike isSupersededDuplicate/
+   * supersededBy above, these two ARE part of the real output — the seeder
+   * needs them.
+   */
+  needsHumanReview: boolean;
+  reviewReason: string;
 }
 
 export interface LawsParserOutput {
@@ -227,6 +417,23 @@ function toSortKey(rawNum: string | undefined | null): string {
   return `99999-${base}${mkrSuffix}`;
 }
 
+/**
+ * Deterministic short prefix from a regulation's `ref` (its identifying
+ * name/title, e.g. "اللائحة الاقتصادية للمطارات"), so sortKey groups each
+ * merged regulation's own articles together instead of interleaving them by
+ * bare regNum with every other regulation attached to the same article gap.
+ * A simple string hash, not a lookup table — no shared state needed across
+ * calls, and collisions are harmless (they only degrade back to interleaved
+ * order for that pair, never lose or misattribute any row).
+ */
+function refSortPrefix(ref: string): string {
+  let h = 0;
+  for (let i = 0; i < ref.length; i++) {
+    h = (h * 31 + ref.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(36).padStart(7, "0");
+}
+
 function detectVariant(body: string, meta: Record<string, unknown>): "boe" | "qadha" {
   // Qadha format: has regulation block-quotes or explicit source field
   const source = String(meta.source || "").toLowerCase();
@@ -249,6 +456,55 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   // embedded in its text. Normalising once here fixes every downstream pattern.
   const raw = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
   const { meta, body } = parseYamlFrontmatter(raw, filePath);
+
+  // ب-134: `gate_zero_status: "مستبعد — غير تشريعي"` is an established,
+  // already-used convention (first seen on LAW-20-0237, "الدليل التنظيمي
+  // للوزارة" — an internal ministry org chart, not binding legislation) for
+  // marking a file that a prior review determined is not a legal/regulatory
+  // text at all, WITHOUT deleting or moving it. But grep across scripts/
+  // confirmed 2026-08-22 that NO parser ever read this field — the flag was
+  // pure documentation, and the file kept being parsed and seeded as a "law"
+  // exactly like a real one regardless. (LAW-20-0237 only stopped appearing
+  // because it was LATER physically moved out of the content tree entirely —
+  // a heavier, separately-authorized step; flagging alone never worked.)
+  // Applying the same fix philosophy as ب-133: teach the pipeline to act on
+  // a decision that was already made and already recorded, so the next file
+  // someone flags this way (2 more found immediately: SOCPA's "سياسة الجودة"
+  // and "معايير واستفسارات تحت الدراسة" — an internal ISO quality policy and
+  // a description of an internal consultation process) doesn't require a
+  // physical file move just to actually be excluded.
+  const gateZeroStatus = String(meta.gate_zero_status ?? "").trim();
+  if (gateZeroStatus) {
+    gateZeroExcluded.push(`${path.basename(filePath)} :: gate_zero_status="${gateZeroStatus}"`);
+    return null;
+  }
+
+  // ب-133: read independently of validateEnum, which would reject this value
+  // (correctly — it is not a legal status) and default it away before we could
+  // see it. Council review (Codex, 2026-08-22): a lone unverified tag must NOT
+  // cause a silent full parse-and-drop — the file is still parsed normally
+  // here, and the actual exclusion (with proof a real survivor exists) happens
+  // in the main loop after every file's slug is known. See that block for why.
+  // ب-133-b: "merged" is the same library-bookkeeping concept under a
+  // different word — found 2026-08-22 on LAW-13-0979 (an amendment decree
+  // whose text was absorbed into a newly-reconstructed base regulation file,
+  // already carefully documented in 2026-08-14's review_reason). Its
+  // superseded_by is a repo-relative FILE PATH, not an id — a second,
+  // pre-existing convention alongside ب-133's id-based one. Both are honored
+  // by the same verified-exclusion logic below (see the path-matching branch).
+  const rawStatusForDup = String(meta.status ?? meta.law_status ?? "").trim();
+  const isSupersededDuplicate = rawStatusForDup === "superseded_duplicate" || rawStatusForDup === "merged";
+  const supersededBy = String(meta.superseded_by ?? "").trim();
+
+  // ب-139: read independently of anything else — this flag/reason has never
+  // been read anywhere in the pipeline before today (confirmed by grep across
+  // the whole repo). Seeded as plain metadata; see ParsedLaw's doc comment
+  // for why this does not exclude the file or gate the exit code.
+  const needsHumanReview = meta.needs_human_review === true || String(meta.needs_human_review ?? "").trim() === "true";
+  const reviewReason = String(meta.review_reason ?? "").trim();
+
+  const schemaVersionKey = String(meta.schema_version ?? "").trim() || "(missing)";
+  schemaVersionCounts[schemaVersionKey] = (schemaVersionCounts[schemaVersionKey] || 0) + 1;
   const variant = detectVariant(body, meta);
 
   const fileBaseName = path.basename(filePath, ".md");
@@ -270,7 +526,28 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   chapterRe.lastIndex = 0;
 
   if (!hasChapters) {
-    const articles = parseArticlesInBlock(body, "", 0, path.basename(filePath));
+    let articles = parseArticlesInBlock(body, "", 0, path.basename(filePath));
+    if (articles.length === 0) {
+      const hasArticleStart = /<!--\s*ARTICLE_START\b/.test(body);
+      const hasArticleEnd = /<!--\s*ARTICLE_END\s*-->/.test(body);
+      // note_type: redirect marks a stub whose real content was deliberately
+      // merged into a different file (verified 2026-08-21: ملاحظة_نقل.md —
+      // its own frontmatter documents the merge and points to the file that
+      // now holds the actual text). Synthesising an article here would
+      // duplicate that content under a second identity instead of leaving
+      // the redirect as the pointer it was designed to be.
+      const isRedirectStub = meta.note_type === "redirect";
+      if (!hasArticleStart && !hasArticleEnd && !isRedirectStub) {
+        const wrapped = wrapAsWholeDocumentArticle(body, meta);
+        const synthetic = parseArticlesInBlock(wrapped, "", 0, path.basename(filePath));
+        if (synthetic.length === 1 && hasMeaningfulContent(synthetic[0].text)) {
+          articles = synthetic;
+          syntheticWholeDocumentArticles.push(path.basename(filePath));
+        }
+      } else if (hasArticleStart !== hasArticleEnd) {
+        malformedAnchorFiles.push(path.basename(filePath));
+      }
+    }
     chapters.push({ number: 0, title: "", articles });
   } else {
     while ((chapterMatch = chapterRe.exec(body)) !== null) {
@@ -298,7 +575,12 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
 
   const totalArticles = chapters.reduce((sum, ch) => sum + ch.articles.length, 0);
 
-  const preambleText = extractPreamble(body);
+  // ك-03 (2026-08-23): the preamble is the one per-FILE (not per-article) text
+  // blob, and never went through either <details> pass — a live-annex block
+  // (ب-114's 15-item allowlist) landing here would render as a collapsed
+  // toggle instead of visible text. Unwrap only (no stripDetails): anything
+  // outside the allowlist is left exactly as it was before this change.
+  const preambleText = unwrapLiveAnnexes(extractPreamble(body));
 
   // ── Extract regulation preamble (Qadha) ─────────────────────────────────
   let regulationPreamble = "";
@@ -317,12 +599,38 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   // Resolve both; enforce enums + type_normalization_map from the manifest.
   const issue_date_hijri = nullIfForbidden(meta.issue_date_hijri ?? meta.issuance_date) || "";
   const issue_date_gregorian = nullIfForbidden(meta.issue_date_gregorian) || "";
+  // ك-12: kept as genuine `null` (not `|| ""`) when absent — the manifest's own
+  // schema for these four fields (schema_manifest.json:522-544) types them
+  // `date_hijri|null`/`date|null`/`string|null` specifically so "not computed"
+  // is distinguishable from "computed as an empty value", per rule ق-2.
+  const publication_date_hijri = nullIfForbidden(meta.publication_date_hijri);
+  const publication_date_gregorian = nullIfForbidden(meta.publication_date_gregorian);
+  const effective_date_hijri = nullIfForbidden(meta.effective_date_hijri);
+  const effective_date_gregorian = nullIfForbidden(meta.effective_date_gregorian);
+  const effective_date_note = nullIfForbidden(meta.effective_date_note);
   const boe_source_url = nullIfForbidden(meta.boe_source_url ?? meta.boe_url) || "";
   const official_source_url = nullIfForbidden(meta.official_source_url) || "";
   const has_merged_regulation = Boolean(meta.has_merged_regulation ?? meta.has_executive_reg ?? (variant === "qadha"));
-  const article_status_summary = nullIfForbidden(meta.article_status_summary) || "";
+  // ب-114: this is a nested YAML object (jsonb column), not a string — nullIfForbidden
+  // is string-only (`typeof value === "object"` → null) and was silently discarding it
+  // on every file that actually carries one, sending an empty string downstream instead.
+  const article_status_summary =
+    meta.article_status_summary && typeof meta.article_status_summary === "object"
+      ? (meta.article_status_summary as Record<string, unknown>)
+      : null;
+  // ب-127: parsed correctly by the YAML layer but never read into ParsedLaw before —
+  // silently dropped for every file that carries it (amendment instrument/date, jsonb
+  // column `laws.latest_update` already exists and was sitting unused).
+  const latest_update =
+    meta.latest_update && typeof meta.latest_update === "object"
+      ? (meta.latest_update as Record<string, unknown>)
+      : null;
   const law_guid = nullIfForbidden(meta.law_guid ?? meta.id) || "";
-  const statusRaw = nullIfForbidden(meta.status ?? meta.law_status) || "active";
+  // ب-133-c: fold known non-legal-status synonyms ("superseded", "amended")
+  // to their real enum equivalent before validation — same idiom as
+  // normalizeType below, mirrored for status. See normalizeStatus's doc
+  // comment in manifest.ts for why each mapping is safe.
+  const statusRaw = normalizeStatus(nullIfForbidden(meta.status ?? meta.law_status)) || "active";
   const typeCanonical = normalizeType(meta.type);
   // section_code in files is "00".."30" / "97".."99" (zero-padded). An unquoted
   // YAML `00` becomes int 0 → normalize back to a 2-digit string before validating.
@@ -330,39 +638,201 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   const sectionCode = validateEnum(
     "section_code",
     /^\d+$/.test(scRaw) ? scRaw.padStart(2, "0") : scRaw,
-    "غير_مصنف"
+    "غير_مصنف",
+    filePath
   );
 
-  return {
+  const returned: ParsedLaw = {
     id: law_guid || slug,
     slug,
     title,
     title_en: (meta.title_en as string) || "",
-    type: validateEnum("type", typeCanonical, "نظام"),
+    type: validateEnum("type", typeCanonical, "نظام", filePath),
     section_code: sectionCode,
     section_name: (meta.section_name as string) || "",
     issuing_body: (meta.issuing_body as string) || "",
-    issuance_decree: (meta.issuance_decree as string) || "",
+    // ب-127: 3,707 files use the frontmatter key `issuing_instrument:`; only 1 uses the
+    // legacy `issuance_decree:` — reading only the latter left the DB column blank for
+    // virtually the whole library. Same "resolve both keys" idiom as the block above.
+    issuance_decree: (meta.issuing_instrument as string) || (meta.issuance_decree as string) || "",
     issuance_date: issue_date_hijri, // seeder maps this → issue_date_hijri column
     total_articles: totalArticles,
     has_executive_reg: has_merged_regulation, // legacy alias kept for the seeder
     regulation_decree: (meta.regulation_decree as string) || "",
     preamble: preambleText,
     regulation_preamble: regulationPreamble,
-    law_status: validateEnum("status", statusRaw, "active"), // seeder maps → status column
+    law_status: validateEnum("status", statusRaw, "active", filePath), // seeder maps → status column
     source: (meta.source as string) || "",
     boe_url: boe_source_url, // legacy alias kept for the seeder
     issue_date_hijri,
     issue_date_gregorian,
+    publication_date_hijri,
+    publication_date_gregorian,
+    effective_date_hijri,
+    effective_date_gregorian,
+    effective_date_note,
     boe_source_url,
     official_source_url,
     has_merged_regulation,
     article_status_summary,
+    latest_update,
     law_guid,
     variant,
     chapters,
     metadata: meta,
+    isSupersededDuplicate,
+    supersededBy,
+    needsHumanReview,
+    reviewReason,
   };
+
+  // ب-135: measure coverage against the SAME `chapters` this function is
+  // about to return — not a re-parse, so it can't drift from what actually
+  // got extracted. Thresholds chosen from the ب-120 investigation: below
+  // 20,000 chars a normal preamble/chapter-heading overhead alone can
+  // plausibly explain a lower ratio (confirmed repeatedly against small
+  // real files that turned out fine), so only larger documents are checked;
+  // 70% (not e.g. 85%) because several legitimately-fine large multi-chapter
+  // codes measured 70-85% in the same investigation.
+  if (body.length > 20000) {
+    const captured = preambleText.length + regulationPreamble.length + sumCapturedChars(returned.chapters);
+    const coveragePct = (captured / body.length) * 100;
+    if (coveragePct < 70) {
+      lowCoverageFiles.push({
+        file: path.basename(filePath),
+        bodyLen: body.length,
+        capturedLen: captured,
+        coveragePct: Math.round(coveragePct * 10) / 10,
+      });
+    }
+  }
+
+  return returned;
+}
+
+/**
+ * Wraps a whole anchor-less document body in a synthetic `ARTICLE_START` /
+ * `ARTICLE_END` pair so it can run through the exact same extraction pipeline
+ * as a normal article — regulation extraction, history/live-annex/bilingual
+ * recovery, the heading/blockquote cleaning chain — instead of duplicating
+ * that logic. `number_text: "الصفحة 1"` deliberately reuses the convention
+ * already used by ~680 manually-anchored single-page circulars in this same
+ * corpus (e.g. تعميم ساما رقم 20727), not "المادة الأولى" — this is never
+ * claimed to be an actual first article, only the document as one page
+ * (council review: Codex explicitly required the synthetic unit not be
+ * mislabelled as a real article).
+ */
+function wrapAsWholeDocumentArticle(body: string, meta: Record<string, unknown>): string {
+  const rawStatus = String(meta.status ?? meta.law_status ?? "active");
+  const anchorMeta: Record<string, unknown> = {
+    number: "1",
+    number_text: "الصفحة 1",
+    title: String(meta.title || ""),
+    status: KNOWN_ARTICLE_STATUSES.includes(rawStatus) ? rawStatus : "active",
+    free: meta.free !== false,
+  };
+  if (meta.instrument) anchorMeta.instrument = String(meta.instrument);
+  if (meta.title_en) anchorMeta.title_en = String(meta.title_en);
+  return `<!-- ARTICLE_START ${JSON.stringify(anchorMeta)} -->\n${body}\n<!-- ARTICLE_END -->`;
+}
+
+/**
+ * Strips the mechanically-generated "identity card" block (card-v2 SEO
+ * pipeline) that precedes the real body on most files: the "📊 بطاقة تعريف"
+ * table, an optional nested "➕ المزيد من بيانات" <details> sub-table, the
+ * bare "# <title>" heading, and an immediately-following repeal/status
+ * banner or section separator. None of this is ever legal text — it is
+ * template furniture identical in shape whether the file behind it has real
+ * articles or nothing at all, which is exactly why measuring the RAW body
+ * length (the previous check) could not tell a stub from real content: an
+ * identity table alone is easily >30 Arabic letters.
+ *
+ * Line-based rather than one regex on purpose — each step is independently
+ * checkable against a real file, which is how this was verified: it
+ * correctly reduces LAW-04-0208 (a genuine stub — 0 articles, the body is
+ * only this boilerplate) down to an empty remainder, while leaving
+ * جدول-المخالفات-والجزاءات-للأندية-الرياضية-الخاصة (the ب-138 regression
+ * file — real penalty tables, just never wrapped in ARTICLE_START) with its
+ * entire substantive <details> block intact.
+ */
+function stripIdentityCardBoilerplate(text: string): string {
+  const lines = text.split("\n");
+  let i = 0;
+  const skipBlank = () => {
+    while (i < lines.length && lines[i].trim() === "") i++;
+  };
+
+  skipBlank();
+  if (i < lines.length && /^###\s*📊/.test(lines[i])) {
+    i++;
+    skipBlank();
+    while (i < lines.length && lines[i].trim().startsWith("|")) i++;
+    skipBlank();
+    if (i < lines.length && lines[i].trim() === "<details>") {
+      while (i < lines.length && lines[i].trim() !== "</details>") i++;
+      i++; // consume "</details>" itself
+    }
+  }
+
+  skipBlank();
+  if (i < lines.length && /^#\s+\S/.test(lines[i]) && !lines[i].startsWith("##")) i++;
+
+  // A one-line repeal/status banner or a "***"/"---" separator right after
+  // the title — but never a "##" subheading, which is where real (if
+  // unanchored) content like ديباجة النظام starts.
+  //
+  // The banner's own "> " blockquote marker is already gone by the time this
+  // runs: parseArticlesInBlock's cleaning chain strips "^>\s*" from EVERY
+  // line (/gm) as its final step, unconditionally, before this function ever
+  // sees the text (verified directly: cleanText for LAW-04-0208 arrives as
+  // "🚫 **[ملغى…]**", no leading ">"). So this matches the banner by its
+  // actual remaining shape: an optional leading pictograph, then a
+  // bold-bracketed status tag "**[…]**".
+  //
+  // council review (2026-08-22, audit requested by the judge after ب-132):
+  // an earlier version also matched a bare "^>\s" line here as a fail-safe —
+  // Codex correctly flagged that as unbounded (a real article whose whole
+  // body happens to be blockquoted right after its title could be consumed
+  // entirely, returning empty and misclassifying real content as a stub).
+  // Since ">" can never actually reach this point per the paragraph above,
+  // that branch was dead code masquerading as a safety net — removed rather
+  // than capped, since a cap would still be guarding against something that
+  // cannot happen while adding an arbitrary magic number.
+  const bannerRe = /^\p{Extended_Pictographic}\s*\*\*\[[^\]]+\]\*\*/u;
+  while (
+    i < lines.length &&
+    (lines[i].trim() === "" ||
+      /^(\*{3,}|-{3,})$/.test(lines[i].trim()) ||
+      bannerRe.test(lines[i].trim()) ||
+      /^`\[[^\]]+\]`$/.test(lines[i].trim()))
+  ) {
+    i++;
+  }
+
+  return lines.slice(i).join("\n").trim();
+}
+
+/**
+ * Rejects near-empty stubs (an index page, a bare redirect, a metadata-only
+ * card) from the whole-document fallback above — a minimum length alone
+ * would accept a page that is mostly table borders/punctuation, so this also
+ * requires a minimum count of actual letters (council review: both members
+ * required a content check, not length alone).
+ *
+ * ب-121/ب-138 (2026-08-22, design: council/Antigravity): the length+letter
+ * check alone still passed a pure SEO-identity-card stub (LAW-04-0208) as
+ * "meaningful", synthesising a fake "Article 1" out of nothing but that
+ * card. An earlier attempt to fix this via a separate frontmatter field
+ * (`total_articles: 0`) was reverted after it deleted real content from a
+ * file whose count was simply stale (ب-138). This measures the BODY itself
+ * after stripping the identity-card boilerplate — never a separate field
+ * that can go stale independently of the text it claims to describe.
+ */
+function hasMeaningfulContent(text: string): boolean {
+  const substantive = stripIdentityCardBoilerplate(text);
+  if (substantive.length < 50) return false;
+  const letters = substantive.match(/[A-Za-z؀-ۿ]/g);
+  return (letters?.length ?? 0) >= 30;
 }
 
 function parseArticlesInBlock(
@@ -377,6 +847,72 @@ function parseArticlesInBlock(
     /<!--\s*ARTICLE_START\s+(.*?)\s*-->([\s\S]*?)<!--\s*ARTICLE_END\s*-->/g;
   let match: RegExpExecArray | null;
 
+  // ── ب-115: REGULATION anchors placed just after ARTICLE_END, not inside it ──
+  // Confirmed 2026-08-21 across every affected file checked (نظام الاستثمار
+  // التعديني: 170 anchors; النظام الموحد لنفايات الرعاية الصحية: 23 anchors):
+  // the anchor always sits between one article's ARTICLE_END and the next
+  // ARTICLE_START, numbered sequentially to the article that just closed. The
+  // regex above only ever searched inside `articleBody`, so these were parsed
+  // into nothing — not misfiled, never read at all. Council-reviewed (Codex +
+  // Antigravity) before implementing: a REGULATION anchor in this gap is
+  // captured and appended to the article whose ARTICLE_END immediately
+  // precedes it. A REGULATION anchor found before ANY article has opened in
+  // this block has no article to attach to — fail loud rather than invent a
+  // sink no reader would ever see, matching this file's existing convention
+  // for structurally invalid input (see the unknown-status throw below).
+  // ب-142 (2026-08-23): the old lookahead `(?=<!--|$)` ended a regulation's
+  // captured text at ANY comment — but دار الوثائق extractions carry hundreds
+  // of inline `<!-- PDF_PAGE_BREAK -->` markers, so 280 regulation bodies
+  // across 28 files silently lost 274,287 chars (worst: a 42,706-char
+  // penalties table in نظام النقل البري). Capture now ends only at the
+  // structural anchors this parser actually recognizes; residual
+  // non-structural comments inside the captured span are stripped below.
+  // Terminator set = the anchors this parser actually recognizes (Codex review,
+  // narrow question 5): REGULATION_PREAMBLE/_END must be listed explicitly —
+  // `REGULATION\b` cannot match them because `_` is a word character.
+  const regAnchorRe =
+    /<!--\s*REGULATION\s+(.*?)\s*-->([\s\S]*?)(?=<!--\s*(?:REGULATION_PREAMBLE(?:_END)?|REGULATION|ARTICLE_START|ARTICLE_END|CHAPTER_START|CHAPTER_END|AMENDMENT)\b|$)/g;
+  function extractRegulationsFrom(text: string): ExecutiveRegulation[] {
+    const found: ExecutiveRegulation[] = [];
+    regAnchorRe.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = regAnchorRe.exec(text)) !== null) {
+      const regMeta = safeJsonParse(m[1], "regulation");
+      const regText = m[2]
+        .replace(/<!--[\s\S]*?-->/g, "")
+        .replace(/^>\s*/gm, "")
+        .trim();
+      const regNum = regMeta?.regNum != null ? String(regMeta.regNum) : undefined;
+      const ref = String(regMeta?.ref || "");
+      found.push({
+        instrument: String(regMeta?.instrument || "لائحة تنفيذية"),
+        ref,
+        text: regText,
+        regNum,
+        // ب-132 (2026-08-22, council review: Codex): toSortKey(regNum) alone
+        // collides whenever two DIFFERENT merged regulations attached to the
+        // same law-article gap each restart their own numbering at 1 — real
+        // case, نظام الطيران المدني attaches 3 separate regulations to one
+        // article. regNum itself must stay untouched (it's the regulation's
+        // own true article number, shown to readers), so the ref-derived
+        // prefix goes only into sortKey, which exists purely for ordering.
+        sortKey: `${refSortPrefix(ref)}-${toSortKey(regNum)}`,
+        isSecondaryDisplay: regMeta?.is_secondary_display === true,
+      });
+    }
+    return found;
+  }
+
+  {
+    const firstArticleStart = block.search(/<!--\s*ARTICLE_START\s/);
+    const preface = firstArticleStart === -1 ? block : block.slice(0, firstArticleStart);
+    if (/<!--\s*REGULATION\s/.test(preface)) {
+      orphanRegulationAnchors.push(
+        `${sourceLabel} :: chapter "${chapterTitle}" — REGULATION anchor before any article opened`,
+      );
+    }
+  }
+
   while ((match = articleRe.exec(block)) !== null) {
     const artMeta = safeJsonParse(match[1], "article");
     if (!artMeta) continue;
@@ -384,24 +920,16 @@ function parseArticlesInBlock(
     let articleBody = match[2];
 
     // ── Extract regulation blocks ──────────────────────────────────────────
-    const regulations: ExecutiveRegulation[] = [];
-    const regRe = /<!--\s*REGULATION\s+(.*?)\s*-->([\s\S]*?)(?=<!--|$)/g;
-    let regMatch: RegExpExecArray | null;
-    while ((regMatch = regRe.exec(articleBody)) !== null) {
-      const regMeta = safeJsonParse(regMatch[1], "regulation");
-      const regText = regMatch[2]
-        .replace(/^>\s*/gm, "") // Strip block-quote markers
-        .trim();
-      const regNum = regMeta?.regNum != null ? String(regMeta.regNum) : undefined;
-      regulations.push({
-        instrument: String(regMeta?.instrument || "لائحة تنفيذية"),
-        ref: String(regMeta?.ref || ""),
-        text: regText,
-        regNum,
-        sortKey: toSortKey(regNum),
-        isSecondaryDisplay: regMeta?.is_secondary_display === true,
-      });
-    }
+    const regulations: ExecutiveRegulation[] = extractRegulationsFrom(articleBody);
+
+    // Trailing REGULATION anchors: the gap between this article's END and the
+    // next ARTICLE_START (or the end of the block/chapter, for the last article).
+    const gapStart = articleRe.lastIndex;
+    const nextStartRe = /<!--\s*ARTICLE_START\s/g;
+    nextStartRe.lastIndex = gapStart;
+    const nextStartMatch = nextStartRe.exec(block);
+    const gapEnd = nextStartMatch ? nextStartMatch.index : block.length;
+    regulations.push(...extractRegulationsFrom(block.slice(gapStart, gapEnd)));
 
     // ── Extract amendment blocks ──────────────────────────────────────────
     const amendments: AmendmentEntry[] = [];
@@ -415,6 +943,7 @@ function parseArticlesInBlock(
           decree: String(amendMeta.decree || ""),
           summary: String(amendMeta.summary || ""),
           original_text: (amendMeta.original_text as string) || undefined,
+          type: (amendMeta.type as string) || undefined,
         });
       }
     }
@@ -438,13 +967,17 @@ function parseArticlesInBlock(
     // The superseded wording lives inside <details>. It must be pulled out
     // first, then removed from the live text — previously it was never read and
     // never stripped, so it ended up concatenated into `text`.
-    const history = extractArticleHistory(articleBody);
+    const history = extractArticleHistory(articleBody, status);
     for (const h of history.entries) {
       amendments.push({
         date: "",
         decree: "",
         summary: h.source_summary,
         original_text: h.original_text,
+        // Same Arabic vocabulary as real AMENDMENT anchors (تعديل/إلغاء) —
+        // "unknown" stays undefined rather than guessing a specific kind;
+        // seed-library.ts's own "تعديل" fallback covers that case.
+        type: h.kind === "amended" ? "تعديل" : h.kind === "repealed" ? "إلغاء" : undefined,
       });
     }
     // The primary prior wording: prefer a repeal over an amendment, since for a
@@ -455,9 +988,31 @@ function parseArticlesInBlock(
 
     // ── Clean article text ──────────────────────────────────────────────
     let cleanText = articleBody;
-    // 1. Regulation blocks (already captured above).
-    cleanText = cleanText.replace(/<!--\s*REGULATION[\s\S]*?(?=<!--|$)/g, "");
-    // 2. <details> — the superseded text, now safely extracted.
+    // 1. Regulation blocks (already captured above). ب-142: terminator must
+    //    mirror regAnchorRe exactly — with the old `(?=<!--|$)` here, the text
+    //    after an inline PDF_PAGE_BREAK stayed in the ARTICLE body while the
+    //    fixed capture above now also claims it for the regulation → the same
+    //    tail would render twice (once unlabeled in the article, once in the
+    //    regulation panel).
+    //    1a. Preamble blocks first, as a balanced pair (3 files carry one
+    //    inside an article span — measured 2026-08-23). The old bare
+    //    `REGULATION` leading matched these too, but its _END match then
+    //    over-removed up to the next comment; the pair form has no overreach.
+    cleanText = cleanText.replace(
+      /<!--\s*REGULATION_PREAMBLE\s*-->[\s\S]*?<!--\s*REGULATION_PREAMBLE_END\s*-->/g,
+      "",
+    );
+    //    1b. Data-bearing regulation blocks — leading `REGULATION\s` so the
+    //    preamble anchors (already handled above) are never re-matched here.
+    cleanText = cleanText.replace(
+      /<!--\s*REGULATION\s[\s\S]*?(?=<!--\s*(?:REGULATION_PREAMBLE(?:_END)?|REGULATION|ARTICLE_START|ARTICLE_END|CHAPTER_START|CHAPTER_END|AMENDMENT)\b|$)/g,
+      "",
+    );
+    // 2a. ب-114: unwrap allowlisted live-annex <details> blocks (current
+    //     reference content, e.g. narcotics schedules) BEFORE the blanket
+    //     strip below, so their content survives as visible article text.
+    cleanText = unwrapLiveAnnexes(cleanText);
+    // 2b. <details> — the superseded text, now safely extracted.
     cleanText = stripDetails(cleanText);
     // 3. ALL HTML comments. The old pattern required whitespace after the word
     //    AMENDMENT, so it matched neither `<!-- AMENDMENTS -->` (135 in the
@@ -494,10 +1049,27 @@ function parseArticlesInBlock(
     // failure — the invariant above already rules that out. Counted and
     // reported rather than fatal, so one thin article cannot block 1,500 good
     // files, but it can never pass unnoticed either.
+    //
+    // أولوية 3 (2026-08-23): a handful of these are not open questions at all —
+    // a prior session already downloaded the live official PDF, visually
+    // confirmed the page is a genuinely blank back cover, and left an inline
+    // note saying so ("ليست عيب استخراج", ب-116 نمط أ). Re-flagging those every
+    // run wastes a future session re-discovering what's already settled.
+    // Matched on that exact confirmation phrase, not the mere presence of a
+    // comment — measured corpus-wide: 46 articles carry a verification comment
+    // of some kind, but only these say emptiness itself was confirmed, and
+    // only when the article really is empty (this branch already established
+    // that).
     if (!cleanText && !primaryHistory && history.unparsed.length === 0) {
-      emptyArticles.push(
-        `${sourceLabel} :: article ${numberText || number} (status "${status}")`,
-      );
+      if (/ليست عيب استخراج/.test(articleBody)) {
+        verifiedEmptyArticles.push(
+          `${sourceLabel} :: article ${numberText || number} (status "${status}") — confirmed empty against the live official source, see inline note`,
+        );
+      } else {
+        emptyArticles.push(
+          `${sourceLabel} :: article ${numberText || number} (status "${status}")`,
+        );
+      }
     }
 
     articles.push({
@@ -511,6 +1083,9 @@ function parseArticlesInBlock(
       historic_regulation_text: history.regulationBlocks.length
         ? history.regulationBlocks.join("\n\n")
         : undefined,
+      title_en: artMeta.title_en ? String(artMeta.title_en) : undefined,
+      text_en: history.englishText,
+      english_text_status: history.englishText ? "unverified" : undefined,
       chapter_title: String(artMeta.chapter || chapterTitle),
       chapter_number: chapterNumber >= 0 ? chapterNumber : undefined,
       regulations,
@@ -568,6 +1143,11 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
 
   const failed: Array<{ file: string; error: string }> = [];
   const slugSources: Array<{ slug: string; source: string }> = [];
+  // Object-identity map, not string matching: multiple ParsedLaw objects can
+  // share a slug (that is the whole collision case), so looking up "the source
+  // file for slug X" ambiguously by slug alone would silently pick the wrong
+  // one. This is keyed by the actual object reference instead.
+  const lawSourceFile = new Map<ParsedLaw, string>();
 
   for (const file of files) {
     try {
@@ -576,6 +1156,7 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         laws.push(law);
         totalArticles += law.total_articles;
         slugSources.push({ slug: law.slug, source: file });
+        lawSourceFile.set(law, file);
       }
     } catch (err) {
       // Recorded, not swallowed. A file that fails to parse is a legal document
@@ -586,6 +1167,158 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
   }
 
   console.log(`\n✅ Parsed ${laws.length} laws with ${totalArticles} total articles\n`);
+
+  // ── Verified superseded_duplicate exclusion (ب-133) ─────────────────────────
+  // Council review (Codex, 2026-08-22) on the first version of this fix, which
+  // excluded any `status: superseded_duplicate` file the moment its tag was
+  // read: "a lone unverified tag becomes a silent full deletion — worse than
+  // the collision it was meant to fix. Verify a real survivor exists before
+  // trusting it." That critique was confirmed empirically: LAW-17-0084 (the
+  // Basic Law of Governance duplicate) carries only a free-text `status_note`
+  // naming its survivor in prose, not a structured, checkable reference — a
+  // `superseded_by:` field exists on some tagged files (e.g. the NCAR decree
+  // case) but not this one, so requiring that field was not an option either.
+  //
+  // What CAN be verified with zero external dependency: every law's `slug` is
+  // already computed right here, and `library.laws` is keyed by that exact
+  // slug. So the primary check is grounded in the same identity the
+  // collision-detector below already uses — group by slug, and only exclude a
+  // tagged file when a real, untagged, single survivor for that same slug is
+  // actually present in this same parse run:
+  //   - exactly one untagged member + ≥1 tagged member  → verified: drop the
+  //     tagged member(s), keep the untagged survivor.
+  //   - 0 untagged members, or ≥2 untagged members         → still ambiguous
+  //     even after tagging; left for the id-based fallback below, and if that
+  //     doesn't resolve it either, findSlugCollisions still catches it
+  //     (existing safety net, unchanged).
+  //
+  // A same-slug survivor is not the only real shape a duplicate takes, though:
+  // measured 2026-08-22, running this on the actual library found 4 tagged
+  // files with no same-slug sibling at all — not stale tags, but a genuinely
+  // DIFFERENT kind of duplicate, where the content was fully absorbed into an
+  // unrelated document under its own different slug (e.g. a ministerial
+  // decision's text merged as REGULATION blocks into a law it amends). 3 of
+  // those 4 carry a structured `superseded_by: LAW-XX-XXXX` pointer — verified
+  // here as a second, independent check: does that id match a real, untagged
+  // law actually present in this run? If yes, exclusion is just as provable as
+  // the slug case, only via a different identity. The 4th had no structured
+  // field at all (survivor named only in prose) and is deliberately left
+  // unresolved — see its entry in unverifiedSupersededTags below.
+  const bySlug = new Map<string, ParsedLaw[]>();
+  for (const law of laws) {
+    const list = bySlug.get(law.slug);
+    if (list) list.push(law);
+    else bySlug.set(law.slug, [law]);
+  }
+  const toDrop = new Set<ParsedLaw>();
+  const stillUnresolved: ParsedLaw[] = [];
+  for (const group of bySlug.values()) {
+    const tagged = group.filter((l) => l.isSupersededDuplicate);
+    if (tagged.length === 0) continue;
+    const untagged = group.filter((l) => !l.isSupersededDuplicate);
+    if (untagged.length === 1) {
+      for (const t of tagged) toDrop.add(t);
+    } else {
+      stillUnresolved.push(...tagged);
+    }
+  }
+
+  // Second pass — id-based fallback, only for tags the slug pass could not
+  // resolve. Matched against `id` (not slug): this is a DIFFERENT identity
+  // than the primary key, deliberately, because these are documents that were
+  // absorbed into an unrelated survivor rather than sharing its slug.
+  //
+  // ب-133-b: some files (e.g. LAW-13-0979, "merged" status) write a
+  // repo-relative FILE PATH into superseded_by instead of an id — a second,
+  // independently-evolved convention for the same underlying fact. Both are
+  // tried; whichever resolves to a real, un-tagged survivor verifies the drop.
+  const byId = new Map<string, ParsedLaw>();
+  const byPath = new Map<string, ParsedLaw>();
+  for (const law of laws) {
+    if (toDrop.has(law)) continue;
+    byId.set(law.id, law);
+    const src = lawSourceFile.get(law);
+    if (src) byPath.set(src.replace(/\\/g, "/"), law);
+  }
+  const resolveSupersededTarget = (ref: string): ParsedLaw | undefined => {
+    if (byId.has(ref)) return byId.get(ref);
+    const normalized = ref.replace(/\\/g, "/");
+    // Path references are written repo-relative from various depths; match by
+    // suffix so "01_المكتبة_القانونية/أنظمة ولوائح/…/file.md" still resolves
+    // against an absolute lawSourceFile path without requiring an exact root.
+    for (const [srcPath, law] of byPath) {
+      if (srcPath.endsWith(normalized) || normalized.endsWith(srcPath)) return law;
+    }
+    return undefined;
+  };
+  // أولوية 2 (EntityPreScanner, 2026-08-23): mirror of the decrees-side wiring
+  // — a law tagged superseded_duplicate could equally point to a DECREE
+  // survivor (no live case confirmed yet, unlike the decree→law direction,
+  // but the design is symmetric and cheap to keep that way). Built only if
+  // there is an unresolved tag left to check.
+  const entityIndex = stillUnresolved.length > 0 ? buildEntityIndexFromCategoryInput(inputPath) : new Map();
+
+  const unverifiedSupersededTags: string[] = [];
+  const crossDomainVerifiedSuperseded: string[] = [];
+  for (const law of stillUnresolved) {
+    const target = law.supersededBy ? resolveSupersededTarget(law.supersededBy) : undefined;
+    if (target && target !== law && !target.isSupersededDuplicate) {
+      toDrop.add(law);
+      continue;
+    }
+    if (!law.supersededBy) {
+      unverifiedSupersededTags.push(
+        `${path.basename(lawSourceFile.get(law) || law.slug)} :: tagged superseded_duplicate/merged, no ` +
+          `same-slug sibling and no superseded_by pointer — nothing to verify against`,
+      );
+      continue;
+    }
+    const crossHit = resolveCrossDomain(entityIndex, law.supersededBy, "law");
+    if (crossHit) {
+      toDrop.add(law);
+      crossDomainVerifiedSuperseded.push(
+        `${path.basename(lawSourceFile.get(law) || law.slug)} :: superseded_by="${law.supersededBy}" verified ` +
+          `as a real, untagged ${crossHit.kind} (${path.basename(crossHit.path)}) — resolved cross-domain (أولوية 2)`,
+      );
+      continue;
+    }
+    unverifiedSupersededTags.push(
+      `${path.basename(lawSourceFile.get(law) || law.slug)} :: superseded_by="${law.supersededBy}" ` +
+        `does not resolve to a real, untagged law or decree in this run — cannot verify`,
+    );
+  }
+  if (toDrop.size > 0) {
+    for (const law of toDrop) {
+      supersededDuplicateSkipped.push(path.basename(lawSourceFile.get(law) || law.slug));
+    }
+    // laws[] and slugSources[] are built in lockstep (one push each, same
+    // iteration) so index i always refers to the same file in both — safe to
+    // splice by index from the same loop.
+    for (let i = laws.length - 1; i >= 0; i--) {
+      if (toDrop.has(laws[i])) {
+        totalArticles -= laws[i].total_articles;
+        laws.splice(i, 1);
+        slugSources.splice(i, 1);
+      }
+    }
+    console.log(
+      `\nℹ️  ${toDrop.size} file(s) excluded — verified superseded_duplicate/merged (ب-133): ` +
+        `real untagged survivor confirmed for each` +
+        (crossDomainVerifiedSuperseded.length > 0
+          ? ` (${crossDomainVerifiedSuperseded.length} cross-domain, أولوية 2).`
+          : `.`),
+    );
+    if (crossDomainVerifiedSuperseded.length > 0) {
+      for (const line of crossDomainVerifiedSuperseded) console.log(`   • ${line}`);
+    }
+  }
+  if (unverifiedSupersededTags.length > 0) {
+    console.error(
+      `\n🛑 ${unverifiedSupersededTags.length} UNVERIFIED superseded_duplicate/merged tag(s) — ` +
+        `cannot confirm a real survivor, refusing to silently exclude:`,
+    );
+    for (const line of unverifiedSupersededTags) console.error(`   • ${line}`);
+  }
 
   // ── Slug collisions ─────────────────────────────────────────────────────────
   // `library.laws` is keyed by slug and upserted with merge-duplicates, so two
@@ -605,11 +1338,168 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     );
   }
 
+  // ── Entity (law_guid/id) collisions across DIFFERENT slugs ──────────────────
+  // findSlugCollisions above only catches two documents sharing the same slug.
+  // It structurally cannot catch two documents that got DIFFERENT slugs but
+  // are the same real-world instrument — proven live 2026-08-22 (ب-140): the
+  // Chemical Substances Management Law existed as two files with completely
+  // different slugs, both carrying the SAME real boe.gov.sa law_guid, and
+  // survived every prior seeding run undetected. Note this is duplicate
+  // PUBLICATION, not silent overwrite: seed-library.ts's onConflict for
+  // "laws" is "slug", not "id" — two different slugs become two different
+  // rows, each a full copy of the same law under a different URL.
+  //
+  // `law.id` already resolves to `law_guid || slug` (see parseSingleLaw
+  // above), so grouping by `id` and keeping only groups whose members do NOT
+  // all share one slug is exactly "same real identity, different slug" — the
+  // one axis findSlugCollisions cannot see by construction.
+  //
+  // Deliberately a separate pass from the ب-133 block above, not merged into
+  // it: a shared `id` here is a different kind of evidence than a shared
+  // `slug`, and this file already carries hard lessons (ب-133-b, ب-138) about
+  // what happens when two distinct signals get conflated into one loop.
+  const byEffectiveId = new Map<string, ParsedLaw[]>();
+  for (const law of laws) {
+    const list = byEffectiveId.get(law.id);
+    if (list) list.push(law);
+    else byEffectiveId.set(law.id, [law]);
+  }
+  const entityToDrop = new Set<ParsedLaw>();
+  const entityUnresolved: ParsedLaw[] = [];
+  for (const group of byEffectiveId.values()) {
+    const distinctSlugs = new Set(group.map((l) => l.slug));
+    if (distinctSlugs.size < 2) continue; // same slug ⇒ already handled above
+    const tagged = group.filter((l) => l.isSupersededDuplicate);
+    const untagged = group.filter((l) => !l.isSupersededDuplicate);
+    if (tagged.length > 0 && untagged.length === 1) {
+      for (const t of tagged) entityToDrop.add(t);
+    } else {
+      entityUnresolved.push(...group);
+    }
+  }
+  const unverifiedEntityCollisions: string[] = [];
+  if (entityUnresolved.length > 0) {
+    const stillById = new Map<string, ParsedLaw>();
+    const stillByPath = new Map<string, ParsedLaw>();
+    for (const law of laws) {
+      if (entityToDrop.has(law)) continue;
+      stillById.set(law.id, law);
+      const src = lawSourceFile.get(law);
+      if (src) stillByPath.set(src.replace(/\\/g, "/"), law);
+    }
+    const resolveEntityTarget = (ref: string): ParsedLaw | undefined => {
+      if (stillById.has(ref)) return stillById.get(ref);
+      const normalized = ref.replace(/\\/g, "/");
+      for (const [srcPath, law] of stillByPath) {
+        if (srcPath.endsWith(normalized) || normalized.endsWith(srcPath)) return law;
+      }
+      return undefined;
+    };
+    for (const law of entityUnresolved) {
+      if (entityToDrop.has(law)) continue;
+      const target =
+        law.isSupersededDuplicate && law.supersededBy ? resolveEntityTarget(law.supersededBy) : undefined;
+      if (target && target !== law && !target.isSupersededDuplicate && target.id === law.id) {
+        entityToDrop.add(law);
+        continue;
+      }
+      unverifiedEntityCollisions.push(
+        `"${law.id}" :: ${path.basename(lawSourceFile.get(law) || law.slug)} (slug="${law.slug}") — ` +
+          `shares this id with another file under a different slug; not verifiably resolved`,
+      );
+    }
+  }
+  if (entityToDrop.size > 0) {
+    for (const law of entityToDrop) {
+      supersededDuplicateSkipped.push(path.basename(lawSourceFile.get(law) || law.slug));
+    }
+    for (let i = laws.length - 1; i >= 0; i--) {
+      if (entityToDrop.has(laws[i])) {
+        totalArticles -= laws[i].total_articles;
+        laws.splice(i, 1);
+        slugSources.splice(i, 1);
+      }
+    }
+    console.log(
+      `\nℹ️  ${entityToDrop.size} file(s) excluded — verified same-entity duplicate under a different slug: ` +
+        `real untagged survivor confirmed for each.`,
+    );
+  }
+  if (unverifiedEntityCollisions.length > 0) {
+    console.error(
+      `\n🛑 ${unverifiedEntityCollisions.length} UNVERIFIED entity (law_guid/id) collision(s) across ` +
+        `different slugs — cannot confirm which is canonical, refusing to silently publish both:`,
+    );
+    for (const line of unverifiedEntityCollisions) console.error(`   • ${line}`);
+  }
+
+  // ── Rejected enum values (ب-112) ────────────────────────────────────────────
+  // A rejection here means some file's raw `type`/`status`/`section_code` isn't
+  // in the manifest's enum and silently fell back (e.g. every "أمر سامي"/"قرار"
+  // becomes "نظام"). Printed loudly instead of only being derivable by re-running
+  // a manual audit, which is exactly how ب-112 went unnoticed for weeks.
+  const rejectedEnumSummary = getRejectedEnumValues().map(
+    (r) => `${path.basename(r.file || "?")} :: ${r.enumName}=${JSON.stringify(r.value)}`,
+  );
+  printCapped("⚠️  rejected enum value(s) — fell back to default (ب-112)", rejectedEnumSummary);
+
+  // ── schema_version distribution ─────────────────────────────────────────────
+  // No parser branches on this field (verified by grep across scripts/) so its
+  // fragmentation is not a functional bug — but it was invisible, which is how
+  // it went undocumented. Surfaced here, not auto-normalised: collapsing "3.1"
+  // vs "4.0" vs "(missing)" into one value needs a real decision about what
+  // changed between template vintages, not a blind rewrite.
+  const schemaVersionSummary = Object.entries(schemaVersionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([v, n]) => `${v}: ${n}`);
+  printCapped("ℹ️  schema_version distribution", schemaVersionSummary);
+
+  // ── superseded_duplicate skips (ب-133) ──────────────────────────────────────
+  printCapped(
+    "ℹ️  file(s) skipped — status: superseded_duplicate/merged (ب-133, already adjudicated)",
+    supersededDuplicateSkipped,
+  );
+
+  // ── gate_zero_status exclusions (ب-134) ─────────────────────────────────────
+  printCapped(
+    "ℹ️  file(s) excluded — gate_zero_status set (ب-134, already reviewed as non-legislative)",
+    gateZeroExcluded,
+  );
+
+  // ── low extraction coverage (ب-135) ─────────────────────────────────────────
+  // Informational only — does NOT gate the exit code. This surfaces candidates
+  // for manual investigation (per the ب-120/GACAR findings); it is not itself
+  // proof of a defect; every candidate needs direct reading before conclusions.
+  const lowCoverageSummary = lowCoverageFiles
+    .sort((a, b) => a.coveragePct - b.coveragePct)
+    .map((f) => `${f.file} :: ${f.coveragePct}% (${f.capturedLen}/${f.bodyLen} chars)`);
+  printCapped(
+    "⚠️  low extraction coverage <70% on files >20K chars (ب-135, candidates only — verify before acting)",
+    lowCoverageSummary,
+    25,
+  );
+
   // ── Frontmatter warnings ────────────────────────────────────────────────────
   printCapped("⚠️  frontmatter warning(s)", frontmatterWarnings);
   printCapped(
     "⚠️  article(s) with neither live text nor recovered history",
     emptyArticles,
+  );
+  printCapped(
+    "ℹ️  article(s) confirmed empty against the live official source (أولوية 3, not a defect)",
+    verifiedEmptyArticles,
+  );
+  printCapped(
+    "🛑 orphan REGULATION anchor(s) — no preceding article to attach to (ب-115)",
+    orphanRegulationAnchors,
+  );
+  printCapped(
+    "ℹ️  whole-document synthetic article (no ARTICLE_START in source)",
+    syntheticWholeDocumentArticles,
+  );
+  printCapped(
+    "🛑 malformed ARTICLE_START/END (unmatched — not a genuine zero-anchor document)",
+    malformedAnchorFiles,
   );
 
   if (failed.length > 0) {
@@ -627,13 +1517,40 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         articles: totalArticles,
         excluded: excludedCount,
         frontmatterWarnings: frontmatterWarnings.length,
+        rejectedEnumValues: rejectedEnumSummary.length,
+        schemaVersionVariants: Object.keys(schemaVersionCounts).length,
         slugCollisions: collisions.length,
         failed: failed.length,
         emptyArticles: emptyArticles.length,
+        verifiedEmptyArticles: verifiedEmptyArticles.length,
+        orphanRegulationAnchors: orphanRegulationAnchors.length,
+        syntheticWholeDocumentArticles: syntheticWholeDocumentArticles.length,
+        malformedAnchorFiles: malformedAnchorFiles.length,
+        supersededDuplicateSkipped: supersededDuplicateSkipped.length,
+        crossDomainVerifiedSuperseded: crossDomainVerifiedSuperseded.length,
+        unverifiedSupersededTags: unverifiedSupersededTags.length,
+        entityCollisionsExcluded: entityToDrop.size,
+        unverifiedEntityCollisions: unverifiedEntityCollisions.length,
+        gateZeroExcluded: gateZeroExcluded.length,
+        lowCoverageFiles: lowCoverageFiles.length,
       },
       excluded: excludedList,
       frontmatterWarnings,
-      notes: { emptyArticles },
+      rejectedEnumValues: rejectedEnumSummary,
+      schemaVersionCounts,
+      notes: {
+        emptyArticles,
+        verifiedEmptyArticles,
+        orphanRegulationAnchors,
+        syntheticWholeDocumentArticles,
+        malformedAnchorFiles,
+        supersededDuplicateSkipped,
+        crossDomainVerifiedSuperseded,
+        gateZeroExcluded,
+        lowCoverageFiles,
+        unverifiedSupersededTags,
+        unverifiedEntityCollisions,
+      },
       identityCollisions: collisions.map((c) => ({ key: c.slug, members: c.sources })),
       failed: failed.map((f) => `${f.file}: ${f.error}`),
     });
@@ -641,21 +1558,41 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
   }
 
   // Rule ق-3: a run that lost documents or would corrupt identity must not exit 0.
-  if (collisions.length > 0 || failed.length > 0) {
+  // syntheticWholeDocumentArticles is NOT part of this gate — it is a recovery
+  // (0 articles → 1), not a problem; malformedAnchorFiles is, since an
+  // unmatched anchor is exactly the corruption case the fallback must not mask.
+  if (
+    collisions.length > 0 ||
+    failed.length > 0 ||
+    orphanRegulationAnchors.length > 0 ||
+    malformedAnchorFiles.length > 0 ||
+    unverifiedSupersededTags.length > 0 ||
+    unverifiedEntityCollisions.length > 0
+  ) {
     console.error(
       `\n✗ Parse completed with unrecoverable problems ` +
-        `(${collisions.length} collision(s), ${failed.length} failed file(s)). ` +
+        `(${collisions.length} collision(s), ${failed.length} failed file(s), ` +
+        `${orphanRegulationAnchors.length} orphan REGULATION anchor(s), ` +
+        `${malformedAnchorFiles.length} malformed anchor file(s), ` +
+        `${unverifiedSupersededTags.length} unverified superseded_duplicate tag(s), ` +
+        `${unverifiedEntityCollisions.length} unverified entity collision(s)). ` +
         `Refusing to report success.`,
     );
     process.exitCode = 1;
   }
+
+  // isSupersededDuplicate is bookkeeping for the exclusion logic above, not a
+  // documented output field — strip it so laws.json/the seeder contract stay
+  // exactly as documented (no undeclared field for a future reader to wonder
+  // about).
+  const cleanedLaws = laws.map(({ isSupersededDuplicate: _unused, ...rest }) => rest);
 
   return {
     type: "laws",
     generated_at: new Date().toISOString(),
     total_files: files.length,
     total_articles: totalArticles,
-    laws,
+    laws: cleanedLaws as ParsedLaw[],
   };
 }
 

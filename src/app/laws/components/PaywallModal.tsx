@@ -122,14 +122,9 @@ export function PaywallModal({ isOpen, onClose, isRTL, isDark }: {
 
 
 // ─── AdvancedSearchModal ───────────────────────────────────────────────────────
-
-const OPERATORS = [
-  { sym: "+",  ar: "معاً",      en: "AND",   descAr: "يشمل كل هذه الكلمات معاً",          descEn: "All words must appear",     exAr: "قصاص + سلاح",      exEn: "contract + breach" },
-  { sym: "/",  ar: "أو",        en: "OR",    descAr: "يكفي وجود إحدى الكلمتين",       descEn: "Either word can appear",    exAr: "مخدرات / حشيش",   exEn: "fraud / scam" },
-  { sym: "-",  ar: "استثناء",   en: "NOT",   descAr: "يستبعد النتائج التي تحوي الكلمة", descEn: "Excludes this word",        exAr: "مخدرات - حيازة",  exEn: "bank - loan" },
-  { sym: '""', ar: "تطابق تام", en: "EXACT", descAr: "يبحث عن الجملة كما هي بالضبط",  descEn: "Exact phrase match",        exAr: '"تعويض عن ضرر"',  exEn: '"breach of contract"' },
-  { sym: "*",  ar: "جذر الكلمة",en: "ROOT",  descAr: "يبحث عن مشتقات الكلمة (جذر)",   descEn: "Matches word derivations",  exAr: "عوض*",             exEn: "terminat*" },
-];
+// س-01 (2026-08-24): the OPERATORS table (+//-/""/'*' search-syntax buttons)
+// that used to live here was removed — see the comment above the General
+// Search input further down for why.
 
 const LAW_TYPES = [
   { ar: "الكل",                                  en: "All" },
@@ -165,7 +160,6 @@ export function AdvancedSearchModal({
   onApplySearch?: (searchQuery: string, section: "laws" | "precedents") => void;
 }) {
   const [tab,      setTab]      = useState<"laws" | "precedents">("laws");
-  const [tipIdx,   setTipIdx]   = useState<number | null>(null);
   const [lawType,  setLawType]  = useState(0);
   const [precMode, setPrecMode] = useState("all");
   const searchRef               = useRef<HTMLInputElement>(null);
@@ -184,18 +178,6 @@ export function AdvancedSearchModal({
   // ── shared classes ────────────────────────────────────────────────────────
   const field = `w-full px-2.5 py-[6px] rounded-lg border text-[11.5px] outline-none focus:ring-2 focus:ring-[#0B3D2E]/20 transition ${inp}`;
   const lbl   = `block text-[9.5px] font-bold uppercase tracking-wider mb-1 ${mut}`;
-
-  // ── insert operator ───────────────────────────────────────────────────────
-  const insertOp = (sym: string) => {
-    const el = searchRef.current;
-    if (!el) return;
-    const v = el.value, s = el.selectionStart ?? v.length;
-    const ins = sym === '""' ? '""' : ` ${sym} `;
-    el.value = v.slice(0, s) + ins + v.slice(s);
-    el.focus();
-    const pos = s + ins.length;
-    el.setSelectionRange(pos, pos);
-  };
 
   // ── reusable blocks ───────────────────────────────────────────────────────
   const SectionLabel = ({ label }: { label: string }) => (
@@ -218,6 +200,33 @@ export function AdvancedSearchModal({
       <select className={field}>
         {opts.map(o => <option key={o.v} value={o.v}>{isRTL ? o.ar : o.en}</option>)}
       </select>
+    </div>
+  );
+
+  // س-01 (2026-08-24): honesty fix — this modal's footer used to read "الفلاتر
+  // جاهزة للباك-اند" ("filters ready for backend") while `handleApply` above
+  // only ever reads 4-7 of the ~20 visible fields via querySelector; the rest
+  // (type/issuer/section/status/journal-no./every date field, and the whole
+  // precedents-tab court/scope/date filters) were pure decoration — set into
+  // React state or rendered as plain uncontrolled inputs, never read anywhere.
+  // Confirmed by a full council-reviewed search audit (see
+  // RFC_معمارية_البحث_الشامل_2026-08-24.md in the content repo). Rather than
+  // silently wire them to the DB (several risk returning zero results forever
+  // — e.g. LAW_TYPES' compound labels like "نظام / قانون" don't match the
+  // single-token values actually stored in `laws.type`), this wraps every
+  // still-unwired section so the UI stops promising what it can't do. Remove
+  // the wrapper (not the fields) once a given section is genuinely wired.
+  const ComingSoon = ({ children }: { children: React.ReactNode }) => (
+    <div className="relative">
+      <div className="pointer-events-none select-none opacity-45 grayscale-[30%]">
+        {children}
+      </div>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={`px-2.5 py-1 rounded-full text-[9.5px] font-bold border shadow-sm
+          ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-gray-300" : "bg-white border-gray-300 text-gray-600"}`}>
+          {isRTL ? "🚧 قيد التفعيل — لا يؤثر على النتائج بعد" : "🚧 Not wired yet — has no effect on results"}
+        </span>
+      </div>
     </div>
   );
 
@@ -379,40 +388,22 @@ export function AdvancedSearchModal({
               ))}
             </div>
 
-            {/* Operators + General Search */}
+            {/* General Search — س-01 (2026-08-24): the +//-/""/'*' operator
+                toolbar that used to sit here is removed. The backend calls
+                Postgres `plainto_tsquery` (`type: 'plain'` in search/route.ts),
+                which treats the whole query as a plain bag of AND-ed words and
+                silently ignores/strips every one of those symbols — so "-"
+                never excluded anything, it behaved as AND, the opposite of
+                what its own tooltip promised. Restoring real operator support
+                is tracked separately (س-03, needs a safe query parser before
+                any operator syntax is exposed again — see the search RFC). */}
             <div>
               <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
                 <span className={`text-[9.5px] font-bold ${mut}`}>{isRTL ? "بحث عام في كافة النصوص" : "General Search"}</span>
                 <div className={`h-3 w-px ${isDark ? "bg-white/10" : "bg-gray-300"}`} />
-                <span className={`text-[9.5px] ${mut}`}>{isRTL ? "معاملات البحث:" : "Operators:"}</span>
-                {OPERATORS.map((o, i) => (
-                  <div key={i} className="relative">
-                    <button
-                      onClick={() => insertOp(o.sym)}
-                      onMouseEnter={() => setTipIdx(i)}
-                      onMouseLeave={() => setTipIdx(null)}
-                      className={`h-[22px] px-2 rounded-md text-[11px] font-black border transition
-                        ${isDark ? "bg-[#161b22] border-[#2d3748] text-[#C8A762] hover:bg-[#C8A762]/10" : "bg-white border-gray-200 text-[#0B3D2E] hover:border-[#0B3D2E]/40"}`}>
-                      {o.sym}
-                    </button>
-                    <AnimatePresence>
-                      {tipIdx === i && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 4, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0 }}
-                          className={`absolute bottom-full mb-2 ${isRTL ? "right-0" : "left-0"} z-20 w-44 p-2.5 rounded-xl border shadow-2xl text-[10px] leading-relaxed pointer-events-none
-                            ${isDark ? "bg-[#1a1f2e] border-[#2d3748] text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
-                          <p className={`font-black mb-1 ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{isRTL ? o.ar : o.en} ({o.sym})</p>
-                          <p className="mb-1.5 opacity-80">{isRTL ? o.descAr : o.descEn}</p>
-                          <div className={`px-2 py-1 rounded-lg font-mono text-[9px] ${isDark ? "bg-[#0c0f12] text-gray-400" : "bg-gray-50 text-gray-600"}`}>
-                            {isRTL ? o.exAr : o.exEn}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                ))}
+                <span className={`text-[9.5px] ${mut}`}>
+                  {isRTL ? "كلمات أو عبارة بسيطة — بلا معاملات بحث حالياً" : "Plain words or a phrase — no search operators yet"}
+                </span>
               </div>
               <input ref={searchRef} type="text"
                 placeholder={isRTL ? "أدخل الكلمات الدلالية أو الجملة القانونية..." : "Enter keywords or legal phrase..."}
@@ -426,6 +417,7 @@ export function AdvancedSearchModal({
                 {/* Types */}
                 <div>
                   <SectionLabel label={isRTL ? "نوع التشريع" : "Legislation Type"} />
+                  <ComingSoon>
                   <div className="flex flex-wrap gap-1.5">
                     {LAW_TYPES.map((t, i) => (
                       <button key={i} onClick={() => setLawType(i)}
@@ -437,6 +429,7 @@ export function AdvancedSearchModal({
                       </button>
                     ))}
                   </div>
+                  </ComingSoon>
                 </div>
 
                 {/* Identity row */}
@@ -465,6 +458,7 @@ export function AdvancedSearchModal({
                 {/* Classification row */}
                 <div>
                   <SectionLabel label={isRTL ? "التصنيف والحالة" : "Classification & Status"} />
+                  <ComingSoon>
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
                     <SelectField lbl={isRTL ? "الجهة المُصدِرة" : "Issuing Authority"} opts={ISSUERS} />
                     <SelectField lbl={isRTL ? "القسم القانوني" : "Legal Section"} opts={BRANCHES} />
@@ -474,11 +468,13 @@ export function AdvancedSearchModal({
                       <input type="text" placeholder={isRTL ? "مثال: 4945" : "e.g. 4945"} className={field} />
                     </div>
                   </div>
+                  </ComingSoon>
                 </div>
 
                 {/* Dates row */}
                 <div>
                   <SectionLabel label={isRTL ? "التواريخ" : "Dates"} />
+                  <ComingSoon>
                   <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 p-3 rounded-xl border ${sec}`}>
                     <DateField lbl={isRTL ? "تاريخ الإصدار" : "Issuance Date"} ph={isRTL ? "1/1/1446" : "1/1/2025"} />
                     <DateField lbl={isRTL ? "تاريخ النشر" : "Publication Date"} ph={isRTL ? "1/1/1446" : "1/1/2025"} />
@@ -500,6 +496,7 @@ export function AdvancedSearchModal({
                       </div>
                     </div>
                   </div>
+                  </ComingSoon>
                 </div>
               </div>
             )}
@@ -511,6 +508,7 @@ export function AdvancedSearchModal({
                 {/* Search Scope */}
                 <div>
                   <SectionLabel label={isRTL ? "نطاق البحث" : "Search Scope"} />
+                  <ComingSoon>
                   <div className="grid grid-cols-3 gap-2">
                     {PREC_MODES.map(m => {
                       const Icon    = m.icon;
@@ -528,6 +526,7 @@ export function AdvancedSearchModal({
                       );
                     })}
                   </div>
+                  </ComingSoon>
                 </div>
 
                 {/* Text search fields */}
@@ -552,6 +551,7 @@ export function AdvancedSearchModal({
                 {/* Case / Deed identity */}
                 <div>
                   <SectionLabel label={isRTL ? "بيانات الصك / القضية" : "Case / Deed Identity"} />
+                  <ComingSoon>
                   <div className={`grid grid-cols-4 gap-2.5 p-3 rounded-xl border ${sec}`}>
                     <div className="col-span-2">
                       <label className={lbl}>{isRTL ? "رقم الصك / القضية ولسنة" : "Deed / Case No. & Year"}</label>
@@ -565,11 +565,13 @@ export function AdvancedSearchModal({
                     <DateField lbl={isRTL ? "تاريخ الجلسة" : "Session Date"} ph={isRTL ? "1/1/1446" : "1/1/2025"} />
                     <SelectField lbl={isRTL ? "المحكمة" : "Court"} opts={COURTS} />
                   </div>
+                  </ComingSoon>
                 </div>
 
                 {/* Classification + Year */}
                 <div>
                   <SectionLabel label={isRTL ? "التصنيف والتواريخ" : "Classification & Dates"} />
+                  <ComingSoon>
                   <div className="grid grid-cols-4 gap-2.5">
                     <SelectField lbl={isRTL ? "القسم القانوني" : "Legal Section"} opts={BRANCHES} />
                     <SelectField lbl={isRTL ? "جهة الإصدار" : "Issuing Authority"} opts={[
@@ -607,6 +609,7 @@ export function AdvancedSearchModal({
                       </div>
                     </div>
                   </div>
+                  </ComingSoon>
                 </div>
               </div>
             )}
@@ -622,7 +625,7 @@ export function AdvancedSearchModal({
             </button>
             <div className="flex items-center gap-2">
               <span className={`text-[10px] ${mut}`}>
-                {isRTL ? "الفلاتر جاهزة للباك-اند" : "Filters ready for backend"}
+                {isRTL ? "الحقول المظلَّلة 🚧 لا تُطبَّق على النتائج بعد" : "Greyed-out 🚧 fields have no effect on results yet"}
               </span>
               <button onClick={handleApply}
                 className="flex items-center gap-1.5 px-6 py-1.5 bg-[#0B3D2E] text-white text-[11.5px] font-bold rounded-xl hover:bg-[#0a3328] transition shadow-md">

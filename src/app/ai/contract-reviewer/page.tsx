@@ -5,13 +5,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   MagnifyingGlass, FileText, CheckCircle, Warning,
   Copy, Sparkle, ArrowRight, ArrowLeft, Lightning,
-  ShieldCheck, XCircle, Info,
+  ShieldCheck, XCircle, Info, CaretDown, CaretUp,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import BetaReviewGate from "@/components/BetaReviewGate";
 
 type Step = "upload" | "options" | "result";
-type ReviewFocus = "التزامات الطرفين" | "بنود المسؤولية" | "شروط الإنهاء" | "الغرامات والعقوبات" | "التحكيم وحل النزاعات" | "بنود السرية" | "الملكية الفكرية" | "بنود القوة القاهرة";
+type ReviewFocus = "التزامات الطرفين" | "بنود المسؤولية" | "شروط الإنهاء" | "الغرامات والعقوبات" | "أخرى" | "التحكيم وحل النزاعات" | "بنود السرية" | "الملكية الفكرية" | "بنود القوة القاهرة";
 
 interface Issue {
   severity: "خطر" | "تحذير" | "ملاحظة";
@@ -29,11 +29,12 @@ interface ReviewResult {
   redraftSuggestions: string[];
 }
 
+// أول 5 عناصر (٤ محاور + "أخرى") تظهر افتراضياً — الباقي خلف "عرض المزيد"
 const FOCUS_OPTIONS: ReviewFocus[] = [
-  "التزامات الطرفين", "بنود المسؤولية", "شروط الإنهاء",
-  "الغرامات والعقوبات", "التحكيم وحل النزاعات",
-  "بنود السرية", "الملكية الفكرية", "بنود القوة القاهرة",
+  "التزامات الطرفين", "بنود المسؤولية", "شروط الإنهاء", "الغرامات والعقوبات", "أخرى",
+  "التحكيم وحل النزاعات", "بنود السرية", "الملكية الفكرية", "بنود القوة القاهرة",
 ];
+const FOCUS_VISIBLE_COUNT = 5;
 
 const MOCK_RESULT: ReviewResult = {
   summary: "العقد يحتاج إلى مراجعة جوهرية قبل التوقيع. يوجد 3 مخاطر حرجة تتعلق بعدم التوازن في توزيع المسؤوليات، وغياب آلية تسوية ودية، وصياغة مبهمة لبنود التعويض التلقائي.",
@@ -124,6 +125,7 @@ export default function ContractReviewerPage() {
   const [step, setStep] = useState<Step>("upload");
   const [contractText, setContractText] = useState("");
   const [focus, setFocus] = useState<ReviewFocus[]>([]);
+  const [showAllFocus, setShowAllFocus] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [copied, setCopied] = useState(false);
@@ -195,7 +197,7 @@ export default function ContractReviewerPage() {
               <p className={`text-[12px] font-bold mb-1 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>ركّز المراجعة على (اختياري)</p>
               <p className={`text-[11px] mb-3 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>اتركه فارغاً لمراجعة شاملة، أو حدد المحاور ذات الأولوية</p>
               <div className="flex flex-wrap gap-2">
-                {FOCUS_OPTIONS.map(f => (
+                {(showAllFocus ? FOCUS_OPTIONS : FOCUS_OPTIONS.slice(0, FOCUS_VISIBLE_COUNT)).map(f => (
                   <button key={f} onClick={() => toggleFocus(f)}
                     className={`px-3.5 py-2 rounded-xl text-[11px] font-bold transition-all border ${
                       focus.includes(f) ? "bg-[#0B3D2E] border-[#0B3D2E] text-[#C8A762]" : isDark ? "bg-zinc-800 border-white/[0.05] text-zinc-400 hover:text-zinc-200" : "bg-zinc-50 border-zinc-200 text-zinc-500 hover:bg-zinc-100"
@@ -203,6 +205,15 @@ export default function ContractReviewerPage() {
                     {focus.includes(f) ? "✓ " : ""}{f}
                   </button>
                 ))}
+                {FOCUS_OPTIONS.length > FOCUS_VISIBLE_COUNT && (
+                  <button onClick={() => setShowAllFocus(v => !v)}
+                    className={`px-3.5 py-2 rounded-xl text-[11px] font-bold transition-all border flex items-center gap-1 ${
+                      isDark ? "border-white/[0.05] text-zinc-500 hover:text-zinc-300" : "border-zinc-200 text-slate-400 hover:text-slate-600"
+                    }`}>
+                    {showAllFocus ? "عرض أقل" : "عرض المزيد"}
+                    {showAllFocus ? <CaretUp size={11} /> : <CaretDown size={11} />}
+                  </button>
+                )}
               </div>
             </div>
             <div className="flex gap-3">

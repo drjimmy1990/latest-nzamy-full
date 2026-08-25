@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     .insert({
       owner_id: user.id,
       name: body.name,
-      description: body.description ?? null,
+      description: body.description ?? "",
       max_members: body.max_members ?? 10,
       plan_id: body.plan_id ?? null,
     })

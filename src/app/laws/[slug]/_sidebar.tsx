@@ -1,10 +1,20 @@
 "use client";
 
-import Link from "next/link";
 import {
   Stack, BookOpen, Scroll, CalendarBlank, Buildings, Tag, FolderSimple, Lock, Crown
 } from "@phosphor-icons/react";
 import type { LawSystem, LawArticle } from "../data";
+
+// ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx — يحافظ على
+// سلوك عرض الشارة/الاسم المدموج بلا تغيير، بمصدر بيانات جديد فقط.
+function getMergedReg(a: LawArticle): { ref: string; text: string } | null {
+  if (!a.regulations || a.regulations.length === 0) return null;
+  const distinctRefs = Array.from(new Set(a.regulations.map((r) => r.ref || "").filter(Boolean)));
+  return {
+    ref: distinctRefs.join(", "),
+    text: a.regulations.map((r) => r.text || "").join("\n\n"),
+  };
+}
 
 interface SidebarPanelProps {
   isDark: boolean;
@@ -304,18 +314,20 @@ export default function SidebarPanel({
             </div>
           )}
 
-          {/* حالة النظام */}
+          {/* حالة النظام — من law.law_status (البيانات الحية)، لا lawMeta
+              (خريطة ثابتة تُدرِج "active" يدوياً على كل الأنظمة الستين تقريباً
+              — راجع ك-02، 2026-08-23) */}
           <div className="flex items-center gap-1.5 pt-1">
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-              (lawMeta.law_status ?? "active") === "active" ? "bg-emerald-500" :
-              lawMeta.law_status === "repealed" ? "bg-red-500" : "bg-amber-500"
+              (law.law_status ?? "active") === "active" ? "bg-emerald-500" :
+              law.law_status === "repealed" ? "bg-red-500" : "bg-amber-500"
             }`} />
             <span className={`text-[9px] font-bold ${
-              (lawMeta.law_status ?? "active") === "active" ? (isDark ? "text-emerald-400" : "text-emerald-600") :
-              lawMeta.law_status === "repealed" ? "text-red-500" : "text-amber-500"
+              (law.law_status ?? "active") === "active" ? (isDark ? "text-emerald-400" : "text-emerald-600") :
+              law.law_status === "repealed" ? "text-red-500" : "text-amber-500"
             }`}>
-              {(lawMeta.law_status ?? "active") === "active" ? (isRTL ? "ساري" : "Active") :
-               lawMeta.law_status === "repealed" ? (isRTL ? "ملغى" : "Repealed") :
+              {(law.law_status ?? "active") === "active" ? (isRTL ? "ساري" : "Active") :
+               law.law_status === "repealed" ? (isRTL ? "ملغى" : "Repealed") :
                (isRTL ? "معلّق" : "Suspended")}
             </span>
           </div>
@@ -377,7 +389,7 @@ export default function SidebarPanel({
             (() => {
               const regArticles = law.chapters
                 .flatMap(ch => ch.articles)
-                .filter(a => a.executiveReg);
+                .filter(a => a.regulations && a.regulations.length > 0);
               const visibleRegArts = filteredArticles
                 ? regArticles.filter(a => filteredArticles.some(f => f.id === a.id))
                 : regArticles;
@@ -405,7 +417,7 @@ export default function SidebarPanel({
                     } ${a.status === "repealed" ? "line-through opacity-50" : ""}`}
                   >
                     {!a.free && <Lock size={9} className="flex-shrink-0" />}
-                    <span className="truncate flex-1 font-medium">{a.executiveReg?.ref}</span>
+                    <span className="truncate flex-1 font-medium">{getMergedReg(a)?.ref}</span>
                     {hasRegInCart && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
                   </button>
                 );
@@ -433,7 +445,7 @@ export default function SidebarPanel({
               >
                 {!a.free && <Lock size={9} className="flex-shrink-0" />}
                 <span className="truncate flex-1">{a.num}</span>
-                {a.executiveReg && <span className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-600" : "text-slate-400"}`}>ل</span>}
+                {!!(a.regulations && a.regulations.length > 0) && <span className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-500" : "text-slate-400"}`}>ل</span>}
                 {cartMap.has(a.id) && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
               </button>
             ))
@@ -459,10 +471,10 @@ export default function SidebarPanel({
                   >
                     {!a.free && <Lock size={9} className="flex-shrink-0" />}
                     <span className="truncate flex-1">{a.num}</span>
-                    {a.executiveReg && (
+                    {!!(a.regulations && a.regulations.length > 0) && (
                       <span title={isRTL ? "يحتوي لائحة تنفيذية" : "Has executive regulation"}
                         className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${
-                          activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-600" : "text-slate-400"
+                          activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-500" : "text-slate-400"
                         }`}>ل</span>
                     )}
                     {cartMap.has(a.id) && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}

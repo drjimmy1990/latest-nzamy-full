@@ -1,0 +1,1079 @@
+#!/usr/bin/env npx ts-node
+/**
+ * seed-library.ts
+ * ─────────────────────────────────────────────────────────────────────────
+ * Universal seeder for the Nzamy Legal Library.
+ *
+ * Reads JSON output files from the four parsers (laws, decrees, precedents,
+ * feqh) and inserts all data into Supabase in FK-safe order.
+ *
+ * Insertion order:
+ *   1. laws          → chapters → articles → article_amendments
+ *   2. decrees_circulars → decree_pages
+ *   3. judicial_collections → principles → principle_paragraphs
+ *   4. feqh_books    → feqh_chapters → feqh_sections → feqh_blocks
+ *
+ * Environment:
+ *   NEXT_PUBLIC_SUPABASE_URL    — Supabase project URL
+ *   SUPABASE_SERVICE_ROLE_KEY   — Service role key (bypasses RLS)
+ *
+ * Usage:
+ *   npx tsx scripts/seed-library.ts --dir ./output
+ *   npx tsx scripts/seed-library.ts --dir ./output --dry-run
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
+import * as fs from "fs";
+import * as path from "path";
+import * as crypto from "crypto";
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Types — Imported from parser output shapes
+// ══════════════════════════════════════════════════════════════════════════════
+
+type ContentType = "laws" | "decrees" | "precedents" | "feqh";
+
+interface SeedStats {
+  table: string;
+  inserted: number;
+  skipped: number;
+  errors: number;
+}
+
+interface SeedResult {
+  dry_run: boolean;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  stats: SeedStats[];
+  errors: string[];
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Supabase Client
+// ══════════════════════════════════════════════════════════════════════════════
+
+let supabaseClient: ReturnType<typeof createSupabaseClient> | null = null;
+
+// Target schema. Defaults to the live schema; set LIBRARY_SCHEMA=library_next to
+// seed a shadow build that production is not yet reading from.
+const LIBRARY_SCHEMA = process.env.LIBRARY_SCHEMA || "library";
+
+function createSupabaseClient(url: string, key: string) {
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+    "Content-Profile": LIBRARY_SCHEMA,
+    "Accept-Profile": LIBRARY_SCHEMA,
+  };
+
+  return {
+    url,
+    headers,
+
+    async upsert(
+      table: string,
+      rows: Record<string, unknown>[],
+      options?: { onConflict?: string }
+    ): Promise<{ data: Record<string, unknown>[] | null; error: string | null }> {
+      if (rows.length === 0) return { data: [], error: null };
+
+      const conflictTarget = options?.onConflict || (table === "laws" ? "slug" : "id");
+      const urlWithConflict = `${url}/rest/v1/${table}?on_conflict=${conflictTarget}`;
+
+      try {
+        const resp = await fetch(urlWithConflict, {
+          method: "POST",
+          headers: {
+            ...headers,
+            Prefer: "return=representation,resolution=merge-duplicates"
+          },
+          body: JSON.stringify(rows),
+        });
+
+        if (!resp.ok) {
+          const body = await resp.text();
+          return { data: null, error: `${resp.status}: ${body}` };
+        }
+
+        const data = await resp.json();
+        return { data: Array.isArray(data) ? data : [data], error: null };
+      } catch (err) {
+        return { data: null, error: (err as Error).message };
+      }
+    },
+
+    async delete(table: string, filter: Record<string, string>): Promise<{ error: string | null }> {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(filter)) {
+        params.append(key, value);
+      }
+      // PostgREST refuses an unfiltered DELETE (400). When no filter is given,
+      // match every row via a "<pk> not null" predicate so --clean actually clears
+      // the table. `laws` has no `id` column (its PK is `slug`); every other library
+      // table has `id`. Using the wrong column 400s ("column ... does not exist").
+      if (params.toString() === "") {
+        params.append(table === "laws" ? "slug" : "id", "not.is.null");
+      }
+
+      try {
+        const resp = await fetch(`${url}/rest/v1/${table}?${params.toString()}`, {
+          method: "DELETE",
+          headers,
+        });
+        if (!resp.ok) {
+          const body = await resp.text();
+          return { error: `${resp.status}: ${body}` };
+        }
+        return { error: null };
+      } catch (err) {
+        return { error: (err as Error).message };
+      }
+    },
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Batch upsert helper
+// ══════════════════════════════════════════════════════════════════════════════
+
+const BATCH_SIZE = 100;
+
+// Postgres `text`/`jsonb` cannot store NUL (U+0000); PostgREST rejects it with
+// 22P05 "unsupported Unicode escape sequence". Scanned/HTML/PDF-extracted source
+// (decrees, feqh) contains stray NULs — strip them from every string value,
+// recursing into arrays/objects, before upserting.
+function stripNul<T>(value: T): T {
+  if (typeof value === "string") return value.split(String.fromCharCode(0)).join("") as unknown as T;
+  if (Array.isArray(value)) return value.map(stripNul) as unknown as T;
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = stripNul(v);
+    return out as unknown as T;
+  }
+  return value;
+}
+
+async function batchUpsert(
+  client: NonNullable<typeof supabaseClient>,
+  table: string,
+  rows: Record<string, unknown>[],
+  dryRun: boolean,
+  stats: SeedStats,
+  errors: string[]
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  if (dryRun) {
+    console.log(`    [DRY RUN] Would insert ${rows.length} rows into ${table}`);
+    stats.inserted += rows.length;
+    return;
+  }
+
+  // Upsert a slice; on failure, split-and-retry down to a single row. This both
+  // shrinks the payload past a Postgres statement timeout (57014) AND isolates a
+  // single offending row so one bad row no longer fails its whole 100-row batch.
+  async function upsertSlice(slice: Record<string, unknown>[]): Promise<void> {
+    if (slice.length === 0) return;
+    const { error } = await client.upsert(table, slice.map(stripNul));
+    if (!error) {
+      stats.inserted += slice.length;
+      return;
+    }
+    if (slice.length > 1) {
+      const mid = Math.floor(slice.length / 2);
+      await upsertSlice(slice.slice(0, mid));
+      await upsertSlice(slice.slice(mid));
+      return;
+    }
+    // Single row still failing → record and move on (don't abort the whole seed).
+    console.error(`\n    ✗ Row failed in ${table}: ${error}`);
+    errors.push(`${table} row: ${error}`);
+    stats.errors += 1;
+  }
+
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+    const progress = Math.min(i + BATCH_SIZE, rows.length);
+    process.stdout.write(`    → ${table}: ${progress}/${rows.length} rows\r`);
+    await upsertSlice(batch);
+  }
+
+  console.log(`    ✓ ${table}: ${stats.inserted} inserted, ${stats.errors} errors`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Deterministic UUID (UUIDv5-style) for child rows whose PK/FK columns are `uuid`
+// on the live schema (chapters.id, articles.chapter_id, article_amendments.id,
+// decree_pages.id, principle_paragraphs.id, feqh_chapters.id, feqh_sections.id +
+// chapter_id, feqh_blocks.section_id). Derived string keys like `${lawId}__ch-N`
+// are NOT valid uuids; hashing them to a stable uuid keeps parent↔child FKs
+// consistent AND is idempotent across re-seeds. Passthrough if already a uuid.
+// ══════════════════════════════════════════════════════════════════════════════
+function toUuid(key: string): string {
+  if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(key)) {
+    return key.toLowerCase();
+  }
+  const h = crypto.createHash("sha1").update(key).digest();
+  h[6] = (h[6] & 0x0f) | 0x50; // version 5
+  h[8] = (h[8] & 0x3f) | 0x80; // RFC-4122 variant
+  const hex = h.subarray(0, 16).toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+// Clamp to the PostgreSQL int4 range. Source data sometimes puts a case/ruling
+// number (17+ digits) into an integer column (year_hijri/order_index) → 22003
+// "out of range for type integer". Out-of-range/NaN → fallback instead of a crash.
+const INT4_MAX = 2147483647;
+
+/**
+ * Instrument types the decrees_circulars CHECK constraint accepts. MUST stay in
+ * sync with supabase/migrations/20260729_decree_instrument_taxonomy.sql. The
+ * three legacy values are included because existing rows still carry them.
+ */
+const ALLOWED_DECREE_TYPES = new Set([
+  "royal", "cabinet", "circular",
+  "royal_decree", "royal_order", "supreme_order", "supreme_directive", "decree",
+  "cabinet_decision", "ministerial_decision", "economic_council_decision",
+  "administrative_decision", "decision",
+  "rules", "principles", "regulation", "standards", "guide", "policy",
+  "instructions", "organization", "interpretation", "law",
+  "unknown",
+]);
+function safeInt(v: unknown, fallback: number | null): number | null {
+  const n = typeof v === "number" ? v : parseInt(String(v ?? ""), 10);
+  return Number.isFinite(n) && n >= -2147483648 && n <= INT4_MAX ? n : fallback;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Seed: LAWS
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function seedLaws(
+  client: NonNullable<typeof supabaseClient>,
+  data: Record<string, unknown>,
+  dryRun: boolean,
+  errors: string[],
+  clean: boolean
+): Promise<SeedStats[]> {
+  const allStats: SeedStats[] = [];
+  const laws = (data.laws || []) as any[];
+
+  console.log(`\n🏛️  Seeding ${laws.length} laws...\n`);
+
+  if (clean && !dryRun) {
+    console.log("    🧹 Cleaning laws tables (delete before insert)...");
+    // FK-safe order: children first.
+    for (const t of ["article_amendments", "article_regulations", "articles", "chapters", "laws"]) {
+      const { error } = await client.delete(t, {});
+      if (error) {
+        console.error(`    ✗ clean ${t}: ${error}`);
+        errors.push(`clean ${t}: ${error}`);
+      }
+    }
+  }
+
+  const lawRows: Record<string, unknown>[] = [];
+  const chapterRows: Record<string, unknown>[] = [];
+  const articleRows: Record<string, unknown>[] = [];
+  const amendmentRows: Record<string, unknown>[] = [];
+  const regulationRows: Record<string, unknown>[] = [];
+
+  for (const law of laws) {
+    const lawId = String(law.slug || law.id);
+    if (lawId.includes("EXTRACTION_REPORT")) continue;
+
+    lawRows.push({
+      slug: lawId.substring(0, 200),
+      title: law.title,
+      title_en: law.title_en || "",
+      type: (law.type || "نظام").substring(0, 50),
+      description: law.description || law.title || "",
+      section_code: String(law.section_code || "").substring(0, 20),
+      section_name: String(law.section_name || "").substring(0, 200),
+      issuing_body: String(law.issuing_body || "").substring(0, 200),
+      issuing_instrument: String(law.issuance_decree || "").substring(0, 200),
+      issue_date_hijri: String(law.issuance_date || "").substring(0, 20),
+      issue_date_gregorian: String(law.issue_date_gregorian || "").substring(0, 20),
+      total_articles: law.total_articles || 0,
+      preamble: (law.preamble || "") + (law.regulation_preamble ? `\n***\n${law.regulation_preamble}` : ""),
+      has_merged_regulation: law.has_executive_reg || false,
+      status: (law.law_status || "active").substring(0, 30),
+      boe_source_url: String(law.boe_source_url || law.boe_url || "").substring(0, 500),
+      official_source_url: String(law.official_source_url || "").substring(0, 500),
+      // ب-114: jsonb column — pass the structured object through as-is. The prior
+      // String(...).substring(500) both stringified it to "[object Object]" and could
+      // truncate mid-structure, corrupting the JSON; article_status_summary is only
+      // ever a small per-status count map, so no length cap is needed.
+      article_status_summary: (law.article_status_summary && typeof law.article_status_summary === "object")
+        ? law.article_status_summary
+        : {},
+      law_guid: String(law.law_guid || "").substring(0, 100),
+    });
+
+    const chapters = (law.chapters || []) as any[];
+    for (const ch of chapters) {
+      // chapters.id is `uuid` on the live schema → hash the derived key.
+      const chapterId = toUuid(`${lawId}__ch-${ch.number ?? chapters.indexOf(ch)}`);
+      chapterRows.push({
+        id: chapterId,
+        law_slug: lawId.substring(0, 200),
+        number: ch.number || 0,
+        title: ch.title || "",
+        order_index: ch.number || 0,
+      });
+
+      const articles = (ch.articles || []) as any[];
+      for (const art of articles) {
+        // `??` only substitutes on null/undefined — but parse-laws.ts's own
+        // `Number(artMeta.number || 0)` uses 0 as ITS "no real number"
+        // sentinel, so `art.number ?? fallback` let every "no number"
+        // article through as the literal number 0 instead of falling back to
+        // the index. Confirmed on the real corpus (2026-08-21): 1,321
+        // articles carry number:0, 15 laws have more than one — up to 368 in
+        // a single file — so `art-0` collided repeatedly and the Map-based
+        // dedup below kept only the last one (council review: Antigravity).
+        const hasRealNumber = art.number !== null && art.number !== undefined && art.number !== 0;
+        const artId = `${lawId}__art-${hasRealNumber ? art.number : `i${articles.indexOf(art)}`}`.substring(0, 150);
+
+        const regs = (art.regulations || []) as any[];
+        const amends = (art.amendments || []) as any[];
+
+        articleRows.push({
+          id: artId,
+          law_slug: lawId.substring(0, 200),
+          chapter_id: chapterId,
+          number: String(art.number || "0").substring(0, 20),
+          number_text: (art.number_text || "").substring(0, 50),
+          title: art.title || "",
+          status: (art.status || "active").substring(0, 30),
+          text: art.text || "",
+          free: art.free !== false,
+          executive_reg_text: regs.map(r => r.text || "").join("\n\n") || null,
+          executive_reg_ref: regs.map(r => r.ref || "").join(", ") || null,
+          instrument: art.instrument || regs[0]?.instrument || null,
+          order_index: parseInt(art.number) || 0,
+          // Recovered history. Until these columns existed the parser extracted
+          // this text and the seeder dropped it on the floor — and for the 1,613
+          // repealed articles whose `text` is legitimately empty, that is the
+          // whole article. NULL (not "") so "the source has none" stays
+          // distinguishable from "the source has an empty one".
+          original_text: art.original_text || null,
+          historic_regulation_text: art.historic_regulation_text || null,
+          // Quarantine only: excluded from the fts index by the migration and
+          // never returned by any API route.
+          unparsed_details: art.unparsed_details || null,
+          // English courtesy translation — never authoritative, never
+          // indexed into `fts`. NULL (not "") so "no English source" stays
+          // distinguishable from "an empty one".
+          title_en: art.title_en || null,
+          text_en: art.text_en || null,
+          english_text_status: art.text_en ? "unverified" : null,
+        });
+
+        for (let ai = 0; ai < amends.length; ai++) {
+          amendmentRows.push({
+            // article_amendments.id is `uuid`; article_id (→ articles.id, text) stays.
+            id: toUuid(`${artId}__amd-${ai}`),
+            article_id: artId,
+            date: (amends[ai].date || "").substring(0, 30),
+            source: amends[ai].decree || "",
+            type: (amends[ai].type || "تعديل").substring(0, 50),
+            summary: amends[ai].summary || "",
+            full_text: amends[ai].original_text || null,
+          });
+        }
+
+        for (let ri = 0; ri < regs.length; ri++) {
+          const r = regs[ri];
+          regulationRows.push({
+            // article_regulations.id is `uuid`; article_id (→ articles.id) stays.
+            id: toUuid(`${artId}__reg-${ri}`),
+            article_id: artId,
+            law_slug: lawId.substring(0, 200),
+            system_article_number: String(art.number || "0").substring(0, 20),
+            ref: String(r.ref || "").substring(0, 300),
+            reg_num: r.regNum != null ? String(r.regNum).substring(0, 50) : null,
+            sort_key: String(r.sortKey || "99999").substring(0, 50),
+            text: r.text || "",
+            status: (r.status || "active").substring(0, 30),
+            is_secondary_display: r.isSecondaryDisplay === true,
+          });
+        }
+      }
+    }
+  }
+
+  // Deduplicate arrays in memory to prevent ON CONFLICT DO UPDATE commands from trying to affect the same row twice in the same batch
+  const uniqueLawRows = Array.from(new Map(lawRows.map(r => [r.slug, r])).values());
+  const uniqueChapterRows = Array.from(new Map(chapterRows.map(r => [r.id, r])).values());
+  const uniqueArticleRows = Array.from(new Map(articleRows.map(r => [r.id, r])).values());
+  const uniqueAmendmentRows = Array.from(new Map(amendmentRows.map(r => [r.id, r])).values());
+  const uniqueRegulationRows = Array.from(new Map(regulationRows.map(r => [r.id, r])).values());
+
+  const lawStats: SeedStats = { table: "laws", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "laws", uniqueLawRows, dryRun, lawStats, errors);
+  allStats.push(lawStats);
+
+  const chStats: SeedStats = { table: "chapters", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "chapters", uniqueChapterRows, dryRun, chStats, errors);
+  allStats.push(chStats);
+
+  const artStats: SeedStats = { table: "articles", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "articles", uniqueArticleRows, dryRun, artStats, errors);
+  allStats.push(artStats);
+
+  if (uniqueAmendmentRows.length > 0) {
+    const amdStats: SeedStats = { table: "article_amendments", inserted: 0, skipped: 0, errors: 0 };
+    await batchUpsert(client, "article_amendments", uniqueAmendmentRows, dryRun, amdStats, errors);
+    allStats.push(amdStats);
+  }
+
+  if (uniqueRegulationRows.length > 0) {
+    const regStats: SeedStats = { table: "article_regulations", inserted: 0, skipped: 0, errors: 0 };
+    await batchUpsert(client, "article_regulations", uniqueRegulationRows, dryRun, regStats, errors);
+    allStats.push(regStats);
+  }
+
+  return allStats;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Seed: DECREES
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function seedDecrees(
+  client: NonNullable<typeof supabaseClient>,
+  data: Record<string, unknown>,
+  dryRun: boolean,
+  errors: string[],
+  clean: boolean
+): Promise<SeedStats[]> {
+  const allStats: SeedStats[] = [];
+  const decrees = (data.decrees || []) as any[];
+
+  console.log(`\n📋 Seeding ${decrees.length} decrees...\n`);
+
+  if (clean && !dryRun) {
+    console.log("    🧹 Cleaning decrees tables (delete before insert)...");
+    for (const t of ["decree_pages", "decrees_circulars"]) {
+      const { error } = await client.delete(t, {});
+      if (error) {
+        console.error(`    ✗ clean ${t}: ${error}`);
+        errors.push(`clean ${t}: ${error}`);
+      }
+    }
+  }
+
+  const decreeRows: Record<string, unknown>[] = [];
+  const pageRows: Record<string, unknown>[] = [];
+
+  for (const dec of decrees) {
+    const rawId = String(dec.id || dec.slug);
+    if (rawId.includes("EXTRACTION_REPORT")) continue;
+
+    // decrees_circulars.id is `uuid` and decree source ids are Arabic strings →
+    // deterministic uuid (also makes re-seeds idempotent instead of duplicating).
+    const decId = toUuid(rawId);
+
+    // decrees_circulars.type has a CHECK allowing only royal|cabinet|circular.
+    // Instrument type. The parser (lib/instrument.ts) now emits a precise value;
+    // this asserts it is one the DB accepts rather than silently coercing.
+    //
+    // The old code clamped anything outside ('royal','cabinet','circular') to
+    // "circular" — which is how every قرار وزاري (Ministerial Decision) ended up
+    // stored as a mere circular. Silently rewriting a legal instrument type is
+    // exactly the failure this program exists to remove, so an unexpected value
+    // now fails loudly instead.
+    const decType = String(dec.type || "unknown");
+    if (!ALLOWED_DECREE_TYPES.has(decType)) {
+      throw new Error(
+        `decree "${dec.id}" has instrument type "${decType}", which the ` +
+          `decrees_circulars CHECK constraint does not allow. Apply migration ` +
+          `20260729_decree_instrument_taxonomy.sql, or add the value there — ` +
+          `do NOT coerce it to another instrument.`,
+      );
+    }
+    decreeRows.push({
+      id: decId,
+      title: dec.title || "",
+      type: decType,
+      instrument_ar: dec.instrument_ar || null,
+      issuer: dec.issuer || "",
+      ref: dec.ref || "",
+      date: dec.date || "",
+      summary: dec.summary || "",
+      summary_brief: dec.summary_brief || "",
+      category: (dec.cat || "").substring(0, 100),
+      preamble: dec.preamble || "",
+      hashtags: dec.hashtags || [],
+      official_url: dec.official_url || "",
+    });
+
+    const arts = (dec.articles || []) as any[];
+
+    for (let pi = 0; pi < arts.length; pi++) {
+      const art = arts[pi];
+      pageRows.push({
+        id: toUuid(`${decId}__pg-${art.number ?? pi}`), // decree_pages.id is `uuid`
+        decree_id: decId,
+        page_number: art.number || 0,
+        content: art.text || "",
+      });
+    }
+  }
+
+  // Deduplicate
+  const uniqueDecreeRows = Array.from(new Map(decreeRows.map(r => [r.id, r])).values());
+  const uniquePageRows = Array.from(new Map(pageRows.map(r => [r.id, r])).values());
+
+  const decStats: SeedStats = { table: "decrees_circulars", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "decrees_circulars", uniqueDecreeRows, dryRun, decStats, errors);
+  allStats.push(decStats);
+
+  const pageStats: SeedStats = { table: "decree_pages", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "decree_pages", uniquePageRows, dryRun, pageStats, errors);
+  allStats.push(pageStats);
+
+  return allStats;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Seed: PRECEDENTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function seedPrecedents(
+  client: NonNullable<typeof supabaseClient>,
+  data: Record<string, unknown>,
+  dryRun: boolean,
+  errors: string[],
+  clean: boolean
+): Promise<SeedStats[]> {
+  const allStats: SeedStats[] = [];
+  const collections = (data.collections || []) as any[];
+  const courtPrecs = (data.court_precedents || []) as any[];
+
+  console.log(`\n⚖️  Seeding ${collections.length} collections + ${courtPrecs.length} precedents...\n`);
+
+  if (clean && !dryRun) {
+    console.log("    🧹 Cleaning precedents tables (delete before insert)...");
+    for (const t of ["principle_paragraphs", "principles", "judicial_collections"]) {
+      const { error } = await client.delete(t, {});
+      if (error) {
+        console.error(`    ✗ clean ${t}: ${error}`);
+        errors.push(`clean ${t}: ${error}`);
+      }
+    }
+  }
+
+  const collRows: Record<string, unknown>[] = [];
+  const principleRows: Record<string, unknown>[] = [];
+  const paragraphRows: Record<string, unknown>[] = [];
+
+  // ── Collections for standalone court precedents ──────────────────────────
+  // Previously EVERY standalone ruling was attached to one hardcoded row
+  // labelled court "المحكمة التجارية" / track "commercial" — regardless of which
+  // court actually issued it. Rulings of the Supreme Court, the Board of
+  // Grievances, labour courts and quasi-judicial committees were all published
+  // under the Commercial Court's name. ("commercial" was not even a valid track.)
+  //
+  // Now one collection is derived per (track, court) actually present in the
+  // data, so a ruling is only ever filed under the body that issued it.
+  const precedentGroupKey = (p: Record<string, unknown>): string => {
+    const track = String(p.track || "unknown");
+    const court = String(p.court || p.court_type || "").trim();
+    return `${track}::${court}`;
+  };
+
+  const precGroups = new Map<string, Record<string, unknown>[]>();
+  for (const p of courtPrecs) {
+    const k = precedentGroupKey(p as Record<string, unknown>);
+    const list = precGroups.get(k);
+    if (list) list.push(p as Record<string, unknown>);
+    else precGroups.set(k, [p as Record<string, unknown>]);
+  }
+
+  /** Deterministic, stable collection id for a (track, court) pair. */
+  const groupCollectionId = (key: string): string =>
+    `prec-${toUuid(key)}`.substring(0, 100);
+
+  for (const [key, members] of precGroups) {
+    const [track, court] = key.split("::");
+    collRows.push({
+      id: groupCollectionId(key),
+      // No court name in the source means we do not know which body issued it.
+      // Saying so is correct; naming a court would be a fabrication.
+      title: court || "أحكام وسوابق — جهة غير محددة",
+      court: court || null,
+      year_hijri: null,
+      part: 1,
+      source_id: "moj",
+      track: track.substring(0, 50),
+      description: court
+        ? `مجموعة الأحكام والسوابق الصادرة عن ${court}`
+        : "أحكام وسوابق لم تُحدَّد جهة إصدارها في المصدر",
+      ruling_count: members.length,
+      free: true,
+      progress: 100,
+    });
+  }
+
+  for (const coll of collections) {
+    const collId = String(coll.id || coll.slug).substring(0, 100);
+
+    collRows.push({
+      id: collId,
+      title: coll.title || "",
+      court: coll.court || "",
+      year_hijri: safeInt(coll.year_hijri, null),
+      part: coll.part || 1,
+      source_id: coll.source_id || "",
+      // `track` is DERIVED by the parser (lib/court.ts), not read from source —
+      // no source file has ever carried a `track` field, which is why this
+      // column was empty for 94 of 95 collections in production.
+      track: String(coll.track || "unknown").substring(0, 50),
+      description: coll.description || "",
+      ruling_count: coll.total_principles || 0,
+      free: coll.free !== false,
+      progress: 100,
+      // Grouping/display label only (e.g. all volumes of one year's ministry
+      // collection) — never the row's identity. See parse-precedents.ts
+      // parsePrecedentContainer for why id/slug must never be this value.
+      series_id: coll.series_id ? String(coll.series_id).substring(0, 150) : null,
+    });
+
+    const principles = (coll.principles || []) as any[];
+    for (let pri = 0; pri < principles.length; pri++) {
+      const pr = principles[pri];
+      const prId = `${collId}__pr-${pr.number ?? pri}`.substring(0, 150);
+
+      principleRows.push({
+        id: prId,
+        collection_id: collId,
+        principle_number: String(pr.number || "").substring(0, 50),
+        issuing_body: pr.issuing_body || "",
+        session_date: pr.session_date || "",
+        decision_number: pr.decision_number || "",
+        reference: pr.reference || "",
+        text: pr.text || "",
+        ruling_basis: "",
+        facts: pr.details?.facts || "",
+        reasons: pr.details?.reasons || "",
+        ruling: pr.details?.ruling || "",
+        year_hijri: safeInt(pr.year_hijri, null),
+        order_index: safeInt(pr.number, 0),
+      });
+
+      const subs = (pr.sub_principles || []) as any[];
+
+      for (let si = 0; si < subs.length; si++) {
+        paragraphRows.push({
+          // principle_paragraphs.id is `uuid`; principle_id (→ principles.id, text) stays.
+          id: toUuid(`${prId}__sub-${si}`),
+          principle_id: prId,
+          letter: subs[si].letter || "",
+          text: subs[si].text || "",
+          keywords: subs[si].keywords || [],
+          order_index: si,
+        });
+      }
+    }
+  }
+
+  for (let pi = 0; pi < courtPrecs.length; pi++) {
+    const prec = courtPrecs[pi];
+    const precId = String(prec.slug || prec.id).substring(0, 150);
+
+    principleRows.push({
+      id: precId,
+      // Its own court's collection, not the single fabricated commercial one.
+      collection_id: groupCollectionId(precedentGroupKey(prec as Record<string, unknown>)),
+      principle_number: String(prec.ruling_number || "").substring(0, 50),
+      issuing_body: prec.court || prec.court_type || "",
+      session_date: prec.date || "",
+      decision_number: prec.case_number || "",
+      reference: prec.subject || "",
+      text: prec.summary || prec.preamble || "",
+      ruling_basis: prec.summary_brief || "",
+      facts: prec.facts || "",
+      reasons: prec.reasons || "",
+      ruling: prec.ruling || "",
+      year_hijri: safeInt(prec.year, null),
+      order_index: pi,
+    });
+  }
+
+  // Deduplicate
+  const uniqueCollRows = Array.from(new Map(collRows.map(r => [r.id, r])).values());
+  const uniquePrincipleRows = Array.from(new Map(principleRows.map(r => [r.id, r])).values());
+  const uniqueParagraphRows = Array.from(new Map(paragraphRows.map(r => [r.id, r])).values());
+
+  const collStats: SeedStats = { table: "judicial_collections", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "judicial_collections", uniqueCollRows, dryRun, collStats, errors);
+  allStats.push(collStats);
+
+  const prStats: SeedStats = { table: "principles", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "principles", uniquePrincipleRows, dryRun, prStats, errors);
+  allStats.push(prStats);
+
+  if (uniqueParagraphRows.length > 0) {
+    const paraStats: SeedStats = { table: "principle_paragraphs", inserted: 0, skipped: 0, errors: 0 };
+    await batchUpsert(client, "principle_paragraphs", uniqueParagraphRows, dryRun, paraStats, errors);
+    allStats.push(paraStats);
+  }
+
+  return allStats;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Seed: FEQH
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function seedFeqh(
+  client: NonNullable<typeof supabaseClient>,
+  data: Record<string, unknown>,
+  dryRun: boolean,
+  errors: string[],
+  clean: boolean
+): Promise<SeedStats[]> {
+  const allStats: SeedStats[] = [];
+  const books = (data.books || []) as any[];
+
+  console.log(`\n📖 Seeding ${books.length} feqh books...\n`);
+
+  if (clean && !dryRun) {
+    console.log("    🧹 Cleaning feqh tables (delete before insert)...");
+    for (const t of ["feqh_blocks", "feqh_sections", "feqh_chapters", "feqh_books"]) {
+      const { error } = await client.delete(t, {});
+      if (error) {
+        console.error(`    ✗ clean ${t}: ${error}`);
+        errors.push(`clean ${t}: ${error}`);
+      }
+    }
+  }
+
+  const bookRows: Record<string, unknown>[] = [];
+  const chapterRows: Record<string, unknown>[] = [];
+  const sectionRows: Record<string, unknown>[] = [];
+  const blockRows: Record<string, unknown>[] = [];
+
+  for (const book of books) {
+    const bookId = String(book.id || book.slug).substring(0, 100);
+    // Book-global reading position for the paywall.
+    //
+    // order_index was the page index WITHIN a section (`pi`). Almost every
+    // section holds a single page, so 119,353 of 119,392 blocks were 0 — and
+    // the paywall test in api/library/books/[slug]/route.ts is
+    // `order_index >= freeLimit`, which `0 >= 5` never satisfies. Every paid
+    // feqh book was therefore fully readable by anonymous visitors.
+    //
+    // One counter across the whole book makes the index mean "how far into the
+    // book is this block", which is what the paywall assumes.
+    let bookBlockOrder = 0;
+    if (bookId.includes("EXTRACTION_REPORT")) continue;
+
+    bookRows.push({
+      id: bookId,
+      title: book.title || "",
+      author: book.author || "",
+      school: book.school || "",
+      type: (book.type || "sharia").substring(0, 30),
+      category: (book.category || "").substring(0, 100),
+      description: book.description || "",
+      investigator: book.investigator || "",
+      total_volumes: book.total_volumes || 1,
+      total_pages: book.total_pages || 0,
+    });
+
+    const chapters = (book.chapters || []) as any[];
+    for (let ci = 0; ci < chapters.length; ci++) {
+      const ch = chapters[ci];
+      const chId = toUuid(`${bookId}__fc-${ci}`); // feqh_chapters.id is `uuid`
+
+      chapterRows.push({
+        id: chId,
+        book_id: bookId,
+        title: ch.title || "",
+        volume_number: safeInt(ch.pages?.[0]?.volume ?? ch.sections?.[0]?.pages?.[0]?.volume, 1),
+        order_index: ci,
+      });
+
+      // Direct pages under chapter
+      const directPages = (ch.pages || []) as any[];
+      if (directPages.length > 0) {
+        const dummySecId = toUuid(`${chId}__fs-general`); // feqh_sections.id is `uuid`
+        sectionRows.push({
+          id: dummySecId,
+          chapter_id: chId,
+          title: "عام",
+          order_index: 999,
+        });
+
+        for (let pi = 0; pi < directPages.length; pi++) {
+          const pg = directPages[pi];
+          blockRows.push({
+            id: `${dummySecId}__blk-${pi}`.substring(0, 150),
+            section_id: dummySecId,
+            topic: ch.title || "",
+            // null volume means the source states none — do not invent 1.
+            volume_number: safeInt(pg.volume, null),
+            page_number: safeInt(pg.page_number, null),
+            // Verbatim locator tokens, so a non-numeric one ("مقدمة", "7-1",
+            // "None") is shown as the source wrote it, not coerced to a number.
+            page_label: pg.page_label ?? null,
+            volume_label: pg.volume_label ?? null,
+            matn: pg.text || "",
+            sharh: null,
+            hashiyah: {},
+            order_index: bookBlockOrder++,
+            // Denormalised owning book, so the reader can page a book in
+            // reading order with one indexed scan. Without it the route must
+            // reach the book through section -> chapter -> book; the old
+            // section_id IN(...) form built a URL so long that 138 of 144
+            // books returned 400 and rendered completely empty.
+            book_id: bookId,
+          });
+        }
+      }
+
+      // Sections under chapter
+      const sections = (ch.sections || []) as any[];
+      for (let si = 0; si < sections.length; si++) {
+        const sec = sections[si];
+        const secId = toUuid(`${chId}__fs-${si}`); // feqh_sections.id is `uuid`
+
+        sectionRows.push({
+          id: secId,
+          chapter_id: chId,
+          title: sec.title || "",
+          order_index: si,
+        });
+
+        const secPages = (sec.pages || []) as any[];
+        for (let pi = 0; pi < secPages.length; pi++) {
+          const pg = secPages[pi];
+          blockRows.push({
+            id: `${secId}__blk-${pi}`.substring(0, 150),
+            section_id: secId,
+            topic: sec.title || "",
+            // null volume means the source states none — do not invent 1.
+            volume_number: safeInt(pg.volume, null),
+            page_number: safeInt(pg.page_number, null),
+            // Verbatim locator tokens, so a non-numeric one ("مقدمة", "7-1",
+            // "None") is shown as the source wrote it, not coerced to a number.
+            page_label: pg.page_label ?? null,
+            volume_label: pg.volume_label ?? null,
+            matn: pg.text || "",
+            sharh: null,
+            hashiyah: {},
+            order_index: bookBlockOrder++,
+            // Denormalised owning book, so the reader can page a book in
+            // reading order with one indexed scan. Without it the route must
+            // reach the book through section -> chapter -> book; the old
+            // section_id IN(...) form built a URL so long that 138 of 144
+            // books returned 400 and rendered completely empty.
+            book_id: bookId,
+          });
+        }
+      }
+    }
+  }
+
+  // Deduplicate
+  const uniqueBookRows = Array.from(new Map(bookRows.map(r => [r.id, r])).values());
+  const uniqueChapterRows = Array.from(new Map(chapterRows.map(r => [r.id, r])).values());
+  const uniqueSectionRows = Array.from(new Map(sectionRows.map(r => [r.id, r])).values());
+  const uniqueBlockRows = Array.from(new Map(blockRows.map(r => [r.id, r])).values());
+
+  const bookStats: SeedStats = { table: "feqh_books", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "feqh_books", uniqueBookRows, dryRun, bookStats, errors);
+  allStats.push(bookStats);
+
+  const chStats: SeedStats = { table: "feqh_chapters", inserted: 0, skipped: 0, errors: 0 };
+  await batchUpsert(client, "feqh_chapters", uniqueChapterRows, dryRun, chStats, errors);
+  allStats.push(chStats);
+
+  if (uniqueSectionRows.length > 0) {
+    const secStats: SeedStats = { table: "feqh_sections", inserted: 0, skipped: 0, errors: 0 };
+    await batchUpsert(client, "feqh_sections", uniqueSectionRows, dryRun, secStats, errors);
+    allStats.push(secStats);
+  }
+
+  if (uniqueBlockRows.length > 0) {
+    const blockStats: SeedStats = { table: "feqh_blocks", inserted: 0, skipped: 0, errors: 0 };
+    await batchUpsert(client, "feqh_blocks", uniqueBlockRows, dryRun, blockStats, errors);
+    allStats.push(blockStats);
+  }
+
+  return allStats;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Main seeder orchestrator
+// ══════════════════════════════════════════════════════════════════════════════
+
+export async function seedLibrary(options: {
+  dir: string;
+  dryRun: boolean;
+  types?: ContentType[];
+  clean?: boolean;
+}): Promise<SeedResult> {
+  const startedAt = new Date();
+  const allStats: SeedStats[] = [];
+  const errors: string[] = [];
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!options.dryRun && (!supabaseUrl || !supabaseKey)) {
+    console.error("❌ Missing environment variables:");
+    console.error("   NEXT_PUBLIC_SUPABASE_URL");
+    console.error("   SUPABASE_SERVICE_ROLE_KEY");
+    console.error("\n   Set them in .env.local or export them.");
+    process.exit(1);
+  }
+
+  const client = options.dryRun
+    ? createSupabaseClient("http://dry-run", "dry-run-key")
+    : createSupabaseClient(supabaseUrl!, supabaseKey!);
+
+  const targetTypes = options.types || ["laws", "decrees", "precedents", "feqh"];
+
+  console.log("╔══════════════════════════════════════════════════╗");
+  console.log("║       🏛️  Nzamy Legal Library — Seeder          ║");
+  console.log("╚══════════════════════════════════════════════════╝");
+  console.log(`  Mode:   ${options.dryRun ? "🔍 DRY RUN (no writes)" : "✍️  LIVE INSERT"}`);
+  console.log(`  Dir:    ${options.dir}`);
+  console.log(`  Types:  ${targetTypes.join(", ")}`);
+  console.log(`  Clean:  ${options.clean ? "yes (delete before insert)" : "no"}\n`);
+
+  const fileMap: Record<ContentType, string> = {
+    laws: "laws.json",
+    decrees: "decrees.json",
+    precedents: "precedents.json",
+    feqh: "feqh.json",
+  };
+
+  for (const type of targetTypes) {
+    const filePath = path.join(path.resolve(options.dir), fileMap[type]);
+
+    if (!fs.existsSync(filePath)) {
+      console.log(`  ⏭  Skipping ${type} — ${fileMap[type]} not found`);
+      continue;
+    }
+
+    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`  Processing: ${type.toUpperCase()}`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+    const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+
+    let stats: SeedStats[] = [];
+
+    switch (type) {
+      case "laws":
+        stats = await seedLaws(client, data, options.dryRun, errors, options.clean ?? false);
+        break;
+      case "decrees":
+        stats = await seedDecrees(client, data, options.dryRun, errors, options.clean ?? false);
+        break;
+      case "precedents":
+        stats = await seedPrecedents(client, data, options.dryRun, errors, options.clean ?? false);
+        break;
+      case "feqh":
+        stats = await seedFeqh(client, data, options.dryRun, errors, options.clean ?? false);
+        break;
+    }
+
+    allStats.push(...stats);
+  }
+
+  const finishedAt = new Date();
+  const durationMs = finishedAt.getTime() - startedAt.getTime();
+
+  console.log("\n╔══════════════════════════════════════════════════╗");
+  console.log("║                 📊 Seed Summary                 ║");
+  console.log("╠══════════════════════════════════════════════════╣");
+
+  let totalInserted = 0;
+  let totalErrors = 0;
+
+  for (const s of allStats) {
+    const status = s.errors > 0 ? "⚠" : "✓";
+    console.log(
+      `  ${status} ${s.table.padEnd(25)} inserted: ${String(s.inserted).padStart(6)}  errors: ${s.errors}`
+    );
+    totalInserted += s.inserted;
+    totalErrors += s.errors;
+  }
+
+  console.log("╠══════════════════════════════════════════════════╣");
+  console.log(`  Total inserted: ${totalInserted}`);
+  console.log(`  Total errors:   ${totalErrors}`);
+  console.log(`  Duration:       ${(durationMs / 1000).toFixed(1)}s`);
+  console.log("╚══════════════════════════════════════════════════╝\n");
+
+  if (errors.length > 0) {
+    console.log("📝 Errors:\n");
+    for (const err of errors.slice(0, 20)) {
+      console.log(`  • ${err}`);
+    }
+    if (errors.length > 20) {
+      console.log(`  ... and ${errors.length - 20} more\n`);
+    }
+  }
+
+  return {
+    dry_run: options.dryRun,
+    started_at: startedAt.toISOString(),
+    finished_at: finishedAt.toISOString(),
+    duration_ms: durationMs,
+    stats: allStats,
+    errors,
+  };
+}
+
+if (require.main === module) {
+  const envPath = path.resolve(__dirname, "..", ".env.local");
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, "utf-8");
+    for (const line of envContent.split(/\r?\n/)) {
+      const m = line.match(/^([^#=\s]+)\s*=\s*(.*)/);
+      if (m && !process.env[m[1]]) {
+        process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
+      }
+    }
+    console.log("  📋 Loaded environment from .env.local\n");
+  }
+
+  const args = process.argv.slice(2);
+  const dirIdx = args.indexOf("--dir");
+  const typeIdx = args.indexOf("--type");
+
+  const dir = dirIdx >= 0 ? args[dirIdx + 1] : args.find(a => !a.startsWith("--")) || "./output";
+  const dryRun = args.includes("--dry-run");
+  const clean = args.includes("--clean");
+
+  let types: ContentType[] | undefined;
+  if (typeIdx >= 0) {
+    types = [args[typeIdx + 1] as ContentType];
+  }
+
+  seedLibrary({ dir: path.resolve(dir), dryRun, types, clean })
+    .then((result) => {
+      const logDir = path.resolve(dir);
+      fs.mkdirSync(logDir, { recursive: true });
+      const logFile = path.join(logDir, "seed-result.json");
+      fs.writeFileSync(logFile, JSON.stringify(result, null, 2), "utf-8");
+      console.log(`📁 Result log written to: ${logFile}`);
+
+      if (result.errors.length > 0) {
+        process.exit(1);
+      }
+    })
+    .catch((err) => {
+      console.error("❌ Fatal error:", err);
+      process.exit(1);
+    });
+}

@@ -1,14 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Dispatch, SetStateAction } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShieldCheck, ShieldSlash, PencilSimple, Plus,
   CaretDown, CheckCircle, XCircle, Star, Scales,
-  ArrowsOut, Warning, Trash,
+  Warning, Trash,
 } from "@phosphor-icons/react";
 import {
-  MOCK_DEFENSES, MainDefense, SubDefense, DefenseStatus,
+  MainDefense, SubDefense, DefenseStatus,
 } from "@/components/draft/draftConstants";
 import BetaReviewGate from "@/components/BetaReviewGate";
 
@@ -18,9 +18,6 @@ const STATUS_COLORS: Record<DefenseStatus, { badge: string; dot: string }> = {
   confirmed: { badge: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20", dot: "bg-emerald-500" },
   rejected:  { badge: "bg-red-500/10 text-red-500 border-red-500/20",            dot: "bg-red-500"     },
   pending:   { badge: "bg-amber-500/10 text-amber-500 border-amber-500/20",       dot: "bg-amber-400"   },
-};
-const STATUS_LABELS: Record<DefenseStatus, string> = {
-  confirmed: "مؤكَّد", rejected: "مرفوض", pending: "معلَّق",
 };
 const PRIORITY_COLORS: Record<string, string> = {
   "عالية":    "text-red-500 bg-red-500/10 border-red-500/20",
@@ -123,7 +120,6 @@ function DefenseCard({
   const [expanded,   setExpanded]   = useState(true);
   const [addingNote, setAddingNote] = useState(false);
   const [newSubText, setNewSubText] = useState("");
-  const sc = STATUS_COLORS[def.status];
 
   const confirmedCount = def.subDefenses.filter(s => s.status === "confirmed").length;
 
@@ -267,8 +263,11 @@ function DefenseCard({
 
 // ─── Main Step Component ───────────────────────────────────────────────────────
 
-export function StepDefenses({ isDark }: { isDark: boolean }) {
-  const [defenses, setDefenses] = useState<MainDefense[]>(MOCK_DEFENSES);
+export function StepDefenses({ isDark, defenses, setDefenses }: {
+  isDark: boolean;
+  defenses: MainDefense[];
+  setDefenses: Dispatch<SetStateAction<MainDefense[]>>;
+}) {
   const [addingMain, setAddingMain] = useState(false);
   const [newMainText, setNewMainText] = useState("");
 

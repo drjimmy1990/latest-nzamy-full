@@ -18,7 +18,7 @@ import { CaseCard } from "./_components/CaseCard";
 import { DashboardPageSkeleton } from "./_components/DashboardSkeleton";
 import { getDashboardSummary } from "@/lib/services";
 import type { DashboardSummary } from "@/lib/services";
-import { fadeUp, STATUS_COLOR } from "./_data";
+import { fadeUp } from "./_data";
 import type { ClientCase } from "./_data";
 
 export default function ClientDashboard() {
@@ -281,7 +281,7 @@ export default function ClientDashboard() {
                 </p>
               </div>
             </div>
-            <Link href="/dashboard/client/wallet">
+            <Link href="/pricing">
               <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold text-white bg-[#C8A762] hover:bg-[#b8974f] transition flex-shrink-0 cursor-pointer shadow-sm"
               >
@@ -316,7 +316,7 @@ export default function ClientDashboard() {
                   </p>
                 </div>
               </div>
-              <Link href="/dashboard/client/wallet">
+              <Link href="/pricing">
                 <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[#0B3D2E] border border-[#0B3D2E]/20 bg-[#0B3D2E]/5 hover:bg-[#0B3D2E]/10 transition cursor-pointer"
                 >
@@ -391,7 +391,7 @@ export default function ClientDashboard() {
                       }`}>
                         بالعمل القانوني: <strong className="text-amber-500">{item.extraPrice} ر.س</strong>
                         {" · "}
-                        <Link href="/dashboard/client/wallet" className="underline text-royal">ارقِّ الباقة</Link>
+                        <Link href="/pricing" className="underline text-royal">ارقِّ الباقة</Link>
                       </p>
                     )}
                   </div>
@@ -414,7 +414,7 @@ export default function ClientDashboard() {
                     ? `وصلت لـ ${aiPct}% من حد AI الشهري — ${USER_PLAN.payPerUse.extraAiQuery} ر.س للاستفسار الإضافي أو `
                     : `اقتربت من حد AI الشهري (${aiPct}%) — تبقّى ${USER_PLAN.limits.aiQueries - USER_PLAN.used.aiQueries} استفساراً `
                   }
-                  <Link href="/dashboard/client/wallet" className="underline font-bold">ارقِّ الباقة</Link>
+                  <Link href="/pricing" className="underline font-bold">ارقِّ الباقة</Link>
                 </div>
               );
             })()}

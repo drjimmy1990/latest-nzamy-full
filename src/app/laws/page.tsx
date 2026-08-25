@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { normalizeArabic } from "@/utils/normalizeArabic";
 import {
@@ -18,13 +17,9 @@ import {
   DEMO_PRINCIPLES,
   DEMO_PRECEDENTS,
   DEMO_ORDERS,
-  PRINCIPLE_SOURCES,
   DEMO_FEQH_BOOKS,
   DEMO_PRECEDENTS_COLLECTIONS,
   ORDER_ISSUERS,
-  type DemoPrinciple,
-  type DemoPrecedent,
-  type DemoOrder,
   type PrincipleSourceId,
 } from "./demo-data-access";
 import { isSupabaseMode } from "@/lib/services/api";
@@ -44,7 +39,6 @@ import {
   CONTENT_TYPES,
   PLACEHOLDERS,
   PLACEHOLDERS_EN,
-  catTotalCount,
   MAIN_CATEGORIES,
   OTHER_CATEGORIES,
   matchesFeqhCategory,
@@ -63,7 +57,6 @@ import { ISSUER_MAP } from "./components/ListItems";
 export default function LegalLibraryPage() {
   const { isRTL, isDark } = useTheme();
   const { isLoggedIn }    = useUser();
-  const router = useRouter();
 
   // --- Database-backed state variables ---
   const [dbLaws, setDbLaws] = useState<any[]>([]);
@@ -832,7 +825,13 @@ export default function LegalLibraryPage() {
       <Navbar />
 
       {/* ── Invitation Banner (subscribers only) ───────────────────────── */}
-      <div className="max-w-6xl mx-auto px-4 pt-4">
+      {/* pt-32 clears the fixed z-50 Navbar (~80-140px incl. safe-area-inset on
+          notched phones) — this is the first in-flow element on the page, and it
+          previously only had pt-4, so whenever the banner rendered (active
+          subscribers with pending invitations) it was drawn partly underneath the
+          fixed navbar. pt-32 matches the convention already used by the sibling
+          /laws/[slug], /laws/orders/[slug] and /laws/civil-procedure pages. */}
+      <div className="max-w-6xl mx-auto px-4 pt-32">
         <InvitationBanner />
       </div>
 

@@ -5,11 +5,11 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   BookOpen, Check, ArrowLeft, ArrowRight, MagnifyingGlass,
-  Bell, Lock, Scales, Gavel, Buildings, ShieldCheck,
-  Lightning, Star, FileText, Crown, Users,
+  Scales, Buildings,
+  Crown,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { createLibrarySubscription } from "@/lib/invitationStore";
+import { createLibrarySubscription, syncInvitationCodes } from "@/lib/invitationStore";
 import InvitationModal from "@/components/InvitationModal";
 import { useUser } from "@/hooks/useUser";
 import { requestEntitlement } from "@/lib/services/entitlementService";
@@ -253,7 +253,11 @@ export default function LawsSubscribePage() {
       return;
     }
     // Guests: keep the existing local subscription + invite flow.
-    createLibrarySubscription(planId as any);
+    const sub = createLibrarySubscription(planId as any);
+    // Best-effort: persist the generated codes server-side so they are
+    // actually acceptable via /invite/[code]. No-ops quietly if the visitor
+    // isn't logged in yet — InvitationModal retries this on open.
+    syncInvitationCodes(sub.invitations.map((inv) => inv.code));
     setModalOpen(true);
   }
 
@@ -386,7 +390,7 @@ export default function LawsSubscribePage() {
                         {yearly ? plan.priceYearly : plan.price}
                       </span>
                       {!(yearly ? plan.priceYearly : plan.price).includes("/") && (
-                        <span className={`text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+                        <span className="text-[11px] text-zinc-400">
                           {yearly ? t.perYear : t.perMonth}
                         </span>
                       )}

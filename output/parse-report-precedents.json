@@ -1,0 +1,20 @@
+{
+  "type": "precedents",
+  "generated_at": "2026-08-21T22:36:27.872Z",
+  "input": "D:\\Data\\Data\\antigravity ai\\تجارب\\Raw_Vault\\01_المكتبة_القانونية\\مبادئ وسوابق قضائية\\98 - المبادئ القضائية\\3- اللجان شبه القضائية\\5- لجنة النظر في التظلمات وطلبات تعديل الأسعار",
+  "counts": {
+    "collections": 1,
+    "principles": 17,
+    "courtPrecedents": 0,
+    "excluded": 0,
+    "frontmatterWarnings": 0,
+    "collectionIdCollisions": 0,
+    "unclassified": 0,
+    "failed": 0
+  },
+  "excluded": [],
+  "frontmatterWarnings": [],
+  "identityCollisions": [],
+  "unclassified": [],
+  "failed": []
+}

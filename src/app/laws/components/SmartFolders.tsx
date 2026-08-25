@@ -1,14 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  FolderSimple, FolderSimplePlus, PencilSimple, Trash,
-  Check, X, BookOpen, Plus, CaretDown, PushPin,
-  Palette, Star, ArrowRight, DotsSixVertical,
+  FolderSimple, FolderSimplePlus,
+  Check, X, BookOpen, Plus, CaretDown,
   Scroll, Gavel, MagnifyingGlass
 } from "@phosphor-icons/react";
-import Link from "next/link";
 
 // ─── Modular Imports & Re-exports ──────────────────────────────────────────────────
 import type { LawRef, SmartFolder, LibraryDoc } from "./SmartFolderTypes";
@@ -567,7 +565,10 @@ export default function SmartFolders({
 
         {/* Folder List */}
         <div className={`px-5 pb-5 space-y-2 border-t ${isDark ? "border-[#2d3748]" : "border-gray-100"}`}>
-          <div className={`pt-4 space-y-2 transition-all duration-300 ${isExpandedView ? "" : "max-h-[225px] overflow-y-auto pr-1 custom-scrollbar"}`}>
+          {/* Scrollable folder list only — max-h raised from 225px (which clipped
+              even a single expanded folder to a sliver) to a size that comfortably
+              fits a couple of folders before it needs to scroll. */}
+          <div className={`pt-4 space-y-2 transition-all duration-300 ${isExpandedView ? "" : "max-h-[420px] overflow-y-auto pr-1 custom-scrollbar"}`}>
             {/* Loading skeleton */}
             {isLoading && folders.length === 0 && (
               <div className="space-y-2">
@@ -601,18 +602,6 @@ export default function SmartFolders({
               ))}
             </AnimatePresence>
 
-            {/* Create folder inline */}
-            <AnimatePresence>
-              {isCreating && (
-                <CreateFolderInline
-                  isDark={isDark}
-                  isRTL={isRTL}
-                  onCreate={handleCreate}
-                  onCancel={() => setIsCreating(false)}
-                />
-              )}
-            </AnimatePresence>
-
             {/* Empty state */}
             {folders.length === 0 && !isCreating && !isLoading && (
               <motion.div
@@ -632,6 +621,21 @@ export default function SmartFolders({
               </motion.div>
             )}
           </div>
+
+          {/* Create folder inline — rendered OUTSIDE the max-h/overflow-y-auto box
+              above (was previously the last child inside it) so the form is never
+              pushed past the scroll clip when the folder list is already tall
+              (e.g. the default folder auto-expands with 8 items on mount). */}
+          <AnimatePresence>
+            {isCreating && (
+              <CreateFolderInline
+                isDark={isDark}
+                isRTL={isRTL}
+                onCreate={handleCreate}
+                onCancel={() => setIsCreating(false)}
+              />
+            )}
+          </AnimatePresence>
         </div>
 
         {folders.length > 2 && (

@@ -7,10 +7,11 @@ import {
   ClipboardText, ChartLine, ChatText,
   CheckCircle, Clock, Warning, Info, CaretLeft,
   ArrowRight, ListChecks, ChatCircleDots, PaperPlaneRight, DotsThree,
-  Bell, ArrowSquareOut, Sparkle,
+  Bell, ArrowSquareOut,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { useUser } from "@/hooks/useUser";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -185,6 +186,9 @@ function AddDecisionModal({ onAdd, onClose, isDark }: { onAdd: (d: Omit<Decision
 
 export default function SecretaryPage() {
   const { isDark } = useTheme();
+  const { subRole } = useUser();
+  // LegalMail is a corporate-mailbox tool — solo lawyers (no firm mail infra) shouldn't see it here.
+  const isSoloLawyer = subRole === "solo";
   const [tab, setTab]               = useState<Tab>("chat");
   const [rules, setRules]           = useState<AutomationRule[]>(INITIAL_RULES);
   const [decisions, setDecisions]   = useState<DecisionLog[]>(INITIAL_DECISIONS);
@@ -512,15 +516,17 @@ export default function SecretaryPage() {
         </AnimatePresence>
 
         {/* Quick links */}
-        <div className="grid grid-cols-2 gap-3">
-          <Link href="/ai/mail-advisor" className={`flex items-center gap-3 p-4 rounded-2xl border transition-all ${isDark ? "border-white/[0.06] hover:bg-white/[0.03]" : "border-slate-100 hover:bg-slate-50 bg-white shadow-sm"}`}>
-            <ChatText size={18} className="text-blue-500" weight="duotone" />
-            <div>
-              <p className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>LegalMail</p>
-              <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>تحليل البريد الوارد</p>
-            </div>
-            <ArrowRight size={13} className="ms-auto text-slate-300" />
-          </Link>
+        <div className={`grid gap-3 ${isSoloLawyer ? "grid-cols-1" : "grid-cols-2"}`}>
+          {!isSoloLawyer && (
+            <Link href="/ai/mail-advisor" className={`flex items-center gap-3 p-4 rounded-2xl border transition-all ${isDark ? "border-white/[0.06] hover:bg-white/[0.03]" : "border-slate-100 hover:bg-slate-50 bg-white shadow-sm"}`}>
+              <ChatText size={18} className="text-blue-500" weight="duotone" />
+              <div>
+                <p className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>LegalMail</p>
+                <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>تحليل البريد الوارد</p>
+              </div>
+              <ArrowRight size={13} className="ms-auto text-slate-300" />
+            </Link>
+          )}
           <Link href="/dashboard/lawyer/tasks" className={`flex items-center gap-3 p-4 rounded-2xl border transition-all ${isDark ? "border-white/[0.06] hover:bg-white/[0.03]" : "border-slate-100 hover:bg-slate-50 bg-white shadow-sm"}`}>
             <ListChecks size={18} className="text-purple-500" weight="duotone" />
             <div>

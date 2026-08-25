@@ -93,6 +93,31 @@ function addDays(date: Date, days: number): Date {
   return result;
 }
 
+/**
+ * Best-effort server sync for locally-generated invite codes.
+ * This store is localStorage-only (see file header) — a code shown to a
+ * friend never existed in `public.invitations` until this fires. Pushes the
+ * codes to POST /api/v1/invite/sync so /invite/[code] and its accept route
+ * can actually find them.
+ *
+ * Fire-and-forget: never blocks or throws into the caller. The route
+ * requires an authenticated session, so this quietly no-ops (console.warn)
+ * for guests — call it again once the user is logged in (e.g. whenever
+ * InvitationModal surfaces the codes) to retry.
+ */
+export function syncInvitationCodes(codes: string[]): void {
+  if (typeof window === "undefined" || codes.length === 0) return;
+  fetch("/api/v1/invite/sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ codes }),
+  })
+    .then((res) => {
+      if (!res.ok) console.warn("[invitationStore] invite sync failed:", res.status);
+    })
+    .catch((err) => console.warn("[invitationStore] invite sync error:", err));
+}
+
 // ── Subscription Store ─────────────────────────────────────────────────────
 
 /**

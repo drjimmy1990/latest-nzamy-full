@@ -1,24 +1,56 @@
 import type { Metadata, Viewport } from "next";
+import { Cairo, IBM_Plex_Sans_Arabic, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import ThemeProvider from "@/components/ThemeProvider";
 import FloatingButtons from "@/components/FloatingButtons";
+
+// Self-hosted via next/font (no runtime request to fonts.googleapis.com).
+// Weights match the previous Google Fonts CSS2 <link> exactly so rendering
+// is identical; variables are consumed by the --font-* tokens in globals.css.
+const cairo = Cairo({
+  subsets: ["arabic", "latin"],
+  weight: ["400", "500", "600", "700", "800", "900"],
+  display: "swap",
+  variable: "--font-cairo",
+});
+
+const ibmPlexSansArabic = IBM_Plex_Sans_Arabic({
+  subsets: ["arabic", "latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-ibm-plex-sans-arabic",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-jetbrains-mono",
+});
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: "#0B3D2E",
 };
 
 export const metadata: Metadata = {
   title: "نظامي - المنصة القانونية الذكية في السعودية",
   description:
     "المنصة القانونية الذكية في السعودية: استشارات، عقود، تمثيل قضائي، توثيق، وذكاء اصطناعي قانوني متقدم.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "نظامي",
+  },
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
       { url: "/icon.png", type: "image/png" },
     ],
-    apple: "/icon.png",
+    apple: "/icons/apple-touch-icon.png",
     shortcut: "/icon.svg",
   },
   openGraph: {
@@ -32,8 +64,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: "https://nezamy.sa/og-image.png",
-        width: 1200,
-        height: 630,
+        width: 1024,
+        height: 1024,
         alt: "نظامي - المنصة القانونية الذكية في السعودية",
       },
     ],
@@ -66,25 +98,29 @@ const themeInitScript = `
 })();
 `;
 
+const serviceWorkerRegisterScript = `
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("/sw.js").catch(function () {});
+  });
+}
+`;
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ar" dir="rtl" suppressHydrationWarning>
+    <html
+      lang="ar"
+      dir="rtl"
+      suppressHydrationWarning
+      className={`${cairo.variable} ${ibmPlexSansArabic.variable} ${jetbrainsMono.variable}`}
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
+        <script dangerouslySetInnerHTML={{ __html: serviceWorkerRegisterScript }} />
       </head>
       <body className="antialiased" suppressHydrationWarning>
         <a href="#main-content" className="skip-to-content">

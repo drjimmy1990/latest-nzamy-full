@@ -4,8 +4,8 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChatCircleDots, ArrowRight, MagnifyingGlass,
-  Sparkle, BookOpen, ArrowSquareOut, CheckCircle,
-  Clock, Warning, Globe, Database, Lightning,
+  Sparkle, CheckCircle,
+  Warning, Globe, Database, Lightning,
   CaretDown, Gavel, Scroll, Detective, Buildings,
   Users, ArrowLeft, PaperPlaneTilt,
 } from "@phosphor-icons/react";
@@ -56,7 +56,7 @@ const MODES: {
       { icon: Database,  label: "قاعدة نظامي الداخلية",                color: "#10b981" },
       { icon: Buildings, label: "المواقع الحكومية (وزارات، هيئات)",    color: "#3b82f6" },
       { icon: Users,     label: "مواقع محامين ومستشارين",              color: "#8b5cf6" },
-      { icon: Sparkle,   label: "٣ نماذج AI (GPT-4 · Gemini · Claude)", color: "#C8A762" },
+      { icon: Sparkle,   label: "نماذج ذكاء اصطناعي متعددة (قيد التفعيل)", color: "#C8A762" },
     ],
   },
 ];

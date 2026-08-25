@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, Play, CheckCircle, XCircle, ArrowRight,
-  Headphones, BookOpen, Lightning, Check, X,
+  Headphones, Lightning, Check, X,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -152,6 +152,10 @@ function TFCard({ q, isDark }: { q: Extract<QuizQuestion, { type: "tf" }>; isDar
 function MatchCard({ q, isDark }: { q: Extract<QuizQuestion, { type: "match" }>; isDark: boolean }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [matched,  setMatched]  = useState<Record<string, string>>({});
+  // Shuffle column B once via lazy init, not on every render — calling
+  // Math.random() directly in the render body reshuffled the answers on
+  // every click and is an impure render call (hydration-mismatch risk).
+  const [shuffledPairs] = useState(() => [...q.pairs].sort(() => 0.5 - Math.random()));
   const isMatched = (a: string) => a in matched;
   const allDone = Object.keys(matched).length === q.pairs.length;
 
@@ -187,7 +191,7 @@ function MatchCard({ q, isDark }: { q: Extract<QuizQuestion, { type: "match" }>;
         {/* Column B */}
         <div className="space-y-2">
           <p className={`text-[11px] font-bold mb-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>العمود ب</p>
-          {[...q.pairs].sort(() => 0.5 - Math.random()).map((p) => {
+          {shuffledPairs.map((p) => {
             const done = Object.values(matched).includes(p.b);
             return (
               <button key={p.b} disabled={done || !selected}

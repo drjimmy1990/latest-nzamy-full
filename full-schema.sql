@@ -7924,6 +7924,74 @@ on conflict (id) do nothing;
 
 commit;
 
+-- 20260821_judicial_collections_series_id.sql
+-- Adds series_id to library.judicial_collections: the source's own shared
+-- collection_id label (e.g. every موج-rulings-1434 volume file carries the
+-- identical value) for grouping/display only. NEVER the primary key — `id`
+-- is now derived per-file (parsePrecedentContainer fix, 2026-08-21) so every
+-- volume seeds as its own row instead of colliding onto one shared id.
+-- Additive + idempotent.
+begin;
+
+alter table library.judicial_collections
+add column if not exists series_id varchar(150);
+
+create index if not exists idx_judicial_collections_series_id
+  on library.judicial_collections (series_id)
+  where series_id is not null;
+
+comment on column library.judicial_collections.series_id is 'Shared series label from the source''s own collection_id field (e.g. all volumes of one year''s ministry collection) — grouping/display only, never a primary key.';
+
+commit;
+
+-- 20260821_articles_bilingual_columns.sql
+-- Adds English-courtesy-translation columns to library.articles. Recovered
+-- from <details> blocks the parser previously stripped and dropped silently
+-- (e-waste / insurance-policy regulations, 2026-08-21 council review: Codex +
+-- Antigravity). Deliberately excluded from the `fts` generated column — see
+-- its definition above — so English text never pollutes Arabic search
+-- ranking; a separate fts_en index is a follow-up once a product surface
+-- actually consumes it, not built speculatively here. Additive + idempotent.
+begin;
+
+alter table library.articles
+add column if not exists title_en text,
+add column if not exists text_en text,
+add column if not exists english_text_status varchar(20);
+
+comment on column library.articles.title_en is 'English article title, read from the source ARTICLE_START anchor''s own title_en field. NULL when the source carries none — never synthesised.';
+
+comment on column library.articles.text_en is 'English courtesy translation of `text`, recovered from a <details> block. NEVER authoritative — Arabic remains the binding text per Art. 1 of the Basic Law of Governance — and excluded from `fts`.';
+
+comment on column library.articles.english_text_status is 'Provenance of text_en: always ''unverified'' until a dedicated source-verification pass confirms official vs. unofficial status. Never defaulted to ''official'' on an unproven guess.';
+
+commit;
+
+-- 20260821_feqh_blocks_page_label_columns.sql
+-- library.feqh_blocks had no column to receive page_label/volume_label at all —
+-- seed-library.ts was already trying to write them (pg.page_label/pg.volume_label),
+-- so they were silently discarded on every seed regardless of parser correctness.
+-- Discovered while fixing ب-126 (parse-feqh.ts fabricated a new page_number for
+-- every chapter/section heading instead of only at real page boundaries — fixed
+-- separately; that fix alone had nowhere to land without these columns existing).
+-- is_synthetic_page marks the residual case where no real locator was available
+-- at all (front matter before a book's first page anchor, or a locator-less book)
+-- — never true for a heading that merely fell mid-page. Additive + idempotent.
+begin;
+
+alter table library.feqh_blocks
+add column if not exists page_label varchar(50),
+add column if not exists volume_label varchar(50),
+add column if not exists is_synthetic_page boolean not null default false;
+
+comment on column library.feqh_blocks.page_label is 'Verbatim page token from the source (e.g. "3", "مقدمة"). NULL only when is_synthetic_page is true.';
+
+comment on column library.feqh_blocks.volume_label is 'Verbatim volume token from the source (e.g. "10", "7-1"). NULL when the source states none.';
+
+comment on column library.feqh_blocks.is_synthetic_page is 'True only when no real page locator was available anywhere before this block (front matter, or a locator-less book) — the parser fell back to a sequential counter instead of a real page_number. Never true for a heading that fell in the middle of an already-located real page.';
+
+commit;
+
 -- ============================================================
 -- Execute in Supabase SQL Editor or: npx supabase db execute --file <this>
 -- ============================================================
