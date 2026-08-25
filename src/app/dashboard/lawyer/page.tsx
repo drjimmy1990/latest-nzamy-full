@@ -11,8 +11,9 @@ import {
   Warning, ArrowUp,
   Bell, Hourglass, Plus,
   Flag, Lock, Crown, ArrowRight, Storefront,
-  Timer, Folder, Money, Briefcase,
+  Timer, Folder, Money, Briefcase, ShareNetwork, Graph,
 } from "@phosphor-icons/react";
+
 import HijriDateWidget from "@/components/HijriDateWidget";
 import Link from "next/link";
 import { LawyerDashboardSkeleton } from "@/components/ui";
@@ -83,8 +84,10 @@ export default function LawyerDashboardPage() {
   const [activityTab, setActivityTab] = useState<"all" | "ai">("all");
   const [showAddCase, setShowAddCase] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
+  const [copiedProfile, setCopiedProfile] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<LawyerDashboardSummary | null>(null);
+
 
   // Fetch real dashboard data, and re-fetch whenever a workflow item is
   // added/changed (the add-case / add-task modals dispatch nzamy-workflow-updated).
@@ -263,24 +266,53 @@ export default function LawyerDashboardPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <HijriDateWidget />
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== "undefined") {
+                const url = `${window.location.origin}/lawyers/ahmed-alghamdi`;
+                navigator.clipboard.writeText(url);
+                setCopiedProfile(true);
+                setTimeout(() => setCopiedProfile(false), 2500);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+              copiedProfile
+                ? "bg-emerald-500 text-white border-emerald-500 shadow"
+                : isDark ? "border-white/10 text-zinc-200 hover:bg-white/5" : "border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm"
+            }`}
+            title="مشاركة رابط ملفك التعريفي العام مع الموكلين والعملاء"
+          >
+            <ShareNetwork size={15} weight="duotone" />
+            {copiedProfile ? "تم نسخ الرابط ✓" : "مشاركة ملفي المهني 🔗"}
+          </button>
+          <Link href="/dashboard/business/kanban"
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold border transition-colors ${
+              isDark ? "border-purple-500/30 text-purple-400 hover:bg-purple-500/10" : "border-purple-200 text-purple-700 hover:bg-purple-50"
+            }`}
+            title="عرض خريطة وجراف القضايا البصري التفاعلي"
+          >
+            <Graph size={15} weight="duotone" /> جراف القضايا
+          </Link>
           <Link href="/dashboard/lawyer/marketplace"
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${
+            className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold border transition-colors ${
               isDark ? "border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10" : "border-[#C8A762]/40 text-[#C8A762] hover:bg-[#C8A762]/5"
             }`}
           >
-            <Storefront size={16} weight="duotone" /> نشر في السوق
+            <Storefront size={15} weight="duotone" /> نشر في السوق
           </Link>
           <Link href="/ai/draft"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0B3D2E]/90 transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0B3D2E]/90 transition-colors"
           >
-            <PencilSimple size={16} weight="duotone" /> الصائغ القانوني
+            <PencilSimple size={15} weight="duotone" /> الصائغ القانوني
           </Link>
           <button onClick={() => setShowAddCase(true)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors cursor-pointer ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium border transition-colors cursor-pointer ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
           >
-            <Plus size={16} weight="bold" /> قضية جديدة
+            <Plus size={15} weight="bold" /> قضية جديدة
           </button>
         </div>
+
       </div>
 
       {/* ── Subscription Banner ── */}
