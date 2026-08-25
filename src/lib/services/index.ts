@@ -118,8 +118,15 @@ export { getLawyerClients } from "./lawyerClientsService";
 export type { LawyerClient } from "./lawyerClientsService";
 
 // Lawyer Tasks service
-export { getLawyerTasks, createLawyerTask, updateLawyerTaskStatus, taskStatusToDbStatus } from "./lawyerTasksService";
-export type { LawyerTask, CreateLawyerTaskInput } from "./lawyerTasksService";
+export {
+  getLawyerTasks,
+  createLawyerTask,
+  updateLawyerTaskStatus,
+  updateLawyerTask,
+  updateLawyerTaskSubtasks,
+  taskStatusToDbStatus,
+} from "./lawyerTasksService";
+export type { LawyerTask, LawyerSubtask, CreateLawyerTaskInput, UpdateLawyerTaskInput } from "./lawyerTasksService";
 
 // Lawyer Activity service
 export { getLawyerActivity } from "./lawyerActivityService";

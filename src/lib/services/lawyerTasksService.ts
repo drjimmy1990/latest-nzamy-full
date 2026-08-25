@@ -15,6 +15,13 @@ import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/** One checklist step, stored in the task row's metadata.subtasks array. */
+export interface LawyerSubtask {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
 export interface LawyerTask {
   id: string;
   title: string;
@@ -32,6 +39,8 @@ export interface LawyerTask {
   caseId?: string;
   caseRef?: string;
   notes?: string;
+  /** Checklist — from metadata.subtasks. GET always returns an array. */
+  subtasks?: LawyerSubtask[];
 }
 
 export interface CreateLawyerTaskInput {
@@ -42,6 +51,23 @@ export interface CreateLawyerTaskInput {
   caseId?: string;
   caseRef?: string;
   notes?: string;
+  subtasks?: LawyerSubtask[];
+}
+
+/**
+ * A partial task edit. Every field is optional and only the ones actually
+ * present are sent — presence is tested with `!== undefined`, so `notes: ""`
+ * (cleared the note) and `subtasks: []` (deleted the last step) reach the
+ * server instead of being swallowed as falsy.
+ */
+export interface UpdateLawyerTaskInput {
+  title?: string;
+  priority?: string;
+  category?: string;
+  /** null clears the due date. */
+  dueDate?: string | null;
+  notes?: string;
+  subtasks?: LawyerSubtask[];
 }
 
 // ─── Status mapping: UI TaskStatus → DB service_requests.status enum ─────────
@@ -107,4 +133,69 @@ export async function updateLawyerTaskStatus(taskId: string, status: string): Pr
   } catch {
     return false;
   }
+}
+
+export interface UpdateLawyerTaskResult {
+  /** false = nothing was written; the caller must roll its optimistic edit back. */
+  ok: boolean;
+  /**
+   * Everything except the title was written: the row is a client's own request,
+   * whose title the client sees in their dashboard, so the server refuses to
+   * rename it. Revert only the title and tell the lawyer why.
+   */
+  titleSkipped?: boolean;
+}
+
+/**
+ * Persist a partial task edit (title / priority / category / dueDate / notes /
+ * subtasks). Never throws, like updateLawyerTaskStatus — the callers are
+ * optimistic UI handlers that roll back and show an Arabic message.
+ *
+ * The server merges the metadata keys it is given over the ones already stored;
+ * it never replaces the blob, so omitting a field here leaves it untouched
+ * rather than deleting it.
+ */
+export async function updateLawyerTask(
+  taskId: string,
+  patch: UpdateLawyerTaskInput,
+): Promise<UpdateLawyerTaskResult> {
+  if (!taskId) return { ok: false };
+
+  const body: Record<string, unknown> = { taskId };
+  if (patch.title !== undefined) body.title = patch.title;
+  if (patch.priority !== undefined) body.priority = patch.priority;
+  if (patch.category !== undefined) body.category = patch.category;
+  if (patch.dueDate !== undefined) body.dueDate = patch.dueDate;
+  if (patch.notes !== undefined) body.notes = patch.notes;
+  if (patch.subtasks !== undefined) body.subtasks = patch.subtasks;
+
+  // Nothing to send — treat as a no-op success rather than a phantom failure.
+  if (Object.keys(body).length === 1) return { ok: true };
+
+  if (!isSupabaseMode) return { ok: false };
+
+  try {
+    const res = await apiMutate<{ success?: boolean; titleSkipped?: boolean }>(
+      "/api/v1/lawyer/tasks",
+      "PATCH",
+      body,
+    );
+    return res?.titleSkipped ? { ok: true, titleSkipped: true } : { ok: true };
+  } catch (e) {
+    console.error("[lawyerTasksService] updateLawyerTask failed:", e);
+    return { ok: false };
+  }
+}
+
+/**
+ * Persist the whole checklist. The array is replaced wholesale (that is how it
+ * is stored), so ticking one step is last-write-wins against another edit of a
+ * different step on the same task.
+ */
+export async function updateLawyerTaskSubtasks(
+  taskId: string,
+  subtasks: LawyerSubtask[],
+): Promise<boolean> {
+  const res = await updateLawyerTask(taskId, { subtasks });
+  return res.ok;
 }

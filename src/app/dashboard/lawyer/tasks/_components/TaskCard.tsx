@@ -55,7 +55,13 @@ export function TaskCard({
   const addSubtask = () => {
     const t = newSubInput.trim();
     if (!t) return;
-    setEditSubtasks(prev => [...prev, { id: `ns-${Date.now()}`, title: t, done: false }]);
+    // A random id, not Date.now(): two steps added in the same millisecond would
+    // share an id, and both the toggle handler and the server match by id — so a
+    // collision would tick two steps at once (and the API now rejects duplicates).
+    const id = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `ns-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setEditSubtasks(prev => [...prev, { id, title: t, done: false }]);
     setNewSubInput("");
   };
 

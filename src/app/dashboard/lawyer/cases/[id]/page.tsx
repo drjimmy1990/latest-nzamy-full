@@ -28,8 +28,10 @@ import {
   getLawyerTasks,
   createLawyerTask,
   updateLawyerTaskStatus,
+  updateLawyerTaskSubtasks,
   taskStatusToDbStatus,
   type LawyerTask,
+  type LawyerSubtask,
 } from "@/lib/services/lawyerTasksService";
 
 const CaseGraphView = dynamic(
@@ -103,6 +105,8 @@ interface CaseTask {
   priority: string;
   dueDate?: string | null;
   notes?: string;
+  /** metadata.subtasks — the checklist shown and ticked under the task here. */
+  subtasks: LawyerSubtask[];
 }
 
 function toCaseTask(t: LawyerTask): CaseTask {
@@ -113,8 +117,13 @@ function toCaseTask(t: LawyerTask): CaseTask {
     priority: t.priority || "normal",
     dueDate: t.dueDate ?? null,
     notes: t.notes,
+    subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
   };
 }
+
+// «٢ من ٣» — the progress indicator the owner asked for, in Arabic-Indic digits.
+const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
+const toArabicDigits = (n: number) => String(n).replace(/\d/g, d => AR_DIGITS[Number(d)]);
 
 const TABS = [
   { id: "overview",  label: "نظرة عامة",  icon: Gavel },
@@ -410,6 +419,20 @@ export default function CaseDetailPage() {
     if (!ok) {
       setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: previous } : t)));
       setTaskError("تعذّر تحديث حالة المهمة.");
+    }
+  };
+
+  // The checklist is one metadata.subtasks array on the task row, so a tick
+  // sends the array back whole and the server merges it over the task's other
+  // metadata (caseId, dueDate, …). Optimistic with a real revert, like above.
+  const toggleCaseSubtask = async (task: CaseTask, subtaskId: string) => {
+    const previous = task.subtasks;
+    const next = previous.map(s => (s.id === subtaskId ? { ...s, done: !s.done } : s));
+    setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, subtasks: next } : t)));
+    const ok = await updateLawyerTaskSubtasks(task.id, next);
+    if (!ok) {
+      setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, subtasks: previous } : t)));
+      setTaskError("تعذّر حفظ خطوة العمل.");
     }
   };
 
@@ -791,6 +814,62 @@ export default function CaseDetailPage() {
                               <CalendarCheck size={11} />تاريخ التسليم: {t.dueDate}
                             </p>
                           )}
+
+                          {/* Subtasks — «المهام والـ Subtasks المرتبطة بالقضية».
+                              Tickable here as well as on the Kanban; both write
+                              the same metadata.subtasks array. */}
+                          {t.subtasks.length > 0 && (() => {
+                            const doneCount = t.subtasks.filter(s => s.done).length;
+                            const total = t.subtasks.length;
+                            return (
+                              <div className={`mt-2.5 pt-2.5 border-t border-dashed ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <span className={`text-[10px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                                    خطوات العمل
+                                  </span>
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                                    doneCount === total
+                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                                      : isDark ? "bg-white/[0.06] text-zinc-400" : "bg-slate-100 text-slate-500"
+                                  }`}>
+                                    {toArabicDigits(doneCount)} من {toArabicDigits(total)}
+                                  </span>
+                                  <div className={`flex-1 h-1 rounded-full overflow-hidden ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
+                                    <motion.div
+                                      className="h-full rounded-full bg-[#0B3D2E] dark:bg-emerald-400"
+                                      initial={false}
+                                      animate={{ width: `${(doneCount / total) * 100}%` }}
+                                      transition={{ type: "spring", stiffness: 120, damping: 20 }}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  {t.subtasks.map(sub => (
+                                    <button key={sub.id} onClick={() => toggleCaseSubtask(t, sub.id)}
+                                      title="تغيير حالة الخطوة"
+                                      className={`w-full flex items-center gap-2 rounded-lg px-1.5 py-1 text-start transition-colors ${
+                                        isDark ? "hover:bg-white/[0.04]" : "hover:bg-slate-50"
+                                      }`}>
+                                      <span className={`w-3.5 h-3.5 rounded flex-shrink-0 flex items-center justify-center border transition-colors ${
+                                        sub.done
+                                          ? "border-emerald-400 bg-emerald-500"
+                                          : isDark ? "border-white/[0.16]" : "border-slate-300"
+                                      }`}>
+                                        {sub.done && <CheckCircle size={9} weight="fill" className="text-white" />}
+                                      </span>
+                                      <span className={`text-[11px] leading-tight ${
+                                        sub.done
+                                          ? isDark ? "line-through text-zinc-600" : "line-through text-slate-400"
+                                          : isDark ? "text-zinc-300" : "text-slate-600"
+                                      }`}>
+                                        {sub.title}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                         <Link href="/dashboard/lawyer/tasks" title="عرض في لوحة المهام"
                           className={`flex-shrink-0 p-1.5 rounded-lg transition-colors ${isDark ? "text-zinc-600 hover:text-zinc-300 hover:bg-white/[0.06]" : "text-slate-300 hover:text-slate-600 hover:bg-slate-100"}`}>
