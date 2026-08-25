@@ -1,23 +1,64 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, CheckCircle, FileText, UploadSimple,
-  Wallet, Tag, CreditCard, CaretLeft, ShieldCheck, Info, X
+  Receipt, Paperclip, CaretLeft, PaperPlaneTilt, Info, X
 } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
 import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
-import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
+import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
-import { createPaymentIntentStub } from "@/lib/paymentAdapter";
-import { getClientServiceById, quoteClientService } from "@/lib/pricingRepository";
+import { getClientServiceById, formatClientServicePrice } from "@/lib/pricingRepository";
+
+/**
+ * NewRequestWizard — the client's «طلب خدمة جديدة» form.
+ *
+ * THE MODEL THIS FORM SERVES (owner's ruling, 26 August): there is no AI
+ * automation and no payment gateway. A request is fulfilled MANUALLY by the
+ * نظامي team out of the admin queue. So the client submits FREE, the team
+ * reads the request and quotes afterwards, and the catalogue figure appears
+ * here only as «السعر التقديري».
+ *
+ * Two defects this file used to have, both of which made a submitted request
+ * useless or impossible:
+ *
+ *  1. NOTHING COULD BE SUBMITTED. A `paymentsBlocked` gate refused the submit
+ *     whenever the total was above zero, and 22 of the 27 catalogue services
+ *     carry `requiresPayment: true` while no gateway exists — so the client
+ *     wrote their request and hit a wall. The request now goes out with
+ *     `payment: { amount: 0, status: "not_required" }`, which is also what
+ *     keeps POST /api/v1/service-requests' 402 gate (it fires on
+ *     `Number(payment.amount) > 0`) from firing. The price is NOT hidden and
+ *     the service is NOT called free: the public pages advertise these
+ *     numbers, so the figure stays on screen, labelled as an estimate, next to
+ *     the sentence saying the team sets the final one.
+ *
+ *  2. THE FILES WERE THROWN AWAY. The form collected `File[]` and stored only
+ *     `fileCount`/`fileNames` in metadata — there was no upload call in this
+ *     file at all, so the team received a list of documents it could not open.
+ *     It now uses `useOrderAttachments`, the same hook the four lawyer wizards
+ *     use: files upload immediately with `request_id NULL`, and POST
+ *     /api/v1/service-requests re-binds them to the new order by reading
+ *     `metadata.attachments` (route.ts:293-329). The hook's array is passed
+ *     through verbatim — that binding reads `.documentId` off each entry and
+ *     any remapping here would silently no-op it.
+ *
+ * WHY `receiver: "ai_workspace"` — the admin queue hard-filters
+ * `.eq("receiver","ai_workspace")` (api/v1/admin/service-orders/route.ts:54).
+ * That one predicate is the whole of "the team can see this row". The name is
+ * historical and no AI is involved; it means "fulfilled by the نظامي team, not
+ * the marketplace". This form used to send `serviceInfo.receiverType`, which
+ * is "lawyer" for 22 of the 27 services — those rows reached the database and
+ * nobody ever saw them.
+ */
 
 const STEPS = [
   { id: "details", label: "تفاصيل الطلب" },
   { id: "documents", label: "المرفقات" },
-  { id: "payment", label: "الدفع والاعتماد" },
+  { id: "review", label: "المراجعة والإرسال" },
 ];
 
 export default function NewRequestWizard() {
@@ -29,45 +70,19 @@ export default function NewRequestWizard() {
   const [currentStep, setCurrentStep] = useState(0);
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Payment mock state
-  const [useWallet, setUseWallet] = useState(false);
-  const [coupon, setCoupon] = useState("");
-  const [couponApplied, setCouponApplied] = useState(false);
-  const [couponError, setCouponError] = useState<string | null>(null);
   const { catalog, source: pricingSource } = useClientPricingCatalog();
-  const payments = usePaymentsStatus();
+  // Real uploads, identical to the four lawyer wizards. `attachments` holds
+  // OrderAttachment[] — a documentId that exists server-side — not File
+  // objects that never left the browser.
+  const { attachments, uploading, attachError, attachFiles, removeAttachment } = useOrderAttachments();
 
   const serviceInfo = getClientServiceById(typeParam, catalog);
   const price = serviceInfo.requiresPayment ? serviceInfo.basePrice : 0;
   const serviceLabel = serviceInfo.label;
-  const [walletBalance, setWalletBalance] = useState(0);
-
-  // Load the real wallet balance (no hardcoded 150 mock).
-  useEffect(() => {
-    fetch("/api/v1/wallet", { credentials: "same-origin" })
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then((body) => {
-        const balance = body?.data?.balance;
-        if (typeof balance === "number") setWalletBalance(balance);
-      })
-      .catch(() => { /* wallet optional — keep 0 */ });
-  }, []);
-  const couponCode = coupon.trim().toUpperCase();
-  const quote = quoteClientService(serviceInfo.serviceId, {
-    couponCode: couponApplied ? couponCode : undefined,
-    useWallet,
-    walletBalance,
-    source: pricingSource,
-  }, catalog);
-  const discount = quote.discount;
-  const walletUsed = quote.walletUsed;
-  const finalTotal = quote.finalTotal;
-  // Payment gate: block paid submissions while the admin gateway is disabled.
-  const paymentsBlocked = !payments.loading && payments.disabled && finalTotal > 0;
+  const estimateLabel = formatClientServicePrice(serviceInfo);
 
   const handleNext = () => {
     if (currentStep < STEPS.length - 1) setCurrentStep(c => c + 1);
@@ -78,67 +93,27 @@ export default function NewRequestWizard() {
     else router.back();
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.files) return;
-    setFiles(prev => [...prev, ...Array.from(event.target.files ?? [])]);
+  /**
+   * One batch call rather than a loop of single attachFile() calls — see
+   * attachFiles() in useOrderAttachments.ts: it validates the whole selection
+   * up front, keeps an accumulating error list, and stops the batch only on a
+   * timeout.
+   *
+   * Array.from() BEFORE the reset: `event.target.files` is a live FileList and
+   * the `value = ""` that lets the same filename be re-picked empties it in
+   * place, so reading it afterwards yields nothing at all.
+   */
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(event.target.files ?? []);
     event.target.value = "";
-  };
-
-  const removeFile = (index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleApplyCoupon = () => {
-    const code = coupon.trim().toUpperCase();
-    setSubmitError(null);
-
-    if (!code) {
-      setCouponError("أدخل كود الخصم أولا.");
-      return;
-    }
-
-    const nextQuote = quoteClientService(serviceInfo.serviceId, {
-      couponCode: code,
-      source: pricingSource,
-    }, catalog);
-    if (nextQuote.couponError) {
-      setCouponApplied(false);
-      setCouponError(nextQuote.couponError);
-      return;
-    }
-
-    setCoupon(code);
-    setCouponApplied(true);
-    setCouponError(null);
-  };
-
-  const handleRemoveCoupon = () => {
-    setCoupon("");
-    setCouponApplied(false);
-    setCouponError(null);
+    if (picked.length > 0) await attachFiles(picked);
   };
 
   const handleSubmit = async () => {
-    if (coupon.trim() && !couponApplied) {
-      setCurrentStep(2);
-      setSubmitError("طبّق كود الخصم أولا أو احذفه قبل إرسال الطلب.");
-      return;
-    }
-
-    if (paymentsBlocked) {
-      setSubmitError("الدفع غير متاح حالياً — سيتم تفعيل بوابة الدفع قريباً. لا يمكن إتمام الطلب المدفوع حتى التفعيل.");
-      return;
-    }
-
     setIsSubmitting(true);
     setSubmitError(null);
     try {
       const requestId = createWorkflowId("REQ");
-      const paymentIntent = await createPaymentIntentStub({
-        amount: finalTotal,
-        requestId,
-        serviceId: serviceInfo.serviceId,
-      });
       const request = await createWorkflowRequest({
         id: requestId,
         type: serviceInfo.requestType === "consultation" ? "service" : serviceInfo.requestType,
@@ -151,32 +126,59 @@ export default function NewRequestWizard() {
           tier: user.tier,
           businessRole: user.businessRole,
         },
-        receiver: serviceInfo.receiverType,
-        status: finalTotal > 0 ? "pending_payment" : "pending_assignment",
-        payment: {
-          amount: Math.max(0, finalTotal),
-          coupon: couponApplied ? couponCode : undefined,
-          walletUsed,
-          status: serviceInfo.requiresPayment ? (finalTotal > 0 ? "pending" : "paid") : "not_required",
-        },
+        // NOT serviceInfo.receiverType — see the file header. This literal is
+        // what the admin queue filters on, and 20260815_marketplace_excludes_
+        // ai_workspace.sql depends on it too.
+        receiver: "ai_workspace",
+        // Free intake: nothing is owed at submission, so the row must not be
+        // born «بانتظار الدفع» for a charge the client cannot clear.
+        status: "pending_assignment",
+        payment: { amount: 0, status: "not_required" },
         sourcePath: "/dashboard/client/requests/new",
+        // The cast is deliberate and narrow. `WorkflowRequest.metadata` is
+        // still typed `Record<string, string | number | boolean | null>`, but
+        // that type is stale rather than load-bearing: POST
+        // /api/v1/service-requests already reads `metadata.attachments` as an
+        // array of objects (route.ts:293-329) and `metadata.intake` as an
+        // object (intakeGuard.checkOrderIntake), and createServiceOrder()
+        // sends exactly this nested shape today by bypassing the type
+        // entirely. Widening the declaration in src/lib/workflowStore.ts is
+        // the real fix and is reported upstream.
         metadata: {
+          service: serviceInfo.serviceId,
+          // Every surface that renders an ai_workspace order reads this for
+          // its heading (/ai/orders, /ai/orders/[id], buildOrderPrompt) — a
+          // catalogue serviceId is not one of the four premium ServiceKeys, so
+          // without this the title would be blank.
+          serviceTitleAr: serviceLabel,
+          schemaVersion: 1,
           requestedType: serviceInfo.serviceId,
+          categoryId: serviceInfo.categoryId,
+          // The catalogue figure, kept so the team sees what the client was
+          // shown before they quote. It is an estimate, not a charge — the
+          // payment above is 0/not_required.
           originalPrice: price,
-          discount,
-          couponValidated: couponApplied,
-          walletBalance,
-          fileCount: files.length,
-          fileNames: files.map(file => file.name).join(", "),
-          quoteSource: quote.source,
-          paymentIntentId: paymentIntent.id,
-          paymentProvider: paymentIntent.provider,
-        },
+          priceMode: serviceInfo.priceMode,
+          quoteSource: pricingSource,
+          // Without an `intake` object buildOrderPrompt() renders «—» under
+          // «بيانات العميل المُدخلة» and the team's brief is empty. `service`
+          // is a HIDDEN_INTAKE_KEY so it never prints; `description` already
+          // has an Arabic label in intakeValues.ts.
+          intake: {
+            service: serviceInfo.serviceId,
+            subject,
+            description,
+          },
+          // Verbatim, no remapping: route.ts reads `.documentId` off each
+          // entry to bind the uploaded files to this order.
+          attachments,
+        } as unknown as Record<string, string | number | boolean | null>,
         auditEvent: "client_request_created",
       });
       router.push(`/dashboard/client/requests?success=1&id=${request.id}`);
-    } catch {
-      setSubmitError("تعذر حفظ الطلب محليا. راجع المتصفح أو حاول مرة أخرى.");
+    } catch (err) {
+      console.error("[client request] submit failed:", err);
+      setSubmitError("تعذّر إرسال الطلب — تحقق من اتصالك وحاول مجدداً. لم يُطلب منك أي دفع.");
     } finally {
       setIsSubmitting(false);
     }
@@ -210,7 +212,7 @@ export default function NewRequestWizard() {
                 rows={4}
                 value={description}
                 onChange={e => setDescription(e.target.value)}
-                placeholder="اكتب كل التفاصيل التي ستساعد المحامي في تنفيذ طلبك بأفضل شكل..."
+                placeholder="اكتب كل التفاصيل التي ستساعد الفريق على دراسة طلبك بأفضل شكل..."
                 className="w-full bg-white dark:bg-[#161b22] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#0B3D2E] focus:ring-1 focus:ring-[#0B3D2E] outline-none transition-all resize-none dark:text-white"
               />
             </div>
@@ -219,38 +221,55 @@ export default function NewRequestWizard() {
       case 1:
         return (
           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-5">
-            <label className="block border-2 border-dashed border-gray-200 dark:border-white/10 rounded-2xl p-8 text-center hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer group">
+            <label className={`block border-2 border-dashed border-gray-200 dark:border-white/10 rounded-2xl p-8 text-center transition-colors group ${uploading ? "opacity-60 cursor-wait" : "hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer"}`}>
               <input
                 type="file"
                 multiple
                 accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
                 onChange={handleFileChange}
+                disabled={uploading}
                 className="sr-only"
               />
               <div className="w-14 h-14 bg-[#0B3D2E]/10 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-                <UploadSimple size={24} className="text-[#0B3D2E]" />
+                {uploading
+                  ? <div className="w-6 h-6 border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] rounded-full animate-spin" />
+                  : <UploadSimple size={24} className="text-[#0B3D2E]" />}
               </div>
-              <p className="text-sm font-bold text-gray-900 dark:text-white mb-1">اضغط هنا لرفع المستندات</p>
-              <p className="text-xs text-gray-500">أو قم بسحب وإفلات الملفات هنا (PDF, DOCX, JPG)</p>
+              <p className="text-sm font-bold text-gray-900 dark:text-white mb-1">
+                {uploading ? "جارٍ رفع الملفات..." : "اضغط هنا لرفع المستندات"}
+              </p>
+              <p className="text-xs text-gray-500">PDF أو Word أو صورة — بحد أقصى ٢٠ ميجابايت للملف</p>
             </label>
-            {files.length > 0 && (
+
+            {attachments.length > 0 && (
               <div className="space-y-2">
-                {files.map((file, index) => (
-                  <div key={`${file.name}-${index}`} className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs dark:border-white/10 dark:bg-[#161b22]">
-                    <div className="min-w-0">
-                      <p className="truncate font-bold text-gray-900 dark:text-white">{file.name}</p>
-                      <p className="text-gray-400">{Math.max(1, Math.round(file.size / 1024)).toLocaleString("ar-SA")} ك.ب</p>
+                {attachments.map((attachment) => (
+                  <div key={attachment.documentId} className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs dark:border-white/10 dark:bg-[#161b22]">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <CheckCircle size={16} weight="fill" className="flex-shrink-0 text-emerald-600" />
+                      <div className="min-w-0">
+                        <p className="truncate font-bold text-gray-900 dark:text-white">{attachment.name}</p>
+                        <p className="text-gray-400">
+                          {Math.max(1, Math.round(attachment.size / 1024)).toLocaleString("ar-SA")} ك.ب · تم الرفع
+                        </p>
+                      </div>
                     </div>
-                    <button type="button" onClick={() => removeFile(index)} className="rounded-lg p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(attachment.documentId)}
+                      aria-label={`إزالة ${attachment.name}`}
+                      className="rounded-lg p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
                       <X size={14} />
                     </button>
                   </div>
                 ))}
               </div>
             )}
+
             <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 rounded-xl p-4 flex items-start gap-3 text-xs leading-relaxed">
               <Info size={18} className="flex-shrink-0 mt-0.5" />
-              <p>رفع المستندات ذات الصلة (مثل العقود السابقة، أو الأحكام، أو الهوية) يُسرّع من عملية معالجة طلبك ويساعد المحامي على دراسة موقفك بدقة.</p>
+              <p>رفع المستندات ذات الصلة (مثل العقود السابقة، أو الأحكام، أو الهوية) يُسرّع من معالجة طلبك ويساعد الفريق على دراسة موقفك بدقة. المرفقات اختيارية.</p>
             </div>
           </motion.div>
         );
@@ -258,96 +277,67 @@ export default function NewRequestWizard() {
         return (
           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
 
-            {paymentsBlocked && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-700 dark:border-red-800/40 dark:bg-red-900/20 dark:text-red-300 flex items-start gap-2">
-                <Info size={16} className="flex-shrink-0 mt-0.5" />
-                <span>الدفع غير متاح حالياً — سيتم تفعيل بوابة الدفع قريباً. لا يمكن إتمام الطلب المدفوع حتى التفعيل.</span>
-              </div>
-            )}
-
-            {/* Wallet Integration */}
-            <div className="bg-white dark:bg-[#161b22] border border-gray-200 dark:border-white/10 rounded-2xl p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center">
-                  <Wallet size={20} className="text-emerald-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-900 dark:text-white">رصيد المحفظة</p>
-                  <p className="text-xs text-gray-500">متاح {walletBalance} ر.س</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" checked={useWallet} onChange={() => setUseWallet(!useWallet)} />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-[#0B3D2E]"></div>
-              </label>
+            {/* الإرسال مجاني — يقدّر الفريق السعر النهائي بعد القراءة. لا يوجد
+                أي خصم أو محفظة أو بطاقة في هذه الصفحة لأن أياً منها لا يُنفَّذ
+                فعلياً عند الإرسال. */}
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold leading-relaxed text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-900/20 dark:text-emerald-300 flex items-start gap-2">
+              <CheckCircle size={16} weight="fill" className="flex-shrink-0 mt-0.5" />
+              <span>إرسال الطلب مجاني — لا يُطلب منك أي دفع في هذه الخطوة. يراجع فريق نظامي طلبك ثم يتواصل معك بعرض السعر النهائي قبل بدء التنفيذ.</span>
             </div>
 
-            {/* Coupon Integration */}
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Tag size={16} className="absolute top-1/2 -translate-y-1/2 right-3.5 text-gray-400" />
-                <input
-                  type="text"
-                  value={coupon}
-                  onChange={e => {
-                    setCoupon(e.target.value);
-                    setCouponError(null);
-                  }}
-                  disabled={couponApplied}
-                  placeholder="كود الخصم (اختياري)"
-                  className="w-full bg-white dark:bg-[#161b22] border border-gray-200 dark:border-white/10 rounded-xl pr-10 pl-4 py-3 text-sm focus:border-[#0B3D2E] outline-none disabled:opacity-50 dark:text-white"
-                />
-              </div>
-              <button 
-                type="button"
-                onClick={couponApplied ? handleRemoveCoupon : handleApplyCoupon}
-                disabled={!coupon && !couponApplied}
-                className="px-5 bg-gray-900 text-white dark:bg-white dark:text-gray-900 rounded-xl text-sm font-bold disabled:opacity-50 transition-opacity"
-              >
-                {couponApplied ? "إزالة" : "تطبيق"}
-              </button>
-            </div>
-            {couponError && (
-              <p className="text-xs font-semibold text-red-600 dark:text-red-300">{couponError}</p>
-            )}
-            {couponApplied && (
-              <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-300">
-                تم التحقق من الكوبون في بيانات الديمو وتطبيق خصم {discount} ر.س.
-              </p>
-            )}
-
-            {/* Receipt */}
+            {/* السعر التقديري */}
             <div className="bg-gray-50 dark:bg-white/5 rounded-2xl p-5 space-y-3">
-              <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                <span>رسوم الخدمة (تقديرية)</span>
-                <span>{price} ر.س</span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
+                  <Receipt size={18} className="text-[#C8A762]" />
+                  {/* «السعر التقديري» is the right heading over a figure the
+                      team will re-quote. Over «مجانا» / «مشمول في الباقة»
+                      (priceMode free/included, where requiresPayment is false
+                      and price is 0) it reads as if the free-ness itself were
+                      an estimate, so those say «سعر الخدمة» instead. */}
+                  {price > 0 ? "السعر التقديري" : "سعر الخدمة"}
+                </span>
+                <span className="text-lg font-black text-[#0B3D2E] dark:text-[#C8A762]">{estimateLabel}</span>
               </div>
-              {discount > 0 && (
-                <div className="flex justify-between text-sm text-emerald-600">
-                  <span>الخصم</span>
-                  <span>- {discount} ر.س</span>
-                </div>
+              {serviceInfo.priceNote && (
+                <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-400">{serviceInfo.priceNote}</p>
               )}
-              {useWallet && (
-                <div className="flex justify-between text-sm text-emerald-600">
-                  <span>رصيد المحفظة المستخدم</span>
-                  <span>- {walletUsed} ر.س</span>
-                </div>
-              )}
-              <div className="pt-3 border-t border-gray-200 dark:border-white/10 flex justify-between font-black text-lg text-gray-900 dark:text-white">
-                <span>الإجمالي</span>
-                <span>{Math.max(0, finalTotal)} ر.س</span>
-              </div>
+              <p className="pt-3 border-t border-gray-200 dark:border-white/10 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
+                {price > 0
+                  ? `هذا الرقم استرشادي من قائمة أسعار «${serviceLabel}». السعر النهائي يحدده الفريق بعد قراءة طلبك ومرفقاتك، ويصلك في عرض سعر مستقل قبل أي تنفيذ.`
+                  : "هذه الخدمة بلا رسوم. إن احتاج طلبك عملاً خارج نطاقها، يصلك عرض سعر مستقل قبل أي تنفيذ."}
+              </p>
             </div>
 
-            {/* Fake Payment Method */}
-            <div className="border border-gray-200 dark:border-white/10 rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:border-[#0B3D2E] transition-colors">
-              <div className="flex items-center gap-3">
-                <CreditCard size={24} className="text-gray-400" />
-                <span className="text-sm font-bold text-gray-900 dark:text-white">البطاقة الائتمانية</span>
+            {/* مراجعة ما سيُرسل */}
+            <div className="bg-white dark:bg-[#161b22] border border-gray-200 dark:border-white/10 rounded-2xl p-5 space-y-4">
+              <p className="text-sm font-bold text-gray-900 dark:text-white">مراجعة الطلب قبل الإرسال</p>
+              <div className="space-y-1">
+                <p className="text-[11px] font-bold text-gray-500">الخدمة</p>
+                <p className="text-sm text-gray-800 dark:text-gray-300">{serviceLabel}</p>
               </div>
-              <div className="w-4 h-4 rounded-full border-2 border-[#0B3D2E] flex items-center justify-center">
-                <div className="w-2 h-2 rounded-full bg-[#0B3D2E]" />
+              <div className="space-y-1">
+                <p className="text-[11px] font-bold text-gray-500">موضوع الطلب</p>
+                <p className="text-sm text-gray-800 dark:text-gray-300 break-words">{subject || "—"}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[11px] font-bold text-gray-500">الوصف</p>
+                <p className="text-sm text-gray-800 dark:text-gray-300 whitespace-pre-wrap break-words">{description || "—"}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[11px] font-bold text-gray-500">المرفقات</p>
+                {attachments.length === 0 ? (
+                  <p className="text-sm text-gray-800 dark:text-gray-300">لا توجد مرفقات</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {attachments.map((attachment) => (
+                      <li key={attachment.documentId} className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-300">
+                        <Paperclip size={14} className="flex-shrink-0 text-gray-400" />
+                        <span className="truncate">{attachment.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
 
@@ -359,7 +349,7 @@ export default function NewRequestWizard() {
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4" dir="rtl">
-      
+
       {/* Header */}
       <div className="mb-8">
         <button onClick={handlePrev} className="w-10 h-10 flex items-center justify-center bg-white dark:bg-[#161b22] border border-gray-200 dark:border-white/10 rounded-full mb-4 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
@@ -369,7 +359,7 @@ export default function NewRequestWizard() {
           طلب خدمة جديدة
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          أكمل الخطوات التالية لمعاينة الطلب قبل ربط الإرسال الفعلي بالباك اند
+          أكمل الخطوات الثلاث لإرسال طلبك إلى فريق نظامي — الإرسال مجاني ويصلك عرض السعر بعد المراجعة
         </p>
       </div>
 
@@ -422,13 +412,29 @@ export default function NewRequestWizard() {
       </div>
 
       {/* Footer Actions */}
+      {/* Deliberately OUTSIDE renderStepContent(): an upload failure raised on
+          step 2 must still be on screen on step 3, where the client presses
+          «إرسال الطلب». Rendered inside the step it would vanish on «التالي»,
+          and a client whose 2-of-5 files failed would submit believing all
+          five went — the same silently-short attachment list this rewrite
+          exists to remove. */}
+      {attachError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold leading-relaxed text-red-700 dark:border-red-800/40 dark:bg-red-900/20 dark:text-red-300">
+          {attachError}
+        </div>
+      )}
       {submitError && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-800/40 dark:bg-red-900/20 dark:text-red-300">
           {submitError}
         </div>
       )}
+      {uploading && (
+        <p className="mb-4 text-xs font-semibold text-gray-500 dark:text-gray-400">
+          انتظر انتهاء رفع الملفات قبل المتابعة حتى لا يُرسَل الطلب ناقص المرفقات.
+        </p>
+      )}
       <div className="flex items-center justify-between">
-        <button 
+        <button
           onClick={handlePrev}
           className={`px-8 py-3.5 rounded-2xl font-bold text-[13.5px] transition-all border ${currentStep === 0 ? "opacity-0 pointer-events-none" : "text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/[0.06] hover:bg-slate-50 dark:hover:bg-white/[0.04] bg-white dark:bg-transparent shadow-sm"}`}
         >
@@ -436,14 +442,18 @@ export default function NewRequestWizard() {
         </button>
         <button
           onClick={currentStep === STEPS.length - 1 ? handleSubmit : handleNext}
-          disabled={isSubmitting || (currentStep === 0 && (!subject || !description)) || (currentStep === STEPS.length - 1 && paymentsBlocked)}
+          // `uploading` blocks every step, not just the last: a click while an
+          // upload is in flight would ship an `attachments` array missing that
+          // file — a silently short attachment list, which is the same defect
+          // as losing the files outright.
+          disabled={isSubmitting || uploading || (currentStep === 0 && (!subject || !description))}
           className="flex items-center gap-2 px-8 py-3.5 bg-[#0B3D2E] text-white rounded-2xl font-bold text-[13.5px] hover:bg-[#0a3328] transition-all shadow-[0_4px_14px_0_rgba(11,61,46,0.3)] disabled:opacity-50 active:scale-[0.98]"
         >
           {isSubmitting ? (
              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
           ) : currentStep === STEPS.length - 1 ? (
             <>
-              معاينة نهائية <ShieldCheck size={18} />
+              إرسال الطلب <PaperPlaneTilt size={18} weight="fill" />
             </>
           ) : (
             <>
