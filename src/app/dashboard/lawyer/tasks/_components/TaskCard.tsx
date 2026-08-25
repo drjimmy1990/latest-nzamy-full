@@ -4,10 +4,11 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle, Clock, Circle, Archive,
-  CaretRight, Scales, Trash,
+  CaretRight, Scales, Trash, Warning,
   ChartLine, Briefcase, Timer, ArrowLeft, TrendUp, TrendDown, Target,
   PencilSimple, Plus, X, Note,
 } from "@phosphor-icons/react";
+
 import Link from "next/link";
 import { PRIORITY_CONFIG, CATEGORY_CONFIG } from "../_data";
 import type { Task, TaskStatus } from "../_types";

@@ -7,8 +7,9 @@ import {
   Users, MagnifyingGlass, Check, X, Warning, Shield,
   Clock, CheckCircle, Pencil, Trash, Crown, User,
   Buildings, Gavel, Robot, ArrowsDownUp, Plus, CaretDown,
-  SealCheck, LockSimple, DotsThree, Eye, SpinnerGap, ShieldCheck
+  SealCheck, LockSimple, DotsThree, Eye, SpinnerGap, ShieldCheck, Storefront
 } from "@phosphor-icons/react";
+
 import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────

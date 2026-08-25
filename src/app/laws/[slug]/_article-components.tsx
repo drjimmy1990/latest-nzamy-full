@@ -577,9 +577,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
     copyRich(html, plain);
     setCopiedReg(true); setTimeout(() => setCopiedReg(false), 1800);
   }, [article, isLocked, showPaywall, lawName, lawType, isRTL]);
-    copyRich(html, plain);
-    setCopiedReg(true); setTimeout(() => setCopiedReg(false), 1800);
-  }, [article, isLocked, showPaywall, lawName, lawType, isRTL]);
+
 
 
 

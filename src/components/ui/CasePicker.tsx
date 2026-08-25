@@ -177,9 +177,10 @@ export function CasePicker({ value, onChange, isDark }: CasePickerProps) {
                       {c.title}
                     </p>
                     <p className={`text-[10px] truncate mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                      {c.client} · {getCaseTypeLabel(c.type)}
+                      {c.client} · {getCaseTypeLabel(c.type as any)}
                       {c.nextDate && ` · ${c.nextDate}`}
                     </p>
+
                   </div>
                   {value === c.id && <CheckCircle size={13} className="text-emerald-500 flex-shrink-0 mt-0.5" />}
                 </button>

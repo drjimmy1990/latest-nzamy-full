@@ -22,6 +22,13 @@ export interface ServiceOrderDeliverable {
   deliveredBy: string;
 }
 
+export interface ServiceOrderRevision {
+  id: string;
+  revisionNumber: number;
+  notes: string;
+  requestedAt: string;
+}
+
 export interface ServiceOrder {
   id: string;
   type: string;
@@ -38,8 +45,14 @@ export interface ServiceOrder {
     attachments?: OrderAttachment[];
     deliverable?: ServiceOrderDeliverable;
     cancelReason?: string;
+    completedAt?: string;
+    deliveredAt?: string;
+    revisions?: ServiceOrderRevision[];
+    lastRevisionRequestedAt?: string;
+    [key: string]: unknown;
   };
 }
+
 
 export async function createServiceOrder(args: {
   service: ServiceKey;
