@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 
 /**
  * GET /api/v1/lawyers — List verified lawyers (public)
@@ -11,7 +11,13 @@ import { createClient } from "@/lib/supabase/server";
  *   - offset (default: 0)
  */
 export async function GET(request: NextRequest) {
-  const supabase = await createClient();
+  // Service client, deliberately — see the long note in [id]/route.ts. There is
+  // no anonymous SELECT policy on profiles/lawyer_profiles, so under the
+  // RLS-scoped client this endpoint returned ZERO rows to every logged-out
+  // visitor: the public directory was empty for the public. The projection below
+  // is already an allow-list and the gates are explicit, which is where the
+  // safety has to live once RLS is out of the picture.
+  const supabase = await createServiceClient();
 
   const { searchParams } = new URL(request.url);
   const specialty = searchParams.get("specialty");
@@ -33,6 +39,11 @@ export async function GET(request: NextRequest) {
     )
     .eq("user_type", "lawyer")
     .eq("lawyer_profiles.verification_status", "verified")
+    // Consent, not just eligibility. `marketplace_visible` was already projected
+    // and never filtered on, so a verified lawyer who had not asked to be listed
+    // was listed anyway. It defaults to false, which is the right default for
+    // publishing a licensed professional's details.
+    .eq("lawyer_profiles.marketplace_visible", true)
     .range(offset, offset + limit - 1);
 
   if (specialty) {
