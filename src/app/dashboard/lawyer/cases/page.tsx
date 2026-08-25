@@ -111,8 +111,19 @@ export default function CasesPage() {
     const syncCases = async () => {
       try {
         const requests = await getWorkflowRequestsByReceiver("lawyer");
+        // `metadata.task === true` is what POST /api/v1/lawyer/tasks stamps on a
+        // task (route.ts, `const metadata = { task: true, … }`). Tasks share this
+        // page's shape exactly — type "service", receiver "lawyer" — because there
+        // is no tasks table; they are service_requests rows. Without this guard
+        // every task the lawyer saves shows up here as a phantom case, and does so
+        // instantly, since this page also listens for `nzamy-workflow-updated`,
+        // which AddTaskModal dispatches. Latent until the modal's save button was
+        // wired: before that it wrote nothing at all.
         const workflowCases = requests
-          .filter(request => request.type === "service")
+          .filter(request =>
+            request.type === "service" &&
+            (request.metadata as Record<string, unknown> | undefined)?.task !== true,
+          )
           .map(workflowToCase);
         setCases(workflowCases);
       } catch {

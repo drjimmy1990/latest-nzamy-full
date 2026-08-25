@@ -32,18 +32,27 @@ const VALID_DB_STATUSES = new Set([
  * GET /api/v1/lawyer/tasks
  * Auth required. Returns tasks for this lawyer derived from service requests.
  * Maps DB status → UI task status (todo/in_progress/done/archived).
+ *
+ * Query params:
+ *   - caseId → only tasks linked to that case. The link lives in
+ *     metadata.caseId (POST writes it there); there is no tasks table and no
+ *     column to filter on, so this filters the jsonb key directly. Kept as a
+ *     plain `.eq()` on `metadata->>caseId` — same pattern as the admin
+ *     service-orders route — so every other consumer of this GET (the Kanban
+ *     at /dashboard/lawyer/tasks calls it with no params) is untouched.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 
     const uid = user.id;
+    const caseId = new URL(request.url).searchParams.get("caseId");
 
     // Get service requests assigned to this lawyer across all relevant statuses
     // (include completed/cancelled so done/archived tasks surface in the UI).
-    const { data: requests } = await supabase
+    let query = supabase
       .from("service_requests")
       .select("id, title, status, type, created_at, updated_at, metadata")
       .eq("assigned_to", uid)
@@ -53,7 +62,13 @@ export async function GET() {
         "in_review",
         "completed",
         "cancelled",
-      ])
+      ]);
+
+    if (caseId) {
+      query = query.eq("metadata->>caseId", caseId);
+    }
+
+    const { data: requests } = await query
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -94,6 +109,10 @@ export async function GET() {
         dueDate: typeof meta.dueDate === "string" ? meta.dueDate : null,
         caseId: typeof meta.caseId === "string" ? meta.caseId : undefined,
         caseRef: typeof meta.caseRef === "string" ? meta.caseRef : undefined,
+        // Only the task's own `notes` key — never spread `meta`, which on a
+        // real client request also carries the top-level internalNotes the
+        // team note lives in.
+        notes: typeof meta.notes === "string" ? meta.notes : undefined,
         eventsCount: reqEvents.length,
         lastEvent: reqEvents[0] || null,
       };
@@ -186,6 +205,7 @@ export async function POST(request: NextRequest) {
         dueDate: typeof meta.dueDate === "string" ? meta.dueDate : null,
         caseId: typeof meta.caseId === "string" ? meta.caseId : undefined,
         caseRef: typeof meta.caseRef === "string" ? meta.caseRef : undefined,
+        notes: typeof meta.notes === "string" ? meta.notes : undefined,
         createdAt: data.created_at,
         created_at: data.created_at,
         updatedAt: data.updated_at,
