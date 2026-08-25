@@ -11,7 +11,7 @@ import {
   Warning, ArrowUp,
   Bell, Hourglass, Plus,
   Flag, Lock, Crown, ArrowRight, Storefront,
-  Timer, Folder, Money, Briefcase,
+  Timer, Folder, Money, Briefcase, ShareNetwork, Graph,
 } from "@phosphor-icons/react";
 import HijriDateWidget from "@/components/HijriDateWidget";
 import Link from "next/link";
@@ -42,6 +42,7 @@ import { AI_QUICK, ACTIVITY_TYPE_CONFIG } from "./_data/mockData";
 import { getLawyerDashboardSummary, type LawyerDashboardSummary } from "@/lib/services/lawyerDashboardService";
 import { isSupabaseMode } from "@/lib/services/api";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
+import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -91,16 +92,61 @@ function shortRequestRef(requestId: string | undefined): string {
   return requestId ? `طلب #${requestId.slice(0, 8)}` : "—";
 }
 
+/**
+ * Copy `text` to the clipboard, reporting whether it actually landed there.
+ *
+ * Two tiers, because `navigator.clipboard` is unavailable on insecure origins
+ * (plain http, which is how the dashboard is reached on the office LAN) and
+ * rejects outright when the permission is denied. The textarea +
+ * `execCommand("copy")` tier still works in those cases; it is deprecated but
+ * not removed, and it returns a boolean we must honour rather than assume.
+ *
+ * The caller shows a success tick ONLY on `true` — a silent failure that still
+ * ticked would send the lawyer off to paste an empty clipboard.
+ */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Insecure origin, denied permission, or an unfocused document — fall through.
+  }
+  try {
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    // Off-screen rather than hidden: `display:none` / `visibility:hidden`
+    // elements cannot be selected, so the copy would silently do nothing.
+    field.style.position = "fixed";
+    field.style.top = "-1000px";
+    field.style.opacity = "0";
+    document.body.appendChild(field);
+    field.select();
+    field.setSelectionRange(0, text.length);
+    const copied = document.execCommand("copy");
+    document.body.removeChild(field);
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LawyerDashboardPage() {
-  const { name, tier: userTier } = useUser();
+  const { name, tier: userTier, userId } = useUser();
   const { isDark } = useTheme();
   const [activityTab, setActivityTab] = useState<"all" | "ai">("all");
   const [showAddCase, setShowAddCase] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<LawyerDashboardSummary | null>(null);
+  // idle → the button; copied → the tick; manual → both copy tiers failed, so
+  // the URL is shown in a selectable field for the lawyer to copy by hand.
+  const [shareState, setShareState] = useState<"idle" | "copied" | "manual">("idle");
+  const [profileUrl, setProfileUrl] = useState("");
 
   // Fetch real dashboard data, and re-fetch whenever a workflow item is
   // added/changed (the add-case / add-task modals dispatch nzamy-workflow-updated).
@@ -119,6 +165,59 @@ export default function LawyerDashboardPage() {
     window.addEventListener("nzamy-workflow-updated", handler);
     return () => window.removeEventListener("nzamy-workflow-updated", handler);
   }, [loadSummary]);
+
+  // ─── Public profile link ──────────────────────────────────────────────────
+  //
+  // The public profile lives at /lawyers/[slug], but `[slug]` is a misnomer:
+  // there is no slug column on `profiles` or on `lawyer_profiles`, and every
+  // real call site addresses that page by the profile id — the client's
+  // find-lawyer list links `/lawyers/${l.id}`, and the route behind it,
+  // /api/v1/lawyers/[id], filters `profiles.id`. So the per-user value is
+  // `useUser().userId` (= profiles.id = auth user id), NOT a name-shaped slug.
+  //
+  // Two conditions have to hold before the link is safe to hand out, and BOTH
+  // are currently false for at least some sessions:
+  //   1. There is a signed-in id at all. Guests and every demo account resolve
+  //      to a session with no `userId`, so there is nothing per-user to link.
+  //   2. The public directory is open. Under BETA_MONOPOLY_MODE the whole
+  //      /lawyers subtree redirects to /services/lawyers (see
+  //      src/app/lawyers/layout.tsx), so the copied link would land the
+  //      recipient on the firm's intake page instead of this lawyer.
+  //
+  // ⚠️ A third defect is not — and cannot be — gated from here: the profile
+  // page itself never reads its route segment; it renders a module-level mock,
+  // so every id shows the same fabricated lawyer. Whoever flips
+  // BETA_MONOPOLY_MODE to false must fix src/app/lawyers/[slug]/page.tsx first,
+  // or this button starts handing out a link to somebody else's name.
+  //
+  // The gate is the compile-time const, not a runtime flag: the admin features
+  // screen lists BETA_MONOPOLY_MODE but holds it in a local array with no
+  // persistence, and no platform_settings row backs it — its own teardown note
+  // says removal «لا تتم من الواجهة فقط».
+  const canShareProfile = Boolean(userId) && !BETA_MONOPOLY_MODE;
+  // Monopoly mode is tested FIRST because it is the reason that applies to
+  // everyone today. Ordering it after the id check would tell a demo lawyer —
+  // which is how this dashboard is actually tested, demo sessions carry no
+  // `userId` — to «sign in» while they are already signed in.
+  const shareDisabledReason = BETA_MONOPOLY_MODE
+    ? "صفحة الملف العام غير متاحة حالياً — دليل المحامين مغلق خلال المرحلة التجريبية"
+    : "سجّل الدخول بحسابك المهني لمشاركة رابط ملفك العام";
+
+  const handleShareProfile = useCallback(async () => {
+    if (!canShareProfile) return;
+    const url = `${window.location.origin}/lawyers/${userId}`;
+    setProfileUrl(url);
+    // No tick unless the copy is confirmed; otherwise fall back to manual.
+    setShareState((await copyToClipboard(url)) ? "copied" : "manual");
+  }, [canShareProfile, userId]);
+
+  // Let the «تم نسخ الرابط ✓» state lapse on its own, and cancel the timer on
+  // unmount so it cannot fire against a gone component.
+  useEffect(() => {
+    if (shareState !== "copied") return;
+    const timer = window.setTimeout(() => setShareState("idle"), 2500);
+    return () => window.clearTimeout(timer);
+  }, [shareState]);
 
   // ─── Derived tier ─────────────────────────────────────────────────────────
   // Map the user's real subscription tier (UserTier) to the lawyer page's
@@ -306,6 +405,56 @@ export default function LawyerDashboardPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <HijriDateWidget />
+          {/* The title sits on the wrapper, not the button: a disabled control
+              swallows pointer events in several browsers, and with it the only
+              explanation of why this button is greyed out. */}
+          <span
+            className="inline-flex"
+            title={canShareProfile ? "انسخ رابط ملفك المهني العام وشاركه مع موكليك" : shareDisabledReason}
+          >
+            <button
+              type="button"
+              onClick={handleShareProfile}
+              disabled={!canShareProfile}
+              aria-label={canShareProfile ? "مشاركة ملفي المهني" : shareDisabledReason}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${
+                !canShareProfile
+                  ? `opacity-50 cursor-not-allowed ${isDark ? "border-white/[0.08] text-zinc-500" : "border-slate-200 text-slate-400"}`
+                  : shareState === "copied"
+                    ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 cursor-pointer"
+                    : `cursor-pointer ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`
+              }`}
+            >
+              <ShareNetwork size={16} weight="duotone" />
+              {shareState === "copied" ? "تم نسخ الرابط ✓" : "مشاركة ملفي المهني 🔗"}
+            </button>
+          </span>
+          {/* The graph lives on the case detail page (?tab=graph), so this is a
+              deep link and not a second implementation. There is no lawyer-facing
+              "all cases" graph route — /dashboard/business/kanban renders a global
+              one but its layout only admits corporate and admin — so this opens
+              the most recently updated case. With no cases there is nothing to
+              draw, and the control says so instead of linking nowhere. */}
+          {recentCases.length > 0 ? (
+            <Link href={`/dashboard/lawyer/cases/${recentCases[0].id}?tab=graph`}
+              title="افتح جراف علاقات آخر قضية عملت عليها"
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${
+                isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Graph size={16} weight="duotone" /> جراف القضايا 🕸️
+            </Link>
+          ) : (
+            <span className="inline-flex" title="لا توجد قضايا بعد لعرض الجراف">
+              <button type="button" disabled aria-label="لا توجد قضايا بعد لعرض الجراف"
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border opacity-50 cursor-not-allowed ${
+                  isDark ? "border-white/[0.08] text-zinc-500" : "border-slate-200 text-slate-400"
+                }`}
+              >
+                <Graph size={16} weight="duotone" /> جراف القضايا 🕸️
+              </button>
+            </span>
+          )}
           <Link href="/dashboard/lawyer/marketplace"
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${
               isDark ? "border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10" : "border-[#C8A762]/40 text-[#C8A762] hover:bg-[#C8A762]/5"
@@ -325,6 +474,44 @@ export default function LawyerDashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Manual copy fallback ── */}
+      {/* Last resort: neither the Clipboard API nor execCommand worked, so the
+          link is put on screen in a selectable field. Deliberately no tick —
+          nothing has been copied yet. */}
+      {shareState === "manual" && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex flex-wrap items-center gap-3 ${
+            isDark ? "border-white/[0.08] bg-zinc-900/60" : "border-slate-200 bg-white"
+          }`}
+        >
+          <div className="flex-1 min-w-[220px]">
+            <p className={`text-[13px] font-bold mb-1.5 ${isDark ? "text-zinc-200" : "text-slate-800"}`}>
+              تعذّر النسخ تلقائياً — انسخ الرابط يدوياً
+            </p>
+            <input
+              type="text"
+              dir="ltr"
+              readOnly
+              value={profileUrl}
+              onFocus={(e) => e.currentTarget.select()}
+              className={`w-full rounded-xl border px-3 py-2 text-[12px] font-mono text-left ${
+                isDark ? "border-white/10 bg-black/20 text-zinc-300" : "border-slate-200 bg-slate-50 text-slate-600"
+              }`}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setShareState("idle")}
+            className={`shrink-0 rounded-xl px-4 py-2 text-xs font-bold transition-colors cursor-pointer ${
+              isDark ? "text-zinc-400 hover:bg-white/5" : "text-slate-500 hover:bg-slate-100"
+            }`}
+          >
+            إغلاق
+          </button>
+        </motion.div>
+      )}
 
       {/* ── Subscription Banner ── */}
       {(lawyerTier === "free" || lawyerTier === "starter") && (
