@@ -99,14 +99,16 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   // Revisions SLA calculation: max 2 revisions, within 48h of completion
   const completedAt = order.metadata?.completedAt || order.metadata?.deliveredAt || order.created_at;
-  const completedTime = new Date(completedAt).getTime();
+  const rawCompletedTime = completedAt ? new Date(completedAt).getTime() : Date.now();
+  const completedTime = Number.isNaN(rawCompletedTime) ? Date.now() : rawCompletedTime;
   const now = Date.now();
-  const hoursSinceDelivery = Math.floor((now - completedTime) / (1000 * 60 * 60));
+  const hoursSinceDelivery = Math.max(0, Math.floor((now - completedTime) / (1000 * 60 * 60)));
   const isWithin48h = hoursSinceDelivery <= 48;
   const revisionsCount = Array.isArray(order.metadata?.revisions) ? (order.metadata.revisions as any[]).length : 0;
   const maxRevisions = 2;
   const remainingRevisions = Math.max(0, maxRevisions - revisionsCount);
   const canRequestRevision = order.status === "completed" && isWithin48h && remainingRevisions > 0;
+
 
   const [showRevisionForm, setShowRevisionForm] = useState(false);
   const [revisionNotes, setRevisionNotes] = useState("");

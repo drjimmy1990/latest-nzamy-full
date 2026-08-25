@@ -130,8 +130,10 @@ export async function PATCH(
 
     const meta = (existing.metadata ?? {}) as Record<string, unknown>;
     const completedAt = (meta.completedAt as string) || (meta.deliveredAt as string) || existing.updated_at || existing.created_at;
-    const completedTime = new Date(completedAt).getTime();
-    const hoursSince = Math.floor((Date.now() - completedTime) / (1000 * 60 * 60));
+    const rawTime = completedAt ? new Date(completedAt).getTime() : Date.now();
+    const completedTime = Number.isNaN(rawTime) ? Date.now() : rawTime;
+    const hoursSince = Math.max(0, Math.floor((Date.now() - completedTime) / (1000 * 60 * 60)));
+
 
     if (hoursSince > 48) {
       return NextResponse.json({ error: "انتهت فترة التعديلات المتاحة (48 ساعة)" }, { status: 400 });

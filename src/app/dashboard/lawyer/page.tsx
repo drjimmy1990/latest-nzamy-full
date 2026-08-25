@@ -268,12 +268,17 @@ export default function LawyerDashboardPage() {
           <HijriDateWidget />
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
               if (typeof window !== "undefined") {
                 const url = `${window.location.origin}/lawyers/ahmed-alghamdi`;
-                navigator.clipboard.writeText(url);
-                setCopiedProfile(true);
-                setTimeout(() => setCopiedProfile(false), 2500);
+                try {
+                  await navigator.clipboard.writeText(url);
+                  setCopiedProfile(true);
+                  setTimeout(() => setCopiedProfile(false), 2500);
+                } catch {
+                  // Fallback if clipboard permission denied
+                  window.prompt("رابط ملفك المهني العام:", url);
+                }
               }
             }}
             className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
@@ -286,6 +291,7 @@ export default function LawyerDashboardPage() {
             <ShareNetwork size={15} weight="duotone" />
             {copiedProfile ? "تم نسخ الرابط ✓" : "مشاركة ملفي المهني 🔗"}
           </button>
+
           <Link href="/dashboard/business/kanban"
             className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold border transition-colors ${
               isDark ? "border-purple-500/30 text-purple-400 hover:bg-purple-500/10" : "border-purple-200 text-purple-700 hover:bg-purple-50"
