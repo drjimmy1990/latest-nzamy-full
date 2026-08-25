@@ -111,6 +111,80 @@ export async function PATCH(
   const { id } = await context.params;
   const body = await request.json();
 
+  // ── Special Action: Requester requesting a revision (48h / 2 revisions SLA) ──
+  if (body.action === "request_revision") {
+    const admin = await createServiceClient();
+    const { data: existing, error: existingErr } = await admin
+      .from("service_requests")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (existingErr || !existing) {
+      return NextResponse.json({ error: "الطلب غير موجود" }, { status: 404 });
+    }
+
+    if (existing.requester_user_id !== user.id) {
+      return NextResponse.json({ error: "غير مصرح" }, { status: 403 });
+    }
+
+    const meta = (existing.metadata ?? {}) as Record<string, unknown>;
+    const completedAt = (meta.completedAt as string) || (meta.deliveredAt as string) || existing.updated_at || existing.created_at;
+    const completedTime = new Date(completedAt).getTime();
+    const hoursSince = Math.floor((Date.now() - completedTime) / (1000 * 60 * 60));
+
+    if (hoursSince > 48) {
+      return NextResponse.json({ error: "انتهت فترة التعديلات المتاحة (48 ساعة)" }, { status: 400 });
+    }
+
+    const revisions = Array.isArray(meta.revisions) ? (meta.revisions as any[]) : [];
+    if (revisions.length >= 2) {
+      return NextResponse.json({ error: "تم استهلاك الحد الأقصى للتعديلات المجانية (2 تعديل)" }, { status: 400 });
+    }
+
+    const newRevision = {
+      id: crypto.randomUUID(),
+      revisionNumber: revisions.length + 1,
+      notes: typeof body.revisionNotes === "string" ? body.revisionNotes.trim() : "",
+      requestedAt: new Date().toISOString(),
+    };
+
+    const newMetadata = {
+      ...meta,
+      revisions: [...revisions, newRevision],
+      lastRevisionRequestedAt: newRevision.requestedAt,
+    };
+
+    const { data: updated, error: updateErr } = await admin
+      .from("service_requests")
+      .update({
+        status: "in_review",
+        metadata: newMetadata,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (updateErr || !updated) {
+      return NextResponse.json({ error: "فشل تحديث الطلب" }, { status: 500 });
+    }
+
+    try {
+      await recordEvent({
+        supabase: admin,
+        requestId: id,
+        event: RequestEvent.SERVICE_REQUEST_STATUS_CHANGED,
+        actorUserId: user.id,
+        actorName: "العميل",
+      });
+    } catch (e) {
+      console.error("[request_revision] recordEvent failed:", e);
+    }
+
+    return NextResponse.json({ success: true, data: updated });
+  }
+
   const rawPatch = body.patch ?? body;
   const keyMap: Record<string, string> = {
     sourcePath: 'source_path',
@@ -142,6 +216,7 @@ export async function PATCH(
       { status: 400 },
     );
   }
+
 
   // Task 6d — gate status transitions by role. RLS's UPDATE policy is
   // `requester_user_id = auth.uid() or assigned_to = auth.uid()`, which lets a

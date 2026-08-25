@@ -90,10 +90,13 @@ export async function PATCH(
         ...metadata,
         deliverable: {
           documentId: body.documentId, fileName: body.fileName,
-          notes: body.notes ?? "", deliveredAt: nowIso, deliveredBy: adminUserId,
+          notes: body.notes ?? "",
+          internalNotes: (body as any).internalNotes ?? "",
+          deliveredAt: nowIso, deliveredBy: adminUserId,
         },
       },
     };
+
     notifyTitle = "طلبك جاهز";
     eventName = RequestEvent.SERVICE_REQUEST_COMPLETED;
   } else if (body.action === "cancel") {
