@@ -13,7 +13,18 @@ import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 
-type UserRole = "lawyer" | "firm" | "judge" | "admin";
+type UserRole =
+  | "lawyer"
+  | "firm"
+  | "individual"
+  | "corporate"
+  | "micro"
+  | "government"
+  | "judge"
+  | "ngo"
+  | "provider"
+  | "admin";
+
 type UserStatus = "active" | "suspended" | "pending" | "trial";
 type Plan = "free" | "pro" | "max" | "enterprise";
 
@@ -58,12 +69,27 @@ function formatArabicDate(iso: string): string {
 }
 
 function mapRole(userType: string): UserRole {
-  const map: Record<string, UserRole> = { lawyer: "lawyer", firm: "firm", judge: "judge", admin: "admin" };
-  return map[userType] ?? "lawyer";
+  const map: Record<string, UserRole> = {
+    lawyer: "lawyer",
+    firm: "firm",
+    individual: "individual",
+    client: "individual",
+    corporate: "corporate",
+    business: "corporate",
+    micro: "micro",
+    government: "government",
+    gov: "government",
+    judge: "judge",
+    ngo: "ngo",
+    provider: "provider",
+    notary: "provider",
+    admin: "admin",
+  };
+  return map[userType] ?? "individual";
 }
 
 function mapPlan(tier?: string): Plan {
-  const map: Record<string, Plan> = { free: "free", pro: "pro", max: "max", enterprise: "enterprise" };
+  const map: Record<string, Plan> = { free: "free", starter: "free", pro: "pro", max: "max", enterprise: "enterprise" };
   return map[tier ?? "free"] ?? "free";
 }
 
@@ -75,11 +101,18 @@ function mapStatus(subStatus?: string, verifiedAt?: string | null): UserStatus {
 }
 
 const ROLE_CFG: Record<UserRole, { label: string; color: string; bg: string; icon: React.ElementType }> = {
-  lawyer:  { label: "محامي",          color: "text-blue-500",   bg: "bg-blue-500/10",   icon: Gavel },
-  firm:    { label: "مكتب محاماة",  color: "text-violet-500", bg: "bg-violet-500/10", icon: Buildings },
-  judge:   { label: "قاضٍ",           color: "text-amber-500",  bg: "bg-amber-500/10",  icon: Shield },
-  admin:   { label: "مدير",           color: "text-red-500",    bg: "bg-red-500/10",    icon: Crown },
+  lawyer:      { label: "محامي",             color: "text-blue-500",    bg: "bg-blue-500/10",    icon: Gavel },
+  firm:        { label: "شركة محاماة",       color: "text-violet-500",  bg: "bg-violet-500/10",  icon: Buildings },
+  individual:  { label: "عميل / أفراد",      color: "text-emerald-500", bg: "bg-emerald-500/10", icon: User },
+  corporate:   { label: "شركات ومؤسسات",     color: "text-indigo-500",  bg: "bg-indigo-500/10",  icon: Buildings },
+  micro:       { label: "منشآت صغيرة",       color: "text-cyan-500",    bg: "bg-cyan-500/10",    icon: Storefront },
+  government:  { label: "جهات حكومية",       color: "text-amber-500",   bg: "bg-amber-500/10",   icon: Shield },
+  judge:       { label: "قاضٍ / نيابة",       color: "text-amber-600",   bg: "bg-amber-600/10",   icon: ShieldCheck },
+  ngo:         { label: "قطاع غير ربحي",     color: "text-teal-500",    bg: "bg-teal-500/10",    icon: Shield },
+  provider:    { label: "مزود خدمة / موثق",  color: "text-orange-500",  bg: "bg-orange-500/10",  icon: SealCheck },
+  admin:       { label: "مدير النظام",        color: "text-red-500",     bg: "bg-red-500/10",     icon: Crown },
 };
+
 
 const STATUS_CFG: Record<UserStatus, { label: string; color: string; bg: string }> = {
   active:    { label: "نشط",          color: "text-emerald-500", bg: "bg-emerald-500/10 border-emerald-500/20" },
@@ -374,17 +407,22 @@ export default function AdminUsersPage() {
         <div className="flex gap-1.5 flex-wrap">
           {([
             { label: "الكل", value: "all" as const },
-            { label: "محامي", value: "lawyer" as const },
-            { label: "مكتب", value: "firm" as const },
-            { label: "قاضٍ", value: "judge" as const },
+            { label: "محامون", value: "lawyer" as const },
+            { label: "شركات محاماة", value: "firm" as const },
+            { label: "عملاء / أفراد", value: "individual" as const },
+            { label: "شركات", value: "corporate" as const },
+            { label: "منشآت صغيرة", value: "micro" as const },
+            { label: "جهات حكومية", value: "government" as const },
+            { label: "مزودو خدمات", value: "provider" as const },
+            { label: "مدراء", value: "admin" as const },
           ]).map(f => (
             <button key={f.value} onClick={() => setRoleFilter(f.value)}
-              className={`px-3 py-2 rounded-xl border text-[11px] font-bold transition-all ${roleFilter === f.value ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
+              className={`px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${roleFilter === f.value ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-400 hover:text-zinc-200" : "border-slate-100 text-slate-500 hover:text-slate-800"}`}>
               {f.label}
             </button>
           ))}
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as UserStatus | "all")}
-            className={`px-3 py-2 rounded-xl border text-[11px] font-bold outline-none cursor-pointer ${isDark ? "bg-zinc-900 border-white/[0.06] text-zinc-400" : "bg-white border-slate-100 text-slate-500"}`}>
+            className={`px-3 py-1.5 rounded-xl border text-[11px] font-bold outline-none cursor-pointer ${isDark ? "bg-zinc-900 border-white/[0.06] text-zinc-400" : "bg-white border-slate-100 text-slate-500"}`}>
             <option value="all">الحالة: الكل</option>
             <option value="active">نشط</option>
             <option value="pending">انتظار تحقق</option>
@@ -392,6 +430,7 @@ export default function AdminUsersPage() {
             <option value="suspended">موقوف</option>
           </select>
         </div>
+
       </div>
 
       {/* Pending alerts */}
