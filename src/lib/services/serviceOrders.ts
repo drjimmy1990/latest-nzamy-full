@@ -38,6 +38,17 @@ export interface ServiceOrder {
     attachments?: OrderAttachment[];
     deliverable?: ServiceOrderDeliverable;
     cancelReason?: string;
+    /**
+     * Revision requests the client made after delivery, oldest first. Written by
+     * PATCH /api/v1/service-requests/[id] (action "request_revision"), read by the
+     * client's RevisionPanel and by the admin queue's revision marker.
+     *
+     * Top-level under `metadata`, deliberately NOT nested inside `deliverable`:
+     * stripInternalNotes() only sanitises the top level, and a nested shape is
+     * exactly how a private field ends up shipped to the client. Keeping the two
+     * siblings keeps that boundary readable.
+     */
+    revisions?: { requestedAt: string; notes: string; index: number }[];
   };
 }
 

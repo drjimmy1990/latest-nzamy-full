@@ -110,7 +110,21 @@ export function OrderActions({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  if (!CANCELLABLE_STATUSES.has(order.status)) return null;
+  // Status alone stopped being sufficient once the revisions policy shipped.
+  // «طلب تعديل» moves a DELIVERED order from `completed` back to `in_review`,
+  // which is in CANCELLABLE_STATUSES — so this gate would offer a cancel on an
+  // order the team has already delivered, and the server would refuse it. The
+  // server's ai_workspace branch carries the same second conjunct
+  // (`!hasBeenDelivered(...)` in src/app/api/v1/service-requests/[id]/
+  // route.ts), which is what makes owner decision س٢ hold through a revision
+  // rather than around it; this keeps the button a subset of that, so it never
+  // offers an action the server answers 403 to.
+  //
+  // `deliveredAt` rather than the presence of `deliverable`, matching the
+  // server's predicate exactly — /ai/contract-drafter's `completed` rows have
+  // no deliverable at all, and are excluded by the status check regardless.
+  const wasDelivered = Boolean(order.metadata?.deliverable?.deliveredAt);
+  if (!CANCELLABLE_STATUSES.has(order.status) || wasDelivered) return null;
 
   async function doCancel() {
     setBusy(true);

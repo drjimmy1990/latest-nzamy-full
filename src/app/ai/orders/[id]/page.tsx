@@ -16,6 +16,7 @@ import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
 import { OrderTimeline } from "./_components/OrderTimeline";
 import { OrderSummary } from "./_components/OrderSummary";
 import { OrderActions } from "./_components/OrderActions";
+import { RevisionPanel } from "./_components/RevisionPanel";
 import { OPEN_ORDER_STATUSES } from "./_components/openOrderStatuses";
 
 type LoadState = "loading" | "error" | "not_found" | "loaded";
@@ -132,6 +133,20 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   const s = ORDER_STATUS_AR[order.status] ?? ORDER_STATUS_AR.pending_assignment;
   const deliverable = order.metadata?.deliverable;
+  // An order the client has sent back for a revision: the server moves it from
+  // `completed` to `in_review` and records the request at
+  // `metadata.revisions` (see RevisionPanel.tsx and the PATCH route's
+  // `request_revision` branch). Read only to decide which panel to show — the
+  // policy itself is enforced server-side and re-derived there on every call.
+  //
+  // The cast is because `ServiceOrder["metadata"]` does not model `revisions`
+  // yet and src/lib/services/serviceOrders.ts belongs to another agent this
+  // wave; the field addition is in this round's hand-off.
+  const revisionCount = (() => {
+    const raw = (order.metadata as unknown as Record<string, unknown> | null)?.revisions;
+    return Array.isArray(raw) ? raw.length : 0;
+  })();
+  const underRevision = order.status === "in_review" && revisionCount > 0;
   const supportHref = buildWhatsAppHref(
     `مرحباً فريق نظامي، أحتاج مساعدة بخصوص طلبي رقم ${order.id} (${order.metadata?.serviceTitleAr ?? order.title}).`,
   );
@@ -166,9 +181,20 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         </div>
       )}
 
-      {order.status === "completed" && deliverable ? (
+      {/* `underRevision` joins "completed" here on purpose. A revision sends
+          the order back to `in_review`, but `metadata.deliverable` survives
+          that write and the deliverable endpoint does not gate on status
+          (deliverable/route.ts checks participation, then
+          metadata.deliverable) — so the previously delivered version is still
+          downloadable, and taking it away while the team reworks it would
+          leave the client with nothing in hand mid-revision. Without this the
+          order would also fall into the generic «طلبك قيد التنفيذ» panel
+          below and lose every trace of the delivery. */}
+      {(order.status === "completed" || underRevision) && deliverable ? (
         <div className={`${card} p-5 space-y-3`}>
-          <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>المستند جاهز</p>
+          <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+            {underRevision ? "النسخة المسلَّمة (قيد التعديل)" : "المستند جاهز"}
+          </p>
           {deliverable.notes && (
             <p className={`text-[12px] leading-[1.9] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{deliverable.notes}</p>
           )}
@@ -210,6 +236,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </p>
         </div>
       )}
+
+      {/* «سياسة التعديلات: ٤٨ ساعة / تعديلان» plus the support-ticket
+          escalation once that window closes. Self-guarding: it renders
+          nothing at all until the team has actually delivered (no
+          `metadata.deliverable.deliveredAt`, no policy to describe). The
+          countdown and the counter it shows are display only — the server
+          re-derives both from the persisted row on every request. */}
+      <RevisionPanel order={order} isDark={isDark} supportHref={supportHref} onChanged={load} />
 
       {/* Task 6, Step 3 — what the client actually sent: intake answers
           rendered generically (differs per service) plus their own

@@ -78,6 +78,13 @@ export const RequestEvent = {
   SERVICE_REQUEST_UPDATED: "service_request.updated",
   SERVICE_REQUEST_CANCELLED: "service_request.cancelled",
   SERVICE_REQUEST_COMPLETED: "service_request.completed",
+  // The client asked for a revision inside the 48-hour window. Sends the order
+  // back to `in_review` — no new status value, so no CHECK migration; the
+  // revision itself lives at metadata.revisions. Written by
+  // src/app/api/v1/service-requests/[id]/route.ts, which carried this literal
+  // locally until this constant existed; the string is unchanged, so nothing
+  // already recorded needs migrating.
+  SERVICE_REQUEST_REVISION_REQUESTED: "service_request.revision_requested",
   // An order picked up by whoever will fulfil it. Not a new vocabulary word:
   // `service_request.assigned` was already the name both case timelines label
   // («تعيين المحامي» — see EVENT_LABELS in dashboard/{client,lawyer}/cases/
