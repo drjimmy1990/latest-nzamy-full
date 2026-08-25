@@ -427,11 +427,162 @@ function matchesSearch(o: AdminOrder, needle: string): boolean {
   );
 }
 
+/**
+ * Arabic-Indic digits, for the counts printed inside Arabic copy. Every other
+ * number on this screen already arrives in them — the dates through
+ * toLocaleDateString("ar-SA"), the size cap as the literal «٢٠ ميجابايت» — so
+ * a Latin «2/2» in the middle of «طلب تعديل» would be the only Western
+ * numeral on the page.
+ */
+function arDigits(n: number): string {
+  return n.toLocaleString("ar-SA");
+}
+
+/**
+ * One entry of `metadata.revisions`, after normalisation. `index` here is
+ * THIS file's own 1-based numbering, derived from position — not the stored
+ * `index` field, which is deliberately not read. See revisionsOf().
+ */
+interface OrderRevision { index: number; notes: string; requestedAt: string }
+
+/**
+ * The revision requests a client filed against an order, read out of
+ * `metadata.revisions`.
+ *
+ * A revision request sends the order BACK to `in_review` and appends an entry
+ * here. It deliberately adds NO new status value — that would need a
+ * CHECK-constraint migration — which is exactly why this array has to be
+ * surfaced: `status` alone cannot tell an admin whether an in_review order is
+ * fresh work or work the client sent back, and the second kind is work the
+ * team already thought it had finished.
+ *
+ * Read defensively. This key is written by another route, is absent on every
+ * order placed before the flow shipped, and lives in plain jsonb — nothing in
+ * the schema constrains its shape. Each rule below is chosen so the queue can
+ * neither crash nor under-report work the team still owes:
+ *   - not an array (absent, null, an object, a string) → no revisions, no
+ *     marker, no throw. This is the ordinary case for most of the queue.
+ *   - an entry that is not a non-null object → dropped. It carries neither a
+ *     note to show nor an instant to date, so there is nothing to render for
+ *     it, and counting it would inflate «٢/٢» with a phantom request.
+ *   - `index` is IGNORED and the number printed is the entry's own 1-based
+ *     position among the kept entries. The stored field is not read at all,
+ *     even when it is a perfectly good number, because nothing states its
+ *     base: a 0-based producer would put `index: 0` on the first request and
+ *     `index: 1` on the second, and an order with two revisions would then be
+ *     marked «طلب تعديل ١/٢» — no crash, just the wrong number on the one
+ *     marker whose entire job is telling the team how much work it owes.
+ *     Position is derived from data this file controls, is 1-based by
+ *     construction, and always agrees with the total. If the revision flow
+ *     ever needs the admin to see ITS numbering, it has to state the base
+ *     first.
+ *   - a non-string `notes` → "". The marker then still reports the count and
+ *     the date — the fact the team needs is that the client asked again — and
+ *     says plainly that no detail was written, instead of rendering
+ *     "undefined" as if the client had typed it.
+ */
+function revisionsOf(order: AdminOrder): OrderRevision[] {
+  const raw = order.metadata?.revisions;
+  if (!Array.isArray(raw)) return [];
+  const out: OrderRevision[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as { notes?: unknown; requestedAt?: unknown };
+    out.push({
+      index: out.length + 1,
+      notes: typeof e.notes === "string" ? e.notes.trim() : "",
+      requestedAt: typeof e.requestedAt === "string" ? e.requestedAt : "",
+    });
+  }
+  return out;
+}
+
+function hasRevisions(order: AdminOrder): boolean {
+  return revisionsOf(order).length > 0;
+}
+
+/**
+ * «طلب تعديل ٢/٢» — which request this is, out of how many the client has
+ * filed. Because revisionsOf() numbers by position, the two arguments are
+ * equal at every call site TODAY; they are still two arguments so that a
+ * revision flow which later publishes a trustworthy numbering (or an
+ * allowance) changes this function and nothing else.
+ *
+ * Note what the second number is NOT: a quota. No cap is hard-coded here —
+ * the allowance belongs to the revision flow, and a literal «٢» in this file
+ * would go stale the moment that flow changed its mind, while still looking
+ * authoritative on the card.
+ */
+function revisionCountLabel(latestIndex: number, total: number): string {
+  return `${arDigits(latestIndex)}/${arDigits(total)}`;
+}
+
+/**
+ * The client asked for the work to be redone. The loudest thing in the
+ * expanded panel, and deliberately so: it is the only place that says the
+ * order in front of the admin is not new work.
+ *
+ * Amber, like the internal-note box it sits above — the owner asked for
+ * amber, and both boxes carry the same meaning of «الفريق، انتبه». Told apart
+ * by a heavier border, its own 🔁 title and the fact that only one of the two
+ * ever quotes the client.
+ */
+function RevisionBox({ revisions, isDark }: { revisions: OrderRevision[]; isDark: boolean }) {
+  if (revisions.length === 0) return null;
+  // Last element, not max-by-index: the producer appends, so the tail is the
+  // newest request. Nothing here re-sorts by `index`, which may have been
+  // filled in from a position above and would then say nothing new.
+  const latest = revisions[revisions.length - 1];
+  const earlier = revisions.slice(0, -1).reverse();
+  const latestAt = formatNoticeAt(latest.requestedAt);
+
+  return (
+    <div className={`rounded-xl border-2 px-3 py-2.5 ${
+      isDark ? "border-amber-500/45 bg-amber-500/[0.09] text-amber-200"
+        : "border-amber-500/50 bg-amber-50 text-amber-800"}`}>
+      <p className={`text-[11px] font-bold ${isDark ? "text-amber-300" : "text-amber-900"}`}>
+        🔁 طلب تعديل {revisionCountLabel(latest.index, revisions.length)} — أعاد العميل الطلب لطلب تعديل
+      </p>
+      {latestAt && <p className="mt-0.5 text-[10px] opacity-75">بتاريخ {latestAt}</p>}
+      {latest.notes ? (
+        <p className="mt-1.5 text-[11px] leading-[1.9] whitespace-pre-wrap">{latest.notes}</p>
+      ) : (
+        <p className="mt-1.5 text-[11px] opacity-75">لم يكتب العميل تفاصيل للتعديل المطلوب.</p>
+      )}
+      {earlier.length > 0 && (
+        <div className={`mt-2 border-t pt-2 space-y-1 ${
+          isDark ? "border-amber-500/25" : "border-amber-500/30"}`}>
+          <p className="text-[10px] font-semibold opacity-70">طلبات تعديل سابقة</p>
+          {earlier.map((r, i) => {
+            const at = formatNoticeAt(r.requestedAt);
+            return (
+              <p key={`${r.index}-${i}`} className="text-[10px] leading-[1.8] whitespace-pre-wrap opacity-85">
+                {arDigits(r.index)}. {r.notes || "بدون تفاصيل"}{at ? ` — ${at}` : ""}
+              </p>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminServiceOrdersPage() {
   const { isDark } = useTheme();
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
+  // A revision request does not change `status` — it puts the order back to
+  // `in_review` and appends to metadata.revisions — so «طلبات التعديل» cannot
+  // be one more entry in STATUSES: that array is keyed by the value the list
+  // route puts in `.eq("status", …)`, and a made-up key there would query the
+  // server for a status no row can ever hold. It is a second, independent
+  // axis, so it is a toggle that NARROWS whatever the status chips returned,
+  // filtered client-side over the loaded page exactly like the search box.
+  // Which means it reaches the same 200 rows the search box does, and shows
+  // nothing under a chip revisions cannot appear in («مُسلّمة», «ملغاة») —
+  // the empty-state copy below points back at «الكل» for that reason.
+  const [revisionsOnly, setRevisionsOnly] = useState(false);
   const [open, setOpen] = useState<AdminOrder | null>(null);
   const [notes, setNotes] = useState("");
   // Task 3 — a second, private note for the team, never sent to the client.
@@ -613,7 +764,26 @@ export default function AdminServiceOrdersPage() {
   }
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
-  const visibleOrders = orders.filter((o) => matchesSearch(o, search));
+  // `open?.id === o.id` is the same escape hatch mergeKeptOrder() exists for,
+  // one layer up: the order whose panel is open keeps its card no matter what
+  // the revision toggle says. Without it, pressing the chip while a card is
+  // open unmounts that card — taking the upload field and any drafted note
+  // with it — and, worse, act({keepOpen:true}) re-renders from a row whose
+  // metadata came back off the PATCH response, so any future handler that
+  // rewrites metadata without carrying `revisions` forward would make the
+  // card vanish mid-claim. (Today's handler does spread the existing metadata
+  // on both the deliver and the cancel branch, so this is insurance, not a
+  // live bug.) The search box is left alone: typing is a deliberate act with
+  // the text still on screen to undo, whereas this is one click with nothing
+  // to show what happened.
+  const visibleOrders = orders.filter(
+    (o) => matchesSearch(o, search) && (!revisionsOnly || hasRevisions(o) || open?.id === o.id),
+  );
+  // Counted over what is LOADED, not over the whole table — same reach as the
+  // search box, and the honest number to put on a chip that filters the same
+  // rows. Rendered only when non-zero: «(٠)» beside the label would read as a
+  // broken counter rather than as "none in this view".
+  const revisionCount = orders.reduce((n, o) => n + (hasRevisions(o) ? 1 : 0), 0);
 
   return (
     <div className="p-5 md:p-7 space-y-4" dir="rtl">
@@ -628,6 +798,21 @@ export default function AdminServiceOrdersPage() {
             {s.label}
           </button>
         ))}
+
+        {/* A different axis, so it is drawn as a different control: separated
+            by a rule, amber rather than the queue's green, and a toggle
+            (aria-pressed) rather than one of a mutually-exclusive set. An
+            admin must be able to see that pressing it does not un-press
+            «قيد التنفيذ». */}
+        <span aria-hidden="true" className={`mx-1 self-center h-4 w-px ${
+          isDark ? "bg-white/10" : "bg-zinc-200"}`} />
+        <button type="button" aria-pressed={revisionsOnly}
+          onClick={() => setRevisionsOnly((v) => !v)}
+          className={`rounded-full px-3 py-1 text-[11px] font-semibold border ${
+            revisionsOnly ? "bg-amber-600 text-white border-transparent"
+              : isDark ? "border-amber-500/30 text-amber-400" : "border-amber-500/40 text-amber-700"}`}>
+          🔁 طلبات التعديل{revisionCount > 0 ? ` (${arDigits(revisionCount)})` : ""}
+        </button>
       </div>
 
       {/* A client who quotes his order number over الواتساب was, until now,
@@ -653,9 +838,57 @@ export default function AdminServiceOrdersPage() {
       )}
 
       <div className="space-y-2">
-        {visibleOrders.map((o) => (
+        {visibleOrders.map((o) => {
+          const isOpen = open?.id === o.id;
+          const revisions = revisionsOf(o);
+          const panelId = `order-panel-${o.id}`;
+          return (
           <div key={o.id} className={`${card} p-4`}>
-            <div className="flex items-center gap-3">
+            {/* The owner asked for «فتح بطاقة الطلب بالكامل»: the whole header
+                row is the control, not just the word «التفاصيل» in its corner.
+                Because the header itself now carries the onClick, the
+                «التفاصيل» control below is a <span>, NOT a <button> — a button
+                inside a clickable parent fires its own toggle AND bubbles into
+                the parent's, which toggles straight back, and the panel
+                becomes impossible to open by the one target everybody aims at.
+                Downgrading it (rather than stopping propagation on it) also
+                keeps this from being a button nested inside a role="button",
+                which is invalid on its own.
+
+                EVERY OTHER DESCENDANT OF THIS DIV MUST STAY NON-INTERACTIVE.
+                Today they all are: the account/service/revision pills are
+                <span>s, the client line is a <p>, and the e-mail is plain text
+                rather than a mailto link. Anything interactive added here in
+                future needs e.stopPropagation() in its own handler, or a click
+                on it will collapse the card underneath the admin.
+
+                The expanded panel is a SIBLING of this div, not a child, so
+                nothing inside it — the textareas, the dropzone, the deliver
+                and cancel buttons — bubbles into this handler.
+
+                select-none because a click is now a toggle: without it a
+                double-click to select the client's name would highlight text
+                and flip the panel twice. */}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-expanded={isOpen}
+              // Only while the panel exists: the element carrying this id is
+              // rendered under `isOpen`, and aria-controls pointing at an id
+              // that is not in the document is an error, not a hint.
+              aria-controls={isOpen ? panelId : undefined}
+              onClick={() => toggleOpen(o)}
+              onKeyDown={(e) => {
+                // Enter and Space, the two keys a role="button" owes its user.
+                // preventDefault on Space stops the page scrolling under them.
+                if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+                  e.preventDefault();
+                  toggleOpen(o);
+                }
+              }}
+              className={`flex items-center gap-3 cursor-pointer select-none rounded-xl -m-1 p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 ${
+                isDark ? "hover:bg-white/[0.03] focus-visible:ring-emerald-400/40"
+                  : "hover:bg-zinc-50 focus-visible:ring-emerald-600/30"}`}>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{o.title}</p>
@@ -675,6 +908,17 @@ export default function AdminServiceOrdersPage() {
                       {SERVICE_BADGE[(o.metadata?.service as string) ?? ""]}
                     </span>
                   )}
+                  {/* The one thing the status can never say. A revision puts
+                      the order back to `in_review`, so on the «قيد التنفيذ»
+                      tab it is indistinguishable from work nobody has started
+                      — this pill is what separates them without opening the
+                      card. A <span>: see the header comment above. */}
+                  {revisions.length > 0 && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0 ${
+                      isDark ? "bg-amber-500/20 text-amber-300" : "bg-amber-500/15 text-amber-700"}`}>
+                      🔁 طلب تعديل {revisionCountLabel(revisions[revisions.length - 1].index, revisions.length)}
+                    </span>
+                  )}
                 </div>
                 {/* The email was always fetched by the list route and carried
                     on the profile, and was the one contact detail the card
@@ -688,14 +932,15 @@ export default function AdminServiceOrdersPage() {
                   {o.profile?.email ? ` · ${o.profile.email}` : ""} · {new Date(o.created_at).toLocaleDateString("ar-SA")}
                 </p>
               </div>
-              <button onClick={() => toggleOpen(o)}
-                className={`text-[11px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
-                {open?.id === o.id ? "إغلاق" : "التفاصيل"}
-              </button>
+              {/* Deliberately a <span>, not a <button> — the whole header row
+                  above is the control now. See the header comment. */}
+              <span className={`shrink-0 text-[11px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
+                {isOpen ? "إغلاق" : "التفاصيل"}
+              </span>
             </div>
 
-            {open?.id === o.id && (
-              <div className="mt-4 space-y-3 border-t pt-4 border-white/[0.06]">
+            {isOpen && (
+              <div id={panelId} className="mt-4 space-y-3 border-t pt-4 border-white/[0.06]">
                 <div className="flex gap-2">
                   <button onClick={() => copyPrompt(o)}
                     className="rounded-xl border border-emerald-500/30 px-3 py-1.5 text-[11px] font-bold text-emerald-500">
@@ -742,6 +987,16 @@ export default function AdminServiceOrdersPage() {
                     onResend={() => act(o.id, { action: "resend_whatsapp" }, { keepOpen: true })}
                   />
                 )}
+
+                {/* What the client sent the work back for. Sits immediately
+                    above the internal-note box — the two are the team's own
+                    reading matter, and both must clear the long
+                    buildOrderPrompt() block below, which an admin scrolls
+                    past rather than through. Renders on ANY status that
+                    carries revisions rather than on `in_review` alone: a
+                    delivered order keeps its history, and the note explaining
+                    why it was redone is worth as much afterwards as during. */}
+                <RevisionBox revisions={revisions} isDark={isDark} />
 
                 {/* Task 3's other half. The note was written into
                     metadata.internalNotes on deliver/cancel and then rendered
@@ -930,12 +1185,27 @@ export default function AdminServiceOrdersPage() {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
         {!loadErr && visibleOrders.length === 0 && (
           <div className={`${card} p-8 text-center text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
             {/* An empty result under an active search is a different fact from
-                an empty queue, and the admin must not read one as the other. */}
-            {orders.length > 0 ? "لا توجد طلبات مطابقة لبحثك." : "لا توجد طلبات."}
+                an empty queue, and the admin must not read one as the other.
+                The revision toggle adds a third: it narrows the loaded page,
+                so an admin sitting on «مُسلّمة» with it pressed sees nothing
+                and would otherwise read that as "no client has asked for a
+                revision", when the right move is to widen to «الكل». The
+                search branch is tested FIRST when both are active: the admin
+                can see their own text in the box, so that is the narrowing
+                they will suspect, and sending them to «الكل» over a typo
+                would send them the wrong way. */}
+            {orders.length === 0
+              ? "لا توجد طلبات."
+              : search.trim()
+                ? "لا توجد طلبات مطابقة لبحثك."
+                : revisionsOnly
+                  ? "لا توجد طلبات تعديل ضمن المعروض حالياً. جرّب تبويب «الكل»."
+                  : "لا توجد طلبات مطابقة لبحثك."}
           </div>
         )}
       </div>
