@@ -134,6 +134,65 @@ interface ActivityStats {
   ordersTotal: number;
 }
 
+// ─── Card filters ──────────────────────────────────────────────────────────────
+/** The four toggleable cards. Same keys the route counts in `stats`. */
+type StatKey = typeof LIVE_STATS[number]["key"];
+
+/**
+ * Every card counts SERVICE REQUESTS (orders); every feed row is a REQUEST
+ * EVENT. One order emits many events, so a card filter can only ever mean
+ * "the events belonging to the orders this card counts" — never "this many
+ * rows". Worse, the feed payload carries no order status at all (the route
+ * reads `service_requests.status` and drops it, and `badge` is a lossy
+ * projection of the raw event token — a claimed-then-delivered order has BOTH
+ * a `task` row and a `delivery` row). So the badge cannot stand in for status.
+ *
+ * The order index closes that gap honestly: one extra read of the caller's own
+ * `service_requests` gives `id → {status, createdAt}`, which is the exact
+ * ground truth the route counted server-side. It is used ONLY to decide
+ * membership — the numbers on the cards stay the server's, never recomputed
+ * here, so the two can't drift apart.
+ */
+interface OrderFacts { status: string; createdAt: string }
+type OrderIndex = Map<string, OrderFacts>;
+
+/** Mirrors the `activeRes` head-count in the route — keep the two in step. */
+const ACTIVE_ORDER_STATUSES = new Set(["pending_assignment", "assigned", "in_review"]);
+
+/** Same boundary the route uses for `ordersThisMonth` (local first-of-month). */
+function monthStartMs(): number {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+}
+
+/**
+ * Does this row belong to an order the given card counts? Rows with no
+ * `requestId` (admin-audit rows, and any request the route couldn't link) can
+ * never belong to an order, so they match no card — including «إجمالي طلباتي».
+ */
+function matchesCardFilter(act: Activity, key: StatKey, index: OrderIndex): boolean {
+  if (!act.caseId) return false;
+  const order = index.get(act.caseId);
+  if (!order) return false; // not visible to this caller — never guessed at
+  switch (key) {
+    case "ordersThisMonth": return new Date(order.createdAt).getTime() >= monthStartMs();
+    case "ordersActive":    return ACTIVE_ORDER_STATUSES.has(order.status);
+    case "ordersCompleted": return order.status === "completed";
+    case "ordersTotal":     return true;
+  }
+}
+
+// ─── Order index shape (GET /api/v1/service-requests) ──────────────────────────
+interface OrderIndexRow { id: string; status: string; created_at: string }
+interface OrderIndexResponse { data?: OrderIndexRow[]; total?: number; degraded?: boolean }
+
+/**
+ * One page big enough to hold every order a real practice has. If the account
+ * has more than this the list comes back truncated, the index would silently
+ * under-select, and the cards go inert instead of filtering to a wrong subset.
+ */
+const ORDER_INDEX_LIMIT = 400;
+
 interface ActivityApiResponse {
   items: ActivityApiItem[];
   stats: ActivityStats | null;
@@ -212,6 +271,10 @@ export default function ActivityLogPage() {
   const [stats, setStats] = useState<ActivityStats | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Which stat card is toggled on, and the id→{status,createdAt} index that
+  // makes the four cards mean something. Null index = cards stay inert.
+  const [cardFilter, setCardFilter] = useState<StatKey | null>(null);
+  const [orderIndex, setOrderIndex] = useState<OrderIndex | null>(null);
 
   // Fetch the real feed; in supabase mode an empty result stays empty. Demo
   // mode never calls the API at all, so MOCK_ACTIVITIES stands untouched.
@@ -227,6 +290,33 @@ export default function ActivityLogPage() {
       })
       .catch(() => {
         // honest empty state — no invented history
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // The order index behind the card filters. Read once, in parallel with the
+  // feed. Every failure mode ends the same way — index stays null and the
+  // cards render as plain, unclickable cards — because a filter that quietly
+  // drops rows is worse than no filter at all.
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    let cancelled = false;
+    apiGet<OrderIndexResponse>("/api/v1/service-requests", { limit: ORDER_INDEX_LIMIT })
+      .then((res) => {
+        if (cancelled) return;
+        const rows = res.data ?? [];
+        // `degraded: true` is the route's 200-with-empty-list failure signal,
+        // and a `total` above what came back means the page was cut short.
+        // Either way the index is incomplete — don't build one.
+        if (res.degraded || (res.total ?? rows.length) > rows.length) return;
+        const index: OrderIndex = new Map();
+        for (const row of rows) {
+          if (row?.id) index.set(row.id, { status: row.status, createdAt: row.created_at });
+        }
+        setOrderIndex(index);
+      })
+      .catch(() => {
+        // cards stay inert
       });
     return () => { cancelled = true; };
   }, []);
@@ -252,8 +342,36 @@ export default function ActivityLogPage() {
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
+  /**
+   * Stat-card chrome. Built here rather than appended to `card` because the
+   * selected state overrides the SAME border-colour utility `card` sets, and
+   * two competing utilities of equal specificity resolve by stylesheet order,
+   * not by their position in the className string.
+   *
+   * Selected reads as brand gold in both themes: a solid #C8A762 border plus a
+   * ring, over a tinted surface that is dark-on-dark and light-on-light. Note
+   * no gray-50/100/200 anywhere — globals.css redefines those as dark
+   * SURFACES, which would make the label unreadable in dark mode.
+   */
+  const statCardClass = (selected:boolean, interactive:boolean) => {
+    const base = "rounded-2xl border p-4 flex items-center gap-3 w-full text-start transition-all";
+    const shadow = isDark ? "" : " shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
+    const focus = interactive
+      ? " focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762] focus-visible:ring-offset-0 cursor-pointer"
+      : "";
+    if (selected) {
+      return `${base}${shadow}${focus} border-[#C8A762] ring-1 ring-[#C8A762]/40 ${isDark?"bg-[#C8A762]/[0.08]":"bg-amber-50"}`;
+    }
+    const idle = isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-100 bg-white";
+    const hover = interactive ? (isDark ? " hover:border-white/[0.14]" : " hover:border-amber-200") : "";
+    return `${base}${shadow}${focus} ${idle}${hover}`;
+  };
+
+  // Every filter ANDs with every other — the card narrows the same list the
+  // search box and the filter panel narrow.
   const filtered = useMemo(()=>{
     let acts = activities;
+    if(cardFilter&&orderIndex) acts = acts.filter(a=>matchesCardFilter(a,cardFilter,orderIndex));
     if(dayFilter!=="all")  acts = acts.filter(a=>a.dayGroup===dayFilter);
     if(typeFilter!=="all") acts = acts.filter(a=>a.type===typeFilter);
     if(search.trim()){
@@ -261,7 +379,7 @@ export default function ActivityLogPage() {
       acts=acts.filter(a=>a.title.toLowerCase().includes(q)||a.description?.toLowerCase().includes(q)||a.caseName?.toLowerCase().includes(q));
     }
     return acts;
-  },[activities,dayFilter,typeFilter,search]);
+  },[activities,cardFilter,orderIndex,dayFilter,typeFilter,search]);
 
   // Group by day
   const grouped = useMemo(()=>{
@@ -289,9 +407,39 @@ export default function ActivityLogPage() {
 
   // Demo keeps its showcase numbers; supabase mode shows the real counts, and
   // an em-dash only while they are still loading (or if the call failed).
-  const statCards = isSupabaseMode
-    ? LIVE_STATS.map(c=>({...c, value: stats ? arNum(stats[c.key]) : "—"}))
-    : STATS;
+  //
+  // `filterKey` is what makes a card clickable, and it is deliberately null
+  // unless BOTH the count and the order index arrived: a card still reading
+  // "—" has nothing to filter to, and without the index there is no honest
+  // predicate. Demo cards are never clickable — STATS holds invented showcase
+  // numbers (٢٨/١٢/٣/٩) with no relation whatsoever to MOCK_ACTIVITIES, so
+  // clicking one could only ever contradict itself.
+  const statCards: {label:string;value:string;icon:React.ElementType;color:string;bg:string;filterKey:StatKey|null}[] =
+    isSupabaseMode
+      ? LIVE_STATS.map(c=>({...c, value: stats?arNum(stats[c.key]):"—", filterKey: stats&&orderIndex?c.key:null}))
+      : STATS.map(c=>({...c, filterKey:null}));
+
+  // How much of the card's population the loaded feed can actually speak for.
+  // The card number is the server's head-count over ALL the user's orders;
+  // this counts the DISTINCT orders that card covers which have at least one
+  // event in the pages loaded so far. They differ for two honest reasons —
+  // older events not paged in yet, and orders that have no events at all — so
+  // the gap is stated in the UI rather than papered over.
+  const cardCoverage = useMemo(()=>{
+    if(!cardFilter||!stats||!orderIndex) return null;
+    const ids = new Set<string>();
+    activities.forEach(a=>{ if(a.caseId&&matchesCardFilter(a,cardFilter,orderIndex)) ids.add(a.caseId); });
+    return {shown:ids.size, total:stats[cardFilter]};
+  },[cardFilter,stats,orderIndex,activities]);
+
+  const activeCardLabel = cardFilter ? LIVE_STATS.find(c=>c.key===cardFilter)?.label ?? null : null;
+  const anyFilterActive = cardFilter!==null||dayFilter!=="all"||typeFilter!=="all"||search.trim()!=="";
+  const clearAllFilters = () => { setCardFilter(null); setDayFilter("all"); setTypeFilter("all"); setSearch(""); };
+
+  // One chip per active filter — each clears just itself.
+  const chipClass = isDark
+    ? "flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-white/[0.08] bg-white/[0.04] text-zinc-300"
+    : "flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-200 bg-slate-50 text-slate-600";
 
   return (
     <div className="max-w-[900px] mx-auto space-y-6" dir="rtl">
@@ -330,20 +478,45 @@ export default function ActivityLogPage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats — each live card is a toggle over the feed below */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {statCards.map((s,i)=>(
-          <motion.div key={i} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
-            className={`${card} p-4 flex items-center gap-3`}>
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.bg}`}>
-              <s.icon size={18} weight="duotone" className={s.color}/>
-            </div>
-            <div>
-              <p className={`text-xl font-black ${isDark?"text-white":"text-slate-800"}`}>{s.value}</p>
-              <p className={`text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}>{s.label}</p>
-            </div>
-          </motion.div>
-        ))}
+        {statCards.map((s,i)=>{
+          const interactive = s.filterKey!==null;
+          const selected = interactive && s.filterKey===cardFilter;
+          const body = (
+            <>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.bg}`}>
+                <s.icon size={18} weight="duotone" className={s.color}/>
+              </div>
+              <div className="min-w-0">
+                <p className={`text-xl font-black ${isDark?"text-white":"text-slate-800"}`}>{s.value}</p>
+                <p className={`text-[11px] truncate ${selected?"text-[#C8A762] font-semibold":isDark?"text-zinc-500":"text-slate-400"}`}>{s.label}</p>
+              </div>
+              {selected&&(
+                <CheckCircle size={16} weight="fill" className="text-[#C8A762] flex-shrink-0 ms-auto"/>
+              )}
+            </>
+          );
+          // motion.button rather than a div with an onClick: focus, Enter and
+          // Space come from the element itself, and aria-pressed is only valid
+          // on a real button.
+          return interactive ? (
+            <motion.button key={s.label} type="button"
+              initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
+              aria-pressed={selected}
+              // Clicking the active card clears it — same toggle both ways.
+              onClick={()=>setCardFilter(prev=>prev===s.filterKey?null:s.filterKey)}
+              title={selected?`إلغاء الفلتر: ${s.label}`:`عرض أنشطة: ${s.label}`}
+              className={statCardClass(selected,true)}>
+              {body}
+            </motion.button>
+          ) : (
+            <motion.div key={s.label} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
+              className={statCardClass(false,false)}>
+              {body}
+            </motion.div>
+          );
+        })}
       </div>
 
       {/* Filters */}
@@ -362,6 +535,50 @@ export default function ActivityLogPage() {
             <motion.span animate={{rotate:showFilters?180:0}} className="block"><CaretDown size={11}/></motion.span>
           </button>
         </div>
+
+        {/* Active filters — the card toggle, the panel and the search box all
+            land here, so there is one place that shows what is narrowing the
+            feed and one button that clears every one of them. */}
+        {anyFilterActive&&(
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={`text-[9px] font-black uppercase tracking-widest ${isDark?"text-zinc-600":"text-slate-400"}`}>الفلاتر النشطة</span>
+            {activeCardLabel&&(
+              <button onClick={()=>setCardFilter(null)} className={chipClass}>
+                {activeCardLabel}<X size={9}/>
+              </button>
+            )}
+            {dayFilter!=="all"&&(
+              <button onClick={()=>setDayFilter("all")} className={chipClass}>
+                {DAY_GROUP_LABELS[dayFilter]}<X size={9}/>
+              </button>
+            )}
+            {typeFilter!=="all"&&(
+              <button onClick={()=>setTypeFilter("all")} className={chipClass}>
+                {TYPE_FILTER_LABELS[typeFilter as ActivityType]??ACTIVITY_CONFIG[typeFilter as ActivityType].label}<X size={9}/>
+              </button>
+            )}
+            {search.trim()&&(
+              <button onClick={()=>setSearch("")} className={chipClass}>
+                «{search.trim()}»<X size={9}/>
+              </button>
+            )}
+            <button onClick={clearAllFilters}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${isDark?"border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10":"border-amber-300 text-amber-700 hover:bg-amber-50"}`}>
+              مسح الكل
+            </button>
+          </div>
+        )}
+
+        {/* The card counts orders; the feed lists events on those orders, and
+            only the pages loaded so far. Say so instead of letting the two
+            numbers quietly disagree. */}
+        {cardCoverage&&cardCoverage.shown<cardCoverage.total&&(
+          <div className={`rounded-xl px-3 py-2 text-[11px] leading-relaxed border ${isDark?"border-white/[0.07] bg-white/[0.03] text-zinc-400":"border-slate-200 bg-slate-50 text-slate-500"}`}>
+            يعرض السجل أنشطة {arNum(cardCoverage.shown)} من أصل {arNum(cardCoverage.total)} من «{activeCardLabel}».
+            الرقم على البطاقة يُحتسب على الخادم لكامل طلباتك، بينما يعرض السجل الأحداث المحمَّلة فقط
+            {cursor?" — استخدم «تحميل أنشطة أقدم» في الأسفل لعرض المزيد.":" — بقية الطلبات لا تحمل أنشطة مسجَّلة."}
+          </div>
+        )}
 
         <AnimatePresence>
           {showFilters&&(
@@ -403,10 +620,29 @@ export default function ActivityLogPage() {
 
       {/* Timeline */}
       <div className="space-y-6">
+        {/* Two different nothings: a feed with no rows at all, and a feed whose
+            rows the current filters excluded. The second one is recoverable
+            and says so. */}
         {grouped.length===0&&(
           <div className={`${card} p-12 text-center`}>
             <Archive size={36} weight="duotone" className={`mx-auto mb-3 ${isDark?"text-zinc-700":"text-slate-300"}`}/>
-            <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>لا توجد أنشطة مطابقة للبحث أو الفلتر المختار</p>
+            {activities.length===0?(
+              <>
+                <p className={`text-sm font-semibold ${isDark?"text-zinc-400":"text-slate-500"}`}>لا يوجد نشاط مسجَّل بعد</p>
+                <p className={`text-[12px] mt-1 ${isDark?"text-zinc-600":"text-slate-400"}`}>ستظهر هنا حركة طلباتك ومواعيدك فور بدء العمل عليها.</p>
+              </>
+            ):(
+              <>
+                <p className={`text-sm font-semibold ${isDark?"text-zinc-400":"text-slate-500"}`}>لا توجد أنشطة مطابقة للفلتر</p>
+                <p className={`text-[12px] mt-1 ${isDark?"text-zinc-600":"text-slate-400"}`}>
+                  السجل يحتوي على {arNum(activities.length)} نشاطًا، لكن لا شيء منها يطابق الفلاتر الحالية.
+                </p>
+                <button onClick={clearAllFilters}
+                  className={`mt-4 px-4 py-2 rounded-xl text-[11px] font-bold border transition-colors ${isDark?"border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10":"border-amber-300 text-amber-700 hover:bg-amber-50"}`}>
+                  مسح كل الفلاتر
+                </button>
+              </>
+            )}
           </div>
         )}
         {grouped.map(([dayKey,activities])=>(
