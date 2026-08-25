@@ -166,19 +166,22 @@ export const MOCK_RESULT = {
 // ─── Letter Constants ───────────────────────────────────────────────────────────
 
 export const LETTER_TYPES: { id: string; label: string; Icon: React.ElementType }[] = [
-  { id: "warning",   label: "إنذار قانوني",         Icon: Scales },
-  { id: "notice",    label: "إخطار رسمي",            Icon: Bell },
-  { id: "request",   label: "طلب مستند / معلومة",   Icon: FolderOpen },
-  { id: "demand",    label: "مطالبة مالية",          Icon: Coins },
-  { id: "complaint", label: "شكوى",                 Icon: MegaphoneSimple },
-  { id: "objection", label: "اعتراض على قرار",       Icon: Prohibit },
-  { id: "release",   label: "طلب إفراج عن مستند",   Icon: LockKeyOpen },
-  { id: "proxy",     label: "توكيل",                 Icon: PenNib },
+  { id: "warning",     label: "إنذار قانوني",                 Icon: Scales },
+  { id: "termination", label: "إخطار بفسخ عقد / إنهاء علاقة", Icon: Prohibit },
+  { id: "demand",      label: "مطالبة مالية وسداد مستحقات",  Icon: Coins },
+  { id: "eviction",    label: "إشعار إخلاء عقار",             Icon: Warning },
+  { id: "settlement",  label: "عرض تسوية ودية",               Icon: Sparkle },
+  { id: "notice",      label: "إخطار رسمي",                    Icon: Bell },
+  { id: "objection",   label: "تظلم / اعتراض إداري",           Icon: MegaphoneSimple },
+  { id: "request",     label: "طلب مستند / إفادة رسمية",       Icon: FolderOpen },
+  { id: "proxy",       label: "تفويض / إقرار رسمي",            Icon: PenNib },
+  { id: "release",     label: "طلب إفراج عن مستند / كفالة",   Icon: LockKeyOpen },
 ];
 
 export const GOV_ENTITIES = [
-  "وزارة الموارد البشرية", "وزارة التجارة", "وزارة العدل",
-  "هيئة المحاكم الإدارية", "هيئة السوق المالية", "هيئة الزكاة والضريبة والجمارك",
-  "النيابة العامة", "رئاسة المحكمة العليا", "ديوان المظالم",
-  "البلدية", "التأمينات الاجتماعية", "أخرى",
+  "وزارة الموارد البشرية والتنمية الاجتماعية", "وزارة التجارة", "وزارة العدل",
+  "هيئة الزكاة والضريبة والجمارك", "هيئة السوق المالية", "الهيئة العامة للعقار",
+  "ديوان المظالم", "النيابة العامة", "رئاسة المحكمة العامة",
+  "المؤسسة العامة للتأمينات الاجتماعية", "أمانة / بلدية المنطقة", "المركز السعودي للتحكيم التجاري", "أخرى",
 ];
+

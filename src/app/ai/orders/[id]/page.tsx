@@ -97,6 +97,48 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const s = ORDER_STATUS_AR[order.status] ?? ORDER_STATUS_AR.pending_assignment;
   const deliverable = order.metadata?.deliverable;
 
+  // Revisions SLA calculation: max 2 revisions, within 48h of completion
+  const completedAt = order.metadata?.completedAt || order.metadata?.deliveredAt || order.created_at;
+  const completedTime = new Date(completedAt).getTime();
+  const now = Date.now();
+  const hoursSinceDelivery = Math.floor((now - completedTime) / (1000 * 60 * 60));
+  const isWithin48h = hoursSinceDelivery <= 48;
+  const revisionsCount = Array.isArray(order.metadata?.revisions) ? (order.metadata.revisions as any[]).length : 0;
+  const maxRevisions = 2;
+  const remainingRevisions = Math.max(0, maxRevisions - revisionsCount);
+  const canRequestRevision = order.status === "completed" && isWithin48h && remainingRevisions > 0;
+
+  const [showRevisionForm, setShowRevisionForm] = useState(false);
+  const [revisionNotes, setRevisionNotes] = useState("");
+  const [submittingRevision, setSubmittingRevision] = useState(false);
+  const [revisionSuccess, setRevisionSuccess] = useState(false);
+
+  const handleRevisionSubmit = async () => {
+    if (!revisionNotes.trim()) return;
+    setSubmittingRevision(true);
+    try {
+      const res = await fetch(`/api/v1/service-requests/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "request_revision",
+          revisionNotes: revisionNotes.trim(),
+          revisionNumber: revisionsCount + 1,
+        }),
+      });
+      if (res.ok) {
+        setRevisionSuccess(true);
+        setShowRevisionForm(false);
+        setRevisionNotes("");
+        load();
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSubmittingRevision(false);
+    }
+  };
+
   return (
     <div className="p-5 md:p-7 max-w-3xl mx-auto space-y-4" dir="rtl">
       <div>
@@ -107,15 +149,116 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       </div>
 
       {order.status === "completed" && deliverable ? (
-        <div className={`${card} p-5 space-y-3`}>
-          <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>المستند جاهز</p>
+        <div className={`${card} p-5 space-y-4`}>
+          <div className="flex items-center justify-between">
+            <p className={`text-[14px] font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
+              ✓ تم تسليم المستند بنجاح
+            </p>
+            <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${
+              isDark ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-emerald-200 bg-emerald-50 text-emerald-700"
+            }`}>
+              النسخة النهائية
+            </span>
+          </div>
+
+          {/* Delivery notes from team */}
           {deliverable.notes && (
-            <p className={`text-[12px] leading-[1.9] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{deliverable.notes}</p>
+            <div className={`p-3.5 rounded-xl border ${isDark ? "bg-white/[0.03] border-white/[0.06]" : "bg-slate-50 border-slate-100"}`}>
+              <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                ملاحظات وتوجيهات الفريق:
+              </p>
+              <p className={`text-[12px] leading-[1.9] ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{deliverable.notes}</p>
+            </div>
           )}
-          <button onClick={download} className="flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[12px] font-bold text-white">
-            <DownloadSimple size={14} /> تحميل {deliverable.fileName}
-          </button>
+
+          {/* Download button */}
+          <div className="flex flex-wrap gap-2">
+            <button onClick={download} className="flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-6 py-2.5 text-[12px] font-bold text-[#C8A762] hover:bg-[#092e22] shadow transition">
+              <DownloadSimple size={15} /> تحميل {deliverable.fileName || "المستند"}
+            </button>
+          </div>
           {downloadErr && <p className="text-[11px] text-red-500">{downloadErr}</p>}
+
+          {/* SLA Revisions Policy Box */}
+          <div className={`p-4 rounded-2xl border ${isDark ? "border-white/[0.08] bg-zinc-950/50" : "border-slate-200 bg-slate-50/70"}`}>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                  سياسة التعديلات والاستفسارات
+                </p>
+                <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                  {canRequestRevision ? (
+                    <>متاح لك <span className="font-bold text-amber-500">{remainingRevisions} تعديل مجاني</span> خلال 48 ساعة من الاستلام (مضى {hoursSinceDelivery} ساعة).</>
+                  ) : (
+                    <>انتهت فترة التعديلات المباشرة (48 ساعة أو استُهلكت التعديلات).</>
+                  )}
+                </p>
+              </div>
+
+              {canRequestRevision ? (
+                <button
+                  onClick={() => setShowRevisionForm(v => !v)}
+                  className={`px-4 py-2 rounded-xl text-[11px] font-bold border transition ${
+                    showRevisionForm
+                      ? "bg-amber-500 text-white border-amber-500"
+                      : isDark ? "border-amber-500/30 text-amber-400 hover:bg-amber-500/10" : "border-amber-300 text-amber-700 hover:bg-amber-50"
+                  }`}
+                >
+                  {showRevisionForm ? "إلغاء" : "طلب تعديل على المسودة"}
+                </button>
+              ) : (
+                <a
+                  href="/dashboard/lawyer/consultations"
+                  className={`px-4 py-2 rounded-xl text-[11px] font-bold border transition ${
+                    isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  فتح تذكرة دعم / شكوى
+                </a>
+              )}
+            </div>
+
+            {/* Revision Request Form */}
+            {showRevisionForm && (
+              <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-3">
+                <p className={`text-[11px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                  اكتب ملاحظات التعديل المطلوب بدقة:
+                </p>
+                <textarea
+                  rows={3}
+                  value={revisionNotes}
+                  onChange={e => setRevisionNotes(e.target.value)}
+                  placeholder="مثال: يرجى إضافة فقرة تتعلق بالشرط الجزائي وتعديل قيمة المطالبة..."
+                  className={`w-full rounded-xl p-3 text-[12px] outline-none border transition ${
+                    isDark ? "bg-zinc-900 border-white/[0.08] text-zinc-200 focus:border-[#C8A762]" : "bg-white border-zinc-200 text-zinc-800 focus:border-[#0B3D2E]"
+                  }`}
+                />
+                <div className="flex gap-2">
+                  <button
+                    disabled={submittingRevision || !revisionNotes.trim()}
+                    onClick={handleRevisionSubmit}
+                    className="rounded-xl bg-[#0B3D2E] px-5 py-2 text-[12px] font-bold text-[#C8A762] hover:bg-[#092e22] disabled:opacity-40 transition"
+                  >
+                    {submittingRevision ? "جارٍ الإرسال..." : "إرسال طلب التعديل"}
+                  </button>
+                  <button
+                    onClick={() => setShowRevisionForm(false)}
+                    className={`rounded-xl px-4 py-2 text-[12px] font-semibold border ${
+                      isDark ? "border-white/[0.08] text-zinc-400" : "border-slate-200 text-zinc-500"
+                    }`}
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {revisionSuccess && (
+              <p className="text-[11px] text-emerald-400 mt-2 font-semibold">
+                ✓ تم إرسال طلب التعديل لفريق نظامي بنجاح، وسنقوم بمراجعته وإعادة التسليم.
+              </p>
+            )}
+          </div>
         </div>
       ) : order.status === "completed" ? (
         // Reachable: the status flip to "completed" and the metadata.deliverable

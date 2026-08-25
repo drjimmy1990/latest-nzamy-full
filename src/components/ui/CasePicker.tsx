@@ -1,9 +1,18 @@
-"use client";
-
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MagnifyingGlass, Scales, X, CheckCircle } from "@phosphor-icons/react";
-import { getActiveCases, getCaseTypeLabel, SharedCase } from "@/lib/casesStore";
+import { getActiveCases as getMockCases, getCaseTypeLabel, SharedCase } from "@/lib/casesStore";
+import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
+import { isSupabaseMode } from "@/lib/services/api";
+
+interface CaseItem {
+  id: string;
+  title: string;
+  client: string;
+  type: string;
+  status: string;
+  nextDate?: string;
+}
 
 interface CasePickerProps {
   value: string;       // currently selected case id
@@ -20,19 +29,50 @@ const STATUS_DOT: Record<string, string> = {
 export function CasePicker({ value, onChange, isDark }: CasePickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [cases, setCases] = useState<CaseItem[]>([]);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const cases = getActiveCases();
+  // Load real cases from workflow service or fallback to mock
+  useEffect(() => {
+    if (isSupabaseMode) {
+      getWorkflowRequestsByReceiver("lawyer")
+        .then((requests) => {
+          if (requests && requests.length > 0) {
+            const mapped: CaseItem[] = requests
+              .filter(r => r.type === "service" || (r.metadata as any)?.category === "case" || !r.metadata?.task)
+              .map(r => ({
+                id: r.id,
+                title: r.title || "قضية بدون عنوان",
+                client: r.requester?.name || "موكل",
+                type: (r.metadata as any)?.type || "commercial",
+                status: r.status === "completed" ? "active" : "pending",
+                nextDate: typeof (r.metadata as any)?.date === "string" ? (r.metadata as any).date : undefined,
+              }));
+            if (mapped.length > 0) {
+              setCases(mapped);
+              return;
+            }
+          }
+          setCases(getMockCases() as CaseItem[]);
+        })
+        .catch(() => {
+          setCases(getMockCases() as CaseItem[]);
+        });
+    } else {
+      setCases(getMockCases() as CaseItem[]);
+    }
+  }, []);
 
   const filtered = cases.filter(c =>
     !query.trim() ||
     c.title.includes(query) ||
     c.client.includes(query) ||
-    getCaseTypeLabel(c.type).includes(query)
+    (getCaseTypeLabel(c.type as any) || "").includes(query)
   );
 
   const selected = cases.find(c => c.id === value);
+
 
   // close on outside click
   useEffect(() => {

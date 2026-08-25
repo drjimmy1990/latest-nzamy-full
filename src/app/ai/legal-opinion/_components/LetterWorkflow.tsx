@@ -64,7 +64,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
         ? `\nلذا نطلب منكم اتخاذ الإجراء اللازم خلال (${deadlineDays}) أيام من تاريخ استلام هذا الخطاب، وإلا احتفظنا بحق اتخاذ كافة الإجراءات القانونية الكفيلة بصون الحقوق.`
         : "",
       letterAttachments.length > 0
-        ? `\nالمرفقات:\n${letterAttachments.map((a, i) => `${i + 1}. ${a}`).join("\n")}`
+        ? `\nقائمة المرفقات:\n${letterAttachments.map((a, i) => `${i + 1}. ${a}`).join("\n")}`
         : "",
       "",
       `مقدمه،\n${senderName}`,
@@ -82,7 +82,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
 
   return (
     <AnimatePresence mode="wait">
-      {/* Step indicator */}
+      {/* Step indicator — clickable to return to completed steps */}
       {!letterDone && (
         <div className={`${card} p-3 mb-4`}>
           <div className="flex items-center gap-1">
@@ -90,16 +90,23 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               const n = i + 1;
               const isActive = letterStep === n;
               const isDone = letterStep > n;
+              const isClickable = n < letterStep;
               return (
-                <div key={n} className="flex items-center gap-1 flex-1">
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => { if (isClickable) setLetterStep(n); }}
+                  disabled={!isClickable}
+                  className={`flex items-center gap-1 flex-1 text-start transition-all ${isClickable ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
+                >
                   <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0 transition-all ${
                     isDone ? "bg-emerald-500 text-white" : isActive ? "bg-blue-600 text-white" : isDark ? "bg-zinc-800 text-zinc-500" : "bg-zinc-100 text-zinc-400"
                   }`}>
                     {isDone ? <CheckCircle size={12} weight="fill" /> : n}
                   </div>
-                  <span className={`text-[10px] hidden sm:block truncate font-medium ${isActive ? (isDark ? "text-white" : "text-zinc-800") : isDark ? "text-zinc-600" : "text-zinc-400"}`}>{l}</span>
-                  {i < 3 && <div className={`flex-1 h-px mx-1 ${isDone ? "bg-emerald-500/40" : isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />}
-                </div>
+                  <span className={`text-[10px] hidden sm:block truncate font-medium ${isActive ? (isDark ? "text-white" : "text-zinc-800") : isDone ? (isDark ? "text-emerald-400 font-semibold" : "text-emerald-600 font-semibold") : isDark ? "text-zinc-600" : "text-zinc-400"}`}>{l}</span>
+                  {i < 3 && <div className={`flex-1 h-[1px] mx-1 ${isDone ? "bg-emerald-500/50" : isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />}
+                </button>
               );
             })}
           </div>
@@ -357,10 +364,13 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               }`} />
           </div>
 
-          {/* Attachments */}
+          {/* Attachments / Annexes mentioned in letter footer */}
           <div>
-            <p className={`text-[10px] font-bold mb-1.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-              المرفقات <span className="opacity-60 font-normal">(اختياري)</span>
+            <p className={`text-[10px] font-bold mb-0.5 ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
+              المرفقات والملحقات المذكورة في ذيل الخطاب <span className="opacity-60 font-normal">(اختياري)</span>
+            </p>
+            <p className={`text-[10px] mb-1.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+              تُدرج كنصوص ملاحق في أسفل الخطاب الرسمي (مثل: 1- صورة السجل التجاري، 2- نسخة العقد)
             </p>
             <div className="flex gap-2">
               <input value={attachmentInput} onChange={e => setAttachmentInput(e.target.value)}
@@ -371,10 +381,11 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
                     setAttachmentInput("");
                   }
                 }}
-                placeholder="اسم المرفق ثم Enter..."
+                placeholder="اكتب اسم الملحق ثم اضغط Enter..."
                 className={`flex-1 rounded-xl border px-3.5 py-2 text-[12px] outline-none ${
                   isDark ? "border-white/[0.08] bg-zinc-800/60 text-zinc-200 placeholder:text-zinc-600" : "border-slate-200 bg-slate-50 text-zinc-800 placeholder:text-zinc-400"
                 }`} />
+
               <button onClick={() => { if (attachmentInput.trim()) { setLetterAttachments(prev => [...prev, attachmentInput.trim()]); setAttachmentInput(""); } }}
                 className={`px-3 rounded-xl border text-[12px] font-bold transition-colors ${
                   isDark ? "border-white/[0.08] text-zinc-400 hover:text-zinc-200" : "border-slate-200 text-slate-500 hover:text-slate-700"
