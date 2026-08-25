@@ -32,21 +32,27 @@ const VALID_DB_STATUSES = new Set([
  * GET /api/v1/lawyer/tasks
  * Auth required. Returns tasks for this lawyer derived from service requests.
  * Maps DB status → UI task status (todo/in_progress/done/archived).
+ * Optional query params:
+ *   ?case_id=<uuid>  — filter to tasks linked to a specific case
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 
     const uid = user.id;
+    const { searchParams } = new URL(request.url);
+    const caseIdFilter = searchParams.get("case_id");
 
-    // Get service requests assigned to this lawyer across all relevant statuses
-    // (include completed/cancelled so done/archived tasks surface in the UI).
-    const { data: requests } = await supabase
+    // Get service requests assigned to or created by this lawyer.
+    // When case_id is provided we can't filter by metadata column directly
+    // (JSONB filter), so we fetch all and filter in JS — the result set is
+    // small (≤50) so this is fine.
+    let query = supabase
       .from("service_requests")
       .select("id, title, status, type, created_at, updated_at, metadata")
-      .eq("assigned_to", uid)
+      .or(`assigned_to.eq.${uid},requester_user_id.eq.${uid}`)
       .in("status", [
         "pending_assignment",
         "assigned",
@@ -55,21 +61,32 @@ export async function GET() {
         "cancelled",
       ])
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(200);
+
+    const { data: requests } = await query;
+
+    // JS-side caseId filter (metadata is JSONB → filter in application layer)
+    let filtered = requests ?? [];
+    if (caseIdFilter) {
+      filtered = filtered.filter((r) => {
+        const meta = (r.metadata as Record<string, unknown> | null) ?? {};
+        return meta.caseId === caseIdFilter || meta.case_id === caseIdFilter;
+      });
+    }
 
     // Get recent events for these requests
-    const requestIds = (requests ?? []).map((r) => r.id);
+    const requestIds = filtered.map((r) => r.id);
     const { data: events } = requestIds.length > 0
       ? await supabase
           .from("request_events")
           .select("id, request_id, event, created_at")
           .in("request_id", requestIds)
           .order("created_at", { ascending: false })
-          .limit(100)
+          .limit(200)
       : { data: [] };
 
     // Map requests to task-like objects (map DB status → UI task status)
-    const tasks = (requests ?? []).map((req) => {
+    const tasks = filtered.map((req) => {
       const reqEvents = (events ?? []).filter((e) => e.request_id === req.id);
       const meta = (req.metadata as Record<string, unknown> | null) ?? {};
 
@@ -94,6 +111,8 @@ export async function GET() {
         dueDate: typeof meta.dueDate === "string" ? meta.dueDate : null,
         caseId: typeof meta.caseId === "string" ? meta.caseId : undefined,
         caseRef: typeof meta.caseRef === "string" ? meta.caseRef : undefined,
+        notes: typeof meta.notes === "string" ? meta.notes : undefined,
+        subtasks: Array.isArray(meta.subtasks) ? meta.subtasks : [],
         eventsCount: reqEvents.length,
         lastEvent: reqEvents[0] || null,
       };

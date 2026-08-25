@@ -36,6 +36,16 @@ export async function getLawyerTasks(): Promise<LawyerTask[]> {
   }
 }
 
+/** Fetch only tasks linked to a specific case (caseId in metadata). */
+export async function getLawyerTasksByCaseId(caseId: string): Promise<LawyerTask[]> {
+  if (!isSupabaseMode || !caseId) return [];
+  try {
+    return await apiGet<LawyerTask[]>("/api/v1/lawyer/tasks", { case_id: caseId });
+  } catch {
+    return [];
+  }
+}
+
 export async function updateLawyerTaskStatus(taskId: string, status: string): Promise<boolean> {
   if (!isSupabaseMode) return false;
 
