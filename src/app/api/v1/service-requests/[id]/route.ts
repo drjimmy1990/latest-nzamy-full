@@ -6,6 +6,11 @@ import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { canRequesterCancel } from "@/lib/services/orderTransitions";
+import {
+  evaluateOrderEditability,
+  validateEditedDescription,
+  appendEditHistory,
+} from "@/lib/services/orderEditGate";
 
 /* ── سياسة التعديلات: ٤٨ ساعة / تعديلان ──────────────────────────────────────
  *
@@ -497,6 +502,94 @@ export async function PATCH(
         ),
       }),
     });
+  }
+
+  // ── «تعديل الطلب» — owner item ٥ ──────────────────────────────────────────
+  //
+  // Handled here, before `rawPatch`, for exactly the reason `request_revision`
+  // above is: this action carries no `status`, so falling through would hit
+  // ALLOWED_PATCH_FIELDS, drop every key and answer «لا توجد حقول صالحة
+  // للتحديث» — a refusal that tells the client nothing about why. And it must
+  // not be expressible as an ordinary patch: `description` is off the
+  // allowlist on purpose (RLS lets any participant write ANY column on their
+  // own row), so this handler is the only path that can change it, and it
+  // enforces the window before it does.
+  if (body.action === "edit_details") {
+    const { data: existing, error: existingError } = await supabase
+      .from("service_requests")
+      .select("requester_user_id, assigned_to, status, metadata, description, title")
+      .eq("id", id)
+      .single();
+
+    if (existingError || !existing) {
+      return NextResponse.json({ error: "الطلب غير موجود" }, { status: 404 });
+    }
+
+    const gate = evaluateOrderEditability({
+      requesterUserId: existing.requester_user_id as string | null,
+      callerUserId: user.id,
+      status: existing.status as string | null,
+      assignedTo: existing.assigned_to as string | null,
+      metadata: existing.metadata as Record<string, unknown> | null,
+    });
+    if (!gate.editable) {
+      // 403 for "not yours", 409 for "the work moved on" — the second is a
+      // state conflict the client can see explained on the page, not an
+      // authorisation failure.
+      return NextResponse.json(
+        { error: gate.message, reason: gate.reason },
+        { status: gate.reason === "not_owner" ? 403 : 409 },
+      );
+    }
+
+    const validated = validateEditedDescription(body.description);
+    if (!validated.ok) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
+    }
+
+    const previous = typeof existing.description === "string" ? existing.description : "";
+    if (validated.value === previous) {
+      // Not an error, and deliberately not a write either: an unchanged save
+      // would append a history entry recording that nothing changed and put a
+      // «عُدِّل» pill on the admin card for no reason.
+      return NextResponse.json({ success: true, unchanged: true });
+    }
+
+    const nowIso = new Date().toISOString();
+    const metadata = (existing.metadata ?? {}) as Record<string, unknown>;
+    const { data: updated, error: updateError } = await supabase
+      .from("service_requests")
+      .update({
+        description: validated.value,
+        // The previous text is kept, not overwritten. This is a law office —
+        // what the client originally asked for has to stay answerable after
+        // he has changed what he asked for.
+        metadata: { ...metadata, editHistory: appendEditHistory(metadata, previous, nowIso) },
+        updated_at: nowIso,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+
+    // Best-effort, exactly like every other side-channel in this file: the
+    // edit is already saved and a failed audit row must not undo it.
+    try {
+      await recordEvent({
+        supabase,
+        requestId: id,
+        event: RequestEvent.SERVICE_REQUEST_UPDATED,
+        actorUserId: user.id,
+        actorName: "العميل",
+      });
+    } catch (e) {
+      console.error("[service-requests PATCH] edit_details recordEvent failed:", e);
+    }
+
+    return NextResponse.json({ success: true, data: updated });
   }
 
   const rawPatch = body.patch ?? body;

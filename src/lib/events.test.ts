@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { describeRequestEvent, RequestEvent } from "./events.ts";
+import { orderReference } from "./services/orderReference.ts";
 
 test("names the Arabic service and the order reference on creation", () => {
   const out = describeRequestEvent({
@@ -9,7 +10,16 @@ test("names the Arabic service and the order reference on creation", () => {
     serviceTitleAr: "محترف العقود",
     requestTitle: "عقد إيجار",
   });
-  assert.equal(out.title, "تم قيد طلبكم: محترف العقود برقم #8f14e45f");
+  // Owner item ٤ — the feed quotes the SAME short reference the client reads
+  // off their order page and support types into the admin queue. If this ever
+  // diverges again (it was three private formats before orderReference()
+  // existed), a client quoting what the feed told them finds nothing.
+  assert.equal(out.title, "تم قيد طلبكم: محترف العقود برقم ORD-8F14E4");
+  assert.equal(
+    out.title.endsWith(orderReference("8f14e45f-ceea-467a-9575-1a5b3d8f0e11")),
+    true,
+    "the feed must not carry its own copy of the reference format",
+  );
   assert.equal(out.badge, "order");
 });
 

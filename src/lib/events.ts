@@ -1,3 +1,4 @@
+import { orderReference } from "./services/orderReference.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -167,8 +168,10 @@ export function describeRequestEvent(opts: {
   // (e.g. «محترف العقود»); the request title is the fallback when an older
   // row predates it.
   const service = serviceTitleAr?.trim() || requestTitle?.trim() || "طلب خدمة";
-  // Same short reference the admin console and the order page quote.
-  const ref = requestId ? ` برقم #${requestId.slice(0, 8)}` : "";
+  // Same short reference the admin console and the order page quote — one
+  // helper now owns the format (owner item ٤), so a client reading it aloud
+  // and an admin searching for it are looking at the same string.
+  const ref = requestId ? ` برقم ${orderReference(requestId)}` : "";
   const delivered: DescribedEvent = {
     title: `تم إنجاز معاملتكم: ${service}`,
     description: "المستند جاهز للتحميل من صفحة الطلب.",

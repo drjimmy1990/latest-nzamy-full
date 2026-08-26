@@ -42,6 +42,7 @@ import { AI_QUICK, ACTIVITY_TYPE_CONFIG } from "./_data/mockData";
 import { getLawyerDashboardSummary, type LawyerDashboardSummary } from "@/lib/services/lawyerDashboardService";
 import { isSupabaseMode } from "@/lib/services/api";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
+import { orderReference } from "@/lib/services/orderReference";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -89,7 +90,8 @@ function badgeToActivityType(badge: ActivityBadge): keyof typeof ACTIVITY_TYPE_C
 
 /** Short order reference — the same one the activity log and admin console quote. */
 function shortRequestRef(requestId: string | undefined): string {
-  return requestId ? `طلب #${requestId.slice(0, 8)}` : "—";
+  // Owner item ٤ — was a third private copy of the short-reference format.
+  return requestId ? `طلب ${orderReference(requestId)}` : "—";
 }
 
 /**

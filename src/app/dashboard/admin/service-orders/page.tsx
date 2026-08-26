@@ -8,6 +8,7 @@ import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { validateUploadFile } from "@/lib/services/fileValidation";
 import { buildOrderPrompt } from "@/lib/services/orderPrompt";
 import { uploadErrorMessage } from "./_errorCopy";
+import { orderReference, matchesOrderReference } from "@/lib/services/orderReference";
 
 interface AdminOrder {
   id: string; title: string; description: string; status: string;
@@ -421,11 +422,27 @@ function mergeKeptOrder(next: AdminOrder[], kept: AdminOrder | null): AdminOrder
  * 200 rows it returns — enough for the queue as it stands, and the status
  * chips narrow it further before this ever runs.
  */
+/**
+ * How many times the client rewrote the brief after submitting it (owner item
+ * ٥). `metadata.editHistory` is append-only and holds the PREVIOUS text of
+ * each edit, so its length is the number of edits — the current description is
+ * not in it.
+ */
+function editCountOf(o: AdminOrder): number {
+  const raw = (o.metadata as Record<string, unknown> | undefined)?.editHistory;
+  return Array.isArray(raw) ? raw.length : 0;
+}
+
 function matchesSearch(o: AdminOrder, needle: string): boolean {
   if (!needle) return true;
   const q = needle.trim().toLowerCase();
   if (!q) return true;
   return (
+    // Owner item ٤ — the client now reads «ORD-8F14E4» off their order page,
+    // so support typing exactly that has to land on this row. The raw-substring
+    // test stays beside it: older WhatsApp threads still quote the bare
+    // «8f14e45f» form and full UUIDs still get pasted.
+    matchesOrderReference(o.id, needle) ||
     o.id.toLowerCase().includes(q) ||
     (o.profile?.display_name ?? "").toLowerCase().includes(q) ||
     (o.title ?? "").toLowerCase().includes(q)
@@ -911,7 +928,7 @@ export default function AdminServiceOrdersPage() {
           no text search on this screen at all. Matches the order number, the
           client's name and the order title; see matchesSearch(). */}
       <input value={search} onChange={(e) => setSearch(e.target.value)}
-        placeholder="بحث برقم الطلب أو اسم العميل"
+        placeholder="بحث برقم الطلب (ORD-…) أو اسم العميل"
         className={`w-full md:max-w-sm rounded-xl px-3 py-2 text-[12px] border ${
           isDark ? "bg-zinc-950 border-white/[0.07] text-zinc-200 placeholder:text-zinc-600"
             : "bg-white border-zinc-200 text-zinc-800 placeholder:text-zinc-400"}`} />
@@ -1010,6 +1027,18 @@ export default function AdminServiceOrdersPage() {
                       🔁 طلب تعديل {revisionCountLabel(revisions[revisions.length - 1].index, revisions.length)}
                     </span>
                   )}
+                  {/* Owner item ٥ — the client edited the brief after
+                      submitting it. Worth a pill of its own: an admin who read
+                      this order yesterday and comes back to fulfil it today
+                      would otherwise have no signal that the text under them
+                      changed. A <span>, like every other descendant of the
+                      role="button" header. */}
+                  {editCountOf(o) > 0 && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0 ${
+                      isDark ? "bg-violet-500/20 text-violet-300" : "bg-violet-500/15 text-violet-700"}`}>
+                      ✎ عدّله العميل{editCountOf(o) > 1 ? ` (${arDigits(editCountOf(o))})` : ""}
+                    </span>
+                  )}
                   {/* Who owes this order. A <span> — see the header comment:
                       every descendant of the role="button" row must stay
                       non-interactive. The control that CHANGES it lives in the
@@ -1031,7 +1060,7 @@ export default function AdminServiceOrdersPage() {
                     null, and «—» in its place would read as a missing
                     address rather than an absent one. */}
                 <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                  {o.profile?.display_name ?? "—"} · {o.profile?.phone ?? "لا يوجد جوال"}
+                  <span className="font-mono font-bold">{orderReference(o.id)}</span> · {o.profile?.display_name ?? "—"} · {o.profile?.phone ?? "لا يوجد جوال"}
                   {o.profile?.email ? ` · ${o.profile.email}` : ""} · {new Date(o.created_at).toLocaleDateString("ar-SA")}
                 </p>
               </div>
