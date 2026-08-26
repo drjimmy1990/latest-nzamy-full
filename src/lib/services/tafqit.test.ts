@@ -46,7 +46,27 @@ test("a zero group is skipped, not spoken", () => {
 test("the receipt line reads the way a receipt reads", () => {
   assert.equal(tafqit(1250), "فقط ألف ومائتان وخمسون ريالاً سعودياً لا غير");
   assert.equal(tafqit(250), "فقط مائتان وخمسون ريالاً سعودياً لا غير");
-  assert.equal(tafqit(800), "فقط ثمانمائة ريالاً سعودياً لا غير");
+});
+
+test("REGRESSION: تمييز العدد is decided by the last two digits, not by size", () => {
+  // An earlier version used the منصوب form for everything from 3 upward, which
+  // printed «مائة ريالاً سعودياً» and «خمسة ريالاً سعودياً» on receipts. Both
+  // are wrong, and a receipt is a document a client keeps.
+
+  // … 00 → مفرد مجرور
+  assert.equal(tafqit(100), "فقط مائة ريال سعودي لا غير");
+  assert.equal(tafqit(800), "فقط ثمانمائة ريال سعودي لا غير");
+  assert.equal(tafqit(1000), "فقط ألف ريال سعودي لا غير");
+  assert.equal(tafqit(5000), "فقط خمسة آلاف ريال سعودي لا غير");
+
+  // … 03–10 → جمع مجرور
+  assert.equal(tafqit(5), "فقط خمسة ريالات سعودية لا غير");
+  assert.equal(tafqit(10), "فقط عشرة ريالات سعودية لا غير");
+  assert.equal(tafqit(103), "فقط مائة وثلاثة ريالات سعودية لا غير");
+
+  // … 11–99 → مفرد منصوب
+  assert.equal(tafqit(11), "فقط أحد عشر ريالاً سعودياً لا غير");
+  assert.equal(tafqit(250), "فقط مائتان وخمسون ريالاً سعودياً لا غير");
 });
 
 test("one and two carry the count inside the unit word", () => {
@@ -64,13 +84,13 @@ test("halalas are spoken, and only when there are any", () => {
 test("the words are rounded exactly as the figure beside them is", () => {
   // 99.999 prints as 100.00 on the receipt; the words must say مائة too, or
   // the two lines contradict each other.
-  assert.equal(tafqit(99.999), "فقط مائة ريالاً سعودياً لا غير");
+  assert.equal(tafqit(99.999), "فقط مائة ريال سعودي لا غير");
   assert.equal(tafqit(0.005), "فقط هللة لا غير");
-  assert.equal(tafqit(10.004), "فقط عشرة ريالاً سعودياً لا غير");
+  assert.equal(tafqit(10.004), "فقط عشرة ريالات سعودية لا غير");
 });
 
 test("zero is expressible — a receipt for nothing is still a receipt", () => {
-  assert.equal(tafqit(0), "فقط صفر ريالاً سعودياً لا غير");
+  assert.equal(tafqit(0), "فقط صفر ريال سعودي لا غير");
 });
 
 test("what cannot be expressed comes back EMPTY, never partial", () => {

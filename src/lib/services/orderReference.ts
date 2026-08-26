@@ -23,6 +23,8 @@
  */
 const PREFIX = "ORD-";
 const LENGTH = 6;
+/** Shortest bare fragment (no «ORD-») that may prefix-match an order. */
+const MIN_LOOSE_MATCH = 4;
 
 /**
  * `ORD-8F14E4` for the order whose id starts `8f14e45f-…`.
@@ -42,10 +44,10 @@ export function orderReference(requestId: string | null | undefined): string {
 /**
  * Does what a human typed identify this order?
  *
- * Accepts the full UUID, any prefix of it, the short reference with or without
- * the `ORD-` prefix, and either case — because all of those are things people
- * actually paste. Support pasting «ORD-8F14E4» and support pasting
- * «8f14e45f-ceea-467a» have to reach the same row.
+ * Accepts the full UUID, any prefix of it at least MIN_LOOSE_MATCH long, the
+ * short reference with or without the `ORD-` prefix, and either case — because
+ * all of those are things people actually paste. Support pasting «ORD-8F14E4»
+ * and support pasting «8f14e45f-ceea-467a» have to reach the same row.
  */
 export function matchesOrderReference(
   requestId: string | null | undefined,
@@ -56,11 +58,26 @@ export function matchesOrderReference(
   if (!needle) return false;
 
   const hex = requestId.replace(/-/g, "").toUpperCase();
-  const bare = needle.startsWith(PREFIX) ? needle.slice(PREFIX.length) : needle;
+  const prefixed = needle.startsWith(PREFIX);
+  const bare = prefixed ? needle.slice(PREFIX.length) : needle;
   // The typed value is compared against the HYPHEN-STRIPPED id, so a paste of
   // «8f14e45f-ceea» matches after its own hyphens come out too.
   const bareHex = bare.replace(/-/g, "");
   if (!bareHex) return false;
 
-  return hex.startsWith(bareHex) || requestId.toUpperCase().includes(needle);
+  // A MINIMUM before the prefix branch will fire. Without it a bare «A» —
+  // the first keystroke in a live-filtered search box — prefix-matches about
+  // one order in sixteen, and the admin is shown an arbitrary subset that
+  // looks exactly like a real result set. Anything typed WITH the «ORD-»
+  // prefix is unambiguous at any length, because nobody types that by
+  // accident; anything without it has to be long enough to mean something.
+  //
+  // There is deliberately NO free-substring fallback here. One used to sit
+  // beside this test (`requestId.includes(needle)`) and it made the minimum
+  // meaningless — «8» is a substring of almost every UUID, so it matched
+  // anyway. The admin queue keeps its own separate substring search over the
+  // raw id for free-form lookups; this function answers the narrower question
+  // its name asks, and answers it precisely.
+  const longEnough = prefixed || bareHex.length >= MIN_LOOSE_MATCH;
+  return longEnough && hex.startsWith(bareHex);
 }

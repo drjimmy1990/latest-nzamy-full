@@ -305,9 +305,12 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
           <p className={`text-[10px] font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{family.label}</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             {family.tiles.map((lt, tileIndex) => {
-              // The stagger runs across the whole picker, not per family, so
-              // the tiles still animate in as one list rather than five.
-              const i = familyIndex * 2 + tileIndex;
+              // Stagger delay only. Deliberately NOT a running index across the
+              // whole picker — that would need the count of every preceding
+              // family threaded through here for a 40 ms animation offset.
+              // Families are small and ordered, so this is close enough to
+              // read as one list appearing rather than five blocks.
+              const i = familyIndex + tileIndex;
               const isSelected = letterType === lt.id;
               const IconComp = lt.Icon as React.ElementType;
               return (
