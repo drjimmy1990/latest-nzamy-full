@@ -46,6 +46,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
   const service = searchParams.get("service");
+  // Owner item ١٣ — «كل واحد يشوف اللي عليه». `unassigned` is a real value,
+  // not the absence of the parameter: the queue needs a chip for «غير موجّه»
+  // (the work nobody has taken yet) that is distinct from «الكل».
+  const assignee = searchParams.get("assignee");
 
   const admin = await createServiceClient();
   let query = admin
@@ -57,18 +61,49 @@ export async function GET(request: NextRequest) {
 
   if (status) query = query.eq("status", status);
   if (service) query = query.eq("metadata->>service", service);
+  if (assignee === "unassigned") query = query.is("assigned_to", null);
+  else if (assignee) query = query.eq("assigned_to", assignee);
 
   const { data: rows, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // No PostgREST FK from service_requests to profiles — enrich separately.
+  //
+  // One query for BOTH sides of the row: the client who asked (requester_user_id)
+  // and the team member it was routed to (assigned_to). Resolving the assignee
+  // separately would double the round-trips for no reason, and leaving it
+  // unresolved would print a raw UUID on the card — the same failure the
+  // Arabic label map exists to prevent.
   const orders = rows ?? [];
-  const userIds = [...new Set(orders.map((o) => o.requester_user_id).filter(Boolean))] as string[];
+  const userIds = [
+    ...new Set(
+      [
+        ...orders.map((o) => o.requester_user_id),
+        ...orders.map((o) => o.assigned_to),
+      ].filter(Boolean),
+    ),
+  ] as string[];
   let profileMap = new Map<string, Record<string, unknown>>();
   if (userIds.length > 0) {
     const { data: profs } = await admin
       .from("profiles").select("id, display_name, email, phone, user_type").in("id", userIds);
     profileMap = new Map((profs ?? []).map((p) => [p.id as string, p]));
+  }
+
+  /**
+   * The name to put on the card for a routed order. Many admin profiles carry
+   * no display_name at all, so it degrades name → email → the id itself
+   * rather than to an empty string: an order routed to someone unnamed still
+   * has to read as routed.
+   */
+  function assigneeLabel(userId: unknown): { id: string; name: string } | null {
+    if (typeof userId !== "string" || !userId) return null;
+    const p = profileMap.get(userId);
+    const name =
+      (typeof p?.display_name === "string" && p.display_name.trim()) ||
+      (typeof p?.email === "string" && p.email.trim()) ||
+      userId;
+    return { id: userId, name };
   }
 
   // Task 7 — same shape as the profiles enrichment above and for the same
@@ -122,6 +157,7 @@ export async function GET(request: NextRequest) {
     data: orders.map((o) => ({
       ...o,
       profile: profileMap.get(o.requester_user_id as string) ?? null,
+      assignee: assigneeLabel(o.assigned_to),
       whatsappNotice: noticeMap.get(String(o.id)) ?? null,
     })),
   });

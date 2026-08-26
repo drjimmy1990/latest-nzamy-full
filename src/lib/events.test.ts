@@ -69,3 +69,27 @@ test("omits the reference when there is no request id", () => {
   const out = describeRequestEvent({ event: RequestEvent.SERVICE_REQUEST_CREATED, serviceTitleAr: "محترف العقود" });
   assert.equal(out.title, "تم قيد طلبكم: محترف العقود");
 });
+
+// ── Owner item ١٣ — routing is not the same promise as starting ─────────────
+test("an internal routing never tells the client work has begun", () => {
+  const routed = describeRequestEvent({
+    event: RequestEvent.SERVICE_REQUEST_REASSIGNED,
+    serviceTitleAr: "محترف العقود",
+  });
+  const claimed = describeRequestEvent({
+    event: RequestEvent.SERVICE_REQUEST_ASSIGNED,
+    serviceTitleAr: "محترف العقود",
+  });
+  // The whole point of giving routing its own event: if these two ever
+  // collapse into the same line, the audit log stops being able to answer
+  // «مين وجّه ومين استلم» and the client is told work started when it has not.
+  assert.notEqual(routed.title, claimed.title);
+  assert.ok(!routed.title.includes("بدأ العمل"));
+  assert.equal(routed.title, "تم توجيه طلبكم إلى المختص: محترف العقود");
+});
+
+test("routing does not fall through to the generic update line", () => {
+  const routed = describeRequestEvent({ event: RequestEvent.SERVICE_REQUEST_REASSIGNED });
+  assert.notEqual(routed.title, "تحديث على طلبكم: طلب خدمة");
+  assert.ok(!/[A-Za-z]/.test(routed.title));
+});
