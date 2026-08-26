@@ -568,3 +568,45 @@ test("no rendered VALUE in any real order is a bare picker id", () => {
     }
   }
 });
+
+// ─── the corporate legal request ──────────────────────────────────────────────
+
+test("the corporate request's intake renders in Arabic, not raw keys", () => {
+  // src/app/dashboard/business/_components/AddCaseModal.tsx writes exactly
+  // this shape. Before it was repointed at /api/v1/service-requests the row
+  // never reached a human at all; now that it does, a missing label here is
+  // what puts «caseType» / «department» / «urgency» / «details» in front of
+  // the fulfilment team, because labelFor() falls back to the raw key.
+  const rows = buildSummaryRows({
+    service: "business_case",
+    caseType: "مراجعة عقد مورد (تجاري)",
+    department: "المشتريات والعقود",
+    urgency: "عاجلة",
+    details: "المورد أوقف التوريد بعد الدفعة الثانية",
+  });
+  // `service` is a HIDDEN_INTAKE_KEY, so four rows, not five.
+  assert.deepEqual(
+    rows.map((r) => r.label),
+    ["نوع الطلب / القضية", "القسم الطالب", "مستوى الأهمية / الاستعجال", "تفاصيل إضافية لفريق نظامي القانوني"],
+  );
+  // The values are already the Arabic the modal's own pickers showed, so they
+  // must survive untouched — a dictionary hit here would mean some unrelated
+  // INTAKE_VALUE_AR key had started rewriting a corporate answer.
+  assert.deepEqual(
+    rows.map((r) => flattenValue(r.value)),
+    ["مراجعة عقد مورد (تجاري)", "المشتريات والعقود", "عاجلة", "المورد أوقف التوريد بعد الدفعة الثانية"],
+  );
+});
+
+test("an unanswered corporate field drops its row instead of printing an empty label", () => {
+  // «تفاصيل إضافية» is the one optional field on that modal; an empty string
+  // must not reach the brief as a label with nothing after it.
+  const rows = buildSummaryRows({
+    service: "business_case",
+    caseType: "أخرى",
+    department: "المالية",
+    urgency: "طبيعية",
+    details: "",
+  });
+  assert.deepEqual(rows.map((r) => r.label), ["نوع الطلب / القضية", "القسم الطالب", "مستوى الأهمية / الاستعجال"]);
+});

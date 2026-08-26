@@ -431,8 +431,27 @@ export const INTAKE_LABELS: Record<string, string> = {
   contactEmail: "البريد الإلكتروني",
   notes: "ملاحظات العميل",
   consultationType: "نوع الاستشارة",
+  // Written by the consultation wizard when the client picked a specific
+  // lawyer. Without a label here the fulfilment brief prints the raw key
+  // «lawyerName» — labelFor() deliberately falls back to the key rather than
+  // dropping the row, so a missing label is visible but ugly.
+  lawyerName: "المحامي المطلوب",
   preferredTiming: "التوقيت المطلوب",
   estimatedPrice: "السعر التقديري",
+  // The corporate «تسجيل قضية / طلب قانوني جديد» modal
+  // (src/app/dashboard/business/_components/AddCaseModal.tsx), which reached
+  // localStorage instead of the queue until it was repointed at
+  // /api/v1/service-requests. Each label is that modal's own on-screen
+  // wording, copied rather than re-translated, on the same rule as every
+  // other group in this file: the team's brief and the form the client filled
+  // in must say the same thing. The four VALUES are already Arabic — they come
+  // from CASE_TYPES / DEPARTMENTS / the urgency buttons, not from machine ids
+  // — so they need no INTAKE_VALUE_AR entry, only these labels. Without them
+  // the fulfilment team reads «caseType», «department», «urgency», «details».
+  caseType: "نوع الطلب / القضية",
+  department: "القسم الطالب",
+  urgency: "مستوى الأهمية / الاستعجال",
+  details: "تفاصيل إضافية لفريق نظامي القانوني",
   // legal_opinion (الرأي الفصل)
   outputType: "نوع الطلب",
   topicArea: "مجال الموضوع",

@@ -3,11 +3,10 @@
 import { motion } from "framer-motion";
 import {
   Crosshair,
-  Sparkle,
+  Info,
   Plus,
   Robot,
   FileText,
-  Lightbulb,
   Export,
   Lock,
   LockOpen,
@@ -199,6 +198,47 @@ export function SidebarLauncher({
 
 // ─── AI Analysis Panel ───────────────────────────────────────────────────────
 
+/**
+ * WHAT THIS PANEL USED TO DO, AND WHY IT NO LONGER DOES IT.
+ *
+ * It rendered a fixed paragraph as if it were a reading of the board in front
+ * of the user: it named two nodes and an article number from the demo graph,
+ * praised the user's «تأسيس لمبدأ الفسخ التعسفي», flagged a missing notice as
+ * a weakness — and cited «سابقة قضائية (رقم ٣٤٢ لعام ١٤٤٤هـ)», a Saudi
+ * judgment that does not exist. None of it was computed from anything. The
+ * same words appeared over ANY board, including a lawyer's real case, because
+ * the text was hardcoded. Handing a lawyer an invented precedent to rely on is
+ * the worst thing a screen in this product can do, and it is not fixable by
+ * making the fabrication vaguer.
+ *
+ * There is no analysis engine behind this canvas — no request, no model, no
+ * rule set. `runAiAnalysis` in ./_use-case-graph-state.ts is a 2-second
+ * setTimeout that flips this panel open. So the panel says exactly that, and
+ * nothing that could be mistaken for a legal reading:
+ *  - no substitute "insight" derived from node/edge counts. A count dressed up
+ *    as a finding is the same defect wearing different clothes.
+ *  - no «قيد الإعداد» / «قريباً». Nothing in this repo is building it, and a
+ *    promise is another statement that isn't true.
+ *
+ * TWO CLAIMS THIS FILE CANNOT REACH — both need a follow-up in files outside
+ * this one:
+ *  1. ./CaseGraphView.tsx's toolbar button still reads «تحليل AI» and spins
+ *     «جاري التحليل...» for two seconds before opening this panel. It analyses
+ *     nothing.
+ *  2. The export in ./_use-case-graph-state.ts (generateAiDocument) heads its
+ *     output «تحليل آلي بواسطة نظامي AI» and appends three generic
+ *     «التوصيات». The document body IS real — it is the user's own cards and
+ *     links — but that header claims an analysis that did not happen. That is
+ *     why the export button was removed from THIS panel rather than relabelled:
+ *     an honest label on a button whose output calls itself an AI analysis just
+ *     moves the false claim one click away. The same export still lives in the
+ *     toolbar, unchanged.
+ *
+ * `nodeCount`, `selectedNodeIds` and `generateAiDocument` stay on the props
+ * interface although nothing here reads them any more: ./CaseGraphView.tsx
+ * passes all three and is not part of this change — removing them from the
+ * interface would turn that JSX into an excess-property error.
+ */
 interface AiAnalysisPanelProps {
   isDark: boolean;
   showAiAnalysis: boolean;
@@ -212,9 +252,6 @@ export function AiAnalysisPanel({
   isDark,
   showAiAnalysis,
   setShowAiAnalysis,
-  nodeCount,
-  selectedNodeIds,
-  generateAiDocument,
 }: AiAnalysisPanelProps) {
   if (!showAiAnalysis) return null;
 
@@ -224,22 +261,21 @@ export function AiAnalysisPanel({
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         className={`rounded-3xl p-5 shadow-2xl border flex flex-col gap-4 backdrop-blur-xl ${
-          isDark ? "bg-zinc-900/95 border-[#C8A762]/30" : "bg-white/95 border-emerald-200"
+          isDark ? "bg-zinc-900/95 border-white/[0.08]" : "bg-white/95 border-zinc-200"
         }`}
       >
-        <div className="flex items-center justify-between border-b pb-3 border-opacity-10 border-white">
+        <div className={`flex items-center justify-between border-b pb-3 ${isDark ? "border-white/[0.08]" : "border-zinc-200"}`}>
           <div className="flex items-center gap-3">
-            <div className="flex-shrink-0 h-10 w-10 rounded-xl bg-gradient-to-br from-[#0B3D2E] to-[#125e47] flex items-center justify-center shadow-inner">
-              <Sparkle size={18} weight="fill" className="text-white" />
+            <div
+              className={`flex-shrink-0 h-10 w-10 rounded-xl flex items-center justify-center ${
+                isDark ? "bg-white/[0.06]" : "bg-zinc-100"
+              }`}
+            >
+              <Info size={18} weight="fill" className={isDark ? "text-zinc-300" : "text-zinc-600"} />
             </div>
-            <div>
-              <p className={`text-sm font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
-                تحليل شامل للجراف والعصف الذهني
-              </p>
-              <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                نظامي AI • تحليل {nodeCount} عقدة فكرية
-              </p>
-            </div>
+            <p className={`text-sm font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
+              لا يوجد تحليل آلي لهذه اللوحة
+            </p>
           </div>
           <button
             onClick={() => setShowAiAnalysis(false)}
@@ -249,44 +285,20 @@ export function AiAnalysisPanel({
                 : "bg-zinc-100 border-zinc-200 text-zinc-600"
             }`}
           >
-            إغلاق التحليل
+            إغلاق
           </button>
         </div>
 
         <div className={`text-xs leading-relaxed space-y-2 ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
           <p>
-            استناداً للربط الذي قمت به بين <strong className="text-[#C8A762]">مؤسسة البناء</strong> و{" "}
-            <strong className="text-emerald-500">توقف الأعمال</strong> عبر المادة{" "}
-            <strong className="text-purple-400">(٧٧)</strong>:
+            المنصة لا تقرأ محتوى هذه اللوحة ولا تُصدر أي قراءة قانونية له. البطاقات والروابط
+            التي تراها من إنشائك أنت وفريقك وحدكم، ولا تُضيف إليها المنصة أي مواد نظامية أو
+            أحكام أو سوابق قضائية.
           </p>
-          <ul className="list-disc ps-5 space-y-1">
-            <li>
-              تأسيسك لمبدأ &quot;الفسخ التعسفي&quot; ممتاز ويتوافق مع سابقة قضائية (رقم ٣٤٢ لعام ١٤٤٤هـ).
-            </li>
-            <li>
-              <strong>نقطة ضعف محتملة:</strong> لم تقم بربط أي{" "}
-              <strong className="text-orange-400">إشعار أو رسالة رسمية (دليل)</strong> تثبت أنك أنذرت
-              المقاول قبل الغلق. المحكمة قد تطلب هذا المستند كخطوة تسبق الفسخ.
-            </li>
-          </ul>
           <p>
-            هل تود أن أقوم بتحويل هذه الخريطة الذهنية إلى{" "}
-            <strong className="text-blue-500">مسودة لائحة دعوى</strong> جاهزة بناءً على هذه الروابط؟
+            للحصول على رأي قانوني في هذه القضية، سجّل طلباً قانونياً من لوحة قيادة المنشأة
+            ليصل إلى فريق نظامي القانوني.
           </p>
-        </div>
-
-        <div className="flex items-center gap-2 mt-2">
-          <button
-            onClick={() => generateAiDocument(selectedNodeIds.size > 0 ? selectedNodeIds : undefined)}
-            className="flex items-center justify-center gap-1.5 flex-1 rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#0a3328] transition-colors shadow-lg shadow-[#0B3D2E]/20"
-          >
-            <FileText size={14} weight="bold" />
-            توليد مسودة اللائحة الآن
-          </button>
-          <button className="flex items-center justify-center flex-1 gap-1.5 rounded-xl border border-[#C8A762] px-4 py-2.5 text-xs font-bold text-[#C8A762] hover:bg-[#C8A762]/10 transition-colors">
-            <Lightbulb size={14} weight="bold" />
-            اقتراح أفكار لدعم الموقف
-          </button>
         </div>
       </motion.div>
     </div>

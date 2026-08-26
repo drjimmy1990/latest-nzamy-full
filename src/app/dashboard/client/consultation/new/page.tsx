@@ -242,7 +242,22 @@ export default function NewConsultationPage() {
           tier: user.tier,
           businessRole: user.businessRole,
         },
-        receiver: path === "ai" ? "ai_workspace" : "lawyer",
+        // ALWAYS "ai_workspace" — the same literal the client request form was
+        // corrected to, and for the same reason. This is the ONE value the
+        // fulfilment queue filters on
+        // (src/app/api/v1/admin/service-orders/route.ts:54,
+        //  `.eq("receiver", "ai_workspace")`). The old ternary sent every
+        // lawyer-path booking — the paid ones: «استشارة مرئية», «استشارة
+        // حضورية», «رأي قانوني مكتوب» — to `receiver: "lawyer"`, a value
+        // NOTHING in this codebase reads. Those bookings were written to the
+        // database and no human was ever shown them.
+        //
+        // The name is about WHERE the work is triaged, not about who does it:
+        // during the single-office beta one team picks up every order and a
+        // scheduled video call is picked up the same way a drafted contract
+        // is. `metadata.mode` and `metadata.path` still carry what kind of
+        // consultation it is, and the admin card reads them.
+        receiver: "ai_workspace",
         // Driven by what is actually owed, the same way requests/new/page.tsx
         // decides it. Keyed off the path, a free AI question was born
         // «بانتظار الدفع» priced ٤٩ — a charge it never owed, and one the
@@ -266,6 +281,27 @@ export default function NewConsultationPage() {
           paymentIntentId: paymentIntent.id,
           paymentProvider: paymentIntent.provider,
           attachmentCount: attachments.length,
+          // The fulfilment brief (buildOrderPrompt, src/lib/services/orderPrompt.ts)
+          // reads `metadata.intake` and NOTHING ELSE — the flat keys above are
+          // invisible to it. Before this, a booking that finally reached the
+          // queue showed the team a description and an em dash: no
+          // consultation type, no specialisation, no named lawyer. Every key
+          // here has an Arabic label in src/lib/services/intakeValues.ts;
+          // adding one without a label prints the raw English key to the team.
+          intake: {
+            // The three real values of `mode` are "text" | "voice" |
+            // "in-person" (ConsultMode). Written out in Arabic here rather
+            // than passed through raw, because this string is read by the
+            // fulfilment team off the brief.
+            consultationType:
+              path === "ai" ? "استشارة بالذكاء الاصطناعي"
+                : mode === "in-person" ? "استشارة حضورية"
+                : mode === "voice" ? "استشارة صوتية / مرئية"
+                : "استشارة مكتوبة",
+            specialty,
+            ...(selectedLawyer?.name ? { lawyerName: selectedLawyer.name } : {}),
+            subject: activeTopic,
+          },
         },
         auditEvent: "client_consultation_created",
       });
