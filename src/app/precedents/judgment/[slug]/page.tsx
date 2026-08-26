@@ -14,7 +14,7 @@ export default function PrecedentReaderPage() {
   return (
     <DashboardComingSoon
       title="تفاصيل صك الحكم"
-      description="صفحة تفاصيل صكوك الأحكام قيد التطوير وستكون متاحة قريباً. لا توجد بيانات أحكام حقيقية لعرضها بعد."
+      description="صفحة تفاصيل صكوك الأحكام غير متاحة حالياً وستُفعَّل قريباً. لا توجد بيانات أحكام حقيقية لعرضها بعد."
       backHref="/laws"
     />
   );

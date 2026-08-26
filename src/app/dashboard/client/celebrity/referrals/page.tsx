@@ -6,7 +6,7 @@ export default function CelebrityReferralsPage() {
   return (
     <DashboardComingSoon
       title="إحالات صنّاع المحتوى"
-      description="قائمة الإحالات والعمولات لصنّاع المحتوى قيد التطوير. ستظهر هنا فور ربط بوابة صنّاع المحتوى بقاعدة البيانات."
+      description="قائمة الإحالات والعمولات لصنّاع المحتوى غير متاحة حالياً. ستظهر هنا فور ربط بوابة صنّاع المحتوى بقاعدة البيانات."
       backHref="/dashboard/client"
     />
   );

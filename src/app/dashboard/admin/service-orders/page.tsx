@@ -7,12 +7,19 @@ import { uploadDocumentFile } from "@/lib/services/documentService";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { validateUploadFile } from "@/lib/services/fileValidation";
 import { buildOrderPrompt } from "@/lib/services/orderPrompt";
+import { ReceiptPanel } from "./_components/ReceiptPanel";
 import { uploadErrorMessage } from "./_errorCopy";
+import { orderReference, matchesOrderReference } from "@/lib/services/orderReference";
 
 interface AdminOrder {
   id: string; title: string; description: string; status: string;
   created_at: string; metadata: Record<string, unknown>;
   profile: { display_name?: string; email?: string; phone?: string; user_type?: string } | null;
+  // Owner item ١٣ — who this order was routed to. Resolved by the LIST route
+  // (never here), because `assigned_to` is a bare UUID on the row and printing
+  // it would tell an admin nothing. `null` = nobody has been given it yet,
+  // which is a state the queue has to be able to show and filter on.
+  assignee: { id: string; name: string } | null;
   // Task 7 — the latest `notification.whatsapp_*` event recorded for this
   // ORDER (see GET /api/v1/admin/service-orders), or null when nothing was
   // ever recorded. `status` is the raw suffix off the event name.
@@ -416,11 +423,27 @@ function mergeKeptOrder(next: AdminOrder[], kept: AdminOrder | null): AdminOrder
  * 200 rows it returns — enough for the queue as it stands, and the status
  * chips narrow it further before this ever runs.
  */
+/**
+ * How many times the client rewrote the brief after submitting it (owner item
+ * ٥). `metadata.editHistory` is append-only and holds the PREVIOUS text of
+ * each edit, so its length is the number of edits — the current description is
+ * not in it.
+ */
+function editCountOf(o: AdminOrder): number {
+  const raw = (o.metadata as Record<string, unknown> | undefined)?.editHistory;
+  return Array.isArray(raw) ? raw.length : 0;
+}
+
 function matchesSearch(o: AdminOrder, needle: string): boolean {
   if (!needle) return true;
   const q = needle.trim().toLowerCase();
   if (!q) return true;
   return (
+    // Owner item ٤ — the client now reads «ORD-8F14E4» off their order page,
+    // so support typing exactly that has to land on this row. The raw-substring
+    // test stays beside it: older WhatsApp threads still quote the bare
+    // «8f14e45f» form and full UUIDs still get pasted.
+    matchesOrderReference(o.id, needle) ||
     o.id.toLowerCase().includes(q) ||
     (o.profile?.display_name ?? "").toLowerCase().includes(q) ||
     (o.title ?? "").toLowerCase().includes(q)
@@ -571,6 +594,14 @@ export default function AdminServiceOrdersPage() {
   const { isDark } = useTheme();
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [filter, setFilter] = useState("");
+  // Owner item ١٣. Two separate pieces of state and deliberately so:
+  //   • `team`   — the people an order CAN be routed to. Fetched once.
+  //   • `assigneeFilter` — whose queue is on screen. Sent to the server, not
+  //     applied client-side like the search box, because the list route caps
+  //     at 200 rows: filtering after the fetch would silently hide a member's
+  //     older orders behind other people's newer ones.
+  const [team, setTeam] = useState<{ id: string; name: string }[]>([]);
+  const [assigneeFilter, setAssigneeFilter] = useState("");
   const [search, setSearch] = useState("");
   // A revision request does not change `status` — it puts the order back to
   // `in_review` and appends to metadata.revisions — so «طلبات التعديل» cannot
@@ -614,7 +645,11 @@ export default function AdminServiceOrdersPage() {
   const load = useCallback(async (kept: AdminOrder | null = null) => {
     setLoadErr("");
     try {
-      const res = await fetch(`/api/v1/admin/service-orders${filter ? `?status=${filter}` : ""}`);
+      const params = new URLSearchParams();
+      if (filter) params.set("status", filter);
+      if (assigneeFilter) params.set("assignee", assigneeFilter);
+      const qs = params.toString();
+      const res = await fetch(`/api/v1/admin/service-orders${qs ? `?${qs}` : ""}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setLoadErr(body.error ?? "تعذّر تحميل الطلبات");
@@ -628,9 +663,40 @@ export default function AdminServiceOrdersPage() {
     } catch {
       setLoadErr("تعذّر تحميل الطلبات. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.");
     }
-  }, [filter]);
+  }, [filter, assigneeFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  // The routing destinations. Fetched once — the admin roster does not change
+  // while someone works a queue — and failing softly on purpose: losing this
+  // list must not take the queue down with it. When it is empty the «توجيه»
+  // control below renders a plain explanation instead of an empty <select>,
+  // which would look like "there is nobody to assign to".
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/admin/teams");
+        if (!res.ok) return;
+        const body = await res.json();
+        if (cancelled) return;
+        setTeam(
+          (body.team ?? [])
+            .filter((m: { id?: string }) => typeof m.id === "string" && m.id)
+            // Same degradation the list route uses for the card label, for the
+            // same reason: an admin profile with no display_name still has to
+            // be pickable.
+            .map((m: { id: string; name?: string; email?: string }) => ({
+              id: m.id,
+              name: m.name?.trim() || m.email || m.id,
+            })),
+        );
+      } catch {
+        /* the queue works without it — see above */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   async function act(id: string, payload: Record<string, unknown>, opts: { keepOpen?: boolean } = {}) {
     setBusy(true); setErr("");
@@ -662,11 +728,28 @@ export default function AdminServiceOrdersPage() {
           // moment the row matches the selected chip again the server's own
           // values win.
           const previous = orders.find((o) => o.id === id) ?? null;
+          // `assignee` is a THIRD list-route-only field, but unlike the other
+          // two it must not be carried over blindly: «توجيه» is precisely the
+          // action that changes it, and the PATCH response does carry the new
+          // truth — as the raw `assigned_to` uuid. Re-resolving it against the
+          // roster here is what stops the card showing the previous owner's
+          // name (and the <select> pointing at them) after a reroute that
+          // moved the row out of the current filter. Falls back to the id when
+          // the roster does not have that member, for the same reason the
+          // server's own label does.
+          const routedTo = (body.data as { assigned_to?: string | null } | undefined)?.assigned_to;
+          const nextAssignee: AdminOrder["assignee"] =
+            typeof routedTo === "string" && routedTo
+              ? previous?.assignee?.id === routedTo
+                ? previous.assignee
+                : { id: routedTo, name: team.find((m) => m.id === routedTo)?.name ?? routedTo }
+              : null;
           const kept: AdminOrder | null = body.data
             ? {
                 ...(previous ?? {} as AdminOrder), ...(body.data as AdminOrder),
                 profile: previous?.profile ?? null,
                 whatsappNotice: previous?.whatsappNotice ?? null,
+                assignee: nextAssignee,
               }
             : previous;
           await load(kept);
@@ -813,6 +896,32 @@ export default function AdminServiceOrdersPage() {
               : isDark ? "border-amber-500/30 text-amber-400" : "border-amber-500/40 text-amber-700"}`}>
           🔁 طلبات التعديل{revisionCount > 0 ? ` (${arDigits(revisionCount)})` : ""}
         </button>
+
+        {/* Owner item ١٣ — «كل واحد يشوف اللي عليه». A third axis, so again a
+            separate control rather than another chip in the status set. A
+            <select> and not chips: the roster grows, and eight names in a chip
+            row would push the status filters off the first line.
+
+            «غير موجّه» is its own option and not the same as «الكل»: the work
+            nobody has picked up is the single most useful view on this screen
+            and it has no other way to be reached. */}
+        <span aria-hidden="true" className={`mx-1 self-center h-4 w-px ${
+          isDark ? "bg-white/10" : "bg-zinc-200"}`} />
+        <select
+          value={assigneeFilter}
+          onChange={(e) => setAssigneeFilter(e.target.value)}
+          aria-label="تصفية حسب المسؤول"
+          className={`rounded-full px-3 py-1 text-[11px] font-semibold border ${
+            assigneeFilter
+              ? "bg-[#0B3D2E] text-white border-transparent"
+              : isDark ? "bg-transparent border-white/10 text-zinc-400"
+                : "bg-transparent border-zinc-200 text-zinc-500"}`}>
+          <option value="">كل المسؤولين</option>
+          <option value="unassigned">غير موجّه</option>
+          {team.map((m) => (
+            <option key={m.id} value={m.id}>{m.name}</option>
+          ))}
+        </select>
       </div>
 
       {/* A client who quotes his order number over الواتساب was, until now,
@@ -820,7 +929,7 @@ export default function AdminServiceOrdersPage() {
           no text search on this screen at all. Matches the order number, the
           client's name and the order title; see matchesSearch(). */}
       <input value={search} onChange={(e) => setSearch(e.target.value)}
-        placeholder="بحث برقم الطلب أو اسم العميل"
+        placeholder="بحث برقم الطلب (ORD-…) أو اسم العميل"
         className={`w-full md:max-w-sm rounded-xl px-3 py-2 text-[12px] border ${
           isDark ? "bg-zinc-950 border-white/[0.07] text-zinc-200 placeholder:text-zinc-600"
             : "bg-white border-zinc-200 text-zinc-800 placeholder:text-zinc-400"}`} />
@@ -919,6 +1028,30 @@ export default function AdminServiceOrdersPage() {
                       🔁 طلب تعديل {revisionCountLabel(revisions[revisions.length - 1].index, revisions.length)}
                     </span>
                   )}
+                  {/* Owner item ٥ — the client edited the brief after
+                      submitting it. Worth a pill of its own: an admin who read
+                      this order yesterday and comes back to fulfil it today
+                      would otherwise have no signal that the text under them
+                      changed. A <span>, like every other descendant of the
+                      role="button" header. */}
+                  {editCountOf(o) > 0 && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0 ${
+                      isDark ? "bg-violet-500/20 text-violet-300" : "bg-violet-500/15 text-violet-700"}`}>
+                      ✎ عدّله العميل{editCountOf(o) > 1 ? ` (${arDigits(editCountOf(o))})` : ""}
+                    </span>
+                  )}
+                  {/* Who owes this order. A <span> — see the header comment:
+                      every descendant of the role="button" row must stay
+                      non-interactive. The control that CHANGES it lives in the
+                      panel below, which is a sibling of that row. Rendered
+                      only when routed: an «غير موجّه» pill on every new order
+                      would be noise on the tab where every order is new. */}
+                  {o.assignee && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0 ${
+                      isDark ? "bg-sky-500/20 text-sky-300" : "bg-sky-500/15 text-sky-700"}`}>
+                      👤 {o.assignee.name}
+                    </span>
+                  )}
                 </div>
                 {/* The email was always fetched by the list route and carried
                     on the profile, and was the one contact detail the card
@@ -928,7 +1061,7 @@ export default function AdminServiceOrdersPage() {
                     null, and «—» in its place would read as a missing
                     address rather than an absent one. */}
                 <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                  {o.profile?.display_name ?? "—"} · {o.profile?.phone ?? "لا يوجد جوال"}
+                  <span className="font-mono font-bold">{orderReference(o.id)}</span> · {o.profile?.display_name ?? "—"} · {o.profile?.phone ?? "لا يوجد جوال"}
                   {o.profile?.email ? ` · ${o.profile.email}` : ""} · {new Date(o.created_at).toLocaleDateString("ar-SA")}
                 </p>
               </div>
@@ -952,6 +1085,75 @@ export default function AdminServiceOrdersPage() {
                     تنزيل ملف .md
                   </button>
                 </div>
+
+                {/* Owner item ١٥ — the money the office actually received.
+                    Sits on every open card, whatever the status: a client can
+                    pay before, during or after the work, and a receipt panel
+                    that only appeared on delivered orders would be missing
+                    exactly when the first payment arrives. */}
+                <ReceiptPanel orderId={o.id} isDark={isDark} />
+
+                {/* Owner item ١٣ — «توزيع المهام على أشرف ورامي بالاسم».
+                    Deliberately separate from «استلام»: that button is the
+                    member saying "I am doing this", this one is the manager
+                    saying "you are doing this". Routing does NOT move the
+                    order to «قيد التنفيذ» and does NOT message the client —
+                    see the PATCH handler, which explains why on all three
+                    side-channels. Placed at the top of the panel, above the
+                    long prompt block, because it is a decision taken while
+                    reading the order rather than after scrolling past it.
+
+                    Rendered on every open card except a decided one: the
+                    server refuses to reroute a completed or cancelled order
+                    (the decided-already 409), so offering the control there
+                    would be a button whose only outcome is an error. */}
+                {o.status !== "completed" && o.status !== "cancelled" && (
+                  <div className={`rounded-xl border p-3 ${
+                    isDark ? "border-white/[0.07] bg-white/[0.02]" : "border-zinc-200 bg-zinc-50"}`}>
+                    <label htmlFor={`assign-${o.id}`}
+                      className={`mb-1.5 block text-[11px] font-bold ${
+                        isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                      المسؤول عن الطلب
+                    </label>
+                    {team.length === 0 ? (
+                      <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                        تعذّر تحميل قائمة الفريق — أعد تحميل الصفحة للتوجيه.
+                      </p>
+                    ) : (
+                      <select
+                        id={`assign-${o.id}`}
+                        disabled={busy}
+                        value={o.assignee?.id ?? ""}
+                        onChange={(e) =>
+                          act(
+                            o.id,
+                            { action: "assign", assigneeUserId: e.target.value || null },
+                            { keepOpen: true },
+                          )
+                        }
+                        className={`w-full rounded-xl px-3 py-2 text-[12px] border disabled:opacity-40 ${
+                          isDark ? "bg-zinc-950 border-white/[0.07] text-zinc-200"
+                            : "bg-white border-zinc-200 text-zinc-800"}`}>
+                        <option value="">غير موجّه — متاح لأي عضو</option>
+                        {/* The current assignee may have been removed from the
+                            roster since the routing. Without this the <select>
+                            would silently fall back to «غير موجّه» and the
+                            next change would look like a correction rather
+                            than the reroute it is. */}
+                        {o.assignee && !team.some((m) => m.id === o.assignee!.id) && (
+                          <option value={o.assignee.id}>{o.assignee.name}</option>
+                        )}
+                        {team.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    )}
+                    <p className={`mt-1.5 text-[10px] leading-relaxed ${
+                      isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                      التوجيه داخلي — لا يُرسل أي إشعار للعميل ولا يغيّر حالة الطلب.
+                    </p>
+                  </div>
+                )}
 
                 {/* Task 7 (owner س١١) — did the WhatsApp notice actually reach
                     the client? Delivered orders ONLY, because deliver is the

@@ -1,3 +1,4 @@
+import { orderReference } from "./services/orderReference.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -94,6 +95,17 @@ export const RequestEvent = {
   // in src/lib/n8n/dispatch.ts has no branch for this event, exactly as it
   // had none for `status_changed` at status `in_review`.
   SERVICE_REQUEST_ASSIGNED: "service_request.assigned",
+  // A manager ROUTED the order to a named member of the team, which is not the
+  // same fact as SERVICE_REQUEST_ASSIGNED («استلمه من سيؤديه»). Both write
+  // `assigned_to`, but only the claim means work has begun — the queue's
+  // «توجيه» action deliberately leaves `status` where it was. They need
+  // separate names or the audit log cannot answer «مين وجّه ومين استلم»,
+  // which is the entire reason claim and cancel stopped sharing
+  // STATUS_CHANGED. `request_events.event` is plain `text` with no CHECK
+  // (see 20260518_client_workflow_backend_ready.sql:21), so this needs no
+  // migration. Routing is unaffected: resolvePath() in src/lib/n8n/dispatch.ts
+  // keys off STATUS, not event name, and «توجيه» changes no status.
+  SERVICE_REQUEST_REASSIGNED: "service_request.reassigned",
   CONSULTATION_CREATED: "consultation.created",
   CONSULTATION_STATUS_CHANGED: "consultation.status_changed",
   TASK_CREATED: "task.created",
@@ -156,8 +168,10 @@ export function describeRequestEvent(opts: {
   // (e.g. «محترف العقود»); the request title is the fallback when an older
   // row predates it.
   const service = serviceTitleAr?.trim() || requestTitle?.trim() || "طلب خدمة";
-  // Same short reference the admin console and the order page quote.
-  const ref = requestId ? ` برقم #${requestId.slice(0, 8)}` : "";
+  // Same short reference the admin console and the order page quote — one
+  // helper now owns the format (owner item ٤), so a client reading it aloud
+  // and an admin searching for it are looking at the same string.
+  const ref = requestId ? ` برقم ${orderReference(requestId)}` : "";
   const delivered: DescribedEvent = {
     title: `تم إنجاز معاملتكم: ${service}`,
     description: "المستند جاهز للتحميل من صفحة الطلب.",
@@ -188,6 +202,16 @@ export function describeRequestEvent(opts: {
       return { title: `تم تحديث بيانات طلبكم: ${service}`, badge: "order" };
     case RequestEvent.SERVICE_REQUEST_ASSIGNED:
       return claimed;
+    case RequestEvent.SERVICE_REQUEST_REASSIGNED:
+      // Deliberately NOT `claimed`: routing an order to a colleague is not the
+      // same promise as «بدأ العمل على طلبكم», and saying so would be the
+      // exact class of claim this codebase has been removing. It also must not
+      // fall through to the generic «تحديث على طلبكم», which says nothing.
+      return {
+        title: `تم توجيه طلبكم إلى المختص: ${service}`,
+        description: "أُسند الطلب لعضو من فريق نظامي وسيبدأ العمل عليه.",
+        badge: "task",
+      };
     case RequestEvent.SERVICE_REQUEST_STATUS_CHANGED:
       // Claims recorded before `service_request.assigned` existed still arrive
       // here as the generic token — the request's status is what identifies them.

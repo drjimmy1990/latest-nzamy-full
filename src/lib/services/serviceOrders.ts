@@ -30,6 +30,16 @@ export interface ServiceOrder {
   status: "pending_assignment" | "assigned" | "in_review" | "completed" | "cancelled";
   created_at: string;
   updated_at: string;
+  /**
+   * The team member the order was routed to, or null. Already present in the
+   * GET response (that handler selects `*`); declared here so the client's
+   * edit gate can ask the SAME question the server's does — «توجيه» (owner
+   * item ١٣) leaves `status` at `pending_assignment`, so a UI that gated on
+   * status alone would offer «تعديل الطلب» on work already on someone's desk
+   * and then be refused by the server. Optional because older cached shapes
+   * and the demo backend omit it.
+   */
+  assigned_to?: string | null;
   metadata: {
     service?: ServiceKey;
     serviceTitleAr?: string;

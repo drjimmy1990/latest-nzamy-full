@@ -120,7 +120,7 @@ export default function BusinessPage() {
                   ))}
                   <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
                     <ShieldCheck size={16} weight="fill" className="text-emerald-600" />
-                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">{isAr ? "أتعابك محمية بنظام Escrow" : "Your fees are protected via Escrow"}</span>
+                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">{isAr ? "أتعابك لا تُصرف إلا بعد الإنجاز" : "Fees are released only after delivery"}</span>
                   </div>
                 </div>
               </motion.div>

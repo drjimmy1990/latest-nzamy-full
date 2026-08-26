@@ -41,7 +41,7 @@ export default function DashboardComingSoon({
 
         <h1 className={`text-2xl font-bold mb-3 ${tp}`}>{title}</h1>
         <p className={`text-sm leading-relaxed ${ts}`}>
-          {description ?? "هذه الميزة قيد التطوير وستكون متاحة قريباً. لا توجد بيانات حقيقية لعرضها بعد."}
+          {description ?? "هذه الميزة غير متاحة حالياً وستُفعَّل قريباً. لا توجد بيانات حقيقية لعرضها بعد."}
         </p>
 
         {backHref && (

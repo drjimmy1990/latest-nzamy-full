@@ -17,6 +17,7 @@ import StepPreviewSign from "./_components/StepPreviewSign";
 import StepContractResult from "./_components/StepContractResult";
 import StepLawyerCTA from "./_components/StepLawyerCTA";
 import { CreditsBanner } from "@/components/PaywallGate";
+import AdvisoryTemplateNotice from "@/components/ai/AdvisoryTemplateNotice";
 
 // ─── Step indicator labels ────────────────────────────────────────────────────
 
@@ -170,6 +171,12 @@ export default function ContractDrafterPage() {
                 : "Create a professional contract draft in minutes — then get it reviewed by a certified lawyer for legal peace of mind."}
             </p>
           </motion.div>
+
+          {/* Owner item ١٨ — one of the three tools he named. The hero already
+              promises a lawyer's review; this is the button that actually
+              starts it, and the sentence that says what the draft is until
+              then. */}
+          <AdvisoryTemplateNotice handoffServiceId="contract-review" className="mt-8 text-start" />
 
           {/* Step indicator */}
           {mode && (

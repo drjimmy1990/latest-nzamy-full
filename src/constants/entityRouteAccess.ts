@@ -30,6 +30,15 @@ const BUSINESS_REQUEST_ROLES = ["owner", "legal_manager", "legal_staff", "depart
 
 export const BUSINESS_ROUTE_RULES: readonly Rule<BusinessRole>[] = [
   { path: "/dashboard/business", match: "exact", label: "لوحة الشركة", allowedRoles: ALL_BUSINESS_ROLES },
+  // Owner item ٨ — خزنة وثائق المنشأة. Listed EXPLICITLY even though an
+  // unlisted route defaults to allowed: this vault holds the company's
+  // commercial register, articles and signatory list, and defaulting a
+  // document store open because nobody wrote a rule is not a decision anyone
+  // made. Scoped to the roles that can raise a request, since attaching to a
+  // request is what the vault is for; `seconded` and `compliance_officer` are
+  // deliberately outside it — an external seconded counsel is not the
+  // company's document custodian.
+  { path: "/dashboard/business/documents", match: "prefix", label: "خزنة وثائق المنشأة", allowedRoles: BUSINESS_REQUEST_ROLES },
   { path: "/dashboard/business/cases/new", match: "prefix", label: "إنشاء قضية", allowedRoles: ["owner", "legal_manager", "seconded"] },
   { path: "/dashboard/business/cases", match: "prefix", label: "القضايا والنزاعات", allowedRoles: BUSINESS_CASE_ROLES },
   { path: "/dashboard/business/hearings", match: "prefix", label: "الجلسات", allowedRoles: ["owner", "legal_manager", "legal_staff", "seconded"] },

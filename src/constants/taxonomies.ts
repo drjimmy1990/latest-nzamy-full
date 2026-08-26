@@ -48,3 +48,93 @@ export function getCategoryBySlug(slug: string): LawCategory | undefined {
   return LEGAL_TAXONOMY.find((c) => c.slug === slug);
 }
 
+
+// ─── One taxonomy — owner item ١٦ ────────────────────────────────────────────
+//
+// His ruling on س٥ was «الـ٣١ اللي في الكود»: LEGAL_TAXONOMY above is the
+// platform's specialisation vocabulary, and everything else defers to it.
+//
+// It did not, until now. Five separate lists described the same idea with
+// mutually incompatible ids — `real-estate` here, `real_estate` there, and the
+// raw Arabic string «عقاري» as an id in a third — and at least one of them
+// (dashboard/client/find-lawyer) WRITES its id into `metadata.specialty` on a
+// real request. So the database already holds three spellings of one
+// specialisation and nothing can group them.
+//
+// The fix is not to delete the old ids: rows carrying them exist and a picker
+// that no longer recognises its own stored values shows the client a blank
+// field. This maps every legacy spelling onto its canonical `SA-xx`, so old
+// data resolves and new data is written canonically. Exactly the precedent set
+// by keeping `letterType: "complaint"` in intakeValues.ts after that tile was
+// retired from the picker.
+//
+// Deliberately INCOMPLETE where the answer is a guess. «العقود والاتفاقيات» and
+// «الامتثال التنظيمي» sit across more than one category, and filing them under
+// a wrong SA-xx would be worse than leaving them unmapped — an unmapped value
+// falls back to displaying itself, which is honest. Add them when someone who
+// knows decides.
+const CATEGORY_ALIASES: Record<string, string> = {
+  // SA-00 — الإجرائي والقضائي
+  enforcement: "SA-00", "تنفيذ": "SA-00", "التنفيذ": "SA-00",
+  // SA-01 — الجنائي والعقوبات
+  criminal: "SA-01", "جنائي": "SA-01", "جزائي": "SA-01",
+  "قضايا جنائية": "SA-01", "القانون الجنائي": "SA-01",
+  // SA-02 — الإداري والخدمة المدنية
+  admin: "SA-02", administrative: "SA-02", "إداري": "SA-02",
+  "قضايا إدارية": "SA-02", "القانون الإداري": "SA-02",
+  // SA-03 — المدني والأحوال الشخصية
+  civil: "SA-03", family: "SA-03", "مدني": "SA-03",
+  "أحوال شخصية": "SA-03", "الأحوال الشخصية": "SA-03",
+  "قانون الأسرة": "SA-03", "المنازعات المدنية": "SA-03", "أسرة": "SA-03",
+  // SA-04 — التجاري والشركات
+  commercial: "SA-04", corporate: "SA-04", "تجاري": "SA-04", "شركات": "SA-04",
+  "قضايا تجارية": "SA-04", "تجاري وشركات": "SA-04", "القانون التجاري": "SA-04",
+  // SA-05 — الملكية الفكرية
+  ip: "SA-05", "ملكية فكرية": "SA-05", "الملكية الفكرية": "SA-05",
+  // SA-06 — العمل والتأمينات
+  labor: "SA-06", labour: "SA-06", "عمالي": "SA-06",
+  "قضايا عمالية": "SA-06", "قضايا العمل": "SA-06",
+  // SA-07 — العقاري والبناء والمقاولات
+  "real-estate": "SA-07", real_estate: "SA-07", realestate: "SA-07",
+  "عقاري": "SA-07", "عقارات": "SA-07", "القضايا العقارية": "SA-07",
+  // SA-08 — المالي والمصرفي
+  banking: "SA-08", finance: "SA-08", "بنكي/مالي": "SA-08", "مالي": "SA-08",
+  // SA-28 — التحكيم وتسوية النزاعات
+  arbitration: "SA-28", "تحكيم": "SA-28",
+  "التحكيم الدولي": "SA-28", "التحكيم التجاري": "SA-28",
+};
+
+/**
+ * The canonical `SA-xx` for anything a picker or an old row might carry, or
+ * null when nothing in the vocabulary matches.
+ *
+ * Null is a real answer, not a failure: `all` (the "no filter" option every
+ * picker carries) has no category and must not be coerced into one, and an
+ * unrecognised legacy value is better shown as itself than filed under a guess.
+ */
+export function normalizeCategoryId(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  if (!value) return null;
+  // Already canonical — accept any case so `sa-06` from a URL resolves.
+  const upper = value.toUpperCase();
+  if (LEGAL_TAXONOMY.some((c) => c.id === upper)) return upper;
+  // A slug (`sec_06_labor`) is canonical too — the library and the blog use
+  // slugs where the pickers use ids.
+  const bySlug = LEGAL_TAXONOMY.find((c) => c.slug === value.toLowerCase());
+  if (bySlug) return bySlug.id;
+  return CATEGORY_ALIASES[value] ?? CATEGORY_ALIASES[value.toLowerCase()] ?? null;
+}
+
+/**
+ * The Arabic label to show for any stored specialisation value.
+ *
+ * Falls back to the raw value rather than to «—» or to an English id: the same
+ * rule intakeValues.ts follows, and for the same reason — a fulfilment team
+ * reading «real_estate» on an order summary is the failure this prevents.
+ */
+export function categoryLabelFor(raw: string | null | undefined): string {
+  const id = normalizeCategoryId(raw);
+  if (id) return LEGAL_TAXONOMY.find((c) => c.id === id)?.label ?? id;
+  return typeof raw === "string" ? raw.trim() : "";
+}

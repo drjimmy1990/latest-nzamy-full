@@ -25,18 +25,37 @@ const test = (name: string, fn: () => void) => {
 
 // ── the visible set ──────────────────────────────────────────────────────────
 
-test('only the dashboard root is still linked under /dashboard/business', () => {
-  assert.deepEqual(VISIBLE_BUSINESS_ROUTES, ['/dashboard/business']);
+// The vault joined the root on 26 August (owner item ٨). The list is pinned
+// rather than merely counted so that re-opening a corporate route is always a
+// deliberate edit here — every entry on it is a section a corporate account can
+// reach, and the whole point of the 26 August ruling was that most of them
+// could not honestly be.
+test('only the dashboard root and the document vault are linked under /dashboard/business', () => {
+  assert.deepEqual(VISIBLE_BUSINESS_ROUTES, [
+    '/dashboard/business',
+    '/dashboard/business/documents',
+  ]);
 });
 
 test('the corporate sidebar links to nothing that renders fabricated data', () => {
   const hrefs = CORPORATE_SIDEBAR.flatMap((g) => g.items).map((i) => i.href);
   assert.deepEqual(hrefs, [
     '/dashboard/business',
+    // Real: /dashboard/business/documents lists the account's own uploads and
+    // nothing else — there is no mock row anywhere in it.
+    '/dashboard/business/documents',
     '/notifications',
     '/blog',
     '/settings',
   ]);
+});
+
+test('the vault and its sub-pages are reachable, its look-alikes are not', () => {
+  assert.equal(isVisibleBusinessRoute('/dashboard/business/documents'), true);
+  assert.equal(isVisibleBusinessRoute('/dashboard/business/documents/42'), true);
+  assert.equal(isVisibleBusinessRoute('/dashboard/business/documents?tab=all'), true);
+  // A route that merely starts with the same letters is a different section.
+  assert.equal(isVisibleBusinessRoute('/dashboard/business/documentsX'), false);
 });
 
 // ── what the guard admits ────────────────────────────────────────────────────

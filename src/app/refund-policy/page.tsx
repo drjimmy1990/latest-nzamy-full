@@ -22,20 +22,21 @@ const sections = {
       ],
     },
     {
-      id: "escrow",
-      title: "٢. نظام الضمان المالي (Escrow) وأثره على الاسترداد",
+      id: "collection",
+      title: "٢. كيف تُحصَّل الأتعاب وأثر ذلك على الاسترداد",
       content: [
-        "تُحتجز جميع الأتعاب في حساب Escrow لدى المنصة فور الدفع، ولا تُصرف لمقدم الخدمة إلا بعد إتمام كل مرحلة متفق عليها.",
-        "هذا النظام هو ما يتيح استرداد الأتعاب بسهولة وأمان قبل إنجاز الخدمة، لأن الأموال تبقى تحت ضمان المنصة لا في حساب مقدم الخدمة مباشرة.",
+        "تُحصَّل الأتعاب عبر قنوات الدفع المعتمدة في المنصة عند تأكيد الطلب، ولا يُصرف المستحق لمقدم الخدمة إلا بعد إنجاز الخدمة أو المرحلة المتفق عليها منها.",
+        "ولأن المبلغ لا ينتقل لمقدم الخدمة قبل الإنجاز، فإن استرداده قبل بدء الخدمة لا يتطلب موافقته ولا يتوقف عليها.",
         "عمولة المنصة (٥٪–١٥٪ حسب نوع الخدمة) تُقتطع فقط عند صرف المبلغ لمقدم الخدمة، وبالتالي لا تُقتطع من أي مبلغ يُسترد قبل بدء الخدمة.",
+        "يُرد المبلغ إلى وسيلة الدفع الأصلية خلال المدة المقررة في نظام التجارة الإلكترونية ولائحته التنفيذية، وبما لا يتجاوز المدد المبيّنة في القسم ٧ أدناه.",
       ],
     },
     {
       id: "subscriptions",
       title: "٣. استرداد اشتراكات الباقات",
       content: [
-        "**ضمان ١٤ يوماً**: يحق لأي مشترك جديد طلب استرداد كامل لقيمة الاشتراك خلال ١٤ يوماً من تاريخ أول عملية دفع، دون شروط معقّدة، بما لا يتعارض مع الاستخدام العادل للخدمة.",
-        "بعد مرور ١٤ يوماً: يمكن إلغاء التجديد التلقائي في أي وقت من إعدادات الحساب، ويستمر الوصول للخدمة حتى نهاية الفترة المدفوعة بالفعل دون استرداد جزئي عن الفترة المتبقية.",
+        "**حق العدول**: للمشترك الجديد حق العدول عن الاشتراك واسترداد قيمته وفق المدد والحالات المقررة في نظام التجارة الإلكترونية ولائحته التنفيذية، ما لم يكن قد استُهلك من الخدمة ما لا يمكن ردّه.",
+        "بعد انقضاء مدة العدول: يمكن إلغاء التجديد التلقائي في أي وقت من إعدادات الحساب، ويستمر الوصول للخدمة حتى نهاية الفترة المدفوعة بالفعل دون استرداد جزئي عن الفترة المتبقية.",
         "الترقية بين الباقات لا تستوجب رسوم استرداد؛ يُحتسب فرق السعر تناسبياً على الفاتورة التالية.",
       ],
     },
@@ -55,8 +56,8 @@ const sections = {
       content: [
         "الخدمات المكتملة والمقبولة كتابياً من طالب الخدمة.",
         "الرسوم الحكومية أو القضائية أو رسوم التوثيق المدفوعة لجهات خارج المنصة.",
-        "الاشتراكات بعد انتهاء مهلة ضمان الـ١٤ يوماً (يُطبَّق عليها إلغاء التجديد فقط، لا الاسترداد الفوري).",
-        "حالات إساءة استخدام الضمان، كتكرار طلب الاسترداد بعد استهلاك كامل حصة الخدمة أكثر من مرة.",
+        "الاشتراكات بعد انقضاء مدة العدول المقررة نظاماً (يُطبَّق عليها إلغاء التجديد فقط، لا الاسترداد الفوري).",
+        "حالات إساءة استخدام حق العدول، كتكرار طلب الاسترداد بعد استهلاك كامل حصة الخدمة أكثر من مرة.",
       ],
     },
     {
@@ -106,20 +107,21 @@ const sections = {
       ],
     },
     {
-      id: "escrow",
-      title: "2. The Escrow System and Its Effect on Refunds",
+      id: "collection",
+      title: "2. How Fees Are Collected and What That Means for Refunds",
       content: [
-        "All fees are held in an Escrow account with the platform immediately upon payment and are not released to the service provider until each agreed milestone is completed.",
-        "This system is what makes refunding fees easy and secure before the service is completed, since the funds remain under the platform's guarantee rather than directly in the provider's account.",
-        "The platform's commission (5%–15% depending on the service) is deducted only when funds are released to the service provider, so it is never deducted from any amount refunded before the service begins.",
+        "Fees are collected through the platform's approved payment channels upon order confirmation, and are not paid out to the service provider until the service — or the agreed milestone of it — has been delivered.",
+        "Because the money has not moved to the service provider before delivery, refunding it before the service starts neither requires nor depends on their approval.",
+        "The platform's commission (5%–15% depending on the service) is deducted only when funds are paid out to the service provider, so it is never deducted from any amount refunded before the service begins.",
+        "Refunds are returned to the original payment method within the period prescribed by the Saudi E-Commerce Law and its Implementing Regulations, and no later than the periods set out in Section 7 below.",
       ],
     },
     {
       id: "subscriptions",
       title: "3. Subscription Plan Refunds",
       content: [
-        "**14-day guarantee**: Any new subscriber may request a full refund of their subscription value within 14 days of the first payment date, with no complicated conditions, provided fair use of the service.",
-        "After the 14 days: automatic renewal can be cancelled at any time from account settings, and access continues until the end of the period already paid for, with no partial refund for the remaining period.",
+        "**Right of withdrawal**: New subscribers may withdraw from a subscription and recover its value within the periods and cases set out in the Saudi E-Commerce Law and its Implementing Regulations, except to the extent the service has already been consumed and cannot be returned.",
+        "After the withdrawal period ends: automatic renewal can be cancelled at any time from account settings, and access continues until the end of the period already paid for, with no partial refund for the remaining period.",
         "Upgrading between plans does not require a refund; the price difference is pro-rated on the next invoice.",
       ],
     },
@@ -139,8 +141,8 @@ const sections = {
       content: [
         "Services that have been completed and accepted in writing by the service seeker.",
         "Government fees, court fees, or notarization fees paid to entities outside the platform.",
-        "Subscriptions after the 14-day guarantee period has ended (only renewal cancellation applies, not an immediate refund).",
-        "Cases of guarantee abuse, such as repeatedly requesting refunds after fully consuming the service quota more than once.",
+        "Subscriptions after the statutory withdrawal period has ended (only renewal cancellation applies, not an immediate refund).",
+        "Cases of abuse of the right of withdrawal, such as repeatedly requesting refunds after fully consuming the service quota more than once.",
       ],
     },
     {
@@ -206,8 +208,8 @@ export default function RefundPolicyPage() {
             </p>
             <div className={`mx-auto mt-4 max-w-lg rounded-xl border px-4 py-3 text-sm ${isDark ? "border-yellow-500/20 bg-yellow-500/5 text-yellow-300" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
               {isRTL
-                ? "ضمان استرداد كامل خلال ١٤ يوماً على جميع الاشتراكات، واسترداد كامل أو جزئي لأتعاب الخدمات الفردية وفق الشروط أدناه."
-                : "Full refund guarantee within 14 days on all subscriptions, and full or partial refunds for individual service fees per the terms below."}
+                ? "حق العدول عن الاشتراكات وفق نظام التجارة الإلكترونية، واسترداد كامل أو جزئي لأتعاب الخدمات الفردية وفق الشروط أدناه."
+                : "A right of withdrawal on subscriptions under the Saudi E-Commerce Law, and full or partial refunds for individual service fees per the terms below."}
             </div>
           </motion.div>
         </div>

@@ -36,7 +36,7 @@ const features = {
     { icon: Users, title: "إدارة الموكلين", desc: "قاعدة بيانات ذكية لجميع موكليك مع سجل كامل للتواصل والمستندات والاتفاقيات.", color: "from-blue-500 to-cyan-600" },
     { icon: FileText, title: "مكتبة قوالب ذكية", desc: "مئات القوالب القانونية الجاهزة يمكن تخصيصها بالذكاء الاصطناعي في ثوانٍ.", color: "from-amber-500 to-orange-600" },
     { icon: CalendarBlank, title: "إدارة المواعيد", desc: "تقويم ذكي مدمج مع محكمة.جوف وإشعارات تلقائية للجلسات والمواعيد النهائية.", color: "from-pink-500 to-rose-600" },
-    { icon: CurrencyDollar, title: "نظام الأتعاب والفواتير", desc: "إصدار فواتير احترافية، تتبع المدفوعات، ونظام Escrow لضمان حصولك على أتعابك.", color: "from-teal-500 to-green-600" },
+    { icon: CurrencyDollar, title: "نظام الأتعاب والفواتير", desc: "إصدار فواتير احترافية، تتبع المدفوعات، وصرف الأتعاب عبر المنصة بعد إنجاز الخدمة.", color: "from-teal-500 to-green-600" },
   ],
   en: [
     { icon: Brain, title: "Specialized AI Assistant", desc: "AI trained on Saudi laws and regulations to help you draft, research, and analyze.", color: "from-violet-500 to-purple-600" },
@@ -44,7 +44,7 @@ const features = {
     { icon: Users, title: "Client Management", desc: "Smart database for all your clients with full communication history, docs, and agreements.", color: "from-blue-500 to-cyan-600" },
     { icon: FileText, title: "Smart Template Library", desc: "Hundreds of ready-made legal templates customizable with AI in seconds.", color: "from-amber-500 to-orange-600" },
     { icon: CalendarBlank, title: "Appointment Management", desc: "Smart calendar integrated with court portals with auto-notifications.", color: "from-pink-500 to-rose-600" },
-    { icon: CurrencyDollar, title: "Fees & Invoicing", desc: "Issue professional invoices, track payments, and secure your fees with Escrow.", color: "from-teal-500 to-green-600" },
+    { icon: CurrencyDollar, title: "Fees & Invoicing", desc: "Issue professional invoices, track payments, and get paid through the platform once the service is delivered.", color: "from-teal-500 to-green-600" },
   ],
 };
 

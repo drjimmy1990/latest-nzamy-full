@@ -28,7 +28,7 @@ export const services = {
       duration: "حسب القضية",
       color: "bg-gold/10 text-gold-dark",
       borderHover: "hover:border-gold/20",
-      features: ["محامون متخصصون في كل نوع قضايا", "متابعة مستمرة للقضية", "تقارير دورية للموكّل", "نظام Escrow لحماية الأتعاب"],
+      features: ["محامون متخصصون في كل نوع قضايا", "متابعة مستمرة للقضية", "تقارير دورية للموكّل", "الأتعاب لا تُصرف للمحامي إلا بعد الإنجاز"],
     },
     {
       id: "contracts",
@@ -110,7 +110,7 @@ export const services = {
       duration: "Case-dependent",
       color: "bg-gold/10 text-gold-dark",
       borderHover: "hover:border-gold/20",
-      features: ["Specialists for each case type", "Continuous case follow-up", "Periodic client reports", "Escrow system for fee protection"],
+      features: ["Specialists for each case type", "Continuous case follow-up", "Periodic client reports", "Fees released to the lawyer only after delivery"],
     },
     {
       id: "contracts",
@@ -172,14 +172,14 @@ export const services = {
 export const faqs = {
   ar: [
     { q: "هل الاستشارة سرية تماماً؟", a: "نعم. كل استشارة محمية بسرية مهنية كاملة وفق نظام المحاماة السعودي." },
-    { q: "كيف يعمل نظام الضمان المالي؟", a: "نستخدم نظام Escrow — مبلغ الأتعاب محتجز لديك حتى تؤكد اكتمال الخدمة." },
+    { q: "كيف تُحفظ حقوقي المالية؟", a: "تُدفع الأتعاب عبر المنصة ولا تُصرف للمحامي إلا بعد إنجاز الخدمة المتفق عليها." },
     { q: "هل يمكنني تقييم المحامي بعد الانتهاء؟", a: "بالتأكيد. نظام التقييم شفاف ومرئي للجميع لضمان جودة الخدمة." },
-    { q: "ماذا إذا لم أكن راضياً عن الخدمة؟", a: "لدينا سياسة استرداد كاملة خلال ٧٢ ساعة إذا لم تكن الخدمة مطابقة للمواصفات." },
+    { q: "ماذا إذا لم أكن راضياً عن الخدمة؟", a: "إذا لم تكن الخدمة مطابقة لما اتُّفق عليه يمكنك طلب الاسترداد — والمدد والحالات مبيّنة في سياسة الاسترجاع وفق نظام التجارة الإلكترونية." },
   ],
   en: [
     { q: "Is the consultation fully confidential?", a: "Yes. Every consultation is protected by full professional confidentiality under Saudi Bar regulations." },
-    { q: "How does the financial guarantee work?", a: "We use an Escrow system — fees are held until you confirm service completion." },
+    { q: "How are my payments protected?", a: "Fees are paid through the platform and are not released to the lawyer until the agreed service has been delivered." },
     { q: "Can I rate the lawyer after the service?", a: "Absolutely. Our rating system is transparent and public to ensure service quality." },
-    { q: "What if I'm not satisfied with the service?", a: "We offer a full refund within 72 hours if the service doesn't meet specifications." },
+    { q: "What if I'm not satisfied with the service?", a: "If the service does not match what was agreed you may request a refund — the periods and cases are set out in the Refund Policy under the Saudi E-Commerce Law." },
   ],
 };

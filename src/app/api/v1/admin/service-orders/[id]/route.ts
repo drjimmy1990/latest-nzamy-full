@@ -172,8 +172,8 @@ async function dispatchOrderNotice(opts: {
 
 /**
  * PATCH /api/v1/admin/service-orders/[id]
- * Body: { action: "claim" | "deliver" | "cancel" | "resend_whatsapp",
- *         documentId?, fileName?, notes?, reason?, sendWhatsapp? }
+ * Body: { action: "claim" | "assign" | "deliver" | "cancel" | "resend_whatsapp",
+ *         documentId?, fileName?, notes?, reason?, sendWhatsapp?, assigneeUserId? }
  * Side-channels (event, notification, n8n) are best-effort and never break the write.
  *
  * "claim" is intentionally idempotent-as-takeover, not a 409: re-claiming an
@@ -199,9 +199,11 @@ export async function PATCH(
   const adminUserId = gate.userId;
 
   let body: {
-    action?: "claim" | "deliver" | "cancel" | "resend_whatsapp";
+    action?: "claim" | "assign" | "deliver" | "cancel" | "resend_whatsapp";
     documentId?: string; fileName?: string; notes?: string; reason?: string;
     internalNotes?: string; sendWhatsapp?: boolean;
+    /** "assign" only — the admin to route this order to, or null to clear it. */
+    assigneeUserId?: string | null;
   };
   try { body = await request.json(); }
   catch { return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 }); }
@@ -244,6 +246,88 @@ export async function PATCH(
 
   if (order.status === "completed" || order.status === "cancelled") {
     return NextResponse.json({ error: "تم البت في هذا الطلب مسبقًا" }, { status: 409 });
+  }
+
+  // ── "assign" — route the order to a named member of the team ───────────────
+  //
+  // Owner item ١٣ («توزيع المهام على أشرف ورامي بالاسم»). Handled as its own
+  // early return rather than as another `patch` branch below, because all
+  // THREE of the shared side-channels down there are wrong for it:
+  //
+  //   • recordNotification — a manager routing work internally is not a fact
+  //     about the client's order. «بدأ العمل على طلبك» would be a claim we
+  //     have not earned; the member has not opened it yet.
+  //   • dispatchOrderNotice — the same message, over WhatsApp.
+  //   • the `status` write — deliberately absent. resolvePath()
+  //     (src/lib/n8n/dispatch.ts) keys the outbound webhook off STATUS, not
+  //     the event name, so moving an order to `in_review` on a routing
+  //     decision would fire the client's "work started" workflow. An order
+  //     that is `pending_assignment` WITH an `assigned_to` is the honest
+  //     state: routed, not started. The member's own «استلام» (claim) is
+  //     still what moves it to `in_review`.
+  //
+  // Clearing (assigneeUserId: null) is supported so a wrong routing can be
+  // undone without inventing a second action.
+  if (body.action === "assign") {
+    const assigneeUserId =
+      typeof body.assigneeUserId === "string" && body.assigneeUserId.trim()
+        ? body.assigneeUserId.trim()
+        : null;
+
+    // The id arrives from a <select> the admin console fills from
+    // GET /api/v1/admin/teams, but this route is reachable directly and
+    // `assigned_to` is what POST /api/v1/documents checks before letting
+    // someone upload a deliverable onto this order. An unvalidated id here
+    // would hand that permission to any user in the system.
+    let assigneeName: string | null = null;
+    if (assigneeUserId) {
+      const { data: assignee } = await admin
+        .from("profiles")
+        .select("id, display_name, email, user_type")
+        .eq("id", assigneeUserId)
+        .maybeSingle();
+      if (!assignee || assignee.user_type !== "admin") {
+        return NextResponse.json(
+          { error: "لا يمكن توجيه الطلب إلا لعضو من فريق الإدارة" },
+          { status: 400 },
+        );
+      }
+      assigneeName =
+        (assignee.display_name as string | null)?.trim() ||
+        (assignee.email as string | null) ||
+        null;
+    }
+
+    const { data: routed, error: routeError } = await admin
+      .from("service_requests")
+      .update({ assigned_to: assigneeUserId, updated_at: nowIso })
+      .eq("id", id)
+      .select()
+      .single();
+    if (routeError) {
+      return NextResponse.json({ error: routeError.message }, { status: 500 });
+    }
+
+    try {
+      await recordEvent({
+        supabase: admin,
+        requestId: id,
+        event: RequestEvent.SERVICE_REQUEST_REASSIGNED,
+        actorUserId: adminUserId,
+        // The audit row is the only place the routing decision is written
+        // down, so it names the destination. Falls back to the raw id rather
+        // than to «الإدارة» — an unnamed profile still has to be traceable.
+        actorName: assigneeName
+          ? `الإدارة ← ${assigneeName}`
+          : assigneeUserId
+            ? `الإدارة ← ${assigneeUserId}`
+            : "الإدارة (إلغاء التوجيه)",
+      });
+    } catch (e) {
+      console.error("[service-orders] assign recordEvent failed:", e);
+    }
+
+    return NextResponse.json({ success: true, data: routed });
   }
 
   const metadata = (order.metadata ?? {}) as Record<string, unknown>;

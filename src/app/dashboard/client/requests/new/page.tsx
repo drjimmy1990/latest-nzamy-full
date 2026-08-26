@@ -9,7 +9,9 @@ import {
 } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
 import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
+import { useTheme } from "@/components/ThemeProvider";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
+import { VaultAttachPicker } from "@/components/documents/VaultAttachPicker";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
 import { getClientServiceById, formatClientServicePrice } from "@/lib/pricingRepository";
 
@@ -77,7 +79,8 @@ export default function NewRequestWizard() {
   // Real uploads, identical to the four lawyer wizards. `attachments` holds
   // OrderAttachment[] — a documentId that exists server-side — not File
   // objects that never left the browser.
-  const { attachments, uploading, attachError, attachFiles, removeAttachment } = useOrderAttachments();
+  const { isDark } = useTheme();
+  const { attachments, uploading, attachError, attachFiles, attachFromVault, removeAttachment } = useOrderAttachments();
 
   const serviceInfo = getClientServiceById(typeParam, catalog);
   const price = serviceInfo.requiresPayment ? serviceInfo.basePrice : 0;
@@ -240,6 +243,20 @@ export default function NewRequestWizard() {
               </p>
               <p className="text-xs text-gray-500">PDF أو Word أو صورة — بحد أقصى ٢٠ ميجابايت للملف</p>
             </label>
+
+            {/* Owner item ٨ — «تتاح الوثائق للإرفاق الفوري بنقرة واحدة دون
+                إعادة رفعها من الجهاز». Renders nothing until the account
+                actually has something in its vault, so a first-time client is
+                never shown a button that would do nothing. Attaching COPIES
+                the vault document (see /api/v1/documents/[id]/copy) — binding
+                the original would empty the vault the first time each file was
+                used. */}
+            <VaultAttachPicker
+              isDark={isDark}
+              disabled={uploading}
+              attachedNames={attachments.map((a) => a.name)}
+              onAttach={async (documentId) => { await attachFromVault(documentId); }}
+            />
 
             {attachments.length > 0 && (
               <div className="space-y-2">

@@ -157,7 +157,7 @@ export default function IndividualsPage() {
                 className="grid grid-cols-2 gap-4"
               >
                 {[
-                  { icon: ShieldCheck, label: isAr ? "ضمان مالي كامل" : "Full Financial Guarantee", desc: isAr ? "Escrow لحماية أموالك" : "Escrow protects your money", color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10" },
+                  { icon: ShieldCheck, label: isAr ? "ضمان مالي كامل" : "Full Financial Guarantee", desc: isAr ? "لا تُصرف الأتعاب قبل الإنجاز" : "Fees are not released before delivery", color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10" },
                   { icon: Brain, label: isAr ? "ذكاء اصطناعي قانوني" : "Legal AI", desc: isAr ? "مدرّب على الأنظمة السعودية" : "Trained on Saudi law", color: "text-royal bg-royal/5 dark:bg-royal/20" },
                   { icon: Star, label: isAr ? "محامون موثّقون" : "Verified Lawyers", desc: isAr ? "معتمدون من وزارة العدل" : "Ministry of Justice certified", color: "text-gold-dark bg-gold/10" },
                   { icon: Clock, label: isAr ? "استجابة فورية" : "Instant Response", desc: isAr ? "خلال ١٥ دقيقة أو أقل" : "Within 15 minutes or less", color: "text-blue-600 bg-blue-50 dark:bg-blue-500/10" },
@@ -309,8 +309,8 @@ export default function IndividualsPage() {
                   stepEn: "3",
                   labelAr: "احصل على خدمتك بضمان",
                   labelEn: "Get Your Service with Guarantee",
-                  descAr: "استلم خدمتك مع ضمان استرداد كامل عبر نظام Escrow إذا لم تكن راضياً.",
-                  descEn: "Receive your service with a full refund guarantee via Escrow if you're not satisfied.",
+                  descAr: "استلم خدمتك، ولك حق طلب الاسترداد وفق سياسة الاسترجاع إذا لم تكن مطابقة لما اتُّفق عليه.",
+                  descEn: "Receive your service, with the right to request a refund under the Refund Policy if it does not match what was agreed.",
                   icon: ShieldCheck,
                 },
               ].map((step, i) => {

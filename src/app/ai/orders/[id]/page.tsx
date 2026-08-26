@@ -16,8 +16,11 @@ import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
 import { OrderTimeline } from "./_components/OrderTimeline";
 import { OrderSummary } from "./_components/OrderSummary";
 import { OrderActions } from "./_components/OrderActions";
+import { OrderEditPanel } from "./_components/OrderEditPanel";
+import { useUser } from "@/hooks/useUser";
 import { RevisionPanel } from "./_components/RevisionPanel";
 import { OPEN_ORDER_STATUSES } from "./_components/openOrderStatuses";
+import { orderReference } from "@/lib/services/orderReference";
 
 type LoadState = "loading" | "error" | "not_found" | "loaded";
 
@@ -32,6 +35,7 @@ const TIMELINE_STATUSES = new Set([...OPEN_ORDER_STATUSES, "completed"]);
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { isDark } = useTheme();
+  const user = useUser();
   const [order, setOrder] = useState<ServiceOrder | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [downloadErr, setDownloadErr] = useState("");
@@ -83,9 +87,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     try {
       // navigator.clipboard throws on insecure origins (plain HTTP,
       // non-localhost) — never let the button look dead with no feedback.
-      // Copies order.id, not the route param `id`, so what's copied is
-      // provably the same value the header displays (#order.id).
-      await navigator.clipboard.writeText(order?.id ?? id);
+      // Copies exactly what the header renders — the short reference derived
+      // from order.id, not the route param `id` and not the raw UUID. A copy
+      // button that puts a different string on the clipboard than the one on
+      // screen is a trap: the client pastes 36 characters into WhatsApp having
+      // read «ORD-8F14E4» and cannot tell which one support wanted. The admin
+      // queue's search resolves both forms (matchesOrderReference), so the
+      // short one is not a lossy copy.
+      await navigator.clipboard.writeText(orderReference(order?.id ?? id));
       setIdCopied(true);
       setTimeout(() => setIdCopied(false), 2000);
     } catch {
@@ -148,7 +157,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   })();
   const underRevision = order.status === "in_review" && revisionCount > 0;
   const supportHref = buildWhatsAppHref(
-    `مرحباً فريق نظامي، أحتاج مساعدة بخصوص طلبي رقم ${order.id} (${order.metadata?.serviceTitleAr ?? order.title}).`,
+    // Both forms on purpose: the short reference is what the client would
+    // read out, the full id is what makes the message unambiguous for whoever
+    // picks it up. A WhatsApp body is not read aloud, so carrying both costs
+    // nothing.
+    `مرحباً فريق نظامي، أحتاج مساعدة بخصوص طلبي ${orderReference(order.id)} (${order.metadata?.serviceTitleAr ?? order.title}). المعرّف الكامل: ${order.id}`,
   );
 
   return (
@@ -156,9 +169,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       <div className="space-y-1.5">
         {/* Task 6, Step 1 — a reference the client can quote. The order id
             is already the primary key (service_requests.id); this doesn't
-            invent a second, parallel numbering scheme. */}
+            invent a second, parallel numbering scheme.
+            Owner item ٤: what is SHOWN is the short derived reference, because
+            a 36-character UUID is not something anyone reads over the phone.
+            The copy button copies exactly what is displayed — copying a
+            different string from the one on screen is a surprise — and the
+            admin queue's search resolves both forms. */}
         <div className="flex items-center gap-2">
-          <span className={`text-[11px] font-mono ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>#{order.id}</span>
+          <span className={`text-[12px] font-mono font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{orderReference(order.id)}</span>
           <button onClick={copyId} className="text-[11px] font-semibold text-[#0B3D2E]">
             {idCopied ? "تم النسخ ✓" : "نسخ رقم الطلب"}
           </button>
@@ -270,6 +288,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         >
           <WhatsappLogo size={14} weight="fill" /> تواصل مع الدعم
         </a>
+        {/* Owner item ٥ — «تعديل الطلب قبل بدء التنفيذ». Beside cancel, not
+            instead of it: the two are different answers to "I got this wrong",
+            and the window for editing is narrower than the window for
+            cancelling. Renders nothing once the window has closed. */}
+        <OrderEditPanel order={order} userId={user.userId ?? null} isDark={isDark} onSaved={load} />
         <OrderActions order={order} isDark={isDark} onCancelled={load} />
       </div>
     </div>

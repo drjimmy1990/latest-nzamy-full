@@ -84,10 +84,10 @@ const benefits = [
   },
   {
     icon: Lock,
-    ar: "دفع آمن (Escrow)",
-    en: "Secure Escrow Payments",
-    descAr: "أموالك محمية حتى اكتمال الخدمة",
-    descEn: "Funds protected until service completion",
+    ar: "أتعاب مربوطة بالإنجاز",
+    en: "Fees Tied to Delivery",
+    descAr: "تُصرف أتعابك بعد إنجاز الخدمة وفق السياسة المالية",
+    descEn: "Fees are paid out after the service is delivered, per the financial policy",
   },
   {
     icon: Robot,
@@ -154,41 +154,24 @@ const steps = [
   },
 ];
 
-const testimonials = [
-  {
-    nameAr: "أ. خالد العمري",
-    nameEn: "Khalid Al-Omari",
-    roleAr: "محامٍ — الرياض",
-    roleEn: "Lawyer — Riyadh",
-    textAr:
-      "منذ انضمامي لنظامي تضاعف دخلي. المنصة سهّلت عليّ إدارة القضايا والتواصل مع العملاء بشكل احترافي.",
-    textEn:
-      "Since joining Nezamy, my income has doubled. The platform made managing cases and communicating with clients much easier.",
-    stars: 5,
-  },
-  {
-    nameAr: "أ. نورة السبيعي",
-    nameEn: "Noura Al-Subaie",
-    roleAr: "موثّقة — جدة",
-    roleEn: "Notary — Jeddah",
-    textAr:
-      "أقدّر كثيراً نظام الـ Escrow لأنه يضمن حقوقي المالية. الدعم الفني ممتاز والواجهة سهلة الاستخدام.",
-    textEn:
-      "I greatly appreciate the Escrow system as it guarantees my financial rights. Technical support is excellent and the interface is user-friendly.",
-    stars: 5,
-  },
-  {
-    nameAr: "م. سعد القحطاني",
-    nameEn: "Saad Al-Qahtani",
-    roleAr: "معقّب — الدمام",
-    roleEn: "Legal Runner — Dammam",
-    textAr:
-      "استطعت توسيع نطاق عملي بشكل كبير. نظامي يربطني بعملاء من كل مناطق المملكة بكل سهولة.",
-    textEn:
-      "I was able to greatly expand my business. Nezamy connects me with clients from all regions of the Kingdom with ease.",
-    stars: 4,
-  },
-];
+/**
+ * Provider testimonials — EMPTY ON PURPOSE.
+ *
+ * This held three invented providers («أ. خالد العمري — الرياض»,
+ * «أ. نورة السبيعي — جدة», «م. سعد القحطاني — الدمام») with invented
+ * quotes and star ratings, one of them claiming the platform doubled the
+ * speaker's income. None of these people exist. A recruiting page carrying
+ * fabricated endorsements is the same problem as the invented lawyer profile
+ * that was removed from the directory, and it sits on a page meant to be read
+ * by a bank.
+ *
+ * The section below renders only when this array has entries, so adding real,
+ * attributable quotes here is all that is needed to bring it back.
+ */
+const testimonials: {
+  nameAr: string; nameEn: string; roleAr: string; roleEn: string;
+  textAr: string; textEn: string; stars: number;
+}[] = [];
 
 const requirementsByType: Record<string, { ar: string; en: string }[]> = {
   "0": [
@@ -463,7 +446,11 @@ export default function JoinPage() {
         </div>
       </section>
 
-      {/* Testimonials */}
+      {/* Testimonials — hidden while there are none. An empty «يقول عنا مزودو
+          الخدمة» heading over a blank grid says the providers said nothing,
+          which is worse than not asking the question. See the note on the
+          `testimonials` array. */}
+      {testimonials.length > 0 && (
       <section className={`py-20 px-4 ${isDark ? "bg-dark-bg" : "bg-white"}`}>
         <div className="max-w-6xl mx-auto">
           <motion.div
@@ -512,6 +499,7 @@ export default function JoinPage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* Requirements */}
       <section className={`py-20 px-4 ${isDark ? "bg-dark-card" : "bg-gray-50"}`}>

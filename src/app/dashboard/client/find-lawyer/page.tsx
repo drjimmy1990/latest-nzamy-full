@@ -17,6 +17,7 @@ import {
 import { useUser } from '@/hooks/useUser';
 import { usePaymentsStatus } from '@/hooks/usePaymentsStatus';
 import { createWorkflowId, createWorkflowRequest } from '@/lib/clientWorkflowRepository';
+import { normalizeCategoryId, categoryLabelFor } from '@/constants/taxonomies';
 import { createPaymentIntentStub } from '@/lib/paymentAdapter';
 import { type Lawyer } from './data';
 import { getLawyers } from '@/lib/services';
@@ -381,7 +382,14 @@ export default function FindLawyerPage() {
       metadata: {
         lawyerId: lawyer.id,
         lawyerName: lawyer.name,
-        specialty: lawyer.specialtyKey,
+        // Owner item ١٦ — the canonical SA-xx, not this page's private
+        // `real-estate`/`labor` spelling. This value goes into the database
+        // and was one of three incompatible spellings of the same
+        // specialisation across the app; normalizeCategoryId() is now the
+        // single answer. The human-readable name is kept beside it so the
+        // fulfilment team never has to resolve an id to read the order.
+        specialty: normalizeCategoryId(lawyer.specialtyKey) ?? lawyer.specialtyKey,
+        specialtyLabel: categoryLabelFor(lawyer.specialtyKey),
         city: lawyer.city,
         mode: 'video',
         serviceId: 'find-lawyer-consultation',
