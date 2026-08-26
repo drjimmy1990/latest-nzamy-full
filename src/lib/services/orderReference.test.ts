@@ -35,6 +35,18 @@ test("everything a human might paste finds the same order", () => {
   }
 });
 
+test("a one- or two-character fragment does not select a third of the queue", () => {
+  // The admin search box filters on every keystroke. A bare «8» prefix-matching
+  // one order in sixteen puts an arbitrary subset on screen that reads as a
+  // real result set. With the «ORD-» prefix present the intent is unambiguous
+  // at any length, so that stays permissive.
+  assert.equal(matchesOrderReference(ID, "8"), false);
+  assert.equal(matchesOrderReference(ID, "8F"), false);
+  assert.equal(matchesOrderReference(ID, "8F1"), false);
+  assert.equal(matchesOrderReference(ID, "8F14"), true);
+  assert.equal(matchesOrderReference(ID, "ORD-8F"), true);
+});
+
 test("a different order does not answer to this reference", () => {
   assert.equal(matchesOrderReference("11111111-2222-3333-4444-555555555555", "ORD-8F14E4"), false);
   assert.equal(matchesOrderReference(ID, "ORD-000000"), false);
