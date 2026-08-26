@@ -7,6 +7,7 @@ import { uploadDocumentFile } from "@/lib/services/documentService";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { validateUploadFile } from "@/lib/services/fileValidation";
 import { buildOrderPrompt } from "@/lib/services/orderPrompt";
+import { ReceiptPanel } from "./_components/ReceiptPanel";
 import { uploadErrorMessage } from "./_errorCopy";
 import { orderReference, matchesOrderReference } from "@/lib/services/orderReference";
 
@@ -1084,6 +1085,13 @@ export default function AdminServiceOrdersPage() {
                     تنزيل ملف .md
                   </button>
                 </div>
+
+                {/* Owner item ١٥ — the money the office actually received.
+                    Sits on every open card, whatever the status: a client can
+                    pay before, during or after the work, and a receipt panel
+                    that only appeared on delivered orders would be missing
+                    exactly when the first payment arrives. */}
+                <ReceiptPanel orderId={o.id} isDark={isDark} />
 
                 {/* Owner item ١٣ — «توزيع المهام على أشرف ورامي بالاسم».
                     Deliberately separate from «استلام»: that button is the
