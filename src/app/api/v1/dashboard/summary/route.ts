@@ -21,7 +21,7 @@ export async function GET() {
 
   // Run all queries in parallel — each wrapped to return defaults on failure
   const [
-    activeCases,
+    activeCasesResult,
     nextAppointment,
     recentMessages,
     subscription,
@@ -29,18 +29,35 @@ export async function GET() {
     walletBalance,
     unreadNotifications,
   ] = await Promise.all([
-    // 1. Active cases
+    // 1. Active cases — the three most recent, PLUS how many there really are.
+    //
+    // WHY THE COUNT — the row list is capped at 3 for the dashboard's preview
+    // grid, and the landing page prints the number of open orders in
+    // its welcome line and in the section badge. Printing the length of a
+    // capped list tells a client with seven open orders that they have three,
+    // which is a false statement about their own file. `count: "exact"`
+    // counts every row matching the filters and ignores the limit.
+    //
+    // NAMED COLUMNS, not `select("*")` — the client dashboard is the only
+    // consumer of this field and needs exactly these five. The wider select
+    // also shipped the `requester` and `payment` blobs to the browser for no
+    // reader at all.
     Promise.resolve(
       supabase
         .from("service_requests")
-        .select("*")
+        .select("id, title, status, metadata, created_at", { count: "exact" })
         .eq("requester_user_id", uid)
         .in("status", ["pending_assignment", "assigned", "in_review"])
         .order("created_at", { ascending: false })
         .limit(3),
     )
-      .then(({ data }) => data ?? [])
-      .catch(() => []),
+      .then(({ data, count }) => ({
+        rows: data ?? [],
+        // A null count (PostgREST omitted the range header) must not become a
+        // zero that contradicts the rows we are about to return.
+        total: count ?? (data?.length ?? 0),
+      }))
+      .catch(() => ({ rows: [], total: 0 })),
 
     // 2. Next appointment
     Promise.resolve(
@@ -127,7 +144,10 @@ export async function GET() {
   ]);
 
   return NextResponse.json({
-    activeCases,
+    activeCases: activeCasesResult.rows,
+    // The real number of open orders, which `activeCases.length` is not: that
+    // array is capped at 3 above.
+    activeCasesTotal: activeCasesResult.total,
     nextAppointment,
     recentMessages,
     subscription,

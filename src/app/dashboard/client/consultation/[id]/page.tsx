@@ -1,22 +1,19 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
-import { useState, useRef, useEffect } from "react";
+import { motion } from "framer-motion";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
-  ArrowRight, PaperPlaneTilt, Microphone, MicrophoneSlash,
-  Paperclip, Robot, Clock, Phone, Video,
-  FileText, Star, CheckCircle, DotsThree,
-  Download, Warning, X, SealCheck, Copy, FileArrowUp,
-  Scales, ShieldCheck, CaretUp, CaretDown, CalendarBlank,
-  Sparkle
+  ArrowRight, Robot, FileText, Warning, SealCheck,
+  Copy, FileArrowUp, WhatsappLogo,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import SessionChatPane from "@/components/dashboard/SessionChatPane";
+import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
 import { listClientWorkflowRequests } from "@/lib/clientWorkflowRepository";
-import type { WorkflowRequest } from "@/lib/workflowStore";
+import type { WorkflowRequestStatus } from "@/lib/workflowStore";
 import {
   getChatRooms,
   createChatRoom,
@@ -34,21 +31,28 @@ interface Consultation {
   id: string;
   type: ConsultType;
   status: ConsultStatus;
+  /** The request's own status wording — see REQUEST_STATUS_AR. */
+  requestStatusLabel: string;
   lawyerName: string;
   lawyerSpecialty: string;
   lawyerInitial: string;
   lawyerColor: string;
+  /** The stored request title, exactly as the booking wizard wrote it. */
+  title: string;
+  /** The client's own submitted text (`service_requests.description`). Never an answer. */
   topic: string;
+  /** Formatted submission date, or "" when the row carries no usable timestamp. */
   date: string;
   time: string;
   duration: string;
   price: number;
-  rating?: number;
-  hasPdf?: boolean;
-  pdfName?: string;
-  caseId?: string;
-  notes?: string;
-  questionText?: string;
+  /**
+   * Where the fulfilled document actually appears, for `ai_workspace` rows only
+   * — /ai/orders/[id] is the one page in this codebase that reads
+   * `metadata.deliverable` and serves the file. Null for any other receiver, so
+   * this page never points a client at a page that would not show their order.
+   */
+  orderHref: string | null;
 }
 
 interface Message {
@@ -83,14 +87,104 @@ function mapChatMessage(
   };
 }
 
-const STATUS_CONFIG: Record<ConsultStatus, { label: string; badge: string }> = {
-  upcoming:  { label: "قادمة",    badge: "text-blue-600 bg-blue-500/10 border-blue-500/20" },
-  active:    { label: "نشطة الآن", badge: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20 animate-pulse" },
-  completed: { label: "مكتملة",   badge: "text-zinc-400 bg-white/5 border-white/10" },
-  cancelled: { label: "ملغية",    badge: "text-rose-500 bg-rose-500/10 border-rose-500/20" },
+const STATUS_BADGE: Record<ConsultStatus, string> = {
+  upcoming:  "text-blue-600 bg-blue-500/10 border-blue-500/20",
+  active:    "text-emerald-500 bg-emerald-500/10 border-emerald-500/20 animate-pulse",
+  // zinc/10 rather than white/5: a white-tinted pill on the light theme's white
+  // card left the status word all but unreadable. Same tone the orders list
+  // uses for a finished order.
+  completed: "text-zinc-500 bg-zinc-500/10 border-zinc-500/20",
+  cancelled: "text-rose-500 bg-rose-500/10 border-rose-500/20",
 };
 
+/**
+ * The session state this page renders, derived from the request's own status.
+ *
+ * WHY a total map instead of the ternary chain that stood here: that chain read
+ * `completed ? "completed" : pending_payment ? "upcoming" : "upcoming"`, so a
+ * CANCELLED request was painted «قادمة» — and because SessionChatPane only
+ * hides its composer on `completed`/`cancelled`, a cancelled consultation kept
+ * a live message box on a request nobody will ever answer. Declaring the map
+ * `Record<WorkflowRequestStatus, ConsultStatus>` turns a new request status
+ * into a compile error instead of another silent «قادمة».
+ *
+ * NOTHING maps to "active" on purpose. "active" is the only value that paints a
+ * pulsing «نشطة الآن» badge, and nothing in this codebase reports that a
+ * consultation session is actually running — there is no session-clock API. Do
+ * not "fix" this later by pointing `assigned`/`in_review` at it; that would
+ * claim a live session on the strength of a queue state.
+ */
+const CONSULT_STATUS_BY_REQUEST_STATUS: Record<WorkflowRequestStatus, ConsultStatus> = {
+  draft: "upcoming",
+  pending_payment: "upcoming",
+  pending_assignment: "upcoming",
+  assigned: "upcoming",
+  in_review: "upcoming",
+  completed: "completed",
+  cancelled: "cancelled",
+};
 
+/**
+ * The request's own status in Arabic. Kept separate from ConsultStatus because
+ * the four session states collapse seven request states into «قادمة», which
+ * would tell a client whose request is «قيد التنفيذ» that a session is coming.
+ * Wording follows ORDER_STATUS_AR (src/lib/services/serviceOrders.ts) so the
+ * same row does not read one way here and another way in «طلباتي».
+ */
+const REQUEST_STATUS_AR: Record<WorkflowRequestStatus, string> = {
+  draft: "مسودة",
+  pending_payment: "بانتظار الدفع",
+  pending_assignment: "بانتظار الاستلام",
+  assigned: "قيد التنفيذ",
+  in_review: "قيد التنفيذ",
+  completed: "مكتمل",
+  cancelled: "ملغى",
+};
+
+/**
+ * The real submission date, or null when there is none to show.
+ *
+ * `metadata.day` — what this field used to read — is written by no creator of
+ * these rows (neither /dashboard/client/consultation/new nor
+ * useConsultationForm sets it), so its `?? "محفوظ الآن"` fallback printed a
+ * placeholder into the date field of a document a client hands to a lawyer.
+ * `createdAt` is server-set on every row; when it is absent or unparsable the
+ * answer is "no date", never a stand-in.
+ */
+function formatRequestDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+}
+
+/**
+ * Escapes text interpolated into the printable document.
+ *
+ * The printed copy's entire claim is that it reproduces the client's own words.
+ * Written into `document.write` raw, a description containing `<` is eaten by
+ * the parser — the section silently drops exactly the text it promises to show
+ * — and pasted markup would run inside the print window. Every interpolated
+ * value goes through here.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// The single sentence this page is allowed to say about a legal opinion. There
+// is no AI engine and no lawyer write-back behind this record: `topic` is the
+// client's own description column, and nothing in the codebase ever writes an
+// answer into it. Any future "opinion" text must come from a real stored
+// deliverable, not from re-labelling a field the client filled in.
+const NO_OPINION_AR =
+  "لم يصدر رأي قانوني في هذا الطلب. لا يتضمن هذا السجل تحليلاً آلياً ولا رأي محامٍ؛ ما هو معروض هنا هو نص الطلب كما أرسلته.";
+
+const NO_REQUEST_TEXT_AR = "لم يُسجَّل نص لهذا الطلب.";
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -103,6 +197,8 @@ export default function ConsultationRoomPage() {
   const [consultation, setConsultation] = useState<Consultation | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [printError, setPrintError] = useState<string | null>(null);
   // Assigned lawyer's user id (used to find/create the chat room). Null until the
   // workflow request resolves; stays null for ai_workspace or unassigned requests.
   const [lawyerUserId, setLawyerUserId] = useState<string | null>(null);
@@ -114,24 +210,23 @@ export default function ConsultationRoomPage() {
   const [showAIPanel, setShowAIPanel] = useState(false);
   // Real chat room id for this consultation (looked up / created via chatService).
   const [chatRoomId, setChatRoomId] = useState<string | null>(null);
-  const [chatLoading, setChatLoading] = useState(false);
+  // Starts true: the lawyer branch renders "no chat room" whenever this is
+  // false and `chatRoomId` is null, and that verdict must not be shown before
+  // the lookup has run.
+  const [chatLoading, setChatLoading] = useState(true);
   // Honest, user-facing chat banner (no fabricated lawyer/AI messages).
   const [chatNotice, setChatNotice] = useState<string | null>(null);
-  // NOTE: a real session countdown requires a session-clock API (not built yet).
-  // Showing a frozen "٤٧:١٣" fakes a live timer — use an honest static label.
+  // A required SessionChatPane prop that the pane does not render. A real
+  // countdown needs a session-clock API that does not exist; never put a
+  // ticking figure here.
   const [sessionTimeLeft] = useState("جارية");
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  // Expandable statutes and roadmaps states
-  const [expandedStatutes, setExpandedStatutes] = useState<Record<string, boolean>>({});
-  const [completedRoadmapSteps, setCompletedRoadmapSteps] = useState<number[]>([]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  useEffect(() => {
+    // Wait for the session first. Querying with an unresolved `userId` returns
+    // nothing, and this page answers "nothing" with «الاستشارة غير موجودة» — a
+    // statement about the client's records that would be made before we knew
+    // whose records they are.
+    if (user.loading) return;
     // Fetch the consultation from the dynamic workflow repository (real data only).
     // No mock fallback: an unknown id leaves consultation null and the not-found UI
     // renders honestly.
@@ -144,19 +239,41 @@ export default function ConsultationRoomPage() {
           setConsultation({
             id: found.id,
             type,
-            status: found.status === "completed" ? "completed" : found.status === "pending_payment" ? "upcoming" : "upcoming",
+            // BOTH fallbacks are load-bearing, not defensive noise: the DB's
+            // `service_requests_status_check` allows a value the TypeScript
+            // union does not — supabase/migrations/20260616_production_readiness_fixes.sql
+            // added 'pending' — and localStorage can still hold rows written
+            // under an older shape. An unrecognised status must degrade to
+            // something *stated*: an empty label would make the status row
+            // disappear from the badge, the facts card and the printed copy at
+            // once, leaving the client a document with no status line and no
+            // sign that one was missing.
+            status: CONSULT_STATUS_BY_REQUEST_STATUS[found.status] ?? "upcoming",
+            requestStatusLabel: REQUEST_STATUS_AR[found.status] ?? "حالة غير معروفة",
             lawyerName: found.receiver === "ai_workspace" ? "نظامي AI" : String(found.metadata?.lawyer ?? "بانتظار تأكيد المحامي"),
             lawyerSpecialty: found.receiver === "ai_workspace" ? "مساعد قانوني ذكي" : String(found.metadata?.specialty ?? "استشارة قانونية"),
             lawyerInitial: found.receiver === "ai_workspace" ? "AI" : "ن",
             lawyerColor: found.receiver === "ai_workspace" ? "bg-[#0B3D2E]" : "bg-emerald-600",
-            topic: found.description,
-            date: String(found.metadata?.day ?? "محفوظ الآن"),
-            time: String(found.metadata?.time ?? "قيد الجدولة"),
-            duration: found.receiver === "ai_workspace" ? "فوري" : "60 دق",
+            title: found.title ?? "",
+            topic: found.description ?? "",
+            date: formatRequestDate(found.createdAt),
+            // Neither field has a source. No creator of these rows writes
+            // `metadata.time`, and the hardcoded "60 دق" was wrong for every
+            // 30-minute booking (`video-short`) — SessionChatPane prints it
+            // verbatim under «المدة» in its session panel, so it was a duration
+            // the client never bought. The request carries no recorded duration,
+            // and saying so is the only honest value available here; deriving
+            // one needs a real minutes field on the service catalogue.
+            time: "",
+            duration: "غير محددة",
             price: found.payment.amount,
-            notes: `رقم الطلب: ${found.id}`,
-            questionText: found.metadata?.question as string,
+            orderHref: found.receiver === "ai_workspace" ? `/ai/orders/${encodeURIComponent(found.id)}` : null,
           });
+          // NOTE: there is deliberately no `questionText` any more. It read
+          // `metadata.question`, which no creator of these rows writes, and its
+          // only job was to be missing so a hardcoded «تأصيل الوقائع المحددة من
+          // الاستبيان التشخيصي» could be printed in its place — invented facts
+          // in the "facts established" row of a legal-looking document.
         } else {
           setConsultation(null);
         }
@@ -165,15 +282,24 @@ export default function ConsultationRoomPage() {
       .catch(() => {
         setLoading(false);
       });
-  }, [id, user.userId]);
+  }, [id, user.userId, user.loading]);
 
   // Wire the real chat room for this consultation (lawyer consultations only —
   // the AI branch renders its own panel and never reaches SessionChatPane).
   useEffect(() => {
     if (!consultation || consultation.type === "ai") return;
-    if (!user.userId) return;
+    if (user.loading) return;
     let cancelled = false;
     (async () => {
+      if (!user.userId) {
+        // No account, no room to look up — and no reason to leave the pane on a
+        // loading state for a lookup that will never be attempted.
+        setChatLoading(false);
+        setChatRoomId(null);
+        setMessages([]);
+        setChatNotice("تعذّر تحميل المحادثة: لم يتم التعرف على الحساب.");
+        return;
+      }
       setChatLoading(true);
       setChatNotice(null);
       try {
@@ -202,28 +328,39 @@ export default function ConsultationRoomPage() {
           setMessages(history.map(cm => mapChatMessage(cm, user.userId, consultation.type)));
         } else {
           setMessages([]);
+          // No «قريباً»: nothing here schedules the room, so a promised date
+          // would be one more thing this screen cannot keep.
           setChatNotice(
             lawyerUserId
-              ? "تعذّر إنشاء غرفة المحادثة الآن. حاول مرة أخرى لاحقاً."
-              : "سيتم تفعيل المحادثة المباشرة قريباً بمجرد تأكيد تعيين المحامي."
+              ? "تعذّر فتح غرفة المحادثة الآن."
+              : "لا توجد محادثة مباشرة لهذا الطلب: لم يُعيَّن محامٍ بعد."
           );
         }
       } catch {
         if (!cancelled) {
           setChatRoomId(null);
           setMessages([]);
-          setChatNotice("تعذّر تحميل المحادثة الآن. حاول مرة أخرى لاحقاً.");
+          setChatNotice("تعذّر تحميل المحادثة الآن.");
         }
       } finally {
         if (!cancelled) setChatLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [consultation, lawyerUserId, user.userId]);
+  }, [consultation, lawyerUserId, user.userId, user.loading]);
 
   async function sendMessage() {
     const text = input.trim();
     if (!text) return;
+    // No room, no send. This branch used to append the client's message to the
+    // thread, clear the box and answer «تم تسجيل رسالتك» — nothing was written
+    // anywhere, because with no chat room there is no endpoint to write to.
+    // The composer is not rendered without a room (see the lawyer branch), so
+    // this is the backstop: keep the text in the box, claim nothing.
+    if (!chatRoomId) {
+      setChatNotice("لم تُرسل الرسالة: لا توجد غرفة محادثة لهذا الطلب.");
+      return;
+    }
     const now = new Date();
     const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
     const localId = `local-${Date.now()}`;
@@ -236,113 +373,119 @@ export default function ConsultationRoomPage() {
       isRead: false,
     }]);
     setInput("");
-    if (chatRoomId) {
-      try {
-        const saved = await sendChatMessage(chatRoomId, text);
-        setMessages(prev => prev.map(m =>
-          m.id === localId ? mapChatMessage(saved, user.userId, consultation?.type ?? "video") : m
-        ));
-      } catch {
-        setChatNotice("تعذّر إرسال الرسالة. حاول مرة أخرى.");
-      }
-    } else {
-      setChatNotice(
-        lawyerUserId
-          ? "تعذّر إرسال الرسالة الآن. حاول مرة أخرى لاحقاً."
-          : "سيتم تفعيل المحادثة المباشرة قريباً بمجرد تأكيد تعيين المحامي. تم تسجيل رسالتك."
-      );
+    try {
+      const saved = await sendChatMessage(chatRoomId, text);
+      setMessages(prev => prev.map(m =>
+        m.id === localId ? mapChatMessage(saved, user.userId, consultation?.type ?? "video") : m
+      ));
+    } catch {
+      // A rejected POST must not leave the optimistic bubble sitting in the
+      // thread: it is pixel-identical to a delivered message. Drop it and hand
+      // the text back so the send can be retried — unless the client has
+      // already started typing something else.
+      setMessages(prev => prev.filter(m => m.id !== localId));
+      setInput(prev => (prev.trim() ? prev : text));
+      setChatNotice("تعذّر إرسال الرسالة ولم تُحفظ. أُعيد النص إلى مربع الكتابة.");
     }
   }
 
   // ─── Native Copy & Branded PDF Creators ─────────────────────────────────────
 
+  // WhatsApp is the one support channel this codebase actually ships
+  // (buildWhatsAppHref → NZAMY_WHATSAPP_NUMBER, the same href /ai/orders/[id]
+  // offers). Never point the client at a route or number that has not been
+  // verified to exist.
+  const supportHref = consultation
+    ? buildWhatsAppHref(`مرحباً فريق نظامي، بخصوص طلب الاستشارة رقم ${consultation.id}.`)
+    : buildWhatsAppHref("مرحباً فريق نظامي، لدي استفسار بخصوص طلب استشارة.");
+
   const handleCopyReport = () => {
     if (!consultation) return;
 
-    let reportText = `⚖️ تقرير استشارة وتشخيص قانوني - نظامي AI ⚖️\n`;
-    reportText += `رقم الاستشارة: ${consultation.id}\n`;
-    reportText += `تاريخ الاستشارة: ${consultation.date}\n`;
-    reportText += `=========================================\n\n`;
+    const lines = [
+      "نسخة من طلب استشارة قانونية — منصة نظامي",
+      `رقم الطلب: ${consultation.id}`,
+      ...(consultation.title ? [`عنوان الطلب: ${consultation.title}`] : []),
+      ...(consultation.date ? [`تاريخ الإرسال: ${consultation.date}`] : []),
+      ...(consultation.requestStatusLabel ? [`حالة الطلب: ${consultation.requestStatusLabel}`] : []),
+      "=========================================",
+      "",
+      "نص الطلب كما أرسله العميل:",
+      consultation.topic.trim() || NO_REQUEST_TEXT_AR,
+      "",
+      "الرأي القانوني:",
+      NO_OPINION_AR,
+      "",
+      "-----------------------------------------",
+      "هذه نسخة من طلب مقدَّم عبر منصة نظامي، وليست رأياً قانونياً ولا تقريراً صادراً عن محامٍ.",
+    ];
 
-    reportText += `📌 [أولاً: موجز الاستخلاص والوقائع]\n`;
-    reportText += `• موضوع المسألة: ${consultation.lawyerSpecialty}\n`;
-    reportText += `• الوقائع المستخلصة: ${consultation.questionText || "تأصيل الوقائع المحددة من الاستبيان"}\n\n`;
-
-    reportText += `🔍 [ثانياً: التشخيص القانوني المباشر]\n`;
-    reportText += `${consultation.topic}\n\n`;
-
-    reportText += `-----------------------------------------\n`;
-    reportText += `تنبيه: هذا التقرير تم توليده بواسطة محرك نظامي AI لأغراض استرشادية ولا يُعد استشارة قانونية رسمية.`;
-
-    navigator.clipboard.writeText(reportText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopyError(null);
+    // `navigator.clipboard` is undefined outside a secure context, where the
+    // unguarded call threw inside the click handler and the button did nothing
+    // at all — no copy, no message.
+    if (!navigator.clipboard?.writeText) {
+      setCopyError("تعذّر النسخ تلقائياً — حدّد النص وانسخه يدوياً.");
+      return;
+    }
+    navigator.clipboard.writeText(lines.join("\n"))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        // Announcing «تم النسخ» after a rejected clipboard write is the same
+        // lie in miniature: the client walks away with an empty clipboard.
+        setCopyError("تعذّر النسخ تلقائياً — حدّد النص وانسخه يدوياً.");
+      });
   };
 
   const handleDownloadPDF = () => {
     if (!consultation) return;
 
     const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
+    if (!printWindow) {
+      // A blocked popup used to return silently, so the button looked broken —
+      // or worse, looked like it had produced a file somewhere.
+      setPrintError("تعذّر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.");
+      return;
+    }
+    setPrintError(null);
 
-    // Detect category to print relevant statutes
-    const low = (consultation.topic + " " + (consultation.questionText || "")).toLowerCase();
-    const isLabor = /عمال|موظف|راتب|فصل/.test(low);
-    const isRealEstate = /عقار|أرض|شقة|إيجار/.test(low);
-
-    const statutesHtml = isLabor ? `
-      <div class="section">
-        <div class="section-title">السند القانوني والمواد النظامية المعول عليها</div>
-        <div class="statute-box">
-          <div class="statute-header"><strong>المادة 77 - نظام العمل السعودي</strong> - <span style="color:#C8A762">تعويضات إنهاء العقد لسبب غير مشروع</span></div>
-          <div class="statute-body">إذا أنهي العقد لسبب غير مشروع، يستحق الطرف المتضرر تعويضاً عادلاً تقدره المحكمة العمالية، أو تعويضاً تعاقدياً محدداً، وفي حال غيابه يستحق أجر 15 يوماً عن كل سنة خدمة للعقد غير محدد المدة، أو أجر المدة المتبقية للعقد محدد المدة.</div>
-        </div>
-        <div class="statute-box">
-          <div class="statute-header"><strong>المادة 84 - تسوية مستحقات الخدمة</strong> - <span style="color:#C8A762">احتساب مكافأة نهاية الخدمة</span></div>
-          <div class="statute-body">يستحق العامل عند انتهاء العلاقة العمالية مكافأة نهاية خدمة تحسب بواقع أجر نصف شهر عن كل سنة من السنوات الخمس الأولى، وأجر شهر كامل عن كل سنة تالية.</div>
-        </div>
-      </div>
-    ` : isRealEstate ? `
-      <div class="section">
-        <div class="section-title">السند القانوني والمواد النظامية المعول عليها</div>
-        <div class="statute-box">
-          <div class="statute-header"><strong>المادة 105 - التزامات المؤجر الصيانة</strong> - <span style="color:#C8A762">أعمال الصيانة الهيكلية والضرورية</span></div>
-          <div class="statute-body">يلتزم المؤجر بترميم العين المؤجرة وإجراء الصيانة الضرورية لتمكين المستأجر من استيفاء المنفعة كاملة دون عوائق هيكلية.</div>
-        </div>
-        <div class="statute-box">
-          <div class="statute-header"><strong>المادة 112 - حقوق الفسخ والخصم</strong> - <span style="color:#C8A762">حقوق المستأجر عند تقاعس المؤجر</span></div>
-          <div class="statute-body">للمستأجر عند تقاعس المؤجر عن الصيانة إخطاره رسمياً، فإذا لم يستجب يحق له إجراء الصيانة بخصمها من الأجرة أو اللجوء للفسخ.</div>
-        </div>
-      </div>
-    ` : `
-      <div class="section">
-        <div class="section-title">السند القانوني والمواد النظامية المعول عليها</div>
-        <div class="statute-box">
-          <div class="statute-header"><strong>المادة 140 - نظام المعاملات المدنية</strong> - <span style="color:#C8A762">الالتزام بتنفيذ بنود العقد المتفق عليها</span></div>
-          <div class="statute-body">العقد شريعة المتعاقدين، ويلتزم كل طرف بتنفيذ ما تم التراضي عليه بما يوافق مبادئ حسن النية والعدالة التعاقدية.</div>
-        </div>
-        <div class="statute-box">
-          <div class="statute-header"><strong>المادة 178 - الشرط الجزائي والتعويض</strong> - <span style="color:#C8A762">احتساب غرامات التأخير التعاقدية</span></div>
-          <div class="statute-body">يجوز للمتعاقدين تحديد قيمة التعويض مسبقاً في العقد عن التأخير أو عدم التنفيذ، ولا تلغيه المحكمة إلا إذا ثبت مبالغته الكبيرة.</div>
-        </div>
-      </div>
-    `;
-
-    const roadmapHtml = `
-      <div class="section">
-        <div class="section-title">خريطة الطريق والخطوات التنفيذية</div>
-        <ul class="roadmap-list">
-          <li><strong>الخطوة 1: توجيه إنذار رسمي كتابي</strong><p>إرسال خطاب إنذار بالوفاء يمنح الطرف الآخر مهلة نهائية وموثقة قانونياً لإثبات الوقائع ومحاولة الحل الودي.</p></li>
-          <li><strong>الخطوة 2: الشكوى والتسوية الودية</strong><p>تقديم طلب تسوية عبر المنصات الإلكترونية المعتمدة (قوى / إيجار / مركز التحكيم) لتوثيق تعذر الصلح.</p></li>
-          <li><strong>الخطوة 3: قيد صحيفة الدعوى القضائية</strong><p>إحالة ملف المنازعة وتوجيه صحيفة ادعاء واضحة للدوائر القضائية المختصة للمطالبة بالأصل والتعويضات.</p></li>
-        </ul>
-      </div>
-    `;
+    // WHAT IS NOT IN THIS DOCUMENT, AND MUST NOT COME BACK:
+    //
+    //  - A «التشخيص والإجابة القانونية المباشرة» section. It printed
+    //    `consultation.topic` — the client's own description column — under a
+    //    heading announcing it as the legal answer. There is no answer stored
+    //    anywhere on this row.
+    //  - A «السند القانوني والمواد النظامية المعول عليها» section. Two
+    //    keyword regexes (/عمال|موظف|راتب|فصل/, /عقار|أرض|شقة|إيجار/) picked
+    //    between three hardcoded arrays of statute articles, so a criminal,
+    //    family or inheritance matter was handed civil-contract articles and
+    //    told they were the authorities relied upon for it.
+    //  - A «خريطة الطريق والخطوات التنفيذية» section: three fixed litigation
+    //    steps, identical for every client, printed as this matter's plan.
+    //
+    // What remains is what the row actually contains: the request, and a
+    // statement that no opinion has been issued on it.
+    const dateLine = consultation.date ? ` | تاريخ الإرسال: ${escapeHtml(consultation.date)}` : "";
+    const titleRow = consultation.title
+      ? `<tr><th>عنوان الطلب</th><td>${escapeHtml(consultation.title)}</td></tr>`
+      : "";
+    const statusRow = consultation.requestStatusLabel
+      ? `<tr><th>حالة الطلب</th><td>${escapeHtml(consultation.requestStatusLabel)}</td></tr>`
+      : "";
+    // Only when there is a figure. A printed «٠ ر.س» reads as a priced service
+    // that came to nothing, and free bookings are the common case.
+    const priceRow = consultation.price > 0
+      ? `<tr><th>المبلغ المسجّل على الطلب</th><td>${escapeHtml(consultation.price.toLocaleString("ar-SA"))} ر.س</td></tr>`
+      : "";
+    const requestText = consultation.topic.trim();
 
     printWindow.document.write(`
       <html dir="rtl" lang="ar">
       <head>
-        <title>تقرير استشارة وتشخيص قانوني - نظامي AI</title>
+        <title>نسخة من طلب استشارة قانونية — منصة نظامي</title>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -381,8 +524,14 @@ export default function ConsultationRoomPage() {
             font-size: 20px;
             font-weight: 900;
             color: #111827;
-            margin-bottom: 30px;
+            margin-bottom: 8px;
             text-align: center;
+          }
+          .subtitle {
+            font-size: 12px;
+            color: #6b7280;
+            text-align: center;
+            margin-bottom: 30px;
           }
           .section {
             margin-bottom: 30px;
@@ -412,51 +561,25 @@ export default function ConsultationRoomPage() {
             width: 30%;
             font-weight: 700;
           }
-          .answer {
+          .quote {
             background-color: #f9fafb !important;
             border: 1px solid #e5e7eb;
-            border-right: 4px solid #10b981;
+            border-right: 4px solid #9ca3af;
             padding: 20px;
             border-radius: 12px;
             white-space: pre-wrap;
             font-size: 13.5px;
             line-height: 1.7;
           }
-          .statute-box {
-            border: 1px solid #e5e7eb;
-            padding: 15px;
+          .notice {
+            background-color: #fffbeb !important;
+            border: 1px solid #fde68a;
+            border-right: 4px solid #d97706;
+            padding: 20px;
             border-radius: 12px;
-            margin-bottom: 15px;
-            background-color: #ffffff;
-            page-break-inside: avoid;
-          }
-          .statute-header {
             font-size: 13px;
-            margin-bottom: 8px;
-            border-bottom: 1px solid #f3f4f6;
-            padding-bottom: 8px;
-          }
-          .statute-body {
-            font-size: 12px;
-            color: #4b5563;
-          }
-          .roadmap-list {
-            list-style: none;
-            padding: 0;
-          }
-          .roadmap-list li {
-            margin-bottom: 15px;
-            padding-right: 25px;
-            position: relative;
-            page-break-inside: avoid;
-          }
-          .roadmap-list li::before {
-            content: "•";
-            color: #C8A762;
-            font-size: 24px;
-            position: absolute;
-            right: 0;
-            top: -6px;
+            line-height: 1.8;
+            color: #78350f;
           }
           .footer {
             border-top: 1px solid #e5e7eb;
@@ -464,49 +587,46 @@ export default function ConsultationRoomPage() {
             margin-top: 50px;
             text-align: center;
             font-size: 11px;
-            color: #9ca3af;
+            color: #6b7280;
           }
         </style>
       </head>
       <body>
         <div class="header">
-          <div class="logo-title">نظامي AI • المستشار القانوني الذكي</div>
-          <div class="date">رقم الاستشارة: ${consultation.id} | التاريخ: ${consultation.date}</div>
+          <div class="logo-title">منصة نظامي</div>
+          <div class="date">رقم الطلب: ${escapeHtml(consultation.id)}${dateLine}</div>
         </div>
-        
-        <div class="title">تقرير استشارة وتشخيص قانوني رسمي للعميل</div>
-        
+
+        <div class="title">نسخة من طلب استشارة قانونية</div>
+        <div class="subtitle">وثيقة تعرض الطلب كما أرسله العميل — وليست رأياً قانونياً</div>
+
         <div class="section">
-          <div class="section-title">موجز الوقائع والاستخلاص الأولي</div>
+          <div class="section-title">بيانات الطلب</div>
           <table class="table">
             <tr>
-              <th>تصنيف القضية</th>
-              <td>${consultation.lawyerSpecialty}</td>
+              <th>رقم الطلب</th>
+              <td>${escapeHtml(consultation.id)}</td>
             </tr>
-            <tr>
-              <th>الوقائع المستخلصة</th>
-              <td>${consultation.questionText || "تأصيل الوقائع المحددة من الاستبيان التشخيصي"}</td>
-            </tr>
-            <tr>
-              <th>القيمة المالية المقدرة</th>
-              <td>${consultation.price.toLocaleString("ar-SA")} ر.س</td>
-            </tr>
+            ${titleRow}
+            ${statusRow}
+            ${priceRow}
           </table>
         </div>
-        
+
         <div class="section">
-          <div class="section-title">التشخيص والإجابة القانونية المباشرة</div>
-          <div class="answer">${consultation.topic}</div>
+          <div class="section-title">نص الطلب كما أرسله العميل</div>
+          <div class="quote">${requestText ? escapeHtml(requestText) : escapeHtml(NO_REQUEST_TEXT_AR)}</div>
         </div>
-        
-        ${statutesHtml}
-        
-        ${roadmapHtml}
-        
+
+        <div class="section">
+          <div class="section-title">الرأي القانوني</div>
+          <div class="notice">${escapeHtml(NO_OPINION_AR)}</div>
+        </div>
+
         <div class="footer">
-          تنبيه: هذا التقرير تم توليده بواسطة محرك نظامي AI لأغراض استرشادية فقط ولا يحل محل التوكيل القضائي أو الاستشارة الرسمية المعتمدة.
+          هذه الوثيقة نسخة من طلب مقدَّم عبر منصة نظامي. ليست رأياً قانونياً ولا تقريراً صادراً عن محامٍ، ولا يصح الاستناد إليها أمام أي جهة.
         </div>
-        
+
         <script>
           window.onload = function() {
             window.print();
@@ -519,16 +639,6 @@ export default function ConsultationRoomPage() {
       </html>
     `);
     printWindow.document.close();
-  };
-
-  const toggleStatuteExpand = (key: string) => {
-    setExpandedStatutes(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const toggleRoadmapStep = (stepNum: number) => {
-    setCompletedRoadmapSteps(prev => 
-      prev.includes(stepNum) ? prev.filter(s => s !== stepNum) : [...prev, stepNum]
-    );
   };
 
   // ─── Loading or Error State ─────────────────────────────────────────────────
@@ -559,57 +669,29 @@ export default function ConsultationRoomPage() {
     );
   }
 
-  // ─── 1. AI REVIEW PANEL RENDER ──────────────────────────────────────────────
+  // ─── 1. REQUEST RECORD RENDER ───────────────────────────────────────────────
+  //
+  // Reached by every `ai_workspace` row — which includes the human consultation
+  // bookings made at /book/consultation (useConsultationForm posts them with
+  // `receiver: "ai_workspace"` and no `metadata.mode`). That is why nothing on
+  // this screen may present itself as an AI assistant's work: for a large share
+  // of these rows there is no AI in the picture at all, and for the rest there
+  // is still no stored output.
 
   if (consultation.type === "ai") {
-    // Determine dynamic statutes based on topic
-    const low = (consultation.topic + " " + (consultation.questionText || "")).toLowerCase();
-    const isLabor = /عمال|موظف|راتب|فصل/.test(low);
-    const isRealEstate = /عقار|أرض|شقة|إيجار/.test(low);
-
-    const dynamicStatutes = isLabor ? [
-      {
-        title: "المادة 77 - نظام العمل السعودي",
-        subtitle: "إنهاء العقد لسبب غير مشروع",
-        text: "إذا أنهي العقد لسبب غير مشروع، يستحق الطرف المتضرر تعويضاً عادلاً تقدره المحكمة العمالية، أو تعويضاً تعاقدياً محدداً، وفي حال غيابه يستحق أجر 15 يوماً عن كل سنة خدمة للعقد غير محدد المدة، أو أجر المدة المتبقية للعقد محدد المدة."
-      },
-      {
-        title: "المادة 84 - تسوية مستحقات الخدمة",
-        subtitle: "احتساب مكافأة نهاية الخدمة",
-        text: "يستحق العامل عند انتهاء العلاقة العمالية مكافأة نهاية خدمة تحسب بواقع أجر نصف شهر عن كل سنة من السنوات الخمس الأولى، وأجر شهر كامل عن كل سنة تالية."
-      }
-    ] : isRealEstate ? [
-      {
-        title: "المادة 105 - التزامات المؤجر الصيانة",
-        subtitle: "أعمال الصيانة الهيكلية والضرورية",
-        text: "يلتزم المؤجر بترميم العين المؤجرة وإجراء الصيانة الضرورية لتمكين المستأجر من استيفاء المنفعة كاملة دون عوائق هيكلية."
-      },
-      {
-        title: "المادة 112 - حقوق الفسخ والخصم",
-        subtitle: "حقوق المستأجر عند تقاعس المؤجر",
-        text: "للمستأجر عند تقاعس المؤجر عن الصيانة إخطاره رسمياً، فإذا لم يستجب يحق له إجراء الصيانة بخصمها من الأجرة أو اللجوء للفسخ."
-      }
-    ] : [
-      {
-        title: "المادة 140 - نظام المعاملات المدنية",
-        subtitle: "الالتزام بتنفيذ بنود العقد المتفق عليها",
-        text: "العقد شريعة المتعاقدين، ويلتزم كل طرف بتنفيذ ما تم التراضي عليه بما يوافق مبادئ حسن النية والعدالة التعاقدية."
-      },
-      {
-        title: "المادة 178 - الشرط الجزائي والتعويض",
-        subtitle: "احتساب غرامات التأخير التعاقدية",
-        text: "يجوز للمتعاقدين تحديد قيمة التعويض مسبقاً في العقد عن التأخير أو عدم التنفيذ، ولا تلغيه المحكمة إلا إذا ثبت مبالغته الكبيرة."
-      }
-    ];
-
-    const roadmapSteps = [
-      { step: 1, title: "توجيه إخطار رسمي كتابي", desc: "إرسال خطاب إنذار بالوفاء يمنح الطرف الآخر مهلة نهائية وموثقة قانونياً لإثبات الوقائع." },
-      { step: 2, title: "الشكوى والتسوية الودية", desc: "تقديم طلب تسوية عبر المنصات الإلكترونية المعتمدة (قوى / إيجار / مركز التحكيم) لتوثيق النزاع." },
-      { step: 3, title: "قيد صحيفة الدعوى القضائية", desc: "إحالة ملف المنازعة وتوجيه صحيفة ادعاء واضحة للدوائر القضائية المختصة للمطالبة بالأصل والتعويضات." }
-    ];
-
     const bg = isDark ? "bg-[#111418]" : "bg-zinc-50/50";
     const cardBg = isDark ? "bg-zinc-900/60 backdrop-blur-md border-white/10" : "bg-white border-zinc-200/60";
+    const requestText = consultation.topic.trim();
+
+    const infoRows: Array<{ k: string; v: string }> = [
+      { k: "رقم الطلب", v: consultation.id },
+      ...(consultation.title ? [{ k: "عنوان الطلب", v: consultation.title }] : []),
+      ...(consultation.date ? [{ k: "تاريخ الإرسال", v: consultation.date }] : []),
+      ...(consultation.requestStatusLabel ? [{ k: "حالة الطلب", v: consultation.requestStatusLabel }] : []),
+      ...(consultation.price > 0
+        ? [{ k: "المبلغ المسجّل على الطلب", v: `${consultation.price.toLocaleString("ar-SA")} ر.س` }]
+        : []),
+    ];
 
     return (
       <div className={`flex flex-col h-[100dvh] overflow-hidden ${bg}`} dir="rtl">
@@ -626,57 +708,55 @@ export default function ConsultationRoomPage() {
             </Link>
             <div>
               <h1 className={`text-[16px] font-black tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`} style={{ fontFamily: 'var(--font-brand)' }}>
-                تفاصيل وسجل الاستشارة الذكية AI
+                تفاصيل طلب الاستشارة
               </h1>
               <p className={`text-[11px] font-semibold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                رقم الطلب: {consultation.id} · تم الحفظ في {consultation.date}
+                رقم الطلب: {consultation.id}{consultation.date ? ` · أُرسل في ${consultation.date}` : ""}
               </p>
             </div>
           </div>
-          <span className={`inline-flex items-center gap-1.5 text-[10px] font-black px-3 py-1 rounded-full border ${STATUS_CONFIG[consultation.status].badge}`}>
-            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
-            {STATUS_CONFIG[consultation.status].label}
-          </span>
+          {consultation.requestStatusLabel && (
+            <span className={`inline-flex items-center gap-1.5 text-[10px] font-black px-3 py-1 rounded-full border ${STATUS_BADGE[consultation.status]}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
+              {consultation.requestStatusLabel}
+            </span>
+          )}
         </header>
 
         {/* Content Workspace */}
         <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-8">
           <div className="max-w-4xl mx-auto space-y-6">
 
-            {/* Title & Info Bento Card */}
+            {/* Request facts — every value below is a stored column, never a derived guess */}
             <div className={`p-6 rounded-[2rem] border relative space-y-4 ${cardBg}`}>
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-[#0B3D2E] flex items-center justify-center shadow-md">
-                  <Robot size={26} weight="duotone" className="text-[#C8A762]" />
+                  <FileText size={26} weight="duotone" className="text-[#C8A762]" />
                 </div>
                 <div>
-                  <h2 className="text-base font-black text-gray-900 dark:text-white" style={{ fontFamily: 'var(--font-brand)' }}>
-                    التكييف الهيكلي والاستخلاص الأولي
+                  <h2 className="text-base font-black text-zinc-900 dark:text-white" style={{ fontFamily: 'var(--font-brand)' }}>
+                    بيانات الطلب
                   </h2>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">موجز الوقائع التي تم مطابقتها وتحليلها بالذكاء الاصطناعي</p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">ما هو مسجَّل في هذا الطلب لدى المنصة</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-bold pt-2 border-t border-zinc-200/5">
-                <div className={`p-4 rounded-xl border ${isDark ? "bg-white/[0.01] border-white/5" : "bg-zinc-50 border-zinc-100"}`}>
-                  <span className="opacity-50 block">تصنيف المسألة ونوع القضية:</span>
-                  <span className="opacity-95 mt-1 block text-[13px]">{consultation.lawyerSpecialty}</span>
-                </div>
-                <div className={`p-4 rounded-xl border ${isDark ? "bg-white/[0.01] border-white/5" : "bg-zinc-50 border-zinc-100"}`}>
-                  <span className="opacity-50 block">الوقائع والبيانات المستهدفة:</span>
-                  <span className="opacity-95 mt-1 block text-[13px] leading-relaxed">
-                    {consultation.questionText || "تأصيل الوقائع التي تم إدخالها وتطويرها في الاستبيان"}
-                  </span>
-                </div>
+                {infoRows.map(({ k, v }) => (
+                  <div key={k} className={`p-4 rounded-xl border ${isDark ? "bg-white/[0.01] border-white/5" : "bg-zinc-50 border-zinc-100"}`}>
+                    <span className="opacity-50 block">{k}</span>
+                    <span className="opacity-95 mt-1 block text-[13px] leading-relaxed break-words">{v}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Direct Assessment Opinion Card */}
+            {/* The client's own submitted text — labelled as exactly that */}
             <div className={`p-6 rounded-[2rem] border relative space-y-4 ${cardBg}`}>
-              <div className="flex items-center justify-between border-b border-zinc-200/5 pb-3">
-                <div className="flex items-center gap-2 text-emerald-500">
-                  <ShieldCheck size={20} weight="fill" />
-                  <span className="text-[13px] font-black uppercase tracking-wider">رأي المساعد الذكي والتشخيص القانوني</span>
+              <div className="flex items-center justify-between border-b border-zinc-200/5 pb-3 gap-3">
+                <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                  <FileText size={20} weight="duotone" className="text-[#C8A762]" />
+                  <span className="text-[13px] font-black tracking-wider">نص الطلب كما أرسلته</span>
                 </div>
 
                 <button
@@ -690,105 +770,79 @@ export default function ConsultationRoomPage() {
                   }`}
                 >
                   <Copy size={14} />
-                  <span>{copied ? "✓ تم نسخ التقرير" : "نسخ التقرير كامل"}</span>
+                  <span>{copied ? "تم نسخ نص الطلب ✓" : "نسخ نص الطلب"}</span>
                 </button>
               </div>
 
-              <div className={`p-5 rounded-2xl border leading-relaxed text-[13.5px] font-medium whitespace-pre-wrap ${
-                isDark ? "bg-white/[0.01] border-white/5 text-zinc-200" : "bg-emerald-500/[0.01] border-emerald-500/5 text-zinc-800"
-              }`}>
-                {consultation.topic}
+              {requestText ? (
+                <div className={`p-5 rounded-2xl border leading-relaxed text-[13.5px] font-medium whitespace-pre-wrap break-words ${
+                  isDark ? "bg-white/[0.01] border-white/5 text-zinc-200" : "bg-zinc-50 border-zinc-200/60 text-zinc-800"
+                }`}>
+                  {requestText}
+                </div>
+              ) : (
+                <div className={`p-5 rounded-2xl border text-[13px] font-bold ${
+                  isDark ? "bg-white/[0.01] border-white/5 text-zinc-400" : "bg-zinc-50 border-zinc-200/60 text-zinc-500"
+                }`}>
+                  {NO_REQUEST_TEXT_AR}
+                </div>
+              )}
+
+              {copyError && (
+                <p className="text-[11px] font-bold text-rose-500">{copyError}</p>
+              )}
+            </div>
+
+            {/* The honest empty state that replaced the fabricated opinion */}
+            <div className={`p-6 rounded-[2rem] border relative space-y-4 ${
+              isDark ? "bg-amber-900/10 border-amber-700/25" : "bg-amber-50 border-amber-200"
+            }`}>
+              <div className="flex items-center gap-2">
+                <Warning size={20} weight="fill" className="text-amber-500" />
+                <span className={`text-[13px] font-black tracking-wider ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+                  الرأي القانوني
+                </span>
+              </div>
+              <p className={`text-[13px] font-semibold leading-relaxed ${isDark ? "text-amber-200/90" : "text-amber-900"}`}>
+                {NO_OPINION_AR}
+              </p>
+              {consultation.orderHref && (
+                <p className={`text-[12px] font-bold leading-relaxed ${isDark ? "text-amber-200/70" : "text-amber-800"}`}>
+                  عند إصدار الفريق للمستند يظهر للتحميل في صفحة الطلب.
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {consultation.orderHref && (
+                  <Link href={consultation.orderHref}>
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="px-4 py-2.5 rounded-xl bg-[#0B3D2E] text-white text-[11px] font-black border border-[#C8A762]/20"
+                    >
+                      فتح صفحة الطلب
+                    </motion.button>
+                  </Link>
+                )}
+                <a href={supportHref} target="_blank" rel="noopener noreferrer">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`px-4 py-2.5 rounded-xl text-[11px] font-black border flex items-center gap-1.5 ${
+                      isDark ? "bg-white/5 border-white/10 text-zinc-200" : "bg-white border-zinc-200 text-zinc-700"
+                    }`}
+                  >
+                    <WhatsappLogo size={14} weight="fill" />
+                    مراسلة الفريق عبر واتساب
+                  </motion.button>
+                </a>
               </div>
             </div>
 
-            {/* Expandable Statutory Provisions */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-zinc-500">
-                <Scales size={18} weight="duotone" className="text-[#C8A762]" />
-                <span className="text-[11px] font-extrabold uppercase tracking-wider">السندات ومواد الأنظمة ذات العلاقة</span>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2">
-                {dynamicStatutes.map((s, idx) => {
-                  const key = `${consultation.id}-${idx}`;
-                  const isExpanded = expandedStatutes[key];
-                  return (
-                    <div
-                      key={idx}
-                      onClick={() => toggleStatuteExpand(key)}
-                      className={`p-4 rounded-2xl border transition-all cursor-pointer ${cardBg} hover:border-[#C8A762]/30`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-[12.5px] font-black text-emerald-500">{s.title}</h4>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[9px] font-black text-[#C8A762]">{s.subtitle}</span>
-                          {isExpanded ? <CaretUp size={14} /> : <CaretDown size={14} />}
-                        </div>
-                      </div>
-                      
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.p
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 0.8 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="text-[11.5px] leading-relaxed mt-3 pt-3 border-t border-zinc-200/5"
-                          >
-                            {s.text}
-                          </motion.p>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Interactive Timeline Roadmap */}
-            <div className={`p-6 rounded-[2rem] border relative space-y-4 ${cardBg}`}>
-              <div className="flex items-center gap-2 text-zinc-500">
-                <Clock size={18} weight="duotone" className="text-[#C8A762]" />
-                <span className="text-[12px] font-extrabold uppercase tracking-wider">خريطة الطريق التنفيذية والخطوات المتبعة</span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {roadmapSteps.map((act) => {
-                  const isStepDone = completedRoadmapSteps.includes(act.step);
-                  return (
-                    <div
-                      key={act.step}
-                      onClick={() => toggleRoadmapStep(act.step)}
-                      className={`p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
-                        isStepDone
-                          ? "border-emerald-500/30 bg-emerald-500/5 opacity-75"
-                          : isDark
-                            ? "border-white/5 bg-zinc-950 hover:bg-white/[0.01]"
-                            : "border-zinc-200 bg-zinc-50 hover:bg-zinc-100"
-                      }`}
-                    >
-                      <div className="flex gap-2.5 items-start">
-                        <div className={`mt-0.5 flex-shrink-0 w-4 h-4 rounded flex items-center justify-center border ${
-                          isStepDone ? "bg-emerald-500 border-emerald-500 text-white" : "border-zinc-400"
-                        }`}>
-                          {isStepDone && <CheckCircle size={12} weight="fill" />}
-                        </div>
-                        
-                        <div>
-                          <h5 className={`text-[12px] font-black leading-tight ${isStepDone ? "line-through text-zinc-500" : ""}`}>
-                            {act.title}
-                          </h5>
-                          <p className="text-[10px] text-zinc-500 mt-1 leading-normal">{act.desc}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Actions Toolbar */}
-              <div className="pt-4 border-t border-zinc-200/5 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-[11px] font-bold text-zinc-500">
-                  يمكنك تحميل هذا الرأي القانوني كوثيقة PDF منسقة ومطبوعة رسمياً.
+            {/* Actions */}
+            <div className={`p-6 rounded-[2rem] border relative space-y-3 ${cardBg}`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 max-w-md leading-relaxed">
+                  يمكنك تنزيل نسخة مطبوعة من هذا الطلب. النسخة تتضمن نص طلبك وبياناته فقط، ولا تتضمن رأياً قانونياً.
                 </p>
                 <div className="flex items-center gap-2">
                   <motion.button
@@ -798,29 +852,36 @@ export default function ConsultationRoomPage() {
                     className="px-5 py-2.5 rounded-xl bg-[#0B3D2E] hover:bg-[#0a3328] text-white text-[11px] font-black shadow-md flex items-center gap-2 border border-[#C8A762]/20"
                   >
                     <FileArrowUp size={14} weight="bold" />
-                    <span>تنزيل التقرير الموثق PDF</span>
+                    <span>تنزيل نسخة من الطلب PDF</span>
                   </motion.button>
-                  <Link href={`/dashboard/client/consultation/new?escalate=${consultation.id}`}>
+                  {/* Plain booking link: the wizard never read the `escalate`
+                      query parameter this button used to send, so the label now
+                      says what actually happens — it opens a new booking. */}
+                  <Link href="/dashboard/client/consultation/new">
                     <motion.button
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       className="px-4 py-2.5 rounded-xl bg-[#C8A762]/10 hover:bg-[#C8A762]/20 text-[#C8A762] text-[11px] font-black border border-[#C8A762]/20"
                     >
-                      طلب مراجعة من محامٍ
+                      حجز استشارة مع محامٍ
                     </motion.button>
                   </Link>
                 </div>
               </div>
+              {printError && (
+                <p className="text-[11px] font-bold text-rose-500">{printError}</p>
+              )}
             </div>
 
           </div>
         </div>
 
         {/* Branded Footer disclaimer */}
-        <footer className={`flex-shrink-0 flex items-center justify-center gap-2 py-3 text-[11px] font-bold border-t ${
-          isDark ? "text-zinc-600 border-white/5 bg-zinc-900/30" : "text-zinc-400 border-zinc-200 bg-zinc-50/30"
+        <footer className={`flex-shrink-0 flex items-center justify-center gap-2 py-3 text-[11px] font-bold border-t text-center px-4 ${
+          isDark ? "text-zinc-500 border-white/5 bg-zinc-900/30" : "text-zinc-500 border-zinc-200 bg-zinc-50/30"
         }`}>
-          <Warning size={14} weight="fill" /> الإجابات والتقارير لأغراض استرشادية فقط ولا تُعدّ استشارة قانونية رسمية ملزمة.
+          <Warning size={14} weight="fill" className="flex-shrink-0" />
+          <span>لا يصدر عن هذه الصفحة رأي قانوني؛ الرأي يصدر من محامٍ معتمد بعد مراجعة الطلب.</span>
         </footer>
       </div>
     );
@@ -829,7 +890,6 @@ export default function ConsultationRoomPage() {
   // ─── 2. LAWYER INTERACTIVE CHAT PANEL RENDER ────────────────────────────────
 
   const bg = isDark ? "bg-zinc-950" : "bg-zinc-50";
-  const panelBg = isDark ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-zinc-200/70";
 
   return (
     <div className={`flex h-[100dvh] flex-col ${bg}`} dir="rtl">
@@ -849,9 +909,6 @@ export default function ConsultationRoomPage() {
             <div className={`h-10 w-10 rounded-full ${consultation.lawyerColor} flex items-center justify-center shadow-md`}>
               <span className="text-white font-extrabold text-sm">{consultation.lawyerInitial}</span>
             </div>
-            {consultation.status === "active" && (
-              <span className="absolute -bottom-0.5 -end-0.5 flex h-3 w-3 rounded-full border-2 border-white dark:border-zinc-950 bg-emerald-500" />
-            )}
           </div>
           <div className="min-w-0">
             <p className={`text-[14px] font-bold truncate ${isDark ? "text-white" : "text-zinc-900"}`}>
@@ -864,59 +921,104 @@ export default function ConsultationRoomPage() {
           </div>
         </div>
 
-        {/* Session timer */}
-        {consultation.status === "active" && (
-          <div className={`hidden sm:flex items-center gap-1.5 rounded-xl px-3 py-1.5 ${isDark ? "bg-amber-900/30 border border-amber-700/30" : "bg-amber-50 border border-amber-200"}`}>
-            <Clock size={13} className="text-amber-500" />
-            <span className={`font-mono text-[12px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>{sessionTimeLeft}</span>
+        {/* Actions.
+            The call and video buttons that stood here had no onClick and no
+            call feature behind them — two live-looking controls that did
+            nothing when pressed. The AI toggle is rendered only when there is a
+            chat pane for it to open, because its panel lives inside
+            SessionChatPane. */}
+        {chatRoomId && (
+          <div className="flex items-center gap-1.5">
+            <motion.button
+              whileHover={{ scale: 1.07 }} whileTap={{ scale: 0.93 }}
+              onClick={() => setShowAIPanel(!showAIPanel)}
+              className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${showAIPanel
+                ? "bg-[#0B3D2E] text-[#C8A762]"
+                : isDark ? "bg-white/[0.06] text-zinc-400 hover:text-zinc-200" : "bg-zinc-100 text-zinc-600 hover:text-zinc-900"
+              }`}>
+              <Robot size={16} />
+            </motion.button>
           </div>
         )}
-
-        {/* Actions */}
-        <div className="flex items-center gap-1.5">
-          <motion.button whileHover={{ scale: 1.07 }} whileTap={{ scale: 0.93 }}
-            className={`flex h-9 w-9 items-center justify-center rounded-xl ${isDark ? "bg-white/[0.06] text-zinc-400 hover:text-zinc-200" : "bg-zinc-100 text-zinc-600 hover:text-zinc-900"}`}>
-            <Phone size={16} />
-          </motion.button>
-          <motion.button whileHover={{ scale: 1.07 }} whileTap={{ scale: 0.93 }}
-            className={`flex h-9 w-9 items-center justify-center rounded-xl ${isDark ? "bg-white/[0.06] text-zinc-400 hover:text-zinc-200" : "bg-zinc-100 text-zinc-600 hover:text-zinc-900"}`}>
-            <Video size={16} />
-          </motion.button>
-          <motion.button
-            whileHover={{ scale: 1.07 }} whileTap={{ scale: 0.93 }}
-            onClick={() => setShowAIPanel(!showAIPanel)}
-            className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${showAIPanel
-              ? "bg-[#0B3D2E] text-[#C8A762]"
-              : isDark ? "bg-white/[0.06] text-zinc-400 hover:text-zinc-200" : "bg-zinc-100 text-zinc-600 hover:text-zinc-900"
-            }`}>
-            <Robot size={16} />
-          </motion.button>
-        </div>
       </header>
 
       {/* Body */}
-      {(chatLoading || chatNotice) && (
-        <div className={`flex-shrink-0 px-4 py-2 text-center text-[11px] font-bold border-b ${
-          isDark
-            ? "bg-amber-900/20 border-amber-700/20 text-amber-300"
-            : "bg-amber-50 border-amber-200 text-amber-700"
-        }`}>
-          {chatLoading ? "جارٍ تحميل المحادثة..." : chatNotice}
+      {chatLoading ? (
+        <div className={`flex-1 flex items-center justify-center text-[12px] font-bold ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+          جارٍ تحميل المحادثة...
+        </div>
+      ) : chatRoomId ? (
+        <>
+          {chatNotice && (
+            <div className={`flex-shrink-0 px-4 py-2 text-center text-[11px] font-bold border-b ${
+              isDark
+                ? "bg-amber-900/20 border-amber-700/20 text-amber-300"
+                : "bg-amber-50 border-amber-200 text-amber-700"
+            }`}>
+              {chatNotice}
+            </div>
+          )}
+          <SessionChatPane
+            consultation={consultation}
+            messages={messages}
+            input={input}
+            setInput={setInput}
+            isRecording={isRecording}
+            setIsRecording={setIsRecording}
+            showAIPanel={showAIPanel}
+            setShowAIPanel={setShowAIPanel}
+            sessionTimeLeft={sessionTimeLeft}
+            isDark={isDark}
+            sendMessage={sendMessage}
+          />
+        </>
+      ) : (
+        /* No room means no endpoint that could store a message. Rendering the
+           chat pane here would put a composer on screen whose text goes
+           nowhere — which is exactly what «تم تسجيل رسالتك» used to cover up.
+           Show the reason and a channel that actually reaches the team. */
+        <div className="flex-1 overflow-y-auto px-4 py-10">
+          <div className={`max-w-md mx-auto rounded-3xl border p-7 text-center space-y-4 ${
+            isDark ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-zinc-200/70"
+          }`}>
+            <div className="flex justify-center">
+              <Warning size={30} weight="fill" className="text-amber-500" />
+            </div>
+            <h3 className={`text-[14px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>
+              لا توجد محادثة مباشرة لهذا الطلب
+            </h3>
+            <p className={`text-[12px] font-semibold leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+              {chatNotice ?? "تعذّر تحميل المحادثة الآن."}
+            </p>
+            <p className={`text-[11px] font-bold leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              لمتابعة طلبك رقم {consultation.id}، راسل فريق نظامي مباشرة.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <a href={supportHref} target="_blank" rel="noopener noreferrer">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="px-5 py-2.5 rounded-xl bg-[#0B3D2E] text-white text-[11px] font-black flex items-center gap-1.5 border border-[#C8A762]/20"
+                >
+                  <WhatsappLogo size={14} weight="fill" />
+                  مراسلة الفريق عبر واتساب
+                </motion.button>
+              </a>
+              <Link href="/dashboard/client/consultation">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`px-4 py-2.5 rounded-xl text-[11px] font-black border ${
+                    isDark ? "bg-white/5 border-white/10 text-zinc-200" : "bg-zinc-50 border-zinc-200 text-zinc-700"
+                  }`}
+                >
+                  الرجوع لاستشاراتي
+                </motion.button>
+              </Link>
+            </div>
+          </div>
         </div>
       )}
-      <SessionChatPane
-        consultation={consultation}
-        messages={messages}
-        input={input}
-        setInput={setInput}
-        isRecording={isRecording}
-        setIsRecording={setIsRecording}
-        showAIPanel={showAIPanel}
-        setShowAIPanel={setShowAIPanel}
-        sessionTimeLeft={sessionTimeLeft}
-        isDark={isDark}
-        sendMessage={sendMessage}
-      />
     </div>
   );
 }

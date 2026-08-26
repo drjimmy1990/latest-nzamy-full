@@ -77,7 +77,23 @@ export type WorkflowRequest = {
   status: WorkflowRequestStatus;
   payment: WorkflowPayment;
   sourcePath: string;
-  metadata?: Record<string, string | number | boolean | null>;
+  /**
+   * Scalars OR one level of nesting. It was scalars-only, which silently made
+   * `metadata.intake` — the object EVERY fulfilment brief is rendered from
+   * (buildOrderPrompt reads `metadata.intake` and nothing else) — untypeable
+   * on this path. The consultation wizard hit exactly that and shipped its
+   * answers as flat keys the brief cannot see.
+   *
+   * Deliberately not `unknown`: the value is written straight into a jsonb
+   * column and read back by label maps that expect scalars at the leaves.
+   * One level of nesting is what `intake` needs and is where this stops.
+   */
+  metadata?: Record<
+    string,
+    | string | number | boolean | null
+    | Record<string, string | number | boolean | null | undefined>
+    | Array<Record<string, string | number | boolean | null | undefined>>
+  >;
   assignedTo?: string | null;
   auditTrail: Array<{ at: string; event: string; by: string }>;
 };

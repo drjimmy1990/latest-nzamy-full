@@ -5,21 +5,26 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   Gavel, CalendarBlank, FolderOpen, Coins, Robot, Sparkle,
-  ArrowLeft, MagnifyingGlass, Bell,
+  ArrowLeft, MagnifyingGlass,
   CheckCircle, Clock, Warning, ChatCircle, Phone,
   FileText, Wallet, Shield,
   ChatDots, Headset, ArrowUp, SealCheck, Users, PencilSimple,
-  Package, Lightning,
+  Package, Lightning, WarningCircle,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
 import { CaseCard } from "./_components/CaseCard";
 import { DashboardPageSkeleton } from "./_components/DashboardSkeleton";
-import { getDashboardSummary } from "@/lib/services";
-import type { DashboardSummary } from "@/lib/services";
+import { getDashboardSummary, getDocuments } from "@/lib/services";
+import type { DashboardSummary, Document as ApiDocument } from "@/lib/services";
+import {
+  toClientCases,
+  toClientDocumentRows,
+  activeCasesPhraseAr,
+  toArabicDigits,
+} from "@/lib/services/clientDashboardCards";
 import { fadeUp } from "./_data";
-import type { ClientCase } from "./_data";
 
 export default function ClientDashboard() {
   const { isDark } = useTheme();
@@ -27,6 +32,10 @@ export default function ClientDashboard() {
   const [aiInput, setAiInput] = useState("");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  // null while the request is still in flight — the card must not print
+  // «لا توجد مستندات بعد» over a list it has not finished reading.
+  const [documents, setDocuments] = useState<ApiDocument[] | null>(null);
+  const [documentsFailed, setDocumentsFailed] = useState(false);
 
   useEffect(() => {
     getDashboardSummary()
@@ -35,11 +44,51 @@ export default function ClientDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
+  // The documents card reads the same source the /dashboard/client/documents
+  // page reads. getDocuments() THROWS on failure rather than returning [] (see
+  // documentService.ts), which is what lets the card tell "you have no files"
+  // apart from "we could not read your files" — the two must never render the
+  // same sentence.
+  useEffect(() => {
+    let cancelled = false;
+    getDocuments()
+      .then((docs) => { if (!cancelled) setDocuments(docs); })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error("[client dashboard] documents fetch failed:", e);
+        setDocumentsFailed(true);
+        setDocuments([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   // ── Derived data from summary ──────────────────────────────────────────
-  const MY_CASES = (summary?.activeCases ?? []) as ClientCase[];
+  // toClientCases(), not `as ClientCase[]`. The cast this replaces claimed the
+  // raw `service_requests` rows already had a `statusColor` — a column that
+  // does not exist — and CaseCard then read `.bg` off `undefined`, crashing the
+  // whole page for every client who had ever placed an order.
+  const MY_CASES = toClientCases(summary?.activeCases);
   const NEXT_APPOINTMENT = summary?.nextAppointment as { title: string; lawyer: string; lawyerPhone: string; date: string; time: string; type: string; countdown: string } | null;
   const RECENT_MESSAGES = (summary?.recentMessages ?? []) as { from: string; msg: string; time: string; unread: boolean }[];
   const COMMUNITY_PREVIEW = (summary?.communityPreview ?? []) as { id: number; title: string; tag: string; answers: number; votes: number; isAnswered: boolean; ago: string }[];
+
+  // How many open orders the client really has. The route caps `activeCases`
+  // at three rows and returns the exact filtered count beside them, so
+  // MY_CASES.length would tell a client with seven that they have three.
+  // Read through a local intersection because the DashboardSummary interface
+  // (dashboardService.ts) is outside this change; Math.max keeps the printed
+  // number from ever being smaller than the number of cards below it.
+  const summaryWithTotal = summary as (DashboardSummary & { activeCasesTotal?: number }) | null;
+  const rawActiveTotal = summaryWithTotal?.activeCasesTotal;
+  const ACTIVE_TOTAL = typeof rawActiveTotal === "number" && Number.isFinite(rawActiveTotal)
+    ? Math.max(rawActiveTotal, MY_CASES.length)
+    : MY_CASES.length;
+  // null at zero, and the welcome sentence disappears with it — «لديك ٠ قضايا»
+  // is worse than silence.
+  const ACTIVE_PHRASE = activeCasesPhraseAr(ACTIVE_TOTAL);
+
+  // Three real files at most. `documents` is null until the fetch settles.
+  const DOC_ROWS = toClientDocumentRows(documents, 3);
 
   // ── Subscription / Plan ───────────────────────────────────────────────
   const sub = summary?.subscription;
@@ -144,17 +193,23 @@ export default function ClientDashboard() {
                   أهلاً، {user.name?.split(" ")[0] || "خالد"}
                   <Sparkle size={26} weight="fill" className="text-[#C8A762]" />
                 </h1>
-                <p className="text-emerald-300/70 text-sm mt-1">
-                  لديك <strong className="text-white">قضيتان نشطتان</strong> يتابعهما محاموك الآن
-                </p>
+                {/* Derived, and absent when there is nothing to say. This line
+                    was the literal string «لديك قضيتان نشطتان يتابعهما محاموك
+                    الآن», printed to every client — including one with no
+                    orders at all. The «يتابعهما محاموك» half is gone for a
+                    second reason: `service_requests.assigned_to` is routinely
+                    null, so nothing in the row supports a claim that a lawyer
+                    is acting on it. */}
+                {ACTIVE_PHRASE && (
+                  <p className="text-emerald-300/70 text-sm mt-1">
+                    لديك <strong className="text-white">{ACTIVE_PHRASE}</strong>
+                  </p>
+                )}
               </div>
-              {MY_CASES.some(c => c.urgent) && (
-                <Link href="/notifications" aria-label="عرض الإشعارات العاجلة"
-                  className="mt-1 text-[11px] font-bold bg-red-500/20 border border-red-400/30 text-red-300 px-3 py-1 rounded-full flex items-center gap-1 flex-shrink-0 animate-pulse hover:bg-red-500/30 transition-colors"
-                >
-                  <Bell size={11} weight="fill" /> تنبيه عاجل
-                </Link>
-              )}
+              {/* The «تنبيه عاجل» badge that stood here was driven by
+                  `ClientCase.urgent`, and no column on service_requests marks a
+                  row urgent — it could only ever have been a value someone
+                  invented. Removed rather than left permanently dark. */}
             </div>
 
             <p className="text-emerald-100/60 text-sm mb-5 max-w-md leading-relaxed">
@@ -246,8 +301,10 @@ export default function ClientDashboard() {
           <div className="flex items-center gap-2">
             <Gavel size={17} weight="fill" className="text-royal" />
             <h2 className={`font-bold text-[16px] ${isDark ? "text-white" : "text-zinc-800"}`}>قضاياي</h2>
+            {/* The total, not the length of the capped list rendered below it.
+                «عرض الكل» is how the client reaches the rest. */}
             <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
-              {MY_CASES.length} نشطة
+              {toArabicDigits(ACTIVE_TOTAL)} نشطة
             </span>
           </div>
           <Link href="/dashboard/client/cases" className="flex items-center gap-1 text-royal text-[12px] font-medium hover:underline">
@@ -518,33 +575,77 @@ export default function ClientDashboard() {
               الكل <ArrowLeft size={11} />
             </Link>
           </div>
+          {/* Real files only.
+              This card used to render three hardcoded names — «عقد التوظيف.pdf»,
+              «إشعار قانوني.docx», «محضر الجلسة.pdf» — each captioned with an
+              invented case number and each linking to a documents page where
+              none of them existed. A hearing transcript attributed to a case
+              number is a statement about the client's own legal file, so the
+              list now comes from getDocuments(), the same source
+              /dashboard/client/documents reads, and shows nothing when there is
+              nothing. */}
           <div className="p-4 space-y-2">
-            {[
-              { name: "عقد التوظيف.pdf", type: "PDF", date: "١٢ أبريل ٢٠٢٦", case: "قضية ٢٠٢٥-٠٠١" },
-              { name: "إشعار قانوني.docx", type: "Word", date: "٨ أبريل ٢٠٢٦", case: "قضية ٢٠٢٥-٠٠٢" },
-              { name: "محضر الجلسة.pdf", type: "PDF", date: "١ مارس ٢٠٢٦", case: "قضية ٢٠٢٥-٠٠١" },
-            ].map((doc, i) => (
-              <Link key={i} href="/dashboard/client/documents">
-                <motion.div whileHover={{ x: -2 }}
-                  className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors ${
-                    isDark ? "hover:bg-white/[0.05]" : "hover:bg-zinc-50"
-                  }`}
-                >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 font-bold text-[10px] ${
-                    doc.type === "PDF"
-                      ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
-                      : "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                  }`}>
-                    {doc.type}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-[13px] font-medium truncate ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{doc.name}</p>
-                    <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{doc.case} · {doc.date}</p>
-                  </div>
-                  <ArrowLeft size={12} className={isDark ? "text-zinc-600" : "text-zinc-300"} />
-                </motion.div>
-              </Link>
-            ))}
+            {documents === null ? (
+              <p className={`text-[12px] py-6 text-center ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                جارٍ تحميل المستندات…
+              </p>
+            ) : documentsFailed ? (
+              // NOT «لا توجد مستندات» — the files may well be there and only the
+              // request failed. Saying they are absent would be a false
+              // statement about the client's own library.
+              <div className={`flex items-start gap-2 rounded-xl p-3 text-[12px] ${
+                isDark
+                  ? "bg-amber-900/20 border border-amber-700/30 text-amber-300"
+                  : "bg-amber-50 border border-amber-200 text-amber-700"
+              }`}>
+                <WarningCircle size={14} weight="fill" className="flex-shrink-0 mt-0.5" />
+                <span>تعذّر تحميل المستندات. حدّث الصفحة أو حاول بعد قليل.</span>
+              </div>
+            ) : DOC_ROWS.length === 0 ? (
+              <div className="py-6 text-center">
+                <p className={`text-[13px] font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                  لا توجد مستندات بعد
+                </p>
+                <Link href="/dashboard/client/documents" className="mt-1 inline-block text-[11px] text-royal hover:underline">
+                  ارفع أول مستند
+                </Link>
+              </div>
+            ) : (
+              DOC_ROWS.map((doc) => (
+                <Link key={doc.id} href="/dashboard/client/documents">
+                  <motion.div whileHover={{ x: -2 }}
+                    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors ${
+                      isDark ? "hover:bg-white/[0.05]" : "hover:bg-zinc-50"
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 font-bold text-[10px] ${
+                      doc.format === "pdf"
+                        ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+                        : doc.format === "word"
+                          ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                          : doc.format === "image"
+                            ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+                            : "bg-zinc-100 text-zinc-600 dark:bg-white/[0.06] dark:text-zinc-300"
+                    }`}>
+                      {doc.formatLabel}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[13px] font-medium truncate ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{doc.name}</p>
+                      {/* Only what the row carries: a file with no request_id
+                          gets no reference, and one with an unreadable
+                          created_at gets no date — never a placeholder for
+                          either. */}
+                      {(doc.orderRef || doc.dateLabel) && (
+                        <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                          {[doc.orderRef, doc.dateLabel].filter(Boolean).join(" · ")}
+                        </p>
+                      )}
+                    </div>
+                    <ArrowLeft size={12} className={isDark ? "text-zinc-600" : "text-zinc-300"} />
+                  </motion.div>
+                </Link>
+              ))
+            )}
           </div>
         </div>
       </motion.div>
