@@ -419,6 +419,8 @@ export const INTAKE_LABELS: Record<string, string> = {
   // English name — the defect fixed in a879f6e, and adding a field is exactly
   // how it comes back.
   subject: "موضوع الطلب",
+  specialty: "التخصص",
+  specialtyLabel: "التخصص",
   // `companyName` is NOT repeated here — it already exists further down for the
   // letter wizard's party fields («اسم الشركة»), and that wording serves the
   // corporate lead just as well. A second entry is a duplicate-key compile error.

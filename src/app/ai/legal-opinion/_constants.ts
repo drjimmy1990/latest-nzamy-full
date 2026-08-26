@@ -189,6 +189,40 @@ export const LETTER_TYPES: { id: string; label: string; Icon: React.ElementType 
   { id: "release",     label: "طلب إفراج عن مستند / كفالة",   Icon: LockKeyOpen },
 ];
 
+/**
+ * Letter families — owner item ١٧, «قائمة طويلة متداخلة → تجميعها في عائلات
+ * وتصنيفات رئيسية واضحة».
+ *
+ * PRESENTATIONAL ONLY. Not a single `id` in LETTER_TYPES above changes, and no
+ * new ids are introduced: `letterType` is written into `metadata.intake` on
+ * every order ever placed, it is what intakeValues.ts labels, and it is what
+ * the drafted letter's own heading is resolved from. Renaming an id to make a
+ * grouping tidier would silently re-label historic orders — which is exactly
+ * why `letterType: "complaint"` is still carried in intakeValues.ts long after
+ * that tile left the picker.
+ *
+ * The families answer the question the flat grid could not: a client who knows
+ * what they WANT («أريد إنهاء عقد») but not what the document is CALLED had to
+ * read all eleven tiles to find «إخطار بفسخ عقد». The grouping is by intent,
+ * not by legal form.
+ *
+ * Order matters — it is the order the families are rendered in, and it runs
+ * from the most-asked-for to the most specialised.
+ */
+export const LETTER_FAMILIES: { id: string; label: string; members: string[] }[] = [
+  { id: "claim",      label: "مطالبة واقتضاء حق",        members: ["warning", "demand"] },
+  { id: "terminate",  label: "إنهاء علاقة تعاقدية",       members: ["termination", "eviction"] },
+  { id: "settle",     label: "تسوية ودية",                members: ["settlement"] },
+  { id: "official",   label: "مخاطبات رسمية وجهات حكومية", members: ["notice", "objection", "request"] },
+  { id: "authorize",  label: "توكيلات وإقرارات وإفراجات",  members: ["proxy", "release"] },
+];
+
+/** The family a letter type belongs to, or null for one that belongs to none
+ *  (today: the «أخرى» tile the picker appends inline, which is not a type). */
+export function letterFamilyOf(letterTypeId: string): string | null {
+  return LETTER_FAMILIES.find((f) => f.members.includes(letterTypeId))?.id ?? null;
+}
+
 export const GOV_ENTITIES = [
   "وزارة الموارد البشرية والتنمية الاجتماعية", "وزارة التجارة", "وزارة العدل",
   "هيئة الزكاة والضريبة والجمارك", "هيئة السوق المالية", "الهيئة العامة للعقار",

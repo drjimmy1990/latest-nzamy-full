@@ -8,7 +8,7 @@ import {
   Warning, CloudArrowUp, FileText, Spinner,
 } from "@phosphor-icons/react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
-import { LETTER_TYPES, GOV_ENTITIES } from "../_constants";
+import { LETTER_TYPES, LETTER_FAMILIES, GOV_ENTITIES } from "../_constants";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import { useUser } from "@/hooks/useUser";
@@ -273,8 +273,41 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
         <motion.div key="ls1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
           transition={spring} className={`${card} p-5 space-y-4`}>
           <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>نوع الخطاب</p>
+          {/* Owner item ١٧ — «قائمة طويلة متداخلة → تجميعها في عائلات». The
+              eleven tiles used to sit in one undifferentiated grid, so a client
+              who knew what they wanted («أريد إنهاء عقد») but not what the
+              document is called had to read every one to find «إخطار بفسخ
+              عقد». The families group by INTENT.
+
+              Every tile still renders and every `id` is untouched — the
+              grouping is purely how they are laid out. LETTER_FAMILIES is
+              covered by a test that fails if a type ever falls outside every
+              family, which is the one way grouping could lose a tile.
+
+              «أخرى» is appended as its own trailing group rather than folded
+              into one of the families: it is not a kind of letter, it is the
+              escape hatch, and it opens a free-text field the others do not. */}
+          {[
+            ...LETTER_FAMILIES.map((f) => ({
+              id: f.id,
+              label: f.label,
+              tiles: f.members
+                .map((m) => LETTER_TYPES.find((lt) => lt.id === m))
+                .filter((lt): lt is (typeof LETTER_TYPES)[number] => Boolean(lt)),
+            })),
+            {
+              id: "other",
+              label: "غير ذلك",
+              tiles: [{ id: "other", label: "أخرى", Icon: PencilSimple }],
+            },
+          ].map((family, familyIndex) => (
+          <div key={family.id} className="space-y-2">
+          <p className={`text-[10px] font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{family.label}</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            {[...LETTER_TYPES, { id: "other", label: "أخرى", Icon: PencilSimple }].map((lt, i) => {
+            {family.tiles.map((lt, tileIndex) => {
+              // The stagger runs across the whole picker, not per family, so
+              // the tiles still animate in as one list rather than five.
+              const i = familyIndex * 2 + tileIndex;
               const isSelected = letterType === lt.id;
               const IconComp = lt.Icon as React.ElementType;
               return (
@@ -319,6 +352,8 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               );
             })}
           </div>
+          </div>
+          ))}
           {letterType === "other" && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
