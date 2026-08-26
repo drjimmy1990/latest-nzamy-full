@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import EscalationFlow from "@/components/EscalationFlow";
+import AdvisoryTemplateNotice from "@/components/ai/AdvisoryTemplateNotice";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -237,6 +238,11 @@ export default function AIConsultPage() {
           </p>
         </div>
       </div>
+
+      {/* Owner item ١٨ — one of the three tools he named. flex-shrink-0 like
+          the header above it: this column is a fixed-height flex layout and a
+          growable banner would eat the message list. */}
+      <AdvisoryTemplateNotice handoffServiceId="written-opinion" className="flex-shrink-0 m-3 mb-0" />
 
       {/* ── Messages ──────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">

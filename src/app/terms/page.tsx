@@ -21,7 +21,7 @@ const sections = {
         "**المستخدم**: كل شخص طبيعي أو اعتباري يسجل أو يستخدم المنصة، سواء كان طالب خدمة أو مقدم خدمة.",
         "**طالب الخدمة**: الفرد أو الجهة التي تطلب خدمات قانونية عبر المنصة.",
         "**مقدم الخدمة**: المحامي أو الموثق أو المعقب أو المحكم المرخص الذي يقدم خدماته عبر المنصة.",
-        "**نظام Escrow**: نظام الضمان المالي الذي تحتجز بموجبه المنصة الأتعاب ريثما تتم الخدمة وفق الاتفاق.",
+        "**الأتعاب**: المقابل المالي المستحق عن الخدمة القانونية، ويُحصَّل عبر قنوات الدفع المعتمدة في المنصة وحدها.",
       ],
     },
     {
@@ -60,7 +60,7 @@ const sections = {
       content: [
         "يلتزم مقدم الخدمة بتقديم خدماته بالمعايير المهنية اللازمة ووفق أحكام الأنظمة المهنية المعمول بها في المملكة.",
         "يُقرّ مقدم الخدمة بأن ترخيصه ساري المفعول ويلتزم بإخطار المنصة فور انتهائه أو تعليقه.",
-        "يُحظر على مقدم الخدمة تحويل العملاء لجهات خارجية أو طلب دفع خارج منظومة Escrow.",
+        "يُحظر على مقدم الخدمة تحويل العملاء لجهات خارجية أو طلب دفع خارج قنوات الدفع المعتمدة في المنصة.",
         "تحتفظ المنصة بحق تعليق أو إنهاء حساب مقدم الخدمة في حال ثبوت مخالفة مهنية أو تلقي شكاوى موثقة.",
         "يحق لمقدم الخدمة الطعن في أي قرار تعليق وفق إجراءات الاعتراض المنصوص عليها في سياسة الدعم.",
       ],
@@ -69,9 +69,11 @@ const sections = {
       id: "financial",
       title: "٦. السياسة المالية",
       content: [
-        "تُودَع الأتعاب في حساب Escrow لدى المنصة عند توقيع الاتفاق. يُطلق المبلغ لمقدم الخدمة عند إتمام كل مرحلة متفق عليها.",
+        "تُعرض الأتعاب كاملة وشاملة للضريبة قبل تأكيد الطلب، ولا يُستحق أي مبلغ لم يُعرض على طالب الخدمة قبل الدفع.",
+        "تُحصَّل الأتعاب عبر قنوات الدفع المعتمدة في المنصة عند تأكيد الطلب، ويُصرف المستحق لمقدم الخدمة بعد إنجاز الخدمة أو المرحلة المتفق عليها منها.",
         "رسوم المنصة: تُقتطع عمولة الخدمة (تتراوح بين ٥٪ و١٥٪ حسب الخدمة) مباشرة من الأتعاب قبل تحويلها لمقدم الخدمة.",
-        "سياسة الاسترداد: يحق لطالب الخدمة طلب الاسترداد الكامل قبل بدء الخدمة أو الجزئي في حال إخلال مقدم الخدمة بالاتفاق.",
+        "**حق العدول**: لطالب الخدمة الحق في العدول عن الطلب واسترداد ما دفعه وفق المدد والحالات المقررة في نظام التجارة الإلكترونية ولائحته التنفيذية، ما لم يكن تنفيذ الخدمة قد بدأ بموافقته الصريحة أو كان المخرج مُعدّاً خصيصاً له.",
+        "سياسة الاسترداد التفصيلية — بما فيها مدد المعالجة وحالات الاستثناء — مبيّنة في **سياسة الاسترداد** وتُعدّ جزءاً لا يتجزأ من هذه الشروط.",
         "يخضع نظام الفوترة لمتطلبات الفاتورة الإلكترونية لهيئة الزكاة والضريبة والجمارك (ZATCA المرحلة الثانية).",
       ],
     },
@@ -89,7 +91,7 @@ const sections = {
       title: "٨. تحديد المسؤولية",
       content: [
         "لا تتحمل المنصة المسؤولية عن جودة الخدمة القانونية المقدمة من مقدمي الخدمة المستقلين.",
-        "الحد الأقصى للمسؤولية في جميع الأحوال لا يتجاوز قيمة الأتعاب المحتجزة في Escrow للمعاملة المتنازع عليها.",
+        "الحد الأقصى لمسؤولية المنصة في جميع الأحوال لا يتجاوز قيمة الأتعاب المدفوعة فعلياً عن الخدمة محل النزاع، ولا يخلّ هذا الحد بأي حق مقرر لطالب الخدمة بموجب نظام التجارة الإلكترونية أو نظام حماية المستهلك.",
         "لا تتحمل المنصة المسؤولية عن أي خسائر غير مباشرة أو عرضية أو تبعية تنشأ عن استخدام المنصة.",
       ],
     },
@@ -99,7 +101,7 @@ const sections = {
       content: [
         "يحق للمستخدم إنهاء حسابه في أي وقت عبر صفحة الإعدادات. تُنجز المعاملات الجارية قبل الإنهاء.",
         "تحتفظ المنصة بحق تعليق أي حساب فوراً في حال ثبوت انتهاك لهذه الشروط أو الأنظمة النافذة.",
-        "عند إنهاء الحساب، تُعاد الأموال المحتجزة في Escrow لأصحابها وفق سياسة الاسترداد.",
+        "عند إنهاء الحساب، تُرد أي مبالغ مدفوعة عن خدمات لم تُنجَز، وفق سياسة الاسترداد.",
       ],
     },
     {
@@ -109,6 +111,7 @@ const sections = {
         "تخضع هذه الشروط لأحكام نظام التجارة الإلكترونية السعودي ونظام حماية المستهلك وسائر الأنظمة ذات الصلة.",
         "تختص المحاكم السعودية بالنظر في أي نزاع ينشأ عن هذه الشروط، وتكون مكة المكرمة هي دار القضاء المختصة.",
         "يُشجع على حل النزاعات وداً أو عبر نظام التحكيم الإلكتروني المتاح في المنصة قبل اللجوء للقضاء.",
+        "ولطالب الخدمة في جميع الأحوال الحق في تقديم شكوى إلى وزارة التجارة عبر قنواتها المعتمدة، ولا يُعدّ اللجوء إلى المنصة أولاً شرطاً لذلك.",
       ],
     },
     {
@@ -137,7 +140,7 @@ const sections = {
         "**User**: Any natural or legal person who registers or uses the platform, whether as a service seeker or provider.",
         "**Service Seeker**: The individual or entity requesting legal services through the platform.",
         "**Service Provider**: The licensed lawyer, notary, tracker, or arbitrator providing services through the platform.",
-        "**Escrow System**: The financial guarantee system under which the platform holds fees until the service is completed as agreed.",
+        "**Fees**: The amount payable for the legal service, collected exclusively through the platform's approved payment channels.",
       ],
     },
     {
@@ -176,7 +179,7 @@ const sections = {
       content: [
         "Service providers must deliver services to required professional standards and in accordance with applicable professional regulations in the Kingdom.",
         "Service providers acknowledge that their license is valid and must notify the platform immediately upon its expiry or suspension.",
-        "Directing clients to external parties or requesting payment outside the Escrow system is prohibited.",
+        "Directing clients to external parties or requesting payment outside the platform's approved payment channels is prohibited.",
         "The platform reserves the right to suspend or terminate a service provider's account upon proven professional violation or documented complaints.",
         "Service providers have the right to appeal any suspension decision according to the support policy appeal procedures.",
       ],
@@ -185,9 +188,11 @@ const sections = {
       id: "financial",
       title: "6. Financial Policy",
       content: [
-        "Fees are deposited in the platform's Escrow account upon signing the agreement. Funds are released to the service provider upon completing each agreed milestone.",
+        "Fees are displayed in full and inclusive of tax before an order is confirmed; no amount not shown to the service seeker before payment becomes due.",
+        "Fees are collected through the platform's approved payment channels upon order confirmation, and are paid out to the service provider after the service — or the agreed milestone of it — has been delivered.",
         "Platform fees: A service commission (ranging from 5% to 15% depending on the service) is deducted directly from fees before transfer to the service provider.",
-        "Refund policy: Service seekers have the right to request a full refund before service commencement or partial refund in case of provider breach.",
+        "**Right of withdrawal**: Service seekers may withdraw from an order and recover what they paid within the periods and cases set out in the Saudi E-Commerce Law and its Implementing Regulations, unless performance has begun with their express consent or the deliverable was prepared specifically for them.",
+        "The detailed refund terms — including processing times and exclusions — are set out in the **Refund Policy**, which forms an integral part of these terms.",
         "The billing system complies with ZATCA e-invoicing requirements (Phase 2).",
       ],
     },
@@ -205,7 +210,7 @@ const sections = {
       title: "8. Limitation of Liability",
       content: [
         "The platform bears no responsibility for the quality of legal services provided by independent service providers.",
-        "Maximum liability in all cases shall not exceed the value of fees held in Escrow for the disputed transaction.",
+        "The platform's maximum liability in all cases shall not exceed the fees actually paid for the disputed service. This cap does not limit any right afforded to the service seeker under the Saudi E-Commerce Law or the Consumer Protection Law.",
         "The platform bears no responsibility for any indirect, incidental, or consequential losses arising from use of the platform.",
       ],
     },
@@ -215,7 +220,7 @@ const sections = {
       content: [
         "Users may terminate their account at any time through the settings page. Ongoing transactions are completed before termination.",
         "The platform reserves the right to immediately suspend any account upon proven violation of these terms or applicable regulations.",
-        "Upon account termination, funds held in Escrow are returned to their owners according to the refund policy.",
+        "Upon account termination, any amounts paid for services not delivered are refunded according to the refund policy.",
       ],
     },
     {
@@ -225,6 +230,7 @@ const sections = {
         "These terms are governed by Saudi e-commerce law, consumer protection regulations, and other relevant laws.",
         "Saudi courts have jurisdiction over any dispute arising from these terms, with Makkah as the competent court location.",
         "Amicable resolution or the platform's electronic arbitration system is encouraged before resorting to litigation.",
+        "Service seekers retain, in all cases, the right to file a complaint with the Ministry of Commerce through its official channels; approaching the platform first is not a precondition.",
       ],
     },
     {

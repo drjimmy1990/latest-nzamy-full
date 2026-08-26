@@ -7,6 +7,7 @@ import AttachmentSqueezer from "./_components/AttachmentSqueezer";
 import SmartAnalyzer from "./_components/SmartAnalyzer";
 import { useUser } from "@/hooks/useUser";
 import { CreditsBanner } from "@/components/PaywallGate";
+import AdvisoryTemplateNotice from "@/components/ai/AdvisoryTemplateNotice";
 
 function AnalyzePageInner() {
   const { theme, lang } = useTheme();
@@ -20,6 +21,10 @@ function AnalyzePageInner() {
       <Navbar />
       <div className="max-w-5xl mx-auto px-5 sm:px-8 pt-28 pb-24">
         {isExhausted && <CreditsBanner isDark={isDark} />}
+        {/* Owner item ١٨ — one of the three tools he named. Above the analyzer,
+            not under its verdict: the reader has to know this is a guidance
+            template before they act on what it says. */}
+        <AdvisoryTemplateNotice handoffServiceId="contract-review" className="mb-5" />
         {user.userType === "lawyer" || user.userType === "firm" ? (
           <AttachmentSqueezer isDark={isDark} isRTL={isRTL} />
         ) : (

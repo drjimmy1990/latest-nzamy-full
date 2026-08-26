@@ -855,7 +855,7 @@ export default function NewConsultationPage() {
                 <div className={`rounded-xl p-3.5 flex items-start gap-2.5 mb-5 text-[11px] ${isDark ? "bg-amber-900/15 border border-amber-700/20" : "bg-amber-50 border border-amber-200"}`}>
                   <Warning size={13} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-amber-400" : "text-amber-600"}`} weight="fill" />
                   <p className={isDark ? "text-amber-300/80" : "text-amber-700"}>
-                    بعد الضغط على «{confirmLabel}» سيتم إنشاء طلب فعلي في طبقة الـ workflow مع payment intent تجريبي لحين ربط مزود الدفع النهائي.
+                    بعد الضغط على «{confirmLabel}» يُسجَّل طلبك لدى المكتب ويصل فريق نظامي فوراً. لا يُخصم أي مبلغ في هذه الخطوة.
                   </p>
                 </div>
               )}

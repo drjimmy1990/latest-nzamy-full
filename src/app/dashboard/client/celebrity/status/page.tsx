@@ -6,7 +6,7 @@ export default function CelebrityStatusPage() {
   return (
     <DashboardComingSoon
       title="حالة برنامج صنّاع المحتوى"
-      description="لوحة حالة برنامج صنّاع المحتوى قيد التطوير. ستظهر الإحصاءات والأرباح هنا فور تفعيل البوابة المخصصة."
+      description="لوحة حالة برنامج صنّاع المحتوى غير مفعَّل حالياً. ستظهر الإحصاءات والأرباح هنا فور تفعيل البوابة المخصصة."
       backHref="/dashboard/client"
     />
   );

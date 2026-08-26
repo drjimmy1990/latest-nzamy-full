@@ -9,7 +9,7 @@ export function PaymentsTab() {
   const [localMessage, setLocalMessage] = useState<string | null>(null);
   const transactions = [
     { date: "٢٠٢٥/٠٣/١٥", desc: "رسوم استشارة قانونية", amount: "٢٥٠ ر.س", status: "مكتمل" },
-    { date: "٢٠٢٥/٠٢/٢٨", desc: "Escrow — القضية ٢٠٢٥-٠٠١", amount: "٢,٥٠٠ ر.س", status: "محجوز" },
+    { date: "٢٠٢٥/٠٢/٢٨", desc: "أتعاب القضية ٢٠٢٥-٠٠١ — بانتظار الإنجاز", amount: "٢,٥٠٠ ر.س", status: "محجوز" },
     { date: "٢٠٢٥/٠٢/١٠", desc: "رسوم خدمة المنصة", amount: "٩٩ ر.س", status: "مكتمل" },
     { date: "٢٠٢٥/٠١/٢٠", desc: "رسوم استشارة قانونية", amount: "٣٥٠ ر.س", status: "مكتمل" },
     { date: "٢٠٢٤/١٢/٠٥", desc: "استرداد — إلغاء موعد", amount: "١٥٠ ر.س", status: "مسترد" },

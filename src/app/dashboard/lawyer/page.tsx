@@ -200,7 +200,7 @@ export default function LawyerDashboardPage() {
   // which is how this dashboard is actually tested, demo sessions carry no
   // `userId` — to «sign in» while they are already signed in.
   const shareDisabledReason = BETA_MONOPOLY_MODE
-    ? "صفحة الملف العام غير متاحة حالياً — دليل المحامين مغلق خلال المرحلة التجريبية"
+    ? "صفحة الملف العام غير متاحة حالياً — دليل المحامين غير مفتوح للنشر بعد"
     : "سجّل الدخول بحسابك المهني لمشاركة رابط ملفك العام";
 
   const handleShareProfile = useCallback(async () => {

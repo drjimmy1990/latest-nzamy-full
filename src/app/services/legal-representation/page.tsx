@@ -54,22 +54,22 @@ const steps = {
     { num: "١", icon: FileText, title: "تقييم القضية", desc: "تقديم تفاصيل قضيتك، يراجعها محامٍ متخصص ويُقدم تقييماً أولياً مجانياً خلال ٢٤ ساعة." },
     { num: "٢", icon: UserCircle, title: "اختيار المحامي", desc: "يُقترح عليك محامون متخصصون في نوع قضيتك مع تقييماتهم وسجل قضاياهم." },
     { num: "٣", icon: Handshake, title: "توقيع التوكيل", desc: "وكالة رسمية إلكترونية موثقة وتحديد الأتعاب بشفافية تامة." },
-    { num: "٤", icon: Lock, title: "إيداع الأتعاب (Escrow)", desc: "تُودَع الأتعاب في حساب ضمان محمي — لا تصل للمحامي إلا عند إنجاز كل مرحلة." },
+    { num: "٤", icon: Lock, title: "سداد الأتعاب", desc: "تُسدَّد الأتعاب عبر المنصة — ولا تُصرف للمحامي إلا عند إنجاز كل مرحلة متفق عليها." },
     { num: "٥", icon: Gavel, title: "الترافع والمتابعة", desc: "يترافع محاميك أمام المحكمة مع تحديثات دورية وتقارير مفصّلة بعد كل جلسة." },
   ],
   en: [
     { num: "1", icon: FileText, title: "Case Evaluation", desc: "Submit your case details, reviewed by a specialized lawyer who provides a free preliminary assessment within 24 hours." },
     { num: "2", icon: UserCircle, title: "Lawyer Selection", desc: "Specialized lawyers are suggested based on your case type with ratings and case history." },
     { num: "3", icon: Handshake, title: "Power of Attorney", desc: "Official electronic notarized POA and transparent fee determination." },
-    { num: "4", icon: Lock, title: "Escrow Fee Deposit", desc: "Fees are deposited in a protected escrow — only released to the lawyer upon completing each milestone." },
+    { num: "4", icon: Lock, title: "Fee Payment", desc: "Fees are paid through the platform — released to the lawyer only upon completing each agreed milestone." },
     { num: "5", icon: Gavel, title: "Litigation & Follow-up", desc: "Your lawyer pleads in court with periodic updates and detailed reports after each hearing." },
   ],
 };
 
 const faqs = [
   { q: { ar: "كيف أختار المحامي المناسب لقضيتي؟", en: "How do I choose the right lawyer for my case?" }, a: { ar: "نظامي يقترح عليك محامين بناءً على تخصصهم وموقعهم وتقييمات موكليهم السابقين. يمكنك مراجعة ملفاتهم الكاملة قبل الاختيار.", en: "Nezamy suggests lawyers based on their specialty, location, and previous client ratings. You can review their full profiles before choosing." } },
-  { q: { ar: "ما هو نظام Escrow وكيف يحمي حقوقي؟", en: "What is the Escrow system and how does it protect my rights?" }, a: { ar: "نظام Escrow يعني إيداع الأتعاب في حساب ضمان محمي لدى نظامي. يُطلق للمحامي عند إنجاز كل مرحلة متفق عليها، مما يضمن حقوقك كاملاً.", en: "Escrow means depositing fees in a protected trust account at Nezamy. Released to the lawyer upon completing each agreed milestone, fully protecting your rights." } },
-  { q: { ar: "هل يمكنني تغيير المحامي أثناء سير القضية؟", en: "Can I change the lawyer during the case?" }, a: { ar: "نعم، إذا لم تكن راضياً يمكن تغيير المحامي. تُعاد الأتعاب غير المكتسبة لحساب Escrow تلقائياً.", en: "Yes, if unsatisfied you can change lawyers. Unearned fees are automatically returned to the Escrow account." } },
+  { q: { ar: "كيف تُحفظ حقوقي المالية؟", en: "How are my payments protected?" }, a: { ar: "تُسدَّد الأتعاب عبر قنوات الدفع المعتمدة في المنصة، ولا تُصرف للمحامي إلا عند إنجاز كل مرحلة متفق عليها. وحق العدول ومدد الاسترداد مبيّنة في سياسة الاسترجاع.", en: "Fees are paid through the platform's approved payment channels and are released to the lawyer only upon completing each agreed milestone. Withdrawal rights and refund periods are set out in the Refund Policy." } },
+  { q: { ar: "هل يمكنني تغيير المحامي أثناء سير القضية؟", en: "Can I change the lawyer during the case?" }, a: { ar: "نعم، إذا لم تكن راضياً يمكن تغيير المحامي، وتُرد الأتعاب عن المراحل التي لم تُنجَز وفق سياسة الاسترجاع.", en: "Yes, if unsatisfied you can change lawyers, and fees for milestones not delivered are refunded under the Refund Policy." } },
   { q: { ar: "ما درجات التقاضي التي يغطيها نظامي؟", en: "Which court levels does Nezamy cover?" }, a: { ar: "جميع الدرجات: المحاكم الابتدائية، محاكم الاستئناف، المحكمة العليا، المحاكم الإدارية، والمحاكم التجارية.", en: "All levels: Primary courts, Courts of Appeal, Supreme Court, Administrative Courts, and Commercial Courts." } },
   { q: { ar: "هل المحامون مرخصون من وزارة العدل؟", en: "Are the lawyers licensed by the Ministry of Justice?" }, a: { ar: "نعم، جميع المحامين المسجلين في نظامي يمرون بعملية تحقق صارمة من رخصة المحاماة الصادرة من وزارة العدل وهيئة المحامين.", en: "Yes, all lawyers registered on Nezamy go through strict verification of their license issued by the Ministry of Justice and Bar Association." } },
 ];
@@ -100,8 +100,8 @@ export default function LegalRepresentationPage() {
               </h1>
               <p className={`mt-6 text-lg leading-relaxed ${isDark ? "text-gray-400" : "text-slate-600"}`}>
                 {isRTL
-                  ? "وكّل محامياً معتمداً يترافع نيابةً عنك في جميع درجات التقاضي — مع نظام Escrow لضمان أتعابك وتقارير دورية مفصّلة."
-                  : "Appoint a certified lawyer to plead on your behalf at all court levels — with Escrow protection and detailed periodic reports."}
+                  ? "وكّل محامياً معتمداً يترافع نيابةً عنك في جميع درجات التقاضي — بأتعاب لا تُصرف إلا عند الإنجاز وتقارير دورية مفصّلة."
+                  : "Appoint a certified lawyer to plead on your behalf at all court levels — with fees released only on delivery and detailed periodic reports."}
               </p>
               <div className="mt-8 flex flex-wrap gap-4">
                 <Link href="/register/client" className="inline-flex items-center gap-2 rounded-xl bg-royal px-8 py-4 font-semibold text-white transition hover:bg-royal/90">
@@ -207,7 +207,7 @@ export default function LegalRepresentationPage() {
         <div className="mx-auto max-w-5xl px-4">
           <div className="grid gap-5 sm:grid-cols-3">
             {[
-              { icon: Lock, title: isRTL ? "نظام Escrow محمي" : "Protected Escrow System", desc: isRTL ? "أتعابك محمية في حساب ضمان — لا تصل للمحامي إلا عند إنجاز كل مرحلة." : "Your fees protected in escrow — only released to the lawyer upon completing each milestone." },
+              { icon: Lock, title: isRTL ? "أتعاب مربوطة بالإنجاز" : "Fees Tied to Delivery", desc: isRTL ? "أتعابك تُسدَّد عبر المنصة — ولا تصل للمحامي إلا عند إنجاز كل مرحلة." : "Your fees are paid through the platform — released to the lawyer only upon completing each milestone." },
               { icon: ShieldCheck, title: isRTL ? "محامون معتمدون" : "Licensed Lawyers", desc: isRTL ? "جميع المحامين محققون من هيئة المحامين ووزارة العدل." : "All lawyers verified by the Bar Association and Ministry of Justice." },
               { icon: ChartBar, title: isRTL ? "تقارير مفصّلة" : "Detailed Reports", desc: isRTL ? "تقرير كامل بعد كل جلسة يشمل ما دار وما هو متوقع." : "Full report after each hearing covering what happened and what's next." },
             ].map((badge, i) => (

@@ -33,7 +33,7 @@ const modules = {
   ar: [
     { icon: FileText, title: "إدارة القضايا", desc: "متابعة شاملة لجميع القضايا من الإيداع حتى الإغلاق مع تتبع المواعيد والجلسات والمستندات.", color: "bg-royal/10 text-royal" },
     { icon: Users, title: "إدارة الموارد البشرية", desc: "إدارة المحامين والمساعدين والإداريين مع تتبع الأداء وتوزيع العمل وإدارة الإجازات.", color: "bg-blue-500/10 text-blue-600" },
-    { icon: ChartBar, title: "المالية والفوترة", desc: "نظام محاسبي متكامل مع إدارة Escrow، الفواتير، المصروفات، والتقارير المالية.", color: "bg-emerald-500/10 text-emerald-600" },
+    { icon: ChartBar, title: "المالية والفوترة", desc: "نظام محاسبي متكامل لإدارة الأتعاب، الفواتير، المصروفات، والتقارير المالية.", color: "bg-emerald-500/10 text-emerald-600" },
     { icon: Brain, title: "ذكاء اصطناعي مؤسسي", desc: "محرك AI مخصص لمؤسستك مدرَّب على قضاياكم وعقودكم وسوابقكم القانونية.", color: "bg-violet-500/10 text-violet-600" },
     { icon: Database, title: "إدارة المستندات", desc: "مستودع ذكي للمستندات مع بحث AI وتصنيف تلقائي وإدارة الإصدارات.", color: "bg-orange-500/10 text-orange-600" },
     { icon: ChartLineUp, title: "التقارير والتحليلات", desc: "لوحات بيانات تفاعلية وتقارير تفصيلية عن أداء المكتب والإيرادات والقضايا.", color: "bg-pink-500/10 text-pink-600" },
@@ -43,7 +43,7 @@ const modules = {
   en: [
     { icon: FileText, title: "Case Management", desc: "Full case tracking from filing to closure with deadlines, hearings, and document management.", color: "bg-royal/10 text-royal" },
     { icon: Users, title: "HR Management", desc: "Manage lawyers, paralegals, and admins with performance tracking, workload distribution, and leave management.", color: "bg-blue-500/10 text-blue-600" },
-    { icon: ChartBar, title: "Finance & Billing", desc: "Integrated accounting with Escrow management, invoicing, expenses, and financial reports.", color: "bg-emerald-500/10 text-emerald-600" },
+    { icon: ChartBar, title: "Finance & Billing", desc: "Integrated accounting for fees, invoicing, expenses, and financial reports.", color: "bg-emerald-500/10 text-emerald-600" },
     { icon: Brain, title: "Enterprise AI", desc: "Custom AI engine trained on your firm's cases, contracts, and legal precedents.", color: "bg-violet-500/10 text-violet-600" },
     { icon: Database, title: "Document Management", desc: "Smart document repository with AI search, auto-classification, and version control.", color: "bg-orange-500/10 text-orange-600" },
     { icon: ChartLineUp, title: "Reports & Analytics", desc: "Interactive dashboards and detailed reports on firm performance, revenue, and cases.", color: "bg-pink-500/10 text-pink-600" },

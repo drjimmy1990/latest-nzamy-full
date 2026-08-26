@@ -256,7 +256,7 @@ export default function MyGroupPage() {
                     <UsersThree size={16} weight="fill" className={isDark ? "text-emerald-400" : "text-emerald-600"} />
                     <p className={`text-sm font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>إنشاء المجموعة</p>
                   </div>
-                  <p className={`text-xs leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>ستحصل على رابط الدعوة فوراً لدعوة باقي الأعضاء. نظام الفوترة والتناوب قيد التطوير — لن يتم سحب أي مبلغ الآن.</p>
+                  <p className={`text-xs leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>ستحصل على رابط الدعوة فوراً لدعوة باقي الأعضاء. نظام الفوترة والتناوب غير مفعَّل بعد — لن يتم سحب أي مبلغ الآن.</p>
                 </div>
 
                 {createError && (
@@ -430,7 +430,7 @@ export default function MyGroupPage() {
         <motion.div variants={fadeUp}>
           <DashboardComingSoon
             title="نظام التناوب والدفع الجماعي"
-            description="إدارة دورة الدفع الشهرية بين أعضاء المجموعة قيد التطوير. حالياً يمكنك إنشاء المجموعة ودعوة الأعضاء فقط — لا توجد فوترة فعلية بعد."
+            description="إدارة دورة الدفع الشهرية بين أعضاء المجموعة غير متاحة حالياً. حالياً يمكنك إنشاء المجموعة ودعوة الأعضاء فقط — لا توجد فوترة فعلية بعد."
           />
         </motion.div>
 

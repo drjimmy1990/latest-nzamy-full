@@ -15,8 +15,8 @@ const faqsAr = [
     a: "يمكنك حجز استشارة فورية عبر أيقونة الواتساب أسفل الشاشة، أو من خلال اختيار خدمة 'استشارات قانونية' وتحديد نوع الاستشارة: نصية، ملف صوتي، أو مكالمة فيديو."
   },
   {
-    q: "ما هو ضمان الـ Escrow؟",
-    a: "هو نظام مالي يضمن حقوق كلا الطرفين (العميل والمحامي). يتم الاحتفاظ بالمبلغ المالي لدينا، ولا يُصرف للمحامي إلا بعد إنجاز الخدمة المتفق عليها بالكامل."
+    q: "كيف تُحفظ حقوقي المالية؟",
+    a: "تُدفع الأتعاب عبر قنوات الدفع المعتمدة في المنصة، ولا تُصرف لمقدم الخدمة إلا بعد إنجاز الخدمة المتفق عليها. وحق العدول ومدد الاسترداد مبيّنة في سياسة الاسترجاع."
   },
   {
     q: "هل بياناتي وعقودي محمية؟",
@@ -42,8 +42,8 @@ const faqsEn = [
     a: "You can book instantly via the WhatsApp button at the screen bottom, or navigate to 'Consultations' to choose text, voice, or video formats."
   },
   {
-    q: "What is the Escrow guarantee?",
-    a: "It's a financial system holding funds securely. The lawyer is only paid once the agreed legal service is fully delivered and approved."
+    q: "How are my payments protected?",
+    a: "Fees are paid through the platform's approved payment channels and are not released to the service provider until the agreed service has been delivered. Withdrawal rights and refund periods are set out in the Refund Policy."
   },
   {
     q: "Are my data and contracts secure?",

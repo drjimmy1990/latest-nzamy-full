@@ -5,7 +5,13 @@ import {
   type ClientServiceCategory,
   type ClientServiceCategoryId,
   type ClientServicePriceMode,
-} from "@/constants/clientServiceCatalog";
+  // Relative + explicit .ts, not the `@/` alias: this module is now covered by
+  // unit tests, and the `node --test` runner strips types without resolving
+  // tsconfig paths — an aliased VALUE import (the two catalog constants above
+  // are values) is unresolvable there. Same convention as
+  // src/lib/services/intakeGuard.ts. `allowImportingTsExtensions` is on, so
+  // the bundler is unaffected.
+} from "../constants/clientServiceCatalog.ts";
 
 export type PricingCatalogSource = "admin-seed" | "backend";
 

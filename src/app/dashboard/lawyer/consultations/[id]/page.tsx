@@ -14,7 +14,7 @@ export default function ConsultationDetailPage({ params: _params }: { params: { 
   return (
     <DashboardComingSoon
       title="تفاصيل الاستشارة"
-      description="هذه الميزة قيد التطوير وستكون متاحة قريباً. لا توجد بيانات حقيقية لعرضها بعد."
+      description="هذه الميزة غير متاحة حالياً وستُفعَّل قريباً. لا توجد بيانات حقيقية لعرضها بعد."
       backHref="/dashboard/lawyer/consultations"
     />
   );
