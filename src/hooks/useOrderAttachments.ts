@@ -163,6 +163,51 @@ export function useOrderAttachments() {
     return attached;
   }
 
+  /**
+   * Attach a document the account already has in its vault — owner item ٨,
+   * «بنقرة واحدة دون إعادة رفعها من الجهاز».
+   *
+   * Goes through POST /api/v1/documents/[id]/copy, which takes a server-side
+   * copy of the bytes and returns a NEW unbound attachment. The copy, not the
+   * vault row, is what ends up in `attachments` and therefore what the order's
+   * bind step claims — binding is a move, and binding the original would empty
+   * the vault the first time each document was used. That route's own comment
+   * carries the full reasoning.
+   *
+   * Never throws: like attachFiles(), it reports through attachError and the
+   * caller renders whatever actually attached.
+   */
+  async function attachFromVault(documentId: string): Promise<OrderAttachment | null> {
+    setAttachError("");
+    setUploading(true);
+    try {
+      const res = await fetch(`/api/v1/documents/${encodeURIComponent(documentId)}/copy`, {
+        method: "POST",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.data?.id) {
+        setAttachError(
+          typeof body.error === "string" && body.error
+            ? body.error
+            : "تعذّر إرفاق الوثيقة من الخزنة.",
+        );
+        return null;
+      }
+      const attachment: OrderAttachment = {
+        documentId: String(body.data.id),
+        name: String(body.data.file_name ?? ""),
+        size: Number(body.data.size_bytes ?? 0),
+      };
+      setAttachments((prev) => [...prev, attachment]);
+      return attachment;
+    } catch {
+      setAttachError("تعذّر إرفاق الوثيقة من الخزنة. تحقق من اتصالك بالإنترنت.");
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  }
+
   function removeAttachment(documentId: string): void {
     setAttachments((prev) => prev.filter((a) => a.documentId !== documentId));
   }
@@ -171,5 +216,5 @@ export function useOrderAttachments() {
     setAttachError("");
   }
 
-  return { attachments, uploading, attachError, attachFile, attachFiles, removeAttachment, clearAttachError };
+  return { attachments, uploading, attachError, attachFile, attachFiles, attachFromVault, removeAttachment, clearAttachError };
 }

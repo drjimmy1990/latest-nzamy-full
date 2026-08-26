@@ -39,12 +39,19 @@ import type { SidebarGroup } from "./navigation.types";
 // NOT re-added yet, and each is somebody else's file — see the cluster report:
 //   «طلب خدمة جديدة» / «متابعة الطلبات»  — the real intake lives under /dashboard/client/*,
 //        which src/proxy.ts:16 refuses to a corporate account.
-//   «خزنة وثائق الشركة»        — no route exists yet.
 //   «باقتنا والاشتراك»          — no destination that is not fabricated.
+//
+// «خزنة وثائق الشركة» came BACK on 26 August (owner item ٨): the reason it was
+// withheld — «no route exists yet» — stopped being true when
+// /dashboard/business/documents was built. Re-adding the link is all that is
+// needed to re-open the route, because VISIBLE_BUSINESS_ROUTES below is
+// derived from this array rather than maintained beside it.
 export const CORPORATE_SIDEBAR: SidebarGroup[] = [
   {
     items: [
       { label: "نظرة عامة", labelEn: "Overview", href: "/dashboard/business", icon: "SquaresFour" },
+      // Owner item ٨ — «ارفع وثائق المنشأة مرة واحدة وأرفقها بنقرة».
+      { label: "خزنة وثائق المنشأة", labelEn: "Company Documents", href: "/dashboard/business/documents", icon: "FolderOpen" },
     ],
   },
   {
