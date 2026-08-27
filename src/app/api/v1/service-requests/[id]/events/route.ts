@@ -3,7 +3,42 @@ import { createClient } from "@/lib/supabase/server";
 import { recordEvent, namespaceEvent, RequestEvent } from "@/lib/events";
 
 /**
- * GET /api/v1/service-requests/[id]/events — Get timeline events for a request
+ * How many timeline events one read returns.
+ *
+ * ── WHY A CAP WAS ADDED RATHER THAN REPORTED ────────────────────────────────
+ *
+ * This route had NO `.limit()` and NO `.range()` — it asked for every event on
+ * a request. That is not the same as being uncapped: PostgREST enforces its
+ * own `max-rows` on the hosted project, and when it trims a response it says
+ * nothing. So the cap existed, it just lived somewhere this code could not see
+ * or report, which is the worst of both.
+ *
+ * And the old query ordered `created_at` ASCENDING, so the rows an invisible
+ * cap dropped were the NEWEST ones. A timeline does not look truncated when it
+ * loses its tail — it looks finished. A reader would have concluded that
+ * nothing had happened on the request since whatever the last surviving event
+ * was.
+ *
+ * 500 is far above any real request's timeline (recordEvent writes one row per
+ * status change, note and notification callback; the busiest order in the tree
+ * carries a couple of dozen) and matches the ceiling /api/v1/lawyer/finance
+ * already uses for the same "one practice cannot time the route out" reason.
+ */
+const EVENTS_PAGE = 500;
+
+/**
+ * GET /api/v1/service-requests/[id]/events — Get timeline events for a request.
+ *
+ * Returns `{ data, total }`, `data` oldest-first as it always was, `total` the
+ * exact number of events on the request. Read newest-first and reversed, so
+ * that a truncated read keeps the RECENT end of the timeline and loses the
+ * ancient one — the opposite of what the unbounded query did. When nothing is
+ * truncated the two orderings return the identical array, and `total` says
+ * which case the caller is in.
+ *
+ * No caller exists in the tree today (nothing fetches this path — grep), so
+ * there is no screen to put a notice on. `total` is here for the caller that
+ * eventually arrives, so it cannot inherit an unreported cap.
  */
 export async function GET(
   _request: NextRequest,
@@ -21,17 +56,34 @@ export async function GET(
 
   const { id: requestId } = await context.params;
 
-  const { data, error } = await supabase
+  const { data, count, error } = await supabase
     .from("request_events")
-    .select("*")
+    .select("*", { count: "exact" })
     .eq("request_id", requestId)
-    .order("created_at", { ascending: true });
+    // Newest first so the cap bites the oldest end, with the bigserial `id` as
+    // the tie-break for two events written inside the same millisecond — the
+    // same pair of keys /api/v1/admin/service-orders orders by, and without it
+    // the reversal below would leave same-instant events in an arbitrary order
+    // that could flip between reads.
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(EVENTS_PAGE);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data });
+  return NextResponse.json({
+    // Back to oldest-first: the shape callers read is a timeline, and only the
+    // WHICH-rows question changed, not the order they arrive in.
+    //
+    // A non-array stays a non-array. `?? []` here would turn "the driver
+    // returned no rows object" into "this request has no events" — the exact
+    // substitution listRead.ts exists to stop — so the absence is passed
+    // through and listFromApi() reads it as unreadable, as it should.
+    data: Array.isArray(data) ? [...data].reverse() : data,
+    total: typeof count === "number" ? count : null,
+  });
 }
 
 /**

@@ -254,9 +254,10 @@ export default function CaseDetailPage() {
   const [activeTab, setActiveTab] = useState(
     TABS.some(t => t.id === requestedTab) ? (requestedTab as string) : "overview",
   );
+  // `noteInput` survives; `noteSaving`/`noteSaved` do not. See the comment on
+  // the notes composer below for why the save button is disabled rather than
+  // wired.
   const [noteInput, setNoteInput] = useState("");
-  const [noteSaving, setNoteSaving] = useState(false);
-  const [noteSaved, setNoteSaved] = useState(false);
   const [graphFullscreen, setGraphFullscreen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -489,21 +490,29 @@ export default function CaseDetailPage() {
     }
   };
 
-  // ── Notes save: events POST route does not persist metadata.text, so we
-  //    cannot faithfully store a note with content through it. Gate as قريباً
-  //    and do NOT pretend it saved. ──
-  const saveNote = () => {
-    // The POST /api/v1/service-requests/[id]/events route inserts
-    // { request_id, event, actor_user_id } only — it drops metadata, so the
-    // note text would be lost. Surface a "coming soon" state instead of faking.
-    setNoteSaving(true);
-    setTimeout(() => {
-      setNoteSaving(false);
-      setNoteSaved(true);
-      setNoteInput("");
-      setTimeout(() => setNoteSaved(false), 2500);
-    }, 600);
-  };
+  // ── Notes save: REMOVED, not re-implemented. ──
+  //
+  // `saveNote` stood here. Its own comment said «do NOT pretend it saved» and
+  // then the body did exactly that: a 600 ms setTimeout behind a spinner,
+  // followed by `setNoteInput("")`. Nothing was ever sent anywhere.
+  //
+  // The cleared textarea was the damaging half. The «قريباً» pill and the
+  // amber line were honest, but an emptied composer is the one gesture every
+  // interface on earth uses to mean "your text is committed now" — so the
+  // lawyer's note was destroyed by the control they pressed to keep it, and
+  // the marker saying otherwise was two lines away in 10px text.
+  //
+  // It is NOT wired, and the blocker is the route, not effort: the POST in
+  // src/app/api/v1/service-requests/[id]/events/route.ts reads `body.event`
+  // and `body.actor_name`, and its `recordEvent({...})` call passes only
+  // { supabase, requestId, event, actorUserId, actorName }. The string
+  // "metadata" does not occur in that file, so the note text has nowhere to
+  // go. The read side is already waiting for it: `notes` above maps
+  // `metadata.text`. One forwarded field on that route makes this real, and
+  // that route is not this file's to change.
+  //
+  // Until then the button is disabled — the same shape as «إضافة جلسة · قريباً»
+  // on this page — and the composer keeps whatever was typed in it.
 
   // ── Document upload: wire to documentService.uploadDocumentFile ──
   const handleUpload = async (file: File) => {
@@ -1211,15 +1220,25 @@ export default function CaseDetailPage() {
                   rows={3}
                   className={`w-full text-sm bg-transparent outline-none resize-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`}
                 />
-                <div className="flex justify-end mt-2 items-center gap-2">
-                  {noteSaved && (
-                    <span className="text-[10px] text-amber-500 font-bold">سيتم تفعيل حفظ الملاحظات قريباً</span>
-                  )}
-                  <button onClick={saveNote} disabled={!noteInput.trim() || noteSaving}
-                    title="قريباً"
-                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors disabled:opacity-40 flex items-center gap-1.5">
-                    {noteSaving ? <Spinner size={12} className="animate-spin" /> : null}
-                    حفظ الملاحظة
+                {/* Always shown, not only after a press: the lawyer needs to
+                    know the draft is not stored BEFORE they navigate away, not
+                    after. The old amber line appeared for 2.5s once the (fake)
+                    save had already cleared the box.
+                    Per-theme amber, not a single `amber-500`: this card is
+                    `bg-zinc-900/60` in dark, and the one line whose entire job
+                    is to be read before the lawyer leaves the page cannot be
+                    the one that is hard to read. Same pair the contracts page
+                    uses on its own amber notice. */}
+                <div className="flex flex-wrap justify-end mt-2 items-center gap-2">
+                  <span className={`text-[10px] font-bold me-auto ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+                    حفظ الملاحظات غير مفعّل بعد — انسخ نصك قبل مغادرة الصفحة.
+                  </span>
+                  <button
+                    disabled
+                    title="حفظ الملاحظات — قريباً"
+                    aria-label="حفظ الملاحظات — قريباً"
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] transition-colors opacity-40 cursor-not-allowed flex items-center gap-1.5">
+                    حفظ الملاحظة · قريباً
                   </button>
                 </div>
               </div>

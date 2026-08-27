@@ -274,11 +274,25 @@ export function vaultDocumentsPhraseAr(count: number): string | null {
  * How many rows in the account's document list belong to the company vault.
  *
  * The vault is the set of attachments NOT bound to an order — the exact same
- * definition /dashboard/business/documents renders (`all.filter(d =>
- * !d.request_id)`). Duplicating the predicate rather than exporting one from
- * that page is deliberate: the page is a "use client" React module and this
- * has to stay loadable by `node --test`. The definition is one boolean and it
- * is documented in both places.
+ * definition /dashboard/business/documents renders
+ * (`all.filter(d => !d.request_id)`, that page's line 85). Duplicating the
+ * predicate rather than exporting one from that page is deliberate: the page is
+ * a "use client" React module and this has to stay loadable by `node --test`.
+ *
+ * THE PREDICATE IS COPIED CHARACTER FOR CHARACTER, and that is the whole
+ * discipline here. Both surfaces are handed the SAME unfiltered list from
+ * `getDocuments()` — the overview counts it here, the vault page filters it
+ * there — so any difference between the two booleans is a tile whose number
+ * disagrees with the list it summarises, with no error anywhere.
+ *
+ * It used to differ. This function tested `=== null || === undefined` and
+ * carried a comment saying an empty-string `request_id` was excluded because
+ * counting it "would put a document the company cannot see in this page's
+ * count". That reasoning was simply wrong on the facts: `!""` is `true`, so the
+ * vault page SHOWS such a row, and it was the count that was hiding it. A
+ * company with one malformed row read «وثيقة واحدة محفوظة» on the overview and
+ * opened a page listing two. Fixed by writing the same boolean, not a
+ * paraphrase of it — a paraphrase is what drifted in the first place.
  *
  * Returns null — never 0 — for input that is not a list, so a caller that was
  * handed something unexpected renders nothing instead of «لا توجد وثائق».
@@ -288,11 +302,7 @@ export function countVaultDocuments(docs: unknown): number | null {
   let count = 0;
   for (const doc of docs) {
     if (!isRecord(doc)) continue;
-    // Both null and undefined mean "not attached to any order". A row whose
-    // request_id is an empty string is treated as bound rather than free: it
-    // is a malformed row either way, and guessing it into the vault would put
-    // a document the company cannot see in this page's count.
-    if (doc.request_id === null || doc.request_id === undefined) count += 1;
+    if (!doc.request_id) count += 1;
   }
   return count;
 }

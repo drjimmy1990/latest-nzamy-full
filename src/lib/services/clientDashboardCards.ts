@@ -23,9 +23,15 @@
  * taskMetadata.ts documents. `orderReference.ts` is imported with its explicit
  * extension because node's ESM resolver does no extension guessing; that is
  * the established pattern here (see orderIntake.contracts.ts, intakeGuard.ts).
- * The `ServiceOrder` import is TYPE-ONLY on purpose: serviceOrders.ts is
- * "use client" and pulls in `@/lib/services/api`, which node cannot resolve —
- * turning that line into a value import would break this module's tests.
+ *
+ * The `ServiceOrder` import is TYPE-ONLY on purpose. The original reason — that
+ * serviceOrders.ts imported `@/lib/services/api`, which node could not resolve —
+ * stopped being true when that module was given relative imports so it could be
+ * tested. The DECISION stands on its own: this module renders a client's
+ * dashboard from data somebody else already fetched, and it must not acquire a
+ * path to the fetch layer just because one is now resolvable. Its own test
+ * imports both modules and pins that the two status vocabularies agree, which
+ * is the only coupling that was ever wanted.
  */
 
 import type { ServiceOrder } from "./serviceOrders";
@@ -94,12 +100,16 @@ export interface ClientDocumentRow {
 /**
  * The Arabic status wording, copied verbatim from ORDER_STATUS_AR in
  * serviceOrders.ts — the app's one status vocabulary — rather than reworded.
- * It is copied instead of imported because that module is "use client" and
- * imports the fetch layer, which would make this module untestable under
- * `node --test` (see the header).
+ * It is copied instead of imported to keep this module clear of the fetch
+ * layer (see the header).
  *
- * The KEY SET cannot drift even so: it is `Record<ServiceOrder["status"], …>`,
- * so adding a status to that union without adding it here fails the build. The
+ * Neither half of the copy can drift silently. The KEY SET is fixed at build
+ * time: this is `Record<ServiceOrder["status"], …>`, so adding a status to that
+ * union without adding it here fails the build. The LABELS are pinned by
+ * clientDashboardCards.test.ts, which imports the original and asserts the two
+ * agree string for string — a build error cannot catch «جاهز» being reworded
+ * on one side only, and two screens quietly disagreeing about the same order
+ * is what a copied vocabulary risks. The
  * tones are this dashboard's own — `emerald` there is `green` here, because
  * these keys name entries in STATUS_COLOR, not Tailwind palettes.
  */
@@ -203,6 +213,19 @@ export function toClientCase(row: unknown): ClientCase | null {
   // looks live is exactly what this file exists to stop.
   if (!id) return null;
 
+  // The SECOND way a row can fail to produce a reference, and the one the
+  // `caseNo` docblock promised was handled when it was not: `orderReference`
+  // strips hyphens before slicing, so an id of «---» is a non-empty string
+  // that survives the guard above and still yields "". The card then printed
+  // «رقم الطلب: » with nothing after it — the exact empty-field the guard
+  // above exists to prevent, reached by a different route. No production
+  // `service_requests.id` looks like this (the column is a uuid), so this is
+  // a contract being made true rather than a bug being observed; it is here
+  // because a promise in a docblock that the code does not keep is how the
+  // next reader gets misled.
+  const caseNo = orderReference(id);
+  if (!caseNo) return null;
+
   const rawStatus = str(row.status);
   // hasOwnProperty, not a plain lookup: `STATUS_AR["constructor"]` is a
   // truthy inherited value whose `.label` is undefined, which would put an
@@ -226,7 +249,7 @@ export function toClientCase(row: unknown): ClientCase | null {
     // `title` is NOT NULL in the schema, so the fallbacks are for rows written
     // before that was true and for a title that is nothing but whitespace.
     title: rawTitle || serviceLabel || "طلب دون عنوان",
-    caseNo: orderReference(id),
+    caseNo,
     status: known ? (rawStatus as ServiceOrder["status"]) : "unknown",
     statusLabel: (known ?? UNKNOWN_STATUS).label,
     statusColor: (known ?? UNKNOWN_STATUS).tone,

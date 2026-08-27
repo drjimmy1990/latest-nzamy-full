@@ -82,9 +82,19 @@ interface TxRow {
  */
 interface WalletApiResponse {
   data: {
-    balance?: number;
-    pendingBalance?: number;
+    /**
+     * `null` when the route could not sum the ledger — see BALANCE_SCAN_MAX in
+     * src/app/api/v1/wallet/route.ts. It used to be summed over the same
+     * `.limit(50)` that fed the history list, so a client with 51 movements
+     * was shown the sum of his newest 50 in the hero, as his balance. That is
+     * not a short list, it is a wrong total, and the type says so now: a
+     * number that may be absent cannot be read as a number by accident.
+     */
+    balance?: number | null;
+    pendingBalance?: number | null;
     transactions?: TxRow[];
+    /** كم حركة على الحساب فعلاً — لا طول القائمة المعروضة. */
+    transactionsTotal?: number | null;
     coupons?: Coupon[];
   };
 }
@@ -227,19 +237,49 @@ export default function WalletPage() {
   // Live arrays start empty — mock data is only shown while `loading` is true.
   const [liveCoupons, setLiveCoupons] = useState<Coupon[]>([]);
   const [liveTransactions, setLiveTransactions] = useState<TxRow[]>([]);
+  /** كم حركة على الحساب فعلاً، أو null إن لم يُرسل الخادم عدداً. */
+  const [transactionsTotal, setTransactionsTotal] = useState<number | null>(null);
   const [walletLoading, setWalletLoading] = useState(true);
   const [walletError, setWalletError] = useState<string | null>(null);
+  /**
+   * The read SUCCEEDED and the balance is still unknown.
+   *
+   * A third state, and deliberately not folded into `walletError`: that string
+   * says «تعذر تحميل», which would be false here — the transactions below it
+   * are on screen and real. What is unknown is only the sum, because the
+   * ledger is longer than the window the route sums over. Two different facts
+   * need two different sentences.
+   */
+  const [balanceUncountable, setBalanceUncountable] = useState(false);
 
   useEffect(() => {
     apiGet<WalletApiResponse>("/api/v1/wallet")
       .then((res) => {
         setWalletError(null);
-        if (res.data?.balance !== undefined) setWalletBalance(res.data.balance);
-        if (res.data?.pendingBalance !== undefined) setPendingBalance(res.data.pendingBalance);
-        setBalanceKnown(true);
+        // `typeof === "number"`, not `!== undefined`: the route now answers
+        // `balance: null` when it could not sum the whole ledger, and `null
+        // !== undefined` is true — the old test would have written null into a
+        // number state and printed it as «٠». A balance is either a number we
+        // computed over every row, or it is not a balance.
+        const balance = res.data?.balance;
+        const pending = res.data?.pendingBalance;
+        const known = typeof balance === "number";
+        if (known) setWalletBalance(balance);
+        if (typeof pending === "number") setPendingBalance(pending);
+        setBalanceKnown(known);
+        // `=== null` and NOT `!known`: null is the route's explicit "I read the
+        // ledger and it is longer than I can sum" signal, and that is the only
+        // thing the sentence below explains. A `balance` key that is missing
+        // altogether is some other failure we have no account of, and giving it
+        // this explanation would be inventing a reason. It gets «—» with
+        // nothing claimed about why, which is the lesser of the two.
+        setBalanceUncountable(balance === null);
         // Always replace with the API result (which may be []) — never keep mock
         // data after the call resolves.
         setLiveTransactions(res.data?.transactions ?? []);
+        setTransactionsTotal(
+          typeof res.data?.transactionsTotal === "number" ? res.data.transactionsTotal : null,
+        );
         setLiveCoupons(res.data?.coupons ?? []);
       })
       .catch((err) => {
@@ -248,7 +288,12 @@ export default function WalletPage() {
         // On failure show nothing rather than fake rows — and do not claim a
         // balance we could not read.
         setBalanceKnown(false);
+        // The failure banner already covers this case; raising the "too many
+        // movements" line as well would give one failure two explanations,
+        // only one of which is true.
+        setBalanceUncountable(false);
         setLiveTransactions([]);
+        setTransactionsTotal(null);
         setLiveCoupons([]);
       })
       .finally(() => setWalletLoading(false));
@@ -291,6 +336,15 @@ export default function WalletPage() {
    * reads as plain `liveCoupons` there.
    */
   const visibleCoupons = walletLoading && !isSupabaseMode ? coupons : liveCoupons;
+
+  /**
+   * هل «سجل المعاملات» هو كل السجل؟
+   *
+   * الخادم يعرض أحدث ٥٠ حركة ويرسل العدد الحقيقي معها. المقارنة بالعدد المرسل
+   * لا بالسقف: السقف رقم في ملف آخر، والعدد هو ما يصف هذه القراءة بالذات.
+   */
+  const transactionsTruncated =
+    transactionsTotal !== null && transactionsTotal > liveTransactions.length;
 
   return (
     <div dir="rtl" className={`min-h-screen pb-24 ${isDark ? "bg-zinc-950 text-zinc-100" : "bg-slate-50 text-zinc-900"}`}>
@@ -354,6 +408,23 @@ export default function WalletPage() {
               and no provider has been chosen. Saying so is the fix; the tiles
               had no source at all, so they are gone rather than zeroed.
             */}
+            {/*
+              لماذا قد يظهر «—» فوق مع أن القراءة نجحت.
+
+              كان الرصيد يُجمع من أحدث ٥٠ حركة فقط — وهي نفس الخمسين المعروضة
+              في «سجل المعاملات» — فمن تجاوزت حركاته الخمسين رأى في هذا المكان،
+              بخط كبير وبوصفه «رصيد المحفظة»، مجموعَ آخر خمسين حركة له. ذلك ليس
+              رصيده. الرقم الآن لا يُطبع إلا إذا جُمع من كل حركة على الحساب،
+              وإلا قيل ذلك صراحةً. الصمت هنا كان سيعني «—» بلا تفسير، وهو في
+              شاشة تخصّ مال العميل أسوأ من الرقم الخاطئ في وضوحه على الأقل.
+            */}
+            {balanceUncountable && !walletError && (
+              <p className="mb-4 text-xs leading-relaxed rounded-xl bg-amber-400/10 border border-amber-400/25 text-amber-200 px-3 py-2">
+                تعذّر احتساب الرصيد: عدد الحركات على حسابك أكبر مما يمكن جمعه في قراءة واحدة، ولن نعرض
+                رقماً غير مؤكد. الحركات أدناه صحيحة، وللحصول على الرصيد تواصل مع إدارة نظامي.
+              </p>
+            )}
+
             <p className="text-xs text-white/60 leading-relaxed border-t border-white/10 pt-4">
               الرصيد محفوظ على حسابك، ولا يمكن استخدامه بعد — بوابة الدفع في المنصة غير مفعَّلة حالياً.
             </p>
@@ -482,7 +553,14 @@ export default function WalletPage() {
                   <p className={`mt-4 pt-4 border-t text-[12px] leading-relaxed ${
                     isDark ? "border-white/10 text-zinc-500" : "border-zinc-100 text-zinc-500"
                   }`}>
-                    يُضاف الرصيد إلى حسابك من إدارة نظامي. كل حركة عليه مسجّلة في «سجل المعاملات».
+                    {/* «كل حركة مسجّلة في سجل المعاملات» صحيحة في التسجيل
+                        وموهِمة في العرض: التبويب يعرض أحدث ٥٠ فقط. تُصحَّح
+                        الجملة عند الاقتطاع وحده حتى لا تحمل كل محفظة صغيرة
+                        تحفّظاً لا ينطبق عليها. */}
+                    يُضاف الرصيد إلى حسابك من إدارة نظامي. كل حركة عليه مسجّلة في «سجل المعاملات»
+                    {transactionsTruncated && transactionsTotal !== null
+                      ? `، ويُعرض منها أحدث ${toArDigits(liveTransactions.length)} من ${toArDigits(transactionsTotal)}.`
+                      : "."}
                   </p>
                 </div>
               </div>
@@ -660,6 +738,24 @@ export default function WalletPage() {
                   <h3 className={`font-bold text-sm ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
                     سجل معاملات المحفظة
                   </h3>
+                  {/*
+                    الجملة مكتوبة هنا ولم تُؤخذ من truncationNoticeAr() في
+                    src/lib/services/listRead.ts: خاتمتها «استخدم البحث للوصول
+                    إلى الباقي»، ولا يوجد في هذه الصفحة مربع بحث أصلاً — لا في
+                    هذا التبويب ولا في غيره. فلا وجهة تُذكر: يُقال العدد ويُقال
+                    إن الأقدم غير معروضة، ويُسكت.
+
+                    وأرقامها بـ toArDigits المحلية في هذه الصفحة، وهي نفس
+                    الدالة التي يُطبع بها الرصيد فوق، لا بـ toLocaleString التي
+                    تستخدمها الدالة المشتركة — حتى لا تختلف أرقام التنبيه عن
+                    أرقام الشاشة التي يصفها.
+                  */}
+                  {transactionsTruncated && transactionsTotal !== null && (
+                    <p className={`mt-1.5 text-[11px] leading-relaxed ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+                      يُعرض أحدث {toArDigits(liveTransactions.length)} حركة من {toArDigits(transactionsTotal)} —
+                      الحركات الأقدم غير معروضة على هذه الشاشة.
+                    </p>
+                  )}
                 </div>
                 <div className="divide-y divide-dashed divide-zinc-100 dark:divide-white/[0.05]">
                   {(walletLoading && !isSupabaseMode ? transactions : liveTransactions).length === 0 ? (

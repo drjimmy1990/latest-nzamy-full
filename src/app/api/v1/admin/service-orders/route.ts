@@ -17,6 +17,25 @@ import { requireAdmin } from "@/lib/access-control";
 const WHATSAPP_EVENT_PREFIX = "notification.whatsapp_";
 
 /**
+ * How many orders one read of the fulfilment queue returns.
+ *
+ * 200 is not a page size — nothing on the consuming screen pages — it is a
+ * ceiling on how much work this route will assemble at once, and it is picked
+ * by the two per-page enrichments below rather than by the reader: every
+ * visible order's requester and assignee are resolved in one `.in()`, and so
+ * is every notification event, so a bigger number is a bigger PostgREST query
+ * string on both (the library search in this repo broke at ~396 UUIDs).
+ *
+ * It stays 200. What changes is that it is now REPORTED: `total` below is the
+ * exact number of orders matching this request's filters, so the queue can say
+ * «يُعرض أحدث ٢٠٠ من ٤٧٣» instead of presenting a capped page as the whole
+ * queue. Support searching an order number on that screen searches only what
+ * was loaded, so an unreported cap did not merely hide rows — it let «لا توجد
+ * طلبات مطابقة لبحثك» be printed about an order that exists.
+ */
+const ORDERS_PAGE = 200;
+
+/**
  * GET /api/v1/admin/service-orders — the AI service fulfillment queue.
  * Query: ?status=pending_assignment|in_review|completed|cancelled  ?service=draft|...
  * service_requests has no admin RLS policy, so this uses the service-role
@@ -54,17 +73,24 @@ export async function GET(request: NextRequest) {
   const admin = await createServiceClient();
   let query = admin
     .from("service_requests")
-    .select("*")
+    .select("*", { count: "exact" })
     .eq("receiver", "ai_workspace")
     .order("created_at", { ascending: false })
-    .limit(200);
+    .limit(ORDERS_PAGE);
 
+  // Every one of the three filters is applied HERE, in the query, which is the
+  // precondition for `total` below meaning anything: a count is only
+  // comparable to the rows returned when the same predicates produced both.
+  // (Contrast /api/v1/admin/audit-log, which returns `total: null` whenever
+  // `?severity=` is set, because severity is derived in memory after the
+  // fetch.) If a filter is ever moved out of this query and into the mapping
+  // below, `total` has to become null with it.
   if (status) query = query.eq("status", status);
   if (service) query = query.eq("metadata->>service", service);
   if (assignee === "unassigned") query = query.is("assigned_to", null);
   else if (assignee) query = query.eq("assigned_to", assignee);
 
-  const { data: rows, error } = await query;
+  const { data: rows, count, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // No PostgREST FK from service_requests to profiles — enrich separately.
@@ -108,8 +134,8 @@ export async function GET(request: NextRequest) {
 
   // Task 7 — same shape as the profiles enrichment above and for the same
   // reason: ONE query for every visible order, never one per order. This queue
-  // renders up to 200 rows (the .limit(200) above), so per-row lookups would
-  // be 200 round-trips.
+  // renders up to ORDERS_PAGE rows (the .limit() above), so per-row lookups
+  // would be 200 round-trips.
   //
   // `.in()` is safe at this size: 200 ids is well under the point where the
   // PostgREST query string starts getting truncated.
@@ -205,6 +231,11 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
+    // The number of orders matching this request's filters, capped page or
+    // not. `null` — never `orders.length`, and never 0 — when PostgREST did
+    // not return a count: a total that silently equals what was returned makes
+    // every truncated read look complete, which is the defect, not the fix.
+    total: typeof count === "number" ? count : null,
     data: orders.map((o) => ({
       ...o,
       profile: profileMap.get(o.requester_user_id as string) ?? null,

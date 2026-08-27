@@ -1,5 +1,38 @@
 "use client";
 
+/**
+ * LegalCanvas — NOT MOUNTED. Read this before wiring it to anything.
+ *
+ * Nothing imports this module. `grep -rn LegalCanvas src/` returns this file's
+ * own declaration and, separately, `dashboard/firm/cases/[id]/LegalCanvas.tsx`
+ * — a different component. The lawyer case page's `?tab=graph` renders
+ * `CaseGraphView` from dashboard/business/kanban instead (it is the only
+ * dynamic import in cases/[id]/page.tsx). So none of what follows is
+ * reachable by a lawyer today.
+ *
+ * The two controls that claimed an AI did work for the lawyer have been
+ * removed anyway (see the comments at their sites) — an unreachable lie is
+ * still a lie the moment someone mounts the file.
+ *
+ * IT IS STILL NOT FIT TO MOUNT, and this comment exists so that is not
+ * discovered by a lawyer instead of by a developer. Two things outlive this
+ * pass:
+ *
+ *   1. `INIT_NODES` is an invented contractor dispute — stages, dates, and
+ *      `aiHint` strings such as «صدر حكم ابتدائي إيجابي. قوة الموقف: ٧٨٪.» —
+ *      with no case id, no fetch, and no prop to feed it real rows. Mounted on
+ *      a case detail page it would render fictional litigation under a real
+ *      client's case title.
+ *   2. The five «نوع الكارت» entries in the context menu do nothing;
+ *      `handleCtxAction` has no arm for their `type:` keys. See the note there
+ *      for why making them real is a build and not a deletion.
+ *   3. The «منفرد / فريق» toolbar toggle sets `mode`, and `mode` is read in
+ *      exactly one place: the toggle's own highlight. Nothing on the board
+ *      changes. It is a switch wired to its own lamp.
+ *
+ * Give it real data, a working type switch and a real mode first, or delete it.
+ */
+
 import { useCallback, useState, useRef, useEffect, useLayoutEffect } from "react";
 import {
   ReactFlow,
@@ -24,7 +57,8 @@ import {
   Scales, Warning, Briefcase, Receipt, Robot, PencilSimple,
   X, Sparkle, ListChecks, SealCheck, ArrowLeft, Users,
   Plus, Trash, ArrowsOut, ArrowsIn,
-  Copy, ClipboardText, MagicWand, DotsThree,
+  // `MagicWand` left with the two «نسّق بـ AI» controls it iconified.
+  Copy, ClipboardText, DotsThree,
   Tag, BookOpen, WarningCircle, Circle,
 } from "@phosphor-icons/react";
 
@@ -216,13 +250,11 @@ function DetailPanel({ node, onClose }: { node: Node<StageData>; onClose: () => 
           <X size={13} />
         </button>
       </div>
-      {/* AI Format banner */}
-      {(false) && (
-        <div className="px-4 py-2 bg-[#C8A762]/10 border-b border-[#C8A762]/20 flex items-center gap-2">
-          <MagicWand size={11} className="text-[#C8A762]" />
-          <span className="text-[10px] text-[#C8A762] font-semibold">يُنسَّق بـ AI...</span>
-        </div>
-      )}
+      {/* An «يُنسَّق بـ AI...» banner stood here behind a literal `{(false) &&}`.
+          It was the render half of the `aiFormatting` flag that the context
+          menu's «نسّق بـ AI» set on a 1800 ms timer — a progress message for
+          work no code in this file performs. Both halves are gone; see
+          CTX_ACTIONS below. */}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="flex items-center gap-2">
@@ -265,9 +297,12 @@ function DetailPanel({ node, onClose }: { node: Node<StageData>; onClose: () => 
             <a href="/ai/wargaming" className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-[12px] font-medium border border-white/[0.08] text-zinc-300 hover:bg-white/[0.05] transition-colors">
               <Robot size={13} />تحليل المخاطر
             </a>
-            <button className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-[12px] font-medium border border-[#C8A762]/20 text-[#C8A762] hover:bg-[#C8A762]/10 transition-colors">
-              <MagicWand size={13} />نسّق بـ AI
-            </button>
+            {/* «نسّق بـ AI» stood here — a bare <button>, no onClick, no
+                wrapper, sitting under two links that DO navigate, so it read as
+                the third working action on the panel. There is no formatter
+                behind it: no route, no service call, nothing in this module but
+                the label. Removed rather than pointed at /ai/draft, which is a
+                drafter and would not have formatted this card either. */}
           </div>
         )}
       </div>
@@ -285,9 +320,13 @@ const CTX_NODE_TYPES = [
   { key: "note",    label: "ملاحظة",         icon: BookOpen },
 ];
 
+// `{ key: "ai", label: "نسّق بـ AI", icon: MagicWand }` was the middle entry.
+// Its handler was `setAiFormatting(true)` followed by a 1800 ms setTimeout back
+// to false — a spinner's worth of delay and then nothing, on a menu item whose
+// two neighbours (copy, delete) genuinely mutate the board. Removed with the
+// banner it drove. `copy` and `delete` are real and stay.
 const CTX_ACTIONS = [
   { key: "copy",   label: "نسخ الكارت",       icon: Copy },
-  { key: "ai",     label: "نسّق بـ AI",       icon: MagicWand },
   { key: "delete", label: "حذف",              icon: Trash },
 ];
 
@@ -372,7 +411,6 @@ export default function LegalCanvas({ isDark }: LegalCanvasProps) {
   const [mode, setMode] = useState<"solo" | "team">("solo");
   const [clipboard, setClipboard] = useState<Node<StageData> | null>(null);
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
-  const [aiFormatting, setAiFormatting] = useState(false);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge({ ...params, type: "smoothstep", style: { stroke: "#C8A762", strokeWidth: 2 } }, eds)),
@@ -427,10 +465,17 @@ export default function LegalCanvas({ isDark }: LegalCanvasProps) {
       setNodes(nds => nds.filter(n => n.id !== nodeId));
       setEdges(eds => eds.filter(e => e.source !== nodeId && e.target !== nodeId));
       if (selectedNode?.id === nodeId) setSelectedNode(null);
-    } else if (key === "ai") {
-      setAiFormatting(true);
-      setTimeout(() => setAiFormatting(false), 1800);
     }
+    // No `ai` arm any more — see CTX_ACTIONS.
+    //
+    // STILL BROKEN, and left that way deliberately: the five «نوع الكارت»
+    // entries send `type:stage` … `type:note` and NO arm here reads them, so
+    // all five close the menu and change nothing. They are not removed in this
+    // pass because the honest alternative is to make them real, and that is not
+    // a deletion — only `stage` is registered in `nodeTypes`, so switching a
+    // node to `event`/`doc`/`risk`/`note` would drop it to React Flow's default
+    // renderer and lose the card entirely. That is a build, on a component
+    // nobody can reach yet. Recorded in the file header.
   }, [nodes, selectedNode, setNodes, setEdges]);
 
   const canvasContent = (

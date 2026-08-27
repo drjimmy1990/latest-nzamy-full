@@ -104,8 +104,37 @@ const REQUEST_ID_CHUNK = 150;
 const MAX_ROWS = 500;
 
 /**
+ * The DB statuses that are an invoice, as an array for the query.
+ *
+ * `INVOICEABLE_PAYMENT_STATUSES` was applied ONLY in memory, after the fetch,
+ * and that made two separate lies possible at once:
+ *
+ *  1. A count could not be reported. A DB count behind an in-memory filter
+ *     describes a different set than the rows returned — the same reason
+ *     /api/v1/admin/audit-log returns `total: null` under `?severity=`.
+ *  2. Worse, and already true today: the cap was spent on rows that were then
+ *     thrown away. 500 `not_required` rows came back, the filter dropped all
+ *     of them, and the lawyer saw an empty invoice list while his invoices sat
+ *     unread past the cap.
+ *
+ * Pushing it into the query fixes both. The in-memory `.filter()` is KEPT
+ * rather than deleted: both read this one constant so they cannot disagree,
+ * and it stops a future edit of the query from feeding a `refunded` row into
+ * mapPaymentToInvoice() — which is precisely how a refund once appeared in the
+ * red «مستحقات متأخرة» banner as a debt to chase.
+ */
+const INVOICEABLE_STATUS_LIST = [...INVOICEABLE_PAYMENT_STATUSES];
+
+/**
  * GET /api/v1/lawyer/finance
- * Auth required. Returns financial data for this lawyer.
+ * Auth required. Returns financial data for this lawyer:
+ * `{ invoices, invoicesTotal, walletTransactions, walletTransactionsTotal }`.
+ *
+ * Each list is capped at MAX_ROWS and each carries its own exact count, so the
+ * page can say which of its figures cover the whole practice and which cover
+ * only the newest N. Every «إجمالي» on that screen is summed from `invoices`
+ * — over a capped list that number is not a total, and until the counts
+ * existed there was no way for it to know.
  *
  * Selects only real columns: payments(id, request_id, provider, amount,
  * currency, status, metadata, created_at); wallet_transactions(id, amount,
@@ -156,15 +185,16 @@ export async function GET() {
         chunks.map((chunk) =>
           supabase
             .from("payments")
-            .select(PAYMENT_COLUMNS)
+            .select(PAYMENT_COLUMNS, { count: "exact" })
             .in("request_id", chunk)
+            .in("status", INVOICEABLE_STATUS_LIST)
             .order("created_at", { ascending: false })
             .limit(MAX_ROWS),
         ),
       ),
       supabase
         .from("wallet_transactions")
-        .select("id, amount, kind, description, created_at")
+        .select("id, amount, kind, description, created_at", { count: "exact" })
         .eq("user_id", uid)
         .order("created_at", { ascending: false })
         .limit(MAX_ROWS),
@@ -176,13 +206,42 @@ export async function GET() {
 
     // Each chunk is ordered and capped on its own, so the merged list has to be
     // re-sorted and re-capped before it can be called "the most recent N".
+    //
+    // KNOWN, PRE-EXISTING, AND DELIBERATELY NOT FIXED HERE: "the most recent
+    // MAX_ROWS" is only exactly true while no SINGLE chunk exceeds its own cap.
+    // A lawyer with more than 500 invoices inside one 150-request chunk loses
+    // that chunk's 501st row even if it is newer than a row another chunk kept.
+    // That is a wrong-ROWS defect, not an unreported-COUNT one, and fixing it
+    // means paging every chunk to exhaustion or a server-side aggregate —
+    // neither of which this pass owns. `invoicesTotal` below reports the true
+    // number either way, so nothing on the screen can claim to be a total.
     const paymentsRaw = paymentResults
       .flatMap((r) => (r.data ?? []) as unknown as Record<string, unknown>[])
+      // Belt to the query's braces — see INVOICEABLE_STATUS_LIST. Reads the
+      // same constant the `.in("status", …)` above does, so the two cannot
+      // drift apart, and a query edit that let a `refunded` row through still
+      // never reaches mapPaymentToInvoice().
       .filter((p) => INVOICEABLE_PAYMENT_STATUSES.has(String(p.status ?? "")))
       .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
       .slice(0, MAX_ROWS);
 
     const invoices = paymentsRaw.map(mapPaymentToInvoice);
+
+    /**
+     * How many invoiceable payments this lawyer actually has.
+     *
+     * The chunks partition a list of PRIMARY KEYS, so they are disjoint and
+     * their counts add up to an exact total with no double-counting. One chunk
+     * answering without a count makes the whole sum unknowable — reported as
+     * `null` rather than as a sum of the chunks that did answer, which would
+     * be a number smaller than the truth presented as the truth.
+     *
+     * Zero chunks (a lawyer with no assigned requests) is a real 0, not an
+     * unknown: there is nothing to count.
+     */
+    const invoicesTotal = paymentResults.some((r) => typeof r.count !== "number")
+      ? null
+      : paymentResults.reduce((sum, r) => sum + (r.count ?? 0), 0);
 
     /**
      * wallet_transactions → the lawyer's PLATFORM WALLET ledger.
@@ -207,7 +266,21 @@ export async function GET() {
       }),
     );
 
-    return NextResponse.json({ invoices, walletTransactions });
+    /**
+     * TWO totals, never one.
+     *
+     * `invoices` and `walletTransactions` are independent reads of unrelated
+     * tables, each with its own MAX_ROWS cap, and either can be truncated
+     * while the other is not. A single `total` would put an invoice count over
+     * a wallet list on the screen that renders them in two different tabs.
+     */
+    return NextResponse.json({
+      invoices,
+      invoicesTotal,
+      walletTransactions,
+      walletTransactionsTotal:
+        typeof walletResult.count === "number" ? walletResult.count : null,
+    });
   } catch (err) {
     console.error("[lawyer/finance GET] Unexpected error:", err);
     return NextResponse.json({ error: "Failed to read finance data" }, { status: 500 });

@@ -126,6 +126,15 @@ export default function FinancePage() {
   // الحالات التفاعلية للبيانات الحية
   const [invoices, setInvoices] = useState<any[]>([]);
   const [walletTxns, setWalletTxns] = useState<any[]>([]);
+  /**
+   * العدد الحقيقي للصفوف في قاعدة البيانات، أو null إن لم يُرسله الخادم.
+   *
+   * عدّادان منفصلان لأن القائمتين قراءتان مستقلتان لجدولين مختلفين، ولكلٍّ
+   * سقفها الخاص (MAX_ROWS في الخادم): يمكن أن تُقتطع الفواتير وحدها أو حركات
+   * المحفظة وحدها. عدّاد واحد كان سيضع عدد الفواتير فوق قائمة المحفظة.
+   */
+  const [invoicesTotal, setInvoicesTotal] = useState<number | null>(null);
+  const [walletTotal, setWalletTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -141,17 +150,33 @@ export default function FinancePage() {
     if (!isSupabaseMode) { setLoading(false); return; }
     setLoading(true);
     setLoadError(null);
-    apiGet<{ invoices?: any[]; walletTransactions?: any[] }>("/api/v1/lawyer/finance")
+    apiGet<{
+      invoices?: any[];
+      invoicesTotal?: number | null;
+      walletTransactions?: any[];
+      walletTransactionsTotal?: number | null;
+    }>("/api/v1/lawyer/finance")
       .then((data) => {
         // إسناد غير مشروط: الشرط القديم `if (data.invoices?.length)` كان يُبقي
         // القائمة السابقة معروضة حين يردّ الخادم قائمة فارغة عن حق.
         setInvoices(Array.isArray(data?.invoices) ? data.invoices : []);
         setWalletTxns(Array.isArray(data?.walletTransactions) ? data.walletTransactions : []);
+        // رقمٌ فقط يُقبل كرقم. الغياب يبقى null فلا يظهر التنبيه أصلاً — ولا
+        // يُملأ العدد من طول القائمة المعروضة، فذلك يجعل كل قراءة مقتطعة تبدو
+        // كاملة وهو عين العيب الذي يُغلق هنا.
+        setInvoicesTotal(typeof data?.invoicesTotal === "number" ? data.invoicesTotal : null);
+        setWalletTotal(
+          typeof data?.walletTransactionsTotal === "number" ? data.walletTransactionsTotal : null,
+        );
         setLoading(false);
       })
       .catch((err: any) => {
         console.error("[finance] load failed:", err);
         setLoadError("تعذّرت قراءة بياناتك المالية من الخادم، فلا تُعرض أي أرقام على هذه الشاشة. هذا عطل في القراءة وليس معناه أنك لم تُصدر فواتير — أعد المحاولة.");
+        // القراءة فشلت فلا عدد معلوماً: تُمسح الأعداد كما تبقى القوائم فارغة،
+        // حتى لا يبقى «من ٧٤٠» من قراءة سابقة معلّقاً فوق شاشة لا تعرض شيئاً.
+        setInvoicesTotal(null);
+        setWalletTotal(null);
         setLoading(false);
       });
   }, []);
@@ -389,6 +414,19 @@ export default function FinancePage() {
     }
   };
 
+  /**
+   * هل ما على الشاشة هو كل ما في الحساب؟
+   *
+   * كل مبلغ في هذه الصفحة — «إجمالي الأتعاب المفوترة»، «المبالغ المحصّلة
+   * فعلياً»، نسبة التحصيل، الرسم الدائري، أعمدة الأشهر، وملخص الأتعاب — مجموعٌ
+   * من مصفوفة `invoices` نفسها. والخادم يقرأ أحدث MAX_ROWS فاتورة فقط، فإن
+   * تجاوز عددها ذلك السقف صار كل رقم يحمل كلمة «إجمالي» أقلَّ من الحقيقة بلا
+   * أي إشارة. المقارنة بـ `>` لا بـ `!==`: عدد أصغر من المعروض لا معنى له وليس
+   * سبباً لادّعاء الاقتطاع.
+   */
+  const invoicesTruncated = invoicesTotal !== null && invoicesTotal > invoices.length;
+  const walletTruncated = walletTotal !== null && walletTotal > walletTxns.length;
+
   const hasInvoices = invoices.length > 0;
   // فواتير موجودة لكن بمجموع صفر (صفوف payments.amount = 0 كان يمكن إنشاؤها
   // قبل إضافة شرط «أكبر من صفر» في الخادم) تجعل الرسم الدائري يعود null
@@ -486,6 +524,42 @@ export default function FinancePage() {
 
       {!loading && !loadError && (
         <>
+          {/* ── تنبيه الاقتطاع ──
+              فوق التبويبات لا داخل أحدها، لأن الفواتير المقروءة تغذّي أربعة
+              تبويبات: المؤشرات والرسوم في «نظرة عامة»، القائمة في «إدارة
+              الفواتير»، والملخص في «ملخص الأتعاب». تنبيه داخل تبويب واحد يترك
+              الأرقام في الثلاثة الأخرى تدّعي أنها إجمالي.
+
+              الجملة لا تُؤخذ من truncationNoticeAr() في
+              src/lib/services/listRead.ts: خاتمتها «استخدم البحث للوصول إلى
+              الباقي» كاذبة هنا. مربع البحث وشرائح الحالة كلاهما يصفّي مصفوفة
+              `invoices` في الذاكرة (انظر filteredInvoices)، ولا يُرسل أيٌّ
+              منهما إلى الخادم، فلا سبيل في هذه الشاشة إلى الفاتورة رقم ٥٠١.
+              لذلك تقف الجملة عند حدّ ما هو صحيح ولا تعد بمخرج غير موجود.
+
+              والأرقام بـ toLocaleString() المجرّدة، وهي نفس الدالة التي تطبع
+              بها بطاقات المؤشرات مبالغها على بُعد بضعة بكسلات — فلا يمكن أن
+              يختلف تنسيق التنبيه عن تنسيق الرقم الذي يتحدث عنه. */}
+          {invoicesTruncated && invoicesTotal !== null && (
+            <div className={`rounded-2xl p-4 border flex items-start gap-3 ${
+              isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"
+            }`}>
+              <span className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+                <Warning size={18} weight="fill" className="text-amber-500" />
+              </span>
+              <div className="space-y-1">
+                <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+                  هذه الشاشة تقرأ أحدث {invoices.length.toLocaleString()} فاتورة من {invoicesTotal.toLocaleString()}
+                </p>
+                <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-amber-700/70"}`}>
+                  كل المبالغ والنِّسَب والرسوم في هذه الصفحة محسوبة على هذه الفواتير وحدها، فهي ليست إجمالي
+                  ما أصدره مكتبك. والبحث وشرائح التصفية تعمل على المعروض فقط، فلا تصل إلى الفواتير الأقدم.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* ── شريط التبويبات الفخم مع الكبسولة المنزلقة ── */}
           <div className={`p-1.5 rounded-3xl flex gap-1 ${isDark ? "bg-zinc-800/50" : "bg-slate-100/80"}`}>
             {([
@@ -904,6 +978,18 @@ export default function FinancePage() {
                   </div>
                 </div>
 
+                {/* سقف مستقل عن سقف الفواتير وقراءة مستقلة، فتنبيهه هنا داخل
+                    تبويبه لا فوق الصفحة. ولا وجهة تُذكر: لا بحث في هذا التبويب
+                    ولا تصفية ولا صفحة تالية، فالجملة تقول العدد وتقف. */}
+                {walletTruncated && walletTotal !== null && (
+                  <p className={`text-[11px] leading-relaxed rounded-2xl border px-4 py-3 ${
+                    isDark ? "border-amber-500/20 bg-amber-900/10 text-amber-400"
+                      : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                    يُعرض أحدث {walletTxns.length.toLocaleString()} حركة من {walletTotal.toLocaleString()}؛
+                    الأقدم منها غير معروضة على هذه الشاشة.
+                  </p>
+                )}
+
                 {walletTxns.length === 0 ? (
                   <EmptyCard cardCls={cardCls} text="لا توجد حركات على محفظتك في المنصة." />
                 ) : (
@@ -962,8 +1048,16 @@ export default function FinancePage() {
                       <p className={`text-[12px] font-black uppercase tracking-wider ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                         ملخص الأتعاب والتحصيل
                       </p>
+                      {/* «جميع الفواتير المسجلة على حسابك» هي أوضح جملة على
+                          هذه الشاشة يمكن اقتباسها، وأول ما يكذب عند الاقتطاع:
+                          الملخص أسفلها مجموعٌ من المعروض لا من الحساب كله.
+                          الجزء الصحيح دائماً — «بدون تحديد فترة» — يبقى في
+                          الحالتين، ويتغيّر الجزء الذي يدّعي الشمول وحده. */}
                       <span className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 flex items-center gap-1">
-                        <CalendarBlank size={12} /> جميع الفواتير المسجلة على حسابك — بدون تحديد فترة
+                        <CalendarBlank size={12} />
+                        {invoicesTruncated && invoicesTotal !== null
+                          ? `أحدث ${invoices.length.toLocaleString()} فاتورة من ${invoicesTotal.toLocaleString()} — بدون تحديد فترة`
+                          : "جميع الفواتير المسجلة على حسابك — بدون تحديد فترة"}
                       </span>
                     </div>
 
