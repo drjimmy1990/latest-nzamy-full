@@ -5,9 +5,7 @@ import {
   Crosshair,
   Info,
   Plus,
-  Robot,
   FileText,
-  Export,
   Lock,
   LockOpen,
 } from "@phosphor-icons/react";
@@ -24,27 +22,37 @@ interface Group {
   locked: boolean;
 }
 
+/**
+ * WHAT THIS LAUNCHER USED TO OFFER, AND WHY TWO OF THE THREE ARE GONE.
+ *
+ * It is the entry panel for an EMPTY GLOBAL board (dashboard/business/kanban).
+ * It offered three things; two of them were fiction:
+ *
+ *  1. «لوحة حرة فارغة» — real, and kept. It seeds one blank card the user then
+ *     types into.
+ *  2. «استخراج من قضية (AI)» / «يسحب البيانات والوقائع آلياً» — a case picker
+ *     listing two hardcoded cases, then a 1.5s «جاري استخراج الشبكة الحرة...»
+ *     spinner, then a board of five invented cards (a named plaintiff, a
+ *     «موجز الوقائع الأساسية», a «تسبيب المحكمة (المتوقع)») presented as having
+ *     been extracted from whichever case was picked. Nothing was read: the
+ *     selection was never even passed anywhere. There is no extraction service to
+ *     wire this to, so the promise is removed rather than relabelled.
+ *  3. «اللوحات المحفوظة مؤخراً» — three invented board names («لوحة نزاع
+ *     الشراكة», «أفكار تجديد الإيجار», «تحليل عقد النقل») each stamped
+ *     «تحديث منذ يومين», rendered as buttons with no handler. No board is saved
+ *     anywhere (this canvas has no persistence at all), so there is no list to
+ *     show — and an empty «اللوحات المحفوظة» section would still promise that
+ *     saving exists. The whole section is gone.
+ */
 interface SidebarLauncherProps {
   isDark: boolean;
   isWorkspaceEmpty: boolean | undefined;
-  showCaseSelector: boolean;
-  setShowCaseSelector: (v: boolean) => void;
-  isSimulatingErp: boolean;
-  selectedCase: string | null;
-  setSelectedCase: (v: string) => void;
-  generateErpGraph: () => void;
   setNodes: React.Dispatch<React.SetStateAction<GraphNode[]>>;
 }
 
 export function SidebarLauncher({
   isDark,
   isWorkspaceEmpty,
-  showCaseSelector,
-  setShowCaseSelector,
-  isSimulatingErp,
-  selectedCase,
-  setSelectedCase,
-  generateErpGraph,
   setNodes,
 }: SidebarLauncherProps) {
   if (!isWorkspaceEmpty) return null;
@@ -64,134 +72,39 @@ export function SidebarLauncher({
         منصة اللوحات البصرية
       </h2>
 
-      <div className="space-y-3 mb-8">
-        <button
-          onClick={() => {
-            setNodes([
-              {
-                id: "n_start",
-                type: "custom",
-                title: "مساحة جديدة",
-                desc: "ابدأ التفكير هنا...",
-                pos: { x: 300, y: 200 },
-                author: { name: "أنت", role: "", color: "bg-blue-600" },
-              },
-            ]);
-          }}
-          className={`w-full text-start flex items-center gap-3 p-4 rounded-2xl border transition-all ${
-            isDark
-              ? "bg-white/[0.04] border-white/10 hover:border-blue-500/50"
-              : "bg-zinc-50 border-zinc-200 hover:border-blue-500"
-          }`}
-        >
-          <div className="bg-blue-500/20 p-2.5 rounded-xl">
-            <Plus size={18} className="text-blue-500" />
-          </div>
-          <div>
-            <p className={`text-sm font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
-              لوحة حرة فارغة
-            </p>
-            <p className="text-[11px] text-zinc-500 mt-0.5">مساحة نقية بدون قضايا مرتبطة</p>
-          </div>
-        </button>
-
-        <button
-          onClick={() => setShowCaseSelector(true)}
-          className={`w-full text-start flex items-center gap-3 p-4 rounded-2xl border transition-all ${
-            isDark
-              ? "bg-white/[0.04] border-white/10 hover:border-[#C8A762]/50"
-              : "bg-zinc-50 border-zinc-200 hover:border-[#C8A762]"
-          }`}
-        >
-          <div className="bg-[#C8A762]/20 p-2.5 rounded-xl">
-            <Robot size={18} className="text-[#C8A762]" />
-          </div>
-          <div>
-            <p className={`text-sm font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
-              استخراج من قضية (AI)
-            </p>
-            <p className="text-[11px] text-zinc-500 mt-0.5">يسحب البيانات والوقائع آلياً</p>
-          </div>
-        </button>
-      </div>
-
-      <p className={`text-xs font-bold mb-3 ps-1 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-        اللوحات المحفوظة مؤخراً
-      </p>
-      <div className="space-y-2 overflow-y-auto hidden-scrollbar">
-        {["لوحة نزاع الشراكة", "أفكار تجديد الإيجار", "تحليل عقد النقل"].map((name, i) => (
-          <button
-            key={i}
-            className={`w-full text-start px-4 py-3 rounded-xl border transition-colors ${
-              isDark
-                ? "border-white/[0.04] hover:bg-white/[0.06] text-zinc-300"
-                : "border-zinc-100 hover:bg-zinc-50 text-zinc-700"
-            }`}
-          >
-            <p className="text-sm font-semibold">{name}</p>
-            <p className="text-[10px] text-zinc-500 mt-1">تحديث منذ يومين</p>
-          </button>
-        ))}
-      </div>
-
-      {showCaseSelector && (
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl ${
-              isDark ? "bg-zinc-900 border border-white/10" : "bg-white border border-zinc-200"
-            }`}
-          >
-            {isSimulatingErp ? (
-              <div className="py-8 flex flex-col items-center justify-center">
-                <div className="w-12 h-12 border-4 border-[#C8A762]/30 border-t-[#C8A762] rounded-full animate-spin mb-4" />
-                <p className={`text-sm font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                  جاري استخراج الشبكة الحرة...
-                </p>
-              </div>
-            ) : (
-              <div>
-                <h3 className={`text-base font-bold mb-4 ${isDark ? "text-white" : "text-zinc-900"}`}>
-                  اختر القضية النشطة
-                </h3>
-                <select
-                  className={`w-full rounded-xl border p-3 mb-4 outline-none text-sm font-semibold ${
-                    isDark ? "bg-zinc-800 border-zinc-700 text-white" : "bg-zinc-50 border-zinc-200"
-                  }`}
-                  onChange={(e) => setSelectedCase(e.target.value)}
-                  defaultValue=""
-                >
-                  <option value="" disabled>
-                    -- قائمة القضايا --
-                  </option>
-                  <option value="CASE-1200">نزاع مقاولة مع شركة البناء الحديث</option>
-                  <option value="CASE-1201">صياغة لائحة العمل الداخلية المحدثة</option>
-                </select>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setShowCaseSelector(false)}
-                    className={`flex-1 py-2.5 text-xs font-bold rounded-xl ${
-                      isDark ? "bg-white/10 text-white" : "bg-zinc-100 text-zinc-700"
-                    }`}
-                  >
-                    تراجع
-                  </button>
-                  <button
-                    disabled={!selectedCase}
-                    onClick={generateErpGraph}
-                    className={`flex-[2] py-2.5 text-xs font-bold rounded-xl text-white ${
-                      selectedCase ? "bg-[#0B3D2E]" : "bg-zinc-500 opacity-50"
-                    }`}
-                  >
-                    بدء الاستخراج
-                  </button>
-                </div>
-              </div>
-            )}
-          </motion.div>
+      <button
+        onClick={() => {
+          setNodes([
+            {
+              id: "n_start",
+              type: "custom",
+              title: "مساحة جديدة",
+              desc: "ابدأ التفكير هنا...",
+              pos: { x: 300, y: 200 },
+              author: { name: "أنت", role: "", color: "bg-blue-600" },
+            },
+          ]);
+        }}
+        className={`w-full text-start flex items-center gap-3 p-4 rounded-2xl border transition-all ${
+          isDark
+            ? "bg-white/[0.04] border-white/10 hover:border-blue-500/50"
+            : "bg-zinc-50 border-zinc-200 hover:border-blue-500"
+        }`}
+      >
+        <div className="bg-blue-500/20 p-2.5 rounded-xl">
+          <Plus size={18} className="text-blue-500" />
         </div>
-      )}
+        <div>
+          <p className={`text-sm font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
+            لوحة حرة فارغة
+          </p>
+          <p className="text-[11px] text-zinc-500 mt-0.5">مساحة نقية بدون قضايا مرتبطة</p>
+        </div>
+      </button>
+
+      <p className={`text-[11px] leading-relaxed mt-6 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+        اللوحات لا تُحفظ حالياً: ما ترسمه هنا يبقى في هذه الصفحة فقط ويزول عند مغادرتها.
+      </p>
     </div>
   );
 }
@@ -212,32 +125,29 @@ export function SidebarLauncher({
  * making the fabrication vaguer.
  *
  * There is no analysis engine behind this canvas — no request, no model, no
- * rule set. `runAiAnalysis` in ./_use-case-graph-state.ts is a 2-second
- * setTimeout that flips this panel open. So the panel says exactly that, and
- * nothing that could be mistaken for a legal reading:
+ * rule set. (Until this pass, `runAiAnalysis` in ./_use-case-graph-state.ts was a
+ * 2-second setTimeout that flipped this panel open; it is gone, and the toolbar
+ * button opens the panel directly.) So the panel says exactly that, and nothing
+ * that could be mistaken for a legal reading:
  *  - no substitute "insight" derived from node/edge counts. A count dressed up
  *    as a finding is the same defect wearing different clothes.
  *  - no «قيد الإعداد» / «قريباً». Nothing in this repo is building it, and a
  *    promise is another statement that isn't true.
  *
- * TWO CLAIMS THIS FILE CANNOT REACH — both need a follow-up in files outside
- * this one:
- *  1. ./CaseGraphView.tsx's toolbar button still reads «تحليل AI» and spins
- *     «جاري التحليل...» for two seconds before opening this panel. It analyses
- *     nothing.
- *  2. The export in ./_use-case-graph-state.ts (generateAiDocument) heads its
- *     output «تحليل آلي بواسطة نظامي AI» and appends three generic
- *     «التوصيات». The document body IS real — it is the user's own cards and
- *     links — but that header claims an analysis that did not happen. That is
- *     why the export button was removed from THIS panel rather than relabelled:
- *     an honest label on a button whose output calls itself an AI analysis just
- *     moves the false claim one click away. The same export still lives in the
- *     toolbar, unchanged.
+ * THE TWO CLAIMS THIS FILE COULD NOT REACH HAVE SINCE BEEN FIXED in the files
+ * that owned them, and are recorded here so the history reads straight:
+ *  1. ./CaseGraphView.tsx's toolbar button read «تحليل AI» and spun
+ *     «جاري التحليل...» for two seconds before opening this panel. It is now an
+ *     «عن التحليل الآلي» info button that opens the panel immediately.
+ *  2. The export in ./_use-case-graph-state.ts (generateAiDocument) headed its
+ *     output «تحليل آلي بواسطة نظامي AI» and appended three generic
+ *     «التوصيات». The header and the recommendations are gone; the output is
+ *     now described as what it is — a text copy of the user's own cards.
  *
  * `nodeCount`, `selectedNodeIds` and `generateAiDocument` stay on the props
  * interface although nothing here reads them any more: ./CaseGraphView.tsx
- * passes all three and is not part of this change — removing them from the
- * interface would turn that JSX into an excess-property error.
+ * passes all three, and dropping them from the interface would turn that JSX
+ * into an excess-property error for no gain.
  */
 interface AiAnalysisPanelProps {
   isDark: boolean;
@@ -290,14 +200,19 @@ export function AiAnalysisPanel({
         </div>
 
         <div className={`text-xs leading-relaxed space-y-2 ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
+          {/* One paragraph, and it only states what the platform does not do.
+              A second paragraph used to send the reader to «لوحة قيادة المنشأة»
+              to file a request with «فريق نظامي القانوني» — copy written for the
+              corporate board. This canvas is also mounted on the LAWYER case file
+              (dashboard/lawyer/cases/[id]), where six practising lawyers see it:
+              they have no such dashboard, and telling a lawyer to order a legal
+              opinion on their own case from a route that does not exist for them
+              is a second false statement inside the panel that exists to stop
+              making them. */}
           <p>
             المنصة لا تقرأ محتوى هذه اللوحة ولا تُصدر أي قراءة قانونية له. البطاقات والروابط
             التي تراها من إنشائك أنت وفريقك وحدكم، ولا تُضيف إليها المنصة أي مواد نظامية أو
             أحكام أو سوابق قضائية.
-          </p>
-          <p>
-            للحصول على رأي قانوني في هذه القضية، سجّل طلباً قانونياً من لوحة قيادة المنشأة
-            ليصل إلى فريق نظامي القانوني.
           </p>
         </div>
       </motion.div>
@@ -321,7 +236,6 @@ interface OverlaysBundleProps {
   dissolveGroup: (groupId: string) => void;
   aiDocument: string | null;
   setAiDocument: (s: string | null) => void;
-  isGeneratingDoc: boolean;
 }
 
 export function OverlaysBundle({
@@ -432,7 +346,14 @@ export function OverlaysBundle({
                 </div>
               </div>
 
-              {/* Actions */}
+              {/* Actions.
+                  Two primary buttons used to sit next to «إغلاق»: «فتح المستند»
+                  on a doc card and «عرض نص المادة» on a law card. Neither had an
+                  onClick, and neither could have one — a graph card is free text
+                  the user typed, not a link to a stored document or to a statute in
+                  any library. «عرض نص المادة» was the worse of the two: it implied
+                  the platform could produce the text of whatever article the card
+                  named. */}
               <div className="flex gap-2 mt-5">
                 <button
                   onClick={() => setSelectedNodeDetail(null)}
@@ -444,16 +365,6 @@ export function OverlaysBundle({
                 >
                   إغلاق
                 </button>
-                {selectedNodeDetail.type === "doc" && (
-                  <button className="flex-[2] py-2.5 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
-                    فتح المستند
-                  </button>
-                )}
-                {selectedNodeDetail.type === "law" && (
-                  <button className="flex-[2] py-2.5 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
-                    عرض نص المادة
-                  </button>
-                )}
               </div>
             </motion.div>
           </div>
@@ -642,12 +553,16 @@ export function OverlaysBundle({
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-inner">
                 <FileText size={16} className="text-white" />
               </div>
+              {/* Header read «مستند الجراف — نظامي AI» over «يمكنك التعديل ثم
+                  إرساله للمُجمِّع أو الصائغ». The platform contributed nothing to
+                  this text, and there is nobody to send it to — the «إرسال
+                  للمُجمِّع» button below it had no handler. Both corrected. */}
               <div className="flex-1">
                 <p className={`text-[14px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
-                  مستند الجراف — نظامي AI
+                  ملخص اللوحة البصرية
                 </p>
                 <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                  يمكنك التعديل ثم إرساله للمُجمِّع أو الصائغ
+                  نص بطاقاتك وروابطها — انسخه من هنا لاستخدامه في مستندك
                 </p>
               </div>
               <button
@@ -683,9 +598,6 @@ export function OverlaysBundle({
                 }`}
               >
                 إغلاق
-              </button>
-              <button className="flex-[2] py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors flex items-center justify-center gap-2">
-                <Export size={14} /> إرسال للمُجمِّع
               </button>
             </div>
           </motion.div>

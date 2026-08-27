@@ -58,37 +58,31 @@ export const EDGE_CONFIG: Record<EdgeType, { color: string; dash: string }> = {
   neutral:  { color: "#a1a1aa", dash: "stroke-dasharray-2" },
 };
 
-// ── Mock Data ──────────────────────────────────────────────────────────────────
-
-export const MOCK_NODES: GraphNode[] = [
-  { id: "n1", type: "person", title: "مؤسسة البناء الحديث", desc: "المقاول المنفذ للمشروع", pos: { x: 300, y: 150 }, author: { name: "فهد", role: "قانوني", color: "bg-blue-500" } },
-  { id: "n2", type: "doc", title: "عقد المقاولة رقم (١٢٣)", desc: "يتضمن شرط جزائي للتأخير", pos: { x: 550, y: 150 }, author: { name: "فهد", role: "قانوني", color: "bg-blue-500" } },
-  { id: "n3", type: "event", title: "توقف الأعمال بالموقع", desc: "توقف غير مبرر في ٥ رجب", pos: { x: 300, y: 350 }, author: { name: "حسين", role: "مستشار", color: "bg-emerald-500" } },
-  { id: "n4", type: "law", title: "المادة (٧٧) من نظام...", desc: "عن فسخ العقد التعسفي", pos: { x: 750, y: 350 }, author: { name: "فهد", role: "قانوني", color: "bg-blue-500" }, meta: "مقترح من نظامي AI" },
-  { id: "n5", type: "evidence", title: "تقرير المهندس الاستشاري", desc: "يثبت سوء تنفيذ الميدة", pos: { x: 550, y: 350 }, author: { name: "أحمد", role: "مهندس", color: "bg-orange-500" } },
-];
-
-export const ERP_GENERATED_NODES: GraphNode[] = [
-  { id: "n1", type: "person", title: "المدعي: شركة الأفق المحدودة", desc: "يمثلها وكيل شرعي", pos: { x: 300, y: 100 }, author: { name: "نظامي", role: "AI", color: "bg-[#C8A762]" }, meta: "استخراج تلقائي: الأطراف" },
-  { id: "n2", type: "person", title: "المدعى عليه: مؤسسة المقاولات", desc: "لم يحضر الجلسة الأولى", pos: { x: 600, y: 100 }, author: { name: "نظامي", role: "AI", color: "bg-[#C8A762]" }, meta: "استخراج تلقائي: الأطراف" },
-  { id: "n3", type: "event", title: "موجز الوقائع الأساسية", desc: "تم تأخير تسليم المشروع ٦ أشهر متجاوزاً مدة العقد المسموحة بدون ظروف قاهرة حسب تقارير المهندس.", pos: { x: 450, y: 250 }, author: { name: "نظامي", role: "AI", color: "bg-[#C8A762]" }, meta: "صياغة تلقائية" },
-  { id: "n4", type: "evidence", title: "الدفوع والهجوم (الردود)", desc: "رد المدعي بأن الظروف تخص الجائحة، واعترض المدعى عليه بأن الجائحة انتهت قبل بدء المشروع بنثبت مستند (ش-٢).", pos: { x: 450, y: 400 }, author: { name: "نظامي", role: "AI", color: "bg-[#C8A762]" } },
-  { id: "n5", type: "law", title: "تسبيب المحكمة (المتوقع)", desc: "اللائحة التنفيذية توجب الغرامة...", pos: { x: 450, y: 550 }, author: { name: "نظامي", role: "AI", color: "bg-[#C8A762]" }, meta: "بناء بناءً على السوابق" },
-];
-
-export const ERP_GENERATED_EDGES: GraphEdge[] = [
-  { id: "e1", from: "n1", to: "n3", type: "neutral", label: "أسس الدعوى بناءً على" },
-  { id: "e2", from: "n2", to: "n3", type: "conflict", label: "يُنكر" },
-  { id: "e3", from: "n3", to: "n4", type: "support", label: "تفاصيل السجال القانوني" },
-  { id: "e4", from: "n4", to: "n5", type: "neutral", label: "يوجه إلى" },
-];
-
-export const MOCK_EDGES: GraphEdge[] = [
-  { id: "e1", from: "n1", to: "n2", type: "support", label: "الطرف الثاني" },
-  { id: "e2", from: "n1", to: "n3", type: "conflict", label: "تسبب في" },
-  { id: "e3", from: "n3", to: "n5", type: "support", label: "تم إثباته بـ" },
-  { id: "e4", from: "n5", to: "n4", type: "support", label: "تأسيس قانوني لـ" },
-];
+// ── NO SEED DATA LIVES HERE ANY MORE ───────────────────────────────
+//
+// This file used to export four arrays of invented case material, and
+// ./_use-case-graph-state.ts handed two of them to every board that was mounted
+// without a seed — which is every board a practising lawyer opens:
+//
+//   MOCK_NODES / MOCK_EDGES        a contractor dispute: «مؤسسة البناء الحديث»,
+//                                  «عقد المقاولة رقم (١٢٣)», a stoppage dated
+//                                  «٥ رجب», an expert's report, and
+//                                  «المادة (٧٧) من نظام…» carrying
+//                                  meta: "مقترح من نظامي AI". Five cards, three
+//                                  invented colleagues, one invented statute
+//                                  reference — painted under the REAL title of
+//                                  whatever case file the lawyer had open.
+//   ERP_GENERATED_NODES / _EDGES   a second invented case ("المدعي: شركة الأفق
+//                                  المحدودة", "تسبيب المحكمة (المتوقع)"), which a
+//                                  1.5s spinner labelled «استخراج من قضية (AI)»
+//                                  pasted onto the board as though it had been
+//                                  read out of the selected case.
+//
+// A lawyer can quote a statute reference off their own case file to a client or a
+// court. Nothing suggested those; nobody wrote them. Sample data does not belong
+// in a component that real case files mount — an unseeded board is now empty, and
+// the only way material reaches it is a caller passing `initialNodes`/
+// `initialEdges`, or the user typing it.
 
 // ── Smart Edge Routing: connects from nearest handle on each node ────────────
 

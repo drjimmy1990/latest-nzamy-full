@@ -1,17 +1,16 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Receipt, CheckCircle, Clock, Warning, Plus, MagnifyingGlass,
-  ChartLine, Wallet, TrendUp, CurrencyCircleDollar,
-  ShoppingCart, ChartBar, Scales, ArrowUpRight, ArrowDownRight,
-  Sparkle, Microphone, X, Coins, FileText, CalendarBlank, Bank
+  ChartLine, Wallet, TrendUp, ChartBar, Scales, ArrowClockwise,
+  X, Coins, FileText, CalendarBlank, Bank
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import confetti from "canvas-confetti";
 
-import { type FinanceTab, type InvoiceStatus, type FeeType, type Period, type ExpenseCategory, type Invoice, type Expense, STATUS_CFG, EXP_CFG } from "@/constants/lawyerFinanceData";
+import { type FinanceTab, type InvoiceStatus, type FeeType, type Period, STATUS_CFG } from "@/constants/lawyerFinanceData";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { AreaBarChart, DonutChart } from "@/components/dashboard/lawyer/FinanceCharts";
@@ -28,7 +27,7 @@ const COLLECT_METHODS = [
 /**
  * PATCH /api/v1/lawyer/finance لا يقبل إلا صف دفع حالته `requires_payment`،
  * وهي الحالة التي تُعرض هنا «معلقة» أو «مسدّدة جزئياً». أما «مسدّدة كاملاً»
- * فقد حُصّلت، و«متأخرة» تعني failed/refunded في قاعدة البيانات ويردّها الخادم بـ 409.
+ * فقد حُصّلت، و«متأخرة» تعني failed في قاعدة البيانات ويردّها الخادم بـ 409.
  */
 const isCollectable = (inv: any) =>
   (inv?.status === "pending" || inv?.status === "partial") &&
@@ -45,6 +44,77 @@ const COLLECT_ERROR_AR: Record<string, string> = {
     "المبلغ المحصّل يجب أن يكون أكبر من صفر وألا يتجاوز إجمالي الفاتورة.",
 };
 
+/**
+ * أسماء الشهور الميلادية.
+ *
+ * الخادم يشتق `month`/`quarter`/`year` من `payments.created_at` عبر
+ * getMonth()/getFullYear()، وكلاهما ميلادي؛ بينما التاريخ المطبوع على بطاقة
+ * الفاتورة هجري (ar-SA = أم القرى، كما في بقية لوحة المحامي). لذلك تُكتب السنة
+ * الميلادية صراحةً في تسميات المحور حتى لا يُقرأ الشهر على أنه هجري. توحيد
+ * التقويمين على مستوى المنتج قرار يخص المالك، لا هذه الصفحة.
+ */
+const GREGORIAN_MONTHS_AR = [
+  "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+  "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
+];
+
+/**
+ * تصنيف حركة المحفظة. العمود `amount` في wallet_transactions بلا إشارة،
+ * والاتجاه يعيش في `kind` — ونفس القراءة مطبقة في /api/v1/wallet
+ * (credit = دخول، وما عداه من debit/reversal = خروج، و pending محجوز).
+ */
+const WALLET_KIND_CFG: Record<string, { label: string; sign: string; color: string; bg: string }> = {
+  credit:   { label: "إيداع",      sign: "+", color: "text-emerald-500", bg: "bg-emerald-500/10" },
+  debit:    { label: "خصم",        sign: "−", color: "text-red-500",     bg: "bg-red-500/10"     },
+  reversal: { label: "عكس قيد",   sign: "−", color: "text-orange-500",  bg: "bg-orange-500/10"  },
+  pending:  { label: "معلّق",      sign: "",  color: "text-amber-500",   bg: "bg-amber-500/10"   },
+};
+
+/** المتبقي على الفاتورة، بلا سالب — لا يُفترض وجوده لكن صفاً قديماً قد يحمله. */
+const remainderOf = (inv: any) =>
+  Math.max((Number(inv?.totalFee) || 0) - (Number(inv?.paidAmount) || 0), 0);
+
+/**
+ * بطاقة «لا توجد بيانات» — تُعرض فقط بعد قراءة ناجحة، فهي تقول «لا يوجد»
+ * لا «تعذّرت القراءة». حالة الخطأ لها بطاقتها المستقلة مع زر إعادة المحاولة.
+ */
+function EmptyCard({ text, cardCls }: { text: string; cardCls: string }) {
+  return (
+    <div className={`${cardCls} p-12 text-center text-slate-400 dark:text-zinc-500 text-xs font-semibold leading-relaxed`}>
+      {text}
+    </div>
+  );
+}
+
+type ChartBucket = { sort: number; label: string; paid: number; pending: number };
+
+/**
+ * يجمّع الفواتير في فترات مشتقة من تواريخها الفعلية.
+ *
+ * كان المحور قبل ذلك أربع تسميات ثابتة («يناير…أبريل») ورثتها الصفحة عن بيانات
+ * تجريبية محذوفة، فكانت كل فاتورة صادرة من مايو إلى ديسمبر — أي كل فاتورة
+ * تُصدر اليوم — تسقط خارج المحور تماماً بينما يبدو الرسم مأهولاً.
+ *
+ * الفاتورة التي لا يمكن تأريخها بثقة تُترك خارج المحور بدل وضعها في فترة
+ * مُختلقة؛ ومجاميع المؤشرات أعلاه غير محدودة بفترة فلا يضيع منها شيء.
+ */
+function groupInvoices(
+  invoices: any[],
+  bucketOf: (inv: any) => { key: string; sort: number; label: string } | null,
+  keepMostRecent: number,
+): ChartBucket[] {
+  const map = new Map<string, ChartBucket>();
+  for (const inv of invoices) {
+    const b = bucketOf(inv);
+    if (!b) continue;
+    const cur = map.get(b.key) ?? { sort: b.sort, label: b.label, paid: 0, pending: 0 };
+    cur.paid += Number(inv.paidAmount) || 0;
+    cur.pending += remainderOf(inv);
+    map.set(b.key, cur);
+  }
+  return [...map.values()].sort((a, b) => a.sort - b.sort).slice(-keepMostRecent);
+}
+
 export default function FinancePage() {
   const { isDark } = useTheme();
   const payments = usePaymentsStatus();
@@ -52,30 +122,45 @@ export default function FinancePage() {
   const [period,    setPeriod]    = useState<Period>("monthly");
   const [filter,    setFilter]    = useState<InvoiceStatus | "all">("all");
   const [search,    setSearch]    = useState("");
-  const [expCat,    setExpCat]    = useState<ExpenseCategory | "all">("all");
 
   // الحالات التفاعلية للبيانات الحية
   const [invoices, setInvoices] = useState<any[]>([]);
-  const [expenses, setExpenses] = useState<any[]>([]);
+  const [walletTxns, setWalletTxns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
+  /**
+   * ثلاث حالات مفصولة: جارٍ التحميل / تعذّرت القراءة / لا توجد بيانات فعلاً.
+   *
+   * كانت القراءة الفاشلة تُبتلع في ثلاث طبقات (الخادم يردّ 200 بأصفار، و
+   * `.catch` هنا يتجاهل الخطأ، و`loading` معلن ولا يُعرض)، فيقرأ المحامي «لا
+   * توجد فواتير» و«٠ ﷼» أثناء عطل في قاعدة البيانات ويظنّ أنه لم يُصدر شيئاً.
+   */
+  const loadFinance = useCallback(() => {
+    // isSupabaseMode ثابت على مستوى الوحدة، فهذا الفرع يُحذف من حزمة الإنتاج.
     if (!isSupabaseMode) { setLoading(false); return; }
-    apiGet('/api/v1/lawyer/finance').then((data: any) => {
-      if (data.invoices?.length) setInvoices(data.invoices);
-      if (data.walletTransactions?.length) setExpenses(data.walletTransactions);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    setLoading(true);
+    setLoadError(null);
+    apiGet<{ invoices?: any[]; walletTransactions?: any[] }>("/api/v1/lawyer/finance")
+      .then((data) => {
+        // إسناد غير مشروط: الشرط القديم `if (data.invoices?.length)` كان يُبقي
+        // القائمة السابقة معروضة حين يردّ الخادم قائمة فارغة عن حق.
+        setInvoices(Array.isArray(data?.invoices) ? data.invoices : []);
+        setWalletTxns(Array.isArray(data?.walletTransactions) ? data.walletTransactions : []);
+        setLoading(false);
+      })
+      .catch((err: any) => {
+        console.error("[finance] load failed:", err);
+        setLoadError("تعذّرت قراءة بياناتك المالية من الخادم، فلا تُعرض أي أرقام على هذه الشاشة. هذا عطل في القراءة وليس معناه أنك لم تُصدر فواتير — أعد المحاولة.");
+        setLoading(false);
+      });
   }, []);
+
+  useEffect(() => { loadFinance(); }, [loadFinance]);
 
   // حالات النوافذ المنبثقة
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // حالة الإجراء الصوتي السريع
-  const [voiceInput, setVoiceInput] = useState("");
-  const [isListening, setIsListening] = useState(false);
-  const [voiceParsedMessage, setVoiceParsedMessage] = useState<string | null>(null);
 
   // نموذج الفاتورة الجديدة
   const [newInvClient, setNewInvClient] = useState("");
@@ -97,127 +182,75 @@ export default function FinancePage() {
     : "rounded-[2rem] border border-slate-200/50 bg-white shadow-[0_20px_40px_-15px_rgba(0,0,0,0.04)]";
 
   // ── حساب المجاميع الحية ──
-  const totalPaid      = useMemo(() => invoices.filter(i => i.status === "paid").reduce((s, b) => s + b.totalFee, 0), [invoices]);
-  const totalPending   = useMemo(() => invoices.filter(i => i.status === "pending").reduce((s, b) => s + b.totalFee, 0), [invoices]);
-  const totalOverdue   = useMemo(() => invoices.filter(i => i.status === "overdue").reduce((s, b) => s + b.totalFee, 0), [invoices]);
-  const totalPartial   = useMemo(() => invoices.filter(i => i.status === "partial").reduce((s, b) => s + (b.totalFee - b.paidAmount), 0), [invoices]);
-  const totalAll       = useMemo(() => invoices.reduce((s, b) => s + b.totalFee, 0), [invoices]);
-  const totalCollected = useMemo(() => invoices.reduce((s, b) => s + b.paidAmount, 0), [invoices]);
+  // كل هذه المبالغ من نفس النوع (ريالات من إجمالي المفوتر)، ومجموع
+  // المحصّل + المتبقيات الثلاثة = إجمالي الأتعاب. كان الرسم الدائري قبل ذلك
+  // يخلط أتعاباً كاملة مع «متبقي» الفواتير الجزئية في مقام واحد، فيعلن نسبة
+  // تحصيل تخالف بطاقة المؤشر التي تبعد عنها عشرين بكسلاً.
+  const totalAll         = useMemo(() => invoices.reduce((s, b) => s + (Number(b.totalFee) || 0), 0), [invoices]);
+  const totalCollected   = useMemo(() => invoices.reduce((s, b) => s + (Number(b.paidAmount) || 0), 0), [invoices]);
+  const pendingRemainder = useMemo(() => invoices.filter(i => i.status === "pending").reduce((s, b) => s + remainderOf(b), 0), [invoices]);
+  const partialRemainder = useMemo(() => invoices.filter(i => i.status === "partial").reduce((s, b) => s + remainderOf(b), 0), [invoices]);
+  const overdueRemainder = useMemo(() => invoices.filter(i => i.status === "overdue").reduce((s, b) => s + remainderOf(b), 0), [invoices]);
+  const collectedPct     = totalAll > 0 ? Math.round((totalCollected / totalAll) * 100) : 0;
 
-  // ── بيانات الرسم البياني الحية ──
-  const monthLabels = ["يناير", "فبراير", "مارس", "أبريل"];
-  const monthlyData = useMemo(() => {
-    return monthLabels.map((label, idx) => {
-      const m = idx + 1;
-      const items = invoices.filter(i => i.month === m);
-      return { 
-        label: label, 
-        paid: items.reduce((s, b) => s + b.paidAmount, 0), 
-        pending: items.reduce((s, b) => s + (b.totalFee - b.paidAmount), 0) 
-      };
-    });
-  }, [invoices]);
+  const feeSegments = useMemo(() => [
+    { label: "محصّل",                 value: totalCollected,   color: "#10b981" },
+    { label: "متبقٍ (جزئية)",         value: partialRemainder, color: "#3b82f6" },
+    { label: "متبقٍ (معلقة)",         value: pendingRemainder, color: "#f59e0b" },
+    { label: "متبقٍ (متأخرة)",        value: overdueRemainder, color: "#ef4444" },
+  ], [totalCollected, partialRemainder, pendingRemainder, overdueRemainder]);
 
-  const quarterlyData = useMemo(() => {
-    return [1, 2, 3, 4].map(q => {
-      const items = invoices.filter(i => i.quarter === q);
-      return { 
-        label: `الربع ${q}`, 
-        paid: items.reduce((s, b) => s + b.paidAmount, 0), 
-        pending: items.reduce((s, b) => s + (b.totalFee - b.paidAmount), 0) 
-      };
-    });
-  }, [invoices]);
+  // ── بيانات الرسم البياني الحية (فترات مشتقة من تواريخ الفواتير) ──
+  const monthlyData = useMemo(() => groupInvoices(invoices, (inv) => {
+    const y = Number(inv.year); const m = Number(inv.month);
+    if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null;
+    return { key: `${y}-${m}`, sort: y * 12 + m, label: `${GREGORIAN_MONTHS_AR[m - 1]} ${y}` };
+  }, 6), [invoices]);
 
-  const annualData = useMemo(() => {
-    return [{
-      label: "عام ٢٠٢٦",
-      paid: totalCollected,
-      pending: totalAll - totalCollected
-    }];
-  }, [totalAll, totalCollected]);
+  const quarterlyData = useMemo(() => groupInvoices(invoices, (inv) => {
+    const y = Number(inv.year); const q = Number(inv.quarter);
+    if (!Number.isFinite(y) || !Number.isFinite(q) || q < 1 || q > 4) return null;
+    return { key: `${y}-Q${q}`, sort: y * 4 + q, label: `الربع ${q} — ${y}` };
+  }, 4), [invoices]);
+
+  const annualData = useMemo(() => groupInvoices(invoices, (inv) => {
+    const y = Number(inv.year);
+    if (!Number.isFinite(y)) return null;
+    return { key: `${y}`, sort: y, label: `عام ${y}` };
+  }, 5), [invoices]);
 
   const chartData = period === "quarterly" ? quarterlyData : period === "annual" ? annualData : monthlyData;
+  const chartScopeLabel =
+    period === "quarterly" ? "آخر أربعة أرباع فيها فواتير"
+    : period === "annual"  ? "آخر خمس سنوات فيها فواتير"
+    : "آخر ستة أشهر فيها فواتير";
 
   // ── تصفية الفواتير ──
+  // الترتيب بـ createdAt لا بـ id: معرّف الفاتورة UUID عشوائي، وترتيب القائمة
+  // به كان يعني أن «أحدث فاتورة» في أعلى الشاشة اختيار عشوائي.
   const filteredInvoices = useMemo(() =>
     invoices.filter(inv => {
       const ms = filter === "all" || inv.status === filter;
       const mq = !search || inv.client.includes(search) || inv.desc.includes(search) || inv.id.includes(search);
       return ms && mq;
-    }).sort((a, b) => b.id.localeCompare(a.id)),
+    }).sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))),
   [invoices, filter, search]);
-
-  // ── حساب المصروفات الحية ──
-  const totalExpenses   = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
-  const vatableExpenses = useMemo(() => expenses.filter(e => e.vatIncluded).reduce((s, e) => s + e.amount, 0), [expenses]);
-  const vatAmount       = Math.round(vatableExpenses * 0.15);
-  const netProfit       = totalCollected - totalExpenses;
-
-  const filteredExpenses = useMemo(() =>
-    expenses.filter(e => expCat === "all" || e.category === expCat).sort((a, b) => b.id.localeCompare(a.id)),
-  [expenses, expCat]);
-
-  const expByCategory = useMemo(() => {
-    return (Object.keys(EXP_CFG) as ExpenseCategory[]).map(key => ({
-      key, ...EXP_CFG[key], total: expenses.filter(e => e.category === key).reduce((s, e) => s + e.amount, 0),
-    })).filter(e => e.total > 0);
-  }, [expenses]);
-
-  // ── محاكاة الإملاء الصوتي ──
-  const handleVoiceSimulate = () => {
-    if (isListening) return;
-    setIsListening(true);
-    setVoiceParsedMessage(null);
-    
-    // محاكاة إدخال نص بالصوت خطوة بخطوة
-    const sentences = [
-      "إضافة مصروف جديد...",
-      "إضافة مصروف جديد: شراء رخص برمجية لمكتب المحاماة بقيمة ١٢٠٠ ريال",
-      "إضافة مصروف جديد: شراء رخص برمجية لمكتب المحاماة بقيمة ١٢٠٠ ريال شامل الضريبة"
-    ];
-
-    let step = 0;
-    const interval = setInterval(() => {
-      setVoiceInput(sentences[step]);
-      step++;
-      if (step >= sentences.length) {
-        clearInterval(interval);
-        setIsListening(false);
-        
-        // تفكيك النص وتوليد المصروف تلقائياً
-        setTimeout(() => {
-          const newExp: Expense = {
-            id: `EXP-0${expenses.length + 1}`,
-            desc: "رخص برمجية للمكتب (تحليل صوتي)",
-            amount: 1200,
-            category: "tech",
-            date: "١ يونيو ٢٠٢٦",
-            month: 4,
-            vatIncluded: true
-          };
-          setExpenses(prev => [newExp, ...prev]);
-          setVoiceParsedMessage("تم استيعاب الطلب الصوتي: تمت إضافة مصروف 'رخص برمجية' بقيمة ١,٢٠٠ ﷼ وتحديث الميزانية بنجاح!");
-          confetti({ particleCount: 40, spread: 60, origin: { y: 0.8 } });
-          // تفريغ النص بعد ٣ ثواني
-          setTimeout(() => {
-            setVoiceInput("");
-            setVoiceParsedMessage(null);
-          }, 5000);
-        }, 1000);
-      }
-    }, 1200);
-  };
 
   // ── معالجة إضافة فاتورة جديدة ──
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newInvClient || !newInvFee) return;
+    if (!newInvClient.trim() || !newInvFee) return;
+
+    const feeNum = parseFloat(newInvFee);
+    // قيمة سالبة أو صفرية كانت تمرّ إلى قاعدة البيانات (لا CHECK على
+    // payments.amount) وتُطرح من كل مجموع في الصفحة، ولا توجد أداة إلغاء هنا.
+    if (!Number.isFinite(feeNum) || feeNum <= 0) {
+      setInvoiceError("أدخل قيمة أتعاب أكبر من صفر.");
+      return;
+    }
 
     setInvoiceError(null);
     setIsSubmitting(true);
-
-    const feeNum = parseFloat(newInvFee);
 
     if (isSupabaseMode) {
       try {
@@ -251,34 +284,34 @@ export default function FinancePage() {
         setIsSubmitting(false);
       }
     } else {
-      // Demo fallback: local only
-      setTimeout(() => {
-        const newInv: Invoice = {
-          id: `INV-0${invoices.length + 1}`,
-          client: newInvClient,
-          clientType: "company",
-          caseTitle: newInvCase || "—",
-          desc: newInvDesc || "أتعاب نظامية متفق عليها",
-          totalFee: feeNum,
-          paidAmount: 0,
-          feeType: newInvType,
-          status: "pending",
-          date: "١ يونيو ٢٠٢٦",
-          month: 4,
-          quarter: 2,
-        };
+      // Demo fallback: local only (محذوف من حزمة الإنتاج عبر isSupabaseMode)
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      setInvoices(prev => [{
+        id: `INV-0${prev.length + 1}`,
+        client: newInvClient,
+        clientType: "company",
+        caseTitle: newInvCase || "—",
+        desc: newInvDesc || "أتعاب نظامية متفق عليها",
+        totalFee: feeNum,
+        paidAmount: 0,
+        feeType: newInvType,
+        status: "pending",
+        date: now.toLocaleDateString("ar-SA", { day: "numeric", month: "long", year: "numeric" }),
+        month,
+        quarter: Math.ceil(month / 3),
+        year: now.getFullYear(),
+        createdAt: now.toISOString(),
+      }, ...prev]);
+      setIsSubmitting(false);
+      setIsInvoiceModalOpen(false);
 
-        setInvoices(prev => [newInv, ...prev]);
-        setIsSubmitting(false);
-        setIsInvoiceModalOpen(false);
+      setNewInvClient("");
+      setNewInvDesc("");
+      setNewInvFee("");
+      setNewInvCase("");
 
-        setNewInvClient("");
-        setNewInvDesc("");
-        setNewInvFee("");
-        setNewInvCase("");
-
-        confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
-      }, 1200);
+      confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
     }
   };
 
@@ -356,6 +389,12 @@ export default function FinancePage() {
     }
   };
 
+  const hasInvoices = invoices.length > 0;
+  // فواتير موجودة لكن بمجموع صفر (صفوف payments.amount = 0 كان يمكن إنشاؤها
+  // قبل إضافة شرط «أكبر من صفر» في الخادم) تجعل الرسم الدائري يعود null
+  // فيظهر إطار فارغ بلا تفسير — نقولها صراحةً بدلاً من ذلك.
+  const hasFeeAmounts = totalAll > 0;
+
   return (
     <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-10 space-y-8 text-right" dir="rtl">
 
@@ -378,10 +417,10 @@ export default function FinancePage() {
           </div>
         </motion.div>
       )}
-      
+
       {/* ── الرأس وتوزيع عناصرها بغير تماثل ── */}
-      <motion.div 
-        initial={{ opacity: 0, y: -15 }} 
+      <motion.div
+        initial={{ opacity: 0, y: -15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 100, damping: 18 }}
         className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 pb-6 border-b border-zinc-200/50 dark:border-white/[0.06]"
@@ -392,16 +431,18 @@ export default function FinancePage() {
               <Coins size={22} weight="duotone" />
             </span>
             <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-800 dark:text-zinc-100">
-              الإدارة المالية الذكية
+              الفواتير والتحصيل
             </h1>
           </div>
+          {/* الوصف السابق كان يعد بـ«تحليلات ضريبية متوافقة مع هيئة الزكاة
+              والضريبة والجمارك» — لا تحتسب المنصة ضريبة ولا تسجّل مصروفات. */}
           <p className="text-[13px] text-slate-500 dark:text-zinc-500 leading-relaxed">
-            تتبع الفواتير، التدفقات النقدية، المصروفات، والتحليلات الضريبية المتوافقة مع هيئة الزكاة والضريبة والجمارك.
+            الفواتير التي أصدرتها ومبالغ التحصيل المسجلة على حسابك. القيود اليدوية فقط — لا توجد بوابة دفع إلكتروني.
           </p>
         </div>
 
-        <motion.button 
-          whileHover={{ scale: 1.03 }} 
+        <motion.button
+          whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => setIsInvoiceModalOpen(true)}
           className="flex items-center gap-2 px-5 py-3 rounded-2xl text-xs font-black bg-[#0B3D2E] text-[#C8A762] hover:bg-[#082d22] shadow-lg shadow-[#0B3D2E]/15 transition-all self-start md:self-auto cursor-pointer"
@@ -410,692 +451,584 @@ export default function FinancePage() {
         </motion.button>
       </motion.div>
 
-      {/* ── شريط التبويبات الفخم مع الكبسولة المنزلقة ── */}
-      <div className={`p-1.5 rounded-3xl flex gap-1 ${isDark ? "bg-zinc-800/50" : "bg-slate-100/80"}`}>
-        {([
-          { key: "overview"  as FinanceTab, label: "نظرة عامة والتحليل", icon: ChartBar },
-          { key: "invoices"  as FinanceTab, label: "إدارة الفواتير",       icon: Receipt },
-          { key: "expenses"  as FinanceTab, label: "سجل المصروفات",     icon: ShoppingCart },
-          { key: "pl"        as FinanceTab, label: "قائمة الأرباح والخسائر", icon: Scales },
-        ] as const).map(tab => {
-          const isActive = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className="relative flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[12px] font-black transition-all cursor-pointer overflow-hidden"
-              style={{ color: isActive ? (isDark ? "#ffffff" : "#0B3D2E") : (isDark ? "#71717a" : "#64748b") }}
-            >
-              {isActive && (
-                <motion.div
-                  layoutId="activeTabPill"
-                  className={`absolute inset-0 z-0 ${isDark ? "bg-zinc-700/60" : "bg-white shadow-sm border border-slate-200/50"}`}
-                  transition={{ type: "spring", stiffness: 140, damping: 20 }}
-                />
-              )}
-              <span className="relative z-10">
-                <tab.icon size={14} weight={isActive ? "fill" : "regular"} className={isActive ? "text-[#C8A762]" : ""} />
-              </span>
-              <span className="relative z-10 hidden md:block">{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* ── جارٍ التحميل ── */}
+      {loading && (
+        <div className={`${cardCls} p-12 flex flex-col items-center justify-center gap-4`}>
+          <motion.span
+            className="w-8 h-8 rounded-full border-[3px] border-[#C8A762]/25 border-t-[#C8A762]"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          />
+          <p className="text-[12px] font-bold text-slate-500 dark:text-zinc-400">جارٍ قراءة بياناتك المالية...</p>
+        </div>
+      )}
 
-      {/* ── التفاعل الحركي للتبويبات ── */}
-      <AnimatePresence mode="wait">
-        
-        {/* ── تبويب النظرة العامة (Bento Grid 2.0) ── */}
-        {activeTab === "overview" && (
-          <motion.div 
-            key="overview" 
-            initial={{ opacity: 0, y: 15 }} 
-            animate={{ opacity: 1, y: 0 }} 
-            exit={{ opacity: 0 }} 
-            className="space-y-6"
+      {/* ── تعذّرت القراءة ── */}
+      {!loading && loadError && (
+        <div className={`${cardCls} p-8 flex flex-col sm:flex-row items-center gap-4 border-red-500/20`}>
+          <span className="p-3 rounded-2xl bg-red-500/10 text-red-500 flex-shrink-0">
+            <Warning size={22} weight="duotone" />
+          </span>
+          <div className="flex-1 space-y-1 text-center sm:text-right">
+            <p className={`text-[13px] font-black ${isDark ? "text-zinc-200" : "text-slate-800"}`}>تعذّر تحميل البيانات المالية</p>
+            <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{loadError}</p>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={loadFinance}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 text-red-500 text-[11px] font-black border border-red-500/20 hover:bg-red-500/20 transition-all cursor-pointer flex-shrink-0"
           >
-            {/* أزرار اختيار النطاق الزمني */}
-            <div className="flex justify-end">
-              <div className={`p-1 rounded-2xl flex gap-1 ${isDark ? "bg-zinc-800/80 border border-white/[0.06]" : "bg-slate-100 border border-slate-200"}`}>
-                {([
-                  { key: "monthly", label: "تقرير شهري" },
-                  { key: "quarterly", label: "تقرير ربع سنوي" },
-                  { key: "annual", label: "تقرير سنوي" }
-                ] as const).map(p => {
-                  const isActive = period === p.key;
-                  return (
-                    <button
-                      key={p.key}
-                      onClick={() => setPeriod(p.key)}
-                      className="relative px-4 py-1.5 rounded-xl text-[11px] font-black cursor-pointer transition-all"
-                      style={{ color: isActive ? (isDark ? "#ffffff" : "#0f172a") : (isDark ? "#52525b" : "#64748b") }}
-                    >
-                      {isActive && (
-                        <motion.div
-                          layoutId="activePeriodPill"
-                          className={`absolute inset-0 z-0 ${isDark ? "bg-zinc-700" : "bg-white shadow-sm border border-slate-200"}`}
-                          transition={{ type: "spring", stiffness: 150, damping: 20 }}
-                        />
-                      )}
-                      <span className="relative z-10">{p.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <ArrowClockwise size={13} weight="bold" /> إعادة المحاولة
+          </motion.button>
+        </div>
+      )}
 
-            {/* الصف الأول من Bento Grid: الرسوم البيانية (60/40) */}
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-              
-              {/* الرسم البياني للأعمدة والتحصيل (3/5) */}
-              <div className={`${cardCls} lg:col-span-3 p-6 flex flex-col justify-between`}>
-                <div className="flex items-start justify-between mb-6">
-                  <div className="space-y-1">
-                    <p className={`text-[14px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>توزيع الإيرادات والتحصيل</p>
-                    <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>مقارنة الفواتير المسددة بالمبالغ المعلقة والجزئية</p>
-                  </div>
-                  <div className="flex gap-3 text-[10px] font-bold">
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#0B3D2E]" />مسدّد</span>
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#b8974f]" />معلق</span>
-                  </div>
-                </div>
-                <div className="flex-1 flex items-center">
-                  <AreaBarChart data={chartData} isDark={isDark} />
-                </div>
-              </div>
+      {!loading && !loadError && (
+        <>
+          {/* ── شريط التبويبات الفخم مع الكبسولة المنزلقة ── */}
+          <div className={`p-1.5 rounded-3xl flex gap-1 ${isDark ? "bg-zinc-800/50" : "bg-slate-100/80"}`}>
+            {([
+              { key: "overview"  as FinanceTab, label: "نظرة عامة",              icon: ChartBar },
+              { key: "invoices"  as FinanceTab, label: "إدارة الفواتير",          icon: Receipt },
+              { key: "expenses"  as FinanceTab, label: "حركات محفظة المنصة",   icon: Wallet },
+              { key: "pl"        as FinanceTab, label: "ملخص الأتعاب والتحصيل", icon: Scales },
+            ] as const).map(tab => {
+              const isActive = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className="relative flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[12px] font-black transition-all cursor-pointer overflow-hidden"
+                  style={{ color: isActive ? (isDark ? "#ffffff" : "#0B3D2E") : (isDark ? "#71717a" : "#64748b") }}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeTabPill"
+                      className={`absolute inset-0 z-0 ${isDark ? "bg-zinc-700/60" : "bg-white shadow-sm border border-slate-200/50"}`}
+                      transition={{ type: "spring", stiffness: 140, damping: 20 }}
+                    />
+                  )}
+                  <span className="relative z-10">
+                    <tab.icon size={14} weight={isActive ? "fill" : "regular"} className={isActive ? "text-[#C8A762]" : ""} />
+                  </span>
+                  <span className="relative z-10 hidden md:block">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
 
-              {/* الرسم الدائري لتوزيع الحالات (2/5) */}
-              <div className={`${cardCls} lg:col-span-2 p-6 flex flex-col justify-between`}>
-                <div className="space-y-1 mb-6">
-                  <p className={`text-[14px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>موقف الفواتير العام</p>
-                  <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>النسب المئوية لحالات الفواتير الفردية والشركاء</p>
-                </div>
-                <div className="flex-1 flex items-center justify-center">
-                  <DonutChart paid={totalPaid} pending={totalPending} overdue={totalOverdue} partial={totalPartial} />
-                </div>
-              </div>
-            </div>
+          {/* ── التفاعل الحركي للتبويبات ── */}
+          <AnimatePresence mode="wait">
 
-            {/* الصف الثاني من Bento Grid: كروت المؤشرات المالية (KPI Cards) */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {[
-                { label: "إجمالي الأتعاب المستحقة", value: totalAll, icon: ChartLine, color: "text-emerald-500", bg: "bg-emerald-500/10 dark:bg-emerald-500/25", pulse: false },
-                { label: "المبالغ المحصّلة فعلياً", value: totalCollected, icon: TrendUp, color: "text-[#C8A762]", bg: "bg-[#C8A762]/10 dark:bg-[#C8A762]/20", pct: `${Math.round(totalCollected / (totalAll || 1) * 100)}% التحصيل` },
-                { label: "إجمالي المصروفات", value: totalExpenses, icon: ShoppingCart, color: "text-red-500", bg: "bg-red-500/10 dark:bg-red-500/20", pulse: false },
-                { label: "صافي أرباح المكتب", value: netProfit, icon: Scales, color: netProfit >= 0 ? "text-emerald-400" : "text-red-500", bg: netProfit >= 0 ? "bg-emerald-500/10 dark:bg-emerald-500/25" : "bg-red-500/10 dark:bg-red-500/25", pct: `${Math.round(netProfit / (totalCollected || 1) * 100)}% الهامش`, pulse: netProfit >= 0 },
-              ].map((k, i) => {
-                const Icon = k.icon;
-                return (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ type: "spring", stiffness: 100, damping: 18, delay: i * 0.05 }}
-                    whileHover={{ y: -4, scale: 1.01 }}
-                    className={`${cardCls} p-5 relative overflow-hidden`}
-                  >
-                    {k.pulse && (
-                      <span className="absolute top-4 left-4 flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                      </span>
-                    )}
-                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center mb-4 ${k.bg}`}>
-                      <Icon size={18} weight="duotone" className={k.color} />
+            {/* ── تبويب النظرة العامة (Bento Grid 2.0) ── */}
+            {activeTab === "overview" && (
+              <motion.div
+                key="overview"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="space-y-6"
+              >
+                {!hasInvoices ? (
+                  <EmptyCard cardCls={cardCls} text="لم تُسجَّل أي فاتورة على حسابك بعد. أصدر أول فاتورة من الزر أعلى الصفحة." />
+                ) : (
+                  <>
+                    {/* أزرار اختيار النطاق الزمني */}
+                    <div className="flex justify-end">
+                      <div className={`p-1 rounded-2xl flex gap-1 ${isDark ? "bg-zinc-800/80 border border-white/[0.06]" : "bg-slate-100 border border-slate-200"}`}>
+                        {([
+                          { key: "monthly", label: "تقرير شهري" },
+                          { key: "quarterly", label: "تقرير ربع سنوي" },
+                          { key: "annual", label: "تقرير سنوي" }
+                        ] as const).map(p => {
+                          const isActive = period === p.key;
+                          return (
+                            <button
+                              key={p.key}
+                              onClick={() => setPeriod(p.key)}
+                              className="relative px-4 py-1.5 rounded-xl text-[11px] font-black cursor-pointer transition-all"
+                              style={{ color: isActive ? (isDark ? "#ffffff" : "#0f172a") : (isDark ? "#52525b" : "#64748b") }}
+                            >
+                              {isActive && (
+                                <motion.div
+                                  layoutId="activePeriodPill"
+                                  className={`absolute inset-0 z-0 ${isDark ? "bg-zinc-700" : "bg-white shadow-sm border border-slate-200"}`}
+                                  transition={{ type: "spring", stiffness: 150, damping: 20 }}
+                                />
+                              )}
+                              <span className="relative z-10">{p.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <p className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 mb-1">{k.label}</p>
-                    <p className="text-xl font-black font-mono tracking-tight text-slate-800 dark:text-zinc-100">
-                      {k.value.toLocaleString()} <span className="text-xs font-normal font-sans">﷼</span>
-                    </p>
-                    {k.pct && (
-                      <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded-full mt-2 ${k.bg} ${k.color}`}>
-                        {k.pct}
-                      </span>
-                    )}
-                  </motion.div>
-                );
-              })}
-            </div>
 
-            {/* الصف الثالث من Bento Grid: كشوف السداد وصندوق الميكروفون السريع (60/40) */}
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-              
-              {/* توزيع السداد ومؤشر النطاق (3/5) */}
-              <div className={`${cardCls} lg:col-span-3 p-6 space-y-4`}>
-                <div className="space-y-1">
-                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>توزيع الأتعاب حسب طبيعة السداد</p>
-                  <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>تتبع التدفقات النقدية ونسب الاستحقاق الفعلية</p>
-                </div>
-                <div className="space-y-4 pt-2">
-                  {[
-                    { label: "أتعاب مسدّدة بالكامل", value: totalPaid, color: "bg-emerald-500", rawPct: totalPaid / (totalAll || 1) },
-                    { label: "فواتير مسدّدة جزئياً (التحصيل)", value: invoices.filter(i => i.status === "partial").reduce((s, b) => s + b.paidAmount, 0), color: "bg-blue-400", rawPct: invoices.filter(i => i.status === "partial").reduce((s, b) => s + b.paidAmount, 0) / (totalAll || 1) },
-                    { label: "أتعاب معلقة ومجدولة", value: totalPending, color: "bg-amber-400", rawPct: totalPending / (totalAll || 1) },
-                    { label: "فواتير متأخرة السداد", value: totalOverdue, color: "bg-red-500", rawPct: totalOverdue / (totalAll || 1) },
-                  ].map(row => {
-                    const pct = Math.round(row.rawPct * 100);
-                    return (
-                      <div key={row.label} className="space-y-1.5">
-                        <div className={`flex items-center justify-between text-[11px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
-                          <span className="font-bold">{row.label}</span>
-                          <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{row.value.toLocaleString()} ﷼ ({pct}%)</span>
+                    {/* الصف الأول من Bento Grid: الرسوم البيانية (60/40) */}
+                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+                      {/* الرسم البياني للأعمدة والتحصيل (3/5) */}
+                      <div className={`${cardCls} lg:col-span-3 p-6 flex flex-col justify-between`}>
+                        <div className="flex items-start justify-between mb-6">
+                          <div className="space-y-1">
+                            <p className={`text-[14px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>توزيع الإيرادات والتحصيل</p>
+                            <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{chartScopeLabel} — بالتقويم الميلادي</p>
+                          </div>
+                          <div className="flex gap-3 text-[10px] font-bold">
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#0B3D2E]" />محصّل</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#b8974f]" />غير محصّل</span>
+                          </div>
                         </div>
-                        <div className={`h-2 rounded-full overflow-hidden ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>
-                          <motion.div 
-                            className={`h-full rounded-full ${row.color}`} 
-                            initial={{ width: 0 }} 
-                            animate={{ width: `${pct}%` }} 
-                            transition={{ duration: 0.8, ease: "easeOut" }} 
-                          />
+                        <div className="flex-1 flex items-center">
+                          <AreaBarChart data={chartData} isDark={isDark} />
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
 
-              {/* صندوق الصياغة المالية السريعة بالصوت (2/5) */}
-              <div className={`${cardCls} lg:col-span-2 p-6 flex flex-col justify-between border-dashed border-[#C8A762]/30 bg-amber-500/[0.02]`}>
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkle size={15} className="text-[#C8A762] animate-pulse" weight="fill" />
-                    <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>الإجراء المالي الصوتي السريع</p>
-                  </div>
-                  <p className={`text-[10px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                    تحدث بطلاقة لتسجيل مصروفاتك أو فواتيرك فورياً عبر الذكاء الاصطناعي دون تعبئة النماذج الطويلة.
-                  </p>
-                </div>
-
-                <div className="my-4 space-y-3">
-                  <div className="relative">
-                    <textarea
-                      readOnly
-                      value={voiceInput}
-                      placeholder="انقر على ميكروفون الإملاء الصوتي للتحدث..."
-                      className={`w-full rounded-2xl border p-4 text-[12px] h-20 outline-none resize-none leading-relaxed transition-all text-right font-semibold ${
-                        isDark 
-                          ? "border-white/[0.08] bg-zinc-950/40 text-zinc-300 placeholder:text-zinc-700" 
-                          : "border-slate-200 bg-slate-50 text-slate-700 placeholder:text-slate-400"
-                      }`}
-                    />
-                    
-                    <div className="absolute left-3 bottom-3">
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={handleVoiceSimulate}
-                        disabled={isListening}
-                        className={`w-9 h-9 rounded-full flex items-center justify-center shadow-md cursor-pointer ${
-                          isListening 
-                            ? "bg-red-500 text-white animate-pulse" 
-                            : "bg-[#0B3D2E] text-[#C8A762] hover:bg-[#07241b]"
-                        }`}
-                      >
-                        <Microphone size={16} weight={isListening ? "fill" : "bold"} />
-                      </motion.button>
+                      {/* الرسم الدائري لتوزيع الحالات (2/5) */}
+                      <div className={`${cardCls} lg:col-span-2 p-6 flex flex-col justify-between`}>
+                        <div className="space-y-1 mb-6">
+                          <p className={`text-[14px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>موقف الفواتير العام</p>
+                          <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>توزيع إجمالي الأتعاب المفوترة بين ما حُصّل وما تبقّى</p>
+                        </div>
+                        <div className="flex-1 flex items-center justify-center">
+                          {hasFeeAmounts ? (
+                            <DonutChart segments={feeSegments} centerPct={collectedPct} centerLabel="محصّل" />
+                          ) : (
+                            <p className="text-[11px] text-center text-slate-400 dark:text-zinc-500 leading-relaxed">
+                              لا توجد مبالغ لعرضها — كل الفواتير المسجلة قيمتها ٠ ﷼.
+                            </p>
+                          )}
+                        </div>
+                      </div>
                     </div>
+
+                    {/* الصف الثاني من Bento Grid: كروت المؤشرات المالية (KPI Cards) */}
+                    {/* كل بطاقة من قاعدة البيانات؛ ٢+٣+٤ = ١ بالضبط. حُذفت بطاقتا
+                        «إجمالي المصروفات» و«صافي أرباح المكتب»: لا تسجّل المنصة
+                        مصروفات مكتب، وكانت الأولى تجمع إيداعات المحفظة (نقداً
+                        داخلاً) كأنها مصروفات، والثانية تطرحها من الأرباح. */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      {[
+                        { label: "إجمالي الأتعاب المفوترة", value: totalAll, icon: ChartLine, color: "text-emerald-500", bg: "bg-emerald-500/10 dark:bg-emerald-500/25" },
+                        { label: "المبالغ المحصّلة فعلياً", value: totalCollected, icon: TrendUp, color: "text-[#C8A762]", bg: "bg-[#C8A762]/10 dark:bg-[#C8A762]/20", pct: `${collectedPct}% التحصيل`, pulse: true },
+                        { label: "متبقٍ تحت التحصيل", value: pendingRemainder + partialRemainder, icon: Clock, color: "text-amber-500", bg: "bg-amber-500/10 dark:bg-amber-500/20" },
+                        { label: "متبقٍ على فواتير متأخرة", value: overdueRemainder, icon: Warning, color: "text-red-500", bg: "bg-red-500/10 dark:bg-red-500/20" },
+                      ].map((k, i) => {
+                        const Icon = k.icon;
+                        return (
+                          <motion.div
+                            key={i}
+                            initial={{ opacity: 0, y: 12 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ type: "spring", stiffness: 100, damping: 18, delay: i * 0.05 }}
+                            whileHover={{ y: -4, scale: 1.01 }}
+                            className={`${cardCls} p-5 relative overflow-hidden`}
+                          >
+                            {k.pulse && (
+                              <span className="absolute top-4 left-4 flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                              </span>
+                            )}
+                            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center mb-4 ${k.bg}`}>
+                              <Icon size={18} weight="duotone" className={k.color} />
+                            </div>
+                            <p className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 mb-1">{k.label}</p>
+                            <p className="text-xl font-black font-mono tracking-tight text-slate-800 dark:text-zinc-100">
+                              {k.value.toLocaleString()} <span className="text-xs font-normal font-sans">﷼</span>
+                            </p>
+                            {k.pct && (
+                              <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded-full mt-2 ${k.bg} ${k.color}`}>
+                                {k.pct}
+                              </span>
+                            )}
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+
+                    {/* توزيع السداد — نفس تقسيم الرسم الدائري، فتبلغ النسب ١٠٠٪ */}
+                    {hasFeeAmounts && (
+                    <div className={`${cardCls} p-6 space-y-4`}>
+                      <div className="space-y-1">
+                        <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>توزيع الأتعاب حسب طبيعة السداد</p>
+                        <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>نِسَب من إجمالي الأتعاب المفوترة ({totalAll.toLocaleString()} ﷼)</p>
+                      </div>
+                      <div className="space-y-4 pt-2">
+                        {[
+                          { label: "أتعاب محصّلة فعلياً", value: totalCollected, color: "bg-emerald-500" },
+                          { label: "متبقٍ على فواتير مسدّدة جزئياً", value: partialRemainder, color: "bg-blue-400" },
+                          { label: "متبقٍ على فواتير معلقة", value: pendingRemainder, color: "bg-amber-400" },
+                          { label: "متبقٍ على فواتير متأخرة", value: overdueRemainder, color: "bg-red-500" },
+                        ].map(row => {
+                          const pct = totalAll > 0 ? Math.round((row.value / totalAll) * 100) : 0;
+                          return (
+                            <div key={row.label} className="space-y-1.5">
+                              <div className={`flex items-center justify-between text-[11px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
+                                <span className="font-bold">{row.label}</span>
+                                <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{row.value.toLocaleString()} ﷼ ({pct}%)</span>
+                              </div>
+                              <div className={`h-2 rounded-full overflow-hidden ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>
+                                <motion.div
+                                  className={`h-full rounded-full ${row.color}`}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${pct}%` }}
+                                  transition={{ duration: 0.8, ease: "easeOut" }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    )}
+
+                    {/* تنبيه بالمتأخرات — الزر ينقل إلى الفواتير المتأخرة فعلاً.
+                        كان زر «إرسال تذكير بالسداد فوراً» يعرض alert يؤكد أن
+                        إشعارات «متوافقة مع الأنظمة» أُرسلت لعدد من العملاء، ولا
+                        يوجد في المستودع كله ما يرسل تذكيراً بالسداد. */}
+                    {overdueRemainder > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className={`${cardCls} p-5 flex flex-col sm:flex-row items-center justify-between gap-4 border-red-500/20 bg-red-500/[0.01]`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="p-2.5 rounded-2xl bg-red-500/10 text-red-500">
+                            <Wallet size={20} weight="duotone" />
+                          </span>
+                          <div className="space-y-0.5">
+                            <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>مستحقات متأخرة معلقة</p>
+                            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                              متبقٍ على فواتير متأخرة بقيمة <strong className="font-mono text-xs">{overdueRemainder.toLocaleString()} ﷼</strong>. متابعة العميل تتم خارج المنصة — لا تُرسل المنصة تذكيرات سداد.
+                            </p>
+                          </div>
+                        </div>
+                        <motion.button
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => { setFilter("overdue"); setActiveTab("invoices"); }}
+                          className="px-4 py-2.5 rounded-xl bg-red-500/10 text-red-500 text-[11px] font-black border border-red-500/20 hover:bg-red-500/20 transition-all cursor-pointer flex-shrink-0"
+                        >
+                          عرض الفواتير المتأخرة
+                        </motion.button>
+                      </motion.div>
+                    )}
+                  </>
+                )}
+              </motion.div>
+            )}
+
+            {/* ── تبويب إدارة الفواتير ── */}
+            {activeTab === "invoices" && (
+              <motion.div
+                key="invoices"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="space-y-6"
+              >
+                {/* الفلاتر والبحث الجمالي */}
+                <div className="flex flex-col xl:flex-row gap-4">
+
+                  {/* شريط البحث */}
+                  <div className={`flex items-center gap-2 flex-1 px-4 py-3 rounded-2xl border transition-all focus-within:border-[#C8A762]/50 ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white shadow-sm"}`}>
+                    <MagnifyingGlass size={16} className={isDark ? "text-zinc-500" : "text-slate-400"} />
+                    <input
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      placeholder="بحث في الفواتير (اسم العميل، رقم الفاتورة، التفاصيل)..."
+                      className={`flex-1 bg-transparent text-[13px] outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-700" : "text-slate-700 placeholder:text-slate-400"}`}
+                    />
                   </div>
 
-                  <AnimatePresence>
-                    {voiceParsedMessage && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 5 }} 
-                        animate={{ opacity: 1, y: 0 }} 
+                  {/* شريط التصفية السريع بالكبسولة المنزلقة */}
+                  <div className={`p-1.5 rounded-2xl flex gap-1 flex-wrap md:flex-nowrap overflow-x-auto ${isDark ? "bg-zinc-800/80 border border-white/[0.06]" : "bg-slate-100 border border-slate-200"}`}>
+                    {(["all", "paid", "partial", "pending", "overdue"] as const).map(s => {
+                      const isActive = filter === s;
+                      return (
+                        <button
+                          key={s}
+                          onClick={() => setFilter(s)}
+                          className="relative px-4 py-2 rounded-xl text-[11px] font-black cursor-pointer transition-all flex-shrink-0"
+                          style={{ color: isActive ? (isDark ? "#ffffff" : "#0f172a") : (isDark ? "#52525b" : "#64748b") }}
+                        >
+                          {isActive && (
+                            <motion.div
+                              layoutId="activeFilterPill"
+                              className={`absolute inset-0 z-0 ${isDark ? "bg-zinc-700" : "bg-white shadow-sm border border-slate-200"}`}
+                              transition={{ type: "spring", stiffness: 150, damping: 20 }}
+                            />
+                          )}
+                          <span className="relative z-10">
+                            {s === "all" ? "كافة الفواتير" : STATUS_CFG[s].label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* قائمة الفواتير التفاعلية */}
+                <div className="space-y-3">
+                  <AnimatePresence mode="popLayout">
+                    {filteredInvoices.length === 0 ? (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className={`p-3 rounded-xl border text-[10px] leading-relaxed ${
-                          isDark ? "bg-emerald-950/30 border-emerald-500/20 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-800"
-                        }`}
+                        className={`${cardCls} p-12 text-center text-slate-400 dark:text-zinc-500 text-xs font-semibold`}
                       >
-                        {voiceParsedMessage}
+                        {/* التمييز مهم: «لا توجد نتائج للفلتر» غير «لم تُصدر فاتورة قط». */}
+                        {hasInvoices
+                          ? "لا توجد فواتير مطابقة لمعايير البحث والتصفية المحددة."
+                          : "لم تُصدر أي فاتورة بعد."}
                       </motion.div>
+                    ) : (
+                      filteredInvoices.map((inv) => {
+                        const sc = STATUS_CFG[inv.status as InvoiceStatus];
+                        const StatusIcon = sc.icon;
+                        const payPct = inv.totalFee ? Math.round(inv.paidAmount / inv.totalFee * 100) : 0;
+                        return (
+                          <motion.div
+                            key={inv.id}
+                            layout
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.98 }}
+                            transition={{ type: "spring", stiffness: 100, damping: 18 }}
+                          >
+                            <div className={`${cardCls} p-5 hover:border-[#C8A762]/30 transition-all shadow-[0_4px_20px_-10px_rgba(0,0,0,0.02)]`}>
+                              <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
+                                <div className="flex items-start gap-4 flex-1 min-w-0">
+                                  <span className={`p-2.5 rounded-2xl flex-shrink-0 mt-0.5 ${isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
+                                    <Receipt size={18} weight="duotone" className="text-[#C8A762]" />
+                                  </span>
+                                  <div className="space-y-1.5 flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <h3 className={`text-[14px] font-black truncate ${isDark ? "text-zinc-200" : "text-slate-800"}`}>{inv.client}</h3>
+                                      <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 flex-shrink-0 ${sc.color}`}>
+                                        <StatusIcon size={9} weight="fill" /> {sc.label}
+                                      </span>
+                                      <span className={`text-[9px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ${
+                                        inv.feeType === "full"
+                                          ? isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700"
+                                          : isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-700"
+                                      }`}>
+                                        {inv.feeType === "full" ? "أتعاب كاملة" : "دفعة جزئية"}
+                                      </span>
+                                    </div>
+                                    <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{inv.desc}</p>
+                                    <div className={`flex items-center gap-2 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                                      {inv.caseTitle !== "—" && (
+                                        <>
+                                          <span className="flex items-center gap-1"><FileText size={11} /> {inv.caseTitle}</span>
+                                          <span>·</span>
+                                        </>
+                                      )}
+                                      <span className="flex items-center gap-1"><CalendarBlank size={11} /> {inv.date}</span>
+                                      <span>·</span>
+                                      <span className="font-mono">{inv.id}</span>
+                                    </div>
+
+                                    {inv.status === "partial" && (
+                                      <div className="pt-2 max-w-md">
+                                        <div className={`flex justify-between text-[9px] mb-1 font-bold ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                                          <span>محصّل: {inv.paidAmount.toLocaleString()} ﷼</span>
+                                          <span>متبقي: {(inv.totalFee - inv.paidAmount).toLocaleString()} ﷼</span>
+                                        </div>
+                                        <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>
+                                          <div className="h-full rounded-full bg-blue-500" style={{ width: `${payPct}%` }} />
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex sm:flex-col items-end justify-between sm:justify-start w-full sm:w-auto border-t sm:border-0 pt-3 sm:pt-0 mt-2 sm:mt-0 flex-shrink-0">
+                                  <p className="text-[17px] font-black font-mono tracking-tight text-slate-800 dark:text-zinc-100">
+                                    {inv.totalFee.toLocaleString()} <span className="text-xs font-normal font-sans">﷼</span>
+                                  </p>
+                                  {inv.status === "partial" && <span className="text-[10px] font-black text-blue-500 mt-1">{payPct}% محصّل</span>}
+                                  {isCollectable(inv) && (
+                                    <motion.button
+                                      whileHover={{ scale: 1.04 }}
+                                      whileTap={{ scale: 0.96 }}
+                                      onClick={() => openCollectModal(inv)}
+                                      className={`mt-2 flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black border transition-all cursor-pointer ${
+                                        isDark
+                                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
+                                          : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                                      }`}
+                                    >
+                                      <CheckCircle size={11} weight="fill" /> تم التحصيل
+                                    </motion.button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })
                     )}
                   </AnimatePresence>
                 </div>
+              </motion.div>
+            )}
 
-                <div className="flex items-center gap-1.5 justify-center py-1 bg-black/[0.04] dark:bg-white/[0.02] rounded-xl text-[9px] font-bold text-slate-400 dark:text-zinc-500">
-                  <CheckCircle size={10} className="text-[#C8A762]" />
-                  <span>محاكاة صوتية متصلة بمحرك RAG المالي</span>
-                </div>
-              </div>
-            </div>
-
-            {/* تنبيه بالمتأخرات */}
-            {totalOverdue > 0 && (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className={`${cardCls} p-5 flex flex-col sm:flex-row items-center justify-between gap-4 border-red-500/20 bg-red-500/[0.01]`}
+            {/* ── حركات محفظة المنصة ──
+                هذا التبويب كان اسمه «سجل المصروفات»، وكان يعرض صفوف
+                wallet_transactions كأنها مصروفات مكتب: يجمعها في «إجمالي
+                المصروفات»، ويطرحها من «صافي أرباح المكتب»، ويحسب عليها استرجاع
+                ضريبة. الجدول لا يحمل عمود فئة ولا عمود ضريبة، والكاتب الوحيد له
+                في المستودع (src/lib/entitlements.ts) يكتب kind = 'credit' — أي
+                نقداً داخلاً — فكان الإيداع يُطرح من الأرباح بدل أن يُضاف. لا
+                توجد في المنصة أي جهة تسجّل مصروفات مكتب، فحُذف الادعاء كله. */}
+            {activeTab === "expenses" && (
+              <motion.div
+                key="expenses"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="space-y-4"
               >
-                <div className="flex items-center gap-3">
-                  <span className="p-2.5 rounded-2xl bg-red-500/10 text-red-500">
-                    <Wallet size={20} weight="duotone" />
+                <div className={`${cardCls} p-5 flex items-start gap-3`}>
+                  <span className="p-2.5 rounded-2xl bg-[#C8A762]/10 text-[#C8A762] flex-shrink-0">
+                    <Wallet size={18} weight="duotone" />
                   </span>
-                  <div className="space-y-0.5">
-                    <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>مستحقات متأخرة معلقة</p>
-                    <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                      لديك فواتير متأخرة غير مسددة بقيمة <strong className="font-mono text-xs">{totalOverdue.toLocaleString()} ﷼</strong> لدى عملائك المتأخرين.
+                  <div className="space-y-1">
+                    <p className={`text-[13px] font-black ${isDark ? "text-zinc-200" : "text-slate-800"}`}>حركات محفظتك على منصة نظامي</p>
+                    <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                      هذه حركات رصيدك داخل المنصة (مثل الإيداعات الإدارية) وليست مصروفات مكتبك.
+                      لا تسجّل المنصة مصروفات المكتب ولا ضريبة القيمة المضافة، ولذلك لا تُعرض هنا أرباح صافية ولا مسترجع ضريبي.
                     </p>
                   </div>
                 </div>
-                <motion.button 
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => {
-                    confetti({ particleCount: 30, spread: 40 });
-                    alert("تم إرسال إشعارات تذكير بالسداد متوافقة مع الأنظمة لـ " + invoices.filter(i => i.status === "overdue").length + " عملاء.");
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-red-500/10 text-red-500 text-[11px] font-black border border-red-500/20 hover:bg-red-500/20 transition-all cursor-pointer"
-                >
-                  إرسال تذكير بالسداد فوراً
-                </motion.button>
-              </motion.div>
-            )}
-          </motion.div>
-        )}
 
-        {/* ── تبويب إدارة الفواتير ── */}
-        {activeTab === "invoices" && (
-          <motion.div 
-            key="invoices" 
-            initial={{ opacity: 0, y: 15 }} 
-            animate={{ opacity: 1, y: 0 }} 
-            exit={{ opacity: 0 }} 
-            className="space-y-6"
-          >
-            {/* الفلاتر والبحث الجمالي */}
-            <div className="flex flex-col xl:flex-row gap-4">
-              
-              {/* شريط البحث */}
-              <div className={`flex items-center gap-2 flex-1 px-4 py-3 rounded-2xl border transition-all focus-within:border-[#C8A762]/50 ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white shadow-sm"}`}>
-                <MagnifyingGlass size={16} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-                <input 
-                  value={search} 
-                  onChange={e => setSearch(e.target.value)} 
-                  placeholder="بحث في الفواتير (اسم العميل، رقم الفاتورة، التفاصيل)..."
-                  className={`flex-1 bg-transparent text-[13px] outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-700" : "text-slate-700 placeholder:text-slate-400"}`} 
-                />
-              </div>
-
-              {/* شريط التصفية السريع بالكبسولة المنزلقة */}
-              <div className={`p-1.5 rounded-2xl flex gap-1 flex-wrap md:flex-nowrap overflow-x-auto ${isDark ? "bg-zinc-800/80 border border-white/[0.06]" : "bg-slate-100 border border-slate-200"}`}>
-                {(["all", "paid", "partial", "pending", "overdue"] as const).map(s => {
-                  const isActive = filter === s;
-                  return (
-                    <button
-                      key={s}
-                      onClick={() => setFilter(s)}
-                      className="relative px-4 py-2 rounded-xl text-[11px] font-black cursor-pointer transition-all flex-shrink-0"
-                      style={{ color: isActive ? (isDark ? "#ffffff" : "#0f172a") : (isDark ? "#52525b" : "#64748b") }}
-                    >
-                      {isActive && (
-                        <motion.div
-                          layoutId="activeFilterPill"
-                          className={`absolute inset-0 z-0 ${isDark ? "bg-zinc-700" : "bg-white shadow-sm border border-slate-200"}`}
-                          transition={{ type: "spring", stiffness: 150, damping: 20 }}
-                        />
-                      )}
-                      <span className="relative z-10">
-                        {s === "all" ? "كافة الفواتير" : STATUS_CFG[s].label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* قائمة الفواتير التفاعلية */}
-            <div className="space-y-3">
-              <AnimatePresence mode="popLayout">
-                {filteredInvoices.length === 0 ? (
-                  <motion.div 
-                    initial={{ opacity: 0 }} 
-                    animate={{ opacity: 1 }} 
-                    exit={{ opacity: 0 }}
-                    className={`${cardCls} p-12 text-center text-slate-400 dark:text-zinc-600 text-xs font-semibold`}
-                  >
-                    لا توجد فواتير مطابقة لمعايير البحث والتصفية المحددة.
-                  </motion.div>
+                {walletTxns.length === 0 ? (
+                  <EmptyCard cardCls={cardCls} text="لا توجد حركات على محفظتك في المنصة." />
                 ) : (
-                  filteredInvoices.map((inv, i) => {
-                    const sc = STATUS_CFG[inv.status as InvoiceStatus];
-                    const StatusIcon = sc.icon;
-                    const payPct = inv.totalFee ? Math.round(inv.paidAmount / inv.totalFee * 100) : 0;
-                    return (
-                      <motion.div 
-                        key={inv.id} 
-                        layout
-                        initial={{ opacity: 0, y: 10 }} 
-                        animate={{ opacity: 1, y: 0 }} 
-                        exit={{ opacity: 0, scale: 0.98 }}
-                        transition={{ type: "spring", stiffness: 100, damping: 18 }}
-                      >
-                        <div className={`${cardCls} p-5 hover:border-[#C8A762]/30 transition-all shadow-[0_4px_20px_-10px_rgba(0,0,0,0.02)]`}>
-                          <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
-                            <div className="flex items-start gap-4 flex-1 min-w-0">
-                              <span className={`p-2.5 rounded-2xl flex-shrink-0 mt-0.5 ${isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
-                                <Receipt size={18} weight="duotone" className="text-[#C8A762]" />
-                              </span>
-                              <div className="space-y-1.5 flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h3 className={`text-[14px] font-black truncate ${isDark ? "text-zinc-200" : "text-slate-800"}`}>{inv.client}</h3>
-                                  <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 flex-shrink-0 ${sc.color}`}>
-                                    <StatusIcon size={9} weight="fill" /> {sc.label}
-                                    {inv.daysOver && <span className="font-normal font-mono">({inv.daysOver}يوم)</span>}
-                                  </span>
-                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ${
-                                    inv.feeType === "full"
-                                      ? isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700"
-                                      : isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-700"
-                                  }`}>
-                                    {inv.feeType === "full" ? "أتعاب كاملة" : "دفعة جزئية"}
-                                  </span>
-                                </div>
-                                <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{inv.desc}</p>
-                                <div className={`flex items-center gap-2 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                                  {inv.caseTitle !== "—" && (
-                                    <>
-                                      <span className="flex items-center gap-1"><FileText size={11} /> {inv.caseTitle}</span>
-                                      <span>·</span>
-                                    </>
-                                  )}
-                                  <span className="flex items-center gap-1"><CalendarBlank size={11} /> {inv.date}</span>
-                                  <span>·</span>
-                                  <span className="font-mono">{inv.id}</span>
-                                </div>
-                                
-                                {inv.status === "partial" && (
-                                  <div className="pt-2 max-w-md">
-                                    <div className={`flex justify-between text-[9px] mb-1 font-bold ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                                      <span>محصّل: {inv.paidAmount.toLocaleString()} ﷼</span>
-                                      <span>متبقي: {(inv.totalFee - inv.paidAmount).toLocaleString()} ﷼</span>
-                                    </div>
-                                    <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>
-                                      <div className="h-full rounded-full bg-blue-500" style={{ width: `${payPct}%` }} />
-                                    </div>
-                                  </div>
-                                )}
+                  <div className="space-y-2">
+                    {walletTxns.map((t) => {
+                      const cfg = WALLET_KIND_CFG[String(t.kind)] ?? {
+                        // نوع غير معروف: نعرضه كما ورد بلا افتراض اتجاه.
+                        label: String(t.kind || "حركة"), sign: "", color: "text-slate-500", bg: "bg-slate-500/10",
+                      };
+                      return (
+                        <div
+                          key={t.id}
+                          className={`${cardCls} p-4 flex items-center justify-between gap-4`}
+                        >
+                          <div className="flex items-center gap-4 min-w-0">
+                            <span className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${cfg.bg}`}>
+                              <Wallet size={18} weight="duotone" className={cfg.color} />
+                            </span>
+                            <div className="min-w-0 space-y-1">
+                              <p className={`text-[13px] font-black truncate ${isDark ? "text-zinc-200" : "text-slate-800"}`}>{t.desc || "—"}</p>
+                              <div className={`flex items-center gap-2 text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                                <span className={`px-2 py-0.5 rounded-full font-black text-[9px] ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
+                                <span>·</span><span>{t.date}</span>
                               </div>
                             </div>
-                            <div className="flex sm:flex-col items-end justify-between sm:justify-start w-full sm:w-auto border-t sm:border-0 pt-3 sm:pt-0 mt-2 sm:mt-0 flex-shrink-0">
-                              <p className="text-[17px] font-black font-mono tracking-tight text-slate-800 dark:text-zinc-100">
-                                {inv.totalFee.toLocaleString()} <span className="text-xs font-normal font-sans">﷼</span>
-                              </p>
-                              {inv.status === "partial" && <span className="text-[10px] font-black text-blue-500 mt-1">{payPct}% محصّل</span>}
-                              {isCollectable(inv) && (
-                                <motion.button
-                                  whileHover={{ scale: 1.04 }}
-                                  whileTap={{ scale: 0.96 }}
-                                  onClick={() => openCollectModal(inv)}
-                                  className={`mt-2 flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black border transition-all cursor-pointer ${
-                                    isDark
-                                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
-                                      : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                                  }`}
-                                >
-                                  <CheckCircle size={11} weight="fill" /> تم التحصيل
-                                </motion.button>
-                              )}
-                              {inv.status === "overdue" && (
-                                <motion.button
-                                  whileHover={{ scale: 1.05 }}
-                                  whileTap={{ scale: 0.95 }}
-                                  onClick={() => {
-                                    confetti({ particleCount: 20, spread: 30 });
-                                    alert("تم إرسال تذكير ودّي للعميل: " + inv.client);
-                                  }}
-                                  className="mt-1 text-[10px] font-black text-red-500 hover:underline cursor-pointer"
-                                >
-                                  إرسال تذكير سريع
-                                </motion.button>
-                              )}
-                            </div>
                           </div>
+                          <p className={`text-[15px] font-black font-mono flex-shrink-0 ${cfg.color}`}>
+                            {cfg.sign}{Number(t.amount || 0).toLocaleString()} <span className="text-xs font-normal font-sans">﷼</span>
+                          </p>
                         </div>
-                      </motion.div>
-                    );
-                  })
+                      );
+                    })}
+                  </div>
                 )}
-              </AnimatePresence>
-            </div>
-          </motion.div>
-        )}
+              </motion.div>
+            )}
 
-        {/* ── سجل المصروفات ── */}
-        {activeTab === "expenses" && (
-          <motion.div 
-            key="expenses" 
-            initial={{ opacity: 0, y: 15 }} 
-            animate={{ opacity: 1, y: 0 }} 
-            exit={{ opacity: 0 }} 
-            className="space-y-6"
-          >
-            {/* بطاقات تلخيص المصروفات والضريبة */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[
-                { label: "إجمالي المصروفات", value: totalExpenses, color: "text-red-500", bg: "bg-red-500/10 dark:bg-red-500/20" },
-                { label: "مسترجع ضريبة VAT (15%)", value: vatAmount, color: "text-[#C8A762]", bg: "bg-[#C8A762]/10 dark:bg-[#C8A762]/20" },
-                { label: "المصروفات الصافية (دون VAT)", value: totalExpenses - vatAmount, color: "bg-[#0B3D2E]/10 dark:bg-[#0B3D2E]/25 text-[#C8A762]", bg: "text-[#C8A762]" },
-              ].map((k, i) => (
-                <div key={i} className={`${cardCls} p-5`}>
-                  <p className={`text-[10px] font-bold mb-1.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{k.label}</p>
-                  <p className={`text-xl font-black font-mono tracking-tight ${k.color}`}>
-                    {k.value.toLocaleString()} <span className="text-xs font-normal font-sans">﷼</span>
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            {/* الرسم التفصيلي للمصروفات حسب الكاتيجوري */}
-            <div className={`${cardCls} p-6 space-y-4`}>
-              <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>توزيع المصروفات التشغيلية حسب الفئة</p>
-              <div className="space-y-3 pt-2">
-                {expByCategory.sort((a, b) => b.total - a.total).map(cat => {
-                  const pct = totalExpenses ? Math.round(cat.total / totalExpenses * 100) : 0;
-                  const barColor = cat.color.replace("text-", "bg-");
-                  return (
-                    <div key={cat.key} className="space-y-1">
-                      <div className={`flex items-center justify-between text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-                        <span className="flex items-center gap-2 font-bold">
-                          <span className={`w-2.5 h-2.5 rounded-full ${barColor}`} />{cat.label}
-                        </span>
-                        <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{cat.total.toLocaleString()} ﷼ ({pct}%)</span>
-                      </div>
-                      <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>
-                        <motion.div className={`h-full rounded-full ${barColor}`} initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.8 }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* تصفيات فئات المصروفات */}
-            <div className="flex gap-1.5 flex-wrap">
-              {(["all", ...Object.keys(EXP_CFG)] as (ExpenseCategory | "all")[]).map(cat => (
-                <button 
-                  key={cat} 
-                  onClick={() => setExpCat(cat as ExpenseCategory | "all")}
-                  className={`px-4 py-2 rounded-2xl border text-[11px] font-black cursor-pointer transition-all ${
-                    expCat === cat 
-                      ? "bg-red-500 text-white border-red-500 shadow-md shadow-red-500/10" 
-                      : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-200 text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  {cat === "all" ? "كافة الفئات" : EXP_CFG[cat as ExpenseCategory].label}
-                </button>
-              ))}
-            </div>
-
-            {/* قائمة المصروفات الفعلية */}
-            <div className="space-y-2">
-              <AnimatePresence mode="popLayout">
-                {filteredExpenses.map((exp, i) => {
-                  const cfg = EXP_CFG[exp.category as ExpenseCategory];
-                  const barColor = cfg.color.replace("text-", "bg-");
-                  return (
-                    <motion.div 
-                      key={exp.id} 
-                      layout
-                      initial={{ opacity: 0, y: 8 }} 
-                      animate={{ opacity: 1, y: 0 }} 
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ type: "spring", stiffness: 100, damping: 18 }}
-                      className={`${cardCls} p-4 hover:border-slate-300 dark:hover:border-white/10 transition-all flex items-center justify-between gap-4`}
-                    >
-                      <div className="flex items-center gap-4 min-w-0">
-                        <span className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${cfg.bg}`}>
-                          <ShoppingCart size={18} weight="duotone" className={cfg.color} />
-                        </span>
-                        <div className="min-w-0 space-y-1">
-                          <p className={`text-[13px] font-black truncate ${isDark ? "text-zinc-200" : "text-slate-800"}`}>{exp.desc}</p>
-                          <div className={`flex items-center gap-2 text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                            <span className={`px-2 py-0.5 rounded-full font-black text-[9px] ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
-                            <span>·</span><span>{exp.date}</span>
-                            {exp.vatIncluded && (
-                              <>
-                                <span>·</span>
-                                <span className="text-[#C8A762] font-black text-[9px] px-1.5 py-0.5 rounded-full bg-[#C8A762]/10 border border-[#C8A762]/20">VAT شاملة</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <p className={`text-[15px] font-black font-mono flex-shrink-0 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-                        {exp.amount.toLocaleString()} <span className="text-xs font-normal font-sans">﷼</span>
+            {/* ── ملخص الأتعاب والتحصيل ──
+                كان هذا التبويب «قائمة الأرباح والخسائر»، بترويسة ثابتة «الربع
+                الثاني ٢٠٢٦» فوق أرقام غير محدودة بفترة، وبند ضريبة قيمة مضافة
+                لا مصدر له، وسطر «صافي الأرباح التشغيلية» يطرح إيداعات المحفظة.
+                ما بقي هنا كله مقروء من صفوف payments فعلية. */}
+            {activeTab === "pl" && (
+              <motion.div
+                key="pl"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="space-y-6"
+              >
+                {!hasInvoices ? (
+                  <EmptyCard cardCls={cardCls} text="لا توجد فواتير لتلخيصها بعد." />
+                ) : (
+                  <div className={`${cardCls} p-6 md:p-8 space-y-6 shadow-xl shadow-slate-200/20 dark:shadow-none`}>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-zinc-200/50 dark:border-white/[0.06] pb-4">
+                      <p className={`text-[12px] font-black uppercase tracking-wider ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                        ملخص الأتعاب والتحصيل
                       </p>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
-          </motion.div>
-        )}
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 flex items-center gap-1">
+                        <CalendarBlank size={12} /> جميع الفواتير المسجلة على حسابك — بدون تحديد فترة
+                      </span>
+                    </div>
 
-        {/* ── قائمة الأرباح والخسائر (P&L) ── */}
-        {activeTab === "pl" && (
-          <motion.div 
-            key="pl" 
-            initial={{ opacity: 0, y: 15 }} 
-            animate={{ opacity: 1, y: 0 }} 
-            exit={{ opacity: 0 }} 
-            className="space-y-6 animate-stagger"
-          >
-            <div className={`${cardCls} p-6 md:p-8 space-y-6 shadow-xl shadow-slate-200/20 dark:shadow-none`}>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-zinc-200/50 dark:border-white/[0.06] pb-4">
-                <p className={`text-[12px] font-black uppercase tracking-wider ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-                  بيان الدخل (الأرباح والخسائر) — الربع الثاني ٢٠٢٦
-                </p>
-                <span className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 flex items-center gap-1">
-                  <CalendarBlank size={12} /> متوافق مع مبدأ الاستحقاق والتحصيل الفعلي
-                </span>
-              </div>
+                    <div className="space-y-2">
+                      {[
+                        { label: "إجمالي الأتعاب المقيدة بالفواتير", value: totalAll, indent: false, muted: false },
+                        { label: "الأتعاب المحصلة فعلياً (نقداً أو تحويلاً بنكياً)", value: totalCollected, indent: true, muted: false, highlight: true },
+                        { label: "المتبقي على فواتير معلقة وجزئية", value: pendingRemainder + partialRemainder, indent: true, muted: true },
+                        { label: "المتبقي على فواتير متأخرة", value: overdueRemainder, indent: true, muted: true },
+                      ].map(row => (
+                        <div key={row.label} className={`flex items-center justify-between py-2.5 ${row.indent ? "ps-5 border-dashed" : ""} border-b ${isDark ? "border-white/[0.03]" : "border-slate-50"} ${row.highlight ? "bg-emerald-500/[0.02] dark:bg-emerald-500/[0.04] px-2 rounded-xl" : ""}`}>
+                          <span className={`text-[12px] ${row.highlight ? "font-bold text-emerald-500" : row.muted ? isDark ? "text-zinc-500" : "text-slate-400" : isDark ? "text-zinc-300" : "text-slate-700"}`}>{row.label}</span>
+                          <span className={`font-mono text-[12px] font-black ${row.highlight ? "text-emerald-500" : row.muted ? isDark ? "text-zinc-500" : "text-slate-400" : isDark ? "text-zinc-200" : "text-slate-700"}`}>{row.value.toLocaleString()} ﷼</span>
+                        </div>
+                      ))}
+                    </div>
 
-              {/* الإيرادات */}
-              <div className="space-y-2">
-                <div className={`py-1.5 border-b ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
-                  <p className={`text-[10px] font-black uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>الإيرادات والتحصيل</p>
-                </div>
-                {[
-                  { label: "إجمالي الأتعاب المقيدة بالفواتير", value: totalAll, indent: false, muted: false },
-                  { label: "الأتعاب المحصلة فعلياً (السيولة النقدية الواردة)", value: totalCollected, indent: true, muted: false, highlight: true },
-                  { label: "الأتعاب المعلقة والجزئية (تحت التحصيل)", value: totalPending + totalPartial, indent: true, muted: true },
-                  { label: "المستحقات المتأخرة والديون المعدومة", value: totalOverdue, indent: true, muted: true },
-                ].map(row => (
-                  <div key={row.label} className={`flex items-center justify-between py-2.5 ${row.indent ? "ps-5 border-dashed" : ""} border-b ${isDark ? "border-white/[0.03]" : "border-slate-50"} ${row.highlight ? "bg-emerald-500/[0.02] dark:bg-emerald-500/[0.04] px-2 rounded-xl" : ""}`}>
-                    <span className={`text-[12px] ${row.highlight ? "font-bold text-emerald-500" : row.muted ? isDark ? "text-zinc-600" : "text-slate-400" : isDark ? "text-zinc-300" : "text-slate-700"}`}>{row.label}</span>
-                    <span className={`font-mono text-[12px] font-black ${row.highlight ? "text-emerald-500" : row.muted ? isDark ? "text-zinc-600" : "text-slate-400" : isDark ? "text-zinc-200" : "text-slate-700"}`}>{row.value.toLocaleString()} ﷼</span>
+                    {/* لماذا لا يوجد صافي ربح هنا: لا مصدر لمصروفات المكتب. */}
+                    <div className={`p-4 rounded-2xl border flex items-start gap-2.5 text-[11px] leading-relaxed ${
+                      isDark ? "border-amber-500/20 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"
+                    }`}>
+                      <Warning size={14} weight="fill" className="flex-shrink-0 mt-0.5" />
+                      <span>
+                        هذا ملخص تحصيل وليس قائمة أرباح وخسائر: المنصة لا تسجّل مصروفات المكتب ولا ضريبة القيمة المضافة،
+                        فلا يمكن احتساب صافي ربح أو هامش منها. احتساب الأرباح والإقرار الضريبي يتمّان في دفاتر مكتبك.
+                      </span>
+                    </div>
                   </div>
-                ))}
-              </div>
+                )}
+              </motion.div>
+            )}
 
-              {/* المصروفات */}
-              <div className="space-y-2 pt-3">
-                <div className={`py-1.5 border-b ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
-                  <p className={`text-[10px] font-black uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>المصروفات التشغيلية والضرائب</p>
-                </div>
-                {expByCategory.map(cat => (
-                  <div key={cat.key} className={`flex items-center justify-between py-2.5 ps-5 border-b ${isDark ? "border-white/[0.03]" : "border-slate-50"}`}>
-                    <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{cat.label}</span>
-                    <span className="font-mono text-[12px] font-black text-red-500">{cat.total.toLocaleString()} ﷼</span>
-                  </div>
-                ))}
-                <div className={`flex items-center justify-between py-3 border-b ${isDark ? "border-white/[0.06]" : "border-slate-200"}`}>
-                  <span className={`text-[13px] font-black ${isDark ? "text-zinc-300" : "text-slate-700"}`}>إجمالي المصروفات التشغيلية</span>
-                  <span className="font-mono text-[13px] font-black text-red-500">{totalExpenses.toLocaleString()} ﷼</span>
-                </div>
-              </div>
+          </AnimatePresence>
+        </>
+      )}
 
-              {/* الضريبة والزكاة */}
-              <div className="space-y-2 pt-3">
-                <div className={`flex items-center justify-between py-2.5 border-b ${isDark ? "border-white/[0.03]" : "border-slate-50"}`}>
-                  <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>ضريبة القيمة المضافة المحسوبة (15% شاملة للمصروفات المؤهلة)</span>
-                  <span className="font-mono text-[12px] font-black text-amber-500">{vatAmount.toLocaleString()} ﷼</span>
-                </div>
-              </div>
-
-              {/* الربح الصافي النهائي */}
-              <div className={`flex items-center justify-between py-4 mt-6 rounded-2xl px-5 border ${
-                netProfit >= 0 
-                  ? isDark ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-100" 
-                  : isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50 border-red-100"
-              }`}>
-                <span className={`text-[15px] font-black ${netProfit >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                  صافي الأرباح التشغيلية النهائية للمكتب
-                </span>
-                <span className={`font-mono text-[19px] font-black ${netProfit >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                  {netProfit.toLocaleString()} ﷼
-                </span>
-              </div>
-            </div>
-
-            {/* الهامش ومؤشر الأداء النهائي */}
-            <div className={`${cardCls} p-5 flex items-center gap-4`}>
-              <span className="p-3 rounded-2xl bg-[#0B3D2E]/10 dark:bg-[#0B3D2E]/25 text-[#C8A762]">
-                <ChartBar size={20} weight="duotone" />
-              </span>
-              <div className="space-y-1">
-                <p className={`text-[13px] font-black ${isDark ? "text-zinc-200" : "text-slate-800"}`}>
-                  هامش الربح الصافي للمكتب: {Math.round((netProfit / (totalCollected || 1)) * 100)}%
-                </p>
-                <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                  محسوب بالاعتماد على إجمالي التحصيل الفعلي ({totalCollected.toLocaleString()} ﷼) مقسوماً على المصروفات الإجمالية.
-                </p>
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-      </AnimatePresence>
-
-      {/* ── 4. النافذة الزجاجية التفاعلية المنبثقة: إنشاء فاتورة جديدة ── */}
+      {/* ── النافذة الزجاجية التفاعلية المنبثقة: إنشاء فاتورة جديدة ── */}
       <AnimatePresence>
         {isInvoiceModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            
+
             {/* الخلفية المعتمة والزجاج المشوش */}
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsInvoiceModalOpen(false)}
               className="absolute inset-0 bg-black/60 backdrop-blur-md"
             />
 
             {/* محتوى النافذة المنبثقة مع spring physics */}
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 15 }} 
-              animate={{ opacity: 1, scale: 1, y: 0 }} 
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
               transition={{ type: "spring", stiffness: 120, damping: 18 }}
               className={`relative z-10 w-full max-w-lg p-6 md:p-8 rounded-[2.5rem] border text-right shadow-2xl ${
-                isDark 
-                  ? "bg-zinc-950/90 border-white/10 text-zinc-100" 
+                isDark
+                  ? "bg-zinc-950/90 border-white/10 text-zinc-100"
                   : "bg-white border-slate-200 text-slate-800"
               }`}
             >
-              
+
               {/* إغلاق */}
-              <button 
+              <button
                 onClick={() => setIsInvoiceModalOpen(false)}
                 className="absolute top-6 left-6 p-2 rounded-2xl bg-black/[0.04] dark:bg-white/[0.04] hover:bg-black/[0.08] transition-colors cursor-pointer"
               >
@@ -1106,21 +1039,23 @@ export default function FinancePage() {
                 <span className="p-2.5 rounded-2xl bg-[#0B3D2E]/10 dark:bg-[#0B3D2E]/25 text-[#C8A762]">
                   <Receipt size={18} weight="duotone" />
                 </span>
-                <h2 className="text-xl font-extrabold tracking-tight">إصدار فاتورة قانونية جديدة</h2>
+                <h2 className="text-xl font-extrabold tracking-tight">إصدار فاتورة جديدة</h2>
               </div>
 
               <AnimatePresence mode="wait">
                 {isSubmitting ? (
-                  // شاشة التحميل Shimmer التفاعلية
-                  <motion.div 
+                  // شاشة الانتظار أثناء الحفظ على الخادم.
+                  // النص السابق كان يعد بـ«فحص المطابقة وحساب الضريبة بالذكاء
+                  // الاصطناعي»؛ الطلب يكتب صف فاتورة واحداً ولا يحسب ضريبة.
+                  <motion.div
                     key="shimmer"
-                    initial={{ opacity: 0 }} 
-                    animate={{ opacity: 1 }} 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     className="py-12 space-y-6 text-center"
                   >
                     <div className="relative w-16 h-16 mx-auto">
-                      <motion.div 
+                      <motion.div
                         className="absolute inset-0 rounded-full border-4 border-[#C8A762]/20 border-t-[#C8A762]"
                         animate={{ rotate: 360 }}
                         transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
@@ -1128,18 +1063,18 @@ export default function FinancePage() {
                     </div>
                     <div className="space-y-2">
                       <p className="text-sm font-bold text-slate-700 dark:text-zinc-300">
-                        جارٍ معالجة وتسجيل الفاتورة نظامياً...
+                        جارٍ حفظ الفاتورة...
                       </p>
                       <p className="text-[11px] text-slate-400 dark:text-zinc-500 max-w-xs mx-auto leading-relaxed">
-                        يتم الآن فحص المطابقة وحساب الضريبة الضريبية وحفظ الفاتورة في السجل المالي للمنصة بالذكاء الاصطناعي.
+                        يتم تسجيل الفاتورة في سجلّك المالي على المنصة.
                       </p>
                     </div>
                   </motion.div>
                 ) : (
                   // نموذج المدخلات التفاعلي
-                  <motion.form 
+                  <motion.form
                     key="form"
-                    onSubmit={handleCreateInvoice} 
+                    onSubmit={handleCreateInvoice}
                     className="space-y-4"
                   >
                     {/* حقل العميل */}
@@ -1164,7 +1099,7 @@ export default function FinancePage() {
                         type="text"
                         value={newInvCase}
                         onChange={(e) => setNewInvCase(e.target.value)}
-                        placeholder="مثال: قضية نزاع شركة الأفق، استشارة عمالية..."
+                        placeholder="مثال: نزاع تجاري، استشارة عمالية..."
                         className={`w-full rounded-2xl border px-4 py-3 text-[12px] outline-none focus:border-[#C8A762]/50 transition-all text-right ${
                           isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"
                         }`}
@@ -1178,6 +1113,8 @@ export default function FinancePage() {
                         <input
                           required
                           type="number"
+                          min="1"
+                          step="any"
                           value={newInvFee}
                           onChange={(e) => setNewInvFee(e.target.value)}
                           placeholder="مثال: ٢٥٠٠٠"
@@ -1252,7 +1189,7 @@ export default function FinancePage() {
         )}
       </AnimatePresence>
 
-      {/* ── 5. نافذة تأكيد تحصيل الفاتورة (نقداً / تحويل بنكي) ── */}
+      {/* ── نافذة تأكيد تحصيل الفاتورة (نقداً / تحويل بنكي) ── */}
       <AnimatePresence>
         {collectTarget && (() => {
           const alreadyCollected = Number(collectTarget.paidAmount) || 0;

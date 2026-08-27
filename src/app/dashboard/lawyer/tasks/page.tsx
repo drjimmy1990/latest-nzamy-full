@@ -5,40 +5,28 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, CheckCircle, Kanban, List,
   Archive, ArrowCounterClockwise, Trash,
-  Trophy, X, UsersThree, User,
+  Trophy,
   FolderOpen, CalendarBlank, CalendarDot, CalendarCheck, ChartBar, CalendarStar, Timer,
-  Warning,
+  Warning, ArrowClockwise, CircleNotch,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import EmptyState from "@/components/ui/EmptyState";
-import { VoiceInput } from "@/components/ui/VoiceInput";
-import { CasePicker } from "@/components/ui/CasePicker";
-import { getActiveCases } from "@/lib/services/casesService";
 import {
-  getLawyerTasks,
   updateLawyerTaskStatus,
   updateLawyerTask,
   updateLawyerTaskSubtasks,
+  type LawyerTask,
 } from "@/lib/services/lawyerTasksService";
-import { apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { SHARED_CASES } from "@/lib/casesStore";
-import { useUser } from "@/hooks/useUser";
 import ReactConfetti from "react-confetti";
 
 // Internal
 import type { Task, TaskStatus, TaskCategory, ViewMode, TimeRange, KanbanGroupBy, Priority } from "./_types";
 import { KANBAN_COLS, CATEGORY_CONFIG, PRIORITY_CONFIG, today, playSuccessBeep } from "./_data";
-import { TaskCard, TaskGamification } from "./_components/TaskCard";
+import { TaskCard } from "./_components/TaskCard";
 import PomodoroPanel from "./_components/PomodoroPanel";
-import { getBenchmarks, getPerformanceContext, getPerformanceSnapshot, buildLiveSnapshot } from "../_data/performance";
-
-// ─── Solo+ Team Members Mock ──────────────────────────────────────────────────
-const TEAM_MEMBERS = [
-  { id: "m1", name: "نورة القحطاني", avatar: "ن" },
-  { id: "m2", name: "علي المطيري",   avatar: "ع" },
-];
-
-type OwnerFilter = "mine" | "team" | "all";
+import AddTaskModal from "../_components/AddTaskModal";
 
 // ─── Status mapping: UI TaskStatus ↔ DB service_requests.status enum ─────────
 // todo → pending_assignment, in_progress → assigned, done → completed, archived → cancelled
@@ -53,25 +41,26 @@ const taskStatusToDb = (s: TaskStatus): string =>
 
 export default function LawyerTasksPage() {
   const { isDark } = useTheme();
-  const user = useUser();
   const [showPomodoro, setShowPomodoro] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Loading / could-not-read / read-and-genuinely-empty. The page used to have
+  // only `loading`, so a failed query rendered as a positive statement that the
+  // lawyer has no tasks.
+  // Demo mode has no store behind /api/v1/lawyer/tasks, so there is nothing to
+  // wait for and an empty board there is the truth, not a pending read.
+  const [loadState, setLoadState] = useState<"loading" | "error" | "ready">(
+    isSupabaseMode ? "loading" : "ready",
+  );
   // A write that the server refused must say so — every handler below is
   // optimistic, so a silent failure looks exactly like a save.
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const [pomodoroBonus, setPomodoroBonus] = useState(0);
   const [filter, setFilter] = useState<TaskStatus | "all" | "archived">("all");
-  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<TaskCategory | "all">("all");
   const [priority,  setPriority]  = useState<Priority | "all">("all");
   const [timeRange, setTimeRange] = useState<TimeRange>("all");
   const [view, setView] = useState<ViewMode>("list");
   const [kanbanGroup, setKanbanGroup] = useState<KanbanGroupBy>("status");
-  const [newTask, setNewTask] = useState("");
-  const [taskCategory, setTaskCategory] = useState<TaskCategory>("case");
-  const [taskCaseId, setTaskCaseId] = useState("");
   const [showArchive, setShowArchive] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [achievementTitle, setAchievementTitle] = useState<string | null>(null);
@@ -86,28 +75,54 @@ export default function LawyerTasksPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // ─── Fetch tasks from service ───────────────────────────────────────────────
-  useEffect(() => {
-    getLawyerTasks()
-      .then((data) => {
-        const mapped: Task[] = (data || []).map((d: any) => ({
-          id: d.id,
-          title: d.title || '',
-          category: (d.type === 'case' || d.type === 'document' || d.type === 'admin' || d.type === 'deadline' || d.type === 'client' ? d.type : 'case') as TaskCategory,
-          priority: (d.priority === 'urgent' || d.priority === 'high' || d.priority === 'normal' || d.priority === 'low' ? d.priority : 'normal') as Priority,
-          status: (d.status === 'todo' || d.status === 'in_progress' || d.status === 'done' || d.status === 'archived' ? d.status : 'todo') as TaskStatus,
-          dueDate: d.dueDate || d.due_date || undefined,
-          caseId: d.caseId || d.case_id || undefined,
-          caseRef: d.caseRef || d.case_ref || undefined,
-          ownerId: d.ownerId || d.owner_id || undefined,
-          notes: d.notes || undefined,
-          subtasks: d.subtasks || [],
-        }));
-        setTasks(mapped);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+  // ─── Fetch tasks ────────────────────────────────────────────────────────────
+  // NOT getLawyerTasks(): that wrapper is `try { … } catch { return []; }`
+  // (lawyerTasksService.ts:99-101), so a 401 after a session expiry, a 500 or an
+  // RLS refusal all arrive here as "you have no tasks" and get rendered as one.
+  // apiGet throws on any non-2xx, which is the whole point. The route no longer
+  // answers 200-with-[] on a failed select either, so the throw actually
+  // happens. src/components/ui/CasePicker.tsx:81-95 uses the same shape on the
+  // same grounds.
+  // No setState before the first await — the retry button sets "loading" itself,
+  // and a refetch after a save keeps the current board on screen.
+  const loadTasks = useCallback(async () => {
+    if (!isSupabaseMode) return;
+    try {
+      const data = await apiGet<LawyerTask[]>("/api/v1/lawyer/tasks");
+      setTasks((data ?? []).map((d): Task => ({
+        id: d.id,
+        title: d.title || "",
+        // `d.category`, not `d.type`. The route derives `category` from
+        // metadata.category (route.ts:98-101) and returns `type` as the raw DB
+        // row type, which is always "service" for a task — so reading `type`
+        // here made every task fall back to «قضية» no matter what the lawyer
+        // picked, and the التصنيف filter could never match the others.
+        category: (d.category === "case" || d.category === "document" || d.category === "admin" || d.category === "deadline" || d.category === "client" ? d.category : "case") as TaskCategory,
+        priority: (d.priority === "urgent" || d.priority === "high" || d.priority === "normal" || d.priority === "low" ? d.priority : "normal") as Priority,
+        status: (d.status === "todo" || d.status === "in_progress" || d.status === "done" || d.status === "archived" ? d.status : "todo") as TaskStatus,
+        dueDate: d.dueDate || undefined,
+        caseId: d.caseId || undefined,
+        caseRef: d.caseRef || undefined,
+        notes: d.notes || undefined,
+        subtasks: d.subtasks || [],
+      })));
+      setLoadState("ready");
+    } catch (err) {
+      console.error("[tasks] failed to load tasks:", err);
+      setLoadState("error");
+    }
   }, []);
+
+  // Wrapped rather than `void loadTasks()` so the fetch is not a synchronous call
+  // out of the effect body — same shape as src/components/ui/CasePicker.tsx.
+  useEffect(() => { (async () => { await loadTasks(); })(); }, [loadTasks]);
+
+  // AddTaskModal dispatches this once the server has CONFIRMED the insert.
+  useEffect(() => {
+    const onUpdated = () => { void loadTasks(); };
+    window.addEventListener("nzamy-workflow-updated", onUpdated);
+    return () => window.removeEventListener("nzamy-workflow-updated", onUpdated);
+  }, [loadTasks]);
 
   const showAchievement = (title: string) => {
     setAchievementTitle(title);
@@ -157,7 +172,6 @@ export default function LawyerTasksPage() {
     ? archived
     : active
         .filter(t => filter === "all" || t.status === filter)
-        .filter(t => ownerFilter === "all" || (ownerFilter === "mine" ? !t.ownerId : !!t.ownerId))
         .filter(t => !t.caseId || !archivedCaseIds.has(t.caseId));
 
   const cutoff = timeRangeCutoff(timeRange);
@@ -177,7 +191,6 @@ export default function LawyerTasksPage() {
   const kanbanTasks = (s: TaskStatus) =>
     active
       .filter(t => t.status === s)
-      .filter(t => ownerFilter === "all" || (ownerFilter === "mine" ? !t.ownerId : !!t.ownerId))
       .filter(t => categoryFilter === "all" || t.category === categoryFilter)
       .filter(t => priority === "all" || t.priority === priority)
       .filter(t => {
@@ -360,52 +373,16 @@ export default function LawyerTasksPage() {
     });
   }, []);
 
-  const addTask = async () => {
-    if (!newTask.trim()) return;
-    const activeCasesList = await getActiveCases();
-    const linked = activeCasesList.find(c => c.id === taskCaseId);
-    const priority = "normal";
-    const payload = {
-      title: newTask.trim(),
-      category: taskCategory,
-      priority,
-      dueDate: undefined as string | undefined,
-      caseId: taskCaseId || undefined,
-      caseRef: linked?.title || undefined,
-    };
-
-    if (isSupabaseMode) {
-      try {
-        const res = await apiMutate<{ data: any }>("/api/v1/lawyer/tasks", "POST", payload);
-        const d = res?.data;
-        if (d) {
-          const newTaskObj: Task = {
-            id: d.id,
-            title: d.title || newTask,
-            category: (d.category === "case" || d.category === "document" || d.category === "admin" || d.category === "deadline" || d.category === "client" ? d.category : taskCategory) as TaskCategory,
-            priority: (d.priority === "urgent" || d.priority === "high" || d.priority === "normal" || d.priority === "low" ? d.priority : priority) as Priority,
-            status: (d.status === "todo" || d.status === "in_progress" || d.status === "done" || d.status === "archived" ? d.status : "todo") as TaskStatus,
-            caseId: d.caseId || undefined,
-            caseRef: d.caseRef || undefined,
-          };
-          setTasks(prev => [newTaskObj, ...prev]);
-          window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
-        }
-      } catch (e) {
-        console.error("[tasks] createTask failed:", e);
-      }
-    } else {
-      // Demo fallback: local only
-      const newTaskObj: Task = {
-        id: Date.now().toString(), title: newTask,
-        category: taskCategory, priority, status: "todo",
-        caseId: taskCaseId || undefined,
-        caseRef: linked?.title || undefined,
-      };
-      setTasks(prev => [newTaskObj, ...prev]);
-    }
-    setNewTask(""); setTaskCaseId(""); setTaskCategory("case");
-  };
+  // `addTask` and the inline «تفاصيل المهمة الجديدة» modal it served are gone.
+  // That modal called this async function WITHOUT awaiting it and closed
+  // immediately, its only failure handling was a console.error, and it cleared
+  // the title the lawyer had typed either way — so a failed POST produced a
+  // closed modal, an empty field, no row and no message. Its «الأولوية» row was
+  // three buttons with no onClick at all: permanently styled as if «حرجة» and
+  // «عاجل» were both selected, and never sent. ../_components/AddTaskModal
+  // already does this correctly — it awaits the insert, only shows the success
+  // screen once the server confirms, surfaces the Arabic error in place, sends
+  // the priority and the due date, and disables the form mid-save.
 
   const onDragStart = useCallback((id: string) => { dragId.current = id; }, []);
   const onDrop = useCallback((targetStatus: TaskStatus) => {
@@ -418,41 +395,56 @@ export default function LawyerTasksPage() {
       original = current?.status;
       return prev.map(t => t.id === dragIdRef ? { ...t, status: targetStatus } : t);
     });
-    // L5: persist the kanban drop to the backend (mapped to DB enum).
-    updateLawyerTaskStatus(dragIdRef, taskStatusToDb(targetStatus)).catch(() => {
-      // Revert on failure.
-      if (original) {
-        const revertStatus: TaskStatus = original;
-        setTasks(prev => prev.map(t => t.id === dragIdRef ? { ...t, status: revertStatus } : t));
-      }
+    // Was a `.catch()`, which was dead code: updateLawyerTaskStatus resolves
+    // `false` on failure rather than rejecting (lawyerTasksService.ts:130-135),
+    // exactly as the comment block above this section warns. A card dragged into
+    // «مكتملة» against a failing PATCH stayed there, the header count moved, and
+    // the task was still «معلقة» after a reload. Check the resolved boolean, the
+    // way the other seven handlers in this file already do.
+    updateLawyerTaskStatus(dragIdRef, taskStatusToDb(targetStatus)).then(ok => {
+      if (ok || !original) return;
+      const revertStatus: TaskStatus = original;
+      setTasks(prev => prev.map(t => t.id === dragIdRef ? { ...t, status: revertStatus } : t));
+      setSaveError("تعذّر نقل المهمة. أعد المحاولة.");
     });
     dragId.current = null;
     setDragOverCol(null);
   }, []);
 
-  const performanceContext = getPerformanceContext(user);
-  const performanceSnapshot = buildLiveSnapshot("today", tasks, { pomodoroBonus });
-  const performanceBenchmarks = getBenchmarks(performanceContext, {
-    city: "الرياض",
-    firmName: user.affiliation?.entityName,
-  });
-
-  const onPomodoroComplete = useCallback(() => {
-    setPomodoroBonus(count => count + 1);
-  }, []);
-
   return (
     <div className="max-w-[1240px] mx-auto space-y-5 relative" dir="rtl">
-      {/* Demo Banner */}
-      {!loading && tasks.length === 0 && (
+      {/* Read state. This banner used to fire on `!loading && tasks.length === 0`
+          — one condition for two completely different facts. An expired session,
+          an offline browser or an RLS refusal each produced the sentence
+          «لا توجد مهام بعد», a positive claim about the account, under a heading
+          calling the (nonexistent) contents «بيانات تجريبية». */}
+      {loadState === "error" && (
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
-            <Warning size={18} weight="fill" className="text-amber-500" />
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-500/25 bg-red-900/10" : "border-red-200 bg-red-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-red-500/15" : "bg-red-100"}`}>
+            <Warning size={18} weight="fill" className="text-red-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>تعذّر قراءة مهامك</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-red-600/70"}`}>
+              هذه ليست قائمة فارغة — لم نتمكّن من قراءة المهام، وقد تكون لديك مهام لا تظهر هنا الآن.
+            </p>
+          </div>
+          <button onClick={() => { setLoadState("loading"); void loadTasks(); }}
+            className="flex items-center gap-1.5 flex-shrink-0 rounded-xl px-3 py-2 text-[12px] font-bold bg-red-500 text-white hover:bg-red-600 transition">
+            <ArrowClockwise size={13} weight="bold" />إعادة المحاولة
+          </button>
+        </motion.div>
+      )}
+      {loadState === "ready" && tasks.length === 0 && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-slate-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-white/[0.05]" : "bg-white"}`}>
+            <CheckCircle size={18} weight="duotone" className={isDark ? "text-zinc-500" : "text-slate-400"} />
           </div>
           <div>
-            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
-            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>لا توجد مهام بعد — أضف مهمة جديدة أو اربط حسابك بقاعدة البيانات</p>
+            <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد مهام بعد</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>ابدأ بإضافة مهمة من زر «مهمة جديدة» أعلاه.</p>
           </div>
         </motion.div>
       )}
@@ -542,37 +534,17 @@ export default function LawyerTasksPage() {
           </div>
       </motion.div>
 
-      {/* Owner Toggle (Solo+ Mode) */}
-      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }}
-        className={`flex gap-1 p-1 rounded-2xl w-fit ${isDark ? "bg-zinc-800/60" : "bg-slate-100"}`}>
-        {([
-          { key: "all"  as OwnerFilter, label: "الكل",         icon: CheckCircle },
-          { key: "mine" as OwnerFilter, label: "مهامي",        icon: User },
-          { key: "team" as OwnerFilter, label: "مهام الفريق", icon: UsersThree },
-        ]).map(opt => {
-          const Icon = opt.icon;
-          const isActive = ownerFilter === opt.key;
-          return (
-            <button key={opt.key} onClick={() => setOwnerFilter(opt.key)}
-              className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold transition-all ${
-                isActive ? isDark ? "bg-zinc-700 text-white" : "bg-white text-[#0B3D2E] shadow-sm" : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"
-              }`}>
-              <Icon size={13} weight={isActive ? "fill" : "regular"} />
-              {opt.label}
-              {opt.key === "team" && (
-                <span className="flex -space-x-1">
-                  {TEAM_MEMBERS.map(m => (
-                    <span key={m.id}
-                      className={`w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center ring-1 ring-white ${
-                        isActive ? isDark ? "bg-zinc-600 text-white" : "bg-slate-200 text-slate-700" : "bg-slate-300 text-slate-500"
-                      }`}>{m.avatar}</span>
-                  ))}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </motion.div>
+      {/* The الكل / مهامي / مهام الفريق toggle used to sit here. It filtered on
+          `t.ownerId`, which GET /api/v1/lawyer/tasks does not return and
+          service_requests has no column for — so it was always undefined,
+          «مهام الفريق» was permanently «لا توجد مهام» whatever the account held,
+          and «مهامي» was indistinguishable from «الكل». The tab also carried two
+          avatar circles built from a hardcoded pair of invented colleagues,
+          implying a solo lawyer has a two-person team. There is no team
+          membership in this product (zero firm accounts exist), so the control
+          is removed rather than wired to something that does not exist. Every
+          task the route returns is already this lawyer's own — it filters on
+          `assigned_to = user.id`. */}
 
       {/* Pomodoro Panel — يظهر أولاً عند التفعيل */}
       <AnimatePresence>
@@ -587,19 +559,24 @@ export default function LawyerTasksPage() {
             <PomodoroPanel
               isDark={isDark}
               taskTitles={tasks.filter(t => t.status !== "archived" && t.status !== "done").map(t => t.title)}
-              onPomodoroComplete={onPomodoroComplete}
             />
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Gamification Panel — سجل الأداء يلي المؤقت */}
-      <TaskGamification
-        snapshot={performanceSnapshot}
-        benchmarks={performanceBenchmarks}
-        context={performanceContext}
-        isDark={isDark}
-      />
+      {/* The «سجل الأداء» panel used to sit here. Every number in it was a
+          literal from ../_data/performance.ts — 4.7 ساعات, 3 مهام منجزة, 2 قضايا
+          نشطة, 6 جلسات بومودورو, a 75% productivity dial, and
+          «أنت في أعلى ٥٤٪ ضمن محامو المملكة», where the 54 is
+          Math.round(((4.7 - 4.8) / 4.8) * 45 + 55) against an invented national
+          average, and «الرياض» was hardcoded regardless of where the lawyer
+          practises. Its «المهام المنجزة ٣» sat directly above this page's own
+          real `counts.done`, contradicting it on screen.
+          There is no hours-worked, no productivity and no peer-benchmark source
+          anywhere in this product, so the panel is removed rather than
+          zero-filled: a rendered 0 would be the same lie as a rendered 4.7.
+          The Pomodoro timer above still runs — it just no longer feeds two
+          points per session into a fabricated score. */}
 
       {/* Time Range Bar */}
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}
@@ -653,8 +630,15 @@ export default function LawyerTasksPage() {
         </button>
       </motion.div>
 
+      {loadState === "loading" && (
+        <div className={`${card} p-12 flex flex-col items-center gap-3`}>
+          <CircleNotch size={24} weight="bold" className={`animate-spin ${isDark?"text-zinc-600":"text-slate-300"}`}/>
+          <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>جارٍ تحميل مهامك…</p>
+        </div>
+      )}
+
       {/* ── List View (grouped) ── */}
-      {view === "list" && (() => {
+      {loadState === "ready" && view === "list" && (() => {
         type GSection = {key:string;label:string;color:string;tasks:Task[]};
         let sections: GSection[] = [];
 
@@ -729,7 +713,7 @@ export default function LawyerTasksPage() {
       })()}
 
       {/* ── Kanban View (Bento 2.0 & Liquid Glass) ── */}
-      {view === "kanban" && (
+      {loadState === "ready" && view === "kanban" && (
         <div className="space-y-4">
           <div className="flex gap-6 overflow-x-auto pb-4 pt-2 snap-x snap-mandatory hide-scrollbar">
             {(()=>{
@@ -832,73 +816,15 @@ export default function LawyerTasksPage() {
         </div>
       )}
 
-      {/* ── Add Task Modal ── */}
+      {/* Add Task Modal — the shared component, not the inline copy that used to
+          live here. See the note where `addTask` was: that copy closed without
+          awaiting the save, swallowed the failure to the console, discarded the
+          typed title, and rendered a three-button «الأولوية» row with no
+          handlers that was never sent. This one confirms with the server first
+          and refetches the board on success via `nzamy-workflow-updated`. */}
       <AnimatePresence>
         {showAddModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={e => { if (e.target === e.currentTarget) setShowAddModal(false); }}>
-            <motion.div initial={{ scale: 0.95, y: 10, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.95, y: -10, opacity: 0 }}
-              className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}>
-              <div className="flex justify-between items-center mb-5">
-                <h3 className={`text-lg font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>تفاصيل المهمة الجديدة</h3>
-                <button onClick={() => setShowAddModal(false)} className={`w-8 h-8 flex items-center justify-center rounded-full ${isDark ? "bg-white/10 hover:bg-white/20" : "bg-slate-100 hover:bg-slate-200"}`}>
-                  <X size={16} />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>عنوان المهمة</label>
-                  <div className="relative">
-                    <input value={newTask} onChange={e => setNewTask(e.target.value)} placeholder="مثال: كتابة مذكرة رد..."
-                      className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none pe-12 ${isDark ? "border-white/[0.06] bg-zinc-800 text-zinc-100" : "border-slate-200 bg-slate-50 text-slate-800"}`} />
-                    <div className="absolute left-2 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center pointer-events-auto">
-                      <VoiceInput onTranscript={t => setNewTask(prev => prev ? prev + " " + t : t)} compact />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>التصنيف</label>
-                    <select value={taskCategory} onChange={e=>setTaskCategory(e.target.value as TaskCategory)} className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${isDark ? "border-white/[0.06] bg-zinc-800 text-zinc-100" : "border-slate-200 bg-slate-50 text-slate-800"}`}>
-                      <option value="case">قضية</option>
-                      <option value="document">مستند</option>
-                      <option value="client">إدارة عملاء</option>
-                      <option value="admin">إداري عام</option>
-                    </select>
-                  </div>
-                  {taskCategory === "case" && (
-                    <div>
-                      <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>ارتباط بقضية (اختياري)</label>
-                      <CasePicker value={taskCaseId} onChange={(id) => setTaskCaseId(id)} isDark={isDark} />
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>الأولوية</label>
-                  <div className="flex gap-2">
-                    {(["critical", "high", "normal"] as const).map(p => (
-                      <button key={p} className={`flex-1 rounded-xl py-2 text-[12px] font-bold border transition-colors ${
-                        p === "critical" ? "border-red-500/30 bg-red-500/10 text-red-500" :
-                        p === "high" ? "border-amber-500/30 bg-amber-500/10 text-amber-500" :
-                        isDark ? "border-white/[0.06] bg-zinc-800 text-zinc-400" : "border-slate-200 bg-slate-50 text-slate-500"
-                      }`}>
-                        {p === "critical" ? "حرجة" : p === "high" ? "عاجل" : "عادية"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <button onClick={() => { if(newTask.trim()) { addTask(); setShowAddModal(false); } }}
-                  className="w-full mt-2 rounded-xl bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] py-3 text-[13px] font-bold text-white">
-                  تأكيد الإضافة
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
+          <AddTaskModal onClose={() => setShowAddModal(false)} isDark={isDark} />
         )}
       </AnimatePresence>
     </div>

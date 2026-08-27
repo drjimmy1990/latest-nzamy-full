@@ -4,14 +4,22 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, XCircle } from "@phosphor-icons/react";
 import { createWorkflowRequest } from "@/lib/services/workflowService";
+import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createWorkflowId } from "@/lib/workflowStore";
 import type { UserType, UserTier } from "@/hooks/useUser";
 
 interface Props {
   onClose: () => void;
   isDark: boolean;
-  /** Current user context from the parent page (useUser()). */
-  user?: { userId?: string; name: string; userType: UserType; tier: UserTier };
+  /**
+   * Current user context from the parent page (useUser()). REQUIRED, and
+   * `userId` is checked again at save time: a hearing row written with
+   * `assigned_to = null` is not merely orphaned, it matches the marketplace
+   * browse policy (`assigned_to IS NULL AND status IN ('pending',
+   * 'pending_assignment') AND receiver <> 'ai_workspace'`) and becomes readable
+   * by every other verified lawyer on the platform.
+   */
+  user: { userId?: string; name: string; userType: UserType; tier: UserTier };
 }
 
 type Urgency = "critical" | "high" | "normal";
@@ -56,34 +64,78 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
   );
 
   async function handleSave() {
+    // A hearing with no date is not a diary entry — the calendar has nowhere to
+    // put it, and the old code defaulted it to "today, forever". The date input
+    // is now gated in step 1 as well; this is the backstop.
+    if (!date) {
+      setError("حدِّد تاريخ الموعد قبل الحفظ — لا يمكن إدراج موعد بلا تاريخ في الجدول.");
+      setStep(1);
+      return;
+    }
+    // Refuse to write a row nobody owns. `assigned_to = null` on a
+    // receiver="lawyer" row is exactly the shape the marketplace browse policy
+    // opens to every verified lawyer, so an unowned hearing is both invisible
+    // to its author's own filters and visible to strangers.
+    if (!user.userId) {
+      setError("تعذّر تحديد حسابك. أعد تحميل الصفحة ثم حاول مرة أخرى.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const id = createWorkflowId();
       const typeLabel = TYPE_OPTIONS.find(t => t.value === type)?.label ?? "جلسة";
-      await createWorkflowRequest({
+      const payload = {
         id,
-        type: "service",
+        type: "service" as const,
         title: caseName.trim() ? `جلسة — ${caseName.trim()}` : typeLabel,
         description: notes.trim(),
-        receiver: "lawyer",
-        status: "pending_assignment",
+        receiver: "lawyer" as const,
+        status: "pending_assignment" as const,
         requester: {
-          userId: user?.userId,
-          name: user?.name || "محامي نظامي",
-          role: user?.userType ?? "lawyer",
-          tier: user?.tier ?? "free",
+          userId: user.userId,
+          name: user.name || "محامي نظامي",
+          role: user.userType ?? "lawyer",
+          tier: user.tier ?? "free",
         },
-        payment: { amount: 0, status: "not_required" },
+        payment: { amount: 0, status: "not_required" as const },
         sourcePath: "",
-        metadata: { date, time, type, urgency, location, notes, caseName },
-        assignedTo: user?.userId ?? null,
-      });
+        // `hearing: true` is the same discriminator convention the task rows
+        // (`metadata.task`) and the manually-added clients (`metadata.client`)
+        // already use: these three shapes all live in service_requests as
+        // type="service", receiver="lawyer", and are told apart only by
+        // metadata. The lawyer cases/contracts boards need it to stop listing
+        // hearings as cases.
+        metadata: { hearing: true, date, time, type, urgency, location, notes, caseName },
+        assignedTo: user.userId,
+      };
+
+      // NOT createWorkflowRequest() in supabase mode. That helper catches a
+      // failed POST and writes the row to localStorage instead
+      // (workflowService.ts:54-57), so it resolves successfully on a 401/500/RLS
+      // refusal — the catch below could never run, and the lawyer read
+      // «تم إضافة الموعد بنجاح» over a hearing that existed only in this
+      // browser and never appeared in any list again. A missed hearing is the
+      // worst thing this dashboard can produce, so the save goes straight to the
+      // API: apiMutate throws on any non-2xx and the error reaches the lawyer.
+      //
+      // Demo mode still uses the helper, because there the local store is the
+      // real backend and genuinely round-trips (readWorkflowRequestsByReceiver
+      // reads it back). The lie was supabase-only.
+      if (isSupabaseMode) {
+        await apiMutate("/api/v1/service-requests", "POST", payload);
+      } else {
+        await createWorkflowRequest(payload);
+      }
       setDone(true);
       window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
     } catch (err) {
-      console.error("[AddHearingModal] createWorkflowRequest failed:", err);
-      setError("تعذّر إضافة الموعد. يرجى المحاولة مرة أخرى.");
+      console.error("[AddHearingModal] save failed:", err);
+      setError(
+        err instanceof Error && err.message
+          ? `تعذّر إضافة الموعد: ${err.message}`
+          : "تعذّر إضافة الموعد. تحقّق من الاتصال ثم أعد المحاولة.",
+      );
     } finally {
       setSaving(false);
     }
@@ -116,7 +168,7 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
             </div>
             <p className={`font-bold text-[16px] flex-col ${isDark ? "text-white" : "text-zinc-900"}`}>تم إضافة الموعد بنجاح!</p>
             <p className={`text-[12px] mt-1 mb-4 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-              تم تسجيل الموعد في جدول أعمالك ومزامنته مع التقويم.
+              تم حفظ الموعد في جدول أعمالك. يمكنك إضافته إلى تقويم Google يدوياً من بطاقة الموعد.
             </p>
             <button onClick={onClose} className="rounded-xl px-5 py-2.5 w-full text-[13px] font-bold bg-[#0B3D2E] text-white hover:bg-[#0B3D2E]/90 transition">
               إغلاق
@@ -145,7 +197,7 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>التاريخ</label>
+                      <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>التاريخ <span className="text-red-500">*</span></label>
                       <input type="date" value={date} onChange={e => setDate(e.target.value)} className={inputCls} />
                     </div>
                     <div>
@@ -153,9 +205,16 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
                       <input type="time" value={time} onChange={e => setTime(e.target.value)} className={inputCls} />
                     </div>
                   </div>
-                  <button onClick={() => setStep(2)} disabled={!type} className="w-full rounded-xl bg-[#0B3D2E] text-[#C8A762] py-2.5 text-[13px] font-bold hover:bg-[#092e22] transition mt-2 disabled:opacity-40">
+                  {/* Both gates are real: a typeless row renders under the wrong
+                      badge, and a dateless row has nowhere to sit on a calendar. */}
+                  <button onClick={() => setStep(2)} disabled={!type || !date} className="w-full rounded-xl bg-[#0B3D2E] text-[#C8A762] py-2.5 text-[13px] font-bold hover:bg-[#092e22] transition mt-2 disabled:opacity-40">
                     الخطوة التالية
                   </button>
+                  {!date && (
+                    <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                      التاريخ مطلوب — بدونه لن يظهر الموعد في جدول أعمالك.
+                    </p>
+                  )}
                 </motion.div>
               )}
               {step === 2 && (

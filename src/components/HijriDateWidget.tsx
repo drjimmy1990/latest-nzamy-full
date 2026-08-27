@@ -17,16 +17,29 @@ function toHijri(date:Date){const jd=toJD(date.getFullYear(),date.getMonth()+1,d
 function fromHijri(hd:number,hm:number,hy:number):Date{const n=Math.floor((hy-1)/30);const yr=hy-30*n-1;const J=Math.floor((yr*11+3)/30)+354*yr+30*hm-Math.floor((hm-1)/2)+hd+29+10631*n+1948440-385;const{year,month,day}=jdToG(J);return new Date(year,month-1,day);}
 function ar(n:number|string){return String(n).replace(/[0-9]/g,d=>"٠١٢٣٤٥٦٧٨٩"[+d]);}
 
-// ── Mock tasks for calendar dots ──────────────────────────────────────
-const MOCK_TASKS: Record<string,{type:"hearing"|"task"|"deadline";label:string}[]> = {
-  [new Date().toDateString()]: [{type:"hearing",label:"جلسة: المحكمة التجارية - ٩ ص"},{type:"task",label:"مراجعة عقد الشركاء"}],
-  [new Date(Date.now()+86400000).toDateString()]: [{type:"deadline",label:"موعد تقديم مذكرة الطعن"}],
-  [new Date(Date.now()+2*86400000).toDateString()]: [{type:"hearing",label:"جلسة: محكمة الاستئناف - ٢ م"}],
-  [new Date(Date.now()+4*86400000).toDateString()]: [{type:"task",label:"إعداد عقد الخدمات"},{type:"task",label:"رد على بريد الموكل"}],
-};
-
-const TYPE_COLOR = {hearing:"bg-blue-500",task:"bg-emerald-500",deadline:"bg-red-500"} as const;
-const TYPE_LABEL = {hearing:"جلسة",task:"مهمة",deadline:"موعد حرج"} as const;
+// ── This widget shows dates. It does NOT show a schedule. ─────────────
+//
+// Audit 2026-08-27 — deleted from here: a `MOCK_TASKS` literal whose keys were
+// computed from `new Date()` at module load, so it never went stale and always
+// looked like today's real agenda. It put «جلسة: المحكمة التجارية - ٩ ص» on
+// today's cell, «موعد تقديم مذكرة الطعن» on tomorrow's, and «جلسة: محكمة
+// الاستئناف - ٢ م» two days out — a named court, a time and an appeal deadline,
+// rendered as this lawyer's own calendar, on every one of the six real accounts,
+// with nothing on screen marking it as sample data. It was rendered, not dead:
+// coloured dots on the month grid and labelled «جلسة/مهمة/موعد حرج» rows on
+// day-click. The colour/label maps and the legend went with it.
+//
+// It was NOT replaced with a real feed. This component takes no props, has no
+// query, and is mounted in three places (the lawyer overview header, the
+// activity page header, the shared sidebar) — two of which are not lawyer
+// surfaces at all, so there is no one hearings source it could honestly read.
+// The lawyer's real schedule already has a screen: /dashboard/lawyer/hearings,
+// backed by `service_requests.metadata.date`. Wiring this widget to it is a
+// feature with an owner and a data contract, not a hole to plug with a literal.
+//
+// Clicking a day now shows that day's date in both calendars, which is the one
+// thing this component can state truthfully — and is what a Hijri date tool is
+// actually for.
 
 // ── Component ─────────────────────────────────────────────────────────
 export default function HijriDateWidget() {
@@ -171,7 +184,6 @@ export default function HijriDateWidget() {
                       if(!cell) return <div key={i}/>;
                       const isToday = cell.toDateString()===now.toDateString();
                       const isSelected = selectedDay?.toDateString()===cell.toDateString();
-                      const tasks = MOCK_TASKS[cell.toDateString()]??[];
                       const hijriDay = toHijri(cell).d;
                       return (
                         <button key={i} onClick={()=>setSelectedDay(isSelected?null:cell)}
@@ -185,51 +197,44 @@ export default function HijriDateWidget() {
                           <span className={`text-[13px] font-bold leading-none ${isSelected?"text-white":isDark?"text-emerald-400":"text-emerald-700"}`}>{ar(hijriDay)}</span>
                           {/* Miladi day = secondary (small, muted) */}
                           <span className={`text-[9px] mt-0.5 ${isSelected?"text-white/60":isDark?"text-zinc-500":"text-slate-400"}`}>{ar(cell.getDate())}</span>
-                          {tasks.length>0&&(
-                            <div className="flex gap-0.5 mt-0.5">
-                              {tasks.slice(0,3).map((t,ti)=>(
-                                <span key={ti} className={`w-1 h-1 rounded-full ${TYPE_COLOR[t.type]} ${isSelected?"opacity-80":""}`}/>
-                              ))}
-                            </div>
-                          )}
                         </button>
                       );
                     })}
                   </div>
 
-                  {/* Selected day events */}
+                  {/* Selected day — the full date in both calendars. Derived
+                      from the clicked cell, so there is nothing here that is
+                      not simply true of that day. */}
                   <AnimatePresence>
                     {selectedDay&&(
                       <motion.div initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}}
                         transition={{type:"spring",stiffness:200,damping:25}} className="overflow-hidden mt-3"
                       >
                         <div className={`rounded-xl p-3 border ${isDark?"border-white/[0.06] bg-white/[0.02]":"border-slate-100 bg-slate-50"}`}>
-                          <p className={`text-[11px] font-bold mb-2 ${isDark?"text-zinc-400":"text-slate-500"}`}>
-                            {ar(selectedDay.getDate())} {GM_AR[selectedDay.getMonth()]}
+                          <p className={`text-[10px] font-semibold mb-1 ${isDark?"text-zinc-500":"text-slate-400"}`}>
+                            {DAYS_FULL[selectedDay.getDay()]}
                           </p>
-                          {(MOCK_TASKS[selectedDay.toDateString()]??[]).length===0?(
-                            <p className={`text-[11px] ${isDark?"text-zinc-600":"text-slate-400"}`}>لا توجد أحداث في هذا اليوم</p>
-                          ):(MOCK_TASKS[selectedDay.toDateString()]).map((t,i)=>(
-                            <div key={i} className="flex items-center gap-2 mb-1.5 last:mb-0">
-                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${TYPE_COLOR[t.type]}`}/>
-                              <span className={`text-[11px] font-medium ${isDark?"text-zinc-300":"text-slate-700"}`}>{t.label}</span>
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full ms-auto flex-shrink-0 ${isDark?"bg-white/[0.06] text-zinc-500":"bg-slate-200 text-slate-500"}`}>{TYPE_LABEL[t.type]}</span>
-                            </div>
-                          ))}
+                          <p className={`text-[13px] font-bold ${isDark?"text-emerald-400":"text-emerald-700"}`}>
+                            {ar(toHijri(selectedDay).d)} {toHijri(selectedDay).monthName} {ar(toHijri(selectedDay).y)} هـ
+                          </p>
+                          <p className={`text-[11px] font-semibold mt-0.5 ${isDark?"text-[#C8A762]":"text-amber-700"}`}>
+                            {ar(selectedDay.getDate())} {GM_AR[selectedDay.getMonth()]} {ar(selectedDay.getFullYear())} م
+                          </p>
                         </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
 
-                  {/* Legend */}
-                  <div className="flex items-center gap-3 mt-3 justify-center">
-                    {(["hearing","task","deadline"] as const).map(type=>(
-                      <div key={type} className="flex items-center gap-1">
-                        <span className={`w-2 h-2 rounded-full ${TYPE_COLOR[type]}`}/>
-                        <span className={`text-[10px] ${isDark?"text-zinc-600":"text-slate-400"}`}>{TYPE_LABEL[type]}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {/* No legend: there are no event dots left to explain. This
+                      line replaces it so a lawyer who remembers the old
+                      coloured dots is told they are gone, not left hunting for
+                      them. Deliberately role-neutral and with no link — this
+                      component is also mounted in SharedSidebar, which every
+                      account type renders, so it cannot point at a
+                      lawyer-only route. */}
+                  <p className={`text-[10px] text-center mt-3 ${isDark?"text-zinc-600":"text-slate-400"}`}>
+                    تقويم للتواريخ فقط — لا يعرض المواعيد والجلسات
+                  </p>
                 </div>
               )}
 

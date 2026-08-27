@@ -1,53 +1,77 @@
 "use client";
 
-import { useEffect, useRef, useState, memo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import {
-  UserCircle, Star, Gavel, Certificate, Phone, Envelope,
-  MapPin, PencilSimple, SealCheck, Scales, Warning,
-  Globe, LinkedinLogo, TwitterLogo,
-  FilePdf, ShareNetwork, Users, BookOpen, FileText,
-  Trophy, Lightning, Target, Lock, CheckCircle,
-  Flame, ChartLine, ChartBar, Robot, ArrowDown,
-  Coins, X, Copy,
-  Clock, Timer, Briefcase, ChartBarHorizontal, TrendUp, TrendDown,
-  Smiley, SmileyMeh, SmileySad,
+  UserCircle, Phone, Envelope, MapPin, PencilSimple, SealCheck,
+  Warning, Globe, FilePdf, Certificate, Clock, XCircle, Prohibit,
+  Eye, EyeSlash, SpinnerGap, ArrowClockwise, Info,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
-import {
-  SpotlightCard,
-  RingScore,
-  ShareModal,
-  OverviewTab,
-  AchievementsTab,
-  ReviewsTab,
-} from "@/components/dashboard/LawyerProfileForms";
-import {
-  PERFORMANCE_RANGE_LABELS,
-  WEEK_ACTIVITY,
-  WORK_DISTRIBUTION,
-  getBenchmarkSummary,
-  getBenchmarks,
-  getPerformanceContext,
-  getPerformanceContextLabel,
-  getPerformanceSnapshot,
-  type StatRange,
-} from "../_data/performance";
-import {
-  getMetalTier, METAL_TIERS, WORK_HOURS,
-  WORK_DIST, WIN_RATE_PCT, WIN, WIN_TOTAL,
-  AI_TOOLS, PRO_SCORES, ACTIVITY_DATA, FINANCIAL_DATA,
-  SHARE_TOGGLE_DEFAULTS, type AnalyticsPeriod,
-} from "../_data/analytics";
+import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
+import { OverviewTab } from "@/components/dashboard/LawyerProfileForms";
 
+/*
+ * ─── WHAT THIS PAGE NO LONGER CLAIMS ─────────────────────────────────────────
+ * This page used to render the lawyer's REAL identity — name, licence number,
+ * city, bio, specialties, verified seal, all from GET /api/v1/profile — and
+ * then surround it with roughly forty numbers that had no source at all. They
+ * came from two module-constant files (../_data/analytics.ts and
+ * ../_data/performance.ts) and were rendered unconditionally, interleaved with
+ * the real fields so that nothing on screen told the lawyer which was which:
+ *
+ *   • «نتائج القضايا» — a 74٪ win rate over 151 case outcomes (106 won / 22
+ *     settled / 15 lost / 8 pending). Nothing in this schema records a case
+ *     outcome. A win rate is precisely the number a lawyer repeats to a
+ *     prospective client, and this one was a literal.
+ *   • «ملخص الإيرادات» — 123,450 ر.س annual revenue, 10,287 ر.س monthly, a
+ *     best month of نوفمبر. No payment provider has ever been connected to
+ *     this platform and no money has ever moved through it, so there was not
+ *     even a row these could have been read from. The «تقديري» pill did not
+ *     save them: nothing was estimated from anything.
+ *   • «مستوى رضا الموكلين» — 61٪ promoters, NPS 46, and the tier sublabel
+ *     «أفضل ٥٠٪ على مستوى المدينة». There is no reviews table and there were
+ *     zero consultations. The comparison was geographic; the platform has no
+ *     data to make that claim about anyone.
+ *   • The hero stats row — «١٤٣ قضايا / ٤٫٨★ / ٧+ س خبرة / ٨٩ تقييمات» — four
+ *     literals sitting directly beneath the real name and the real licence
+ *     number. Meanwhile the REAL years_experience was fetched on every load
+ *     and thrown away unused.
+ *   • «أنت في أعلى N٪ ضمن محامو المملكة», work-hour benchmark bars against a
+ *     hardcoded national average, a productivity metal tier, a twelve-month
+ *     activity chart, AI-usage counts and four «مؤشرات التطوير المهني» rings
+ *     scoring the lawyer 88/79/92/85.
+ *
+ * All of it is gone rather than zero-filled: a rendered 0 next to «نسبة الفوز»
+ * would be the same lie in the other direction. The whole «الأداء» tab went
+ * with it, following the precedent this file already set for the achievements
+ * and reviews tabs. The «مشاركة» button and its modal went too — the modal
+ * offered to publish the win rate on a professional card that travels
+ * off-platform, its two share buttons had no handlers, and the link it copied
+ * to the clipboard (nezamy.sa/share/lawyer/xK9mP3q) was hardcoded and 404s.
+ *
+ * The «بعض الإحصائيات تجريبية» banner was removed WITH the statistics, not
+ * before them. It is not a licence to display invented figures, and now there
+ * is nothing left for it to disclaim.
+ *
+ * ../_data/analytics.ts and ../_data/performance.ts are deliberately NOT
+ * deleted here: performance.ts is still imported by the lawyer tasks page,
+ * which is outside this change. This page simply stops reading them.
+ *
+ * What remains is what has a source: identity and professional fields from
+ * `profiles` + `lawyer_profiles`, and the two pieces of state the lawyer
+ * actually needs and could not previously see — his verification status and
+ * his directory-visibility setting.
+ */
 
-// Honest empty defaults. In supabase mode the effect below overwrites the
-// identity/professional fields with the authenticated lawyer's real
-// profiles + lawyer_profiles rows; on fetch failure or in demo mode these
-// blanks render — never a fabricated identity or a false "verified" seal.
+// Honest empty defaults. In supabase mode the effect below overwrites these
+// with the authenticated lawyer's real profiles + lawyer_profiles rows. These
+// blanks are never rendered as fact: the page shows a spinner while loading and
+// an explicit "could not read" card on failure, so an empty field on screen
+// always means the server genuinely returned nothing.
 const EMPTY_PROFILE = {
   name: "",
   title: "محامٍ ومستشار قانوني",
@@ -57,13 +81,29 @@ const EMPTY_PROFILE = {
   email: "",
   barNumber: "",
   yearsExp: 0,
-  casesWon: 0,
-  rating: 0,
-  reviewCount: 0,
   verified: false,
+  // verification_status verbatim from lawyer_profiles; null when the column is
+  // empty. Never defaulted to "pending" — an assumed status is an invented one.
+  verificationStatus: null as VerificationStatus | null,
+  // The lawyer's stored directory preference. Displayed as a preference, never
+  // as "you are listed" — see the visibility panel below for why those differ.
+  marketplaceVisible: false,
+  // Whether `lawyer_profiles` was actually read. The route swallows the error
+  // from that sub-query (api/v1/profile/route.ts:100-105), so a 200 can arrive
+  // with roleProfile === null. Everything above sourced from that table is then
+  // a default, not a fact — and «غير مُفعَّل» asserted over an unread column is
+  // exactly the kind of confident blank this pass exists to remove. The status
+  // row checks this before it claims anything.
+  hasRoleProfile: false,
   bio: "",
   expertise: [] as string[],
-  languages: ["العربية"],
+  // Empty, not ["العربية"]. The languages card renders a five-segment
+  // proficiency bar whose fill condition is `s <= 5` — always true — so any
+  // language listed here displays permanent full native fluency. Nothing in
+  // the schema or the profile editor collects languages or proficiency, so
+  // there is no honest value to seed. (The always-full bar itself lives in
+  // LawyerProfileForms.tsx and is reported separately.)
+  languages: [] as string[],
   education: [] as { degree: string; institution: string; year: string }[],
   courts: [] as string[],
   linkedin: "",
@@ -71,70 +111,38 @@ const EMPTY_PROFILE = {
   website: "",
 };
 
-const ACHIEVEMENTS = [
-  { id:"a1", title:"أول انتصار",         desc:"ربحت أول قضية",                   icon:Gavel,   color:"#C8A762", unlocked:true,  date:"مارس ٢٠٢٤",   points:50  },
-  { id:"a2", title:"نجم التقييمات",      desc:"١٠ تقييمات ٥ نجوم متتالية",       icon:Star,    color:"#C8A762", unlocked:true,  date:"يناير ٢٠٢٥",  points:100 },
-  { id:"a3", title:"محامٍ ذهبي",         desc:"أتممت ٥٠ قضية بنجاح",             icon:Trophy,  color:"#0B3D2E", unlocked:true,  date:"فبراير ٢٠٢٥", points:200 },
-  { id:"a4", title:"خبير العقود",        desc:"راجعت أكثر من ١٠٠ عقد",           icon:Certificate, color:"#3b82f6", unlocked:true, date:"أبريل ٢٠٢٥", points:150 },
-  { id:"a5", title:"ملك الاستشارات",     desc:"أجريت ٢٠٠ استشارة قانونية",       icon:Users,   color:"#8b5cf6", unlocked:true,  date:"أبريل ٢٠٢٥", points:175 },
-  { id:"a6", title:"الفريق الأول",       desc:"كوّن فريقاً من ٥ محامين",         icon:Lightning, color:"#f59e0b", unlocked:false, points:250 },
-  { id:"a7", title:"٩٩٪ نسبة ربح",       desc:"نسبة ربح ٩٩٪ في ١٠ قضايا",       icon:Target,  color:"#ef4444", unlocked:false, points:500 },
-  { id:"a8", title:"محامٍ أسطوري",       desc:"أتمم ٥٠٠ قضية بنجاح",            icon:Flame,   color:"#f97316", unlocked:false, points:1000},
-];
+type VerificationStatus = "pending" | "verified" | "rejected" | "suspended";
 
-const REVIEWS = [
-  { name:"شركة الأفق للتجارة", rating:5, text:"محامٍ محترف واستجابته ممتازة. أنجز القضية في وقت قياسي.", date:"مارس ٢٠٢٥" },
-  { name:"عبدالله الحارثي",    rating:5, text:"خبرة واسعة في قانون العمل. نصائحه كانت دقيقة ومفيدة.", date:"فبراير ٢٠٢٥" },
-  { name:"نورة العتيبي",       rating:4, text:"تعامل راقٍ ومتابعة جيدة طوال مراحل القضية.",          date:"يناير ٢٠٢٥"  },
-];
+// Arabic copy per verification status. `pending` is the state all lawyer
+// accounts start in; it is a real status, not a placeholder.
+const VERIFICATION_CFG: Record<VerificationStatus, { label: string; icon: typeof SealCheck; color: string }> = {
+  verified:  { label: "موثّق",         icon: SealCheck, color: "#C8A762" },
+  pending:   { label: "قيد المراجعة",  icon: Clock,     color: "#f59e0b" },
+  rejected:  { label: "مرفوض",         icon: XCircle,   color: "#ef4444" },
+  suspended: { label: "موقوف",         icon: Prohibit,  color: "#ef4444" },
+};
 
-const MILESTONES = [
-  { label:"قضايا مكسوبة", current:143, target:200, color:"bg-emerald-500", icon:Gavel },
-  { label:"الاستشارات",   current:89,  target:200, color:"bg-blue-500",    icon:Users },
-  { label:"تقييمات ٥★",  current:56,  target:100, color:"bg-[#C8A762]",   icon:Star  },
-];
-
-const STATS = [
-  { label:"قضايا", value:"143",  icon:Gavel,   color:"text-emerald-500", bg:"bg-emerald-500/10" },
-  { label:"تقييم", value:"4.8★", icon:Star,    color:"text-[#C8A762]",   bg:"bg-[#C8A762]/10"  },
-  { label:"خبرة",  value:"7+ س", icon:Certificate, color:"text-blue-500", bg:"bg-blue-500/10"   },
-  { label:"تقييمات", value:"89", icon:Users,   color:"text-violet-500",  bg:"bg-violet-500/10" },
-];
-
-type ProfileTab = "overview" | "performance" | "achievements" | "reviews";
-
-// achievements + reviews are hidden during beta (fabricated badges/reviews, no real
-// reputation source yet) — excluded here so ?tab=achievements|reviews falls back to overview.
-const PROFILE_TABS: ProfileTab[] = ["overview", "performance"];
-
-function isProfileTab(value: string | null): value is ProfileTab {
-  return !!value && PROFILE_TABS.includes(value as ProfileTab);
-}
-
-// ─── Promoter Score (NPS) Tier System ────────────────────────────────────────
-
-const PROMOTER_DATA = { promoters: 61, passives: 24, detractors: 15 };
-const NPS_SCORE = PROMOTER_DATA.promoters - PROMOTER_DATA.detractors; // 46
-
-const NPS_TIERS = [
-  { min: 70, label: "محامٍ استثنائي",  sublabel: "أفضل ١٠٪ على مستوى المملكة", color: "#C8A762", next: null,  nextTarget: 100 },
-  { min: 50, label: "محامٍ متميز",    sublabel: "أفضل ٢٥٪ على مستوى المملكة", color: "#10b981", next: 70,   nextTarget: 70 },
-  { min: 30, label: "محامٍ احترافي",  sublabel: "أفضل ٥٠٪ على مستوى المدينة", color: "#3b82f6", next: 50,   nextTarget: 50 },
-  { min: 10, label: "محامٍ ناشئ",     sublabel: "في طريقك للتميز",             color: "#8b5cf6", next: 30,   nextTarget: 30 },
-  { min: -100, label: "بداية المشوار", sublabel: "ابدأ بتحسين رضا الموكلين",   color: "#94a3b8", next: 10,   nextTarget: 10 },
-];
-
-function getNpsTier(nps: number) {
-  return NPS_TIERS.find(t => nps >= t.min) ?? NPS_TIERS[NPS_TIERS.length - 1];
-}
-
-
-
+// loading  → the GET is in flight; render nothing factual yet.
+// failed   → the GET threw; SAY SO and offer a retry. Never fall through to an
+//            empty profile, which a lawyer would read as "my profile is blank".
+// ready    → server state is in hand.
+// no-server→ demo build. `isSupabaseMode` is a module-level constant, so in a
+//            production (supabase) build this branch is dead-code-eliminated;
+//            it exists so a demo build does not spin forever.
+type LoadState = "loading" | "failed" | "ready" | "no-server";
 
 export default function LawyerProfilePage() {
   const { isDark } = useTheme();
   const user = useUser();
   const [profileData, setProfileData] = useState(EMPTY_PROFILE);
+  // Always "loading" at first render. NOT `isSupabaseMode ? … : "no-server"`:
+  // isSupabaseMode reads `typeof window`, so it is FALSE during SSR and true in
+  // the browser (src/lib/services/api.ts:15-20). Branching on it in an
+  // initializer would ship server HTML saying «غير متاح في هذا الوضع» to every
+  // real lawyer and then hydrate into a spinner. Branching on it inside the
+  // effect below is safe — effects are client-only.
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [loadError, setLoadError] = useState("");
 
   type ProfileApiResponse = {
     profile: {
@@ -149,110 +157,110 @@ export default function LawyerProfilePage() {
       years_experience?: number | null;
       bio_ar?: string | null;
       city?: string | null;
-      verification_status?: "pending" | "verified" | "rejected" | "suspended" | null;
+      verification_status?: VerificationStatus | null;
+      marketplace_visible?: boolean | null;
     } | null;
   };
 
-  useEffect(() => {
-    if (!isSupabaseMode) return;
-    // GET /api/v1/profile returns { profile, roleProfile, subscription } — NOT
-    // { data }. The previous code guarded on res.data (always undefined), so it
-    // never mapped and rendered a fabricated identity + a false "verified" seal.
-    apiGet<ProfileApiResponse>("/api/v1/profile")
-      .then((res) => {
-        const p = res.profile;
-        const r = res.roleProfile;
-        if (!p && !r) return;
-        setProfileData((prev) => ({
-          ...prev,
-          // Identity from `profiles`; honest empties, never a mock identity.
-          name: p?.display_name?.trim() || user.name || "",
-          email: p?.email?.trim() || "",
-          phone: p?.phone?.trim() || "",
-          city: (r?.city ?? p?.city)?.trim() || "",
-          // Professional fields from `lawyer_profiles` (real column names).
-          bio: r?.bio_ar?.trim() || "",
-          barNumber: r?.license_number?.trim() || "",
-          yearsExp: typeof r?.years_experience === "number" ? r.years_experience : 0,
-          expertise: r?.specialties?.length ? r.specialties : [],
-          specialty: r?.specialties?.length ? r.specialties[0] : "",
-          // Verified seal driven by the REAL status, never hardcoded true.
-          verified: r?.verification_status === "verified",
-        }));
-      })
-      .catch(() => { /* leave placeholders; never fall back to a mock identity */ });
+  const load = useCallback(async () => {
+    if (!isSupabaseMode) { setLoadState("no-server"); return; }
+    try {
+      // GET /api/v1/profile returns { profile, roleProfile, subscription } —
+      // NOT { data }. An earlier version guarded on res.data (always
+      // undefined), so it never mapped and rendered a fabricated identity plus
+      // a false "verified" seal.
+      const res = await apiGet<ProfileApiResponse>("/api/v1/profile");
+      const p = res.profile;
+      const r = res.roleProfile;
+      setProfileData((prev) => ({
+        ...prev,
+        // Identity from `profiles`; honest empties, never a mock identity.
+        name: p?.display_name?.trim() || user.name || "",
+        email: p?.email?.trim() || "",
+        phone: p?.phone?.trim() || "",
+        city: (r?.city ?? p?.city)?.trim() || "",
+        // Professional fields from `lawyer_profiles` (real column names).
+        bio: r?.bio_ar?.trim() || "",
+        barNumber: r?.license_number?.trim() || "",
+        yearsExp: typeof r?.years_experience === "number" ? r.years_experience : 0,
+        expertise: r?.specialties?.length ? r.specialties : [],
+        specialty: r?.specialties?.length ? r.specialties[0] : "",
+        verificationStatus: r?.verification_status ?? null,
+        // Verified seal driven by the REAL status, never hardcoded true.
+        verified: r?.verification_status === "verified",
+        marketplaceVisible: r?.marketplace_visible === true,
+        hasRoleProfile: r != null,
+      }));
+      setLoadState("ready");
+    } catch (err) {
+      // A silent catch here is what made the old page dangerous: a failed read
+      // rendered as a real-looking profile with an empty licence number.
+      setLoadError(err instanceof Error ? err.message : "تعذّر تحميل بيانات الملف");
+      setLoadState("failed");
+    }
   }, [user.name]);
-  const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
-  const [performanceRange, setPerformanceRange] = useState<StatRange>("today");
-  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("سنة");
-  const [shareOpen, setShareOpen] = useState(false);
-  const [shareToggles, setShareToggles] = useState(SHARE_TOGGLE_DEFAULTS);
-  const [activeWorkIdx, setActiveWorkIdx] = useState<number | null>(null);
 
-  useEffect(() => {
-    const tab = new URLSearchParams(window.location.search).get("tab");
-    if (isProfileTab(tab)) setActiveTab(tab);
-  }, []);
+  useEffect(() => { load(); }, [load]);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
-  const unlocked = ACHIEVEMENTS.filter(a => a.unlocked);
-  const totalPoints = unlocked.reduce((s, a) => s + a.points, 0);
-  const performanceContext = getPerformanceContext(user);
-  const performanceSnapshot = getPerformanceSnapshot(performanceRange);
-  const performanceBenchmarks = getBenchmarks(performanceContext, {
-    city: profileData.city || undefined,
-    firmName: user.affiliation?.entityName,
-  });
-  const benchmarkSummary = getBenchmarkSummary(performanceSnapshot, performanceBenchmarks);
-  const maxWeekHours = Math.max(...WEEK_ACTIVITY.map(day => day.hours), 1);
-  const benchmarkMax = Math.max(performanceSnapshot.hours, ...performanceBenchmarks.map(item => item.avgHours), 1);
-  const performanceKpis = [
-    { label: "ساعات العمل", value: performanceSnapshot.hours.toFixed(1), unit: "س", icon: Clock, color: "#0B3D2E", previous: performanceSnapshot.previousHours.toFixed(1) },
-    { label: "المهام المنجزة", value: String(performanceSnapshot.tasks), unit: "مهمة", icon: CheckCircle, color: "#10b981", previous: String(performanceSnapshot.previousTasks) },
-    { label: "القضايا النشطة", value: String(performanceSnapshot.cases), unit: "قضية", icon: Briefcase, color: "#C8A762", previous: String(performanceSnapshot.previousCases) },
-    { label: "جلسات بومودورو", value: String(performanceSnapshot.pomodoros), unit: "جلسة", icon: Timer, color: "#6366f1", previous: String(performanceSnapshot.previousPomodoros) },
-  ];
+  if (loadState === "loading") {
+    return (
+      <div className="max-w-5xl mx-auto p-16 text-center" dir="rtl">
+        <SpinnerGap size={26} className="animate-spin mx-auto text-zinc-400" />
+        <p className={`mt-3 text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل ملفك المهني…</p>
+      </div>
+    );
+  }
 
-  // NPS derived
-  const npsTier = getNpsTier(NPS_SCORE);
-  const npsNextPct = npsTier.next != null
-    ? Math.min(Math.round(((NPS_SCORE - (npsTier.next - 20)) / 20) * 100), 99)
-    : 100;
+  if (loadState === "failed" || loadState === "no-server") {
+    const isDemo = loadState === "no-server";
+    return (
+      <div className="max-w-2xl mx-auto py-16 px-4" dir="rtl">
+        <div className={`${card} p-6 text-center`}>
+          <div className={`mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl ${isDark ? "bg-amber-500/10" : "bg-amber-50"}`}>
+            <Warning size={26} weight="duotone" className="text-amber-500" />
+          </div>
+          <h1 className={`text-[16px] font-bold mb-2 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>
+            {isDemo ? "الملف المهني غير متاح في هذا الوضع" : "تعذّر تحميل بيانات الملف"}
+          </h1>
+          <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+            {isDemo
+              ? "هذه الصفحة تقرأ ملفك من الخادم، والخادم غير متصل في هذا الوضع. لم يُعرض أي شيء بدلاً من بياناتك."
+              : `${loadError} — لم نتمكن من قراءة ملفك، ولم نعرض بيانات بديلة. حاول مرة أخرى.`}
+          </p>
+          {!isDemo && (
+            <button
+              onClick={() => { setLoadError(""); setLoadState("loading"); load(); }}
+              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[12px] font-bold text-[#C8A762] transition-colors hover:bg-[#0a3328]"
+            >
+              <ArrowClockwise size={14} weight="bold" /> إعادة المحاولة
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
-  // Metal tier derived (based on cumulative focus hours)
-  const metalTier = getMetalTier(WORK_HOURS.total);
-  const metalNextTarget = metalTier.next ?? WORK_HOURS.total;
-  const metalPct = metalTier.next
-    ? Math.min(Math.round((WORK_HOURS.total / metalNextTarget) * 100), 99)
-    : 100;
-  const metalHoursLeft = metalTier.next ? Math.max(0, metalNextTarget - WORK_HOURS.total) : 0;
-  const nextMetalLabel = metalTier.next ? (METAL_TIERS.find(t => t.min === metalTier.next)?.label ?? "") : "";
+  const verificationCfg = profileData.verificationStatus
+    ? VERIFICATION_CFG[profileData.verificationStatus]
+    : null;
+  const VerificationIcon = verificationCfg?.icon ?? Info;
+  const VisibilityIcon = profileData.marketplaceVisible ? Eye : EyeSlash;
 
-  const tabs = [
-    { id: "overview",     label: "الملف المهني" },
-    { id: "performance",  label: "الأداء" },
-    // achievements + reviews tabs hidden during beta — they render fabricated
-    // badges / 5-star reviews with no real source. Re-add when wired to real data.
-  ] as const;
+  // Contact chips: only the ones with a value. An empty pill, or
+  // «رقم الترخيص: » with nothing after it, reads as a broken field rather than
+  // as "not provided".
+  const contactChips = [
+    { icon: Phone, val: profileData.phone },
+    { icon: Envelope, val: profileData.email },
+    { icon: Globe, val: profileData.website },
+  ].filter((c) => c.val);
 
   return (
-    <>
     <div className="max-w-5xl mx-auto space-y-5" dir="rtl">
-
-      {/* ── بانر بيانات تجريبية ── */}
-      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl p-4 border flex items-center gap-3 mb-5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
-          <Warning size={18} weight="fill" className="text-amber-500" />
-        </div>
-        <div>
-          <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بعض الإحصائيات تجريبية</p>
-          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>الإنجازات والتحليلات ستُحدَّث تلقائياً مع الاستخدام</p>
-        </div>
-      </motion.div>
 
       {/* Header hero card */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
@@ -280,12 +288,14 @@ export default function LawyerProfilePage() {
                   )}
                 </div>
                 <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                  {profileData.title} · {profileData.specialty}
+                  {profileData.title}{profileData.specialty ? ` · ${profileData.specialty}` : ""}
                 </p>
-                <div className="flex items-center gap-1 mt-1">
-                  <MapPin size={12} className={isDark ? "text-zinc-600" : "text-slate-400"} />
-                  <span className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{profileData.city}</span>
-                </div>
+                {profileData.city && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <MapPin size={12} className={isDark ? "text-zinc-600" : "text-slate-400"} />
+                    <span className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{profileData.city}</span>
+                  </div>
+                )}
               </div>
             </div>
             {/* Action buttons */}
@@ -297,9 +307,6 @@ export default function LawyerProfilePage() {
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold border transition-all opacity-50 cursor-not-allowed ${isDark ? "border-white/[0.08] text-zinc-500" : "border-slate-200 text-slate-400"}`}>
                 <FilePdf size={13} /> تصدير PDF
               </button>
-              <button onClick={() => setShareOpen(true)} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold border transition-all ${isDark ? "border-white/[0.08] text-zinc-400 hover:text-zinc-200" : "border-slate-200 text-slate-500 hover:border-slate-300"}`}>
-                <ShareNetwork size={13} /> مشاركة
-              </button>
               <Link href="/dashboard/lawyer/profile/edit"
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
                 <PencilSimple size={13} /> تعديل
@@ -307,632 +314,115 @@ export default function LawyerProfilePage() {
             </div>
           </div>
 
-          {/* Stats row */}
-          <div className="grid grid-cols-2 gap-3 mb-4 sm:grid-cols-4">
-            {STATS.map((s, i) => {
-              const Icon = s.icon;
-              return (
-                <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                  className={`${isDark ? "bg-white/[0.03] border border-white/[0.05]" : "bg-slate-50 border border-slate-100"} rounded-xl p-3 flex items-center gap-2.5`}>
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${s.bg}`}>
-                    <Icon size={15} weight="duotone" className={s.color} />
-                  </div>
-                  <div>
-                    <p className={`text-[15px] font-black leading-none ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{s.value}</p>
-                    <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{s.label}</p>
-                  </div>
-                </motion.div>
-              );
-            })}
+          {/*
+            Status row — replaces the old hero stats row of four literals.
+            Every cell here reads a real column, and the only cell that can be
+            absent (سنوات الخبرة) is omitted rather than shown as 0: a lawyer
+            who has not filled the field in has not practised for zero years.
+          */}
+          {!profileData.hasRoleProfile ? (
+            <div className={`rounded-xl border p-3 mb-4 flex gap-2.5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+              <Warning size={15} weight="fill" className="flex-shrink-0 mt-0.5 text-amber-500" />
+              <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-amber-700/80"}`}>
+                تعذّر قراءة بياناتك المهنية (التخصصات، رقم الترخيص، حالة التوثيق، إعداد الظهور في الدليل).
+                ما يظهر أعلاه هو بيانات حسابك فقط. لم نعرض قيماً بديلة عن الحقول التي لم تُقرأ.
+              </p>
+            </div>
+          ) : (
+          <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-3">
+            <div className={`${isDark ? "bg-white/[0.03] border border-white/[0.05]" : "bg-slate-50 border border-slate-100"} rounded-xl p-3 flex items-center gap-2.5`}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: `${verificationCfg?.color ?? "#94a3b8"}1a` }}>
+                <VerificationIcon size={15} weight="duotone" style={{ color: verificationCfg?.color ?? "#94a3b8" }} />
+              </div>
+              <div className="min-w-0">
+                <p className={`text-[13px] font-black leading-none ${isDark ? "text-zinc-100" : "text-slate-800"}`}>
+                  {verificationCfg?.label ?? "غير محددة"}
+                </p>
+                <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>حالة التوثيق</p>
+              </div>
+            </div>
+
+            <div className={`${isDark ? "bg-white/[0.03] border border-white/[0.05]" : "bg-slate-50 border border-slate-100"} rounded-xl p-3 flex items-center gap-2.5`}>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${profileData.marketplaceVisible ? "bg-emerald-500/10" : "bg-slate-400/10"}`}>
+                <VisibilityIcon size={15} weight="duotone" className={profileData.marketplaceVisible ? "text-emerald-500" : "text-slate-400"} />
+              </div>
+              <div className="min-w-0">
+                <p className={`text-[13px] font-black leading-none ${isDark ? "text-zinc-100" : "text-slate-800"}`}>
+                  {profileData.marketplaceVisible ? "مُفعَّل" : "غير مُفعَّل"}
+                </p>
+                <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>طلب الظهور في الدليل</p>
+              </div>
+            </div>
+
+            {profileData.yearsExp > 0 && (
+              <div className={`${isDark ? "bg-white/[0.03] border border-white/[0.05]" : "bg-slate-50 border border-slate-100"} rounded-xl p-3 flex items-center gap-2.5`}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-blue-500/10">
+                  <Certificate size={15} weight="duotone" className="text-blue-500" />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-[13px] font-black leading-none ${isDark ? "text-zinc-100" : "text-slate-800"}`}>
+                    {profileData.yearsExp} سنة
+                  </p>
+                  <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>سنوات الخبرة</p>
+                </div>
+              </div>
+            )}
           </div>
+          )}
+
+          {/*
+            The three facts about directory visibility, stated together.
+            Ticking «الظهور في دليل المحامين» in the editor sets a real column
+            (lawyer_profiles.marketplace_visible) but it is NOT sufficient to
+            list anyone, and the page previously said nothing about that:
+              1. it is a stored preference, not a listing;
+              2. every reader of the directory also requires
+                 verification_status = 'verified' — both the API query and the
+                 RLS policy — and verification is admin-only, deliberately not
+                 self-editable;
+              3. during the beta the public directory is not reachable at all.
+            Clause 3 is gated on the flag so this copy stops being true-but-
+            stale the moment BETA_MONOPOLY_MODE is turned off. The whole block
+            is gated on hasRoleProfile because it explains a tile that is not on
+            screen when the read failed.
+          */}
+          {profileData.hasRoleProfile && (
+          <div className={`rounded-xl border p-3 mb-4 flex gap-2.5 ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-slate-200 bg-slate-50/60"}`}>
+            <Info size={15} weight="duotone" className="flex-shrink-0 mt-0.5 text-[#C8A762]" />
+            <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+              «طلب الظهور في الدليل» تفضيل محفوظ في ملفك ولا يعني أن ملفك منشور.
+              لا يُدرَج أي محامٍ في الدليل العام قبل توثيق حسابه من إدارة المنصة،
+              والتوثيق يتم من الإدارة ولا يمكن تعديله من هنا.
+              {BETA_MONOPOLY_MODE && " كما أن دليل المحامين العام غير مُفعَّل خلال مرحلة التجربة الحالية، فلا يظهر فيه أي محامٍ حتى الآن."}
+            </p>
+          </div>
+          )}
 
           {/* Contact chips */}
-          <div className="flex flex-wrap gap-2">
-            {[
-              { icon: Phone,    val: profileData.phone },
-              { icon: Envelope, val: profileData.email },
-              { icon: Globe,    val: profileData.website },
-            ].map(({ icon: Icon, val }, i) => (
-              <div key={i} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
-                <Icon size={11} /> {val}
-              </div>
-            ))}
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
-              <SealCheck size={11} className="text-[#C8A762]" /> رقم الترخيص: {profileData.barNumber}
+          {(contactChips.length > 0 || profileData.barNumber) && (
+            <div className="flex flex-wrap gap-2">
+              {contactChips.map(({ icon: Icon, val }, i) => (
+                <div key={i} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
+                  <Icon size={11} /> {val}
+                </div>
+              ))}
+              {profileData.barNumber && (
+                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
+                  <SealCheck size={11} className="text-[#C8A762]" /> رقم الترخيص: {profileData.barNumber}
+                </div>
+              )}
             </div>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className={`flex border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => setActiveTab(t.id)}
-              className={`flex-1 py-3 text-[12px] font-semibold transition-colors border-b-2 ${activeTab === t.id
-                ? "border-[#0B3D2E] text-[#0B3D2E] dark:text-emerald-400"
-                : `border-transparent ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`
-              }`}>
-              {t.label}
-            </button>
-          ))}
+          )}
         </div>
       </motion.div>
 
-      {/* Tab: Overview */}
-      {activeTab === "overview" && (
-        <OverviewTab isDark={isDark} profile={profileData} cardClass={card} />
-      )}
-
-      {/* Tab: Performance */}
-      {activeTab === "performance" && (
-        <div className="space-y-4">
-          <div className={`${card} p-5`}>
-            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className={`text-[11px] font-black uppercase tracking-widest ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لوحة الإنتاجية</p>
-                <h2 className={`mt-1 text-[17px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>إحصائيات الأداء</h2>
-                <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                  {getPerformanceContextLabel(performanceContext)} · {benchmarkSummary}
-                </p>
-              </div>
-              <div className={`flex w-fit gap-0.5 rounded-xl p-1 ${isDark ? "bg-zinc-800/60" : "bg-slate-100"}`}>
-                {(["today", "week", "month", "quarter", "year"] as StatRange[]).map(range => (
-                  <button
-                    key={range}
-                    onClick={() => setPerformanceRange(range)}
-                    className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-all ${
-                      performanceRange === range
-                        ? isDark ? "bg-zinc-700 text-white" : "bg-white text-[#0B3D2E] shadow-sm"
-                        : isDark ? "text-zinc-600 hover:text-zinc-400" : "text-slate-400 hover:text-slate-600"
-                    }`}
-                  >
-                    {PERFORMANCE_RANGE_LABELS[range]}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className={`grid overflow-hidden rounded-2xl border sm:grid-cols-2 lg:grid-cols-4 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-              {performanceKpis.map(({ label, value, unit, icon: Icon, color, previous }, index) => (
-                <div
-                  key={label}
-                  className={`p-4 ${index !== 0 ? isDark ? "border-r border-white/[0.06]" : "border-r border-slate-100" : ""} ${index > 1 ? isDark ? "border-t border-white/[0.06] lg:border-t-0" : "border-t border-slate-100 lg:border-t-0" : ""}`}
-                >
-                  <div className="mb-2 flex items-center gap-1.5">
-                    <Icon size={14} weight="duotone" style={{ color }} />
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{label}</span>
-                  </div>
-                  <div className="flex items-end gap-1">
-                    <span className={`font-mono text-[25px] font-black leading-none ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{value}</span>
-                    <span className={`pb-0.5 text-[11px] font-bold ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{unit}</span>
-                  </div>
-                  <p className={`mt-1 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>السابق: <span className="font-mono">{previous}</span></p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-5">
-              <div className="flex h-16 items-end gap-1.5">
-                {WEEK_ACTIVITY.map((day, index) => {
-                  const isToday = index === new Date().getDay();
-                  return (
-                    <div key={day.day} className="flex flex-1 flex-col items-center gap-1">
-                      <motion.div
-                        initial={{ scaleY: 0 }}
-                        animate={{ scaleY: 1 }}
-                        transition={{ type: "spring", stiffness: 80, damping: 18, delay: index * 0.04 }}
-                        style={{ height: `${Math.max((day.hours / maxWeekHours) * 52, 4)}px`, originY: 1 }}
-                        className={`w-full rounded-sm ${isToday ? "bg-[#0B3D2E]" : isDark ? "bg-zinc-700" : "bg-slate-200"}`}
-                      />
-                      <span className={`font-mono text-[9px] ${isToday ? "font-bold text-[#0B3D2E]" : isDark ? "text-zinc-600" : "text-slate-400"}`}>{day.day}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.85fr_1.15fr]">
-            <div className={`${card} p-5`}>
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <p className={`text-[11px] font-black uppercase tracking-widest ${isDark ? "text-zinc-600" : "text-slate-400"}`}>مستوى الإنتاجية</p>
-                  <h3 className="mt-1 text-[18px] font-black" style={{ color: performanceSnapshot.level.color }}>{performanceSnapshot.level.label}</h3>
-                  <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{performanceSnapshot.level.description}</p>
-                </div>
-                <div className="text-left">
-                  <p className={`font-mono text-[42px] font-black leading-none ${isDark ? "text-zinc-100" : "text-slate-800"}`}>
-                    {performanceSnapshot.productivity}<span className="text-[16px] opacity-45">%</span>
-                  </p>
-                  <p className={`mt-1 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>سلسلة {performanceSnapshot.streak} أيام</p>
-                </div>
-              </div>
-              <div className={`h-2 overflow-hidden rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${performanceSnapshot.productivity}%` }}
-                  transition={{ type: "spring", stiffness: 80, damping: 18 }}
-                  className="h-full rounded-full"
-                  style={{ backgroundColor: performanceSnapshot.level.color }}
-                />
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                {[
-                  { label: "فرق الساعات", value: performanceSnapshot.hours - performanceSnapshot.previousHours },
-                  { label: "فرق المهام", value: performanceSnapshot.tasks - performanceSnapshot.previousTasks },
-                ].map(item => {
-                  const up = item.value >= 0;
-                  return (
-                    <div key={item.label} className={`rounded-xl border px-3 py-2 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-                      <div className={`mb-1 flex items-center gap-1 text-[10px] font-bold ${up ? "text-emerald-500" : "text-red-500"}`}>
-                        {up ? <TrendUp size={11} weight="bold" /> : <TrendDown size={11} weight="bold" />}
-                        {item.label}
-                      </div>
-                      <p className={`font-mono text-[17px] font-black ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{item.value >= 0 ? "+" : ""}{item.value.toFixed(item.label.includes("ساعات") ? 1 : 0)}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className={`${card} p-5`}>
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <p className={`text-[11px] font-black uppercase tracking-widest ${isDark ? "text-zinc-600" : "text-slate-400"}`}>مقارنة بالمتوسطات</p>
-                  <h3 className={`mt-1 text-[16px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>مقارنة مهنية حسب نوع الحساب</h3>
-                </div>
-                <ChartBarHorizontal size={20} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-              </div>
-              <div className="space-y-4">
-                {performanceBenchmarks.map(item => {
-                  const ahead = performanceSnapshot.hours >= item.avgHours;
-                  const userPct = Math.min((performanceSnapshot.hours / benchmarkMax) * 100, 100);
-                  const avgPct = Math.min((item.avgHours / benchmarkMax) * 100, 100);
-                  return (
-                    <div key={item.id}>
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <div>
-                          <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{item.label}</p>
-                          <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{item.description}</p>
-                        </div>
-                        <span className={`font-mono text-[11px] font-bold ${ahead ? "text-emerald-500" : "text-red-500"}`}>
-                          {ahead ? "+" : ""}{(performanceSnapshot.hours - item.avgHours).toFixed(1)}س
-                        </span>
-                      </div>
-                      <div className={`relative h-2.5 overflow-hidden rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${avgPct}%` }}
-                          transition={{ type: "spring", stiffness: 70, damping: 18 }}
-                          className={`absolute inset-y-0 right-0 rounded-full ${isDark ? "bg-zinc-700" : "bg-slate-300"}`}
-                        />
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${userPct}%` }}
-                          transition={{ type: "spring", stiffness: 70, damping: 18, delay: 0.08 }}
-                          className="absolute inset-y-0 right-0 rounded-full"
-                          style={{ backgroundColor: ahead ? "#0B3D2E" : "#ef4444" }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className={`${card} p-5`}>
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className={`text-[11px] font-black uppercase tracking-widest ${isDark ? "text-zinc-600" : "text-slate-400"}`}>توزيع العمل</p>
-                <h3 className={`mt-1 text-[16px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>تفصيل مصادر الإنتاجية</h3>
-              </div>
-              <ChartLine size={20} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-            </div>
-            <div className="space-y-3">
-              {WORK_DISTRIBUTION.map(item => (
-                <div key={item.label}>
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{item.label}</span>
-                    <span className={`font-mono text-[11px] font-bold ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{item.pct}%</span>
-                  </div>
-                  <div className={`h-2 overflow-hidden rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${item.pct}%` }}
-                      transition={{ type: "spring", stiffness: 70, damping: 18 }}
-                      className="h-full rounded-full"
-                      style={{ backgroundColor: item.color }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Bento Row: NPS Tier + Pomodoro Level ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-            {/* Promoter Score Tier Card */}
-            <div className={`${card} p-5`}>
-              <div className="flex items-center gap-2 mb-4">
-                <Star size={14} weight="duotone" className="text-[#C8A762]" />
-                <p className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>مستوى رضا الموكلين</p>
-              </div>
-
-              {/* NPS Score hero */}
-              <div className="flex items-center gap-4 mb-4">
-                <div className="relative w-16 h-16 flex-shrink-0">
-                  <svg width="64" height="64" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="36" fill="none" stroke="currentColor" strokeWidth="12"
-                      className={isDark ? "text-white/[0.06]" : "text-slate-100"} />
-                    <motion.circle cx="50" cy="50" r="36" fill="none"
-                      stroke={npsTier.color} strokeWidth="12" strokeLinecap="round"
-                      transform="rotate(-90 50 50)"
-                      initial={{ strokeDasharray: `0 ${2 * Math.PI * 36}` }}
-                      animate={{ strokeDasharray: `${((NPS_SCORE + 100) / 200) * 2 * Math.PI * 36} ${2 * Math.PI * 36}` }}
-                      transition={{ duration: 0.9 }}
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className={`text-[14px] font-black font-mono ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{NPS_SCORE}</span>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[15px] font-black" style={{ color: npsTier.color }}>{npsTier.label}</p>
-                  <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{npsTier.sublabel}</p>
-                  {npsTier.next != null && (
-                    <p className={`text-[10px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                      يلزمك NPS <span className="font-mono font-bold">{npsTier.next}</span> للمستوى التالي
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Progress to next tier */}
-              {npsTier.next != null && (
-                <div className="mb-4">
-                  <div className="flex justify-between mb-1">
-                    <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>التقدم نحو "{NPS_TIERS.find(t=>t.min===npsTier.next)?.label}"</span>
-                    <span className={`text-[10px] font-mono font-bold`} style={{ color: npsTier.color }}>{npsNextPct}٪</span>
-                  </div>
-                  <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.05]" : "bg-slate-100"}`}>
-                    <motion.div
-                      initial={{ width: 0 }} animate={{ width: `${npsNextPct}%` }}
-                      transition={{ duration: 0.7 }}
-                      className="h-full rounded-full"
-                      style={{ backgroundColor: npsTier.color }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Promoter breakdown */}
-              <div className="space-y-2">
-                {[
-                  { label: "مروّجون",  pct: PROMOTER_DATA.promoters,  icon: Smiley,    color: "#10b981" },
-                  { label: "محايدون",  pct: PROMOTER_DATA.passives,   icon: SmileyMeh, color: "#C8A762" },
-                  { label: "منتقدون",  pct: PROMOTER_DATA.detractors, icon: SmileySad, color: "#ef4444" },
-                ].map(row => {
-                  const Icon = row.icon;
-                  return (
-                    <div key={row.label} className="flex items-center gap-2">
-                      <Icon size={13} weight="duotone" style={{ color: row.color }} />
-                      <span className={`text-[11px] flex-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{row.label}</span>
-                      <span className={`text-[11px] font-mono font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{row.pct}٪</span>
-                      <div className={`w-16 h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.05]" : "bg-slate-100"}`}>
-                        <motion.div
-                          initial={{ width: 0 }} animate={{ width: `${row.pct}%` }}
-                          transition={{ duration: 0.6 }}
-                          className="h-full rounded-full"
-                          style={{ backgroundColor: row.color }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Metal Level Card */}
-            <div className={`${card} p-5`}>
-              <div className="flex items-center gap-2 mb-4">
-                <Coins size={14} weight="duotone" className="text-[#C8A762]" />
-                <p className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>مستوى الإنتاجية</p>
-              </div>
-              <div className={`rounded-2xl p-4 mb-4 ${isDark ? "bg-white/[0.03] border border-white/[0.06]" : "bg-slate-50 border border-slate-100"}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>المستوى الحالي</p>
-                    <p className="text-[22px] font-black" style={{ color: metalTier.color }}>{metalTier.emoji} {metalTier.label}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className={`text-[32px] font-black font-mono leading-none ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{WORK_HOURS.total}</p>
-                    <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>ساعة تراكمية</p>
-                  </div>
-                </div>
-                {metalTier.next && (
-                  <>
-                    <div className="flex justify-between mb-1">
-                      <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                        فاضلك <span className="font-mono font-bold">{metalHoursLeft.toFixed(1)}</span> س للمستوى التالي ({nextMetalLabel})
-                      </span>
-                      <span className="text-[10px] font-mono font-bold" style={{ color: metalTier.color }}>{metalPct}٪</span>
-                    </div>
-                    <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.05]" : "bg-slate-200"}`}>
-                      <motion.div initial={{ width: 0 }} animate={{ width: `${metalPct}%` }}
-                        transition={{ duration: 0.8, delay: 0.1 }} className="h-full rounded-full"
-                        style={{ backgroundColor: metalTier.color }} />
-                    </div>
-                  </>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: "هذا الأسبوع",   value: WORK_HOURS.thisWeek,  unit: "س",    color: "#6366f1" },
-                  { label: "سلسلة التركيز",  value: WORK_HOURS.streak,    unit: "يوم",  color: "#f59e0b" },
-                  { label: "الجلسات",        value: WORK_HOURS.sessions,  unit: "جلسة", color: "#0B3D2E" },
-                  { label: "إجمالي تراكمي", value: WORK_HOURS.total,     unit: "س",    color: metalTier.color },
-                ].map(stat => (
-                  <div key={stat.label} className={`rounded-xl p-3 ${isDark ? "bg-white/[0.03] border border-white/[0.04]" : "bg-slate-50 border border-slate-100"}`}>
-                    <p className="text-[20px] font-black font-mono leading-none mb-0.5" style={{ color: stat.color }}>{stat.value}</p>
-                    <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{stat.label} <span className="font-semibold">{stat.unit}</span></p>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 flex items-center gap-1.5 overflow-x-auto pb-1">
-                {[...METAL_TIERS].reverse().map(t => (
-                  <div key={t.label}
-                    className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border transition-all ${
-                      metalTier.label === t.label ? "border-current" : isDark ? "border-white/[0.06] text-zinc-600" : "border-slate-200 text-slate-400"
-                    }`}
-                    style={{ color: metalTier.label === t.label ? t.color : undefined }}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
-                    {t.label}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* ── Activity Chart ── */}
-          <SpotlightCard isDark={isDark} className="p-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2">
-                <ChartBar size={14} weight="duotone" className="text-[#0B3D2E]" />
-                <h3 className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>نشاط الأعمال</h3>
-              </div>
-              <div className={`flex gap-1 p-1 rounded-xl self-start sm:self-auto ${isDark ? "bg-zinc-800/60 border border-white/[0.06]" : "bg-slate-100"}`}>
-                {(Object.keys(ACTIVITY_DATA) as AnalyticsPeriod[]).map(p => (
-                  <button key={p} onClick={() => setAnalyticsPeriod(p)}
-                    className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-                      analyticsPeriod === p
-                        ? isDark ? "bg-white/10 text-white shadow-sm" : "bg-white text-slate-800 shadow-sm"
-                        : isDark ? "text-zinc-500" : "text-slate-400"
-                    }`}>{p}</button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-end gap-1 h-28">
-              {ACTIVITY_DATA[analyticsPeriod].map((d, i) => {
-                const total = d.cases + d.contracts + d.consult;
-                const max = Math.max(...ACTIVITY_DATA[analyticsPeriod].map(x => x.cases + x.contracts + x.consult), 1);
-                const h = Math.max((total / max) * 100, 4);
-                return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                    <div className="w-full flex flex-col-reverse rounded-sm overflow-hidden" style={{ height: `${h}%` }}>
-                      <div className="w-full bg-[#0B3D2E]" style={{ height: `${(d.cases/total)*100}%` }} />
-                      <div className="w-full bg-[#C8A762]" style={{ height: `${(d.contracts/total)*100}%` }} />
-                      <div className="w-full bg-blue-500/70" style={{ height: `${(d.consult/total)*100}%` }} />
-                    </div>
-                    <span className={`text-[8px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{d.label}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-3 mt-2 text-[9px]">
-              {[["قضايا","bg-[#0B3D2E]"],["عقود","bg-[#C8A762]"],["استشارات","bg-blue-500/70"]].map(([l,c]) => (
-                <span key={l} className={`flex items-center gap-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                  <span className={`w-2 h-2 rounded-sm ${c}`} />{l}
-                </span>
-              ))}
-            </div>
-          </SpotlightCard>
-
-          {/* ── Work Distribution + Win Rate (2-col) ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
-            <SpotlightCard isDark={isDark} className="p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Briefcase size={14} weight="duotone" className="text-[#C8A762]" />
-                <h3 className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>توزيع نوع العمل</h3>
-              </div>
-              <div className="space-y-2">
-                {WORK_DIST.map((w, i) => {
-                  const isOpen = activeWorkIdx === i;
-                  return (
-                    <div key={i}>
-                      <button onClick={() => setActiveWorkIdx(isOpen ? null : i)}
-                        className={`w-full flex items-center gap-3 rounded-xl p-2.5 transition-all text-right ${isOpen ? isDark ? "bg-white/[0.06]" : "bg-slate-50" : "hover:bg-black/[0.02]"}`}>
-                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: w.color }} />
-                        <span className={`text-[12px] font-semibold flex-1 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{w.label}</span>
-                        <span className="text-[11px] font-mono font-bold" style={{ color: w.color }}>{w.pct}٪</span>
-                        <div className={`w-20 h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                          <motion.div animate={{ width: `${w.pct}%` }} initial={{ width: 0 }}
-                            transition={{ duration: 0.7, delay: i * 0.1 }} className="h-full rounded-full" style={{ backgroundColor: w.color }} />
-                        </div>
-                        <ArrowDown size={11} className={`transition-transform ${isOpen ? "rotate-180" : ""} ${isDark ? "text-zinc-600" : "text-slate-400"}`} />
-                      </button>
-                      <AnimatePresence>
-                        {isOpen && (
-                          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22 }} className="overflow-hidden">
-                            <div className="flex flex-wrap gap-1.5 px-3 pb-2 pt-1">
-                              {w.sub.map(s => (
-                                <span key={s} className={`text-[10px] px-2 py-0.5 rounded-full border ${isDark ? "border-white/[0.08] text-zinc-400" : "border-slate-200 text-slate-500"}`}>{s}</span>
-                              ))}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })}
-              </div>
-            </SpotlightCard>
-
-            <SpotlightCard isDark={isDark} className="p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Trophy size={14} weight="duotone" className="text-amber-500" />
-                <h3 className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>نتائج القضايا</h3>
-              </div>
-              <div className="flex flex-col items-center mb-4">
-                <div className="relative w-24 h-24">
-                  <RingScore score={WIN_RATE_PCT} color="#C8A762" size={96} />
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className={`text-2xl font-black font-mono ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{WIN_RATE_PCT}٪</span>
-                    <span className={`text-[9px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>فوز</span>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {[
-                  { label: "مكسوبة",    val: WIN.won,     color: "#10b981" },
-                  { label: "تسوية",     val: WIN.settled, color: "#3b82f6" },
-                  { label: "خسارة",     val: WIN.lost,    color: "#ef4444" },
-                  { label: "قيد النظر", val: WIN.pending, color: "#94a3b8" },
-                ].map(s => (
-                  <div key={s.label} className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
-                    <span className={`text-[11px] flex-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{s.label}</span>
-                    <span className={`text-[11px] font-mono font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{s.val}</span>
-                    <div className={`w-12 h-1 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                      <motion.div initial={{ width: 0 }} animate={{ width: `${(s.val / WIN_TOTAL) * 100}%` }}
-                        transition={{ duration: 0.6, delay: 0.3 }} className="h-full rounded-full" style={{ backgroundColor: s.color }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </SpotlightCard>
-          </div>
-
-          {/* ── AI Usage ── */}
-          <SpotlightCard isDark={isDark} className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Robot size={14} weight="duotone" className="text-[#C8A762]" />
-              <h3 className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>أكثر أدوات نظامي AI استخداماً</h3>
-              <span className={`text-[10px] font-mono mr-auto ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                إجمالي: {AI_TOOLS.reduce((s,a) => s+a.uses, 0)} استخدام
-              </span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {AI_TOOLS.map((tool, i) => (
-                <motion.div key={tool.label} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}
-                  transition={{ type: "spring", stiffness: 120, damping: 18, delay: i * 0.07 }} className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: tool.color }} />
-                      <span className={`text-[12px] font-medium ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{tool.label}</span>
-                    </div>
-                    <span className={`text-[11px] font-mono font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{tool.uses}أ—</span>
-                  </div>
-                  <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${(tool.uses / 47) * 100}%` }}
-                      transition={{ duration: 0.7, delay: 0.1 * i }} className="h-full rounded-full" style={{ backgroundColor: tool.color }} />
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </SpotlightCard>
-
-          {/* ── Professional Scores ── */}
-          <SpotlightCard isDark={isDark} className="p-5">
-            <div className="flex items-center gap-2 mb-5">
-              <Target size={14} weight="duotone" className="text-[#0B3D2E]" />
-              <h3 className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>مؤشرات التطوير المهني</h3>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              {PRO_SCORES.map((item, i) => (
-                <motion.div key={item.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ type: "spring", stiffness: 100, damping: 20, delay: i * 0.1 }} className="flex flex-col items-center gap-2">
-                  <div className="relative">
-                    <RingScore score={item.score} color={item.color} size={84} />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className={`text-xl font-black font-mono ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{item.score}</span>
-                    </div>
-                  </div>
-                  <p className={`text-[11px] font-semibold text-center ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{item.label}</p>
-                </motion.div>
-              ))}
-            </div>
-          </SpotlightCard>
-
-          {/* ── Financial Summary ── */}
-          <SpotlightCard isDark={isDark} className="p-5">
-            <div className="flex items-center gap-2 mb-5">
-              <Coins size={14} weight="duotone" className="text-[#C8A762]" />
-              <h3 className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>ملخص الإيرادات</h3>
-              <span className={`text-[10px] mr-auto px-2 py-0.5 rounded-full border font-semibold ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-200 text-slate-400"}`}>تقديري</span>
-            </div>
-            <div className="grid grid-cols-3 gap-4 mb-5">
-              {[
-                { label: "الإجمالي السنوي",   value: FINANCIAL_DATA.total.toLocaleString(), unit: "ر.س", color: "#0B3D2E" },
-                { label: "المتوسط الشهري",     value: FINANCIAL_DATA.monthly.toLocaleString(), unit: "ر.س", color: "#C8A762" },
-                { label: `أعلى شهر (${FINANCIAL_DATA.bestMonth.name})`, value: FINANCIAL_DATA.bestMonth.amount.toLocaleString(), unit: "ر.س", color: "#10b981" },
-              ].map(item => (
-                <div key={item.label}>
-                  <p className={`text-[10px] mb-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{item.label}</p>
-                  <p className="text-[18px] font-black font-mono leading-none" style={{ color: item.color }}>{item.value}</p>
-                  <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-500"}`}>{item.unit}</p>
-                </div>
-              ))}
-            </div>
-            <div className="space-y-2">
-              {FINANCIAL_DATA.sources.map((src, i) => (
-                <div key={src.label}>
-                  <div className="flex justify-between mb-1">
-                    <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{src.label}</span>
-                    <span className="text-[11px] font-mono font-bold" style={{ color: src.color }}>{src.pct}٪</span>
-                  </div>
-                  <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${src.pct}%` }}
-                      transition={{ duration: 0.7, delay: i * 0.1 }} className="h-full rounded-full" style={{ backgroundColor: src.color }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </SpotlightCard>
-        </div>
-      )}
-
-      {/* Tab: Achievements */}
-      {activeTab === "achievements" && (
-        <AchievementsTab
-          isDark={isDark}
-          totalPoints={totalPoints}
-          unlockedLength={unlocked.length}
-          cardClass={card}
-          achievements={ACHIEVEMENTS}
-          milestones={MILESTONES}
-        />
-      )}
-
-      {/* Tab: Reviews */}
-      {activeTab === "reviews" && (
-        <ReviewsTab isDark={isDark} reviews={REVIEWS} cardClass={card} />
-      )}
+      {/*
+        Single view. The «الأداء» tab is gone (see the file header) and the
+        achievements / reviews tabs were already withheld, so a tab bar with one
+        remaining button would only read as broken chrome.
+      */}
+      <OverviewTab isDark={isDark} profile={profileData} cardClass={card} />
     </div>
-
-    {/* ── Share Modal ── */}
-    <ShareModal
-      open={shareOpen}
-      onClose={() => setShareOpen(false)}
-      isDark={isDark}
-      metalTier={metalTier}
-      shareToggles={shareToggles}
-      setShareToggles={setShareToggles}
-      WIN_RATE_PCT={WIN_RATE_PCT}
-      reviewCount={profileData.reviewCount}
-    />
-    </>
   );
 }

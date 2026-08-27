@@ -1022,12 +1022,19 @@ export default function CaseDetailPage() {
                 <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
                   الجراف البصري للقضية — {caseData.title}
                 </p>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full mr-auto ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-[#C8A762]/10 text-[#C8A762]"}`}>
-                  نظامي AI
-                </span>
+                {/* A «نظامي AI» pill sat here, in the same header as the real case
+                    title. The platform contributes nothing to this board: the
+                    cards are the lawyer's own, the canvas has no analysis engine
+                    behind it, and until this pass the pill was worse than
+                    decorative — the board underneath it was seeded with an
+                    invented contractor dispute (MOCK_NODES, now removed) that the
+                    badge attributed to نظامي. Nothing here is AI-produced, so
+                    nothing here is labelled as such. The `mr-auto` that pushed the
+                    fullscreen button to the far edge lived on that pill and has
+                    moved onto the button itself. */}
                 <button
                   onClick={() => setGraphFullscreen(f => !f)}
-                  className={`p-1.5 rounded-xl transition-colors ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}
+                  className={`mr-auto p-1.5 rounded-xl transition-colors ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}
                   title="ملء الشاشة"
                 >
                   <ArrowsOut size={14} />

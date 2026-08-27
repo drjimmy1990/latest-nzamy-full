@@ -1,21 +1,23 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  User, MagnifyingGlass, Plus, Phone, Gavel, Clock, CaretLeft,
-  Buildings, CheckCircle, Warning, Star,
-  XCircle, SortAscending, ArrowRight, X, Check,
-  ListChecks, CalendarCheck, Dot,
+  User, MagnifyingGlass, Plus, Phone, Clock,
+  Buildings, Warning, Star, ArrowClockwise,
+  XCircle, SortAscending, ArrowRight,
 } from "@phosphor-icons/react";
-import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import { getLawyerClients } from "@/lib/services/lawyerClientsService";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import EmptyState from "@/components/ui/EmptyState";
 
-import { type Client, type ClientFlag, type SortKey, FLAG_CONFIG } from "@/constants/lawyerClientsData";
+import { type ClientFlag, type SortKey, FLAG_CONFIG } from "@/constants/lawyerClientsData";
 import AddClientModal from "@/components/dashboard/lawyer/AddClientModal";
-import ClientDrawer from "@/components/dashboard/lawyer/ClientDrawer";
+import ClientDrawer, {
+  type LawyerClientView,
+  type LawyerClientApiRow,
+  toLawyerClientView,
+} from "@/components/dashboard/lawyer/ClientDrawer";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -24,19 +26,18 @@ export default function ClientsPage() {
   const { isDark } = useTheme();
 
   const [search,     setSearch]     = useState("");
-  const [clients,    setClients]    = useState<Client[]>([]);
+  const [clients,    setClients]    = useState<LawyerClientView[]>([]);
   const [loading,    setLoading]    = useState(true);
+  const [loadError,  setLoadError]  = useState<string | null>(null);
   const [activeFlags, setActiveFlags] = useState<Set<ClientFlag>>(new Set());
   const [sortKey,    setSortKey]    = useState<SortKey>("lastContact");
   const [showModal,  setShowModal]  = useState(false);
-  const [drawerClient, setDrawerClient] = useState<Client | null>(null);
+  const [drawerClient, setDrawerClient] = useState<LawyerClientView | null>(null);
   const [clientView,   setClientView]   = useState<"active" | "archive">("active"); // S82
   const [archiveSearch, setArchiveSearch] = useState(""); // S82
 
-  // S82: auto-inactive = activeCases===0 AND (has inactive flag OR lastContact implies old)
-  // manual flag: inactive
-  // auto: activeCases === 0 (no current work)
-  const isArchived = (c: Client) => c.activeCases === 0 || c.flags.includes("inactive");
+  // S82: auto-inactive = no in-flight requests, OR the lawyer ticked «غير نشط».
+  const isArchived = (c: LawyerClientView) => c.activeRequests === 0 || c.flags.includes("inactive");
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -58,44 +59,50 @@ export default function ClientsPage() {
       return matchSearch && matchFlags && matchArchiveQ;
     }).sort((a, b) => {
       if (sortKey === "name")        return a.name.localeCompare(b.name);
-      if (sortKey === "activeCases") return b.activeCases - a.activeCases;
-      if (sortKey === "unpaid")      return (b.totalFees - b.paidFees) - (a.totalFees - a.paidFees);
-      if (sortKey === "rating")      return b.rating - a.rating;
+      if (sortKey === "activeCases") return b.activeRequests - a.activeRequests;
+      // Clients with no fee agreement and clients with no rating sort last
+      // rather than being treated as 0 / 3 — they are unknown, not lowest.
+      if (sortKey === "unpaid")      return outstandingOf(b) - outstandingOf(a);
+      if (sortKey === "rating")      return (b.rating ?? -1) - (a.rating ?? -1);
       return 0;
     });
   }, [clients, search, activeFlags, sortKey, clientView, archiveSearch]);
 
-  const totalUnpaid = clients.reduce((acc, c) => acc + (c.totalFees - c.paidFees), 0);
+  // Only clients with a fee agreement on record contribute; a client with no
+  // figures is absent from the total, not a zero in it.
+  const withFees = clients.filter(c => c.totalFees !== null && c.paidFees !== null);
+  const totalUnpaid = withFees.reduce((acc, c) => acc + outstandingOf(c), 0);
   const badClients  = clients.filter(c => c.flags.includes("bad") || c.flags.includes("late_pay")).length;
 
-  const onAdd = (c: Client) => setClients(prev => [c, ...prev]);
+  const onAdd = (c: LawyerClientView) => setClients(prev => [c, ...prev]);
 
-  // ─── Fetch clients from service ──────────────────────────────────────────────
-  useEffect(() => {
-    getLawyerClients()
+  // ─── Fetch clients ───────────────────────────────────────────────────────────
+  // Deliberately calls the endpoint directly instead of getLawyerClients():
+  // that service wrapper ends in `catch { return []; }`, so a 500 reaches this
+  // page as an empty array and a failed read is displayed as «لا توجد موكلون
+  // بعد». A lawyer must be able to tell a broken query from an empty directory.
+  const loadClients = useCallback(() => {
+    if (!isSupabaseMode) {
+      // Demo build has no API routes; module-level constant, so this branch is
+      // eliminated from the production bundle.
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setLoadError(null);
+    apiGet<LawyerClientApiRow[]>("/api/v1/lawyer/clients")
       .then((data) => {
-        const mapped: Client[] = (data || []).map((d: any) => ({
-          id: d.id,
-          name: d.name || d.full_name || '',
-          email: d.email || '',
-          phone: d.phone || '',
-          avatar: d.avatar || d.avatar_url || '',
-          type: d.userType || d.user_type || 'individual',
-          flags: [],
-          rating: (d.rating || 3) as 1 | 2 | 3 | 4 | 5,
-          totalFees: 0,
-          paidFees: 0,
-          activeCases: d.activeCount || 0,
-          closedCases: 0,
-          lastContact: d.lastActivity || new Date().toISOString(),
-          requestCount: d.requestCount || 0,
-          since: d.created_at || d.since || '',
-        }));
-        setClients(mapped);
+        setClients(Array.isArray(data) ? data.map(toLawyerClientView) : []);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((e) => {
+        console.error("[lawyer clients] fetch failed:", e);
+        setLoadError("تعذّر تحميل دليل الموكّلين.");
+        setLoading(false);
+      });
   }, []);
+
+  useEffect(() => { loadClients(); }, [loadClients]);
 
   return (
     <>
@@ -104,16 +111,35 @@ export default function ClientsPage() {
     </AnimatePresence>
     <div className="max-w-[1100px] mx-auto space-y-5" dir="rtl">
 
-      {/* Demo Banner */}
-      {!loading && clients.length === 0 && (
+      {/* Could-not-read banner. Distinct from an empty directory: this one says
+          the read failed and offers to run it again. */}
+      {loadError && (
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
-            <Warning size={18} weight="fill" className="text-amber-500" />
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-red-500/15" : "bg-red-100"}`}>
+            <Warning size={18} weight="fill" className="text-red-500" />
+          </div>
+          <div className="flex-1">
+            <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>{loadError}</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-red-600/70"}`}>القائمة أدناه غير مكتملة — لا تعتمد عليها حتى ينجح التحميل.</p>
+          </div>
+          <button onClick={loadClients}
+            className="flex items-center gap-1.5 text-[11px] font-bold text-red-500 hover:underline flex-shrink-0">
+            <ArrowClockwise size={13} /> إعادة المحاولة
+          </button>
+        </motion.div>
+      )}
+
+      {/* Genuinely empty directory — no clients yet, and the read succeeded. */}
+      {!loading && !loadError && clients.length === 0 && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
+            <User size={18} weight="duotone" className={isDark ? "text-zinc-400" : "text-slate-400"} />
           </div>
           <div>
-            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
-            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>لا توجد موكلون بعد — أضف موكّلاً جديداً أو اربط حسابك بقاعدة البيانات</p>
+            <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>لا يوجد موكّلون بعد</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>أضف موكّلاً جديداً، أو انتظر أول طلب يُوجَّه إليك من المنصة.</p>
           </div>
         </motion.div>
       )}
@@ -189,7 +215,7 @@ export default function ClientsPage() {
           isDark ? "bg-amber-500/5 border border-amber-500/15 text-amber-400" : "bg-amber-50 border border-amber-200 text-amber-700"
         }`}>
           <span>⚠️</span>
-          <span>العملاء هنا ليس لديهم قضايا نشطة حالياً أو تم تصنيفهم يدوياً كغير نشطين. لم يتم حذفهم — تستطيع استعادتهم في أي وقت.</span>
+          <span>الموكلون هنا ليس لديهم طلبات نشطة حالياً أو تم تصنيفهم يدوياً كغير نشطين. لم يتم حذفهم — تستطيع استعادتهم في أي وقت.</span>
         </div>
       )}
 
@@ -202,7 +228,9 @@ export default function ClientsPage() {
             {clientView === "archive" ? "أرشيف الموكلين" : "الموكلّون"}
           </h1>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {filtered.length} موكّل · {clientView === "active" ? `${clients.filter(c => !isArchived(c) && c.activeCases > 0).length} نشطون` : "تاريخ سابق — سجل دائم"}
+            {loading
+              ? "جارٍ التحميل…"
+              : `${filtered.length} موكّل · ${clientView === "active" ? `${clients.filter(c => !isArchived(c) && c.activeRequests > 0).length} لديهم طلبات نشطة` : "تاريخ سابق — سجل دائم"}`}
           </p>
         </div>
         {clientView === "active" && (
@@ -255,7 +283,7 @@ export default function ClientsPage() {
           <select value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)}
             className="bg-transparent outline-none text-[12px] cursor-pointer">
             <option value="lastContact">آخر تواصل</option>
-            <option value="activeCases">القضايا النشطة</option>
+            <option value="activeCases">الطلبات النشطة</option>
             <option value="unpaid">الأتعاب المتأخرة</option>
             <option value="rating">التقييم</option>
             <option value="name">الاسم</option>
@@ -265,20 +293,50 @@ export default function ClientsPage() {
 
       {/* Client Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="col-span-2 flex flex-col items-center justify-center gap-3 py-14">
+            <div className="inline-block w-7 h-7 rounded-full border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] animate-spin" />
+            <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل دليل الموكّلين…</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="col-span-2">
             <EmptyState
               icon={<User />}
-              title="لا يوجد موكّلون مطابقون"
-              description="لم يتم العثور على موكّلين يطابقون شروط البحث أو الفلترة الحالية."
-              action={{ label: "إضافة موكّل", onClick: () => setShowModal(true) }}
+              title={loadError ? "تعذّر تحميل القائمة" : "لا يوجد موكّلون مطابقون"}
+              description={loadError
+                ? "فشلت قراءة دليل الموكّلين — هذه ليست قائمة فارغة، بل قراءة لم تنجح."
+                : "لم يتم العثور على موكّلين يطابقون شروط البحث أو الفلترة الحالية."}
+              action={loadError
+                ? { label: "إعادة المحاولة", onClick: loadClients }
+                : { label: "إضافة موكّل", onClick: () => setShowModal(true) }}
             />
           </div>
         ) : filtered.map((client, i) => {
-          const unpaid  = client.totalFees - client.paidFees;
-          const payPct  = client.totalFees ? Math.round((client.paidFees / client.totalFees) * 100) : 100;
+          const outstanding = client.totalFees !== null && client.paidFees !== null
+            ? client.totalFees - client.paidFees
+            : null;
+          const payPct = client.totalFees && client.paidFees !== null
+            ? Math.round((client.paidFees / client.totalFees) * 100)
+            : 0;
           const hasBad   = client.flags.includes("bad");
           const hasLatePay = client.flags.includes("late_pay");
+
+          // The «متبقي» cell exists only when a fee agreement is on record.
+          // It used to be unconditional, with totalFees/paidFees hardcoded to 0,
+          // so every client on the page showed a green «✓» — the platform
+          // telling six practising lawyers that every client was settled up.
+          const cells: { v: string | number; label: string; c: string }[] = [
+            { v: client.activeRequests, label: "طلبات نشطة", c: client.activeRequests > 0 ? "text-royal" : isDark ? "text-zinc-500" : "text-slate-400" },
+            { v: client.closedRequests, label: "مغلقة", c: isDark ? "text-zinc-500" : "text-slate-400" },
+          ];
+          if (outstanding !== null) {
+            cells.push({
+              v: outstanding > 0 ? outstanding.toLocaleString() + " ﷼" : "مسدَّدة",
+              label: "متبقي",
+              c: outstanding > 0 ? "text-red-500" : "text-emerald-500",
+            });
+          }
+
           return (
             <motion.div key={client.id}
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
@@ -295,29 +353,34 @@ export default function ClientsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start gap-2 mb-1">
                         <p className={`text-[14px] font-bold truncate flex-1 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{client.name}</p>
-                        {/* Stars */}
-                        <div className="flex flex-shrink-0">
-                          {Array.from({ length: 5 }).map((_, si) => (
-                            <Star key={si} size={10} weight={si < client.rating ? "fill" : "regular"}
-                              className={si < client.rating ? "text-amber-400" : isDark ? "text-zinc-700" : "text-slate-200"} />
-                          ))}
-                        </div>
+                        {/* Stars only for a client the lawyer actually rated.
+                            There is no rating system on the platform — the only
+                            source is AddClientModal step 2. */}
+                        {client.rating !== null && (
+                          <div className="flex flex-shrink-0">
+                            {Array.from({ length: 5 }).map((_, si) => (
+                              <Star key={si} size={10} weight={si < (client.rating ?? 0) ? "fill" : "regular"}
+                                className={si < (client.rating ?? 0) ? "text-amber-400" : isDark ? "text-zinc-700" : "text-slate-200"} />
+                            ))}
+                          </div>
+                        )}
                       </div>
                       {/* Flags */}
-                      <div className="flex flex-wrap gap-1 mb-1">
-                        {client.flags.map(f => {
-                          const fc = FLAG_CONFIG[f];
-                          return (
-                            <span key={f} className={`text-[9px] font-bold px-1.5 rounded-full ${fc.bg} ${fc.color}`}>
-                              {fc.emoji} {fc.label}
-                            </span>
-                          );
-                        })}
-                      </div>
+                      {client.flags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-1">
+                          {client.flags.map(f => {
+                            const fc = FLAG_CONFIG[f];
+                            return (
+                              <span key={f} className={`text-[9px] font-bold px-1.5 rounded-full ${fc.bg} ${fc.color}`}>
+                                {fc.emoji} {fc.label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                       <div className={`flex items-center gap-3 text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                        <span className="flex items-center gap-0.5"><Clock size={9} />{client.lastContact}</span>
-                        <span className="flex items-center gap-0.5"><Phone size={9} /><span dir="ltr">{client.phone}</span></span>
-
+                        {client.lastContact && <span className="flex items-center gap-0.5"><Clock size={9} />{client.lastContact}</span>}
+                        {client.phone && <span className="flex items-center gap-0.5"><Phone size={9} /><span dir="ltr">{client.phone}</span></span>}
                       </div>
                     </div>
                     <div className="flex-shrink-0">
@@ -327,11 +390,11 @@ export default function ClientsPage() {
                 </div>
 
                 {/* Fee progress */}
-                {client.totalFees > 0 && (
+                {client.totalFees !== null && client.totalFees > 0 && client.paidFees !== null && (
                   <div className="px-4 pb-3">
                     <div className={`flex items-center justify-between text-[10px] mb-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                       <span>الأتعاب المسددة</span>
-                      <span className={hasLatePay && unpaid > 0 ? "text-red-500 font-bold" : ""}>
+                      <span className={hasLatePay && (outstanding ?? 0) > 0 ? "text-red-500 font-bold" : ""}>
                         {client.paidFees.toLocaleString()} / {client.totalFees.toLocaleString()} ﷼
                       </span>
                     </div>
@@ -344,13 +407,9 @@ export default function ClientsPage() {
                 )}
 
                 {/* Stats row */}
-                <div className={`grid grid-cols-3 border-t text-center ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
-                  {[
-                    { v: client.activeCases,                           label: "نشطة",    c: client.activeCases > 0 ? "text-royal" : isDark ? "text-zinc-500" : "text-slate-400" },
-                    { v: client.closedCases,                           label: "مغلقة",   c: isDark ? "text-zinc-500" : "text-slate-400" },
-                    { v: (unpaid > 0 ? unpaid.toLocaleString() + " ﷼" : "✓"), label: "متبقي", c: unpaid > 0 ? "text-red-500" : "text-emerald-500" },
-                  ].map((s, si) => (
-                    <div key={si} className={`py-2.5 text-center ${si < 2 ? (isDark ? "border-l border-white/[0.05]" : "border-l border-slate-100") : ""}`}>
+                <div className={`grid ${cells.length === 3 ? "grid-cols-3" : "grid-cols-2"} border-t text-center ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
+                  {cells.map((s, si) => (
+                    <div key={si} className={`py-2.5 text-center ${si < cells.length - 1 ? (isDark ? "border-l border-white/[0.05]" : "border-l border-slate-100") : ""}`}>
                       <p className={`text-[13px] font-bold ${s.c}`}>{s.v}</p>
                       <p className={`text-[9px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{s.label}</p>
                     </div>
@@ -365,4 +424,12 @@ export default function ClientsPage() {
     </div>
     </>
   );
+}
+
+/** Outstanding fees, or 0 when the client has no fee agreement on record.
+ *  Used only for totals and sorting — never for display, where an unknown
+ *  balance must be omitted rather than shown as a settled account. */
+function outstandingOf(c: LawyerClientView): number {
+  if (c.totalFees === null || c.paidFees === null) return 0;
+  return c.totalFees - c.paidFees;
 }
