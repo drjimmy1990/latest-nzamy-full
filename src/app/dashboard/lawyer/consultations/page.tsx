@@ -1,24 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ChatDots, Clock, Plus, MagnifyingGlass, CalendarCheck,
-  User, CheckCircle, Scales, ArrowRight, Video,
-  Phone, ChatCircle, Sparkle, Buildings, MapPin,
-  Microphone, X, CaretDown, NotePencil, FilePdf,
-  WhatsappLogo, EnvelopeSimple, HouseSimple, UsersThree,
-  Warning, SealCheck, ArrowLeft, Calendar, ClockCountdown,
+  ChatDots, Plus, MagnifyingGlass, CalendarCheck,
+  User, CheckCircle, ArrowRight, Video,
+  Phone, ChatCircle, Sparkle, Buildings,
+  X, CaretDown, NotePencil, ArrowClockwise,
+  HouseSimple, Scales,
+  Warning, ArrowLeft,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import { getWorkflowRequestsByReceiver, createWorkflowRequest } from "@/lib/services/workflowService";
+import { useUser } from "@/hooks/useUser";
+import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createWorkflowId } from "@/lib/workflowStore";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 
+/** Matches CLIENT_REQUESTS_FETCH_LIMIT in src/lib/clientWorkflowRepository.ts,
+ *  which exists because every client list was silently capped at the 20 newest
+ *  rows. This lawyer-side call site was never updated: it asked for the 20
+ *  newest receiver="lawyer" rows and only then filtered to type="consultation",
+ *  so a lawyer who had added twenty clients saw zero consultations. */
+const LAWYER_REQUESTS_FETCH_LIMIT = 100;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ConsultStatus = "upcoming" | "completed" | "cancelled" | "inProgress";
+// No "inProgress": nothing sets it. `service_requests.status` has no in-session
+// value and workflowToConsultation below can only ever produce upcoming /
+// completed / cancelled, so a «جارية الآن» bucket could only ever read 0.
+type ConsultStatus = "upcoming" | "completed" | "cancelled";
 type ConsultMode   = "video" | "phone" | "chat" | "inPerson";
 type BookingStep   = "type" | "mode" | "datetime" | "confirm";
 
@@ -27,16 +38,14 @@ interface Consultation {
   client:      string;
   clientType:  "individual" | "company";
   topic:       string;
+  /** "" when the booking carries no date/time — the UI omits the line. */
   date:        string;
   time:        string;
   mode:        ConsultMode;
   status:      ConsultStatus;
   notes?:      string;
-  isPaid:      boolean;
-  fee:         number;
-  caseId?:     string;
-  duration:    number; // minutes
-  aiSummary?:  string;
+  /** Minutes, or null when the stored booking has no duration on it. */
+  duration:    number | null;
 }
 
 // ─── UI Config ─────────────────────────────────────────────────────────────────
@@ -49,7 +58,6 @@ const STATUS_CONFIG: Record<ConsultStatus, { label: string; color: string }> = {
   upcoming:   { label: "قادمة",      color: "text-royal bg-royal/10 border-royal/20" },
   completed:  { label: "مكتملة",    color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" },
   cancelled:  { label: "ملغية",     color: "text-slate-400 bg-slate-100 border-slate-200" },
-  inProgress: { label: "جارية الآن", color: "text-amber-500 bg-amber-500/10 border-amber-500/20" },
 };
 
 // ─── Booking Modal ─────────────────────────────────────────────────────────────
@@ -68,19 +76,31 @@ function consultModeToWorkflowMode(mode: ConsultMode): string {
   return mode; // "phone" | "video"
 }
 
+/** metadata values are unvalidated jsonb — read them, never substitute. */
+function metaString(v: unknown): string {
+  return typeof v === "string" && v.trim() ? v.trim() : "";
+}
+
 function workflowToConsultation(request: WorkflowRequest): Consultation {
+  const rawDuration = request.metadata?.duration;
   return {
     id: request.id,
     client: request.requester.name || "عميل نظامي",
     clientType: request.requester.role === "corporate" || request.requester.role === "micro" ? "company" : "individual",
     topic: request.title,
-    date: String(request.metadata?.day ?? "بانتظار التأكيد"),
-    time: String(request.metadata?.time ?? "بانتظار التأكيد"),
+    // "" when the booking has no date/time on it. The old code passed the raw
+    // value through String(), so an empty-string date rendered as an empty
+    // slot rather than reaching the «بانتظار التأكيد» fallback beside it.
+    date: metaString(request.metadata?.day),
+    time: metaString(request.metadata?.time),
     mode: workflowModeToConsultMode(request.metadata?.mode),
     status: request.status === "cancelled" ? "cancelled" : request.status === "completed" ? "completed" : "upcoming",
-    isPaid: request.payment.status !== "pending",
-    fee: request.payment.amount,
-    duration: request.metadata?.mode === "text" ? 30 : 60,
+    // The stored duration, not a guess. This used to be
+    // `metadata?.mode === "text" ? 30 : 60`, which printed «٦٠ د» on the card
+    // for a booking the lawyer had explicitly set to 90 or 120 minutes.
+    duration: typeof rawDuration === "number" && Number.isFinite(rawDuration) && rawDuration > 0
+      ? rawDuration
+      : null,
     notes: request.description,
   };
 }
@@ -95,7 +115,7 @@ const CONSULT_TYPES = [
 
 const DURATIONS = [30, 45, 60, 90, 120];
 
-function BookingModal({ isDark, onClose }: { isDark: boolean; onClose: () => void }) {
+function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onClose: () => void; lawyerUserId?: string }) {
   const [step, setStep] = useState<BookingStep>("type");
   const [consultType, setConsultType] = useState("");
   const [mode, setMode] = useState<ConsultMode | "">("");
@@ -107,20 +127,43 @@ function BookingModal({ isDark, onClose }: { isDark: boolean; onClose: () => voi
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const card = isDark
-    ? "rounded-2xl border border-white/[0.06] bg-zinc-800"
-    : "rounded-2xl border border-slate-100 bg-white shadow-sm";
-
   const steps: BookingStep[] = ["type", "mode", "datetime", "confirm"];
   const stepIdx = steps.indexOf(step);
 
   // L10: persist the consultation as a service_request on confirm.
+  //
+  // Two things were wrong here and both are fixed by going straight to the API.
+  //
+  // 1. FALSE SUCCESS. This used to call createWorkflowRequest(), whose catch is
+  //    `return saveLocal(input)` — a failed POST was swallowed, a row was
+  //    written to localStorage["nzamy_workflow_requests_v1"], and a fully-formed
+  //    object came back, so this function took the success path, fired the
+  //    refresh and closed the modal. The red «تعذّر تأكيد الاستشارة» banner
+  //    below could not fire for any server failure, and the refresh it
+  //    triggered re-read the API, which knew nothing of the local row. The
+  //    lawyer got a closed modal and no appointment. apiMutate throws on any
+  //    non-2xx, so the banner is now reachable and nothing is written locally.
+  //
+  // 2. LEAKED TO EVERY OTHER LAWYER. The row went in with no `assignedTo`, so
+  //    `assigned_to` was NULL. The SELECT policy on service_requests
+  //    (supabase/migrations/20260815_marketplace_excludes_ai_workspace.sql:45-54)
+  //    grants EVERY verified lawyer read access to any row that is
+  //    `assigned_to IS NULL AND status IN ('pending','pending_assignment') AND
+  //    receiver <> 'ai_workspace'` — which is exactly the shape this booking
+  //    created. This list queries receiver="lawyer" + type="consultation" with
+  //    no ownership filter of its own, so another lawyer's consultations page
+  //    would render this one's client name, topic and notes. Setting
+  //    `assignedTo` to the booking lawyer takes the row out of that clause and
+  //    leaves it readable through `assigned_to = auth.uid()` (and through
+  //    `requester_user_id = auth.uid()`, which the route sets from the session).
+  //    This also matches how the rest of the lawyer workspace writes its rows
+  //    — see AddCaseModal.tsx and AddHearingModal.tsx.
   const handleConfirm = async () => {
     setError(null);
     setSubmitting(true);
     try {
       const consultLabel = CONSULT_TYPES.find((t) => t.id === consultType)?.label ?? consultType;
-      await createWorkflowRequest({
+      const payload = {
         id: createWorkflowId(),
         type: "consultation",
         title: consultLabel || "استشارة قانونية",
@@ -130,13 +173,28 @@ function BookingModal({ isDark, onClose }: { isDark: boolean; onClose: () => voi
         requester: { name: clientName || "عميل", role: "individual", tier: "free" },
         payment: { amount: 0, status: "not_required" },
         sourcePath: "",
+        assignedTo: lawyerUserId ?? null,
         metadata: {
           day: date,
           time,
           mode: mode ? consultModeToWorkflowMode(mode) : "video",
           duration,
         },
-      });
+      };
+
+      if (!isSupabaseMode) {
+        // Demo build has no API routes. Module-level constant, so this branch is
+        // eliminated from the production bundle the six lawyer accounts use.
+        throw new Error("جدولة الاستشارات غير متاحة في هذا الوضع.");
+      }
+      if (!lawyerUserId) {
+        // Refuse rather than write an unassigned row: see (2) above. An
+        // unresolved session here is rare (the button is deep in a modal), but
+        // the consequence of guessing is another lawyer reading this booking.
+        throw new Error("تعذّر التحقق من الجلسة. أعد تحميل الصفحة ثم حاول مرة أخرى.");
+      }
+
+      await apiMutate<{ data: unknown }>("/api/v1/service-requests", "POST", payload);
       window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
       setSubmitting(false);
       onClose();
@@ -348,21 +406,11 @@ function ConsultCard({ c, isDark, card }: { c: Consultation; isDark: boolean; ca
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
       <div className={`${card} overflow-hidden transition-all hover:border-royal/20`}>
-        {/* In-progress pulse bar */}
-        {c.status === "inProgress" && (
-          <div className="h-0.5 w-full bg-amber-500/20">
-            <motion.div animate={{ x: ["-100%", "100%"] }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-              className="h-full w-1/3 bg-amber-500" />
-          </div>
-        )}
         <div className="p-4 flex items-center gap-4">
           {/* Icon */}
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-            c.status === "inProgress" ? "bg-amber-500/10" : isDark ? "bg-white/[0.04]" : "bg-slate-50"
-          }`}>
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
             <ModeIcon size={18} weight="duotone" className={
               c.status === "upcoming" ? "text-royal" :
-              c.status === "inProgress" ? "text-amber-500" :
               c.status === "completed" ? "text-emerald-500" :
               isDark ? "text-zinc-500" : "text-slate-400"
             } />
@@ -383,33 +431,34 @@ function ConsultCard({ c, isDark, card }: { c: Consultation; isDark: boolean; ca
               <span className={`px-1.5 py-0.5 rounded-md text-[10px] flex items-center gap-1 ${modeColors[1]} ${modeColors[0]}`}>
                 <ModeIcon size={9} /> {MODE_LABELS[c.mode]}
               </span>
-              <span className="w-1 h-1 rounded-full bg-current opacity-40" />
-              <span>{c.duration} د</span>
+              {c.duration !== null && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-current opacity-40" />
+                  <span>{c.duration} د</span>
+                </>
+              )}
             </div>
-            {c.caseId && (
-              <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>⚖️ {c.caseId}</p>
-            )}
+            {/* `caseId` was rendered here as «⚖️ {c.caseId}». Nothing ever set
+                it — there is no case link on a consultation row — so the line
+                could not appear. Removed rather than left as a slot waiting for
+                a field that has no writer. */}
           </div>
 
           {/* Right side */}
           <div className="flex items-center gap-3 flex-shrink-0">
             <div className="text-left">
-              <p className={`text-[13px] font-bold font-mono ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{c.time}</p>
-              <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{c.date}</p>
+              {c.time
+                ? <p className={`text-[13px] font-bold font-mono ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{c.time}</p>
+                : <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>بانتظار التأكيد</p>}
+              {c.date && <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{c.date}</p>}
             </div>
-            {c.status === "upcoming" && (
-              <button className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-royal text-white text-[11px] font-bold hover:bg-royal/90 transition-colors">
-                <Video size={12} /> بدء
-              </button>
-            )}
-            {c.status === "inProgress" && (
-              <motion.button animate={{ boxShadow: ["0 0 0 0 rgba(245,158,11,0)", "0 0 0 6px rgba(245,158,11,0)"] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500 text-white text-[11px] font-bold">
-                <Video size={12} /> دخول
-              </motion.button>
-            )}
-            {(c.status === "completed" || c.notes || c.aiSummary) && (
+            {/* The «بدء» / «دخول» video buttons that used to sit here had no
+                onClick, and nothing to give one: `grep -rn
+                "meetingUrl|meeting_url|jitsi|zoom.us|daily.co|whereby" src`
+                returns nothing. There is no meeting infrastructure in this
+                product, so the buttons are removed rather than wired to a
+                placeholder. */}
+            {(c.status === "completed" || c.notes) && (
               <button onClick={() => setExpanded(!expanded)}
                 className={`w-7 h-7 rounded-lg flex items-center justify-center border ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-200 text-slate-400"}`}>
                 <CaretDown size={12} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
@@ -418,35 +467,20 @@ function ConsultCard({ c, isDark, card }: { c: Consultation; isDark: boolean; ca
           </div>
         </div>
 
-        {/* Expanded: notes + AI summary */}
+        {/* Expanded: the lawyer's own notes (request.description).
+            A «ملخص AI للاستشارة» panel used to live here too, with «إرسال
+            للعميل» and «تصدير PDF» buttons under it. It hung off `aiSummary`,
+            which no code path ever set, so it was unreachable — and there is no
+            consultation-summary generator behind it to reach. Removed. */}
         <AnimatePresence>
-          {expanded && (c.notes || c.aiSummary) && (
+          {expanded && c.notes && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden">
               <div className={`px-4 pb-4 pt-0 space-y-3 border-t ${isDark ? "border-white/[0.04]" : "border-slate-50"}`}>
-                {c.notes && (
-                  <div>
-                    <p className={`text-[10px] font-bold uppercase tracking-wide mb-1.5 mt-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>ملاحظات المحامي</p>
-                    <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{c.notes}</p>
-                  </div>
-                )}
-                {c.aiSummary && (
-                  <div className={`rounded-xl border p-3 ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Sparkle size={12} weight="fill" className="text-[#C8A762]" />
-                      <p className={`text-[10px] font-bold ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}>ملخص AI للاستشارة</p>
-                    </div>
-                    <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-amber-900"}`}>{c.aiSummary}</p>
-                    <div className="flex gap-2 mt-2.5">
-                      <button className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border ${isDark ? "border-[#C8A762]/20 text-[#C8A762]" : "border-amber-300 text-amber-700"}`}>
-                        <WhatsappLogo size={11} weight="fill" /> إرسال للعميل
-                      </button>
-                      <button className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
-                        <FilePdf size={11} /> تصدير PDF
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <div>
+                  <p className={`text-[10px] font-bold uppercase tracking-wide mb-1.5 mt-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>ملاحظات المحامي</p>
+                  <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{c.notes}</p>
+                </div>
               </div>
             </motion.div>
           )}
@@ -460,36 +494,63 @@ function ConsultCard({ c, isDark, card }: { c: Consultation; isDark: boolean; ca
 
 export default function ConsultationsPage() {
   const { isDark } = useTheme();
+  const user = useUser();
   const [filter, setFilter] = useState<ConsultStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [showBooking, setShowBooking] = useState(false);
   const [consults, setConsults] = useState<Consultation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [maybeTruncated, setMaybeTruncated] = useState(false);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
-  useEffect(() => {
-    const syncConsultations = async () => {
-      try {
-        const requests = await getWorkflowRequestsByReceiver("lawyer");
-        const workflowConsults = requests
-          .filter(request => request.type === "consultation")
-          .map(workflowToConsultation);
-        setConsults(workflowConsults);
-      } catch {
-        setConsults([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Calls the endpoint directly instead of getWorkflowRequestsByReceiver(),
+  // for two reasons that both end in a lawyer missing an appointment:
+  //   - that wrapper sends no `limit`, so the route's default of 20 applied and
+  //     the type="consultation" filter ran afterwards in the browser. Manually
+  //     added clients, cases, hearings, tasks and invoices all land in the same
+  //     receiver="lawyer" window, so twenty of anything hid every consultation.
+  //   - the route reports a failed query as HTTP 200 with
+  //     `{ data: [], total: 0, degraded: true }`. apiGet does not throw on a
+  //     200, so the wrapper's catch never ran and the page drew the failure as
+  //     «لا توجد استشارات مطابقة».
+  const loadConsultations = useCallback(async () => {
+    if (!isSupabaseMode) {
+      // Demo build: no API routes. Module-level constant → eliminated in prod.
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await apiGet<{ data: WorkflowRequest[]; total?: number; degraded?: boolean }>(
+        "/api/v1/service-requests",
+        { receiver: "lawyer", limit: LAWYER_REQUESTS_FETCH_LIMIT },
+      );
+      if (res?.degraded) throw new Error("تعذّر تحميل الاستشارات.");
+      const rows = Array.isArray(res?.data) ? res.data : [];
+      setConsults(rows.filter(r => r.type === "consultation").map(workflowToConsultation));
+      // `total` counts every receiver="lawyer" row, not just consultations, so
+      // this can only ever say the list MIGHT be short — never that a specific
+      // consultation is missing.
+      setMaybeTruncated(typeof res?.total === "number" && res.total > rows.length);
+    } catch (e) {
+      console.error("[consultations] load failed:", e);
+      setLoadError("تعذّر تحميل الاستشارات.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-    syncConsultations();
-    const handler = () => syncConsultations();
+  useEffect(() => {
+    loadConsultations();
+    const handler = () => { loadConsultations(); };
     window.addEventListener("nzamy-workflow-updated", handler);
     return () => window.removeEventListener("nzamy-workflow-updated", handler);
-  }, []);
+  }, [loadConsultations]);
 
   const filtered = consults.filter(c => {
     const matchStatus = filter === "all" || c.status === filter;
@@ -497,17 +558,40 @@ export default function ConsultationsPage() {
     return matchStatus && matchSearch;
   });
 
-  const upcoming   = consults.filter(c => c.status === "upcoming");
-  const inProgress = consults.filter(c => c.status === "inProgress");
-  const totalFees  = consults.reduce((s, c) => s + c.fee, 0);
+  const upcoming = consults.filter(c => c.status === "upcoming");
 
   return (
     <div className="max-w-3xl mx-auto space-y-5" dir="rtl">
 
       {/* Booking modal */}
       <AnimatePresence>
-        {showBooking && <BookingModal isDark={isDark} onClose={() => setShowBooking(false)} />}
+        {showBooking && <BookingModal isDark={isDark} onClose={() => setShowBooking(false)} lawyerUserId={user.userId} />}
       </AnimatePresence>
+
+      {/* Could-not-read banner — distinct from an empty list, and retryable. */}
+      {loadError && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50"}`}>
+          <Warning size={18} weight="fill" className="text-red-500 flex-shrink-0" />
+          <div className="flex-1">
+            <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>{loadError}</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-red-600/70"}`}>هذه ليست قائمة فارغة — القراءة لم تنجح. لا تعتمد على ما يظهر أدناه.</p>
+          </div>
+          <button onClick={loadConsultations}
+            className="flex items-center gap-1.5 text-[11px] font-bold text-red-500 hover:underline flex-shrink-0">
+            <ArrowClockwise size={13} /> إعادة المحاولة
+          </button>
+        </motion.div>
+      )}
+
+      {/* Possible truncation. `total` counts all receiver="lawyer" rows, so the
+          honest statement is "may be incomplete", not "consultations missing". */}
+      {!loadError && maybeTruncated && (
+        <div className={`rounded-2xl px-4 py-2.5 border flex items-center gap-2 text-[11px] ${isDark ? "border-amber-500/20 bg-amber-500/[0.06] text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+          <Warning size={14} weight="fill" className="flex-shrink-0" />
+          <span>عدد سجلاتك يتجاوز حد القراءة ({LAWYER_REQUESTS_FETCH_LIMIT} سجلاً)، وقد لا تكون هذه القائمة كاملة.</span>
+        </div>
+      )}
 
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between gap-4">
@@ -515,8 +599,12 @@ export default function ConsultationsPage() {
           <h1 className={`text-2xl font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`} style={{ fontFamily: "var(--font-brand)" }}>
             الاستشارات
           </h1>
+          {/* The «إجمالي: X ﷼» that used to sit here summed `payment.amount`,
+              which the booking form never collects and always stores as 0 — a
+              money figure with no source, on a platform through which no money
+              has ever moved. */}
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {upcoming.length} قادمة · {inProgress.length} جارية الآن · إجمالي: {totalFees.toLocaleString()} ﷼
+            {loading ? "جارٍ التحميل…" : `${upcoming.length} قادمة · ${consults.length} إجمالاً`}
           </p>
         </div>
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
@@ -526,13 +614,17 @@ export default function ConsultationsPage() {
         </motion.button>
       </motion.div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* KPIs. «جارية الآن» is gone with the inProgress status that could never
+          be set, and «إجمالي الأتعاب» with the always-zero fee sum.
+          Hidden entirely while loading or after a failed read: «قادمة ٠ ·
+          مكتملة ٠» over a query that never returned is the headline lie on this
+          screen, and a counter has no honest value to show in that state. */}
+      {!loading && !loadError && (
+      <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "قادمة",       value: upcoming.length,   color: "text-royal",       bg: "bg-royal/10",       icon: CalendarCheck },
-          { label: "جارية الآن",  value: inProgress.length, color: "text-amber-500",   bg: "bg-amber-500/10",   icon: ClockCountdown },
-          { label: "مكتملة",      value: consults.filter(c => c.status === "completed").length, color: "text-emerald-500", bg: "bg-emerald-500/10", icon: CheckCircle },
-          { label: "إجمالي الأتعاب", value: `${totalFees.toLocaleString()}﷼`, color: "text-[#C8A762]", bg: "bg-[#C8A762]/10", icon: Scales },
+          { label: "قادمة",   value: upcoming.length,   color: "text-royal",       bg: "bg-royal/10",       icon: CalendarCheck },
+          { label: "مكتملة",  value: consults.filter(c => c.status === "completed").length, color: "text-emerald-500", bg: "bg-emerald-500/10", icon: CheckCircle },
+          { label: "ملغية",   value: consults.filter(c => c.status === "cancelled").length, color: isDark ? "text-zinc-400" : "text-slate-500", bg: isDark ? "bg-white/[0.06]" : "bg-slate-100", icon: X },
         ].map((k, i) => {
           const Icon = k.icon;
           return (
@@ -549,33 +641,15 @@ export default function ConsultationsPage() {
           );
         })}
       </div>
-
-      {/* In-progress highlight */}
-      {inProgress.length > 0 && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-          className={`${card} p-4 border-amber-500/30 bg-amber-500/[0.04]`}>
-          <div className="flex items-center gap-2 mb-3">
-            <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
-              <div className="w-2 h-2 rounded-full bg-amber-500" />
-            </motion.div>
-            <p className={`text-[11px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>جلسة جارية الآن</p>
-          </div>
-          {inProgress.map(c => (
-            <div key={c.id} className="flex items-center gap-3">
-              <div className="flex-1">
-                <p className={`text-[14px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.client}</p>
-                <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{c.topic} · {MODE_LABELS[c.mode]}</p>
-              </div>
-              <button className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-white text-[12px] font-bold">
-                <Video size={13} /> انضم للجلسة
-              </button>
-            </div>
-          ))}
-        </motion.div>
       )}
 
+      {/* A «جلسة جارية الآن» panel with an «انضم للجلسة» button used to sit
+          here. It was gated on a status no code path can produce, and its
+          button had no onClick — a live-session panel for a product with no
+          sessions. Removed with the status itself. */}
+
       {/* Next upcoming */}
-      {upcoming.length > 0 && (
+      {!loading && !loadError && upcoming.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
           className={`${card} p-5 border-royal/20 bg-royal/[0.03]`}>
           <div className="flex items-center gap-2 mb-3">
@@ -591,16 +665,17 @@ export default function ConsultationsPage() {
             <div className="flex-1">
               <p className={`text-[15px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{upcoming[0].client}</p>
               <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                {upcoming[0].topic} · {MODE_LABELS[upcoming[0].mode]} · {upcoming[0].duration}د
+                {upcoming[0].topic} · {MODE_LABELS[upcoming[0].mode]}
+                {upcoming[0].duration !== null ? ` · ${upcoming[0].duration}د` : ""}
               </p>
             </div>
             <div className="text-left flex-shrink-0">
-              <p className="text-[14px] font-bold font-mono text-royal">{upcoming[0].time}</p>
-              <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{upcoming[0].date}</p>
+              {upcoming[0].time
+                ? <p className="text-[14px] font-bold font-mono text-royal">{upcoming[0].time}</p>
+                : <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>بانتظار التأكيد</p>}
+              {upcoming[0].date && <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{upcoming[0].date}</p>}
             </div>
-            <button className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-royal text-white text-xs font-bold hover:bg-royal/90 transition-colors flex-shrink-0">
-              <Video size={13} /> بدء
-            </button>
+            {/* No «بدء» button: there is no meeting to start. See ConsultCard. */}
           </div>
         </motion.div>
       )}
@@ -613,7 +688,7 @@ export default function ConsultationsPage() {
             className={`flex-1 bg-transparent text-sm outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
         </div>
         <div className="flex gap-1.5">
-          {(["all", "upcoming", "inProgress", "completed", "cancelled"] as const).map(s => (
+          {(["all", "upcoming", "completed", "cancelled"] as const).map(s => (
             <button key={s} onClick={() => setFilter(s)}
               className={`px-3 py-2 rounded-xl border text-[11px] font-semibold flex-shrink-0 transition-all ${filter === s ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20"}`}>
               {s === "all" ? "الكل" : STATUS_CONFIG[s].label}
@@ -622,7 +697,9 @@ export default function ConsultationsPage() {
         </div>
       </div>
 
-      {/* Mode breakdown */}
+      {/* Mode breakdown — same reasoning as the KPIs: four zeros is a
+          statement about the lawyer's practice, not about a failed read. */}
+      {!loading && !loadError && consults.length > 0 && (
       <div className={`${card} p-4`}>
         <p className={`text-[10px] font-bold uppercase tracking-wide mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>توزيع الاستشارات حسب الوسيلة</p>
         <div className="grid grid-cols-4 gap-2">
@@ -640,18 +717,37 @@ export default function ConsultationsPage() {
           })}
         </div>
       </div>
+      )}
 
-      {/* List */}
+      {/* List — three distinct states. «لا توجد استشارات مطابقة» over a failed
+          read is how a lawyer misses an appointment; loading, could-not-read
+          and genuinely-empty now each say what they are. */}
       <div className="space-y-2">
-        {filtered.map(c => (
-          <ConsultCard key={c.id} c={c} isDark={isDark} card={card} />
-        ))}
-        {filtered.length === 0 && (
+        {loading ? (
+          <div className={`${card} p-8 flex flex-col items-center gap-3`}>
+            <div className="inline-block w-7 h-7 rounded-full border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] animate-spin" />
+            <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل الاستشارات…</p>
+          </div>
+        ) : loadError ? (
+          <div className={`${card} p-8 text-center`}>
+            <Warning size={28} weight="duotone" className="mx-auto mb-2 text-red-500" />
+            <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّر تحميل الاستشارات</p>
+            <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>لم تنجح القراءة — لا يمكن عرض مواعيدك الآن.</p>
+            <button onClick={loadConsultations}
+              className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-bold text-royal hover:underline">
+              <ArrowClockwise size={13} /> إعادة المحاولة
+            </button>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className={`${card} p-8 text-center`}>
             <CalendarCheck size={28} weight="duotone" className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
-            <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد استشارات مطابقة</p>
+            <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+              {consults.length === 0 ? "لم تصلك استشارات بعد" : "لا توجد استشارات مطابقة"}
+            </p>
           </div>
-        )}
+        ) : filtered.map(c => (
+          <ConsultCard key={c.id} c={c} isDark={isDark} card={card} />
+        ))}
       </div>
 
       {/* AI tip */}

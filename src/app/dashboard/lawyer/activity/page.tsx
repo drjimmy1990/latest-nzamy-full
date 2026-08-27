@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Clock, Robot, Gavel, CheckCircle, FileText, Receipt,
   User, Scales, ChatCircle, ArrowSquareOut, MagnifyingGlass,
   CalendarBlank, Download, Warning, Archive, X,
   FunnelSimple, CaretDown, ClipboardText, Package, XCircle, Bell,
+  ArrowClockwise,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
@@ -197,6 +198,12 @@ interface ActivityApiResponse {
   items: ActivityApiItem[];
   stats: ActivityStats | null;
   nextCursor: string | null;
+  /**
+   * The route's 200-with-an-empty-feed failure signal: the request_events query
+   * errored, so `items` is a gap, not an absence. Same name and same meaning as
+   * the flag GET /api/v1/service-requests already returns.
+   */
+  degraded?: boolean;
 }
 
 // ─── Formatting helpers ────────────────────────────────────────────────────────
@@ -275,24 +282,39 @@ export default function ActivityLogPage() {
   // makes the four cards mean something. Null index = cards stay inert.
   const [cardFilter, setCardFilter] = useState<StatKey | null>(null);
   const [orderIndex, setOrderIndex] = useState<OrderIndex | null>(null);
+  // Set when the feed could not be read. Not inventing history was already
+  // right; asserting there is none is a different claim, and «لا يوجد نشاط
+  // مسجَّل بعد» is a positive statement about this lawyer's account.
+  const [feedError, setFeedError] = useState(false);
 
   // Fetch the real feed; in supabase mode an empty result stays empty. Demo
   // mode never calls the API at all, so MOCK_ACTIVITIES stands untouched.
-  useEffect(() => {
+  const loadFeed = useCallback(async () => {
     if (!isSupabaseMode) return;
-    let cancelled = false;
-    apiGet<ActivityApiResponse>("/api/v1/lawyer/activity")
-      .then((res) => {
-        if (cancelled) return;
-        setActivities((res.items ?? []).map(toActivity));
-        setStats(res.stats);
-        setCursor(res.nextCursor);
-      })
-      .catch(() => {
-        // honest empty state — no invented history
-      });
-    return () => { cancelled = true; };
+    try {
+      const res = await apiGet<ActivityApiResponse>("/api/v1/lawyer/activity");
+      // The stat cards are exact head-counts and survive a failed feed query,
+      // so they are still shown; only the FEED is marked unreadable.
+      setStats(res.stats);
+      if (res.degraded) {
+        setFeedError(true);
+        setCursor(null);
+        return;
+      }
+      setActivities((res.items ?? []).map(toActivity));
+      setCursor(res.nextCursor);
+      setFeedError(false);
+    } catch (err) {
+      // Still no invented history — but now the page says the read failed
+      // instead of telling the lawyer they have none.
+      console.error("[activity] failed to load the feed:", err);
+      setFeedError(true);
+    }
   }, []);
+
+  // Wrapped rather than a bare call so the fetch is not a synchronous call out
+  // of the effect body.
+  useEffect(() => { (async () => { await loadFeed(); })(); }, [loadFeed]);
 
   // The order index behind the card filters. Read once, in parallel with the
   // feed. Every failure mode ends the same way — index stays null and the
@@ -623,7 +645,25 @@ export default function ActivityLogPage() {
         {/* Two different nothings: a feed with no rows at all, and a feed whose
             rows the current filters excluded. The second one is recoverable
             and says so. */}
-        {grouped.length===0&&(
+        {/* A read that FAILED is its own state. It used to land on «لا يوجد نشاط
+            مسجَّل بعد» — the same sentence as a genuinely empty history — so a
+            lawyer offline, with an expired session, or refused by RLS was told
+            their account had no history at all. */}
+        {feedError&&(
+          <div className={`${card} p-8 text-center`}>
+            <Warning size={32} weight="fill" className="mx-auto mb-3 text-red-500"/>
+            <p className={`text-sm font-semibold ${isDark?"text-red-400":"text-red-700"}`}>تعذّر قراءة سجل النشاط</p>
+            <p className={`text-[12px] mt-1 ${isDark?"text-zinc-500":"text-slate-500"}`}>
+              هذه ليست قائمة فارغة — لم نتمكّن من قراءة سجلك، وقد تكون هناك حركة لا تظهر هنا الآن.
+              {stats!==null&&" الأرقام في البطاقات أعلاه صحيحة ومقروءة من الخادم."}
+            </p>
+            <button onClick={()=>{ setFeedError(false); void loadFeed(); }}
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11px] font-bold bg-red-500 text-white hover:bg-red-600 transition">
+              <ArrowClockwise size={12} weight="bold"/>إعادة المحاولة
+            </button>
+          </div>
+        )}
+        {!feedError&&grouped.length===0&&(
           <div className={`${card} p-12 text-center`}>
             <Archive size={36} weight="duotone" className={`mx-auto mb-3 ${isDark?"text-zinc-700":"text-slate-300"}`}/>
             {activities.length===0?(

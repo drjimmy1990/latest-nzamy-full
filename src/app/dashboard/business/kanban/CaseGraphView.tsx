@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { Crosshair, Sparkle, Plus, Robot, Record, Lightbulb, Microphone, FileText, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil } from "@phosphor-icons/react";
+import { Crosshair, Info, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil } from "@phosphor-icons/react";
 import {
   EDGE_CONFIG,
   TYPE_CONFIG,
@@ -27,24 +27,28 @@ export default function CaseGraphView({
   initialEdges?: GraphEdge[];
 }) {
   const {
-    nodes, setNodes, edges, setEdges, showCaseSelector, setShowCaseSelector, selectedCase, setSelectedCase, isSimulatingErp,
+    nodes, setNodes, edges, setEdges,
     drawingEdgeFrom, mousePos, contextMenu, setContextMenu, nodeMenu, setNodeMenu, pan, setPan, isPanning,
-    showAiAnalysis, setShowAiAnalysis, isSimulatingAnalysis, recordingNode, isFullscreen, setIsFullscreen,
-    showShare, setShowShare, shareMode, setShareMode, blurNames, setBlurNames, blurAmounts, setBlurAmounts,
+    showAiAnalysis, setShowAiAnalysis, isFullscreen, setIsFullscreen,
     edgeDropMenu, setEdgeDropMenu, selectedNodeDetail, setSelectedNodeDetail, selectedNodeId, setSelectedNodeId,
     selectedNodeIds, toggleNodeSelection,
     groups, createGroup, dissolveGroup, toggleGroupLock,
     edgeMenu, setEdgeMenu, handleEdgeContextMenu, updateEdgeStyle,
-    aiDocument, setAiDocument, isGeneratingDoc, generateAiDocument,
+    aiDocument, setAiDocument, generateAiDocument,
     resizingNode, handleResizeStart,
-    hoveredNodeId, setHoveredNodeId, scale, setScale, canvasRef, generateErpGraph, runAiAnalysis, startVoiceRecording,
+    hoveredNodeId, setHoveredNodeId, scale, setScale, canvasRef,
     handleCanvasPointerDown, handlePointerDown, handlePointerMove, handlePointerUp, startDrawingEdge, handleNodePointerUp,
     handleContextMenu, handleNodeContextMenu, handleNodeTextChange, handleEdgeLabelChange,
-  } = useCaseGraphState({ isGlobal, initialNodes: seedNodes, initialEdges: seedEdges });
+  } = useCaseGraphState({ initialNodes: seedNodes, initialEdges: seedEdges });
 
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
 
+  // `isWorkspaceEmpty` gates the LAUNCHER, and the launcher is a global-workspace
+  // affordance only — keep it off the case-file mounts. Since the seed fallback
+  // became empty (see ./_use-case-graph-state.ts), a case-file board also starts
+  // with nothing on it, so the canvas needs its own empty hint: `isBoardEmpty`.
   const isWorkspaceEmpty = isGlobal && nodes.length === 0;
+  const isBoardEmpty = nodes.length === 0;
 
   return (
     <div className={`flex h-full w-full relative ${isFullscreen ? "fixed inset-0 z-[120]" : ""}`}>
@@ -52,12 +56,6 @@ export default function CaseGraphView({
       <SidebarLauncher
         isDark={isDark}
         isWorkspaceEmpty={isWorkspaceEmpty}
-        showCaseSelector={showCaseSelector}
-        setShowCaseSelector={setShowCaseSelector}
-        isSimulatingErp={isSimulatingErp}
-        selectedCase={selectedCase}
-        setSelectedCase={setSelectedCase}
-        generateErpGraph={generateErpGraph}
         setNodes={setNodes}
       />
 
@@ -82,7 +80,7 @@ export default function CaseGraphView({
         ) : (
           <>
             {/* Background Dots Pattern */}
-            <div 
+            <div
               className="absolute inset-0 pointer-events-none opacity-20"
               style={{
                 backgroundImage: `radial-gradient(${isDark ? '#ffffff' : '#0c0f12'} 1px, transparent 1px)`,
@@ -90,26 +88,58 @@ export default function CaseGraphView({
                 backgroundPosition: `${pan.x}px ${pan.y}px`
               }}
             />
+
+            {/* An empty board is now the honest starting point for a case file, so
+                it needs to say how to fill it. pointer-events-none: the right-click
+                this text asks for must reach the canvas underneath. */}
+            {isBoardEmpty && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-6">
+                <div className="text-center max-w-sm">
+                  <Crosshair size={44} className={`mx-auto mb-3 ${isDark ? "text-zinc-700" : "text-zinc-300"}`} />
+                  <p className={`text-[14px] font-bold ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>لوحة فارغة</p>
+                  <p className={`text-[12px] mt-1.5 leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                    اضغط بالزر الأيمن على المساحة لإضافة بطاقة. المنصة لا تضيف أي بطاقات من عندها.
+                  </p>
+                </div>
+              </div>
+            )}
             
             {/* Top Toolbar */}
             <div className={`absolute top-4 start-4 z-10 flex flex-wrap items-center gap-2 rounded-2xl border p-1.5 shadow-sm max-w-[calc(100%-2rem)] ${isDark ? "bg-zinc-900/90 border-white/[0.08]" : "bg-white/90 border-zinc-200"}`}>
-              <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-white/[0.04] text-zinc-300" : "bg-zinc-100 text-zinc-700"}`}>
-                <span className="w-2 h-2 rounded-full bg-emerald-500" /> مساحة محفوظة
+              {/* This chip read «مساحة محفوظة» over a green dot. Nothing on this
+                  canvas is persisted — no localStorage, no request, the nodes live
+                  in useState — and on the case file the panel is unmounted by the
+                  tab switcher, so the board is gone the moment the lawyer clicks
+                  another tab. The label now says that, because a lawyer who maps a
+                  case for twenty minutes needs to know it before they start. */}
+              <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"}`}
+                title="لا يتم حفظ هذه اللوحة على الخادم — أي تعديل يزول عند مغادرة الصفحة أو الانتقال لتبويب آخر">
+                <span className="w-2 h-2 rounded-full bg-amber-500" /> غير محفوظة
               </div>
               <div className={`w-px mx-1 my-1 self-stretch ${isDark ? "bg-white/10" : "bg-zinc-200"}`} />
-              <button onClick={runAiAnalysis} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-colors text-[12px] ${isSimulatingAnalysis ? "bg-zinc-500 text-white cursor-wait" : isDark ? "bg-[#C8A762] text-zinc-900 hover:bg-[#b09355]" : "bg-[#C8A762] text-white hover:bg-[#b09355]"}`} title="تحليل بالذكاء الاصطناعي">
-                {isSimulatingAnalysis ? <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Sparkle size={14} weight="fill" />}
-                {isSimulatingAnalysis ? "جاري التحليل..." : "تحليل AI"}
+              {/* Was a gold «تحليل AI» primary button that spun «جاري التحليل...»
+                  for two seconds and then opened this panel. Nothing analysed
+                  anything — see ./_use-case-graph-state.ts. The panel itself is
+                  honest (it states that the platform does not read the board), so
+                  it is kept and reachable, but the button is now labelled for what
+                  it opens and opens it immediately. */}
+              <button onClick={() => setShowAiAnalysis(true)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-colors text-[12px] border ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/[0.06]" : "border-zinc-200 text-zinc-600 hover:bg-zinc-100"}`}
+                title="ما الذي تفعله المنصة بهذه اللوحة؟">
+                <Info size={14} />
+                عن التحليل الآلي
               </button>
-              {/* AI Document Export — scoped to selection if any */}
+              {/* Text summary of the user's own cards. Labelled «تصدير مستند»
+                  before, which promised a file: nothing is downloaded, the output
+                  opens in a panel. */}
               <button
                 onClick={() => generateAiDocument(selectedNodeIds.size > 0 ? selectedNodeIds : undefined)}
-                disabled={isGeneratingDoc || nodes.length === 0}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-colors text-[12px] border ${isGeneratingDoc ? "opacity-50 cursor-wait" : isDark ? "border-blue-500/30 text-blue-400 hover:bg-blue-500/10" : "border-blue-500/40 text-blue-600 hover:bg-blue-50"}`}
-                title={selectedNodeIds.size > 0 ? `تصدير ${selectedNodeIds.size} بطاقات مختارة` : "تصدير الجراف كاملاً"}
+                disabled={nodes.length === 0}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-colors text-[12px] border disabled:opacity-40 ${isDark ? "border-blue-500/30 text-blue-400 hover:bg-blue-500/10" : "border-blue-500/40 text-blue-600 hover:bg-blue-50"}`}
+                title={selectedNodeIds.size > 0 ? `ملخص نصي لـ ${selectedNodeIds.size} بطاقات مختارة` : "ملخص نصي لكامل اللوحة"}
               >
-                {isGeneratingDoc ? <div className="w-3 h-3 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" /> : <Export size={13} />}
-                {selectedNodeIds.size > 0 ? `تصدير (${selectedNodeIds.size})` : "تصدير مستند"}
+                <Export size={13} />
+                {selectedNodeIds.size > 0 ? `ملخص (${selectedNodeIds.size})` : "ملخص نصي"}
               </button>
               <div className={`w-px mx-1 my-1 self-stretch ${isDark ? "bg-white/10" : "bg-zinc-200"}`} />
               {/* Multi-select indicator + Group */}
@@ -145,11 +175,16 @@ export default function CaseGraphView({
                   <span>Ctrl+C نسخ</span><span className="opacity-40">·</span><span>Del حذف</span>
                 </div>
               )}
-              <button onClick={() => setShowShare(true)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-bold border transition-all ${isDark ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" : "border-emerald-500/40 text-emerald-600 hover:bg-emerald-50"}`}
-                title="مشاركة مع العميل">
-                <Record size={13} /> مشاركة
-              </button>
+              {/* A «مشاركة» button stood here. It opened a dialog offering a
+                  snapshot-or-live choice, four permission levels, two redaction
+                  toggles and a link — https://nzamy.app/graph/share/abc123... —
+                  next to a «نسخ» button and an «إنشاء رابط المشاركة» button, none
+                  of which had a handler. No share store exists (the case-sharing
+                  route at dashboard/lawyer/cases/[id]/sharing is honestly gated as
+                  «قريباً» for the same reason), and this board is not even
+                  persisted, so there is nothing a link could point at. Removed
+                  rather than relabelled: a lawyer could have read that URL out to a
+                  client. */}
               <button onClick={() => setIsFullscreen(f => !f)} className={`p-2 rounded-xl transition-colors ${isDark ? "hover:bg-white/[0.08] text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"}`} title="ملء الشاشة">
                 <Crosshair size={15} />
               </button>
@@ -396,19 +431,15 @@ export default function CaseGraphView({
                           </div>
                         ) : <span />}
 
-                        {/* Right: voice (custom only) + resize handle */}
+                        {/* Right: resize handle.
+                            A Microphone button («تفريغ صوتي») sat here on custom
+                            nodes. It recorded nothing — it pulsed red for 2.5s and
+                            then appended a hardcoded «[ملاحظة صوتية]: يرجى مراجعة
+                            المادة ٧٧ بشأن الفسخ.» to the card, i.e. wrote an
+                            invented statutory instruction into the lawyer's board
+                            and presented it as their own dictation. Removed; see
+                            ./_use-case-graph-state.ts. */}
                         <div className="flex items-center gap-1">
-                          {isCustom && (
-                            <button
-                              onPointerDown={e => e.stopPropagation()}
-                              onClick={e => startVoiceRecording(node.id, e)}
-                              className={`p-1 rounded-md transition-colors
-                                ${recordingNode === node.id ? "bg-red-500 text-white animate-pulse" : isDark ? "text-zinc-600 hover:text-zinc-400" : "text-zinc-400 hover:text-zinc-600"}`}
-                              title="تفريغ صوتي"
-                            >
-                              <Microphone size={11} weight={recordingNode === node.id ? "fill" : "bold"} />
-                            </button>
-                          )}
                           {/* Bottom-Right Resize corner (visible indicator) */}
                           {isSelected && (
                             <div
@@ -615,90 +646,6 @@ export default function CaseGraphView({
           );
         })()}
 
-        {/* Share Modal */}
-        {showShare && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowShare(false)}>
-            <div onClick={e => e.stopPropagation()} className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl border ${isDark ? "bg-zinc-900 border-white/[0.08]" : "bg-white border-slate-100"}`}>
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-2xl bg-royal/10 flex items-center justify-center">
-                  <Record size={18} weight="duotone" className="text-royal" />
-                </div>
-                <div>
-                  <p className={`text-[14px] font-bold ${isDark ? "text-white" : "text-slate-800"}`}>مشاركة الجراف</p>
-                  <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>اختر وضع المشاركة والصلاحيات</p>
-                </div>
-              </div>
-              {/* Share mode */}
-              <div className="flex gap-2 mb-4">
-                {(["snapshot", "live"] as const).map(m => (
-                  <button key={m} onClick={() => setShareMode(m)}
-                    className={`flex-1 py-2.5 rounded-xl text-[12px] font-bold border transition-all ${
-                      shareMode === m ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.08] text-zinc-400" : "border-slate-200 text-slate-500"
-                    }`}>
-                    {m === "snapshot" ? "📸 لحظة ثابتة" : "⚡ مباشر (Live)"}
-                  </button>
-                ))}
-              </div>
-              {/* Blur options */}
-              <p className={`text-[11px] font-bold mb-2 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>طمس المعلومات الحساسة:</p>
-              <div className="space-y-2 mb-5">
-                {[
-                  { label: "أسماء الأشخاص والشركات",   val: blurNames,   set: setBlurNames },
-                  { label: "القيم المالية والأرقام",    val: blurAmounts, set: setBlurAmounts },
-                ].map(opt => (
-                  <label key={opt.label} className="flex items-center gap-3 cursor-pointer">
-                    <div onClick={() => opt.set(v => !v)}
-                      className={`w-10 h-5 rounded-full transition-all relative ${opt.val ? "bg-royal" : isDark ? "bg-zinc-700" : "bg-slate-200"}`}>
-                      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${opt.val ? "left-5" : "left-0.5"}`} />
-                    </div>
-                    <span className={`text-[12px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{opt.label}</span>
-                  </label>
-                ))}
-              </div>
-              {/* Warning */}
-              <div className={`rounded-xl p-3 mb-4 text-[11px] ${isDark ? "bg-amber-500/10 border border-amber-500/20 text-amber-400" : "bg-amber-50 border border-amber-200 text-amber-700"}`}>
-                ⚠ تأكد من عدم مشاركة معلومات سرية. المنصة غير مسؤولة عن المحتوى المشارك.
-              </div>
-
-              {/* Permissions Options (Only for Live Mode) */}
-              {shareMode === "live" && (
-                <>
-                  <p className={`text-[11px] font-bold mb-2 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>صلاحيات المشارك:</p>
-                  <div className="space-y-2 mb-5">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <div className={`w-4 h-4 rounded-full border-4 flex items-center justify-center transition-all border-royal`}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-white shadow-sm" />
-                      </div>
-                      <span className={`text-[12px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>القراءة والعرض فقط (افتراضي)</span>
-                    </label>
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <div className={`w-4 h-4 rounded-full border border-slate-300 transition-all ${isDark ? "border-zinc-600" : ""}`} />
-                      <span className={`text-[12px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>السماح بالتعليقات وإضافة الملاحظات</span>
-                    </label>
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <div className={`w-4 h-4 rounded-full border border-slate-300 transition-all ${isDark ? "border-zinc-600" : ""}`} />
-                      <span className={`text-[12px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>السماح بالتعديل المحدود (الإضافة فقط)</span>
-                    </label>
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <div className={`w-4 h-4 rounded-full border border-slate-300 transition-all ${isDark ? "border-zinc-600" : ""}`} />
-                      <span className={`text-[12px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>صلاحية كاملة (الإضافة، التعديل، والحذف)</span>
-                    </label>
-                  </div>
-                </>
-              )}
-
-              {/* Link */}
-              <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border mb-4 ${isDark ? "border-white/[0.08] bg-zinc-800" : "border-slate-200 bg-slate-50"}`}>
-                <span className={`flex-1 text-[11px] font-mono truncate ${isDark ? "text-zinc-400" : "text-slate-500"}`}>https://nzamy.app/graph/share/abc123...</span>
-                <button className="text-[10px] font-bold text-royal hover:underline">نسخ</button>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => setShowShare(false)} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold ${isDark ? "bg-white/[0.06] text-zinc-300" : "bg-slate-100 text-slate-600"}`}>إلغاء</button>
-                <button className="flex-[2] py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328]">إنشاء رابط المشاركة</button>
-              </div>
-            </div>
-          </div>
-        )}
         {/* Node Detail Modal */}
         <OverlaysBundle
           isDark={isDark}
@@ -714,7 +661,6 @@ export default function CaseGraphView({
           dissolveGroup={dissolveGroup}
           aiDocument={aiDocument}
           setAiDocument={setAiDocument}
-          isGeneratingDoc={isGeneratingDoc}
         />
       </div>
     </div>

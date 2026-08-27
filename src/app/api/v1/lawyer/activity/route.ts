@@ -135,13 +135,22 @@ export async function GET(request: NextRequest) {
     ]);
 
     // A failed query here used to be invisible: `data` came back null and the
-    // page rendered an empty feed with a 200. Log it instead.
+    // page rendered an empty feed with a 200. Logging it fixed the operator's
+    // half of that; `degraded` below fixes the lawyer's half — logging to a
+    // server console does nothing for the person reading «لا يوجد نشاط مسجَّل
+    // بعد», which is a positive claim about their account, not a gap.
     if (eventRes.error) {
       console.error("[lawyer/activity GET] request_events query failed:", eventRes.error.message);
     }
     if (auditRes.error) {
       console.error("[lawyer/activity GET] audit query failed:", auditRes.error.message);
     }
+    // Purely additive, and named the same as the `degraded` flag
+    // GET /api/v1/service-requests already returns for the same situation
+    // (route.ts:84), so the client convention is one convention. Only the
+    // EVENTS stream counts: the audit stream is empty under RLS for a lawyer by
+    // design, so its failure cannot hide anything the feed would have shown.
+    const degraded = !!eventRes.error;
 
     const items: ActivityItem[] = [];
 
@@ -197,6 +206,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       items: page,
+      degraded,
+      // The four cards are independent head-counts and survive a failed events
+      // query, so they are still returned when `degraded` — they are real
+      // numbers about real orders. The client is responsible for saying that the
+      // FEED beneath them could not be read, which is exactly the split the
+      // page's existing coverage note already handles for these cards.
       stats: {
         ordersThisMonth: monthRes.count ?? 0,
         ordersActive: activeRes.count ?? 0,
@@ -211,7 +226,9 @@ export async function GET(request: NextRequest) {
           : null,
     });
   } catch (err) {
+    // Was a 200 with an empty feed, which the page rendered as
+    // «لا يوجد نشاط مسجَّل بعد». Answer with the failure so it can say so.
     console.error("[lawyer/activity GET] Unexpected error:", err);
-    return NextResponse.json({ items: [], stats: null, nextCursor: null });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

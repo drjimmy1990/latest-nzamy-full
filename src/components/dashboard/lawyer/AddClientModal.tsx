@@ -3,13 +3,18 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Buildings, Star, Check, X, Warning
 } from "@phosphor-icons/react";
-import { type Client, type ClientFlag, FLAG_CONFIG } from "@/constants/lawyerClientsData";
+import { type ClientFlag, FLAG_CONFIG } from "@/constants/lawyerClientsData";
+import {
+  type LawyerClientView,
+  type LawyerClientApiRow,
+  toLawyerClientView,
+} from "@/components/dashboard/lawyer/ClientDrawer";
 import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 
 export default function AddClientModal({ isDark, onClose, onAdd }: {
   isDark: boolean;
   onClose: () => void;
-  onAdd: (c: Client) => void;
+  onAdd: (c: LawyerClientView) => void;
 }) {
   const [step, setStep] = useState(0); // 0=basic 1=fees 2=flags
   const [name,     setName]     = useState("");
@@ -33,25 +38,9 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
     setError(null);
     setSubmitting(true);
 
-    const baseClient: Client = {
-      id: Date.now().toString(),
-      name: name.trim(),
-      email: email.trim(),
-      type,
-      phone: phone.trim(),
-      activeCases: 0,
-      closedCases: 0,
-      totalFees: Number(total) || 0,
-      paidFees: Number(paid) || 0,
-      since: new Date().toLocaleDateString("ar-SA", { month: "long", year: "numeric" }),
-      lastContact: "اليوم",
-      flags: [...flags],
-      rating,
-    };
-
     if (isSupabaseMode) {
       try {
-        const res = await apiMutate<{ data: any }>("/api/v1/lawyer/clients", "POST", {
+        const res = await apiMutate<{ data: LawyerClientApiRow }>("/api/v1/lawyer/clients", "POST", {
           name: name.trim(),
           phone: phone.trim(),
           email: email.trim() || undefined,
@@ -62,18 +51,19 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
           paidFees: Number(paid) || 0,
         });
         const d = res?.data;
-        if (d) {
-          onAdd({
-            ...baseClient,
-            id: d.id,
-            name: d.name || baseClient.name,
-            email: d.email || baseClient.email,
-            phone: d.phone || baseClient.phone,
-            activeCases: d.activeCount ?? 0,
-            lastContact: baseClient.lastContact,
-          });
-          window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
-        }
+        // A 200 with no `data` used to close the modal as if the client had
+        // been saved. It is a failure — say so and keep the form open, with
+        // everything the lawyer typed still in it.
+        if (!d) throw new Error("لم يُعِد الخادم بيانات الموكّل المحفوظ.");
+
+        // Render the new card from the SERVER's answer, never from the local
+        // form state. Before this, the card was built from `baseClient` and
+        // showed the fees the lawyer had just typed; the next page load read
+        // them back from an endpoint that returned no fee keys at all, and the
+        // figures silently became a green «✓». Anything the server did not
+        // persist must not appear on the card for even one render.
+        onAdd(toLawyerClientView(d));
+        window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
         setSubmitting(false);
         onClose();
       } catch (e: any) {
@@ -82,7 +72,25 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
         setSubmitting(false);
       }
     } else {
-      onAdd(baseClient);
+      // Demo build: no API routes exist. `isSupabaseMode` is a module-level
+      // constant, so this branch is dead-code-eliminated from the production
+      // bundle — it never runs for the six live lawyer accounts.
+      onAdd({
+        id: Date.now().toString(),
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        avatar: "",
+        source: "manual",
+        type,
+        flags: [...flags],
+        rating,
+        totalFees: Number(total) || 0,
+        paidFees: Number(paid) || 0,
+        activeRequests: 0,
+        closedRequests: 0,
+        lastContact: "",
+      });
       setSubmitting(false);
       onClose();
     }

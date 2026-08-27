@@ -5,17 +5,38 @@ import { assertRole } from "@/lib/auth/assertRole";
 // ─── Shape mappers ──────────────────────────────────────────────────────────
 // payments.status CHECK: not_required | requires_payment | paid | failed | refunded
 // UI InvoiceStatus: paid | pending | overdue | partial
+
+/**
+ * Which `payments` rows are an invoice at all.
+ *
+ * `not_required` means no payment was ever due on that request — it used to map
+ * to "paid", and the mapper then set paidAmount = amount, so a row nobody paid
+ * was counted as cash in «المبالغ المحصّلة فعلياً». `refunded` means the office
+ * gave money BACK — it used to map to "overdue", so a refund was printed in the
+ * red «مستحقات متأخرة» banner as a debt to chase.
+ *
+ * Both are excluded rather than re-mapped: the UI's InvoiceStatus union lives in
+ * src/constants/lawyerFinanceData.ts, which this change does not own, and there
+ * is no honest slot in it for "nothing was owed" or "we paid it back". Dropping
+ * the row is the truthful option — an omitted row is not a wrong number.
+ *
+ * Neither status is produced by any code path in the repo today (POST below
+ * writes `requires_payment`; PATCH writes `paid`/`requires_payment`), so this is
+ * a guard for the day a payment provider or a backfill starts writing them.
+ */
+const INVOICEABLE_PAYMENT_STATUSES = new Set(["requires_payment", "paid", "failed"]);
+
 function paymentStatusToInvoiceStatus(status: string): "paid" | "pending" | "overdue" | "partial" {
   switch (status) {
     case "paid":
-    case "not_required":
       return "paid";
     case "failed":
-    case "refunded":
       return "overdue";
     case "requires_payment":
       return "pending";
     default:
+      // Unreachable while the caller filters on INVOICEABLE_PAYMENT_STATUSES;
+      // "pending" is the state that claims the least if that ever changes.
       return "pending";
   }
 }
@@ -42,7 +63,12 @@ function mapPaymentToInvoice(p: Record<string, unknown>) {
   // has no 'partial'), so the partial state is derived from the collected sum.
   const status =
     invStatus === "pending" && paidAmount > 0 && paidAmount < amount ? "partial" : invStatus;
-  const createdMonth = new Date(String(p.created_at)).getMonth() + 1;
+  // Gregorian components of created_at. The `date` string beside them is Hijri
+  // (ar-SA is Umm al-Qura, as it is on every other lawyer screen), so the page
+  // spells the Gregorian year out in its chart axis labels rather than leaving
+  // the reader to guess which calendar a bare month name belongs to.
+  const created = new Date(String(p.created_at));
+  const createdMonth = created.getMonth() + 1;
   return {
     id: String(p.id),
     client: String(meta.client ?? "عميل"),
@@ -56,18 +82,45 @@ function mapPaymentToInvoice(p: Record<string, unknown>) {
     date: formatDateAr(String(p.created_at)),
     month: createdMonth,
     quarter: Math.ceil(createdMonth / 3) as 1 | 2 | 3 | 4,
+    year: created.getFullYear(),
     provider: p.provider,
     createdAt: p.created_at,
   };
 }
 
+const PAYMENT_COLUMNS =
+  "id, request_id, provider, amount, currency, status, metadata, created_at";
+
+/**
+ * PostgREST builds `.in(...)` into the query string, and this project has
+ * already been bitten by that list overflowing (the library search broke at
+ * ~396 UUIDs and returned an error the caller swallowed). A lawyer accumulates
+ * one service_requests row per client added and per task created, so the list
+ * grows without bound — it is chunked here instead of gambling on the ceiling.
+ */
+const REQUEST_ID_CHUNK = 150;
+
+/** Upper bound on rows read per list, so one huge practice cannot time the route out. */
+const MAX_ROWS = 500;
+
 /**
  * GET /api/v1/lawyer/finance
  * Auth required. Returns financial data for this lawyer.
- * Selects only real columns (B5): payments(id, request_id, provider, amount,
- * currency, status, metadata, created_at); wallet_transactions(id, amount, kind,
- * description, created_at). Scopes payments to this lawyer via service_requests
- * assigned_to = user.id. Maps results to the shapes finance/page.tsx expects.
+ *
+ * Selects only real columns: payments(id, request_id, provider, amount,
+ * currency, status, metadata, created_at); wallet_transactions(id, amount,
+ * kind, description, created_at). Scopes payments to this lawyer via
+ * service_requests.assigned_to = user.id.
+ *
+ * A read that FAILS returns 500 with an error. It used to return HTTP 200 with
+ * empty arrays and zeroed totals, which the page rendered as «لا توجد فواتير»
+ * and ٠ ﷼ — a database outage was indistinguishable from an empty practice, and
+ * a lawyer could conclude he had billed nothing. `subscription`, `totalRevenue`,
+ * `monthlyRevenue`, `totalInvoices` and `pendingInvoices` used to be returned
+ * here and were never read by the page (which recomputes its own totals with
+ * different definitions); they are gone rather than left to drift, and the
+ * subscriptions `.single()` that produced one of them — which errors PGRST116
+ * for any lawyer without an active plan — is gone with them.
  */
 export async function GET() {
   try {
@@ -77,105 +130,87 @@ export async function GET() {
 
     const uid = user.id;
 
+    const readFailed = (what: string, detail: string) => {
+      console.error(`[lawyer/finance GET] ${what} read failed:`, detail);
+      return NextResponse.json({ error: "Failed to read finance data" }, { status: 500 });
+    };
+
     // Request ids assigned to this lawyer (scopes payments via the NOT NULL
     // request_id FK on payments).
-    const { data: myRequests } = await supabase
+    const { data: myRequests, error: reqErr } = await supabase
       .from("service_requests")
       .select("id")
       .eq("assigned_to", uid);
 
-    const requestIds = (myRequests ?? []).map((r) => r.id);
+    if (reqErr) return readFailed("service_requests", reqErr.message);
 
-    const [paymentsRaw, walletTxns, subscription] = await Promise.all([
-      // Payments for requests assigned to this lawyer
-      requestIds.length > 0
-        ? Promise.resolve(
-            supabase
-              .from("payments")
-              .select("id, request_id, provider, amount, currency, status, metadata, created_at")
-              .in("request_id", requestIds)
-              .order("created_at", { ascending: false })
-              .limit(50),
-          )
-            .then(({ data }) => data ?? [])
-            .catch(() => [])
-        : Promise.resolve([]),
+    const requestIds = (myRequests ?? []).map((r) => String(r.id));
 
-      // Wallet transactions (real columns only)
-      Promise.resolve(
-        supabase
-          .from("wallet_transactions")
-          .select("id, amount, kind, description, created_at")
-          .eq("user_id", uid)
-          .order("created_at", { ascending: false })
-          .limit(50),
-      )
-        .then(({ data }) => data ?? [])
-        .catch(() => []),
+    const chunks: string[][] = [];
+    for (let i = 0; i < requestIds.length; i += REQUEST_ID_CHUNK) {
+      chunks.push(requestIds.slice(i, i + REQUEST_ID_CHUNK));
+    }
 
-      // Current subscription
-      Promise.resolve(
-        supabase
-          .from("subscriptions")
-          .select("*, subscription_plans(*)")
-          .eq("user_id", uid)
-          .eq("status", "active")
-          .limit(1)
-          .single(),
-      )
-        .then(({ data }) => data ?? null)
-        .catch(() => null),
+    const [paymentResults, walletResult] = await Promise.all([
+      Promise.all(
+        chunks.map((chunk) =>
+          supabase
+            .from("payments")
+            .select(PAYMENT_COLUMNS)
+            .in("request_id", chunk)
+            .order("created_at", { ascending: false })
+            .limit(MAX_ROWS),
+        ),
+      ),
+      supabase
+        .from("wallet_transactions")
+        .select("id, amount, kind, description, created_at")
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false })
+        .limit(MAX_ROWS),
     ]);
 
-    // Map payments → Invoice shape expected by finance/page.tsx
-    const invoices = (paymentsRaw as Array<Record<string, unknown>>).map(mapPaymentToInvoice);
+    const failedChunk = paymentResults.find((r) => r.error);
+    if (failedChunk?.error) return readFailed("payments", failedChunk.error.message);
+    if (walletResult.error) return readFailed("wallet_transactions", walletResult.error.message);
 
-    // Map wallet_transactions → Expense shape expected by finance/page.tsx
-    const walletTransactions = (walletTxns as Array<Record<string, unknown>>).map((t) => {
-      const createdMonth = new Date(String(t.created_at)).getMonth() + 1;
-      return {
+    // Each chunk is ordered and capped on its own, so the merged list has to be
+    // re-sorted and re-capped before it can be called "the most recent N".
+    const paymentsRaw = paymentResults
+      .flatMap((r) => (r.data ?? []) as unknown as Record<string, unknown>[])
+      .filter((p) => INVOICEABLE_PAYMENT_STATUSES.has(String(p.status ?? "")))
+      .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+      .slice(0, MAX_ROWS);
+
+    const invoices = paymentsRaw.map(mapPaymentToInvoice);
+
+    /**
+     * wallet_transactions → the lawyer's PLATFORM WALLET ledger.
+     *
+     * These are not office expenses and are no longer sent as such. The amount
+     * column is unsigned and the direction lives in `kind`
+     * (credit | debit | pending | reversal), so `kind` is passed through and the
+     * page renders the sign from it. The page used to sum every row as an
+     * expense: an admin wallet deposit — the only kind anything in this repo
+     * writes (src/lib/entitlements.ts) — was money IN booked as money OUT.
+     * `category` and `vatIncluded` used to be hardcoded here ("other" / false);
+     * the table has neither column, so they are gone rather than invented.
+     */
+    const walletTransactions = ((walletResult.data ?? []) as Array<Record<string, unknown>>).map(
+      (t) => ({
         id: String(t.id),
         desc: String(t.description ?? ""),
         amount: Number(t.amount ?? 0),
-        category: "other",
+        kind: String(t.kind ?? ""),
         date: formatDateAr(String(t.created_at)),
-        month: createdMonth,
-        vatIncluded: false,
-        kind: t.kind,
         createdAt: t.created_at,
-      };
-    });
+      }),
+    );
 
-    // Calculate totals (use raw paid amounts for revenue)
-    const totalRevenue = invoices
-      .filter((i) => i.status === "paid")
-      .reduce((sum, i) => sum + (i.paidAmount ?? 0), 0);
-
-    const thisMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-    const monthlyRevenue = (paymentsRaw as Array<Record<string, unknown>>)
-      .filter((p) => (p.status === "paid" || p.status === "not_required") && String(p.created_at) >= thisMonthStart)
-      .reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
-
-    return NextResponse.json({
-      invoices,
-      walletTransactions,
-      subscription,
-      totalRevenue,
-      monthlyRevenue,
-      totalInvoices: invoices.length,
-      pendingInvoices: invoices.filter((i) => i.status === "pending").length,
-    });
+    return NextResponse.json({ invoices, walletTransactions });
   } catch (err) {
     console.error("[lawyer/finance GET] Unexpected error:", err);
-    return NextResponse.json({
-      invoices: [],
-      walletTransactions: [],
-      subscription: null,
-      totalRevenue: 0,
-      monthlyRevenue: 0,
-      totalInvoices: 0,
-      pendingInvoices: 0,
-    });
+    return NextResponse.json({ error: "Failed to read finance data" }, { status: 500 });
   }
 }
 
@@ -195,7 +230,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
-    const { user, supabase } = auth;
+    const { user } = auth;
 
     const body = await request.json();
     const {
@@ -223,6 +258,13 @@ export async function POST(request: NextRequest) {
     const feeNum = Number(amount);
     if (Number.isNaN(feeNum)) {
       return NextResponse.json({ error: "amount must be a number" }, { status: 400 });
+    }
+    // `payments.amount` has no CHECK constraint, so a negative fee was accepted
+    // and then subtracted from every total on the page — including «إجمالي
+    // الأتعاب المستحقة», which a lawyer may quote. There is no void or edit
+    // control on that page, so a bad row could not be taken back.
+    if (!Number.isFinite(feeNum) || feeNum <= 0) {
+      return NextResponse.json({ error: "amount must be greater than zero" }, { status: 400 });
     }
 
     const service = await createServiceClient();
@@ -282,7 +324,7 @@ export async function POST(request: NextRequest) {
         status: "requires_payment",
         metadata: paymentMeta,
       })
-      .select("id, request_id, provider, amount, currency, status, metadata, created_at")
+      .select(PAYMENT_COLUMNS)
       .single();
 
     if (payErr || !paymentRow) {
@@ -343,7 +385,7 @@ export async function PATCH(request: NextRequest) {
 
     const { data: payment, error: readErr } = await service
       .from("payments")
-      .select("id, request_id, provider, amount, currency, status, metadata, created_at")
+      .select(PAYMENT_COLUMNS)
       .eq("id", paymentId)
       .maybeSingle();
 
@@ -392,7 +434,7 @@ export async function PATCH(request: NextRequest) {
         metadata: meta,
       })
       .eq("id", paymentId)
-      .select("id, request_id, provider, amount, currency, status, metadata, created_at")
+      .select(PAYMENT_COLUMNS)
       .single();
 
     if (updErr || !updated) {

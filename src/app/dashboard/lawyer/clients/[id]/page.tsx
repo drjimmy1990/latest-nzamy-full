@@ -1,31 +1,38 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
-  User, Buildings, ArrowRight, Gavel, FileText, ChatDots,
+  User, Buildings, ArrowRight, Gavel, ChatDots,
   CurrencyCircleDollar, Star, Phone, Clock, CheckCircle,
-  Warning, ArrowUpRight, CalendarBlank, Scales, Notepad,
-  PaperclipHorizontal, CaretLeft, ShieldCheck,
+  Warning, ArrowClockwise, CalendarBlank, Scales, Notepad,
+  CaretLeft, ShieldCheck,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { isSupabaseMode, apiGet } from "@/lib/services/api";
-import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
+import type { LawyerClientApiRow } from "@/components/dashboard/lawyer/ClientDrawer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ClientFlag =
   | "vip" | "late_pay" | "bad" | "new" | "loyal" | "urgent" | "corporate" | "inactive";
 
+/**
+ * Nullable by design. `totalFees`, `paidFees` and `rating` are null when the
+ * platform holds no such value — which is the case for every client who came in
+ * through a platform account rather than through AddClientModal. The page must
+ * omit those labels rather than print a 0 or a 3-star default: a fee balance
+ * and a client rating are things a lawyer acts on.
+ */
 interface Client {
-  id: string; name: string; type: "individual" | "company";
+  id: string; name: string; type: "individual" | "company" | null;
   phone: string; email?: string; city?: string;
-  activeCases: number; closedCases: number;
-  totalFees: number; paidFees: number;
+  activeRequests: number; closedRequests: number;
+  totalFees: number | null; paidFees: number | null;
   since: string; lastContact: string;
-  flags: ClientFlag[]; rating: 1 | 2 | 3 | 4 | 5;
+  flags: ClientFlag[]; rating: number | null;
   notes?: string;
 }
 
@@ -50,7 +57,10 @@ const FLAG_CONFIG: Record<ClientFlag, { label: string; color: string; bg: string
   inactive:  { label: "غير نشط",     color: "text-slate-400",  bg: "bg-slate-100",     emoji: "💤" },
 };
 
-const MONTHS = ["نوف", "ديس", "يناير", "فبر", "مارس", "أبريل"];
+const KNOWN_FLAGS: ClientFlag[] = [
+  "vip", "late_pay", "bad", "new", "loyal", "urgent", "corporate", "inactive",
+];
+const isKnownFlag = (f: string): f is ClientFlag => (KNOWN_FLAGS as string[]).includes(f);
 
 function mapRequestStatus(s: string | undefined): "active" | "pending" | "closed" {
   switch (s) {
@@ -76,41 +86,6 @@ function formatDate(iso: string | null | undefined): string {
   }
 }
 
-// ─── Sparkline Component ───────────────────────────────────────────────────────
-
-function Sparkline({ data, isDark }: { data: number[]; isDark: boolean }) {
-  const max = Math.max(...data, 1);
-  const w = 280; const h = 80; const pad = 8;
-  const xs = data.map((_, i) => pad + (i / (data.length - 1)) * (w - 2 * pad));
-  const ys = data.map(v => h - pad - ((v / max) * (h - 2 * pad)));
-  const pathD = xs.map((x, i) => `${i === 0 ? "M" : "L"} ${x} ${ys[i]}`).join(" ");
-  const areaD = `${pathD} L ${xs[xs.length-1]} ${h} L ${xs[0]} ${h} Z`;
-
-  return (
-    <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="overflow-visible">
-      <defs>
-        <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#C8A762" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#C8A762" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={areaD} fill="url(#sparkGrad)" />
-      <path d={pathD} fill="none" stroke="#C8A762" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      {xs.map((x, i) => (
-        <g key={i}>
-          <circle cx={x} cy={ys[i]} r={3} fill="#C8A762" />
-          <text x={x} y={h + 2} textAnchor="middle" fontSize="7" fill={isDark ? "#52525b" : "#94a3b8"} fontFamily="inherit">{MONTHS[i]}</text>
-          {data[i] > 0 && (
-            <text x={x} y={ys[i] - 6} textAnchor="middle" fontSize="7" fill={isDark ? "#a1a1aa" : "#64748b"} fontFamily="inherit">
-              {data[i] >= 1000 ? `${(data[i]/1000).toFixed(0)}k` : data[i]}
-            </text>
-          )}
-        </g>
-      ))}
-    </svg>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ClientDetailPage() {
@@ -125,62 +100,75 @@ export default function ClientDetailPage() {
 
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [consultations, setConsultations] = useState<ConsultationRow[]>([]);
-  // Contracts: no per-client contracts backend yet → empty state.
-  const contracts: { id: string; title: string; status: "active" | "expired" | "draft"; value: number; date: string }[] = [];
   const [relatedError, setRelatedError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Calls /api/v1/lawyer/clients directly rather than through
+  // getLawyerClients(), whose `catch { return []; }` turns any failure into an
+  // empty list. Through that wrapper a database fault rendered this page as
+  // «الموكّل غير موجود» — "no such client", which is a different and more
+  // alarming statement than "we could not read the directory".
+  const loadClient = useCallback(() => {
     if (!isSupabaseMode) {
       setClientLoading(false);
       return;
     }
-    let cancelled = false;
     setClientLoading(true);
     setClientError(null);
 
-    getLawyerClients()
-      .then((clients: LawyerClient[]) => {
-        if (cancelled) return;
-        const found = clients.find((c) => c.id === clientId);
+    apiGet<LawyerClientApiRow[]>("/api/v1/lawyer/clients")
+      .then((rows) => {
+        const found = (Array.isArray(rows) ? rows : []).find((c) => c.id === clientId);
         if (!found) {
           setLiveClient(null);
           return;
         }
-        // Map the lean LawyerClient shape to the richer Client shape used by
-        // this page. Fee/case counts beyond activeCount are not returned by the
-        // clients endpoint, so default to 0 (honest empty state).
-        const mapped: Client = {
+        setLiveClient({
           id: found.id,
-          name: found.name,
-          type: found.userType === "company" || found.userType === "business" ? "company" : "individual",
+          name: found.name || "عميل نظامي",
+          // Only a manually-added client carries an entity type. Deriving
+          // "individual" from the absence of one is a guess, so keep it null
+          // and let the UI fall back to the neutral initial avatar.
+          type: found.clientType,
           phone: found.phone ?? "",
           email: found.email ?? undefined,
-          activeCases: found.activeCount ?? 0,
-          closedCases: 0,
-          totalFees: 0,
-          paidFees: 0,
+          activeRequests: found.activeCount ?? 0,
+          closedRequests: found.closedCount ?? 0,
+          // null, not 0: the endpoint only knows fees for clients whose fee
+          // agreement was typed into AddClientModal.
+          totalFees: found.totalFees,
+          paidFees: found.paidFees,
           since: "",
-          lastContact: found.lastActivity ?? "",
-          flags: [],
-          rating: 3,
-        };
-        setLiveClient(mapped);
+          // formatDate() returns «—» for a missing date; pass "" instead so the
+          // «آخر نشاط» line is omitted rather than shown with a dash in it.
+          lastContact: found.lastActivity ? formatDate(found.lastActivity) : "",
+          flags: (found.flags ?? []).filter(isKnownFlag),
+          rating: found.rating,
+        });
       })
       .catch((e) => {
-        if (cancelled) return;
         console.error("[lawyer client detail] client fetch failed:", e);
         setClientError("تعذّر تحميل بيانات الموكّل.");
       })
-      .finally(() => { if (!cancelled) setClientLoading(false); });
+      .finally(() => setClientLoading(false));
+  }, [clientId]);
 
-    // Fetch the client's service requests (cases + consultations) filtered by
-    // requester_user_id. Contracts have no backend yet → empty state.
-    apiGet<{ data: any[]; total: number }>("/api/v1/service-requests", {
+  // The client's own service requests (cases + consultations), by
+  // requester_user_id.
+  const loadRelated = useCallback(() => {
+    if (!isSupabaseMode) return;
+    setRelatedError(null);
+    apiGet<{ data: any[]; total: number; degraded?: boolean }>("/api/v1/service-requests", {
       requester_user_id: clientId,
       limit: 100,
     })
       .then((res) => {
-        if (cancelled) return;
+        // That route reports a failed query as HTTP 200 with
+        // { data: [], degraded: true }, so the catch below never sees it and
+        // the failure would otherwise be drawn as «لا توجد قضايا».
+        if (res?.degraded) {
+          setRelatedError("تعذّر تحميل القضايا والاستشارات المرتبطة.");
+          return;
+        }
         const rows = Array.isArray(res?.data) ? res.data : [];
         const caseRows: CaseRow[] = [];
         const consultRows: ConsultationRow[] = [];
@@ -208,13 +196,12 @@ export default function ClientDetailPage() {
         setConsultations(consultRows);
       })
       .catch((e) => {
-        if (cancelled) return;
         console.error("[lawyer client detail] related fetch failed:", e);
         setRelatedError("تعذّر تحميل القضايا والاستشارات المرتبطة.");
       });
-
-    return () => { cancelled = true; };
   }, [clientId]);
+
+  useEffect(() => { loadClient(); loadRelated(); }, [loadClient, loadRelated]);
 
   // Notes state (local notepad — not persisted to backend yet).
   const [notes, setNotes] = useState<{id:string;text:string;ts:string;pinned:boolean}[]>([]);
@@ -243,21 +230,40 @@ export default function ClientDetailPage() {
     );
   }
 
-  if (clientError || !client) return (
+  // Two different outcomes, two different messages. A failed read must never be
+  // reported as «الموكّل غير موجود» — that tells the lawyer the client is not on
+  // the platform, which is a claim, not an error.
+  if (clientError) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3" dir="rtl">
-      <User size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
-      <p className={`text-lg font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{clientError ?? "الموكّل غير موجود"}</p>
+      <Warning size={40} weight="duotone" className="text-red-500" />
+      <p className={`text-lg font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{clientError}</p>
+      <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>لم تنجح القراءة — هذا لا يعني أن الموكّل غير موجود.</p>
+      <button onClick={loadClient} className="flex items-center gap-1.5 text-sm font-bold text-royal hover:underline">
+        <ArrowClockwise size={14} /> إعادة المحاولة
+      </button>
       <Link href="/dashboard/lawyer/clients" className="text-sm text-royal hover:underline flex items-center gap-1">
         <CaretLeft size={12} /> العودة لدليل الموكّلين
       </Link>
     </div>
   );
 
-  const unpaid = client.totalFees - client.paidFees;
-  const payPct = client.totalFees ? Math.round((client.paidFees / client.totalFees) * 100) : 100;
-  // No real revenue series yet → honest flat zeros.
-  const revenue = [0,0,0,0,0,0];
-  const totalRevenue = 0;
+  if (!client) return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3" dir="rtl">
+      <User size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
+      <p className={`text-lg font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>الموكّل غير موجود</p>
+      <Link href="/dashboard/lawyer/clients" className="text-sm text-royal hover:underline flex items-center gap-1">
+        <CaretLeft size={12} /> العودة لدليل الموكّلين
+      </Link>
+    </div>
+  );
+
+  // null when no fee agreement is on record — every fee-derived figure on this
+  // page is gated on that, rather than falling back to «0 ﷼ / مسدّدة بالكامل».
+  const hasFees = client.totalFees !== null && client.paidFees !== null;
+  const unpaid = hasFees ? (client.totalFees as number) - (client.paidFees as number) : null;
+  const payPct = hasFees && (client.totalFees as number) > 0
+    ? Math.round(((client.paidFees as number) / (client.totalFees as number)) * 100)
+    : null;
   const hasBad = client.flags.includes("bad");
   const hasLatePay = client.flags.includes("late_pay");
 
@@ -284,7 +290,12 @@ export default function ClientDetailPage() {
       {relatedError && (
         <div className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50"}`}>
           <Warning size={18} className="text-red-500 flex-shrink-0" />
-          <p className={`text-[12px] font-semibold ${isDark ? "text-red-400" : "text-red-600"}`}>{relatedError}</p>
+          <p className={`text-[12px] font-semibold flex-1 ${isDark ? "text-red-400" : "text-red-600"}`}>
+            {relatedError} — القوائم أدناه فارغة لأن القراءة فشلت، لا لأنه لا توجد بيانات.
+          </p>
+          <button onClick={loadRelated} className="flex items-center gap-1.5 text-[11px] font-bold text-red-500 hover:underline flex-shrink-0">
+            <ArrowClockwise size={13} /> إعادة المحاولة
+          </button>
         </div>
       )}
 
@@ -302,12 +313,16 @@ export default function ClientDetailPage() {
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <h1 className={`text-xl font-black ${isDark ? "text-white" : "text-slate-800"}`}
                   style={{ fontFamily: "var(--font-brand)" }}>{client.name}</h1>
-                <div className="flex">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Star key={i} size={11} weight={i < client.rating ? "fill" : "regular"}
-                      className={i < client.rating ? "text-amber-400" : isDark ? "text-zinc-700" : "text-slate-200"} />
-                  ))}
-                </div>
+                {/* Stars only when the lawyer actually rated this client
+                    (AddClientModal step 2 is the only source). */}
+                {client.rating !== null && (
+                  <div className="flex">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} size={11} weight={i < (client.rating ?? 0) ? "fill" : "regular"}
+                        className={i < (client.rating ?? 0) ? "text-amber-400" : isDark ? "text-zinc-700" : "text-slate-200"} />
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex flex-wrap gap-1 mb-2">
                 {client.flags.map(f => {
@@ -320,21 +335,18 @@ export default function ClientDetailPage() {
                 })}
               </div>
               <div className={`flex flex-wrap gap-4 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                <span className="flex items-center gap-1"><Phone size={10} /> {client.phone || "—"}</span>
+                {client.phone && <span className="flex items-center gap-1"><Phone size={10} /> {client.phone}</span>}
                 {client.email && <span className="flex items-center gap-1 dir-ltr">{client.email}</span>}
-                <span className="flex items-center gap-1"><CalendarBlank size={10} /> آخر تواصل: {client.lastContact || "—"}</span>
+                {client.lastContact && (
+                  <span className="flex items-center gap-1"><CalendarBlank size={10} /> آخر نشاط: {client.lastContact}</span>
+                )}
               </div>
             </div>
           </div>
-
-          <div className="flex flex-col gap-2 flex-shrink-0 self-start">
-            <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
-              <Notepad size={13} /> تسجيل ملاحظة
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-semibold border border-[#0B3D2E]/20 text-[#0B3D2E] dark:text-emerald-400 dark:border-emerald-500/20 hover:bg-[#0B3D2E]/5 transition-colors">
-              <ChatDots size={13} /> فتح محادثة
-            </button>
-          </div>
+          {/* «تسجيل ملاحظة» and «فتح محادثة» used to sit here with no onClick at
+              all. The notes panel further down is the working control; there is
+              no messaging surface between a lawyer and a client in the repo, so
+              the chat button is removed rather than left as a dead promise. */}
         </div>
       </motion.div>
 
@@ -342,10 +354,25 @@ export default function ClientDetailPage() {
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}
         className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { icon: Gavel,             label: "قضايا نشطة",   value: client.activeCases, color: "text-emerald-500", sub: `${client.closedCases} مغلقة` },
-          { icon: FileText,          label: "العقود",        value: contracts.length,  color: "text-indigo-500",  sub: contracts.filter(k => k.status === "active").length + " نشط" },
-          { icon: ChatDots,          label: "الاستشارات",    value: consultations.length, color: "text-blue-500", sub: "منجزة" },
-          { icon: CurrencyCircleDollar, label: "إجمالي الأتعاب", value: `${client.totalFees.toLocaleString()} ﷼`, color: unpaid > 0 ? "text-red-500" : "text-emerald-500", sub: unpaid > 0 ? `متبقي ${unpaid.toLocaleString()} ﷼` : "مسدّدة بالكامل" },
+          // «قضايا نشطة» renamed: the number is a count of in-flight service
+          // requests, which is what the endpoint computes. Nothing in the repo
+          // writes the `cases` table, so this was never a case count.
+          { icon: Gavel,             label: "طلبات نشطة",   value: client.activeRequests, color: "text-emerald-500", sub: `${client.closedRequests} مغلقة` },
+          // An «العقود ٠ · ٠ نشط» tile used to sit here, counting a
+          // `const contracts = []` that nothing ever fills: there is no
+          // per-client contracts backend. A zero from a hardcoded empty array
+          // is the same fabrication as the fee tile below, so it goes too.
+          { icon: ChatDots,          label: "الاستشارات",    value: consultations.length, color: "text-blue-500", sub: "مسجّلة" },
+          // The fee tile appears only for a client with a fee agreement on
+          // record. It used to render «0 ﷼ · مسدّدة بالكامل» for every client
+          // on the platform, off two hardcoded zeros.
+          ...(hasFees ? [{
+            icon: CurrencyCircleDollar,
+            label: "إجمالي الأتعاب",
+            value: `${(client.totalFees as number).toLocaleString()} ﷼`,
+            color: (unpaid ?? 0) > 0 ? "text-red-500" : "text-emerald-500",
+            sub: (unpaid ?? 0) > 0 ? `متبقي ${(unpaid as number).toLocaleString()} ﷼` : "مسدّدة بالكامل",
+          }] : []),
         ].map((kpi, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 + i * 0.04 }}
             className={`${card} p-4`}>
@@ -405,24 +432,11 @@ export default function ClientDetailPage() {
             )}
           </motion.div>
 
-          {/* Contracts */}
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.13 }}
-            className={`${card} overflow-hidden`}>
-            <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
-              <div className="flex items-center gap-2">
-                <FileText size={15} className="text-indigo-500" weight="duotone" />
-                <span className={`text-[13px] font-black ${isDark ? "text-zinc-200" : "text-slate-700"}`}>العقود</span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-500"}`}>{contracts.length}</span>
-              </div>
-              <Link href="/dashboard/lawyer/contracts" className={`text-[11px] font-semibold flex items-center gap-0.5 ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-royal"}`}>
-                عرض الكل <ArrowRight size={10} />
-              </Link>
-            </div>
-            <div className="p-8 text-center">
-              <PaperclipHorizontal size={28} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} weight="duotone" />
-              <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد عقود</p>
-            </div>
-          </motion.div>
+          {/* A «العقود» card used to sit here: a header counting the same
+              hardcoded empty `contracts` array, an «عرض الكل» link, and a
+              permanent «لا توجد عقود» body. There is no per-client contracts
+              backend for it to ever show anything — an empty state for a
+              feature that does not exist is a promise, so the card is gone. */}
 
           {/* Consultations */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
@@ -441,12 +455,19 @@ export default function ClientDetailPage() {
               </div>
             ) : (
               <div className="divide-y divide-white/[0.03]">
+                {/* The green check used to be drawn on every row regardless of
+                    status — a pending consultation shown as done. `q.status` is
+                    computed from the request's real status; use it. */}
                 {consultations.map(q => (
                   <div key={q.id} className="flex items-center gap-3 px-4 py-3">
-                    <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" weight="duotone" />
+                    {q.status === "done"
+                      ? <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" weight="duotone" />
+                      : <Clock size={14} className="text-amber-500 flex-shrink-0" weight="duotone" />}
                     <div className="flex-1 min-w-0">
                       <p className={`text-[13px] font-semibold truncate ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{q.title}</p>
-                      <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{q.date}</p>
+                      <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                        {q.status === "done" ? "منتهية" : "قيد الانتظار"}{q.date ? ` · ${q.date}` : ""}
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -455,64 +476,67 @@ export default function ClientDetailPage() {
           </motion.div>
         </div>
 
-        {/* Right column: Revenue chart + Payment + Risk */}
+        {/* Right column: Payment + Risk */}
         <div className="space-y-4">
 
-          {/* Revenue sparkline */}
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
-            className={`${card} p-5`}>
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className={`text-[10px] font-bold uppercase tracking-widest mb-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>الإيرادات (٦ أشهر)</p>
-                <p className={`text-xl font-black ${isDark ? "text-white" : "text-slate-800"}`}>{totalRevenue.toLocaleString()} <span className="text-[12px] font-normal text-amber-500">﷼</span></p>
-              </div>
-              <div className={`p-2 rounded-xl ${isDark ? "bg-amber-500/10" : "bg-amber-50"}`}>
-                <ArrowUpRight size={18} className="text-amber-500" />
-              </div>
-            </div>
-            <div className="mt-2 overflow-hidden" style={{ height: 95 }}>
-              <Sparkline data={revenue} isDark={isDark} />
-            </div>
-            <p className={`text-[10px] mt-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد بيانات إيرادات متاحة بعد</p>
-          </motion.div>
+          {/* The «الإيرادات (٦ أشهر)» sparkline that used to sit here is gone.
+              It plotted `const revenue = [0,0,0,0,0,0]` under a «0 ﷼» headline
+              and a rising-trend arrow: six months of revenue history for a
+              platform through which no money has ever moved. There is no
+              per-client revenue series to plot, so the chart is removed rather
+              than drawn flat — a flat line is still a claim about six months. */}
 
-          {/* Payment status */}
+          {/* Payment status — only for a client with a fee agreement on record.
+              Note this is the agreed fee the lawyer typed in, not a payment
+              record: no payment provider has ever been connected. */}
+          {hasFees && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
             className={`${card} p-4`}>
-            <p className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>حالة السداد</p>
+            <p className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>الأتعاب المتفق عليها</p>
             <div className="flex items-end justify-between mb-2">
               <div>
                 <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>مسدّد</p>
-                <p className={`text-base font-black ${isDark ? "text-white" : "text-slate-800"}`}>{client.paidFees.toLocaleString()} <span className="text-[10px] font-normal">﷼</span></p>
+                <p className={`text-base font-black ${isDark ? "text-white" : "text-slate-800"}`}>{(client.paidFees as number).toLocaleString()} <span className="text-[10px] font-normal">﷼</span></p>
               </div>
-              {unpaid > 0 && (
+              {(unpaid ?? 0) > 0 && (
                 <div className="text-left">
-                  <p className="text-[11px] text-red-400">متأخر</p>
-                  <p className="text-base font-black text-red-500">{unpaid.toLocaleString()} <span className="text-[10px] font-normal">﷼</span></p>
+                  <p className="text-[11px] text-red-400">متبقٍ</p>
+                  <p className="text-base font-black text-red-500">{(unpaid as number).toLocaleString()} <span className="text-[10px] font-normal">﷼</span></p>
                 </div>
               )}
             </div>
-            <div className={`h-3 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-              <div
-                className={`h-full rounded-full transition-all ${payPct === 100 ? "bg-emerald-500" : payPct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
-                style={{ width: `${payPct}%` }} />
-            </div>
-            <div className="flex justify-between mt-1">
-              <p className={`text-[9px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>٠</p>
-              <p className={`text-[9px] font-bold ${payPct === 100 ? "text-emerald-500" : payPct >= 50 ? "text-amber-500" : "text-red-500"}`}>{payPct}% مسدّد</p>
-            </div>
+            {payPct !== null && (
+              <>
+                <div className={`h-3 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
+                  <div
+                    className={`h-full rounded-full transition-all ${payPct === 100 ? "bg-emerald-500" : payPct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
+                    style={{ width: `${payPct}%` }} />
+                </div>
+                <div className="flex justify-between mt-1">
+                  <p className={`text-[9px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>٠</p>
+                  <p className={`text-[9px] font-bold ${payPct === 100 ? "text-emerald-500" : payPct >= 50 ? "text-amber-500" : "text-red-500"}`}>{payPct}% مسدّد</p>
+                </div>
+              </>
+            )}
+            <p className={`text-[9px] mt-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+              أرقام مُدخَلة يدوياً عند إضافة الموكّل — لا يوجد سجل مدفوعات في النظام.
+            </p>
           </motion.div>
+          )}
 
-          {/* Risk / health */}
+          {/* Risk / health — every row here is either a flag the lawyer ticked or
+              a real timestamp. «منخفضة ✓» for payment risk and a default
+              3-star rating used to be printed for clients who had never been
+              classified at all; an unclassified client now reads as such. */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
             className={`${card} p-4`}>
             <p className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>تقييم التعامل</p>
             <div className="space-y-2">
               {[
-                { label: "مستوى الأولوية",   value: client.flags.includes("vip") ? "VIP 👑" : client.flags.includes("urgent") ? "حرج 🔴" : "عادي",  color: client.flags.includes("vip") ? "text-amber-500" : client.flags.includes("urgent") ? "text-red-500" : isDark ? "text-zinc-400" : "text-slate-600" },
-                { label: "مخاطر السداد",     value: hasLatePay ? "مرتفعة ⚠️" : "منخفضة ✓",  color: hasLatePay ? "text-red-500" : "text-emerald-500" },
-                { label: "آخر تواصل",        value: client.lastContact || "—",  color: isDark ? "text-zinc-300" : "text-slate-700" },
-                { label: "التقييم",           value: `${"★".repeat(client.rating)}${"☆".repeat(5 - client.rating)}`, color: "text-amber-400" },
+                { label: "مستوى الأولوية",   value: client.flags.includes("vip") ? "VIP 👑" : client.flags.includes("urgent") ? "حرج 🔴" : "لم يُصنَّف",  color: client.flags.includes("vip") ? "text-amber-500" : client.flags.includes("urgent") ? "text-red-500" : isDark ? "text-zinc-400" : "text-slate-600" },
+                { label: "مخاطر السداد",     value: hasLatePay ? "مرتفعة ⚠️" : "لم تُصنَّف",  color: hasLatePay ? "text-red-500" : isDark ? "text-zinc-400" : "text-slate-600" },
+                ...(client.lastContact ? [{ label: "آخر نشاط", value: client.lastContact, color: isDark ? "text-zinc-300" : "text-slate-700" }] : []),
+                ...(client.rating !== null ? [{ label: "التقييم", value: `${"★".repeat(client.rating)}${"☆".repeat(5 - client.rating)}`, color: "text-amber-400" }] : []),
               ].map((row, i) => (
                 <div key={i} className={`flex items-center justify-between py-1.5 border-b ${isDark ? "border-white/[0.04]" : "border-slate-100"} last:border-0`}>
                   <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{row.label}</p>
@@ -522,17 +546,22 @@ export default function ClientDetailPage() {
             </div>
           </motion.div>
 
-          {/* Compliance */}
+          {/* Compliance. Shown only when an entity type is actually on record —
+              the previous version treated "no type" as "natural person", and
+              called every company «كيان قانوني موثّق» although the platform
+              verifies nothing about a manually-added client. */}
+          {client.type !== null && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.20 }}
             className={`${card} p-4 flex items-start gap-3`}>
             <ShieldCheck size={20} className="text-emerald-500 flex-shrink-0 mt-0.5" weight="duotone" />
             <div>
-              <p className={`text-[12px] font-bold mb-0.5 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>التوثيق القانوني</p>
+              <p className={`text-[12px] font-bold mb-0.5 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>نوع الكيان</p>
               <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                {client.type === "company" ? "كيان قانوني موثّق • تطبّق شروط الشركات" : "شخص طبيعي • نسخة الهوية الوطنية مطلوبة"}
+                {client.type === "company" ? "شركة / كيان اعتباري — كما أُدخل عند إضافة الموكّل" : "شخص طبيعي — كما أُدخل عند إضافة الموكّل"}
               </p>
             </div>
           </motion.div>
+          )}
 
           {/* Notes */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22 }}
@@ -545,6 +574,16 @@ export default function ClientDetailPage() {
               </div>
             </div>
 
+            {/* Say plainly that this notepad is not storage. `notes` is React
+                state and nothing else: there is no client-notes column or
+                endpoint in the repo, so everything typed here is gone on
+                refresh. Relabelled rather than removed — the panel is still
+                useful within one sitting, as long as it does not pretend to
+                keep what a lawyer writes about a client. */}
+            <div className={`px-4 py-2 text-[10px] border-b ${isDark ? "border-white/[0.05] bg-amber-500/[0.06] text-amber-400" : "border-slate-100 bg-amber-50 text-amber-700"}`}>
+              ملاحظات مؤقتة داخل هذه الجلسة فقط — لا تُحفظ في النظام وتُفقد عند تحديث الصفحة.
+            </div>
+
             <div className="p-4">
               <div className={`flex flex-col gap-2 p-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02]" : "border-slate-200 bg-slate-50"}`}>
                 <textarea
@@ -555,7 +594,7 @@ export default function ClientDetailPage() {
                   className={`w-full bg-transparent text-[12px] outline-none resize-none ${isDark ? "text-zinc-300 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`}
                 />
                 <div className="flex items-center justify-between">
-                  <p className={`text-[9px] ${isDark ? "text-zinc-700" : "text-slate-300"}`}>Ctrl+Enter للحفظ</p>
+                  <p className={`text-[9px] ${isDark ? "text-zinc-700" : "text-slate-300"}`}>Ctrl+Enter للإضافة</p>
                   <button onClick={addNote}
                     disabled={!noteInput.trim()}
                     className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500 text-white text-[11px] font-bold hover:bg-amber-600 disabled:opacity-40 transition-all">

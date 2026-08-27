@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { getWorkflowRequestsByReceiver, updateWorkflowRequestById } from "@/lib/services/workflowService";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import type { CaseStatus, CaseType, CourtDegree, Priority, CollabFilter, ViewMode, KanbanGroupBy, Case } from "./_types";
 import AddCaseModal from "../_components/AddCaseModal";
@@ -32,6 +33,91 @@ import {
   COLLAB_TABS
 } from "@/constants/lawyerCasesData";
 
+/**
+ * Which `receiver: "lawyer"` rows on this endpoint are actually CASES.
+ *
+ * There is no cases table. A lawyer's whole workspace is service_requests rows
+ * with `receiver: "lawyer"` + `assigned_to = the lawyer`, so this page's fetch
+ * returns FOUR other things besides cases, and each one used to render as a case
+ * and inflate the header counts:
+ *   • tasks     — POST /api/v1/lawyer/tasks     stamps `metadata.task = true`
+ *   • clients   — POST /api/v1/lawyer/clients   stamps `metadata.client = true`,
+ *                 status "assigned", so every CRM client counted as an ACTIVE case
+ *                 («موكّل: فلان» in the case list)
+ *   • invoices  — POST /api/v1/lawyer/finance   stamps `metadata.invoice = true`,
+ *                 status "completed" and a real `payment.amount`, so an invoice
+ *                 rendered as a closed case whose "value" was the invoice total —
+ *                 and ≥800 SAR turned it into a HIGH-PRIORITY case, because
+ *                 workflowToCase derives priority from the amount
+ *   • hearings  — AddHearingModal, «جلسة — {اسم القضية}», status
+ *                 "pending_assignment", so every hearing added a phantom «انتظار» case
+ * Only the task marker was checked before. The other three are excluded here.
+ *
+ * Hearings are the one writer with no boolean marker, so they are matched on the
+ * metadata SHAPE AddHearingModal writes (`caseName` + `time`, keys no other
+ * writer on this endpoint produces). `metadata.hearing === true` is accepted too
+ * so this keeps working once that modal stamps a proper marker — see the follow-up.
+ * Key presence, not truthiness: the modal writes `caseName: ""` when the field is
+ * left blank.
+ *
+ * A denylist rather than an allowlist ON PURPOSE: the alternative (accept only
+ * rows carrying `metadata.court`, which AddCaseModal writes) would silently hide
+ * any case that reaches the lawyer by a path we have not enumerated. Hiding a
+ * real case from a practising lawyer is worse than showing one extra row.
+ */
+// How many rows to ask the list endpoint for. The route's own default is 20.
+const LIST_LIMIT = 200;
+
+/**
+ * Reads the lawyer's rows and reports HOW the read went.
+ *
+ * This deliberately does NOT go through getWorkflowRequestsByReceiver, which is
+ * what this page used before, because that helper cannot express failure:
+ *   • the GET route answers a failed Supabase query with HTTP 200 and
+ *     `{ data: [], total: 0, degraded: true }` — deliberately, so old callers
+ *     keep working — and the helper types the response as `{ data }` only, so
+ *     the marker is dropped and the failure arrives as an empty list;
+ *   • when the fetch itself throws, the helper catches it and returns the
+ *     browser's localStorage rows instead, so a network or auth failure was
+ *     served to the lawyer either as «لا توجد قضايا» or, worse, as a handful of
+ *     stale local rows presented as their live case file.
+ * Reading the endpoint directly keeps both signals. The demo branch below still
+ * uses the helper; `isSupabaseMode` is a module-level constant, so in a
+ * production build that branch is dead-code-eliminated.
+ *
+ * `limit: 200` is the other half: the route defaults to 20 rows and this page
+ * never passed a limit, so a lawyer's 21st row onward simply did not exist here —
+ * and tasks, clients, invoices and hearings all share that budget. `total` is the
+ * unfiltered server count, so comparing it against the rows we received is an
+ * honest test of whether the page was cut short.
+ */
+async function fetchLawyerRows(): Promise<{ rows: WorkflowRequest[]; degraded: boolean; truncated: boolean }> {
+  if (!isSupabaseMode) {
+    return { rows: await getWorkflowRequestsByReceiver("lawyer"), degraded: false, truncated: false };
+  }
+  const response = await apiGet<{ data?: WorkflowRequest[]; total?: number; degraded?: boolean }>(
+    "/api/v1/service-requests",
+    { receiver: "lawyer", limit: LIST_LIMIT },
+  );
+  const rows = response.data ?? [];
+  return {
+    rows,
+    degraded: response.degraded === true,
+    truncated: (response.total ?? rows.length) > rows.length,
+  };
+}
+
+function isLawyerCaseRow(request: WorkflowRequest): boolean {
+  if (request.type !== "service") return false;
+  const metadata = (request.metadata ?? {}) as Record<string, unknown>;
+  if (metadata.task === true) return false;
+  if (metadata.client === true) return false;
+  if (metadata.invoice === true) return false;
+  if (metadata.hearing === true) return false;
+  if ("caseName" in metadata && "time" in metadata) return false;
+  return true;
+}
+
 export default function CasesPage() {
   const { isDark } = useTheme();
   const user = useUser();
@@ -48,12 +134,15 @@ export default function CasesPage() {
   const [courtFilter,   setCourtFilter]   = useState<string>("all");
   const [cases,         setCases]         = useState<Case[]>([]);
   const [loading,       setLoading]       = useState(true);
+  const [loadError,     setLoadError]     = useState(false);
+  const [truncated,     setTruncated]     = useState(false);
+  const [reloadKey,     setReloadKey]     = useState(0);
   const [showAddCase,   setShowAddCase]   = useState(false);
   const [collabFilter,  setCollabFilter]  = useState<CollabFilter>("all"); // S59
   const [archiveSearch, setArchiveSearch] = useState(""); // S82
 
   // Drag & drop state for Kanban. Column keys are strings (vary by grouping mode);
-  // drag is only enabled in "status" mode where keys are active/pending/suspended/closed.
+  // drag is only enabled in "status" mode where keys are active/pending/closed.
   const dragId = useRef<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
 
@@ -81,63 +170,85 @@ export default function CasesPage() {
     });
     dragId.current = null;
     setDragOverCol(null);
-    // Persist the status change to the backend (optimistic; revert on error).
+    const revert = () => {
+      // Revert to the column/status captured before the optimistic update.
+      setCases(prev => prev.map(c => (c.id === caseId
+        ? { ...c, kanbanCol: originalCol as Case["kanbanCol"], status: originalStatus ?? c.status }
+        : c)));
+    };
+    // Persist the status change to the backend (optimistic; revert on failure).
     // Keys match the status-mode columns rendered in KanbanView.
+    // «معلقة» is deliberately absent: it mapped to "in_review", which
+    // workflowToCase reads back as "active" (constants/lawyerCasesData.ts), so a
+    // drag into that column appeared to succeed and then silently jumped back to
+    // «نشطة» on the very next sync — one this handler triggers itself. There is no
+    // backend status that round-trips as "suspended", so the column is gone from
+    // KanbanView and from the status filters until one exists.
     const statusForCol: Record<string, WorkflowRequest["status"]> = {
       active: "assigned",
       pending: "pending_assignment",
-      suspended: "in_review",
       closed: "completed",
     };
     const nextStatus = statusForCol[col];
     if (!nextStatus) return;
     updateWorkflowRequestById(caseId, { status: nextStatus })
-      .then(() => {
+      .then(updated => {
+        // A rejected PATCH does NOT reject this promise: workflowService catches
+        // it and falls back to the localStorage store, which returns null when it
+        // has never seen the row (the normal case for a server-fetched case). So a
+        // null result is a failed write and must revert, exactly like a throw —
+        // without this check a 403 from the status guard looked like a success.
+        if (!updated) {
+          revert();
+          return;
+        }
         // Dispatch the refresh event so list/kanban views re-sync from the
         // backend (matching how other mutations refresh these list pages).
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event("nzamy-workflow-updated"));
         }
       })
-      .catch(() => {
-        // Revert to the column/status captured before the optimistic update.
-        setCases(prev => prev.map(c => (c.id === caseId
-          ? { ...c, kanbanCol: originalCol as Case["kanbanCol"], status: originalStatus ?? c.status }
-          : c)));
-      });
+      .catch(revert);
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const syncCases = async () => {
       try {
-        const requests = await getWorkflowRequestsByReceiver("lawyer");
-        // `metadata.task === true` is what POST /api/v1/lawyer/tasks stamps on a
-        // task (route.ts, `const metadata = { task: true, … }`). Tasks share this
-        // page's shape exactly — type "service", receiver "lawyer" — because there
-        // is no tasks table; they are service_requests rows. Without this guard
-        // every task the lawyer saves shows up here as a phantom case, and does so
-        // instantly, since this page also listens for `nzamy-workflow-updated`,
-        // which AddTaskModal dispatches. Latent until the modal's save button was
-        // wired: before that it wrote nothing at all.
-        const workflowCases = requests
-          .filter(request =>
-            request.type === "service" &&
-            (request.metadata as Record<string, unknown> | undefined)?.task !== true,
-          )
-          .map(workflowToCase);
-        setCases(workflowCases);
+        const { rows, degraded, truncated } = await fetchLawyerRows();
+        if (cancelled) return;
+        if (degraded) {
+          // The route answers a failed Supabase query with HTTP 200 and
+          // `{ data: [], total: 0, degraded: true }`. Read as data, that is an
+          // empty case list; it is actually a database that did not answer.
+          setLoadError(true);
+          return;
+        }
+        setCases(rows.filter(isLawyerCaseRow).map(workflowToCase));
+        setTruncated(truncated);
+        setLoadError(false);
       } catch {
-        setCases([]);
+        if (cancelled) return;
+        // A read that FAILED must never be rendered as «لا توجد قضايا». A lawyer
+        // who is told they have no cases over a query that never answered stops
+        // looking — and misses whatever was in it. Three states are kept apart
+        // from here on: loading / could-not-read (says so, offers retry) /
+        // genuinely empty. Note we do NOT wipe `cases`: if a background refresh
+        // fails, the last good list stays on screen under a failure banner.
+        setLoadError(true);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     syncCases();
     const handler = () => syncCases();
     window.addEventListener("nzamy-workflow-updated", handler);
-    return () => window.removeEventListener("nzamy-workflow-updated", handler);
-  }, []);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("nzamy-workflow-updated", handler);
+    };
+  }, [reloadKey]);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -150,9 +261,11 @@ export default function CasesPage() {
     return Array.from(s);
   }, [cases]);
 
-  // Filtered cases
-  const activeCases = cases.filter(c => c.status !== "archived");
-  const archivedCases = cases.filter(c => c.status === "archived");
+  // Filtered cases. These two are memoised on `cases` so that the `filtered`
+  // memo below can depend on THEM and still recompute when the fetch resolves —
+  // see the note on that dependency array.
+  const activeCases = useMemo(() => cases.filter(c => c.status !== "archived"), [cases]);
+  const archivedCases = useMemo(() => cases.filter(c => c.status === "archived"), [cases]);
 
   const filtered = useMemo(() => {
     const base = viewMode === "archive" ? archivedCases : activeCases;
@@ -178,18 +291,46 @@ export default function CasesPage() {
       const pOrder = { critical: 0, high: 1, normal: 2, low: 3 };
       return (pOrder[a.priority] ?? 3) - (pOrder[b.priority] ?? 3);
     });
-  }, [collabFilter, statusFilter, typeFilter, degreeFilter, teamFilter, timeFilter, priorityFilter, search, viewMode]);
+    // `activeCases`/`archivedCases` and `courtFilter` were ALL missing from this
+    // array. The case list was the one that mattered: the memo body reads it, so
+    // the empty first-render result stayed cached after the fetch resolved and
+    // every lawyer saw «لا توجد قضايا مطابقة» under a header counting their real
+    // cases. The list and the Kanban were blank; the archive tab worked only
+    // because ArchiveView computes its own local `filtered` straight from `cases`.
+    // Nothing rewrites this for us: the React Compiler is not enabled here (no
+    // `reactCompiler` in next.config.ts, no babel-plugin-react-compiler).
+  }, [activeCases, archivedCases, collabFilter, statusFilter, typeFilter, degreeFilter, courtFilter, teamFilter, timeFilter, priorityFilter, search, viewMode]);
 
+  // No `suspended` key: nothing can produce a case in that state (see the drag
+  // handler above), so the counter could only ever have printed a hard 0.
   const counts = {
     all: activeCases.length,
     active: activeCases.filter(c => c.status === "active").length,
     pending: activeCases.filter(c => c.status === "pending").length,
-    suspended: activeCases.filter(c => c.status === "suspended").length,
     closed: activeCases.filter(c => c.status === "closed").length,
     archived: archivedCases.length,
   };
 
+  // Appeal deadlines: `hasDeadline` is `Boolean(metadata.deadline)` and NOTHING in
+  // this repo writes that key — not AddCaseModal, not AddHearingModal, not the
+  // POST route. So this is 0 for every lawyer, always. The banner and the card
+  // badges below stay because they render nothing while that is true and will
+  // light up correctly the day a writer exists; what was removed is the footer
+  // stat that printed «طعون: 0» as a standing all-clear on a check the platform
+  // never performs.
   const criticalCount = cases.filter(c => c.hasDeadline).length;
+
+  const resetFilters = () => {
+    setStatusFilter("all"); setTypeFilter("all"); setDegreeFilter("all"); setCourtFilter("all");
+    setTeamFilter("all"); setTimeFilter("all"); setPriorityFilter("all"); setCollabFilter("all");
+    setSearch("");
+  };
+
+  const retryLoad = () => {
+    setLoading(true);
+    setLoadError(false);
+    setReloadKey(k => k + 1);
+  };
 
   // ─── VIEWS ────────────────────────────────────────────────────────────────
 
@@ -232,12 +373,26 @@ export default function CasesPage() {
       <div className="space-y-2">
         {filtered.length === 0
           ? (
-            <EmptyState
-              icon={<Gavel />}
-              title="لا توجد قضايا مطابقة"
-              description="لم يتم العثور على أي قضايا تطابق شروط البحث الحالية."
-              action={{ label: "إضافة قضية", onClick: () => setShowAddCase(true) }}
-            />
+            // «لا توجد قضايا مطابقة» is only true when there ARE cases and the
+            // filters excluded them. With an empty list it told a lawyer their
+            // search was at fault when in fact nothing had ever been filed.
+            cases.length === 0
+              ? (
+                <EmptyState
+                  icon={<Gavel />}
+                  title="لا توجد قضايا بعد"
+                  description="القضايا التي تضيفها أو تُسند إليك ستظهر هنا."
+                  action={{ label: "إضافة قضية", onClick: () => setShowAddCase(true) }}
+                />
+              )
+              : (
+                <EmptyState
+                  icon={<Gavel />}
+                  title="لا توجد قضايا مطابقة"
+                  description="لم يتم العثور على أي قضايا تطابق شروط البحث الحالية."
+                  action={{ label: "إعادة ضبط الفلاتر", onClick: resetFilters }}
+                />
+              )
           )
           : filtered.map((c, i) => (
               <motion.div key={c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
@@ -254,10 +409,12 @@ export default function CasesPage() {
     let cols: Col[] = [];
 
     if (kanbanGroup === "status") {
+      // «معلقة» removed — see the note in onKanbanDrop: no backend status reads
+      // back as "suspended", so the column could only ever be empty and dropping
+      // a card into it silently bounced the card back to «نشطة».
       cols = [
         { key:"active",    label:"نشطة",        color:"text-emerald-500", bg:"bg-emerald-500/10",  cases: filtered.filter(c=>c.status==="active") },
         { key:"pending",   label:"انتظار",       color:"text-amber-500",   bg:"bg-amber-500/10",   cases: filtered.filter(c=>c.status==="pending") },
-        { key:"suspended", label:"معلقة",        color:"text-blue-500",    bg:"bg-blue-500/10",    cases: filtered.filter(c=>c.status==="suspended") },
         { key:"closed",    label:"مغلقة",        color:"text-slate-400",   bg:"bg-slate-100 dark:bg-white/[0.03]", cases: filtered.filter(c=>c.status==="closed") },
       ];
     } else if (kanbanGroup === "degree") {
@@ -475,9 +632,18 @@ export default function CasesPage() {
         <div>
           <h1 className={`text-2xl font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`}
               style={{ fontFamily: "var(--font-brand)" }}>ملف القضايا</h1>
+          {/* Counts are only printed once there is a list behind them. While the
+              fetch is in flight `counts.all` is 0, and a printed 0 reads as a
+              fact — the same lie as any other number with no source. */}
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {counts.all} قضية · <span className="text-emerald-500 font-semibold">{counts.active} نشطة</span>
-            {criticalCount > 0 && <> · <span className="text-red-500 font-semibold">{criticalCount} طعون</span></>}
+            {loading
+              ? "جاري تحميل القضايا…"
+              : loadError && cases.length === 0
+                ? <span className="text-red-500 font-semibold">تعذّر تحميل القضايا</span>
+                : <>
+                    {counts.all} قضية · <span className="text-emerald-500 font-semibold">{counts.active} نشطة</span>
+                    {criticalCount > 0 && <> · <span className="text-red-500 font-semibold">{criticalCount} طعون</span></>}
+                  </>}
           </p>
         </div>
         <div className="flex gap-2">
@@ -552,7 +718,7 @@ export default function CasesPage() {
               <div>
                 <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>حالة القضية</p>
                 <div className="flex gap-1.5 flex-wrap">
-                  {(["all", "active", "pending", "suspended", "closed"] as const).map(s => (
+                  {(["all", "active", "pending", "closed"] as const).map(s => (
                     <button key={s} onClick={() => setStatusFilter(s)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
                         statusFilter === s ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-200 text-slate-500"
@@ -629,7 +795,7 @@ export default function CasesPage() {
               </div>
 
               {/* Reset */}
-              <button onClick={() => { setStatusFilter("all"); setTypeFilter("all"); setDegreeFilter("all"); setCourtFilter("all"); setTeamFilter("all"); setTimeFilter("all"); setPriorityFilter("all"); setSearch(""); }}
+              <button onClick={resetFilters}
                 className={`text-[11px] font-semibold underline ${isDark ? "text-zinc-600 hover:text-zinc-400" : "text-slate-400 hover:text-slate-600"}`}>
                 إعادة ضبط الفلاتر
               </button>
@@ -703,10 +869,10 @@ export default function CasesPage() {
         </AnimatePresence>
       </div>
 
-      {/* Quick status pills (always visible) */}
-      {!showFilters && (
+      {/* Quick status pills — hidden while the counts have no data behind them */}
+      {!showFilters && !loading && !(loadError && cases.length === 0) && (
         <div className="flex gap-1.5 flex-wrap">
-          {(["all", "active", "pending", "suspended"] as const).map(s => (
+          {(["all", "active", "pending", "closed"] as const).map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
                 statusFilter === s ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"
@@ -721,30 +887,80 @@ export default function CasesPage() {
         </div>
       )}
 
-      {/* Active View */}
-      <AnimatePresence mode="wait">
-        <motion.div key={viewMode} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-          {viewMode === "list"    && <ListView />}
-          {viewMode === "kanban"  && <KanbanView />}
-          {viewMode === "archive" && <ArchiveView />}
-        </motion.div>
-      </AnimatePresence>
+      {/* Active View — three states kept apart: loading, could-not-read, data.
+          A failed query used to land on the same «لا توجد قضايا» screen as a
+          lawyer who genuinely has none. */}
+      {loading ? (
+        <div className={`${card} p-4 space-y-2`}>
+          {[0, 1, 2].map(i => (
+            <div key={i} className={`h-16 rounded-2xl animate-pulse ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`} />
+          ))}
+          <p className={`text-[12px] text-center pt-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جاري تحميل القضايا…</p>
+        </div>
+      ) : loadError && cases.length === 0 ? (
+        <div className={`${card} p-6 text-center space-y-3`}>
+          <Warning size={26} weight="duotone" className="mx-auto text-red-500" />
+          <p className={`text-[14px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>تعذّر تحميل القضايا</p>
+          <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+            لم يستجب الخادم لطلب القائمة. هذه ليست قائمة فارغة — قد تكون لديك قضايا لم تُقرأ بعد.
+          </p>
+          <button onClick={retryLoad}
+            className="px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
+            إعادة المحاولة
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* A refresh failed but an earlier load succeeded: show the last good
+              list and say plainly that it may be out of date. */}
+          {loadError && (
+            <div className="mb-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-center gap-3">
+              <Warning size={15} weight="duotone" className="text-amber-500 flex-shrink-0" />
+              <p className="text-[12px] font-semibold text-amber-600 dark:text-amber-400 flex-1">
+                تعذّر تحديث القائمة — ما تراه هو آخر تحميل ناجح وقد لا يكون محدّثاً.
+              </p>
+              <button onClick={retryLoad} className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex-shrink-0">
+                إعادة المحاولة
+              </button>
+            </div>
+          )}
+          {/* The server had more rows than it sent. Say so rather than let the
+              lawyer read a cut-off list as their complete case file. */}
+          {truncated && (
+            <div className={`mb-3 rounded-2xl border p-3 text-[12px] font-semibold ${isDark ? "border-white/[0.08] bg-white/[0.03] text-zinc-400" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+              تُعرض أحدث {LIST_LIMIT} سجل فقط — قد تكون هناك قضايا أقدم غير معروضة في هذه القائمة.
+            </div>
+          )}
+          <AnimatePresence mode="wait">
+            <motion.div key={viewMode} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              {viewMode === "list"    && <ListView />}
+              {viewMode === "kanban"  && <KanbanView />}
+              {viewMode === "archive" && <ArchiveView />}
+            </motion.div>
+          </AnimatePresence>
+        </>
+      )}
 
       {/* Stats footer */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
         className={`${card} p-4 flex flex-wrap items-center gap-5`}>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>نشطة: <strong className="text-emerald-500">{counts.active}</strong></span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-amber-400" />
-          <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>انتظار: <strong className="text-amber-500">{counts.pending}</strong></span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-          <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>طعون: <strong className="text-red-500">{criticalCount}</strong></span>
-        </div>
+        {/* Counters only while there is a loaded list behind them. The «طعون»
+            counter that stood here was removed outright: it read `hasDeadline`,
+            which nothing in the repo ever sets, so it was a permanent «0» next to
+            a pulsing red dot — an all-clear on a deadline check that is not
+            performed. Omitted rather than zero-filled. */}
+        {!loading && !(loadError && cases.length === 0) && (
+          <>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>نشطة: <strong className="text-emerald-500">{counts.active}</strong></span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>انتظار: <strong className="text-amber-500">{counts.pending}</strong></span>
+            </div>
+          </>
+        )}
         <div className="mr-auto flex gap-3">
           <Link href="/ai/draft" className="flex items-center gap-1.5 text-[12px] text-royal hover:underline">
             <ArrowUpRight size={13} />صياغة مذكرة

@@ -1,79 +1,157 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  FileText, MagnifyingGlass, Plus, Clock, CalendarCheck,
-  CheckCircle, Warning, CaretLeft, Download, Pen,
-  Trash, Share, ArrowRight, PaperPlaneTilt, X, Archive,
-  ArrowCounterClockwise,
+  FileText, MagnifyingGlass, Plus, Clock, CalendarBlank,
+  CheckCircle, Warning, CaretLeft, Pen,
+  PaperPlaneTilt, X, Archive, Info,
+  ArrowCounterClockwise, ArrowClockwise,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import EmptyState from "@/components/ui/EmptyState";
 import { getWorkflowRequestsByReceiver, updateWorkflowRequestById, createWorkflowRequest } from "@/lib/services/workflowService";
-import type { WorkflowRequest } from "@/lib/workflowStore";
+import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import type { WorkflowRequest, WorkflowRequestStatus } from "@/lib/workflowStore";
 import { createWorkflowId } from "@/lib/workflowStore";
 import { useUser } from "@/hooks/useUser";
 
-// ─── Types & Mock Data ─────────────────────────────────────────────────────────
+// ─── Types & mapping ───────────────────────────────────────────────────────────
 
-type ContractStatus = "active" | "pending_sign" | "expired" | "draft";
+type ContractStatus = "active" | "pending_sign" | "draft" | "cancelled";
 
 interface Contract {
-  id:           string;
-  title:        string;
-  party:        string;
-  type:         "service_agreement" | "fee_agreement" | "power_of_attorney" | "nda" | "employment";
-  status:       ContractStatus;
-  value?:       string;
-  signDate?:    string;
-  expiry?:      string;
-  manualArchive?: boolean;   // أرشفة يدوية بغض النظر عن الحالة
+  id:        string;
+  title:     string;
+  party:     string;
+  type:      ContractType;
+  status:    ContractStatus;
+  value?:    string;
+  /** The row's own created_at. Labelled «أُنشئ» on screen and nothing else. */
+  createdAt?: string;
 }
 
-function workflowToContract(request: WorkflowRequest): Contract {
-  return {
-    id: request.id,
-    title: request.title,
-    party: request.requester.name || "عميل نظامي",
-    type: "service_agreement",
-    status: request.status === "completed" ? "active" : request.status === "cancelled" ? "expired" : "draft",
-    value: request.payment.amount ? `${request.payment.amount.toLocaleString("ar-SA")} ﷼` : undefined,
-    signDate: request.status === "completed" ? new Date(request.createdAt).toLocaleDateString("ar-SA") : undefined,
-  };
-}
+type ContractType = "service_agreement" | "fee_agreement" | "power_of_attorney" | "nda" | "employment" | "other";
 
-const TYPE_LABELS: Record<Contract["type"], string> = {
+const TYPE_LABELS: Record<ContractType, string> = {
   service_agreement: "اتفاقية خدمات",
   fee_agreement:     "عقد أتعاب",
   power_of_attorney: "وكالة قانونية",
   nda:               "اتفاقية سرية",
   employment:        "عقد عمل",
+  // «آخر» is one of the six choices in the wizard (CONTRACT_TYPES below) and
+  // used to have no entry here at all, so picking it rendered an empty badge.
+  other:             "آخر",
 };
 
-const STATUS_CONFIG: Record<ContractStatus, { label: string; color: string; iconColor: string }> = {
-  active:        { label: "ساري",          color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20", iconColor: "text-emerald-500" },
-  pending_sign:  { label: "بانتظار التوقيع", color: "text-amber-500 bg-amber-500/10 border-amber-500/20",     iconColor: "text-amber-500"   },
-  expired:       { label: "منتهي",          color: "text-slate-400 bg-slate-100 border-slate-200 dark:bg-white/[0.04] dark:border-white/[0.06] dark:text-zinc-500", iconColor: "text-slate-400" },
-  draft:         { label: "مسودة",          color: "text-blue-500 bg-blue-500/10 border-blue-500/20",          iconColor: "text-blue-500"    },
+/**
+ * The four workflow statuses this page writes, and nothing else.
+ *
+ * This map and `contractStatusFromWorkflow` below are exact inverses on
+ * purpose: a row saved as «بانتظار التوقيع» has to come back as
+ * «بانتظار التوقيع» after a reload. They used not to be — `in_review` was read
+ * back as «مسودة» — which is how a lawyer could set a status, refresh, and
+ * silently be shown a different one.
+ */
+const workflowStatusFor: Record<ContractStatus, WorkflowRequestStatus> = {
+  draft:        "draft",
+  pending_sign: "in_review",
+  active:       "completed",
+  cancelled:    "cancelled",
 };
 
-const STATUS_ICONS = {
+function contractStatusFromWorkflow(status: WorkflowRequestStatus): ContractStatus | null {
+  switch (status) {
+    case "draft":     return "draft";
+    case "in_review": return "pending_sign";
+    case "completed": return "active";
+    case "cancelled": return "cancelled";
+    // pending_payment / pending_assignment / assigned are never written for a
+    // contract row by this page or by anything else (see the type filter in
+    // loadContracts). Returning null rather than defaulting to «مسودة» keeps
+    // the promise this file now makes: no badge on screen that no column
+    // backs. Such a row is dropped from the list instead of being relabelled.
+    default:          return null;
+  }
+}
+
+const READ_STRING = (v: unknown): string | undefined =>
+  typeof v === "string" && v.trim() ? v.trim() : undefined;
+
+/**
+ * Read a contract back out of the row this page wrote.
+ *
+ * Every field here now has a source. What was removed, and why:
+ *   - `type` was hardcoded `"service_agreement"` for every row, so the badge
+ *     always read «اتفاقية خدمات» whatever the lawyer picked. It now reads
+ *     `metadata.contractType`, which persistNewContract has always written and
+ *     nothing ever read back.
+ *   - `value` was computed from `payment.amount`, which this page always sends
+ *     as 0 — so the «٢٠٬٠٠٠ ﷼» typed in the wizard vanished on the first
+ *     reload. It now reads `metadata.value`, the string the lawyer typed.
+ *   - `signDate` is gone. It was `created_at` relabelled as a signing date and
+ *     rendered behind a «تم التوقيع» calendar icon. Nothing on this platform
+ *     collects a signature, so there is no signing date to show; the row's
+ *     creation instant is shown as what it is instead.
+ *   - `expiry` is gone: nothing ever set it, and it was rendered and searched.
+ */
+function workflowToContract(request: WorkflowRequest): Contract | null {
+  const status = contractStatusFromWorkflow(request.status);
+  if (!status) return null;
+  const meta = (request.metadata ?? {}) as Record<string, unknown>;
+  const rawType = READ_STRING(meta.contractType);
+  return {
+    id:     request.id,
+    title:  request.title,
+    party:  READ_STRING(meta.party) ?? READ_STRING(request.requester?.name) ?? "—",
+    type:   rawType && rawType in TYPE_LABELS ? (rawType as ContractType) : "other",
+    status,
+    value:  READ_STRING(meta.value),
+    createdAt: request.createdAt ? new Date(request.createdAt).toLocaleDateString("ar-SA") : undefined,
+  };
+}
+
+const STATUS_CONFIG: Record<ContractStatus, { label: string; color: string }> = {
+  active:        { label: "ساري",            color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" },
+  pending_sign:  { label: "بانتظار التوقيع",  color: "text-amber-500 bg-amber-500/10 border-amber-500/20" },
+  cancelled:     { label: "ملغي",             color: "text-slate-400 bg-slate-100 border-slate-200 dark:bg-white/[0.04] dark:border-white/[0.06] dark:text-zinc-500" },
+  draft:         { label: "مسودة",            color: "text-blue-500 bg-blue-500/10 border-blue-500/20" },
+};
+
+const STATUS_ICONS: Record<ContractStatus, typeof CheckCircle> = {
   active:       CheckCircle,
   pending_sign: Warning,
-  expired:      Clock,
+  cancelled:    Clock,
   draft:        Pen,
 };
 
-const CONTRACT_TYPES = [
+const CONTRACT_TYPES: { id: ContractType; label: string }[] = [
   { id: "power_of_attorney", label: "وكالة قانونية" },
   { id: "fee_agreement",     label: "عقد أتعاب" },
   { id: "nda",               label: "اتفاقية سرية" },
   { id: "service_agreement", label: "اتفاقية خدمات" },
   { id: "employment",        label: "عقد عمل" },
   { id: "other",             label: "آخر" },
-] as const;
+];
+
+/**
+ * How many rows to pull before sieving contracts out of them.
+ *
+ * GET /api/v1/service-requests takes no `type` parameter and defaults to
+ * `limit=20` (route.ts), and `receiver:"lawyer"` is the lawyer's WHOLE private
+ * workspace — hearings, cases, tasks, clients and invoices all land in that
+ * same stream. So the twenty newest rows can easily contain no contract at all
+ * while the lawyer has several, and a `business_case` filter applied after a
+ * 20-row cap would render that as «لا توجد عقود». Two hundred is enough head-
+ * room for a real practice's first year and still one request.
+ *
+ * It is a cap, not a guarantee, which is why `truncated` below exists: past it
+ * the page says the list is cut rather than quietly showing a short one.
+ */
+const WORKSPACE_PAGE_LIMIT = 200;
+
+type LoadState = "loading" | "ready" | "failed";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -89,172 +167,307 @@ export default function ContractsPage() {
   // New contract modal
   const [showModal, setShowModal]   = useState(false);
   const [modalStep, setModalStep]   = useState(1);
-  const [newType,   setNewType]     = useState("");
+  const [newType,   setNewType]     = useState<ContractType | "">("");
   const [newParty,  setNewParty]    = useState("");
   const [newValue,  setNewValue]    = useState("");
   const [newTitle,  setNewTitle]    = useState("");
+  const [saving,    setSaving]      = useState(false);
   const [contracts, setContracts]   = useState<Contract[]>([]);
-  const [loading, setLoading]      = useState(true);
+  const [loadState, setLoadState]   = useState<LoadState>("loading");
+  const [truncated, setTruncated]   = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
 
+  /**
+   * WHY THIS READS THE ROUTE DIRECTLY instead of going through
+   * getWorkflowRequestsByReceiver(): that helper returns `response.data` and
+   * drops the route's `degraded` flag — and that flag is the ONLY way to tell
+   * «the query failed» from «you have no contracts», because
+   * src/app/api/v1/service-requests/route.ts answers a Supabase error with
+   * HTTP 200 and an empty list. Through the helper, a database outage reached
+   * this screen as a confident «٠ عقد نشط». A lawyer must never be told a
+   * record does not exist because the database was unreachable.
+   *
+   * Demo mode still goes through the helper: there the local store IS the
+   * intended source and cannot be degraded.
+   *
+   * WHY ONLY `business_case`: this list used to include `type === "service"`
+   * as well. `service` + `receiver:"lawyer"` is the exact shape AddHearingModal,
+   * AddCaseModal and the tasks/clients/finance routes write for the lawyer's
+   * own hearings, cases, tasks, clients and invoices — so a court hearing was
+   * rendered here as a contract, and the destructive buttons below wrote
+   * `status:"cancelled"` onto it, dropping the hearing out of the calendar's
+   * default view with no warning and no way back. `business_case` +
+   * `receiver:"lawyer"` is written by exactly one thing in this repo:
+   * persistNewContract, below. So every row on this page is now a row this
+   * page created, and no button here can reach anything else.
+   */
   useEffect(() => {
-    const syncContracts = async () => {
+    let cancelled = false;
+    // Deliberately does NOT flip to "loading" on every run: the initial state
+    // already is, and the `nzamy-workflow-updated` listener re-reads in the
+    // background — blanking a list the lawyer is reading, to re-render the
+    // same rows, is worse than a stale second. Only retryLoad sets it.
+    const read = async () => {
       try {
-        const requests = await getWorkflowRequestsByReceiver("lawyer");
-        const workflowContracts = requests
-          .filter(request => request.type === "service" || request.type === "business_case")
-          .map(workflowToContract);
-        setContracts(workflowContracts);
-      } catch {
+        let rows: WorkflowRequest[];
+        let cut = false;
+        if (!isSupabaseMode) {
+          rows = await getWorkflowRequestsByReceiver("lawyer");
+        } else {
+          const response = await apiGet<{ data?: WorkflowRequest[]; total?: number; degraded?: boolean }>(
+            "/api/v1/service-requests",
+            { receiver: "lawyer", limit: WORKSPACE_PAGE_LIMIT },
+          );
+          if (response.degraded) throw new Error("service-requests responded degraded");
+          rows = response.data ?? [];
+          // `total` is the route's exact-count of matching rows, so this is a
+          // fact rather than the `rows.length >= limit` guess it replaces.
+          cut = typeof response.total === "number"
+            ? response.total > WORKSPACE_PAGE_LIMIT
+            : rows.length >= WORKSPACE_PAGE_LIMIT;
+        }
+        if (cancelled) return;
+        setTruncated(cut);
+        setContracts(
+          rows
+            .filter(request => request.type === "business_case")
+            .map(workflowToContract)
+            .filter((c): c is Contract => c !== null),
+        );
+        setLoadState("ready");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[contracts] load failed:", err);
         setContracts([]);
-      } finally {
-        setLoading(false);
+        setLoadState("failed");
       }
     };
 
-    syncContracts();
-    const handler = () => syncContracts();
+    read();
+    const handler = () => read();
     window.addEventListener("nzamy-workflow-updated", handler);
-    return () => window.removeEventListener("nzamy-workflow-updated", handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("nzamy-workflow-updated", handler);
+    };
+  }, [reloadNonce]);
+
+  // Retry re-runs the effect above rather than duplicating the read. Bumping a
+  // nonce is what lets the reader stay defined inside the effect, where its
+  // `cancelled` guard belongs.
+  const retryLoad = useCallback(() => {
+    setLoadState("loading");
+    setReloadNonce(n => n + 1);
   }, []);
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(null), 2800); }
   function openModal() { setShowModal(true); setModalStep(1); setNewType(""); setNewParty(""); setNewValue(""); setNewTitle(""); }
   function closeModal() { setShowModal(false); }
 
-  // Map a contract-card status to the workflow request status for persistence.
-  const workflowStatusFor: Record<ContractStatus, "draft" | "in_review" | "completed" | "cancelled"> = {
-    draft: "draft",
-    pending_sign: "in_review",
-    active: "completed",
-    expired: "cancelled",
-  };
+  /**
+   * WHY THIS PATCHES THE ROUTE DIRECTLY instead of calling
+   * updateWorkflowRequestById(): that helper answers a failed PATCH by writing
+   * the patch to localStorage and returning a row (workflowService.ts), which
+   * made every `.catch()` on this page unreachable — «تم تحديث حالة العقد» was
+   * shown over a 403 and over a 500 alike, and the change existed only in that
+   * one browser. Here a failure is a failure, the optimistic change is rolled
+   * back, and the lawyer is told the server still holds the old value.
+   */
+  async function patchStatus(id: string, status: ContractStatus, auditEvent: string): Promise<void> {
+    if (!isSupabaseMode) {
+      await updateWorkflowRequestById(id, { status: workflowStatusFor[status] }, auditEvent);
+      return;
+    }
+    await apiMutate(`/api/v1/service-requests/${id}`, "PATCH", {
+      status: workflowStatusFor[status],
+      auditEvent,
+    });
+  }
 
-  function deleteContract(id: string) {
-    setContracts(prev => prev.filter(c => c.id !== id));
-    setExpandedId(null);
-    showToast("تم حذف العقد");
-    // Soft-delete on the backend (no hard DELETE endpoint on service-requests).
-    updateWorkflowRequestById(id, { status: "cancelled" }, "contract_deleted").catch((err) => {
-      console.error("[contracts] deleteContract failed:", err);
+  /**
+   * One writer for every status move on this page. The new status is shown
+   * immediately and reverted in full if the server refuses — reverted by
+   * restoring the whole previous array rather than by inverting the change,
+   * so a rollback cannot itself invent a state. The toast is fired on settle,
+   * never before: «تم» must mean the server said so.
+   */
+  function moveStatus(
+    id: string,
+    status: ContractStatus,
+    auditEvent: string,
+    copy: { done: string; failed: string },
+    opts: { collapse?: boolean } = {},
+  ) {
+    const previous = contracts;
+    setContracts(prev => prev.map(c => (c.id === id ? { ...c, status } : c)));
+    if (opts.collapse) setExpandedId(null);
+    patchStatus(id, status, auditEvent)
+      .then(() => showToast(copy.done))
+      .catch(err => {
+        console.error(`[contracts] ${auditEvent} failed:`, err);
+        setContracts(previous);
+        showToast(copy.failed);
+      });
+  }
+
+  function cancelContract(id: string) {
+    moveStatus(id, "cancelled", "contract_cancelled", {
+      done:   "تم إلغاء العقد — تجده في «الملغاة»",
+      failed: "تعذّر إلغاء العقد — لم يتغيّر شيء على الخادم.",
+    }, { collapse: true });
+  }
+  function markPendingSign(id: string) {
+    moveStatus(id, "pending_sign", "contract_marked_pending_sign", {
+      done:   "تم تحديث الحالة إلى «بانتظار التوقيع»",
+      failed: "تعذّر تحديث الحالة — لم يتغيّر شيء على الخادم.",
     });
   }
-  function changeStatus(id: string, status: ContractStatus) {
-    setContracts(prev => prev.map(c => c.id === id ? { ...c, status } : c));
-    showToast(status === "pending_sign" ? "تم إرسال العقد للتوقيع" : "تم تحديث حالة العقد");
-    updateWorkflowRequestById(id, { status: workflowStatusFor[status] }, "contract_status_changed").catch((err) => {
-      console.error("[contracts] changeStatus failed:", err);
+  function markActive(id: string) {
+    moveStatus(id, "active", "contract_marked_active", {
+      done:   "تم تحديث الحالة إلى «ساري»",
+      failed: "تعذّر تحديث الحالة — لم يتغيّر شيء على الخادم.",
     });
   }
-  function archiveContract(id: string) {
-    setContracts(prev => prev.map(c => c.id === id ? { ...c, manualArchive: true } : c));
-    setExpandedId(null);
-    showToast("🗂 تم نقل العقد للأرشيف");
-    updateWorkflowRequestById(id, { status: "cancelled" }, "contract_archived").catch((err) => {
-      console.error("[contracts] archiveContract failed:", err);
-    });
+  function backToDraft(id: string) {
+    moveStatus(id, "draft", "contract_back_to_draft", {
+      done:   "تم إرجاع العقد إلى المسودات",
+      failed: "تعذّر إرجاع العقد — لم يتغيّر شيء على الخادم.",
+    }, { collapse: true });
   }
-  function restoreContract(id: string, title: string) {
-    setContracts(prev => prev.map(c => c.id === id ? { ...c, manualArchive: false, status: "draft" } : c));
-    showToast(`✅ تم استعادة "${title}" — راجعه في قائمة المسودات`);
-    updateWorkflowRequestById(id, { status: "draft" }, "contract_restored").catch((err) => {
-      console.error("[contracts] restoreContract failed:", err);
-    });
-  }
-  // Build a workflow request for the current new-contract modal inputs.
-  async function persistNewContract(targetStatus: "draft" | "in_review"): Promise<WorkflowRequest | null> {
+
+  /**
+   * Build and persist the row for the new-contract wizard.
+   *
+   * Same reason as patchStatus for going straight to the route in supabase
+   * mode: createWorkflowRequest() answers a failed POST by writing the row to
+   * localStorage and returning it, so the `if (!row)` guard in saveNew() below
+   * never fired. The lawyer saw «تم حفظ المسودة» over a
+   * 500, and the contract disappeared on the next load with no error ever
+   * shown, because a later successful read replaces the list wholesale and
+   * never merges the browser-only row back in.
+   */
+  async function persistNewContract(targetStatus: ContractStatus): Promise<WorkflowRequest | null> {
     const id = createWorkflowId();
     const title = newTitle.trim() || `عقد جديد — ${newParty.trim()}`;
+    const input = {
+      id,
+      type: "business_case" as const,
+      title,
+      description: "",
+      receiver: "lawyer" as const,
+      status: workflowStatusFor[targetStatus],
+      requester: {
+        userId: user.userId,
+        name: newParty.trim() || user.name || "عميل نظامي",
+        role: user.userType ?? "lawyer",
+        tier: user.tier,
+      },
+      // No money has ever moved through this platform and no provider is
+      // connected; `value` below is a free-text note, not a charge.
+      payment: { amount: 0, status: "not_required" as const },
+      sourcePath: "/dashboard/lawyer/contracts",
+      metadata: {
+        contractType: newType || "other",
+        party: newParty.trim(),
+        value: newValue.trim(),
+      },
+      // Load-bearing, do not drop: service_requests_select_policy admits a row
+      // on `requester_user_id = auth.uid()` OR `assigned_to = auth.uid()`.
+      // Without this the lawyer could not read back their own contract.
+      assignedTo: user.userId ?? null,
+    };
     try {
-      const row = await createWorkflowRequest({
-        id,
-        type: "business_case",
-        title,
-        description: "",
-        receiver: "lawyer",
-        status: targetStatus,
-        requester: {
-          userId: user.userId,
-          name: newParty.trim() || user.name || "عميل نظامي",
-          role: user.userType ?? "lawyer",
-          tier: user.tier,
-        },
-        payment: { amount: 0, status: "not_required" },
-        sourcePath: "",
-        metadata: {
-          contractType: newType || "service_agreement",
-          party: newParty.trim(),
-          value: newValue.trim(),
-        },
-        assignedTo: user.userId ?? null,
-      });
-      return row;
+      if (!isSupabaseMode) return await createWorkflowRequest(input);
+      const response = await apiMutate<{ data?: WorkflowRequest }>("/api/v1/service-requests", "POST", input);
+      return response.data ?? null;
     } catch (err) {
       console.error("[contracts] persistNewContract failed:", err);
       return null;
     }
   }
-  async function saveDraft() {
-    const row = await persistNewContract("draft");
-    if (!row) { showToast("تعذّر حفظ المسودة — حاول مرة أخرى"); return; }
-    const contract: Contract = {
-      id: row.id,
-      title: row.title,
-      party: newParty.trim() || "عميل نظامي",
-      type: (newType || "service_agreement") as Contract["type"],
-      status: "draft",
-      value: newValue.trim() || undefined,
-    };
-    setContracts(prev => [contract, ...prev]);
-    closeModal(); showToast("تم حفظ المسودة");
-    window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
-  }
-  async function sendSign() {
-    const row = await persistNewContract("in_review");
-    if (!row) { showToast("تعذّر إرسال العقد — حاول مرة أخرى"); return; }
-    const contract: Contract = {
-      id: row.id,
-      title: row.title,
-      party: newParty.trim() || "عميل نظامي",
-      type: (newType || "service_agreement") as Contract["type"],
-      status: "pending_sign",
-      value: newValue.trim() || undefined,
-    };
-    setContracts(prev => [contract, ...prev]);
-    closeModal(); showToast("تم إرسال العقد للتوقيع ✓");
-    window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
-  }
 
-  // isArchived = منتهية تلقائياً OR أُرشفت يدوياً
-  const isArchived = (c: Contract) => c.status === "expired" || c.manualArchive === true;
+  async function saveNew(targetStatus: ContractStatus, doneCopy: string, failCopy: string) {
+    setSaving(true);
+    const row = await persistNewContract(targetStatus);
+    setSaving(false);
+    if (!row) { showToast(failCopy); return; }
+    closeModal();
+    showToast(doneCopy);
+    // Fired only after the server confirmed the row — and the card is then
+    // rendered from a fresh READ rather than from a locally built object.
+    // That is deliberate: the old code built the card from the wizard's own
+    // state, so the type and the fee looked right until the first refresh
+    // silently replaced them with «اتفاقية خدمات» and nothing. Whatever this
+    // page shows after a save is now what the server actually holds.
+    window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
+  }
+  const saveDraft = () => saveNew("draft", "تم حفظ المسودة", "تعذّر حفظ المسودة — لم يُسجَّل أي عقد. حاول مرة أخرى.");
+  const saveAwaitingSignature = () => saveNew(
+    "pending_sign",
+    "تم الحفظ بحالة «بانتظار التوقيع»",
+    "تعذّر حفظ العقد — لم يُسجَّل أي عقد. حاول مرة أخرى.",
+  );
+
+  const isCancelled = (c: Contract) => c.status === "cancelled";
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
-  // Active contracts (non-archived)
   const filtered = contracts.filter(c => {
-    if (isArchived(c)) return false;
+    if (isCancelled(c)) return false;
     const matchStatus = filter === "all" || c.status === filter;
     const matchSearch = !search || c.title.includes(search) || c.party.includes(search);
     return matchStatus && matchSearch;
   });
 
-  // Archived contracts
   const archivedFiltered = contracts
-    .filter(c => isArchived(c))
+    .filter(isCancelled)
     .filter(c => {
       const q = archiveSearch.trim();
-      return !q || c.title.includes(q) || c.party.includes(q) || c.value?.includes(q) || c.expiry?.includes(q);
+      return !q || c.title.includes(q) || c.party.includes(q) || !!c.value?.includes(q);
     });
 
   const counts = {
-    all:          contracts.filter(c => !isArchived(c)).length,
-    active:       contracts.filter(c => c.status === "active"       && !isArchived(c)).length,
-    pending_sign: contracts.filter(c => c.status === "pending_sign" && !isArchived(c)).length,
-    draft:        contracts.filter(c => c.status === "draft"        && !isArchived(c)).length,
-    expired:      contracts.filter(c => c.status === "expired"      && !isArchived(c)).length,
+    all:          contracts.filter(c => !isCancelled(c)).length,
+    active:       contracts.filter(c => c.status === "active").length,
+    pending_sign: contracts.filter(c => c.status === "pending_sign").length,
+    draft:        contracts.filter(c => c.status === "draft").length,
   };
-  const archiveCount = contracts.filter(c => isArchived(c)).length;
+  const cancelledCount = contracts.filter(isCancelled).length;
+
+  // Counts are rendered ONLY once a read has actually succeeded. A «٠ عقد
+  // نشط» printed over a failed query is the same lie as a fabricated number.
+  const headerLine =
+    loadState === "loading" ? "جارٍ تحميل السجل…"
+    : loadState === "failed" ? "تعذّر قراءة السجل"
+    : `${counts.all} عقد نشط${cancelledCount > 0 ? ` · ${cancelledCount} ملغي` : ""}${counts.pending_sign > 0 ? ` · ${counts.pending_sign} بانتظار التوقيع` : ""}`;
+
+  const failedPanel = (
+    <div className={`flex flex-col items-center gap-3 px-4 py-10 rounded-2xl border text-center ${
+      isDark ? "border-red-500/20 bg-red-500/[0.06] text-red-300" : "border-red-200 bg-red-50 text-red-700"
+    }`}>
+      <Warning size={28} weight="duotone" />
+      <div>
+        <p className="text-[13px] font-bold mb-1">تعذّر قراءة سجل العقود</p>
+        <p className="text-[12px] leading-relaxed opacity-90">
+          لم يصل ردّ من الخادم، وهذه ليست قائمة فارغة — قد تكون لديك عقود مسجّلة لا تظهر الآن. حاول مرة أخرى.
+        </p>
+      </div>
+      <button onClick={retryLoad}
+        className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold border ${
+          isDark ? "border-red-400/30 text-red-200 hover:bg-red-500/10" : "border-red-300 text-red-700 hover:bg-red-100"
+        }`}>
+        <ArrowClockwise size={13} weight="bold" />إعادة المحاولة
+      </button>
+    </div>
+  );
+
+  const loadingPanel = (
+    <div className={`${card} p-12 text-center`}>
+      <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ التحميل…</p>
+    </div>
+  );
 
   return (
     <div className="max-w-4xl mx-auto space-y-5" dir="rtl">
@@ -265,18 +478,13 @@ export default function ContractsPage() {
           <h1 className={`text-2xl font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`} style={{ fontFamily: "var(--font-brand)" }}>
             مدير العقود
           </h1>
-          <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {contracts.filter(c => !isArchived(c)).length} عقد نشط
-            {archiveCount > 0 && ` · ${archiveCount} في الأرشيف`}
-            {counts.pending_sign > 0 ? ` · ${counts.pending_sign} بانتظار التوقيع` : ""}
-          </p>
+          <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{headerLine}</p>
         </div>
         <div className="flex gap-2">
           <Link href="/ai/contracts"
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
             صياغة بـ AI
           </Link>
-          {/* Archive toggle */}
           <button onClick={() => { setViewMode(m => m === "active" ? "archive" : "active"); setExpandedId(null); }}
             className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all ${
               viewMode === "archive"
@@ -284,11 +492,11 @@ export default function ContractsPage() {
                 : isDark ? "border-white/10 text-zinc-400 hover:bg-white/5" : "border-slate-200 text-slate-500 hover:bg-slate-50"
             }`}>
             <Archive size={14} />
-            الأرشيف
-            {archiveCount > 0 && (
+            الملغاة
+            {loadState === "ready" && cancelledCount > 0 && (
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                 viewMode === "archive" ? "bg-amber-500/20 text-amber-600" : isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-400"
-              }`}>{archiveCount}</span>
+              }`}>{cancelledCount}</span>
             )}
           </button>
           <button onClick={openModal} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
@@ -297,6 +505,35 @@ export default function ContractsPage() {
           </button>
         </div>
       </motion.div>
+
+      {/*
+        The honest frame for this whole screen. It replaces four controls that
+        claimed transmission the platform cannot perform — «مشاركة مع الموكل»
+        and «رابط التوقيع» (which toasted «تم نسخ الرابط» with no clipboard call
+        and no contract URL to copy, so the lawyer pasted whatever was already
+        on their clipboard into a message to their client), «تذكير الطرف الثاني»
+        («تم إرسال التذكير», nothing sent) and two «PDF» buttons («جارٍ تحميل
+        PDF...», no file). None of those systems exists, so the promises are
+        gone rather than stubbed.
+      */}
+      <div className={`flex items-start gap-3 px-4 py-3 rounded-2xl border text-[12px] leading-relaxed ${
+        isDark ? "border-white/[0.08] bg-white/[0.02] text-zinc-400" : "border-slate-200 bg-slate-50 text-slate-600"
+      }`}>
+        <Info size={15} className="flex-shrink-0 mt-0.5" />
+        <p>
+          <strong>سجل عقود يدوي.</strong> نظامي لا يرسل العقود ولا يوقّعها إلكترونياً ولا يحفظ ملفاتها ولا يُشعر الطرف الثاني.
+          ما تسجّله هنا هو بياناتك أنت عن العقد — اسمه، الطرف الثاني، المبلغ، والحالة التي تحدّدها بنفسك —
+          ولا يصل الطرف الثاني أي شيء من هذه الصفحة.
+        </p>
+      </div>
+
+      {truncated && loadState === "ready" && (
+        <div className={`px-4 py-2.5 rounded-2xl border text-[12px] ${
+          isDark ? "border-amber-500/15 bg-amber-500/5 text-amber-300" : "border-amber-100 bg-amber-50 text-amber-700"
+        }`}>
+          عُرضت أحدث {WORKSPACE_PAGE_LIMIT} سجل من مساحة عملك فقط — قد تكون هناك عقود أقدم غير ظاهرة في هذه القائمة.
+        </div>
+      )}
 
       {/* ───────────── ACTIVE VIEW ───────────── */}
       {viewMode === "active" && (<>
@@ -309,25 +546,32 @@ export default function ContractsPage() {
             className={`flex-1 bg-transparent text-sm outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
         </div>
         <div className="flex gap-1.5 overflow-x-auto">
-          {(["all", "active", "pending_sign", "draft", "expired"] as const).map(s => (
+          {(["all", "draft", "pending_sign", "active"] as const).map(s => (
             <button key={s} onClick={() => setFilter(s)}
               className={`flex items-center gap-1 px-3 py-2 rounded-xl border text-xs font-semibold flex-shrink-0 transition-all ${filter === s ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20"}`}>
               {s === "all" ? "الكل" : STATUS_CONFIG[s].label}
-              <span className={`rounded-full px-1.5 text-[10px] font-bold ${filter === s ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                {counts[s]}
-              </span>
+              {/* No count badge until a read has succeeded — see headerLine. */}
+              {loadState === "ready" && (
+                <span className={`rounded-full px-1.5 text-[10px] font-bold ${filter === s ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
+                  {counts[s]}
+                </span>
+              )}
             </button>
           ))}
         </div>
       </motion.div>
 
-      {/* Contracts list */}
+      {/* Contracts list — three distinct states: loading / could-not-read / empty */}
       <div className="space-y-2">
-        {filtered.length === 0 ? (
+        {loadState === "loading" ? loadingPanel
+        : loadState === "failed" ? failedPanel
+        : filtered.length === 0 ? (
           <EmptyState
             icon={<FileText />}
-            title="لا توجد عقود مطابقة"
-            description="لم يتم العثور على أي عقود نشطة تطابق شروط الفلترة أو البحث الحالية."
+            title={contracts.length === 0 ? "لا توجد عقود مسجّلة" : "لا توجد عقود مطابقة"}
+            description={contracts.length === 0
+              ? "لم تُسجّل أي عقد في هذا السجل بعد. أضف عقداً لتتابع حالته بنفسك."
+              : "لم يتم العثور على أي عقود نشطة تطابق شروط الفلترة أو البحث الحالية."}
             action={{ label: "إضافة عقد", onClick: openModal }}
           />
         ) : filtered.map((c, i) => {
@@ -357,13 +601,15 @@ export default function ContractsPage() {
                     </div>
                   </div>
                   <div className="flex-shrink-0 text-left hidden sm:block min-w-[110px]">
-                    {c.signDate && <p className={`text-[11px] flex items-center gap-1 mb-0.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}><CalendarCheck size={10} />{c.signDate}</p>}
-                    {c.expiry && <p className={`text-[11px] ${c.status === "expired" ? "text-red-400" : isDark ? "text-zinc-600" : "text-slate-300"}`}>{c.expiry}</p>}
+                    {/* «أُنشئ», not a signing date: this is the row's created_at
+                        and nothing on this platform collects a signature. */}
+                    {c.createdAt && (
+                      <p className={`text-[11px] flex items-center gap-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                        <CalendarBlank size={10} />أُنشئ {c.createdAt}
+                      </p>
+                    )}
                   </div>
-                  <div className="flex gap-1.5 flex-shrink-0">
-                    <button onClick={e => e.stopPropagation()} className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${isDark ? "text-zinc-700 hover:bg-white/[0.05] hover:text-zinc-300" : "text-slate-300 hover:bg-slate-100 hover:text-slate-600"}`}><Download size={14} /></button>
-                    <CaretLeft size={14} className={`transition-transform mt-1 ${isExpanded ? "rotate-90" : ""} ${isDark ? "text-zinc-600" : "text-slate-300"}`} />
-                  </div>
+                  <CaretLeft size={14} className={`flex-shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""} ${isDark ? "text-zinc-600" : "text-slate-300"}`} />
                 </div>
 
                 {/* Expanded detail */}
@@ -371,31 +617,20 @@ export default function ContractsPage() {
                   {isExpanded && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
                       <div className={`px-4 pb-4 pt-2 border-t ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
-                        <p className={`text-[10px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>الإجراءات المتاحة</p>
+                        <p className={`text-[10px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                          تحديث الحالة المسجّلة
+                        </p>
                         <div className="flex flex-wrap gap-2">
-                          {c.status === "draft" && (<>
-                            <button onClick={() => changeStatus(c.id,"pending_sign")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762]"><PaperPlaneTilt size={11}/>إرسال للتوقيع</button>
-                            <button className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark?"border-white/[0.08] text-zinc-300":"border-slate-200 text-slate-600"}`}><Pen size={11}/>تعديل</button>
-                            <button onClick={() => archiveContract(c.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark?"border-white/[0.08] text-zinc-400":"border-slate-200 text-slate-500"}`}><Archive size={11}/>أرشفة</button>
-                            <button onClick={() => deleteContract(c.id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border border-red-500/20 text-red-500"><Trash size={11}/>حذف</button>
-                          </>)}
-                                          {c.status === "active" && (<>
-                            <button onClick={() => changeStatus(c.id,"pending_sign")} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark?"border-white/[0.08] text-zinc-300":"border-slate-200 text-slate-600"}`}><ArrowRight size={11}/>تجديد العقد</button>
-                            <button onClick={() => showToast("تم نسخ رابط المشاركة")} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark?"border-white/[0.08] text-zinc-300":"border-slate-200 text-slate-600"}`}><Share size={11}/>مشاركة مع الموكل</button>
-                            <button onClick={() => showToast("جارٍ تحميل PDF...")} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark?"border-white/[0.08] text-zinc-300":"border-slate-200 text-slate-600"}`}><Download size={11}/>PDF</button>
-                            <button onClick={() => archiveContract(c.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark?"border-white/[0.08] text-zinc-400":"border-slate-200 text-slate-500"}`}><Archive size={11}/>أرشفة</button>
-                            <button onClick={() => changeStatus(c.id,"expired")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border border-red-500/20 text-red-500"><X size={11}/>إنهاء العقد</button>
-                          </>)}
-                          {c.status === "pending_sign" && (<>
-                            <button onClick={() => showToast("تم إرسال التذكير")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20"><PaperPlaneTilt size={11}/>تذكير الطرف الثاني</button>
-                            <button onClick={() => showToast("تم نسخ رابط التوقيع")} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark?"border-white/[0.08] text-zinc-300":"border-slate-200 text-slate-600"}`}><Share size={11}/>رابط التوقيع</button>
-                            <button onClick={() => deleteContract(c.id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border border-red-500/20 text-red-500"><X size={11}/>إلغاء</button>
-                          </>)}
-                          {c.status === "expired" && (<>
-                            <button onClick={() => changeStatus(c.id,"pending_sign")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762]"><ArrowRight size={11}/>تجديد</button>
-                            <button onClick={() => archiveContract(c.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark?"border-white/[0.08] text-zinc-300":"border-slate-200 text-slate-600"}`}><Archive size={11}/>أرشفة</button>
-                            <button onClick={() => showToast("جارٍ تحميل PDF...")} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark?"border-white/[0.08] text-zinc-300":"border-slate-200 text-slate-600"}`}><Download size={11}/>PDF</button>
-                          </>)}
+                          {c.status === "draft" && (
+                            <button onClick={() => markPendingSign(c.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark?"border-white/[0.08] text-zinc-300":"border-slate-200 text-slate-600"}`}><PaperPlaneTilt size={11}/>بانتظار التوقيع</button>
+                          )}
+                          {c.status === "pending_sign" && (
+                            <button onClick={() => backToDraft(c.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark?"border-white/[0.08] text-zinc-300":"border-slate-200 text-slate-600"}`}><ArrowCounterClockwise size={11}/>إرجاع إلى مسودة</button>
+                          )}
+                          {c.status !== "active" && (
+                            <button onClick={() => markActive(c.id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762]"><CheckCircle size={11}/>تعليم كـ ساري</button>
+                          )}
+                          <button onClick={() => cancelContract(c.id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border border-red-500/20 text-red-500"><X size={11}/>إلغاء العقد</button>
                         </div>
                       </div>
                     </motion.div>
@@ -409,27 +644,24 @@ export default function ContractsPage() {
 
       </> )}{/* end ACTIVE VIEW */}
 
-      {/* ───────────── ARCHIVE VIEW ───────────── */}
+      {/* ───────────── CANCELLED VIEW ───────────── */}
       {viewMode === "archive" && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-          {/* Archive info banner */}
           <div className={`flex items-start gap-3 px-4 py-3 rounded-2xl border text-[12px] ${
             isDark ? "border-amber-500/15 bg-amber-500/5 text-amber-300" : "border-amber-100 bg-amber-50 text-amber-700"
           }`}>
             <Archive size={14} className="flex-shrink-0 mt-0.5" />
             <p>
-              <strong>أرشيف العقود</strong> — يشمل العقود المنتهية تلقائياً والمؤرشفة يدوياً.
-              العقود هنا للعرض فقط — يمكنك تجديد العقد أو استعادته للمسودات بضغطة واحدة.
+              <strong>العقود الملغاة</strong> — العقود التي علّمتها كملغاة. لا تُحذف من الخادم؛ يمكنك إرجاع أيٍّ منها إلى المسودات.
             </p>
           </div>
 
-          {/* Archive search */}
           <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border ${
             isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"
           }`}>
             <MagnifyingGlass size={15} className={isDark ? "text-zinc-500" : "text-slate-400"} />
             <input value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)}
-              placeholder="بحث في الأرشيف (اسم عقد، طرف، مبلغ، تاريخ...)"
+              placeholder="بحث في الملغاة (اسم عقد، طرف، مبلغ...)"
               className={`flex-1 bg-transparent text-sm outline-none ${
                 isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"
               }`} />
@@ -440,64 +672,49 @@ export default function ContractsPage() {
             )}
           </div>
 
-          {/* Archived contracts list */}
-          {archivedFiltered.length === 0 ? (
+          {loadState === "loading" ? loadingPanel
+          : loadState === "failed" ? failedPanel
+          : archivedFiltered.length === 0 ? (
             <EmptyState
               icon={<Archive />}
-              title={archiveSearch ? "لم يُعثر على نتائج في الأرشيف" : "أرشيف العقود فارغ"}
-              description="جميع العقود المنتهية تلقائياً والمؤرشفة يدوياً ستظهر هنا."
+              title={archiveSearch ? "لم يُعثر على نتائج" : "لا توجد عقود ملغاة"}
+              description="العقود التي تُعلّمها كملغاة ستظهر هنا."
               action={archiveSearch ? { label: "عرض الكل", onClick: () => setArchiveSearch("") } : undefined}
             />
           ) : (
             <div className="space-y-2">
-              {archivedFiltered.map((c, i) => {
-                const sc = STATUS_CONFIG[c.status];
-                const StatusIcon = STATUS_ICONS[c.status];
-                return (
-                  <motion.div key={c.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                    <div className={`group ${card} p-4 flex items-center gap-4 hover:border-amber-500/20 transition-all`}>
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        isDark ? "bg-amber-500/10" : "bg-amber-50"
-                      }`}>
-                        <FileText size={18} weight="duotone" className="text-amber-600" />
+              {archivedFiltered.map((c, i) => (
+                <motion.div key={c.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
+                  <div className={`group ${card} p-4 flex items-center gap-4 hover:border-amber-500/20 transition-all`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                      isDark ? "bg-amber-500/10" : "bg-amber-50"
+                    }`}>
+                      <FileText size={18} weight="duotone" className="text-amber-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                        <p className={`text-[14px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.title}</p>
+                        <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${STATUS_CONFIG.cancelled.color}`}>
+                          <Clock size={9} weight="fill" />{STATUS_CONFIG.cancelled.label}
+                        </span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                          <p className={`text-[14px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.title}</p>
-                          <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${sc.color}`}>
-                            <StatusIcon size={9} weight="fill" />{sc.label}
-                          </span>
-                          {c.manualArchive && (
-                            <span className={`flex-shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                              isDark ? "bg-white/[0.05] text-zinc-500" : "bg-slate-100 text-slate-400"
-                            }`}>مؤرشف يدوياً</span>
-                          )}
-                        </div>
-                        <div className={`flex items-center gap-2 text-[11px] flex-wrap ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                          <span>{c.party}</span>
-                          {c.value && <span className="text-[#C8A762] font-mono font-semibold">{c.value}</span>}
-                          {c.expiry && <span>{c.expiry}</span>}
-                        </div>
-                      </div>
-                      {/* Archive actions */}
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <button onClick={() => { changeStatus(c.id, "pending_sign"); setViewMode("active"); showToast(`تم إرسال "${c.title}" للتجديد`); }}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border border-[#0B3D2E]/20 bg-[#0B3D2E]/8 text-[#0B3D2E] hover:bg-[#0B3D2E]/15 dark:border-emerald-700/30 dark:bg-emerald-900/20 dark:text-emerald-400 transition-all">
-                          <ArrowRight size={11} />تجديد
-                        </button>
-                        <button onClick={() => restoreContract(c.id, c.title)}
-                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all ${
-                            isDark
-                              ? "border-white/[0.08] text-zinc-400 hover:border-white/[0.15] hover:text-zinc-200"
-                              : "border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700"
-                          }`}>
-                          <ArrowCounterClockwise size={11} />استعادة
-                        </button>
+                      <div className={`flex items-center gap-2 text-[11px] flex-wrap ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                        <span>{c.party}</span>
+                        <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>{TYPE_LABELS[c.type]}</span>
+                        {c.value && <span className="text-[#C8A762] font-mono font-semibold">{c.value}</span>}
                       </div>
                     </div>
-                  </motion.div>
-                );
-              })}
+                    <button onClick={() => backToDraft(c.id)}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex-shrink-0 ${
+                        isDark
+                          ? "border-white/[0.08] text-zinc-400 hover:border-white/[0.15] hover:text-zinc-200"
+                          : "border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                      }`}>
+                      <ArrowCounterClockwise size={11} />إرجاع إلى المسودات
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
             </div>
           )}
         </motion.div>
@@ -556,6 +773,9 @@ export default function ContractsPage() {
                       <label className={`block text-[11px] font-bold mb-1 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>الطرف الثاني</label>
                       <input value={newParty} onChange={e => setNewParty(e.target.value)} placeholder="اسم الموكل أو الجهة"
                         className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-100" : "border-slate-200 bg-slate-50 text-slate-800"}`} />
+                      <p className={`text-[10px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                        اسم للسجل فقط — لا يُرسل إلى هذا الطرف أي إشعار.
+                      </p>
                     </div>
                     <div>
                       <label className={`block text-[11px] font-bold mb-1 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>المبلغ / الأتعاب (اختياري)</label>
@@ -574,14 +794,28 @@ export default function ContractsPage() {
                   <motion.div key="s3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
                     <div className={`rounded-2xl p-4 space-y-2 ${isDark ? "bg-zinc-800/60" : "bg-slate-50"}`}>
                       <p className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>مراجعة العقد</p>
-                      <p className={`text-[13px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{newTitle || `عقد جديد — ${newParty}`}</p>
+                      <p className={`text-[13px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{newTitle.trim() || `عقد جديد — ${newParty}`}</p>
                       <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{CONTRACT_TYPES.find(t => t.id === newType)?.label} · {newParty}</p>
                       {newValue && <p className="text-[11px] text-[#C8A762] font-mono font-bold">{newValue}</p>}
                     </div>
+                    {/*
+                      The second button used to read «إرسال للتوقيع» and toast
+                      «تم إرسال العقد للتوقيع ✓». Its only effect was — and
+                      still is — writing one status value. There is no
+                      recipient, no address, no signing link and no
+                      notification behind it, so it now says what it does.
+                    */}
+                    <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                      الحفظ يسجّل العقد في سجلك فقط؛ لا يُرسل شيء لأي طرف.
+                    </p>
                     <div className="flex gap-2 pt-1">
-                      <button onClick={() => setModalStep(2)} className={`px-3 py-2.5 rounded-xl border text-[12px] font-bold ${isDark ? "border-white/[0.08] text-zinc-300" : "border-slate-200 text-slate-600"}`}>السابق</button>
-                      <button onClick={saveDraft} className={`flex-1 py-2.5 rounded-xl border text-[12px] font-bold ${isDark ? "border-white/[0.08] text-zinc-300" : "border-slate-200 text-slate-600"}`}>حفظ مسودة</button>
-                      <button onClick={sendSign} className="flex-1 py-2.5 rounded-xl bg-[#0B3D2E] text-[#C8A762] text-[12px] font-bold">إرسال للتوقيع</button>
+                      <button onClick={() => setModalStep(2)} disabled={saving} className={`px-3 py-2.5 rounded-xl border text-[12px] font-bold disabled:opacity-40 ${isDark ? "border-white/[0.08] text-zinc-300" : "border-slate-200 text-slate-600"}`}>السابق</button>
+                      <button onClick={saveDraft} disabled={saving} className={`flex-1 py-2.5 rounded-xl border text-[12px] font-bold disabled:opacity-40 ${isDark ? "border-white/[0.08] text-zinc-300" : "border-slate-200 text-slate-600"}`}>
+                        {saving ? "جارٍ الحفظ…" : "حفظ مسودة"}
+                      </button>
+                      <button onClick={saveAwaitingSignature} disabled={saving} className="flex-1 py-2.5 rounded-xl bg-[#0B3D2E] text-[#C8A762] text-[12px] font-bold disabled:opacity-40">
+                        {saving ? "جارٍ الحفظ…" : "حفظ كـ بانتظار التوقيع"}
+                      </button>
                     </div>
                   </motion.div>
                 )}

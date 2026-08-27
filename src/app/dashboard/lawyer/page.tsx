@@ -8,10 +8,9 @@ import {
   Scales, Gavel, CheckCircle, Clock,
   CaretLeft, Robot, PencilSimple,
   CalendarCheck, Lightning,
-  Warning, ArrowUp,
-  Bell, Hourglass, Plus,
+  Warning, ArrowClockwise, Plus,
   Flag, Lock, Crown, ArrowRight, Storefront,
-  Timer, Folder, Money, Briefcase, ShareNetwork, Graph,
+  Timer, Folder, Money, Briefcase, ShareNetwork, Graph, MapPin,
 } from "@phosphor-icons/react";
 import HijriDateWidget from "@/components/HijriDateWidget";
 import Link from "next/link";
@@ -39,7 +38,11 @@ const TIER_CONFIG: Record<LawyerTier, {
 import AddCaseModal from "./_components/AddCaseModal";
 import AddTaskModal from "./_components/AddTaskModal";
 import { AI_QUICK, ACTIVITY_TYPE_CONFIG } from "./_data/mockData";
-import { getLawyerDashboardSummary, type LawyerDashboardSummary } from "@/lib/services/lawyerDashboardService";
+import {
+  getLawyerDashboardSummary,
+  type LawyerDashboardSummary,
+  type LawyerDashboardHearing,
+} from "@/lib/services/lawyerDashboardService";
 import { isSupabaseMode } from "@/lib/services/api";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { orderReference } from "@/lib/services/orderReference";
@@ -47,9 +50,73 @@ import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Map API case status to display shape */
-function mapStatus(status: string): "active" | "pending" {
-  return ["assigned", "in_progress"].includes(status) ? "active" : "pending";
+/**
+ * Arabic label for a real `service_requests.status`.
+ *
+ * Replaces a two-way `mapStatus()` that collapsed every status into
+ * «نشطة»/«انتظار» — which meant a case the office had already delivered was
+ * labelled «انتظار» to the lawyer, and one merely sitting unassigned was
+ * labelled the same as one under review. The set below is exactly the four
+ * statuses the summary route returns.
+ */
+const CASE_STATUS_LABEL: Record<string, { label: string; tone: "active" | "waiting" | "done" }> = {
+  assigned:           { label: "نشطة",             tone: "active" },
+  in_review:          { label: "قيد المراجعة",      tone: "active" },
+  pending_assignment: { label: "بانتظار الإسناد",   tone: "waiting" },
+  completed:          { label: "مكتملة",           tone: "done" },
+};
+
+/**
+ * Hearing-type labels, mirroring EVENT_CONFIG in
+ * src/app/dashboard/lawyer/hearings/page.tsx so the overview and the schedule
+ * name the same thing identically. Duplicated rather than imported because that
+ * file is a client page, not a module — lifting the map into a shared constant
+ * is a followUp on that file's owner, not something to do from here.
+ * An unrecognised token yields no label at all rather than a guess.
+ */
+const HEARING_TYPE_LABEL: Record<string, string> = {
+  hearing:       "جلسة قضائية",
+  deadline:      "طعن / نهائي",
+  gov_review:    "مراجعة حكومية",
+  notary:        "كتابة عدل",
+  client_meet:   "موعد موكل",
+  court_collect: "استلام وثيقة",
+  police:        "مركز شرطة",
+  expert:        "خبير",
+  contract:      "توقيع عقد",
+  internal:      "مهمة داخلية",
+};
+
+/**
+ * Task-category labels, mirroring CATEGORY_CONFIG in
+ * src/app/dashboard/lawyer/tasks/_data.ts. Duplicated rather than imported so
+ * this page does not take a runtime dependency on another group's private
+ * `_data` module; an unknown value falls through to the stored token itself,
+ * which is at least true, rather than being dropped or renamed.
+ */
+const TASK_CATEGORY_LABEL: Record<string, string> = {
+  case:     "قضية",
+  document: "مستند",
+  deadline: "ميعاد",
+  admin:    "إداري",
+  client:   "موكل",
+};
+
+/**
+ * Display bucket for a stored task priority.
+ *
+ * The stored vocabulary is urgent/high/normal/low (src/app/dashboard/lawyer/
+ * tasks/_types.ts); this card has three dot colours. This is a rendering
+ * decision over a real value — it is NOT the old behaviour, which assigned
+ * «high» to whatever happened to be first in the array and «low» to the rest,
+ * so the top row always carried a pulsing red urgent dot no matter what the
+ * lawyer had chosen.
+ */
+function priorityBucket(priority: string | null): "high" | "medium" | "low" | null {
+  if (priority === "urgent" || priority === "high") return "high";
+  if (priority === "normal") return "medium";
+  if (priority === "low") return "low";
+  return null;
 }
 
 /** Relative-time label for an ISO date string */
@@ -64,9 +131,31 @@ function relativeTime(iso: string): string {
   return `منذ ${days} يوم`;
 }
 
-/** Days remaining until a given ISO date */
-function daysUntil(iso: string): number {
-  return Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000));
+/**
+ * Whole days from today to a `YYYY-MM-DD` wall-clock date.
+ *
+ * Same arithmetic as `daysFromToday()` in /dashboard/lawyer/hearings, so «غداً»
+ * on this page and «غداً» on the schedule mean the same day. The old version
+ * took an ISO instant and `Math.ceil`d it, which turned a hearing 25 hours away
+ * into "2 days"; hearings are stored as dates, not instants, so midnight-to-
+ * midnight is the correct unit.
+ */
+function daysUntilDate(dateStr: string): number | null {
+  const parsed = new Date(`${dateStr}T00:00:00`);
+  if (isNaN(parsed.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((parsed.getTime() - today.getTime()) / 86_400_000);
+}
+
+/** «اليوم» / «غداً» / the weekday, from a real stored date. */
+function dayLabel(dateStr: string): string {
+  const days = daysUntilDate(dateStr);
+  if (days === 0) return "اليوم";
+  if (days === 1) return "غداً";
+  const parsed = new Date(`${dateStr}T00:00:00`);
+  if (isNaN(parsed.getTime())) return dateStr;
+  return parsed.toLocaleDateString("ar-SA", { weekday: "long", day: "numeric", month: "long" });
 }
 
 /**
@@ -138,13 +227,18 @@ async function copyToClipboard(text: string): Promise<boolean> {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LawyerDashboardPage() {
-  const { name, tier: userTier, userId } = useUser();
+  const { name, tier: userTier, userId, userType } = useUser();
   const { isDark } = useTheme();
   const [activityTab, setActivityTab] = useState<"all" | "ai">("all");
   const [showAddCase, setShowAddCase] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<LawyerDashboardSummary | null>(null);
+  // The three states this screen has to keep apart. `loadError` holds the
+  // reason the whole summary could not be read; a section that failed on its
+  // own arrives as a `null` field inside `dashboardData` instead. Neither may
+  // ever be rendered as an empty practice — see the comment on the fetch below.
+  const [loadError, setLoadError] = useState<string | null>(null);
   // idle → the button; copied → the tick; manual → both copy tiers failed, so
   // the URL is shown in a selectable field for the lawyer to copy by hand.
   const [shareState, setShareState] = useState<"idle" | "copied" | "manual">("idle");
@@ -152,13 +246,38 @@ export default function LawyerDashboardPage() {
 
   // Fetch real dashboard data, and re-fetch whenever a workflow item is
   // added/changed (the add-case / add-task modals dispatch nzamy-workflow-updated).
+  //
+  // This handler used to be `.catch(() => setLoading(false))` with no error
+  // state at all, over a service whose own catch returned an all-zero summary.
+  // The result was that an expired session or a database error painted four ٠
+  // tiles, «لا توجد جلسات قادمة», «لا توجد مواعيد حرجة» and «لا توجد قضايا نشطة» —
+  // a clean, complete, entirely false picture of the lawyer's own practice, with
+  // nothing anywhere saying the read had failed. A lawyer who believes that
+  // misses a hearing. Failure is now a state of its own, and it is visible.
+  //
+  // Nothing is set synchronously here — the previous error stays on screen
+  // until the retry actually answers, rather than blinking away and leaving a
+  // reassuring blank while the second attempt is still in flight (and it also
+  // keeps this callable straight from an effect without a cascading render).
   const loadSummary = useCallback(() => {
     getLawyerDashboardSummary()
-      .then((data) => {
-        setDashboardData(data);
-        setLoading(false);
+      .then((result) => {
+        if (result.ok) {
+          setDashboardData(result.summary);
+          setLoadError(null);
+        } else {
+          setDashboardData(null);
+          setLoadError(result.reason);
+        }
       })
-      .catch(() => setLoading(false));
+      .catch((err: unknown) => {
+        // getLawyerDashboardSummary does not reject, but a future edit to it
+        // must not be able to reintroduce a silent empty dashboard.
+        console.error("[lawyer dashboard] summary load threw:", err);
+        setDashboardData(null);
+        setLoadError("تعذّر تحميل بيانات لوحة التحكم.");
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -243,46 +362,78 @@ export default function LawyerDashboardPage() {
   const lawyerTier: LawyerTier = deriveLawyerTier(userTier);
 
   // ─── Computed stats ───────────────────────────────────────────────────────
+  //
+  // `value: null` means the server could not read that figure, and the tile
+  // renders «تعذّر القراءة» for it. It must never fall back to ٠: this platform
+  // legitimately answers ٠ all the time, so a zero standing in for a failure is
+  // unfalsifiable from the lawyer's side.
+  //
+  // The trend badge that used to sit on every tile is gone. It rendered an ↑
+  // (or an hourglass) beside an empty `trend` string, i.e. a growth claim with
+  // no period, no baseline and no source.
   const stats = useMemo(() => {
     if (!dashboardData) return [];
+    const revenue = dashboardData.revenueThisMonth;
     return [
-      { label: "القضايا النشطة", value: String(dashboardData.activeCases), icon: Scales, color: "text-royal", bg: "bg-royal/8", trend: "", trendLabel: "نشطة", up: true },
-      { label: "الاستشارات المعلقة", value: String(dashboardData.pendingConsultations), icon: Briefcase, color: "text-amber-500", bg: "bg-amber-500/8", trend: "", trendLabel: "بانتظار رد", up: false },
-      { label: "الجلسات القادمة", value: String((dashboardData.upcomingDeadlines as unknown[]).length), icon: Gavel, color: "text-blue-500", bg: "bg-blue-500/8", trend: "", trendLabel: "قادمة", up: true },
-      { label: "الإيرادات", value: dashboardData.revenueThisMonth > 0 ? `${dashboardData.revenueThisMonth.toLocaleString("ar-SA")} ﷼` : "٠ ﷼", icon: Money, color: "text-emerald-500", bg: "bg-emerald-500/8", trend: "", trendLabel: "هذا الشهر", up: dashboardData.revenueThisMonth > 0 },
+      { label: "القضايا النشطة", value: dashboardData.activeCases === null ? null : String(dashboardData.activeCases), icon: Scales, color: "text-royal", bg: "bg-royal/8", sub: "نشطة" },
+      { label: "الاستشارات المعلقة", value: dashboardData.pendingConsultations === null ? null : String(dashboardData.pendingConsultations), icon: Briefcase, color: "text-amber-500", bg: "bg-amber-500/8", sub: "بانتظار رد" },
+      // «المواعيد», not «الجلسات»: the store behind it holds every schedule
+      // type AddHearingModal offers — جلسة قضائية, طعن, مراجعة حكومية, موعد
+      // موكل — so counting a client meeting under «الجلسات القادمة» would
+      // overstate the court diary. The COUNT, not the length of the (capped)
+      // list in the card beside it.
+      { label: "المواعيد القادمة", value: dashboardData.upcomingHearingsCount === null ? null : String(dashboardData.upcomingHearingsCount), icon: Gavel, color: "text-blue-500", bg: "bg-blue-500/8", sub: "قادمة" },
+      { label: "الإيرادات", value: revenue === null ? null : `${revenue.toLocaleString("ar-SA")} ﷼`, icon: Money, color: "text-emerald-500", bg: "bg-emerald-500/8", sub: "هذا الشهر" },
     ];
   }, [dashboardData]);
 
-  // ─── Computed tasks (from recent cases) ────────────────────────────────────
+  // ─── Computed urgent tasks ─────────────────────────────────────────────────
+  //
+  // Real task rows now (`service_requests` with `metadata.task`), carrying the
+  // priority and the due date the lawyer actually chose in «+ إضافة مهمة».
+  //
+  // What this replaces: `recentCases.slice(0,4)` with `priority` assigned from
+  // the array index (first row always «high», with the pulsing red dot) and the
+  // case's `updated_at` printed under a clock icon as if it were the delivery
+  // date — so «تاريخ التسليم» showed a time in the PAST. Both real fields were
+  // one metadata key away, and this very card's own «+ إضافة مهمة» button is
+  // what writes them. It also meant «المهام العاجلة» and the «القضايا النشطة»
+  // table below it rendered the identical four rows under two headings.
   const tasks = useMemo(() => {
-    if (!dashboardData) return [];
-    const cases = dashboardData.recentCases as Array<{ id: string; title: string; updated_at?: string; type?: string }>;
-    return cases.slice(0, 4).map((c, i) => ({
-      id: i + 1,
-      title: c.title || "مهمة",
-      dueDate: c.updated_at ? relativeTime(c.updated_at) : "—",
-      priority: (i === 0 ? "high" : i === 1 ? "medium" : "low") as "high" | "medium" | "low",
-      category: c.type || "عام",
-    }));
+    if (!dashboardData?.urgentTasks) return [];
+    return dashboardData.urgentTasks.map((t) => {
+      const days = t.dueDate ? daysUntilDate(t.dueDate) : null;
+      return {
+        id: t.id,
+        title: t.title,
+        // null → the card omits the whole due-date chip rather than printing
+        // «—» or, worse, a date it made up.
+        dueLabel: t.dueDate ? dayLabel(t.dueDate) : null,
+        // A date in the past is stated as past. Without this the chip reads
+        // «الخميس ٢٠ أغسطس» and a lawyer scanning the card has to do the
+        // subtraction to notice the task is already late.
+        overdue: days !== null && days < 0,
+        priority: priorityBucket(t.priority),
+        category: t.category ? TASK_CATEGORY_LABEL[t.category] ?? t.category : null,
+      };
+    });
   }, [dashboardData]);
 
   // ─── Computed recent cases ────────────────────────────────────────────────
   const recentCases = useMemo(() => {
-    if (!dashboardData) return [];
-    const cases = dashboardData.recentCases as Array<{ id: string; title: string; status: string; updated_at?: string; type?: string; metadata?: { next_step?: string } }>;
-    return cases.map((c) => ({
+    if (!dashboardData?.recentCases) return [];
+    return dashboardData.recentCases.map((c) => ({
       id: c.id,
       title: c.title || "—",
-      status: mapStatus(c.status),
-      date: c.updated_at ? relativeTime(c.updated_at) : "—",
-      nextStep: c.metadata?.next_step || "—",
-      type: c.type || "عام",
+      status: CASE_STATUS_LABEL[c.status] ?? { label: c.status, tone: "waiting" as const },
+      date: c.updated_at ? relativeTime(c.updated_at) : null,
+      type: c.type,
     }));
   }, [dashboardData]);
 
   // ─── Computed activity timeline ───────────────────────────────────────────
   const activityTimeline = useMemo(() => {
-    if (!dashboardData) return [];
+    if (!dashboardData?.recentActivity) return [];
     // API returns { id, event, created_at, request_id } — nothing else.
     // `event` is a raw namespaced token (`service_request.status_changed`), and
     // it used to be rendered verbatim, so this card showed English to the
@@ -300,7 +451,7 @@ export default function LawyerDashboardPage() {
     // `requestId` is deliberately not passed: the short reference is rendered
     // once in `caseRef` below, and passing it here would repeat it inside the
     // title of every «تم قيد طلبكم» row.
-    const events = dashboardData.recentActivity as Array<{ id: string; event: string; created_at: string; request_id?: string }>;
+    const events = dashboardData.recentActivity;
     return events.map((e, i) => {
       const described = describeRequestEvent({ event: e.event });
       return {
@@ -322,48 +473,98 @@ export default function LawyerDashboardPage() {
     });
   }, [dashboardData]);
 
-  // ─── Computed deadlines ───────────────────────────────────────────────────
-  const upcomingDeadlines = useMemo(() => {
-    if (!dashboardData) return [];
-    // API returns consultations with { id, scheduled_at, mode, requester_user_id } — no `type`.
-    const items = dashboardData.upcomingDeadlines as Array<{ id: string; scheduled_at: string; type?: string; mode?: string }>;
-    return items.map((d) => {
-      const days = daysUntil(d.scheduled_at);
+  // ─── Computed hearings and critical dates ─────────────────────────────────
+  //
+  // Both cards used to read `upcomingDeadlines`, which the summary route filled
+  // from the `consultations` table — zero rows in production and no writer in
+  // the repo. Real hearings live in `service_requests.metadata.date`, written by
+  // AddHearingModal and read back by /dashboard/lawyer/hearings. So this page
+  // printed «لا توجد جلسات قادمة» over hearings that page was listing, on the
+  // same account, at the same moment. The route now reads the same store the
+  // schedule does; these two memos just present it.
+  //
+  // Every string below comes off a stored field. The old block built `court` and
+  // `case` from `d.type` — a column the query did not even select — so both
+  // lines were «جلسة» / «موعد قادم» placeholders by construction.
+  const hearings = useMemo(() => {
+    if (!dashboardData?.upcomingHearings) return [];
+    const palette = [
+      { color: "text-red-500",   bg: isDark ? "bg-red-500/10"   : "bg-red-50",   borderColor: isDark ? "border-red-500/20"   : "border-red-200" },
+      { color: "text-amber-500", bg: isDark ? "bg-amber-500/10" : "bg-amber-50", borderColor: isDark ? "border-amber-500/20" : "border-amber-200" },
+      { color: "text-blue-500",  bg: isDark ? "bg-blue-500/10"  : "bg-blue-50",  borderColor: isDark ? "border-blue-500/20"  : "border-blue-200" },
+    ];
+    return dashboardData.upcomingHearings.map((h: LawyerDashboardHearing, i: number) => ({
+      id: h.id,
+      title: h.title,
+      dateLabel: dayLabel(h.date),
+      // Not defaulted: a hearing saved without a time shows no time at all
+      // rather than an invented «١٢:٠٠ ص» that a lawyer could plan around.
+      time: h.time,
+      typeLabel: h.type ? HEARING_TYPE_LABEL[h.type] ?? null : null,
+      location: h.location,
+      ...palette[i % palette.length],
+    }));
+  }, [dashboardData, isDark]);
+
+  // «مواعيد حرجة» — the same stored rows, narrowed by the route to the ones the
+  // lawyer flagged critical or filed as an appeal/final deadline. `severity` is
+  // computed from the real remaining days, not asserted.
+  const criticalDeadlines = useMemo(() => {
+    if (!dashboardData?.criticalDeadlines) return [];
+    return dashboardData.criticalDeadlines.map((d: LawyerDashboardHearing) => {
+      const days = daysUntilDate(d.date);
       return {
-        label: d.type || (d.mode ? "استشارة قادمة" : "موعد قادم"),
-        date: new Date(d.scheduled_at).toLocaleDateString("ar-SA", { day: "numeric", month: "long" }),
+        id: d.id,
+        label: d.title,
+        typeLabel: d.type ? HEARING_TYPE_LABEL[d.type] ?? null : null,
+        date: dayLabel(d.date),
         daysLeft: days,
-        severity: (days <= 2 ? "urgent" : days <= 7 ? "warning" : "normal") as "urgent" | "warning" | "normal",
+        severity: (days === null ? "normal" : days <= 2 ? "urgent" : days <= 7 ? "warning" : "normal") as "urgent" | "warning" | "normal",
       };
     });
   }, [dashboardData]);
 
-  // ─── Computed hearings (from upcomingDeadlines) ───────────────────────────
-  const hearings = useMemo(() => {
-    if (!dashboardData) return [];
-    const items = dashboardData.upcomingDeadlines as Array<{ id: string; scheduled_at: string; type?: string }>;
-    return items.slice(0, 3).map((d, i) => {
-      const days = daysUntil(d.scheduled_at);
-      const dateObj = new Date(d.scheduled_at);
-      const dateLabel = days === 0 ? "اليوم" : days === 1 ? "غداً" : dateObj.toLocaleDateString("ar-SA", { weekday: "long" });
-      const timeLabel = dateObj.toLocaleTimeString("ar-SA", { hour: "numeric", minute: "2-digit" });
-      const palette = [
-        { color: "text-red-500",   bg: isDark ? "bg-red-500/10"   : "bg-red-50",   borderColor: isDark ? "border-red-500/20"   : "border-red-200" },
-        { color: "text-amber-500", bg: isDark ? "bg-amber-500/10" : "bg-amber-50", borderColor: isDark ? "border-amber-500/20" : "border-amber-200" },
-        { color: "text-blue-500",  bg: isDark ? "bg-blue-500/10"  : "bg-blue-50",  borderColor: isDark ? "border-blue-500/20"  : "border-blue-200" },
-      ];
-      const c = palette[i % palette.length];
-      return {
-        court: d.type || "جلسة",
-        case: d.type || "موعد قادم",
-        date: dateLabel,
-        time: timeLabel,
-        ...c,
-      };
-    });
-  }, [dashboardData, isDark]);
+  // How many critical dates the card is NOT showing. Unlike «المواعيد القادمة»,
+  // this card has no KPI tile beside it carrying the true total, so without
+  // this line a fifth critical deadline would simply not exist on this screen.
+  const hiddenCriticalCount = Math.max(
+    0,
+    (dashboardData?.criticalDeadlinesCount ?? 0) - criticalDeadlines.length,
+  );
+
+  // The banner below renders THIS row, not `[0]`. The old one was gated on
+  // «some row is urgent» but always described row 0, so it could announce a
+  // deadline three weeks out as the two-day emergency.
+  const soonestUrgent = criticalDeadlines.find((d) => d.severity === "urgent") ?? null;
 
   if (loading) return <LawyerDashboardSkeleton />;
+
+  // ─── Read failures ────────────────────────────────────────────────────────
+  // `loadError` = the whole summary could not be fetched (every section below
+  // is therefore unknown). `degraded` = the fetch succeeded but the server
+  // could not read these particular sections. Both must be visible; neither may
+  // be allowed to reach the screen as an empty practice.
+  const failedSections = dashboardData?.degraded ?? [];
+  const sectionFailed = (key: string) => Boolean(loadError) || failedSections.includes(key);
+  const anyReadFailed = Boolean(loadError) || failedSections.length > 0;
+
+  /** Shared «تعذّر القراءة» body for a card whose own section failed. */
+  const readFailedBlock = (retryLabel = "إعادة المحاولة") => (
+    <div className={`text-center py-6 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+      <Warning size={18} weight="fill" className="mx-auto mb-1.5 text-amber-500" />
+      <p className="text-xs font-bold">تعذّرت قراءة هذا القسم</p>
+      <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+        هذه ليست نتيجة فارغة — لم نتمكن من القراءة
+      </p>
+      <button
+        type="button"
+        onClick={loadSummary}
+        className="mt-2 text-[11px] font-bold text-royal hover:underline cursor-pointer"
+      >
+        {retryLabel}
+      </button>
+    </div>
+  );
 
   const card = `rounded-2xl border ${isDark
     ? "bg-zinc-900/60 border-white/[0.06]"
@@ -515,6 +716,40 @@ export default function LawyerDashboardPage() {
         </motion.div>
       )}
 
+      {/* ── Read-failure banner ── */}
+      {/* The single most important element on this page when it appears. Six
+          practising lawyers read this screen for their hearings; without this
+          banner a failed read is indistinguishable from a quiet week. */}
+      {anyReadFailed && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex flex-wrap items-center gap-3 ${isDark ? "border-amber-500/30 bg-amber-900/15" : "border-amber-300 bg-amber-50"}`}
+        >
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+            <Warning size={18} weight="fill" className="text-amber-500" />
+          </div>
+          <div className="flex-1 min-w-[220px]">
+            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+              {loadError ? "تعذّر تحميل بيانات لوحة التحكم" : "تعذّرت قراءة بعض بيانات لوحة التحكم"}
+            </p>
+            <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-amber-700/70"}`}>
+              {loadError
+                ? `${loadError} لا تعتمد على ما يظهر هنا الآن — راجع جدول الجلسات مباشرة.`
+                : "الأقسام المعلَّمة أدناه لم تُقرأ، وليست فارغة. باقي الأرقام سليمة."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={loadSummary}
+            className={`shrink-0 flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-colors cursor-pointer ${
+              isDark ? "bg-white/[0.08] text-zinc-200 hover:bg-white/[0.14]" : "bg-white text-amber-800 border border-amber-300 hover:bg-amber-100"
+            }`}
+          >
+            <ArrowClockwise size={13} weight="bold" /> إعادة المحاولة
+          </button>
+        </motion.div>
+      )}
+
       {/* ── Subscription Banner ── */}
       {(lawyerTier === "free" || lawyerTier === "starter") && (
         <motion.div
@@ -561,7 +796,11 @@ export default function LawyerDashboardPage() {
       )}
 
       {/* ── Urgent Deadlines Banner ── */}
-      {upcomingDeadlines.some(d => d.severity === "urgent") && (
+      {/* Describes the row that triggered it, in its own words. The previous
+          version hardcoded «لديك موعد طعن خلال يومين» over whatever happened to
+          be first in the list — so a client meeting could be announced as an
+          appeal deadline, and a date eight days out as two days away. */}
+      {soonestUrgent && (
         <motion.div
           initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
           className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-700/30 bg-red-900/10" : "border-red-200 bg-red-50"}`}
@@ -572,10 +811,14 @@ export default function LawyerDashboardPage() {
           <div className="flex-1">
             <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>
               <Warning size={14} weight="fill" className="inline mb-0.5 me-1" />
-              لديك موعد طعن خلال يومين — {upcomingDeadlines[0].label}
+              {soonestUrgent.daysLeft === 0
+                ? "موعد اليوم"
+                : soonestUrgent.daysLeft === 1
+                  ? "موعد غداً"
+                  : `موعد خلال ${soonestUrgent.daysLeft} أيام`} — {soonestUrgent.label}
             </p>
             <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-red-600/60"}`}>
-              {upcomingDeadlines[0].date} — تأكد من تحضير المستندات المطلوبة
+              {soonestUrgent.date}{soonestUrgent.typeLabel ? ` · ${soonestUrgent.typeLabel}` : ""}
             </p>
           </div>
           <Link href="/dashboard/lawyer/hearings"
@@ -650,8 +893,14 @@ export default function LawyerDashboardPage() {
       {/* ── KPI Stats ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.length === 0 ? (
-          <div className={`col-span-full text-center py-8 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-            <p className="text-sm">لا توجد إحصائيات حالياً</p>
+          // Reached only when the whole summary failed; the banner above already
+          // says why, so this states the same fact rather than «لا توجد إحصائيات»,
+          // which reads as "you have none".
+          <div className={`col-span-full text-center py-8 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+            <p className="text-sm font-bold">تعذّرت قراءة الإحصائيات</p>
+            <button type="button" onClick={loadSummary} className="mt-1.5 text-xs font-bold text-royal hover:underline cursor-pointer">
+              إعادة المحاولة
+            </button>
           </div>
         ) : stats.map((stat, i) => {
           const Icon = stat.icon;
@@ -666,18 +915,25 @@ export default function LawyerDashboardPage() {
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${stat.bg}`}>
                   <Icon size={20} weight="duotone" className={stat.color} />
                 </div>
-                <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full
-                  ${stat.up
-                    ? isDark ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-emerald-50 text-emerald-600 border border-emerald-200"
-                    : isDark ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : "bg-amber-50 text-amber-600 border border-amber-200"
+                {/* A failed figure is marked on the tile itself, so the number
+                    slot below can never be mistaken for a real ٠. */}
+                {stat.value === null && (
+                  <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${
+                    isDark ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : "bg-amber-50 text-amber-600 border border-amber-200"
                   }`}>
-                  {stat.up ? <ArrowUp size={9} weight="bold" /> : <Hourglass size={9} />}
-                  {stat.trend}
-                </span>
+                    <Warning size={9} weight="fill" /> تعذّرت القراءة
+                  </span>
+                )}
               </div>
               <p className={`text-[11px] mb-0.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{stat.label}</p>
-              <p className={`text-xl font-bold font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{stat.value}</p>
-              <p className={`text-[10px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{stat.trendLabel}</p>
+              {stat.value === null ? (
+                <p className={`text-xl font-bold font-mono ${isDark ? "text-zinc-600" : "text-slate-300"}`}>—</p>
+              ) : (
+                <p className={`text-xl font-bold font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{stat.value}</p>
+              )}
+              <p className={`text-[10px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                {stat.value === null ? "غير معروف" : stat.sub}
+              </p>
             </motion.div>
           );
         })}
@@ -692,27 +948,44 @@ export default function LawyerDashboardPage() {
         <div className={`${card} p-5 flex flex-col`}>
           <div className="flex items-center justify-between mb-4">
             <h2 className={`text-sm font-bold flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-              <CheckCircle size={15} className="text-royal" weight="duotone" /> المهام العاجلة
+              {/* «أقرب المهام», not «المهام العاجلة»: this list is the lawyer's
+                  open tasks sorted by the due date they set — nothing marks any
+                  of them urgent. The old heading was the invented-priority bug
+                  restated in the title bar. */}
+              <CheckCircle size={15} className="text-royal" weight="duotone" /> أقرب المهام
             </h2>
             <Link href="/dashboard/lawyer/tasks" className="text-xs text-royal hover:underline">عرض الكل</Link>
           </div>
           <div className="space-y-2 flex-1">
-            {tasks.length === 0 ? (
+            {sectionFailed("tasks") ? readFailedBlock() : tasks.length === 0 ? (
               <div className={`text-center py-6 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                <p className="text-xs">لا توجد مهام عاجلة حالياً</p>
+                <p className="text-xs">لا توجد مهام مفتوحة</p>
               </div>
             ) : tasks.map((task) => (
               <div
                 key={task.id}
-                className={`flex items-start gap-2.5 p-3 rounded-xl border transition-colors cursor-pointer ${isDark ? "border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.04]" : "border-slate-100 bg-slate-50/80 hover:bg-slate-100/60"}`}
+                className={`flex items-start gap-2.5 p-3 rounded-xl border transition-colors ${isDark ? "border-white/[0.04] bg-white/[0.02]" : "border-slate-100 bg-slate-50/80"}`}
               >
-                <div className={`w-2 h-2 mt-1.5 flex-shrink-0 rounded-full ${task.priority === "high" ? "bg-red-400 animate-pulse" : task.priority === "medium" ? "bg-amber-400" : "bg-emerald-400"}`} />
+                {/* No dot when the task carries no priority — a grey-green
+                    "low" marker over an unset field is a claim about urgency
+                    the lawyer never made. */}
+                {task.priority && (
+                  <div className={`w-2 h-2 mt-1.5 flex-shrink-0 rounded-full ${task.priority === "high" ? "bg-red-400" : task.priority === "medium" ? "bg-amber-400" : "bg-emerald-400"}`} />
+                )}
                 <div className="flex-1 min-w-0">
                   <p className={`text-[13px] font-medium leading-snug mb-1 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{task.title}</p>
-                  <div className={`flex items-center gap-2 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                    <span className="flex items-center gap-1"><Clock size={10} /> {task.dueDate}</span>
-                    <span>·</span>
-                    <span className={`px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>{task.category}</span>
+                  <div className={`flex flex-wrap items-center gap-2 text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                    {/* Both chips are omitted entirely when their field is
+                        unset, rather than rendered as «—» or back-filled from
+                        some other column. */}
+                    {task.dueLabel && (
+                      <span className={`flex items-center gap-1 ${task.overdue ? "text-red-500 font-bold" : ""}`}>
+                        <Clock size={10} /> {task.overdue ? `متأخرة · ${task.dueLabel}` : task.dueLabel}
+                      </span>
+                    )}
+                    {task.category && (
+                      <span className={`px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>{task.category}</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -727,23 +1000,31 @@ export default function LawyerDashboardPage() {
         <div className={`${card} p-5`}>
           <div className="flex items-center justify-between mb-3">
             <h2 className={`text-sm font-bold flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-              <CalendarCheck size={15} className="text-blue-500" weight="duotone" /> الجلسات القادمة
+              <CalendarCheck size={15} className="text-blue-500" weight="duotone" /> المواعيد القادمة
             </h2>
             <Link href="/dashboard/lawyer/hearings" className="text-xs text-royal hover:underline">الجدول الكامل</Link>
           </div>
           <div className="space-y-2.5">
-            {hearings.length === 0 ? (
+            {sectionFailed("hearings") ? readFailedBlock() : hearings.length === 0 ? (
               <div className={`text-center py-6 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                 <p className="text-xs">لا توجد جلسات قادمة</p>
               </div>
-            ) : hearings.map((h, i) => (
-              <div key={i} className={`p-3.5 rounded-xl border ${h.borderColor} ${h.bg}`}>
+            ) : hearings.map((h) => (
+              <div key={h.id} className={`p-3.5 rounded-xl border ${h.borderColor} ${h.bg}`}>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className={`text-[11px] font-bold ${h.color}`}>{h.date} · {h.time}</span>
+                  <span className={`text-[11px] font-bold ${h.color}`}>
+                    {h.dateLabel}{h.time ? ` · ${h.time}` : ""}
+                  </span>
                   <Gavel size={13} className={h.color} weight="duotone" />
                 </div>
-                <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{h.case}</p>
-                <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{h.court}</p>
+                <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{h.title}</p>
+                {(h.typeLabel || h.location) && (
+                  <p className={`flex items-center gap-1 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                    {h.typeLabel}
+                    {h.typeLabel && h.location ? " · " : ""}
+                    {h.location && <><MapPin size={10} weight="duotone" />{h.location}</>}
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -757,11 +1038,11 @@ export default function LawyerDashboardPage() {
             </h2>
           </div>
           <div className="space-y-2">
-            {upcomingDeadlines.length === 0 ? (
+            {sectionFailed("hearings") ? readFailedBlock() : criticalDeadlines.length === 0 ? (
               <div className={`text-center py-6 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                 <p className="text-xs">لا توجد مواعيد حرجة</p>
               </div>
-            ) : upcomingDeadlines.map((d, i) => {
+            ) : criticalDeadlines.map((d, i) => {
               const severityConfig = {
                 urgent:  { bar: "bg-red-500",   text: isDark ? "text-red-400"   : "text-red-600",   bg: isDark ? "bg-red-500/10"   : "bg-red-50",   border: isDark ? "border-red-500/20"   : "border-red-200" },
                 warning: { bar: "bg-amber-500", text: isDark ? "text-amber-400" : "text-amber-600", bg: isDark ? "bg-amber-500/10" : "bg-amber-50", border: isDark ? "border-amber-500/20" : "border-amber-200" },
@@ -770,7 +1051,7 @@ export default function LawyerDashboardPage() {
               const cfg = severityConfig[d.severity];
               return (
                 <motion.div
-                  key={i}
+                  key={d.id}
                   initial={{ opacity: 0, x: 8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.08 }}
@@ -778,25 +1059,41 @@ export default function LawyerDashboardPage() {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <p className={`text-[13px] font-bold ${cfg.text}`}>{d.label}</p>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${d.severity === "urgent" ? "bg-red-500 text-white animate-pulse" : isDark ? "bg-white/[0.06] text-zinc-500" : "bg-white text-slate-500"}`}>
-                      {d.daysLeft === 0 ? "اليوم!" : `${d.daysLeft} أيام`}
-                    </span>
+                    {/* `daysLeft` is null only when the stored date will not
+                        parse; then the countdown chip is omitted rather than
+                        showing «٠ أيام», which would read as "today". */}
+                    {d.daysLeft !== null && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${d.severity === "urgent" ? "bg-red-500 text-white" : isDark ? "bg-white/[0.06] text-zinc-400" : "bg-white text-slate-500"}`}>
+                        {d.daysLeft === 0 ? "اليوم!" : d.daysLeft === 1 ? "غداً" : `${d.daysLeft} أيام`}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <CalendarCheck size={11} className={cfg.text} />
-                    <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{d.date}</span>
+                    <span className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                      {d.date}{d.typeLabel ? ` · ${d.typeLabel}` : ""}
+                    </span>
                   </div>
-                  <div className={`h-1 rounded-full mt-2 overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-white"}`}>
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.max(10, 100 - (d.daysLeft * 10))}%` }}
-                      transition={{ duration: 0.8, delay: 0.3 + i * 0.1 }}
-                      className={`h-full rounded-full ${cfg.bar}`}
-                    />
-                  </div>
+                  {d.daysLeft !== null && (
+                    <div className={`h-1 rounded-full mt-2 overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-white"}`}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(100, Math.max(10, 100 - (d.daysLeft * 10)))}%` }}
+                        transition={{ duration: 0.8, delay: 0.3 + i * 0.1 }}
+                        className={`h-full rounded-full ${cfg.bar}`}
+                      />
+                    </div>
+                  )}
                 </motion.div>
               );
             })}
+            {hiddenCriticalCount > 0 && (
+              <Link href="/dashboard/lawyer/hearings"
+                className={`block text-center text-[11px] font-bold pt-1 text-royal hover:underline`}
+              >
+                و{hiddenCriticalCount} موعد حرج آخر — عرض الجدول
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -825,9 +1122,11 @@ export default function LawyerDashboardPage() {
           </div>
           <div className="space-y-0 flex-1 relative mt-2">
             <div className={`absolute top-3 bottom-3 w-px ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`} style={{ right: "13px" }} />
-            {filteredTimeline.length === 0 ? (
+            {sectionFailed("recentActivity") ? readFailedBlock() : filteredTimeline.length === 0 ? (
               <div className={`text-center py-8 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                <p className="text-xs">لا يوجد نشاط حالياً</p>
+                <p className="text-xs">
+                  {activityTab === "ai" ? "لا يُسجَّل استخدام أدوات الذكاء الاصطناعي بعد" : "لا يوجد نشاط حالياً"}
+                </p>
               </div>
             ) : (
             <AnimatePresence mode="popLayout">
@@ -868,8 +1167,11 @@ export default function LawyerDashboardPage() {
         {/* Cases Table */}
         <div className={`lg:col-span-2 ${card} p-5`}>
           <div className="flex items-center justify-between mb-4">
+            {/* «أحدث القضايا», not «القضايا النشطة»: this list deliberately
+                includes completed cases, so the old heading contradicted the
+                «مكتملة» rows inside it. The active COUNT is the KPI tile above. */}
             <h2 className={`text-sm font-bold flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-              <Scales size={15} className="text-royal" weight="duotone" /> القضايا النشطة
+              <Scales size={15} className="text-royal" weight="duotone" /> أحدث القضايا
             </h2>
             <Link href="/dashboard/lawyer/cases" className="text-xs text-royal hover:underline flex items-center gap-1">
               إدارة القضايا <CaretLeft size={10} />
@@ -879,16 +1181,24 @@ export default function LawyerDashboardPage() {
             <table className="w-full text-right border-collapse min-w-[500px]">
               <thead>
                 <tr className={`border-b ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-                  {["اسم القضية", "النوع", "الحالة", "آخر تحديث", "الخطوة القادمة", ""].map((h, i) => (
-                    <th key={i} className={`pb-3 text-[11px] font-semibold ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{h}</th>
+                  {/* «الخطوة القادمة» was dropped: it read `metadata.next_step`,
+                      a key NOTHING in this repository writes, so the column was
+                      «—» on every row of every account — a heading promising a
+                      case-plan feature that does not exist. */}
+                  {["اسم القضية", "النوع", "الحالة", "آخر تحديث", ""].map((h, i) => (
+                    <th key={i} className={`pb-3 text-[11px] font-semibold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className={`divide-y ${isDark ? "divide-white/[0.04]" : "divide-slate-50"}`}>
-                {recentCases.length === 0 ? (
+                {sectionFailed("cases") ? (
                   <tr>
-                    <td colSpan={6} className={`text-center py-8 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                      <p className="text-xs">لا توجد قضايا نشطة حالياً</p>
+                    <td colSpan={5} className="py-2">{readFailedBlock()}</td>
+                  </tr>
+                ) : recentCases.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className={`text-center py-8 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                      <p className="text-xs">لا توجد قضايا بعد</p>
                     </td>
                   </tr>
                 ) : recentCases.map((c) => (
@@ -897,17 +1207,25 @@ export default function LawyerDashboardPage() {
                       <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{c.title}</p>
                     </td>
                     <td className="py-3.5">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-100 text-slate-500"}`}>
-                        {c.type}
-                      </span>
+                      {/* No «عام» default: the row's real type or nothing. */}
+                      {c.type && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.04] text-zinc-400" : "bg-slate-100 text-slate-500"}`}>
+                          {c.type}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3.5">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${c.status === "active" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-amber-500/10 text-amber-500 border-amber-500/20"}`}>
-                        {c.status === "active" ? "نشطة" : "انتظار"}
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        c.status.tone === "active"
+                          ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                          : c.status.tone === "done"
+                            ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                            : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                      }`}>
+                        {c.status.label}
                       </span>
                     </td>
-                    <td className={`py-3.5 text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{c.date}</td>
-                    <td className={`py-3.5 text-[12px] font-medium ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{c.nextStep}</td>
+                    <td className={`py-3.5 text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{c.date ?? ""}</td>
                     <td className="py-3.5 pl-2">
                       <Link href={`/dashboard/lawyer/cases/${c.id}`}
                         className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-all ${isDark ? "text-zinc-600 hover:bg-white/[0.06] hover:text-zinc-300" : "text-slate-300 hover:bg-royal hover:text-white"}`}
@@ -983,29 +1301,42 @@ export default function LawyerDashboardPage() {
         </div>
       </div>
 
-      {/* ── AI Secretary Notice ── */}
-      <div className={`p-4 rounded-2xl border flex gap-4 items-start ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-[#C8A762]/20 bg-amber-50/60"}`}>
-        <div className="w-9 h-9 rounded-xl bg-[#0B3D2E] text-[#C8A762] flex items-center justify-center flex-shrink-0">
-          <Robot size={18} weight="duotone" />
-        </div>
-        <div className="flex-1">
-          <h4 className={`text-[13px] font-bold mb-0.5 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-            التقرير اليومي من السكرتير الذكي جاهز
-          </h4>
-          <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-            جداولك مزدحمة غداً — تم تحضير مسودات الردود المطلوبة تلقائياً.
-          </p>
-        </div>
-        <Link href="/ai/secretary"
-          className="flex items-center gap-1 text-[12px] font-bold text-royal hover:underline flex-shrink-0 mt-0.5"
-        >
-          مراجعة <CaretLeft size={11} />
-        </Link>
-      </div>
+      {/* ── AI Secretary Notice — REMOVED ────────────────────────────────────
+          Deleted here: a card, rendered unconditionally with no state and no
+          query, that told every lawyer «التقرير اليومي من السكرتير الذكي جاهز»
+          and «جداولك مزدحمة غداً — تم تحضير مسودات الردود المطلوبة تلقائياً»,
+          over a «مراجعة» link to /ai/secretary.
+
+          Nothing on the page computed a schedule density; no daily report is
+          fetched anywhere; and it appeared identically on an account with zero
+          hearings and zero requests. The destination does not hold the report
+          either — /ai/secretary is built entirely on literals, down to a
+          greeting hardcoded to a different person's name. So the claim, the
+          drafts it promised, and the evidence page behind it were all fiction,
+          and a lawyer could act on it: «مسودات الردود جاهزة» is a reason not to
+          write the replies yourself tonight.
+
+          Not replaced with an honest empty state, because there is no daily
+          report — no record, no table, no job. There is nothing here to be
+          empty of. /ai/secretary itself is out of this group's file list and is
+          reported as a followUp. ────────────────────────────────────────────── */}
 
       {/* ── Modals ── */}
       <AnimatePresence>
-        {showAddCase && <AddCaseModal onClose={() => setShowAddCase(false)} isDark={isDark} />}
+        {/* `user` is what makes the case land in this lawyer's workspace.
+            Without it AddCaseModal sends `assignedTo: undefined` → the server
+            stores `assigned_to: null` → every summary query here filters on
+            that column, so a case created from this page showed a «تم» success
+            screen and then never appeared again. The identical flow on
+            /dashboard/lawyer/cases passes the prop and works, which is exactly
+            what made this look like the lawyer's mistake. */}
+        {showAddCase && (
+          <AddCaseModal
+            onClose={() => setShowAddCase(false)}
+            isDark={isDark}
+            user={{ userId, name, userType, tier: userTier }}
+          />
+        )}
         {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} isDark={isDark} />}
       </AnimatePresence>
 

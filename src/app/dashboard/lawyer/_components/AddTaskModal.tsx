@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle, XCircle, Warning, CircleNotch } from "@phosphor-icons/react";
 import { CasePicker } from "@/components/ui/CasePicker";
+import { VoiceInput } from "@/components/ui/VoiceInput";
 import { createLawyerTask } from "@/lib/services/lawyerTasksService";
 
 interface Props {
@@ -105,16 +106,26 @@ export default function AddTaskModal({ onClose, isDark }: Props) {
 
             <div>
               <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>عنوان المهمة</label>
-              <input
-                type="text"
-                autoFocus
-                value={title}
-                disabled={saving}
-                onChange={e => setTitle(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") save(); }}
-                placeholder="مثال: مراجعة العقد"
-                className={inputCls}
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  autoFocus
+                  value={title}
+                  disabled={saving}
+                  onChange={e => setTitle(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") save(); }}
+                  placeholder="مثال: مراجعة العقد"
+                  className={`${inputCls} pe-12`}
+                />
+                {/* Carried over from the tasks page's own inline modal, which
+                    this component replaced — that one collected a title, a
+                    category and a priority it never sent, and closed without
+                    awaiting the save. Voice entry was the one thing it had that
+                    was worth keeping. */}
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center">
+                  <VoiceInput onTranscript={t => setTitle(prev => (prev ? prev + " " + t : t))} compact />
+                </div>
+              </div>
             </div>
 
             <div>

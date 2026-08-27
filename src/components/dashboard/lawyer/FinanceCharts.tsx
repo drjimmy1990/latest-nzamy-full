@@ -3,18 +3,31 @@ import { motion, AnimatePresence } from "framer-motion";
 
 export function AreaBarChart({ data, isDark }: { data: { label: string; paid: number; pending: number }[]; isDark: boolean }) {
   const [hovered, setHovered] = useState<number | null>(null);
-  
+
   const W = 700; const H = 180; const PAD = { t: 40, r: 20, b: 35, l: 30 };
   const W_INNER = W - PAD.l - PAD.r;
   const H_INNER = H - PAD.t - PAD.b;
-  const barW = Math.max((W_INNER / data.length) - 16, 12);
-  const maxVal = Math.max(...data.map(d => d.paid + d.pending), 1000);
-  
+
+  // No buckets → nothing to draw. Guarded before barW, which divides by
+  // data.length and would otherwise be Infinity. The caller shows the honest
+  // empty state; a chart frame with no bars would read as "billed nothing".
+  const hasData = data.length > 0;
+
+  const barW = hasData ? Math.max((W_INNER / data.length) - 16, 12) : 0;
+
+  // The axis used to be floored at 1,000 and every bar at 2px, so a set of
+  // all-zero months still drew a ٠–1.0k scale with visible bars sitting on the
+  // baseline — an empty chart that looked like a populated one. The floor now
+  // applies only to values that are genuinely above zero (so a small real bar
+  // stays clickable); a zero draws nothing and the axis is the real maximum.
+  const maxVal = Math.max(...data.map(d => d.paid + d.pending), 0);
+  const scale = maxVal > 0 ? H_INNER / maxVal : 0;
+
   const barX = (i: number) => PAD.l + i * (W_INNER / data.length) + (W_INNER / data.length - barW) / 2;
-  const barH = (v: number) => Math.max(((v / maxVal) * H_INNER), 2);
+  const barH = (v: number) => (v > 0 && scale > 0 ? Math.max(v * scale, 2) : 0);
   const barY = (v: number) => H - PAD.b - barH(v);
 
-  const formatMoney = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v;
+  const formatMoney = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : Math.round(v);
 
   // Catmull-Rom smoothing
   const paidPoints = data.map((d, i) => ({ x: barX(i) + barW / 2, y: barY(d.paid) }));
@@ -36,6 +49,8 @@ export function AreaBarChart({ data, isDark }: { data: { label: string; paid: nu
     const first = pts[0]; const last = pts[pts.length - 1];
     return smooth(pts) + ` L ${last.x} ${H - PAD.b} L ${first.x} ${H - PAD.b} Z`;
   };
+
+  if (!hasData) return null;
 
   return (
     <div className="relative w-full overflow-hidden" style={{ minHeight: 200 }} dir="ltr">
@@ -65,15 +80,22 @@ export function AreaBarChart({ data, isDark }: { data: { label: string; paid: nu
           return (
             <g key={pct}>
               <line x1={PAD.l} y1={y} x2={W - PAD.r} y2={y} stroke={isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)"} strokeWidth="1" strokeDasharray="4 4" />
-              <text x={PAD.l - 5} y={y + 3} textAnchor="end" fontSize="10" fill={isDark ? "#71717a" : "#94a3b8"} fontWeight="500">
-                {formatMoney((pct / 100) * maxVal)}
-              </text>
+              {(maxVal > 0 || pct === 0) && (
+                <text x={PAD.l - 5} y={y + 3} textAnchor="end" fontSize="10" fill={isDark ? "#71717a" : "#94a3b8"} fontWeight="500">
+                  {formatMoney((pct / 100) * maxVal)}
+                </text>
+              )}
             </g>
           );
         })}
 
-        <path d={pathArea(paidPoints)} fill="url(#areaGradPremium)" />
-        <motion.path d={pathLine} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" filter="url(#glow)" initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }} transition={{ duration: 1.2, ease: "easeOut" }} />
+        {/* The collection line is only meaningful over a non-zero scale. */}
+        {maxVal > 0 && (
+          <>
+            <path d={pathArea(paidPoints)} fill="url(#areaGradPremium)" />
+            <motion.path d={pathLine} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" filter="url(#glow)" initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }} transition={{ duration: 1.2, ease: "easeOut" }} />
+          </>
+        )}
 
         {/* Dynamic Bars */}
         {data.map((d, i) => {
@@ -95,14 +117,18 @@ export function AreaBarChart({ data, isDark }: { data: { label: string; paid: nu
                   transition={{ duration: 0.6, delay: i * 0.05 }} />
               )}
               {/* Paid part */}
-              <motion.rect x={x} y={barY(d.paid)} width={barW} height={paidBarH} fill="url(#barGradPaidPremium)" rx={barW/2}
-                opacity={isHovered ? 1 : 0.9}
-                initial={{ height: 0, y: H - PAD.b }} animate={{ height: paidBarH, y: barY(d.paid) }}
-                transition={{ duration: 0.7, delay: i * 0.05 }} />
-                
+              {d.paid > 0 && (
+                <motion.rect x={x} y={barY(d.paid)} width={barW} height={paidBarH} fill="url(#barGradPaidPremium)" rx={barW/2}
+                  opacity={isHovered ? 1 : 0.9}
+                  initial={{ height: 0, y: H - PAD.b }} animate={{ height: paidBarH, y: barY(d.paid) }}
+                  transition={{ duration: 0.7, delay: i * 0.05 }} />
+              )}
+
               {/* Hover highlight circle on the line */}
-              <motion.circle cx={paidPoints[i].x} cy={paidPoints[i].y} r={isHovered ? 5 : 3.5} fill={isDark ? "#18181b" : "#ffffff"} stroke="#10b981" strokeWidth="2.5" 
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 + i * 0.05 }} />
+              {maxVal > 0 && (
+                <motion.circle cx={paidPoints[i].x} cy={paidPoints[i].y} r={isHovered ? 5 : 3.5} fill={isDark ? "#18181b" : "#ffffff"} stroke="#10b981" strokeWidth="2.5"
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 + i * 0.05 }} />
+              )}
 
               {/* X Axis label */}
               <text x={x + barW / 2} y={H - PAD.b + 18} textAnchor="middle" fontSize="11" fontWeight={isHovered ? "700" : "600"} fill={isHovered ? (isDark ? "#ffffff" : "#0c0f12") : (isDark ? "#71717a" : "#64748b")} style={{ transition: "all 0.3s ease" }}>
@@ -112,14 +138,14 @@ export function AreaBarChart({ data, isDark }: { data: { label: string; paid: nu
           );
         })}
       </svg>
-      
+
       {/* Floating Tooltip */}
       <AnimatePresence>
         {hovered !== null && (
           <motion.div
             initial={{ opacity: 0, y: 10, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
             className={`absolute pointer-events-none z-10 px-4 py-3 rounded-2xl shadow-xl backdrop-blur-md border ${isDark ? "bg-zinc-900/90 border-white/10" : "bg-white/95 border-emerald-900/5"} `}
-            style={{ 
+            style={{
               left: `${(barX(hovered) / W) * 100}%`,
               top: `${Math.max(10, (barY(data[hovered].paid + Math.max(data[hovered].pending, 0)) / H) * 100 - 45)}%`,
               transform: 'translate(-50%, -100%)'
@@ -133,7 +159,7 @@ export function AreaBarChart({ data, isDark }: { data: { label: string; paid: nu
               </div>
               {data[hovered].pending > 0 && (
                 <div className="flex items-center justify-between gap-4">
-                  <span className={`text-[11px] flex items-center gap-1 opacity-80 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}><span className="w-2 h-2 rounded-full bg-[#b8974f]"></span>معلق</span>
+                  <span className={`text-[11px] flex items-center gap-1 opacity-80 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}><span className="w-2 h-2 rounded-full bg-[#b8974f]"></span>غير محصّل</span>
                   <span className="text-[12px] font-bold tracking-tight">{data[hovered].pending.toLocaleString()} ر.س</span>
                 </div>
               )}
@@ -145,22 +171,46 @@ export function AreaBarChart({ data, isDark }: { data: { label: string; paid: nu
   );
 }
 
-export function DonutChart({ paid, pending, overdue, partial }: { paid: number; pending: number; overdue: number; partial: number }) {
+/**
+ * DonutChart — segments must all be the SAME quantity, so that they sum to the
+ * total the centre percentage is a share of.
+ *
+ * It used to take four named props (paid / pending / overdue / partial) where
+ * three were whole invoice fees and the fourth was the UNPAID remainder of the
+ * partial invoices. Those four were summed into a denominator that was neither
+ * total billed nor total outstanding, and the centre — labelled «محصّل» —
+ * divided the paid fees by it, so the donut and the KPI card 20px below it
+ * reported two different collection rates for the same practice. The caller now
+ * passes one riyal partition of the billed total and states the centre share
+ * explicitly.
+ */
+export function DonutChart({
+  segments,
+  centerPct,
+  centerLabel,
+}: {
+  segments: { label: string; value: number; color: string }[];
+  centerPct: number;
+  centerLabel: string;
+}) {
   const [hoveredData, setHoveredData] = useState<{lbl:string, val:number, pct:number, color:string} | null>(null);
-  
-  const total = paid + pending + overdue + partial;
-  if (!total) return null;
-  const segs = [
-    { value: paid,    color: "#10b981", label: "مسدّد" },
-    { value: partial, color: "#3b82f6", label: "جزئي" },
-    { value: pending, color: "#f59e0b", label: "معلق" },
-    { value: overdue, color: "#ef4444", label: "متأخر" },
-  ].filter(s => s.value > 0);
-  
-  let cumulative = 0;
+
+  const total = segments.reduce((s, x) => s + x.value, 0);
+  if (total <= 0) return null;
+
+  // The rotation of each arc is the sum of everything before it. Accumulated
+  // here rather than inside the render callback, so nothing is mutated while
+  // the arcs are being drawn.
+  const segs: { label: string; value: number; color: string; offset: number }[] = [];
+  let running = 0;
+  for (const s of segments) {
+    if (s.value <= 0) continue;
+    segs.push({ ...s, offset: running });
+    running += s.value;
+  }
+
   const r = 42; const cx = 50; const cy = 50;
   const circ = 2 * Math.PI * r;
-  const pct = Math.round(paid / total * 100);
 
   return (
     <div className="flex items-center gap-6" dir="ltr">
@@ -170,8 +220,7 @@ export function DonutChart({ paid, pending, overdue, partial }: { paid: number; 
           <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(128,128,128,0.1)" strokeWidth="10" />
           {segs.map((seg, i) => {
             const segPct = seg.value / total;
-            const rotate = (cumulative / total) * 360;
-            cumulative += seg.value;
+            const rotate = (seg.offset / total) * 360;
             const isHovered = hoveredData?.lbl === seg.label;
             const strokeW = isHovered ? 14 : 10;
             return (
@@ -194,8 +243,8 @@ export function DonutChart({ paid, pending, overdue, partial }: { paid: number; 
           <AnimatePresence mode="wait">
             {!hoveredData ? (
               <motion.g key="default" initial={{opacity:0, scale:0.8}} animate={{opacity:1, scale:1}} exit={{opacity:0, scale:0.8}}>
-                <text x="50" y="47" textAnchor="middle" fill="#10b981" fontSize="16" fontWeight="900" fontFamily="inherit">{pct}%</text>
-                <text x="50" y="60" textAnchor="middle" fill="currentColor" fontSize="8" fontWeight="600" opacity="0.4" fontFamily="inherit">محصّل</text>
+                <text x="50" y="47" textAnchor="middle" fill="#10b981" fontSize="16" fontWeight="900" fontFamily="inherit">{centerPct}%</text>
+                <text x="50" y="60" textAnchor="middle" fill="currentColor" fontSize="8" fontWeight="600" opacity="0.4" fontFamily="inherit">{centerLabel}</text>
               </motion.g>
             ) : (
               <motion.g key="hover" initial={{opacity:0, scale:0.8}} animate={{opacity:1, scale:1}} exit={{opacity:0, scale:0.8}}>

@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import {
-  ERP_GENERATED_EDGES,
-  ERP_GENERATED_NODES,
-  MOCK_EDGES,
-  MOCK_NODES,
   type GraphEdge,
   type GraphNode,
   type NodeGroup,
@@ -11,22 +7,26 @@ import {
 } from "./_graph-model";
 
 export function useCaseGraphState({
-  isGlobal,
   initialNodes: seedNodes,
   initialEdges: seedEdges,
 }: {
-  isGlobal?: boolean;
   initialNodes?: GraphNode[];
   initialEdges?: GraphEdge[];
 }) {
-  const defaultNodes = seedNodes ?? (isGlobal ? [] : MOCK_NODES);
-  const defaultEdges = seedEdges ?? (isGlobal ? [] : MOCK_EDGES);
+  // THE FALLBACK IS EMPTY. It used to be
+  //     seedNodes ?? (isGlobal ? [] : MOCK_NODES)
+  // and `isGlobal` was the wrong discriminator: BOTH lawyer mounts of
+  // CaseGraphView (dashboard/lawyer/cases/[id]/page.tsx, the inline panel and the
+  // fullscreen overlay) pass `isGlobal={false}` with no seed, so every real case a
+  // lawyer opened was painted with an invented contractor dispute — see the note
+  // in ./_graph-model.ts for what was in it. dashboard/business/cases/[id] mounted
+  // it with no props at all and got the same. An unseeded board is now empty for
+  // every caller; a caller with real material passes it in `initialNodes`.
+  const defaultNodes = seedNodes ?? [];
+  const defaultEdges = seedEdges ?? [];
   const [nodes, setNodes] = useState<GraphNode[]>(defaultNodes);
   const [edges, setEdges] = useState<GraphEdge[]>(defaultEdges);
   const [draggedNode, setDraggedNode] = useState<string | null>(null);
-  const [showCaseSelector, setShowCaseSelector] = useState(false);
-  const [selectedCase, setSelectedCase] = useState<string | null>(null);
-  const [isSimulatingErp, setIsSimulatingErp] = useState(false);
   const [drawingEdgeFrom, setDrawingEdgeFrom] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<Point>({x: 0, y: 0});
   const [contextMenu, setContextMenu] = useState<{x: number, y: number} | null>(null);
@@ -34,13 +34,7 @@ export function useCaseGraphState({
   const [pan, setPan] = useState<Point>({x: 0, y: 0});
   const [isPanning, setIsPanning] = useState(false);
   const [showAiAnalysis, setShowAiAnalysis] = useState(false);
-  const [isSimulatingAnalysis, setIsSimulatingAnalysis] = useState(false);
-  const [recordingNode, setRecordingNode] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showShare, setShowShare] = useState(false);
-  const [shareMode, setShareMode] = useState<"live" | "snapshot">("snapshot");
-  const [blurNames, setBlurNames] = useState(true);
-  const [blurAmounts, setBlurAmounts] = useState(false);
   const [edgeDropMenu, setEdgeDropMenu] = useState<{x: number; y: number; canvasX: number; canvasY: number} | null>(null);
   const [selectedNodeDetail, setSelectedNodeDetail] = useState<GraphNode | null>(null);
   const [clipboard, setClipboard] = useState<GraphNode | null>(null);
@@ -102,41 +96,49 @@ export function useCaseGraphState({
     setEdgeMenu(null);
   }, []);
 
-  // ── AI Document generation ──────────────────────────────────────────────────
+  // ── Text summary of the board ───────────────────────────────────────────────
+  //
+  // What this does and does not do. It walks the user's own cards and links and
+  // joins them into markdown. That part was always real. Three things around it
+  // were not, and are gone:
+  //   • the header read «تحليل آلي بواسطة نظامي AI» — no analysis of any kind
+  //     runs here, and on a lawyer's case file the body it headed was the invented
+  //     contractor dispute from the old MOCK_NODES seed, which this label then
+  //     carried out of the browser as a نظامي-AI-branded case summary;
+  //   • three literal «التوصيات» bullets ("review the links between the parties
+  //     and the documents"…) presented as the conclusions of that analysis;
+  //   • a 1200ms setTimeout behind a spinner, which was there to make an
+  //     instantaneous string join look like work being done.
+  // The result is a plain transcript of what the user typed, and says so.
   const [aiDocument, setAiDocument] = useState<string | null>(null);
-  const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
 
   const generateAiDocument = useCallback((targetIds?: Set<string>) => {
-    setIsGeneratingDoc(true);
-    setTimeout(() => {
-      // Scope: use provided IDs, or fall back to the whole graph
-      const scopedNodes = targetIds && targetIds.size > 0
-        ? nodes.filter(n => targetIds.has(n.id))
-        : nodes;
-      const isPartial = targetIds && targetIds.size > 0 && scopedNodes.length < nodes.length;
+    // Scope: use provided IDs, or fall back to the whole graph
+    const scopedNodes = targetIds && targetIds.size > 0
+      ? nodes.filter(n => targetIds.has(n.id))
+      : nodes;
+    const isPartial = targetIds && targetIds.size > 0 && scopedNodes.length < nodes.length;
 
-      const sections = scopedNodes.map(n => {
-        const relEdges = edges.filter(e => e.from === n.id || e.to === n.id);
-        const connections = relEdges
-          .map(e => {
-            const other = e.from === n.id
-              ? nodes.find(nd => nd.id === e.to)
-              : nodes.find(nd => nd.id === e.from);
-            return `  - ${e.label} ← ${other?.title ?? "غير معروف"}`;
-          })
-          .join("\n");
-        return `## ${n.title}\n${n.desc}${connections ? `\n### الروابط:\n${connections}` : ""}`;
-      }).join("\n\n---\n\n");
+    const sections = scopedNodes.map(n => {
+      const relEdges = edges.filter(e => e.from === n.id || e.to === n.id);
+      const connections = relEdges
+        .map(e => {
+          const other = e.from === n.id
+            ? nodes.find(nd => nd.id === e.to)
+            : nodes.find(nd => nd.id === e.from);
+          return `  - ${e.label} ← ${other?.title ?? "غير معروف"}`;
+        })
+        .join("\n");
+      return `## ${n.title}\n${n.desc}${connections ? `\n### الروابط:\n${connections}` : ""}`;
+    }).join("\n\n---\n\n");
 
-      const scope = isPartial
-        ? `(${scopedNodes.length} بطاقات مختارة من أصل ${nodes.length})`
-        : `(الجراف كاملاً — ${nodes.length} بطاقة)`;
+    const scope = isPartial
+      ? `(${scopedNodes.length} بطاقات مختارة من أصل ${nodes.length})`
+      : `(اللوحة كاملة — ${nodes.length} بطاقة)`;
 
-      const doc = `# ملخص الجراف البصري ${scope}\n\nتحليل آلي بواسطة نظامي AI — ${new Date().toLocaleDateString("ar-SA")}\n\n---\n\n${sections}\n\n---\n\n## التوصيات\n- مراجعة الروابط بين الأطراف والمستندات\n- التأكد من تغطية جميع الأدلة\n- إعداد المذكرة بناءً على التحليل أعلاه`;
+    const doc = `# ملخص اللوحة البصرية ${scope}\n\nنسخ نصي لبطاقات اللوحة وروابطها كما كتبتها — ${new Date().toLocaleDateString("ar-SA")}\n\n---\n\n${sections}`;
 
-      setAiDocument(doc);
-      setIsGeneratingDoc(false);
-    }, 1200);
+    setAiDocument(doc);
   }, [nodes, edges]);
 
   // ── Resizing nodes ──────────────────────────────────────────────────────────
@@ -250,33 +252,35 @@ export function useCaseGraphState({
     return () => window.removeEventListener("keydown", handler);
   }, [selectedNodeIds, clipboard, nodes, createGroup]);
 
-  const generateErpGraph = () => {
-    if(!isGlobal) return;
-    setIsSimulatingErp(true);
-    setTimeout(() => {
-      setNodes(ERP_GENERATED_NODES);
-      setEdges(ERP_GENERATED_EDGES);
-      setIsSimulatingErp(false);
-      setShowCaseSelector(false);
-    }, 1500);
-  };
-
-  const runAiAnalysis = () => {
-    setIsSimulatingAnalysis(true);
-    setTimeout(() => {
-      setIsSimulatingAnalysis(false);
-      setShowAiAnalysis(true);
-    }, 2000);
-  };
-
-  const startVoiceRecording = (id: string, e: MouseEvent) => {
-    e.stopPropagation();
-    setRecordingNode(id);
-    setTimeout(() => {
-      setRecordingNode(null);
-      setNodes(prev => prev.map(n => n.id === id ? { ...n, desc: n.desc + (n.desc ? "\n" : "") + "[ملاحظة صوتية]: يرجى مراجعة المادة ٧٧ بشأن الفسخ." } : n));
-    }, 2500);
-  };
+  // THREE SIMULATIONS USED TO LIVE HERE. All three are removed rather than
+  // relabelled, because each of them wrote or implied content that no part of this
+  // product produces:
+  //
+  //   generateErpGraph()     «استخراج من قضية (AI)» — a 1500ms spinner that then
+  //                          replaced the board with ERP_GENERATED_NODES, a
+  //                          fully invented case (a named plaintiff, a
+  //                          «تسبيب المحكمة (المتوقع)» card) presented as having
+  //                          been extracted from the case the user picked. It read
+  //                          nothing. The launcher entry that called it is gone
+  //                          from ./CaseGraphOverlays.tsx too.
+  //
+  //   runAiAnalysis()        a 2000ms setTimeout that spun «جاري التحليل...» and
+  //                          then opened the analysis panel. There is no analysis
+  //                          engine behind this canvas — no request, no model, no
+  //                          rule set — and the panel it opens now says exactly
+  //                          that. ./CaseGraphView.tsx opens the panel directly and
+  //                          its button is labelled for what it is.
+  //
+  //   startVoiceRecording()  a Microphone button, `title="تفريغ صوتي"`, that
+  //                          pulsed red for 2500ms with no getUserMedia, no
+  //                          MediaRecorder and no transcription call, and then
+  //                          appended the literal
+  //                          «[ملاحظة صوتية]: يرجى مراجعة المادة ٧٧ بشأن الفسخ.»
+  //                          to the card — an invented statutory instruction
+  //                          written into a lawyer's own case board and attributed
+  //                          to their voice. Dictation needs a recorder and a
+  //                          transcription service; neither exists, so the control
+  //                          is gone instead of being made vaguer.
 
   const handleCanvasPointerDown = (e: PointerEvent) => {
     if ((e.target as Element).closest('.node-element')) return;
@@ -420,11 +424,6 @@ export function useCaseGraphState({
     setNodes,
     edges,
     setEdges,
-    showCaseSelector,
-    setShowCaseSelector,
-    selectedCase,
-    setSelectedCase,
-    isSimulatingErp,
     drawingEdgeFrom,
     mousePos,
     contextMenu,
@@ -436,18 +435,8 @@ export function useCaseGraphState({
     isPanning,
     showAiAnalysis,
     setShowAiAnalysis,
-    isSimulatingAnalysis,
-    recordingNode,
     isFullscreen,
     setIsFullscreen,
-    showShare,
-    setShowShare,
-    shareMode,
-    setShareMode,
-    blurNames,
-    setBlurNames,
-    blurAmounts,
-    setBlurAmounts,
     edgeDropMenu,
     setEdgeDropMenu,
     selectedNodeDetail,
@@ -469,10 +458,9 @@ export function useCaseGraphState({
     setEdgeMenu,
     handleEdgeContextMenu,
     updateEdgeStyle,
-    // AI Document
+    // Text summary of the board
     aiDocument,
     setAiDocument,
-    isGeneratingDoc,
     generateAiDocument,
     // Resize
     resizingNode,
@@ -483,9 +471,6 @@ export function useCaseGraphState({
     hoveredNodeId,
     setHoveredNodeId,
     canvasRef,
-    generateErpGraph,
-    runAiAnalysis,
-    startVoiceRecording,
     handleCanvasPointerDown,
     handlePointerDown,
     handlePointerMove,

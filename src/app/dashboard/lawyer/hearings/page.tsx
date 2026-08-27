@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarCheck, Clock, MapPin, Gavel, Plus, Warning,
@@ -8,31 +8,53 @@ import {
   MagnifyingGlass, Star, CheckSquare,
   Hourglass, CaretRight, CaretLeft, X,
   User, ArrowRight, List, CalendarBlank,
-  ArrowSquareOut, Scales,
+  ArrowSquareOut, Scales, ArrowClockwise, CircleNotch,
 } from "@phosphor-icons/react";
 
-// ─── Hijri Conversion ─────────────────────────────────────────────────────────
-function toHijri(gDate: Date): { day: number; month: number; year: number } {
-  const y = gDate.getFullYear();
-  const m = gDate.getMonth() + 1;
-  const d = gDate.getDate();
-  const jd = Math.floor((1461*(y+4800+Math.floor((m-14)/12)))/4)
-    + Math.floor((367*(m-2-12*Math.floor((m-14)/12)))/12)
-    - Math.floor((3*Math.floor((y+4900+Math.floor((m-14)/12))/100))/4)
-    + d - 32075;
-  const l = jd - 1948440 + 10632;
-  const n = Math.floor((l-1)/10631);
-  const l2 = l - 10631*n + 354;
-  const j = Math.floor((10985-l2)/5316)*Math.floor(50*l2/17719) + Math.floor(l2/5670)*Math.floor(43*l2/15238);
-  const l3 = l2 - Math.floor((30-j)/15)*Math.floor(17719*j/50) - Math.floor(j/16)*Math.floor(15238*j/43) + 29;
-  const hMonth = Math.floor(24*l3/709);
-  const hDay = l3 - Math.floor(709*hMonth/24);
-  const hYear = 30*n + j - 30;
-  return { day: hDay, month: hMonth, year: hYear };
+// ─── Hijri day label ──────────────────────────────────────────────────────────
+// This page used to carry its own tabular-Hijri conversion. It was a JS port of
+// a C routine that relies on truncation toward zero, and `Math.floor` is not
+// that for the negative `(m-14)/12` term, so the Julian day was wrong for most
+// months: it disagreed with the app's own Hijri chip on 674 of 730 consecutive
+// days, and with the Umm al-Qura calendar — the one Saudi courts file against —
+// on 314 of 400.
+//
+// Intl's `islamic-umalqura` calendar IS Umm al-Qura, so this asks the platform
+// instead of re-deriving it. `en-u-ca-islamic-umalqura` + formatToParts is
+// deliberate: `ar-SA` resolves to different calendars across ICU builds, and
+// reading the `day` PART gives a plain number rather than a localized numeral
+// that would have to be parsed back.
+//
+// No timeZone is set on purpose — the Date passed in is built at LOCAL midnight
+// (`new Date(calYear, calMonth, day)`), so it must be read back in the local
+// zone or a UTC+3 reader would see the previous day.
+//
+// If the runtime has no Umm al-Qura data the label is omitted entirely rather
+// than filled with an approximation: a wrong Hijri date under a hearing is worse
+// than no Hijri date.
+const HIJRI_DAY_FORMAT: Intl.DateTimeFormat | null = (() => {
+  try {
+    const fmt = new Intl.DateTimeFormat("en-u-ca-islamic-umalqura", { day: "numeric" });
+    // Verify the runtime honoured the request instead of silently falling back
+    // to Gregorian, which would print the Gregorian day under a "هـ" suffix.
+    return fmt.resolvedOptions().calendar === "islamic-umalqura" ? fmt : null;
+  } catch {
+    return null;
+  }
+})();
+
+function hijriDayLabel(gDate: Date): string | null {
+  if (!HIJRI_DAY_FORMAT) return null;
+  try {
+    return HIJRI_DAY_FORMAT.formatToParts(gDate).find(part => part.type === "day")?.value ?? null;
+  } catch {
+    return null;
+  }
 }
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { useUser } from "@/hooks/useUser";
 import AddHearingModal from "../_components/AddHearingModal";
@@ -65,14 +87,41 @@ function daysFromToday(dateStr: string): number | null {
   return Math.round((parsed.getTime() - today.getTime()) / 86400000);
 }
 
-function workflowToHearing(request: WorkflowRequest): CalEvent {
+/**
+ * A service_requests row → a calendar event, or null when the row is not one.
+ *
+ * `null` is the whole fix for this page. `service_requests` is where FOUR
+ * different lawyer-owned shapes live, all with type="service" and
+ * receiver="lawyer", told apart only by metadata: hearings (this modal),
+ * tasks (`metadata.task`, /api/v1/lawyer/tasks), manually-added clients
+ * (`metadata.client`, /api/v1/lawyer/clients) and cases (AddCaseModal). This
+ * mapper used to accept all four and paper over the differences with defaults:
+ * a missing `metadata.type` became `"hearing"` and a missing `metadata.date`
+ * became `dateSort = 0`. Together those two defaults rendered every task, every
+ * added client and every case as «جلسة قضائية» happening TODAY, counted in the
+ * red «X موعد اليوم» header — a lawyer with five open tasks read five court
+ * hearings on today's diary.
+ *
+ * The gate is the DATE, not a metadata marker, because that is what a calendar
+ * actually requires and it does not depend on which writer happens to stamp
+ * which key: a row with no parseable event date has no place on a diary at all.
+ * Undated rows are dropped rather than parked in a bucket — AddHearingModal now
+ * requires a date, so the only rows this can drop are the ones that were never
+ * hearings.
+ */
+function workflowToHearing(request: WorkflowRequest): CalEvent | null {
   const meta = request.metadata ?? {};
+  const dateStr = typeof meta.date === "string" ? meta.date : "";
+  const dateSort = daysFromToday(dateStr);
+  if (dateSort === null) return null;
+
   const rawType = typeof meta.type === "string" ? meta.type : "";
-  const type: EventType = (VALID_EVENT_TYPES as string[]).includes(rawType) ? (rawType as EventType) : "hearing";
+  // No default to "hearing". An unrecognised type is «مهمة داخلية» — the modal's
+  // own «أخرى» option — because putting a court-hearing badge on a row whose
+  // type we could not read is the same fabrication as inventing the row.
+  const type: EventType = (VALID_EVENT_TYPES as string[]).includes(rawType) ? (rawType as EventType) : "internal";
   const rawUrgency = typeof meta.urgency === "string" ? meta.urgency : "";
   const urgency: CalEvent["urgency"] = (VALID_URGENCIES as string[]).includes(rawUrgency) ? (rawUrgency as CalEvent["urgency"]) : "normal";
-  const dateStr = typeof meta.date === "string" ? meta.date : "";
-  const dateSort = daysFromToday(dateStr) ?? 0;
   const isDone = request.status === "completed" || request.status === "cancelled";
   const caseName = typeof meta.caseName === "string" ? meta.caseName : undefined;
   return {
@@ -80,10 +129,17 @@ function workflowToHearing(request: WorkflowRequest): CalEvent {
     type,
     title: request.title,
     client: request.requester.name || undefined,
+    // NOTE: this makes the «القضية» chip link to /dashboard/lawyer/cases/<this
+    // hearing's own id>, which is not a case. Left as-is deliberately — it is a
+    // separate defect on a file this pass does not own to fix end-to-end, and
+    // removing the chip would lose the only place the typed case name is shown.
     caseId: caseName ? request.id : undefined,
     caseName,
     location: typeof meta.location === "string" && meta.location ? meta.location : undefined,
-    date: dateStr || new Date(request.createdAt).toLocaleDateString("ar-SA"),
+    // Always the event's own date now. It used to fall back to the row's
+    // CREATION date, rendered under a clock icon in the slot labelled as the
+    // appointment time.
+    date: dateStr,
     dateSort,
     time: typeof meta.time === "string" && meta.time ? meta.time : undefined,
     urgency,
@@ -106,6 +162,12 @@ const EVENT_CONFIG: Record<EventType,{icon:React.ElementType;label:string;color:
   contract:      {icon:Receipt,     label:"توقيع عقد",    color:"#ec4899"},
   internal:      {icon:CheckSquare, label:"مهمة داخلية",  color:"#94a3b8"},
 };
+
+// How many of the lawyer's service_requests rows to read for the diary. The
+// shared endpoint defaults to 20; production holds 29 rows across ALL accounts,
+// so this is headroom, not a guess. `total` is checked against what came back so
+// a lawyer who ever exceeds it is told rather than quietly shown a partial week.
+const HEARINGS_FETCH_LIMIT = 200;
 
 // ─── Linked Tasks Mini-DB (empty — will be populated from service) ─────────────
 const LINKED_TASKS: Record<string,{id:string;title:string;done:boolean;priority:string}[]> = {};
@@ -443,14 +505,16 @@ function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
             const hasHigh = dayEvs.some(e=>e.urgency==="high");
             const isSelected = selectedDay===day;
             const gDate = new Date(calYear,calMonth,day);
-            const hijri = toHijri(gDate);
+            const hijri = hijriDayLabel(gDate);
             return (
               <button key={day} onClick={()=>setSelectedDay(isSelected?null:day)}
                 className={`relative flex flex-col items-center py-1.5 px-0.5 rounded-xl transition-all ${
                   isSelected?"bg-[#0B3D2E] text-white":isToday(day)?isDark?"bg-zinc-700 text-zinc-100":"bg-slate-200 text-slate-800":isDark?"hover:bg-zinc-800 text-zinc-300":"hover:bg-slate-100 text-slate-600"
                 }`}>
                 <span className="text-[12px] font-bold">{day}</span>
-                <span className={`text-[8px] font-medium leading-none mt-0.5 ${isSelected?"text-white/70":isDark?"text-zinc-600":"text-slate-400"}`}>{hijri.day}هـ</span>
+                {hijri!==null&&(
+                  <span className={`text-[8px] font-medium leading-none mt-0.5 ${isSelected?"text-white/70":isDark?"text-zinc-600":"text-slate-400"}`}>{hijri}هـ</span>
+                )}
                 {dayEvs.length>0&&(
                   <div className="flex gap-0.5 mt-0.5">
                     {hasCritical&&<span className="w-1.5 h-1.5 rounded-full bg-red-500"/>}
@@ -489,7 +553,13 @@ export default function LawyerHearingsPage() {
   const {isDark} = useTheme();
   const user = useUser();
   const [events, setEvents] = useState<CalEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Three distinct states, never two. A lawyer reading «لا توجد جلسات» over a
+  // query that failed misses a hearing, so a failed read has to say so and offer
+  // a retry — it must never land on the empty state.
+  const [loadState, setLoadState] = useState<"loading"|"error"|"ready">("loading");
+  // True when the server holds more rows than this page asked for. Silently
+  // showing a partial diary is the same defect as showing an empty one.
+  const [truncated, setTruncated] = useState(false);
   const [viewMode,setViewMode] = useState<ViewMode>("list");
   const [timeFilter,setTimeFilter] = useState<"all"|"today"|"week"|"month"|"deadlines"|"archive">("all");
   const [typeFilter,setTypeFilter] = useState<EventType|"all">("all");
@@ -499,20 +569,67 @@ export default function LawyerHearingsPage() {
   const [showDeadlinesOnly,setShowDeadlinesOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false); // To toggle advanced filters
 
-  // ─── Fetch hearings from service ────────────────────────────────────────────
-  useEffect(() => {
-    getWorkflowRequestsByReceiver("lawyer")
-      .then((data) => {
-        // Only service requests represent hearings; map them through the
-        // workflowToHearing mapper so the shapes match CalEvent (L8).
-        const events = data
+  // ─── Fetch hearings ─────────────────────────────────────────────────────────
+  // NOT getWorkflowRequestsByReceiver(): that helper sends no `limit`, and
+  // GET /api/v1/service-requests defaults to 20 rows ordered by created_at DESC
+  // while discarding `total`. A lawyer whose 20 newest rows are tasks, clients
+  // and cases would see an EMPTY hearing calendar with nothing saying rows were
+  // dropped. src/components/ui/CasePicker.tsx:84 already overrides the same
+  // default on the same endpoint for the same reason. It also swallows the
+  // route's `degraded` flag — its "this empty list is a failure, not an
+  // absence" signal (src/app/api/v1/service-requests/route.ts:84).
+  // No setState before the first await: the retry button sets "loading" itself,
+  // and a refetch triggered by a save deliberately leaves the current list on
+  // screen rather than flashing a spinner over a diary the lawyer is reading.
+  const load = useCallback(async () => {
+    try {
+      let rows: WorkflowRequest[];
+      let cut = false;
+      if (isSupabaseMode) {
+        const res = await apiGet<{ data: WorkflowRequest[]; total?: number; degraded?: boolean }>(
+          "/api/v1/service-requests",
+          { receiver: "lawyer", limit: HEARINGS_FETCH_LIMIT },
+        );
+        if (res.degraded) throw new Error("the service-requests query failed server-side (degraded)");
+        rows = res.data ?? [];
+        cut = (res.total ?? rows.length) > rows.length;
+      } else {
+        rows = await getWorkflowRequestsByReceiver("lawyer");
+      }
+      // `receiver: "lawyer"` is not "mine": the marketplace browse policy lets
+      // any verified lawyer read unassigned rows with that receiver, so filter
+      // to this lawyer's own once the session id is known. Skipped while the id
+      // is still resolving — that is a loading condition, not a read failure,
+      // and blanking the diary over it would be the bug this page already had.
+      const uid = user.userId;
+      setEvents(
+        rows
           .filter(r => r.type === "service")
-          .map(workflowToHearing);
-        setEvents(events);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
+          .filter(r => !uid || r.assignedTo === uid)
+          .map(workflowToHearing)
+          .filter((e): e is CalEvent => e !== null),
+      );
+      setTruncated(cut);
+      setLoadState("ready");
+    } catch (err) {
+      console.error("[hearings] failed to load the diary:", err);
+      setLoadState("error");
+    }
+  }, [user.userId]);
+
+  // Wrapped rather than `void load()` so the fetch is not a synchronous call
+  // out of the effect body — same shape as src/components/ui/CasePicker.tsx.
+  useEffect(() => { (async () => { await load(); })(); }, [load]);
+
+  // AddHearingModal dispatches this on a confirmed save. Without the listener
+  // the modal's «تم تسجيل الموعد في جدول أعمالك» was written over a جدول أعمال
+  // that still said «لا توجد جلسات قادمة» until a full page reload. Same signal
+  // the cases, consultations and contracts pages already listen for.
+  useEffect(() => {
+    const onUpdated = () => { void load(); };
+    window.addEventListener("nzamy-workflow-updated", onUpdated);
+    return () => window.removeEventListener("nzamy-workflow-updated", onUpdated);
+  }, [load]);
 
   const card = isDark?"rounded-3xl border border-white/[0.06] bg-zinc-900/50":"rounded-3xl border border-slate-100 bg-white shadow-sm";
 
@@ -555,16 +672,53 @@ export default function LawyerHearingsPage() {
   return (
     <div className="max-w-[860px] mx-auto space-y-5" dir="rtl">
 
-      {/* Demo Banner */}
-      {!loading && events.length === 0 && (
+      {/* Read state. The old banner here said «بيانات تجريبية / لا توجد جلسات
+          قادمة» for BOTH a genuinely empty diary and a query that failed —
+          i.e. it asserted the lawyer had no hearings whenever the read broke,
+          and called the (nonexistent) contents demo data while doing it. */}
+      {loadState === "error" && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-500/25 bg-red-900/10" : "border-red-200 bg-red-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-red-500/15" : "bg-red-100"}`}>
+            <Warning size={18} weight="fill" className="text-red-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>تعذّر قراءة جدول المواعيد</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-red-600/70"}`}>
+              هذه ليست قائمة فارغة — لم نتمكّن من قراءة مواعيدك، وقد تكون لديك جلسات لا تظهر هنا الآن. أعد المحاولة قبل الاعتماد على هذه الشاشة.
+            </p>
+          </div>
+          <button onClick={() => { setLoadState("loading"); void load(); }}
+            className="flex items-center gap-1.5 flex-shrink-0 rounded-xl px-3 py-2 text-[12px] font-bold bg-red-500 text-white hover:bg-red-600 transition">
+            <ArrowClockwise size={13} weight="bold" />إعادة المحاولة
+          </button>
+        </motion.div>
+      )}
+
+      {truncated && (
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
           className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
             <Warning size={18} weight="fill" className="text-amber-500" />
           </div>
           <div>
-            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>بيانات تجريبية</p>
-            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>لا توجد جلسات قادمة — أضف موعداً جديداً أو اربط حسابك بقاعدة البيانات</p>
+            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>القائمة غير مكتملة</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/70"}`}>
+              حسابك يحتوي على سجلات أكثر ممّا تم تحميله، فقد لا تظهر هنا كل مواعيدك. لا تعتمد على هذه الشاشة وحدها لهذا اليوم.
+            </p>
+          </div>
+        </motion.div>
+      )}
+
+      {loadState === "ready" && events.length === 0 && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-white/[0.06] bg-zinc-900/50" : "border-slate-200 bg-slate-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-white/[0.05]" : "bg-white"}`}>
+            <CalendarCheck size={18} weight="duotone" className={isDark ? "text-zinc-500" : "text-slate-400"} />
+          </div>
+          <div>
+            <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد مواعيد مسجّلة</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>ابدأ بإضافة موعد من زر «موعد جديد» أعلاه.</p>
           </div>
         </motion.div>
       )}
@@ -656,9 +810,17 @@ export default function LawyerHearingsPage() {
         </AnimatePresence>
       </div>
 
-      {/* Content */}
+      {/* Content — only for a read that actually succeeded. Rendering the list
+          (and its «لا توجد مواعيد مطابقة للفلتر المختار») under a failed query
+          is how an unread hearing becomes an absent one. */}
+      {loadState === "loading" && (
+        <div className={`${card} p-12 flex flex-col items-center gap-3`}>
+          <CircleNotch size={24} className={`animate-spin ${isDark?"text-zinc-600":"text-slate-300"}`} weight="bold"/>
+          <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>جارٍ تحميل جدول مواعيدك…</p>
+        </div>
+      )}
       <AnimatePresence mode="wait">
-        {viewMode==="calendar"?(
+        {loadState !== "ready" ? null : viewMode==="calendar"?(
           <motion.div key="cal" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
             <CalendarView events={filtered.length>0?filtered:events} isDark={isDark}/>
           </motion.div>

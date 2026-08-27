@@ -75,20 +75,35 @@ export async function GET(request: NextRequest) {
       query = query.eq("metadata->>caseId", caseId);
     }
 
-    const { data: requests } = await query
+    // `error` was destructured away here. A failed select produced `data: null`,
+    // which the mapper below turned into `[]`, which the Kanban rendered as
+    // «لا توجد مهام بعد» — a positive claim that the lawyer has no work,
+    // written over a query that never ran. Not logged, not signalled, 200 OK.
+    const { data: requests, error: requestsError } = await query
       .order("created_at", { ascending: false })
       .limit(50);
 
-    // Get recent events for these requests
+    if (requestsError) {
+      console.error("[lawyer/tasks GET] service_requests query failed:", requestsError.message, requestsError.code);
+      return NextResponse.json({ error: requestsError.message }, { status: 500 });
+    }
+
+    // Get recent events for these requests. A failure here is NOT fatal: it only
+    // costs the eventsCount/lastEvent decoration, and losing that is not worth
+    // hiding the task list a lawyer needs. Logged, then treated as no events.
     const requestIds = (requests ?? []).map((r) => r.id);
-    const { data: events } = requestIds.length > 0
+    const { data: events, error: eventsError } = requestIds.length > 0
       ? await supabase
           .from("request_events")
           .select("id, request_id, event, created_at")
           .in("request_id", requestIds)
           .order("created_at", { ascending: false })
           .limit(100)
-      : { data: [] };
+      : { data: [], error: null };
+
+    if (eventsError) {
+      console.error("[lawyer/tasks GET] request_events query failed:", eventsError.message);
+    }
 
     // Map requests to task-like objects (map DB status → UI task status)
     const tasks = (requests ?? []).map((req) => {
@@ -131,8 +146,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(tasks);
   } catch (err) {
+    // Was `return NextResponse.json([])` — a 200 carrying an empty list, i.e.
+    // the route answered "this lawyer has no tasks" for every unexpected
+    // failure, and no caller could tell the difference. A 500 lets the caller
+    // say «تعذّر قراءة مهامك» instead of asserting an empty board.
     console.error("[lawyer/tasks GET] Unexpected error:", err);
-    return NextResponse.json([]);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

@@ -4,14 +4,27 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle, XCircle } from "@phosphor-icons/react";
 import { createWorkflowRequest } from "@/lib/services/workflowService";
+import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createWorkflowId } from "@/lib/workflowStore";
 import type { UserType, UserTier } from "@/hooks/useUser";
 
 interface Props {
   onClose: () => void;
   isDark: boolean;
-  /** Current user context from the parent page (useUser()). */
-  user?: { userId?: string; name: string; userType: UserType; tier: UserTier };
+  /**
+   * Current user context from the parent page (useUser()).
+   *
+   * REQUIRED — it used to be optional, and a caller that omitted it saved
+   * `assigned_to: null`. That is not a cosmetic default: /dashboard/lawyer and
+   * every «قضاياي» filter select on the lawyer's own id, so an unowned case
+   * disappeared from the board it was created on, and the row's shape
+   * (`assigned_to IS NULL` + `status='pending_assignment'` + receiver='lawyer')
+   * is exactly what the marketplace browse policy opens to every OTHER verified
+   * lawyer. Making the prop required turns that into a compile error at the call
+   * site instead of a lost case; `userId` is re-checked at save time because the
+   * session can still be resolving when the modal opens.
+   */
+  user: { userId?: string; name: string; userType: UserType; tier: UserTier };
 }
 
 type Priority = "critical" | "high" | "normal";
@@ -47,33 +60,56 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
   );
 
   async function handleSave() {
+    // See the `user` prop doc: an unowned row is a lost case AND a row other
+    // lawyers can read. Refuse rather than write one.
+    if (!user.userId) {
+      setError("تعذّر تحديد حسابك. أعد تحميل الصفحة ثم حاول مرة أخرى.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const id = createWorkflowId();
-      await createWorkflowRequest({
+      const payload = {
         id,
-        type: "service",
+        type: "service" as const,
         title: title.trim() || `قضية — ${clientName.trim() || "عميل نظامي"}`,
         description: description.trim(),
-        receiver: "lawyer",
-        status: "pending_assignment",
+        receiver: "lawyer" as const,
+        status: "pending_assignment" as const,
         requester: {
-          userId: user?.userId,
-          name: clientName.trim() || user?.name || "عميل نظامي",
-          role: user?.userType ?? "lawyer",
-          tier: user?.tier ?? "free",
+          userId: user.userId,
+          name: clientName.trim() || user.name || "عميل نظامي",
+          role: user.userType ?? "lawyer",
+          tier: user.tier ?? "free",
         },
-        payment: { amount: 0, status: "not_required" },
+        payment: { amount: 0, status: "not_required" as const },
         sourcePath: "",
         metadata: { court, priority, assignee },
-        assignedTo: user?.userId ?? null,
-      });
+        assignedTo: user.userId,
+      };
+
+      // Same reason as AddHearingModal: createWorkflowRequest() swallows a
+      // failed POST and writes to localStorage instead
+      // (workflowService.ts:54-57), so it resolves on a 401/500/RLS refusal and
+      // this catch could never fire — the lawyer read «تم إضافة القضية بنجاح»
+      // over a case that reached no database. Go straight to the API in supabase
+      // mode so a non-2xx throws; demo mode keeps the local store, which there
+      // is the real backend and genuinely reads back.
+      if (isSupabaseMode) {
+        await apiMutate("/api/v1/service-requests", "POST", payload);
+      } else {
+        await createWorkflowRequest(payload);
+      }
       setDone(true);
       window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
     } catch (err) {
-      console.error("[AddCaseModal] createWorkflowRequest failed:", err);
-      setError("تعذّر إضافة القضية. يرجى المحاولة مرة أخرى.");
+      console.error("[AddCaseModal] save failed:", err);
+      setError(
+        err instanceof Error && err.message
+          ? `تعذّر إضافة القضية: ${err.message}`
+          : "تعذّر إضافة القضية. تحقّق من الاتصال ثم أعد المحاولة.",
+      );
     } finally {
       setSaving(false);
     }
@@ -104,7 +140,7 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
               <CheckCircle size={28} weight="fill" className="text-emerald-500" />
             </div>
             <p className={`font-bold text-[16px] ${isDark ? "text-white" : "text-zinc-900"}`}>تم إضافة القضية بنجاح!</p>
-            <p className={`text-[12px] mt-1 mb-4 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>تم إدراجها في القائمة النشطة مع تعيين فريق العمل.</p>
+            <p className={`text-[12px] mt-1 mb-4 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>تم إدراجها في قائمة قضاياك النشطة.</p>
             <button onClick={onClose} className="rounded-xl px-5 py-2 text-[13px] font-bold bg-[#0B3D2E] text-white">إغلاق</button>
           </div>
         ) : (
