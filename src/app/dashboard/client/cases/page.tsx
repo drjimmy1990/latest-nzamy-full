@@ -4,13 +4,20 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, useInView } from 'framer-motion';
 import Link from 'next/link';
 import {
-  Scales, CalendarBlank, ArrowUpRight, Clock, Warning,
+  Scales, CalendarBlank, ArrowUpRight, ArrowClockwise, Clock, Warning,
   CheckCircle, Hourglass, XCircle, MagnifyingGlass, FileText,
 } from '@phosphor-icons/react';
 import { useUser } from '@/hooks/useUser';
 import { listClientWorkflowRequestsPage } from '@/lib/clientWorkflowRepository';
 import type { WorkflowRequest, WorkflowRequestStatus } from '@/lib/workflowStore';
 import { toClientCase, type ClientCase } from '@/lib/services/clientDashboardCards';
+import {
+  listOk,
+  listFailed,
+  listViewState,
+  itemsOf,
+  type ListRead,
+} from '@/lib/services/listRead';
 import { matchesOrderReference } from '@/lib/services/orderReference';
 import { SkeletonList } from '../_components/DashboardSkeleton';
 import { normalizeDigits } from '@/utils/normalizeDigits';
@@ -196,52 +203,100 @@ export default function ClientCasesPage() {
   const user = useUser();
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState('');
-  const [rows, setRows] = useState<CaseRow[]>([]);
-  // Three states that must never be confused with one another: nothing has
-  // been fetched yet, the fetch failed, and the client genuinely has no cases.
-  // Rendering «لا توجد قضايا» over the first two is a statement about the
-  // client's own file that this page is not entitled to make.
-  const [hasLoaded, setHasLoaded] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
+  /**
+   * The three states that must never be confused with one another — nothing
+   * has been fetched yet, the fetch failed, and the client genuinely has no
+   * cases — now carried by `ListRead` + `listViewState()`
+   * (src/lib/services/listRead.ts) instead of the local `hasLoaded`/`loadFailed`
+   * pair that stood here. The distinction is unchanged and so is every sentence
+   * on screen; what changes is that this page, «طلباتي», the two document
+   * pages, the business overview and «استشاراتي» now spell it once, the same
+   * way. Rendering «لا توجد قضايا» over the first two states is a statement
+   * about the client's own file that this page is not entitled to make.
+   *
+   * `loading` stays a separate flag rather than being folded into the read:
+   * `listViewState(false, null)` answers 'unreadable' on purpose — a read
+   * nobody has attempted is not an empty one — so the first paint has to be
+   * told it is still waiting.
+   */
+  const [read, setRead] = useState<ListRead<CaseRow> | null>(null);
+  const [loading, setLoading] = useState(true);
   // Set when the server holds more rows than this page asked for. Stated on
   // screen rather than truncating in silence — see CLIENT_REQUESTS_FETCH_LIMIT.
   const [truncatedAt, setTruncatedAt] = useState<number | null>(null);
 
+  /**
+   * Only the NEWEST load may write.
+   *
+   * This page fires `load()` from three places — the mount effect, the
+   * `nzamy-workflow-updated` listener, and «إعادة المحاولة» — so two are
+   * routinely in flight at once. Without a sequence check the slower reply
+   * lands last, and the one that matters is the bad direction: a retry that
+   * succeeds followed by the earlier failure arriving puts «تعذّرت قراءة
+   * قضاياك» back over rows that were just read. Same hazard the retry counters
+   * on /dashboard/business exist for, in the shape that fits a page whose
+   * refetch is not driven by a counter.
+   */
+  const loadSeq = useRef(0);
+
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     try {
       const page = await listClientWorkflowRequestsPage({ requesterUserId: user.userId });
+      if (seq !== loadSeq.current) return;
       // PER-ROW pairing, never index pairing: `toClientCase` returns null for a
       // row it cannot render (no id), so mapping the two lists separately and
       // zipping them by position would shift every card after the first drop
       // and hang the wrong status badge on the rest of the list.
-      setRows(
-        page.requests
-          .map((raw) => ({
-            raw,
-            // The local/demo store writes `createdAt`; an API row carries
-            // `created_at` (the route's `toWorkflowRequest` spreads the raw row
-            // verbatim), which is the name the mapper reads. Supplying the
-            // camelCase value as a FALLBACK — `...raw` comes second, so a real
-            // `created_at` always wins — keeps the submission date from being
-            // silently dropped in demo mode. Same timestamp under two names,
-            // not a substituted one.
-            card: toClientCase({ created_at: raw.createdAt, ...raw }),
-          }))
-          .filter((row): row is CaseRow => row.card !== null),
-      );
-      setLoadFailed(page.degraded);
+      const mapped = page.requests
+        .map((raw) => ({
+          raw,
+          // The local/demo store writes `createdAt`; an API row carries
+          // `created_at` (the route's `toWorkflowRequest` spreads the raw row
+          // verbatim), which is the name the mapper reads. Supplying the
+          // camelCase value as a FALLBACK — `...raw` comes second, so a real
+          // `created_at` always wins — keeps the submission date from being
+          // silently dropped in demo mode. Same timestamp under two names,
+          // not a substituted one.
+          card: toClientCase({ created_at: raw.createdAt, ...raw }),
+        }))
+        .filter((row): row is CaseRow => row.card !== null);
+      // `degraded` IS the failure. It used to set a flag beside the rows, which
+      // was right while a degraded page could still carry localStorage rows;
+      // it now returns `requests: []` in that case, so keeping both would only
+      // mean an empty list flagged as broken — which is what `listFailed()`
+      // says, in one value the render cannot read past.
+      //
+      // NO `total` IS PASSED TO listOk(), deliberately. `page.total` counts the
+      // rows the SERVER matched, before the requester filter above removed the
+      // ones that are not this client's — so handing it over would make
+      // `truncated` true, and truncationNoticeAr() print «يُعرض أحدث ٣ من ٩»,
+      // purely because six of the nine belonged to somebody else. The cap is
+      // reported instead from `total` vs `fetched`, which is the same question
+      // asked of two numbers that are actually comparable.
+      setRead(page.degraded ? listFailed<CaseRow>() : listOk(mapped));
       // Compare the server's total against the rows it returned BEFORE the
       // requester filter — the only question here is "did the limit cut rows off".
       setTruncatedAt(page.total !== null && page.total > page.fetched ? page.limit : null);
     } catch (err) {
       console.error('[client cases] load failed:', err);
-      setRows([]);
+      if (seq !== loadSeq.current) return;
+      setRead(listFailed<CaseRow>());
       setTruncatedAt(null);
-      setLoadFailed(true);
     } finally {
-      setHasLoaded(true);
+      // Superseded loads leave `loading` alone: the newer one still owns it,
+      // and clearing it here would drop the page out of its skeleton while the
+      // read that will actually be rendered is still in flight.
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [user.userId]);
+
+  /** The retry the failure banner and the failure empty-state both press. */
+  const retry = useCallback(() => {
+    setLoading(true);
+    setRead(null);
+    void load();
+  }, [load]);
 
   useEffect(() => {
     // Wait for useUser() to resolve first. It starts at a guest session, so
@@ -298,6 +353,12 @@ export default function ClientCasesPage() {
     if (id) setSearch(id);
   }, []);
 
+  const view = listViewState(loading, read);
+  // itemsOf() is for the 'ready' branch, and it answers [] everywhere else —
+  // which is what the filter and the counts below are entitled to see: on an
+  // unreadable read there is nothing this page may count.
+  const rows = useMemo(() => itemsOf(read), [read]);
+
   const filtered = useMemo(() => {
     const nq = normalizeDigits(search.trim().toLowerCase());
     return rows.filter(({ raw, card }) => {
@@ -328,7 +389,7 @@ export default function ClientCasesPage() {
     { key: 'cancelled', label: 'ملغاة', count: counts.cancelled },
   ];
 
-  if (!hasLoaded) {
+  if (view === 'loading') {
     return <div className="max-w-4xl mx-auto p-6" dir="rtl"><SkeletonList count={3} /></div>;
   }
 
@@ -361,13 +422,29 @@ export default function ClientCasesPage() {
       </div>
 
       {/* Load failure — said out loud, because an empty list and a broken query
-          look identical and only one of them is a fact about the client. */}
-      {loadFailed && (
+          look identical and only one of them is a fact about the client.
+
+          «ما يظهر أدناه قد يكون غير مكتمل» is gone from this sentence: it was
+          written when a degraded page could still hand back localStorage rows,
+          and `listClientWorkflowRequestsPage` now returns none in that case, so
+          there is nothing below to be incomplete. The retry beside it refetches
+          in place rather than telling the client to reload the whole page. */}
+      {view === 'unreadable' && (
         <div className={`flex items-start gap-3 px-4 py-3 mb-6 rounded-xl border text-[12px] ${
           isDark ? 'bg-red-900/10 border-red-700/20 text-red-400' : 'bg-red-50 border-red-200 text-red-700'
         }`}>
           <Warning size={16} weight="duotone" className="flex-shrink-0 mt-0.5" />
-          <span>تعذّر تحميل قضاياك من الخادم. ما يظهر أدناه قد يكون غير مكتمل — حدّث الصفحة بعد قليل.</span>
+          <span className="flex-1">تعذّرت قراءة قضاياك من الخادم.</span>
+          <button
+            type="button"
+            onClick={retry}
+            className={`flex-shrink-0 inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition ${
+              isDark ? 'border-red-700/40 hover:bg-red-900/20' : 'border-red-300 hover:bg-red-100'
+            }`}
+          >
+            <ArrowClockwise size={12} weight="bold" />
+            إعادة المحاولة
+          </button>
         </div>
       )}
 
@@ -407,9 +484,9 @@ export default function ClientCasesPage() {
                 {/*
                   THE COUNT IS DROPPED ON A FAILED LOAD, not zeroed.
 
-                  `loadFailed` means the server list could not be read —
-                  `listClientWorkflowRequestsPage` returned `degraded`, or the
-                  call threw and `rows` was emptied. Either way `counts` is
+                  `view === 'unreadable'` means the server list could not be
+                  read — `listClientWorkflowRequestsPage` returned `degraded`,
+                  or the call threw. Either way `counts` is
                   derived from whatever survived, which is not a statement about
                   the client's caseload. The strip used to render regardless, so
                   a failed load put «الكل 0 / معلّقة 0 / جارية 0 …» directly
@@ -426,7 +503,7 @@ export default function ClientCasesPage() {
                   The tab itself stays. It still filters what is on screen and
                   claims nothing about what is not.
                 */}
-                {!loadFailed && (
+                {view !== 'unreadable' && (
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                     isActive
                       ? 'bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-emerald-500/20 dark:text-emerald-400'
@@ -475,12 +552,21 @@ export default function ClientCasesPage() {
             {/* Three different empty states, because they are three different
                 facts. Only the last one is allowed to say the client has no
                 cases. */}
-            {loadFailed ? (
+            {view === 'unreadable' ? (
               <>
                 <p className={`text-lg font-bold mb-2 ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>تعذّر عرض قضاياك</p>
-                <p className={`text-sm max-w-sm ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
-                  لم نتمكن من قراءة سجلّك من الخادم، ولا يمكننا تأكيد ما إذا كانت لديك قضايا. حاول تحديث الصفحة.
+                <p className={`text-sm mb-6 max-w-sm ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
+                  لم نتمكن من قراءة سجلّك من الخادم، ولا يمكننا تأكيد ما إذا كانت لديك قضايا.
                 </p>
+                <button
+                  onClick={retry}
+                  className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-colors ${
+                    isDark ? 'bg-white/[0.05] text-zinc-200 hover:bg-white/[0.1]' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                  }`}
+                >
+                  <ArrowClockwise size={16} weight="bold" />
+                  إعادة المحاولة
+                </button>
               </>
             ) : rows.length > 0 ? (
               <>

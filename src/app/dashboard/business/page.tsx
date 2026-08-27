@@ -18,13 +18,20 @@ import { useUser } from "@/hooks/useUser";
 import AddCaseModal from "./_components/AddCaseModal";
 import { BusinessProfileReadinessPanel } from "@/components/dashboard/business/BusinessProfileReadinessPanel";
 import { listMyServiceOrders } from "@/lib/services/serviceOrders";
-import { getDocuments } from "@/lib/services/documentService";
+import { getDocuments, type Document } from "@/lib/services/documentService";
 import { toClientCases, type CaseTone, type ClientCase } from "@/lib/services/clientDashboardCards";
 import {
   accountDisplayName,
   countVaultDocuments,
   vaultDocumentsPhraseAr,
 } from "@/lib/services/businessOverview";
+import {
+  listOk,
+  listFailed,
+  listViewState,
+  itemsOf,
+  type ListRead,
+} from "@/lib/services/listRead";
 
 /**
  * نظرة عامة على المنشأة — /dashboard/business.
@@ -149,8 +156,20 @@ const TONE_CLASS: Record<CaseTone, string> = {
  * answer arrives is a false statement that merely happens to be brief — the
  * distinction «لا توجد طلبات» / «تعذّر التحميل» / «لم نعرف بعد» is the whole
  * subject of this page.
+ *
+ * THE LOCAL `LoadState` UNION THAT STOOD HERE IS GONE. It said exactly the
+ * right thing and said it in this file only; the same three states are now
+ * spelled `listViewState()` over a `ListRead` (src/lib/services/listRead.ts),
+ * which is the one spelling the whole platform is moving to. Nothing this page
+ * did is lost in the move — both panels keep their skeleton, their named
+ * failure and their own retry button, and the retry still works the way it did
+ * (see the reload counters below).
+ *
+ * `loading` is tracked beside each read rather than folded into it, because
+ * `listViewState(false, null)` answers 'unreadable' by design — a read nobody
+ * has attempted is not an empty one — and a `false` there on the first paint
+ * would flash «تعذّر التحميل» at a company whose request is still in flight.
  */
-type LoadState = "loading" | "ready" | "error";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 12 },
@@ -165,10 +184,10 @@ export default function BusinessOverviewPage() {
   const { isDark } = useTheme();
   const user = useUser();
 
-  const [ordersState, setOrdersState] = useState<LoadState>("loading");
-  const [orders, setOrders] = useState<ClientCase[]>([]);
-  const [vaultState, setVaultState] = useState<LoadState>("loading");
-  const [vaultCount, setVaultCount] = useState<number | null>(null);
+  const [ordersRead, setOrdersRead] = useState<ListRead<ClientCase> | null>(null);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [vaultRead, setVaultRead] = useState<ListRead<Document> | null>(null);
+  const [vaultLoading, setVaultLoading] = useState(true);
   const [showNewRequest, setShowNewRequest] = useState(false);
 
   // ── Reload counters ────────────────────────────────────────────────────────
@@ -197,14 +216,21 @@ export default function BusinessOverviewPage() {
         // `statusColor`, and reading `.bg` off the `undefined` that a cast
         // produced is what crashed the client landing page for every client
         // who had ever placed an order.
-        setOrders(toClientCases(rows));
-        setOrdersState("ready");
+        //
+        // NO TOTAL is handed to listOk(), and that is the same decision the
+        // header records under "THINGS DELIBERATELY NOT RENDERED":
+        // listMyServiceOrders() fetches the route's default page and does not
+        // report the unfiltered count, so a `total` here could only be
+        // items.length — which would make `truncated` permanently false and
+        // let a future reader believe this list is complete.
+        setOrdersRead(listOk(toClientCases(rows)));
       })
       .catch((e) => {
         if (cancelled) return;
         console.error("[business overview] orders fetch failed:", e);
-        setOrdersState("error");
-      });
+        setOrdersRead(listFailed<ClientCase>());
+      })
+      .finally(() => { if (!cancelled) setOrdersLoading(false); });
     return () => { cancelled = true; };
   }, [ordersAttempt]);
 
@@ -213,20 +239,23 @@ export default function BusinessOverviewPage() {
     getDocuments()
       .then((docs) => {
         if (cancelled) return;
-        setVaultCount(countVaultDocuments(docs));
-        setVaultState("ready");
+        setVaultRead(listOk(docs));
       })
       .catch((e) => {
         if (cancelled) return;
         console.error("[business overview] vault fetch failed:", e);
-        setVaultState("error");
-      });
+        setVaultRead(listFailed<Document>());
+      })
+      .finally(() => { if (!cancelled) setVaultLoading(false); });
     return () => { cancelled = true; };
   }, [vaultAttempt]);
 
   // Back to the skeleton first — that is the only feedback the click gives.
-  const retryOrders = () => { setOrdersState("loading"); setOrdersAttempt((n) => n + 1); };
-  const retryVault = () => { setVaultState("loading"); setVaultAttempt((n) => n + 1); };
+  // Clearing the read as well as raising the flag: leaving the previous
+  // `ok: false` in place would keep the failure branch mounted underneath the
+  // skeleton on the next paint.
+  const retryOrders = () => { setOrdersLoading(true); setOrdersRead(null); setOrdersAttempt((n) => n + 1); };
+  const retryVault = () => { setVaultLoading(true); setVaultRead(null); setVaultAttempt((n) => n + 1); };
 
   const card = isDark
     ? "bg-zinc-900/80 border border-white/[0.06] rounded-2xl"
@@ -256,7 +285,16 @@ export default function BusinessOverviewPage() {
   // rather than a correction.
   const accountName = accountDisplayName(user.name);
 
-  const listed = orders.slice(0, ORDERS_SHOWN);
+  const ordersView = listViewState(ordersLoading, ordersRead);
+  const vaultView = listViewState(vaultLoading, vaultRead);
+
+  const listed = itemsOf(ordersRead).slice(0, ORDERS_SHOWN);
+  // countVaultDocuments() still returns `number | null` and the null is still
+  // honoured below: it is the "this was not a list at all" answer, which is a
+  // different fact from a failed request and must not become «٠ وثيقة».
+  const vaultCount = vaultView === "ready" || vaultView === "empty"
+    ? countVaultDocuments(itemsOf(vaultRead))
+    : null;
   const vaultPhrase = vaultCount === null ? null : vaultDocumentsPhraseAr(vaultCount);
 
   return (
@@ -326,7 +364,7 @@ export default function BusinessOverviewPage() {
             </Link>
           </div>
 
-          {ordersState === "loading" && (
+          {ordersView === "loading" && (
             <div className={`divide-y ${isDark ? "divide-white/[0.04]" : "divide-zinc-50"}`} aria-hidden>
               {[0, 1, 2].map((i) => (
                 <div key={i} className="px-6 py-4">
@@ -337,7 +375,7 @@ export default function BusinessOverviewPage() {
             </div>
           )}
 
-          {ordersState === "error" && (
+          {ordersView === "unreadable" && (
             <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
               <Warning size={30} weight="duotone" className="text-amber-500" />
               {/* Never «لا توجد طلبات» on a failed read: a company that had
@@ -354,7 +392,7 @@ export default function BusinessOverviewPage() {
             </div>
           )}
 
-          {ordersState === "ready" && listed.length === 0 && (
+          {ordersView === "empty" && (
             <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
               <Briefcase size={30} weight="duotone" className={isDark ? "text-zinc-600" : "text-zinc-300"} />
               <p className={`text-sm font-medium ${muted}`}>لم تقدّم منشأتك أي طلب بعد.</p>
@@ -367,7 +405,7 @@ export default function BusinessOverviewPage() {
             </div>
           )}
 
-          {ordersState === "ready" && listed.length > 0 && (
+          {ordersView === "ready" && (
             <div className={`flex-1 divide-y ${isDark ? "divide-white/[0.04]" : "divide-zinc-50"}`}>
               {listed.map((order) => (
                 <Link
@@ -427,11 +465,18 @@ export default function BusinessOverviewPage() {
             <h2 className="text-[14px] font-bold">خزنة وثائق المنشأة</h2>
           </div>
 
-          {vaultState === "loading" && (
+          {vaultView === "loading" && (
             <div className={`h-4 w-36 rounded-full animate-pulse ${isDark ? "bg-white/10" : "bg-zinc-200"}`} aria-hidden />
           )}
 
-          {(vaultState === "error" || (vaultState === "ready" && vaultCount === null)) && (
+          {/* `vaultCount === null` is countVaultDocuments() refusing to count
+              something that was not a list. itemsOf() cannot hand it anything
+              else, so the arm is unreachable today and is kept only so that a
+              "we cannot say" from that helper can never fall through to the
+              invitation below, which reads as a statement that the vault is
+              empty. It is a guard, not a live branch. */}
+          {(vaultView === "unreadable"
+            || ((vaultView === "ready" || vaultView === "empty") && vaultCount === null)) && (
             <div className="space-y-3">
               <p className={`flex items-center gap-2 text-[12px] ${muted}`}>
                 <Warning size={14} weight="fill" className="shrink-0 text-amber-500" />
@@ -448,7 +493,7 @@ export default function BusinessOverviewPage() {
             </div>
           )}
 
-          {vaultState === "ready" && vaultPhrase && (
+          {vaultView === "ready" && vaultPhrase && (
             <div className="space-y-3">
               <p className={`text-[15px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>{vaultPhrase}</p>
               {/* «بأي طلب» was false on two of the three intake paths this very
@@ -477,10 +522,23 @@ export default function BusinessOverviewPage() {
           )}
 
           {/* vaultCount === 0. The phrase helper returns null at zero on
-              purpose: GET /api/v1/documents answers a database failure with
-              `200 {"data": []}`, so «٠ وثيقة» would sometimes be a claim about
-              files we never managed to read. An invitation is true either way. */}
-          {vaultState === "ready" && vaultCount === 0 && (
+              purpose, and an invitation is true whether the vault is empty or
+              merely holds nothing unbound — which is the OTHER way to reach
+              this branch: `vaultView === "ready"` with every document already
+              attached to an order.
+
+              THE ORIGINAL REASON FOR THE NULL-AT-ZERO RULE NO LONGER HOLDS AND
+              THE RULE IS KEPT ANYWAY. It was written because GET
+              /api/v1/documents answered a database failure with
+              `200 {"data": []}`, so a zero could mean "unreadable"; that route
+              now returns 500 and getDocuments() throws, so an unreadable vault
+              lands in the branch above instead and a zero here really is a
+              zero. The invitation is still the better screen for a company with
+              nothing stored — it says what to do rather than counting to none.
+              (businessOverview.ts's own header still cites the old 200-with-
+              empty-data behaviour; that file is not this change's, so the
+              correction is reported as a follow-up.) */}
+          {(vaultView === "ready" || vaultView === "empty") && vaultCount === 0 && (
             <div className="space-y-3">
               {/* Same correction as the counted branch above: the picker lives
                   on the legal-service request form and nowhere else, so «بأي

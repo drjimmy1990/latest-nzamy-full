@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, useInView } from 'framer-motion';
 import {
   FileText, FilePdf, FileDoc, UploadSimple, MagnifyingGlass, FolderOpen,
-  DownloadSimple, Trash, Eye, PlusCircle, SortAscending, WarningCircle, SpinnerGap,
+  ArrowClockwise, DownloadSimple, Trash, Eye, PlusCircle, SortAscending,
+  WarningCircle, SpinnerGap,
 } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
 import {
@@ -17,6 +18,13 @@ import {
 import { isUploadTimeoutError, isDocumentTimeoutError } from '@/lib/services/documentService';
 import { MAX_UPLOAD_BYTES, partitionUploadFiles } from '@/lib/services/fileValidation';
 import { isSupabaseMode } from '@/lib/services/api';
+import {
+  listOk,
+  listFailed,
+  listViewState,
+  itemsOf,
+  type ListRead,
+} from '@/lib/services/listRead';
 import { SkeletonList } from '../_components/DashboardSkeleton';
 
 type DocType = 'contract' | 'evidence' | 'official' | 'other';
@@ -265,12 +273,34 @@ function DocRow({
 
 export default function ClientDocumentsPage() {
   const { isDark } = useTheme();
-  const [docs, setDocs] = useState<Doc[]>([]);
+  /**
+   * TWO PIECES OF STATE FOR ONE LIST, and the split is the point.
+   *
+   * `read` is the LATEST attempt's outcome — `ListRead` + `listViewState()`
+   * (src/lib/services/listRead.ts), the shape this whole sweep moves every
+   * list onto. `lastGood` is the rows of the most recent SUCCESSFUL read, kept
+   * across a failure.
+   *
+   * Collapsing them into a single read would empty the list whenever a refresh
+   * failed — including the refresh that runs immediately after an upload — so
+   * a client who had just watched three files save would be shown a library
+   * with nothing in it. That is the same false sentence as «لا توجد مستندات»,
+   * written in an empty <ul> instead of in words. The rows stay; the banner
+   * above them says the list could not be refreshed.
+   */
+  const [read, setRead] = useState<ListRead<Doc> | null>(null);
+  const [lastGood, setLastGood] = useState<Doc[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /**
+   * WHAT the failed load should say. Only rendered when `read` is `ok: false`,
+   * so it cannot drift out of step with the read itself — but it is a separate
+   * string because handleFiles() has to replace the default sentence with one
+   * that names the files that WERE saved.
+   */
+  const [loadErrorAr, setLoadErrorAr] = useState<string>('تعذّرت قراءة المستندات. حاول مرة أخرى لاحقاً.');
   // One banner for every action that can fail on this page — upload, view,
   // download, delete. Renamed from `uploadError` when view/download/delete
   // stopped failing silently, so the name still describes what it holds.
@@ -285,14 +315,18 @@ export default function ClientDocumentsPage() {
    */
   const loadDocs = useCallback(async (): Promise<boolean> => {
     setLoading(true);
-    setError(null);
     try {
+      // getDocuments() THROWS on failure rather than returning [] — that is
+      // what makes the catch below a real failure branch.
       const data = await getDocuments();
-      setDocs(data.map(apiDocToDoc));
+      const mapped = data.map(apiDocToDoc);
+      setRead(listOk(mapped));
+      setLastGood(mapped);
       return true;
     } catch (err) {
       console.error('[documents] failed to load:', err);
-      setError('تعذر تحميل المستندات. حاول مرة أخرى لاحقاً.');
+      setLoadErrorAr('تعذّرت قراءة المستندات. حاول مرة أخرى لاحقاً.');
+      setRead(listFailed<Doc>());
       return false;
     } finally {
       setLoading(false);
@@ -390,12 +424,13 @@ export default function ClientDocumentsPage() {
 
     // The files are on the server whatever happens next, so a failed refresh
     // must not be reported as a failed upload. loadDocs() has already put its
-    // own «تعذر تحميل المستندات» in `error`; replace it with the sentence that
-    // is actually true here, and name what was saved so the client knows the
-    // work was not lost. The next successful load clears it.
+    // own «تعذّرت قراءة المستندات» in `loadErrorAr`; replace it with the
+    // sentence that is actually true here, and name what was saved so the
+    // client knows the work was not lost. The next successful load clears it —
+    // `read` becomes `ok: true` and the banner stops rendering.
     const refreshed = await loadDocs();
     if (!refreshed) {
-      setError(`تم رفع: ${uploaded.join('، ')} — لكن تعذّر تحديث قائمة المستندات. حدّث الصفحة لعرض ما تم رفعه.`);
+      setLoadErrorAr(`تم رفع: ${uploaded.join('، ')} — لكن تعذّر تحديث قائمة المستندات. أعد المحاولة لعرض ما تم رفعه.`);
     }
   }, [loadDocs]);
 
@@ -452,7 +487,11 @@ export default function ClientDocumentsPage() {
     setActionError(null);
     try {
       await deleteDocument(d.id, d.storagePath);
-      setDocs((prev) => prev.filter((x) => x.id !== d.id));
+      // Drop the row from BOTH the current read and the last-good snapshot:
+      // leaving it in `lastGood` would resurrect a deleted document the next
+      // time a refresh failed.
+      setRead((prev) => (prev && prev.ok ? listOk(prev.items.filter((x) => x.id !== d.id), prev.total) : prev));
+      setLastGood((prev) => (prev ? prev.filter((x) => x.id !== d.id) : prev));
     } catch (err) {
       console.error('[documents] delete failed:', err);
       // A timeout is not a failure: the DELETE may still have been executed
@@ -479,6 +518,27 @@ export default function ClientDocumentsPage() {
     size: 'الحجم',
   };
 
+  const view = listViewState(loading, read);
+  /**
+   * The rows on screen. On an unreadable read they are the last list we
+   * managed to read — the banner above says so — and on every other branch
+   * they are the read itself.
+   *
+   * THE STALE ROWS KEEP THEIR «عرض» / «تنزيل» / «حذف» BUTTONS, deliberately.
+   * Every one of the three acts on a specific `d.id`/`d.storagePath`, so a
+   * stale LIST cannot misdirect them: staleness means rows may be MISSING, not
+   * that the rows shown point somewhere else. A document deleted from another
+   * device is the only mismatch, and that press fails with its own stated
+   * Arabic sentence rather than silently. Disabling them would take a working
+   * control away over a list problem it does not share — and «حذف» in
+   * particular is the button a client reaches for precisely when the page is
+   * misbehaving.
+   */
+  const docs = useMemo(
+    () => (view === 'unreadable' ? (lastGood ?? []) : itemsOf(read)),
+    [view, lastGood, read],
+  );
+
   const filtered = useMemo(() => {
     const matching = docs.filter(
       (d) => d.name.includes(search) || d.caseRef.includes(search)
@@ -504,8 +564,17 @@ export default function ClientDocumentsPage() {
    * The same rule the empty state follows: a list we could not read means "we
    * do not know", not "nothing". «٠ بايت» printed under the red banner would
    * be a false total about files that are on the server.
+   *
+   * STRICTER THAN IT WAS, deliberately. The old test was
+   * `!loading && !(error && docs.length === 0)`, so a FAILED REFRESH that still
+   * had stale rows printed a total — and the sharpest case of that is the one
+   * this page creates itself: upload three files, watch the refresh fail, and
+   * the panel states a byte total and a file count that are both missing the
+   * three files the client just watched save. A stale number stated as the
+   * current one is the defect; «—» is not. The rows themselves stay on screen
+   * because a list is self-evidently a list, while «١٠٫٣ ميجابايت» is a claim.
    */
-  const storageKnown = !loading && !(error && docs.length === 0);
+  const storageKnown = view === 'ready' || view === 'empty';
 
   const uploadReady = isSupabaseMode && !uploading;
 
@@ -572,13 +641,30 @@ export default function ClientDocumentsPage() {
         </div>
       )}
 
-      {/* Load error */}
-      {error && (
+      {/* Load error. Rendered off the read itself, so the banner and the list
+          below it can never disagree about whether the library was read. */}
+      {view === 'unreadable' && (
         <div className={`flex items-start gap-3 p-4 mb-6 rounded-2xl border text-sm ${
           isDark ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-800"
         }`}>
           <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
-          <span>{error}</span>
+          <span className="flex-1">
+            {loadErrorAr}
+            {/* Named only when there is something below to mistake for the
+                current library. */}
+            {docs.length > 0 && ' ما يظهر أدناه هو آخر قائمة تم تحميلها بنجاح، وقد تكون قديمة.'}
+          </span>
+          <button
+            type="button"
+            onClick={() => { void loadDocs(); }}
+            disabled={uploading}
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition disabled:opacity-40 ${
+              isDark ? "border-red-500/30 hover:bg-red-500/10" : "border-red-300 hover:bg-red-100"
+            }`}
+          >
+            <ArrowClockwise size={13} weight="bold" />
+            إعادة المحاولة
+          </button>
         </div>
       )}
 
@@ -660,7 +746,7 @@ export default function ClientDocumentsPage() {
       </div>
 
       {/* Doc List */}
-      {loading ? (
+      {view === 'loading' ? (
         <SkeletonList count={3} />
       ) : (
       <AnimatePresence mode="popLayout">
@@ -679,14 +765,20 @@ export default function ClientDocumentsPage() {
               />
             ))}
           </motion.div>
-        ) : error && docs.length === 0 ? (
+        ) : view === 'unreadable' ? (
           // The list could not be read, so an empty `docs` means "we do not
           // know", not "you have none". Printing «لا توجد مستندات» under the
           // red banner would be a false sentence about files that are on the
           // server — including, after a failed post-upload refresh, files the
           // client just watched upload. The banner above says why the list is
-          // missing. Guarded on `docs`, not `filtered`, so a search that
-          // matches nothing still gets its own empty state.
+          // missing, and carries the retry.
+          //
+          // The test is now the read's own state rather than
+          // `error && docs.length === 0`, which had one gap: a failed refresh
+          // that still held stale rows fell through to the ELSE arm, so a
+          // search matching none of those stale rows printed «لا توجد مستندات»
+          // — the sentence this branch exists to prevent — on a library nobody
+          // had managed to read.
           null
         ) : (
           <motion.div

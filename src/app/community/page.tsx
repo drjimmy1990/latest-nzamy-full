@@ -17,13 +17,13 @@
  *   - باقي الأنواع → يرون Public فقط
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   MagnifyingGlass, ArrowUp, ArrowDown, CheckCircle, ChatCircle,
   Fire, Clock, BookOpen, Scales, Briefcase, House, Users,
   X, SealCheck, PencilSimple, Gavel, ShieldCheck, Warning,
-  Star, CaretLeft, Plus, ChartBar
+  Star, CaretLeft, Plus, ChartBar, ArrowClockwise, SpinnerGap
 } from "@phosphor-icons/react";
 import {
   type CommunityTab,
@@ -48,6 +48,12 @@ import {
 } from "@/lib/services/communityService";
 import { isSupabaseMode } from "@/lib/services/api";
 import { readCommunityQuestionsLocal } from "@/lib/communityStore";
+import { listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
+
+/** The route's own default page size (api/v1/community/posts/route.ts:24). */
+const PAGE_SIZE = 20;
+
+const arNum = (n: number) => n.toLocaleString("ar-SA");
 
 export default function CommunityPage() {
   const { isRTL, isDark } = useTheme();
@@ -60,37 +66,101 @@ export default function CommunityPage() {
   const [search, setSearch]     = useState("");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [mounted, setMounted]   = useState(false);
-  const [savedQuestions, setSavedQuestions] = useState<StoredCommunityQuestion[]>([]);
+  const [read, setRead] = useState<ListRead<StoredCommunityQuestion> | null>(null);
+  // Starts `true`. With it `false` the first paint renders «لم يعثر على أسئلة»
+  // before anything has been asked — an empty forum shown to a visitor whose
+  // request is still in flight.
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
   const [questionVotes, setQuestionVotes] = useState<Record<number, "up" | "down" | null>>({});
 
-  useEffect(() => {
-    setMounted(true);
-    const loadSavedQuestions = async () => {
-      if (isSupabaseMode) {
-        try {
-          const posts = await getCommunityPosts({ tab, category: category !== "all" ? category : undefined });
-          setSavedQuestions(posts);
-        } catch {
-          setSavedQuestions(readCommunityQuestionsLocal());
-        }
-      } else {
-        setSavedQuestions(readCommunityQuestionsLocal());
-      }
-    };
-    loadSavedQuestions();
-    if (!isSupabaseMode) {
-      window.addEventListener(COMMUNITY_UPDATED_EVENT, () => setSavedQuestions(readCommunityQuestionsLocal()));
-      return () => window.removeEventListener(COMMUNITY_UPDATED_EVENT, () => {});
+  const loadPosts = useCallback(async () => {
+    setLoading(true);
+    setMoreFailed(false);
+    if (isSupabaseMode) {
+      // getCommunityPosts no longer rejects — it answers `ok: false`. The
+      // `catch { readCommunityQuestionsLocal() }` that used to sit here was
+      // therefore dead code, AND it was the defect: it rendered THIS browser's
+      // own localStorage as the community's feed, so on the usual fresh browser
+      // a failed load looked exactly like a forum with no questions in it.
+      setRead(await getCommunityPosts({
+        tab,
+        category: category !== "all" ? category : undefined,
+        limit: PAGE_SIZE,
+      }));
+    } else {
+      // Demo mode: communityStore IS the backend, so reading it is the real
+      // read, not a fallback. Unfiltered on purpose — the client-side filter
+      // below already applies tab/category, as it always has here.
+      setRead(listOk(readCommunityQuestionsLocal()));
     }
+    setLoading(false);
   }, [tab, category]);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => { void loadPosts(); }, [loadPosts]);
+
+  useEffect(() => {
+    if (isSupabaseMode) return;
+    // Named handler: the previous code passed a FRESH arrow to
+    // removeEventListener, which never matches the one that was added, so a
+    // listener leaked on every tab/category change.
+    const onUpdate = () => setRead(listOk(readCommunityQuestionsLocal()));
+    window.addEventListener(COMMUNITY_UPDATED_EVENT, onUpdate);
+    return () => window.removeEventListener(COMMUNITY_UPDATED_EVENT, onUpdate);
+  }, []);
+
+  /**
+   * «تحميل المزيد» used to be a button that did nothing at all. The route pages
+   * at 20 and reports an exact `total`, so the rest is genuinely reachable —
+   * this asks for it. `listOk` recomputes `truncated` from the accumulated
+   * length, so the notice and this button retire themselves on the last page.
+   */
+  const loadMore = useCallback(async () => {
+    if (!read || !read.ok || !read.truncated) return;
+    setLoadingMore(true);
+    setMoreFailed(false);
+    const next = await getCommunityPosts({
+      tab,
+      category: category !== "all" ? category : undefined,
+      limit: PAGE_SIZE,
+      offset: read.items.length,
+    });
+    // A failed page is NOT the end of the list. Keep what we have, say the
+    // extra page did not arrive, and leave the button there to try again.
+    if (!next.ok) setMoreFailed(true);
+    else setRead(listOk([...read.items, ...next.items], next.total ?? read.total));
+    setLoadingMore(false);
+  }, [read, tab, category]);
 
   const bg   = isDark ? "bg-[#0c0f12] text-white"   : "bg-[#f9fafb] text-zinc-900";
   const card = `rounded-[2rem] border ${isDark ? "bg-[#161b22]/80 border-white/[0.06] backdrop-blur-xl" : "bg-white/80 border-slate-200/50 backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)]"}`;
   const muted = isDark ? "text-zinc-400" : "text-slate-500";
 
+  const feedState = listViewState(loading, read);
+
+  // itemsOf() is safe here ONLY because every render path below that touches
+  // `questions` is gated on feedState being past 'loading' and 'unreadable'.
+  const savedQuestions = itemsOf(read);
+
   // In supabase mode, show ONLY real posts from the DB. The ALL_QUESTIONS mock
   // seed is demo-only — merging it in prod polluted the real community feed.
   const questions = isSupabaseMode ? savedQuestions : [...savedQuestions, ...ALL_QUESTIONS];
+
+  // «يُعرض ٢٠ من ٤٧». truncationNoticeAr() is deliberately not used: its
+  // sentence ends «استخدم البحث للوصول إلى الباقي», and the search box on this
+  // page filters the questions already in memory — it cannot reach question 21.
+  // «تحميل المزيد» can, so the sentence points there instead.
+  //
+  // Suppressed while loading: on a tab switch `read` still holds the PREVIOUS
+  // tab's numbers, and printing them over the spinner describes a list that is
+  // no longer on screen.
+  const truncation =
+    feedState === "ready" && read && read.ok && read.truncated && read.total !== null
+      ? `يُعرض ${arNum(read.items.length)} من ${arNum(read.total)} سؤالاً — حمّل المزيد للبحث في بقيتها.`
+      : null;
 
   const getVoteCount = (question: Question) => {
     const vote = questionVotes[question.id];
@@ -154,7 +224,13 @@ export default function CommunityPage() {
           >
             <Users size={15} />
             مجتمع الأفراد
-            {tab !== "public" && (
+            {/* Demo mode only, and not out of caution: the fetch is scoped to the
+                ACTIVE tab, so while the lawyers tab is open this count is taken
+                over a set that contains no public questions by construction — it
+                printed ٠ next to «مجتمع الأفراد» however busy that forum was. In
+                demo mode ALL_QUESTIONS spans both tabs, so the number has a real
+                source; this branch is dead-code-eliminated in production. */}
+            {!isSupabaseMode && tab !== "public" && (
               <span className={`text-xs px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/10" : "bg-black/5"}`}>
                 {questions.filter(q => q.tab === "public").length}
               </span>
@@ -253,7 +329,15 @@ export default function CommunityPage() {
                     >
                       <Icon size={14} />
                       <span className="flex-1 text-right">{cat.label}</span>
-                      <span className={`text-xs font-mono ${active ? "opacity-70" : "opacity-40"}`}>{cat.count}</span>
+                      {/* Demo mode only. CATEGORIES.count is a hardcoded seed
+                          (communityData.ts:41-48 — «الكل ١٢٨٤»), and nothing
+                          counts the real forum. It sat 200px from the honest
+                          «يُعرض ٢٠ من ٤٧» notice above the feed, so a reader
+                          comparing the two resolved the contradiction against
+                          the true number. DCE'd in production. */}
+                      {!isSupabaseMode && (
+                        <span className={`text-xs font-mono ${active ? "opacity-70" : "opacity-40"}`}>{cat.count}</span>
+                      )}
                     </button>
                   );
                 })}
@@ -357,9 +441,43 @@ export default function CommunityPage() {
               ))}
             </div>
 
-            {/* Questions list */}
+            {/* ── «يُعرض ٢٠ من ٤٧» ── */}
+            {truncation && (
+              <div className={`${card} px-4 py-3 text-xs flex items-center gap-2 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+                <Warning size={14} weight="fill" className="shrink-0" /> {truncation}
+              </div>
+            )}
+
+            {/* Questions list — أربع حالات منفصلة: جارٍ التحميل / تعذّرت القراءة /
+                لا نتائج فعلاً / القائمة. «لا يوجد» و«لم نستطع القراءة» ليسا
+                الشيء نفسه، ومنتدى فارغ فوق قراءة فاشلة هو ادعاء لا خبر. */}
             <AnimatePresence>
-              {filtered.length === 0 ? (
+              {feedState === "loading" ? (
+                <div className={`${card} p-6 sm:p-16 text-center flex flex-col items-center justify-center min-h-[300px]`}>
+                  <SpinnerGap size={32} className="animate-spin text-[#C8A762] mb-4" />
+                  <p className={`text-sm ${muted}`}>جارٍ تحميل الأسئلة…</p>
+                </div>
+              ) : feedState === "unreadable" ? (
+                <div className={`${card} p-6 sm:p-16 text-center flex flex-col items-center justify-center min-h-[300px]`}>
+                  <div className="w-20 h-20 rounded-3xl bg-amber-50 border border-amber-200 flex items-center justify-center mb-5 dark:bg-amber-500/10 dark:border-amber-500/20">
+                    <Warning size={36} weight="fill" className="text-amber-500" />
+                  </div>
+                  <p className={`text-lg font-black tracking-tight mb-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                    تعذّرت قراءة الأسئلة
+                  </p>
+                  <p className={`text-sm mb-6 max-w-md ${muted}`}>
+                    هذه ليست قائمة فارغة — لم نتمكّن من القراءة، فقد تكون هناك أسئلة
+                    منشورة لا تظهر هنا.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { void loadPosts(); }}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] shadow-md transition-all active:scale-[0.98]"
+                  >
+                    <ArrowClockwise size={14} weight="bold" /> إعادة المحاولة
+                  </button>
+                </div>
+              ) : filtered.length === 0 ? (
                 <div className={`${card} p-6 sm:p-16 text-center flex flex-col items-center justify-center min-h-[300px]`}>
                   <div className="w-20 h-20 rounded-3xl bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-5 dark:bg-zinc-800 dark:border-white/10">
                     <Scales size={36} color="#C8A762" weight="duotone" />
@@ -583,12 +701,29 @@ export default function CommunityPage() {
               )}
             </AnimatePresence>
 
-            {/* Load more */}
-            <div className="text-center pt-2">
-              <button className={`px-6 py-2.5 rounded-xl border text-sm font-medium cursor-pointer transition ${isDark ? "border-[#2d3748] text-gray-300 hover:bg-[#161b22]" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
-                تحميل المزيد
-              </button>
-            </div>
+            {/* Load more — now it loads more. It renders ONLY when the server
+                said it is holding rows this page has not fetched; a button that
+                is always there and sometimes does nothing is the same broken
+                promise as the one it replaces. */}
+            {feedState === "ready" && read?.ok && read.truncated && (
+              <div className="text-center pt-2 space-y-2">
+                {moreFailed && (
+                  <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                    تعذّر تحميل المزيد — لم تصل الأسئلة الإضافية، وما يظهر أعلاه لا يزال ناقصاً.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { void loadMore(); }}
+                  disabled={loadingMore}
+                  className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl border text-sm font-medium cursor-pointer transition disabled:opacity-50 disabled:cursor-wait ${isDark ? "border-[#2d3748] text-gray-300 hover:bg-[#161b22]" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                >
+                  {loadingMore
+                    ? <><SpinnerGap size={14} className="animate-spin" /> جارٍ التحميل…</>
+                    : moreFailed ? "إعادة المحاولة" : "تحميل المزيد"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

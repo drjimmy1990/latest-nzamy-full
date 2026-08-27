@@ -1,16 +1,36 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Megaphone, Plus, CheckCircle, Clock, Users, PencilSimple, Trash, PaperPlaneTilt } from "@phosphor-icons/react";
+import { Megaphone, Plus, CheckCircle, Clock, Users, PencilSimple, Trash, PaperPlaneTilt, Warning, ArrowClockwise } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { listFailed, listFromApi, listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 
-interface Broadcast { id: number | string; title: string; target: string; sent: number; scheduled: string; status: "مُرسل" | "مجدول" | "مسودة"; }
-const BROADCASTS: Broadcast[] = [
-  { id: 1, title: "تحديث نظام الاشتراكات — مايو ٢٠٢٦",      target: "الكل",      sent: 4872,  scheduled: "٢٥ أبريل ٢٠٢٦",  status: "مُرسل" },
-  { id: 2, title: "خاصية الأحكام الجديدة للقضاة",            target: "حكومي",     sent: 0,     scheduled: "٢٨ أبريل ٢٠٢٦",  status: "مجدول" },
-  { id: 3, title: "عرض خصم الجمعيات الخيرية ٢٠٪",            target: "NGO",       sent: 0,     scheduled: "—",               status: "مسودة" },
-  { id: 4, title: "صيانة مجدولة — السبت ٣ مايو",              target: "الكل",      sent: 4901,  scheduled: "٢٢ أبريل ٢٠٢٦",  status: "مُرسل" },
-];
+interface Broadcast {
+  id: number | string;
+  title: string;
+  target: string;
+  /**
+   * `null` — not `0` — for every row, because nothing on the server counts
+   * recipients. `broadcasts` has no delivered/recipient column and no delivery
+   * table is read here, so the honest value is "unknown". It was `0`, which the
+   * card then hid behind `sent > 0`; a hidden zero is harmless until someone
+   * reads the field, and then it says a broadcast reached nobody.
+   */
+  sent: number | null;
+  scheduled: string;
+  status: "مُرسل" | "مجدول" | "مسودة";
+}
+
+/* ── No mock fallback ────────────────────────────────────────────────────────
+ *
+ * A four-row `BROADCASTS` constant used to be substituted whenever the fetch
+ * failed OR the table came back empty — «تحديث نظام الاشتراكات — مايو ٢٠٢٦ …
+ * ٤٬٨٧٢ مستلم». An admin looking at this screen after a failed read was shown
+ * four announcements that were never sent, two of them reporting thousands of
+ * recipients. GET /api/v1/admin/broadcasts now answers a failed query with 500
+ * + {error} rather than an empty 200, so "nothing sent yet" and "could not
+ * read" are finally two different answers and this page gives both.
+ */
 const STATUS_CONF: Record<string, { color: string; bg: string; icon: React.ElementType }> = {
   "مُرسل":  { color: "text-emerald-500", bg: "bg-emerald-500/10", icon: CheckCircle },
   "مجدول": { color: "text-blue-500",    bg: "bg-blue-500/10",    icon: Clock },
@@ -48,7 +68,7 @@ function mapRow(row: BroadcastRow): Broadcast {
     id: row.id,
     title: row.title,
     target: row.audience || "الكل",
-    sent: 0,
+    sent: null,
     scheduled: fmtDate(when),
     status: STATUS_AR[row.status] ?? "مسودة",
   };
@@ -57,23 +77,36 @@ function mapRow(row: BroadcastRow): Broadcast {
 export default function AdminBroadcastsPage() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const [items, setItems] = useState<Broadcast[]>([]);
+  const [read, setRead] = useState<ListRead<Broadcast> | null>(null);
+  // Starts `true` so the first paint cannot claim there are no broadcasts
+  // before the request has even left.
+  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title: "", body: "", audience: "all" });
+  // One line for whatever the last write attempt did wrong. Every mutation on
+  // this screen used to fail in total silence (`catch { /* no-op */ }`), which
+  // on a "send an announcement to every user" button means an admin walks away
+  // believing it went out.
+  const [actionErr, setActionErr] = useState("");
 
   useEffect(() => setMounted(true), []);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await fetch("/api/v1/admin/broadcasts");
-      if (!res.ok) throw new Error("fetch failed");
+      if (!res.ok) {
+        setRead(listFailed<Broadcast>());
+        return;
+      }
       const json = await res.json();
-      const rows: BroadcastRow[] = Array.isArray(json.data) ? json.data : [];
-      setItems(rows.length ? rows.map(mapRow) : BROADCASTS);
+      const base = listFromApi<BroadcastRow>(json);
+      setRead(base.ok ? listOk(base.items.map(mapRow), base.total) : listFailed<Broadcast>());
     } catch {
-      // Keep the mock as a graceful fallback if the API/table is unavailable.
-      setItems(BROADCASTS);
+      setRead(listFailed<Broadcast>());
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -83,6 +116,7 @@ export default function AdminBroadcastsPage() {
     const title = form.title.trim();
     if (!title || saving) return;
     setSaving(true);
+    setActionErr("");
     try {
       const res = await fetch("/api/v1/admin/broadcasts", {
         method: "POST",
@@ -93,16 +127,23 @@ export default function AdminBroadcastsPage() {
         setForm({ title: "", body: "", audience: "all" });
         setCreating(false);
         await load();
+      } else {
+        // A failed save used to close nothing and say nothing, so the draft
+        // stayed on screen looking unsaved-but-fine and the admin had no way to
+        // tell it from a slow network.
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setActionErr(body.error ?? "تعذّر حفظ المسودة.");
       }
     } catch {
-      // no-op — surface nothing; the list stays as-is.
+      setActionErr("تعذّر الاتصال بالخادم — لم تُحفظ المسودة.");
     } finally {
       setSaving(false);
     }
   };
 
   const sendBroadcast = async (id: number | string) => {
-    if (typeof id !== "string") return; // mock (numeric) rows are not persisted
+    if (typeof id !== "string") return; // only persisted rows have a uuid
+    setActionErr("");
     try {
       const res = await fetch(`/api/v1/admin/broadcasts/${id}`, {
         method: "PATCH",
@@ -110,22 +151,32 @@ export default function AdminBroadcastsPage() {
         body: JSON.stringify({ status: "sent" }),
       });
       if (res.ok) await load();
+      else {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setActionErr(body.error ?? "تعذّر إرسال الرسالة — لم يتغيّر شيء.");
+      }
     } catch {
-      // no-op
+      setActionErr("تعذّر الاتصال بالخادم — لم تُرسل الرسالة.");
     }
   };
 
-  const deleteBroadcast = async (id: number | string) => {
-    // No DELETE endpoint — archive by marking as draft is not desired here.
-    // Optimistically drop from the local list only.
-    setItems((prev) => prev.filter((b) => b.id !== id));
+  const deleteBroadcast = (id: number | string) => {
+    // There is no DELETE route for broadcasts (src/app/api/v1/admin/broadcasts/
+    // [id]/route.ts exposes PATCH only). This used to drop the row from local
+    // state, so the broadcast visibly disappeared, the admin read that as
+    // deleted, and it was back on the next reload — a deletion that never
+    // happened, reported as one that did. Saying so is the only honest thing
+    // this button can do until the route exists.
+    void id;
+    setActionErr("الحذف غير متاح حالياً — لا توجد واجهة حذف على الخادم.");
   };
 
   if (!mounted) return null;
   const bg = isDark ? "bg-[#0c0f12]" : "bg-gray-50";
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
-  const list = items.length ? items : BROADCASTS;
+  const state = listViewState(loading, read);
+  const list = itemsOf(read);
   return (
     <div className={`${bg} min-h-screen`} dir="rtl">
       <div className="max-w-3xl mx-auto p-4 md:p-8 space-y-6">
@@ -175,8 +226,36 @@ export default function AdminBroadcastsPage() {
           </motion.div>
         )}
 
+        {actionErr && (
+          <div className={`${card} p-3 flex items-center gap-2 text-xs font-bold ${isDark ? "text-rose-400 border-rose-500/20" : "text-rose-600 border-rose-200"}`}>
+            <Warning size={14} weight="fill" className="shrink-0" /> {actionErr}
+          </div>
+        )}
+
+        {state === "loading" && (
+          <div className={`${card} p-8 text-center text-sm ${muted}`}>جارٍ تحميل الرسائل…</div>
+        )}
+
+        {state === "unreadable" && (
+          <div className={`${card} p-8 text-center`}>
+            <Warning size={20} weight="fill" className="mx-auto mb-2 text-amber-500" />
+            <p className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>تعذّرت قراءة الرسائل</p>
+            <p className={`text-xs mt-1 ${muted}`}>
+              هذه ليست قائمة فارغة — لم نتمكن من القراءة، فلا يمكن الاستنتاج من هنا أنه لم تُرسل أي رسالة.
+            </p>
+            <button type="button" onClick={() => { void load(); }}
+              className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 text-white font-bold text-xs hover:bg-violet-700 transition">
+              <ArrowClockwise size={12} weight="bold" /> إعادة المحاولة
+            </button>
+          </div>
+        )}
+
+        {state === "empty" && (
+          <div className={`${card} p-8 text-center text-sm ${muted}`}>لا توجد رسائل بث بعد.</div>
+        )}
+
         <div className="space-y-3">
-          {list.map((b, i) => {
+          {state === "ready" && list.map((b, i) => {
             const conf = STATUS_CONF[b.status];
             const Icon = conf.icon;
             return (
@@ -187,7 +266,11 @@ export default function AdminBroadcastsPage() {
                   <p className={`font-bold text-sm truncate ${isDark ? "text-white" : "text-gray-900"}`}>{b.title}</p>
                   <div className={`flex items-center gap-3 mt-0.5 text-[10px] ${muted}`}>
                     <span className="flex items-center gap-1"><Users size={9} /> {b.target}</span>
-                    {b.sent > 0 && <span>{b.sent.toLocaleString()} مستلم</span>}
+                    {/* Rendered only when a real count exists. Nothing produces
+                        one today, so this never draws — which is the point:
+                        «٠ مستلم» under a sent broadcast is a claim, not a
+                        blank. */}
+                    {b.sent !== null && b.sent > 0 && <span>{b.sent.toLocaleString("ar-SA")} مستلم</span>}
                     <span>{b.scheduled}</span>
                   </div>
                 </div>

@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Ticket, MagnifyingGlass, ArrowLeft, Clock, CheckCircle,
   Warning, X, ChatCircle, User, Robot, Fire, SealCheck,
-  CaretDown, ArrowsClockwise,
+  CaretDown, ArrowsClockwise, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { listFailed, listFromApi, listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type TicketStatus  = "open" | "inprogress" | "resolved" | "closed";
@@ -18,26 +19,36 @@ interface SupportTicket {
   user: string;
   userType: string;
   subject: string;
+  /**
+   * What the client actually wrote. It is on the row (`support_tickets.body`)
+   * and was being dropped, which is why the detail panel had to invent a
+   * message to fill the space — see the modal below.
+   */
+  body: string | null;
   category: string;
   status: TicketStatus;
   priority: TicketPriority;
   created: string;
   lastReply: string;
-  messages: number;
+  /**
+   * `null` always, until something counts messages. There is no ticket-messages
+   * table anywhere in this repo, so the old hardcoded `1` was a per-row invented
+   * figure sitting under a «رسائل» column header — and a ticket with six
+   * exchanges read as a ticket nobody had answered.
+   */
+  messages: number | null;
   assignee?: string;
 }
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-const TICKETS: SupportTicket[] = [
-  { id: "TKT-2041", user: "محمد العتيبي",    userType: "عميل فرد",     subject: "لا أستطيع الوصول إلى صفحة قضاياي بعد التحديث",         category: "تقني",      status: "open",       priority: "high",     created: "منذ ٣٠ دقيقة", lastReply: "منذ ٣٠ دقيقة", messages: 1 },
-  { id: "TKT-2040", user: "شركة الخبرة القانونية", userType: "شركة محاماة", subject: "طلب ترقية الخطة من PRO إلى Enterprise",            category: "اشتراك",   status: "inprogress", priority: "medium",   created: "منذ ساعتين",   lastReply: "منذ ساعة",    messages: 4, assignee: "فريق الدعم" },
-  { id: "TKT-2039", user: "سارة الزهراني",   userType: "محامي",        subject: "الفاتورة الشهرية تعرض مبلغاً خاطئاً",                   category: "اشتراك",   status: "inprogress", priority: "medium",   created: "منذ ٤ ساعات",  lastReply: "منذ ساعتين", messages: 6, assignee: "فريق المالية" },
-  { id: "TKT-2038", user: "شركة نماء",       userType: "شركة/مؤسسة",  subject: "حذف بيانات القسم القانوني بالخطأ — استعادة عاجلة",      category: "تقني",      status: "open",       priority: "critical", created: "منذ ٥ ساعات",  lastReply: "منذ ٥ ساعات", messages: 1 },
-  { id: "TKT-2037", user: "خالد الدوسري",    userType: "مزود خدمة",   subject: "لم أستلم مدفوعاتي منذ أسبوعين",                        category: "مالي",      status: "open",       priority: "high",     created: "منذ يوم",      lastReply: "منذ يوم",     messages: 2 },
-  { id: "TKT-2036", user: "نورة السبيعي",    userType: "محامي",        subject: "استفسار عن آلية التحقق من شهادة المحامي",               category: "عام",       status: "resolved",   priority: "low",      created: "منذ ٣ أيام",   lastReply: "منذ يومين",   messages: 8, assignee: "دعم العملاء" },
-  { id: "TKT-2035", user: "فهد العتيبي",     userType: "محامي فردي",  subject: "أداة الصائغ القانوني لا تُنتج مستندات PDF",             category: "تقني",      status: "resolved",   priority: "medium",   created: "منذ ٤ أيام",   lastReply: "منذ ٣ أيام", messages: 5, assignee: "فريق المنتج" },
-  { id: "TKT-2034", user: "منشأة الرياض",    userType: "منشأة صغيرة", subject: "عدم ظهور صفحة اشتراطات الترخيص",                       category: "تقني",      status: "closed",     priority: "low",      created: "منذ أسبوع",    lastReply: "منذ ٥ أيام", messages: 3 },
-];
+/* ── No mock queue ───────────────────────────────────────────────────────────
+ *
+ * Eight invented tickets used to be substituted whenever the fetch failed or
+ * the table came back empty, including «حذف بيانات القسم القانوني بالخطأ —
+ * استعادة عاجلة» at critical priority. A support queue that answers a broken
+ * read by inventing an urgent ticket sends the office chasing a client who
+ * never wrote in, while the real queue — whatever is in it — stays invisible.
+ * GET /api/v1/admin/tickets now answers a failed query with 500 + {error}.
+ */
 
 const STATUS_CONFIG: Record<TicketStatus, { label: string; color: string; icon: React.ElementType }> = {
   open:       { label: "مفتوح",     color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",   icon: Clock },
@@ -125,12 +136,13 @@ function rowToTicket(row: SupportTicketRow): SupportTicket {
     user: userLabel,
     userType,
     subject: row.subject,
+    body: typeof row.body === "string" && row.body.trim() ? row.body : null,
     category: row.category ?? "عام",
     status: DB_STATUS_TO_PAGE[row.status ?? "open"] ?? "open",
     priority: DB_PRIORITY_TO_PAGE[row.priority ?? "normal"] ?? "medium",
     created: timeAgo(row.created_at),
     lastReply: timeAgo(row.updated_at ?? row.created_at),
-    messages: 1,
+    messages: null,
     ...(assignee ? { assignee } : {}),
   };
 }
@@ -141,53 +153,78 @@ export default function AdminTicketsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<TicketStatus | "all">("all");
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
-  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [read, setRead] = useState<ListRead<SupportTicket> | null>(null);
+  // Starts `true`: with it `false`, the first paint says «لا توجد تذاكر» to an
+  // office that may well have an open critical ticket.
+  const [loading, setLoading] = useState(true);
+  const [actionErr, setActionErr] = useState("");
 
-  // Fetch tickets from the API; fall back to the mock TICKETS on empty/error.
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/v1/admin/tickets");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = (await res.json()) as { data?: SupportTicketRow[] };
-        const rows = json.data ?? [];
-        if (!active) return;
-        setTickets(rows.length > 0 ? rows.map(rowToTicket) : TICKETS);
-      } catch {
-        if (active) setTickets(TICKETS);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/v1/admin/tickets");
+      if (!res.ok) {
+        setRead(listFailed<SupportTicket>());
+        return;
       }
-    })();
-    return () => {
-      active = false;
-    };
+      const json = await res.json();
+      const base = listFromApi<SupportTicketRow>(json);
+      setRead(base.ok ? listOk(base.items.map(rowToTicket), base.total) : listFailed<SupportTicket>());
+    } catch {
+      setRead(listFailed<SupportTicket>());
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Persist a status change to the API, then update local state optimistically.
+  useEffect(() => { void load(); }, [load]);
+
+  const card = `rounded-2xl border ${isDark ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-zinc-100"}`;
+
+  const state = listViewState(loading, read);
+  const tickets = itemsOf(read);
+
+  // Persist a status change, showing it immediately and TAKING IT BACK if the
+  // write did not land. The optimistic update used to be permanent whatever the
+  // server said — a failed PATCH left «محلول» on screen over a ticket still
+  // open in the database, which is the same defect as a failed read reported as
+  // an empty one, only written into the queue instead of read out of it.
   async function updateTicketStatus(ticketId: string, next: TicketStatus) {
-    setTickets((prev) =>
-      prev.map((t) => (t.id === ticketId ? { ...t, status: next } : t)),
-    );
-    setSelectedTicket((cur) =>
-      cur && cur.id === ticketId ? { ...cur, status: next } : cur,
-    );
+    const previous = tickets.find((t) => t.id === ticketId)?.status;
+    setActionErr("");
+    const apply = (status: TicketStatus) => {
+      setRead((cur) =>
+        cur && cur.ok
+          ? listOk(cur.items.map((t) => (t.id === ticketId ? { ...t, status } : t)), cur.total)
+          : cur,
+      );
+      setSelectedTicket((cur) => (cur && cur.id === ticketId ? { ...cur, status } : cur));
+    };
+    apply(next);
     try {
-      await fetch(`/api/v1/admin/tickets/${ticketId}`, {
+      const res = await fetch(`/api/v1/admin/tickets/${ticketId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: PAGE_STATUS_TO_DB[next] }),
       });
+      if (!res.ok) {
+        if (previous) apply(previous);
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setActionErr(body.error ?? "تعذّر تغيير حالة التذكرة — لم يُحفظ التغيير.");
+      }
     } catch {
-      // best-effort; local optimistic state stays
+      if (previous) apply(previous);
+      setActionErr("تعذّر الاتصال بالخادم — لم يُحفظ تغيير الحالة.");
     }
   }
-
-  const card = `rounded-2xl border ${isDark ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-zinc-100"}`;
 
   const filtered = tickets
     .filter(t => statusFilter === "all" || t.status === statusFilter)
     .filter(t => search === "" || t.subject.includes(search) || t.user.includes(search) || t.id.includes(search));
 
+  // Counted over what was read. On an unreadable queue these are not rendered
+  // as numbers at all — see the KPI row: «٠ مفتوح» is a statement that nothing
+  // is waiting, and it is the single most expensive thing this screen can say.
   const COUNTS = {
     all: tickets.length,
     open: tickets.filter(t => t.status === "open").length,
@@ -195,6 +232,7 @@ export default function AdminTicketsPage() {
     resolved: tickets.filter(t => t.status === "resolved").length,
     closed: tickets.filter(t => t.status === "closed").length,
   };
+  const countsKnown = state === "empty" || state === "ready";
 
   return (
     <div className={`p-6 md:p-8 space-y-6 max-w-[1300px] mx-auto ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
@@ -210,6 +248,13 @@ export default function AdminTicketsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {state === "unreadable" && (
+            <span className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl ${
+              isDark ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                : "bg-amber-50 text-amber-600 border border-amber-200"}`}>
+              <Warning size={13} weight="fill" /> تعذّرت القراءة
+            </span>
+          )}
           {tickets.filter(t => t.status === "open" && t.priority === "critical").length > 0 && (
             <span className="flex items-center gap-1.5 text-xs font-bold bg-red-500 text-white px-3 py-1.5 rounded-xl animate-pulse">
               <Fire size={13} weight="fill" />
@@ -227,8 +272,10 @@ export default function AdminTicketsPage() {
             onClick={() => setStatusFilter(s)}
             className={`${card} p-4 text-center transition-all hover:scale-[1.02] ${statusFilter === s ? "ring-2 ring-[#0B3D2E]" : ""}`}
           >
-            <p className={`text-2xl font-black font-mono ${isDark ? "text-white" : "text-zinc-900"}`}>
-              {COUNTS[s]}
+            <p className={`text-2xl font-black font-mono ${
+              countsKnown ? (isDark ? "text-white" : "text-zinc-900") : (isDark ? "text-zinc-600" : "text-zinc-300")
+            }`}>
+              {countsKnown ? COUNTS[s] : "—"}
             </p>
             <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
               {s === "all" ? "الكل" : STATUS_CONFIG[s].label}
@@ -260,7 +307,7 @@ export default function AdminTicketsPage() {
         </div>
 
         <div className="divide-y divide-zinc-100 dark:divide-white/[0.04]">
-          {filtered.map((ticket, i) => {
+          {state === "ready" && filtered.map((ticket, i) => {
             const StatusIcon = STATUS_CONFIG[ticket.status].icon;
             return (
               <motion.button
@@ -305,19 +352,48 @@ export default function AdminTicketsPage() {
                   {ticket.lastReply}
                 </span>
 
-                {/* Messages */}
+                {/* Messages — «—» until something counts them. */}
                 <span className={`flex items-center gap-1 text-[12px] self-center ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
                   <ChatCircle size={13} />
-                  {ticket.messages}
+                  {ticket.messages ?? "—"}
                 </span>
               </motion.button>
             );
           })}
 
-          {filtered.length === 0 && (
+          {state === "loading" && (
+            <div className={`px-5 py-12 text-center text-sm ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              جارٍ تحميل التذاكر…
+            </div>
+          )}
+
+          {state === "unreadable" && (
+            <div className="px-5 py-12 text-center">
+              <Warning size={24} weight="fill" className="mx-auto mb-2 text-amber-500" />
+              <p className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>تعذّرت قراءة التذاكر</p>
+              <p className={`text-xs mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                هذه ليست قائمة فارغة — لم نتمكن من القراءة، فقد تكون هناك تذاكر مفتوحة لا تظهر هنا.
+              </p>
+              <button type="button" onClick={() => { void load(); }}
+                className="mt-3 inline-flex items-center gap-1.5 bg-[#0B3D2E] hover:bg-[#1a5c44] text-white text-xs font-bold px-4 py-2 rounded-xl transition">
+                <ArrowClockwise size={12} weight="bold" /> إعادة المحاولة
+              </button>
+            </div>
+          )}
+
+          {state === "empty" && (
             <div className="px-5 py-12 text-center">
               <Ticket size={40} className={`mx-auto mb-3 opacity-30 ${isDark ? "text-zinc-500" : "text-zinc-400"}`} weight="duotone" />
               <p className={`text-sm ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>لا توجد تذاكر</p>
+            </div>
+          )}
+
+          {/* Read fine, but the chips or the search box hid everything. A
+              different fact from an empty queue and worded as one. */}
+          {state === "ready" && filtered.length === 0 && (
+            <div className="px-5 py-12 text-center">
+              <Ticket size={40} className={`mx-auto mb-3 opacity-30 ${isDark ? "text-zinc-500" : "text-zinc-400"}`} weight="duotone" />
+              <p className={`text-sm ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>لا توجد تذاكر مطابقة للتصفية الحالية</p>
             </div>
           )}
         </div>
@@ -361,7 +437,26 @@ export default function AdminTicketsPage() {
                 </button>
               </div>
 
-              {/* Chat-style */}
+              {/* The ticket as filed.
+                  ── WHAT WAS HERE ──────────────────────────────────────────
+                  This panel used to render «مرحباً، أواجه مشكلة في: {subject}.
+                  أرجو المساعدة في أقرب وقت.» under the client's own name and
+                  timestamp, styled as their message. Nobody wrote that
+                  sentence. It was a template built from the subject line and
+                  attributed to a real, named person — the strongest form of
+                  this whole defect, because an admin reading it has no way to
+                  know they are not reading their client.
+
+                  `support_tickets.body` is the real text and was already on the
+                  row; it was simply being dropped in rowToTicket(). It is now
+                  carried through and shown, and when the column is genuinely
+                  empty the panel says so rather than filling the space.
+
+                  The second block — a «تم استلام تذكرتك…» reply attributed to
+                  the assignee — is gone entirely and not replaced. There is no
+                  replies table in this repo, so there is no such message to
+                  show; only the assignment itself is a fact, and that is what
+                  is left. */}
               <div className="p-6 space-y-4 max-h-80 overflow-y-auto">
                 <div className={`p-4 rounded-2xl ${isDark ? "bg-zinc-800" : "bg-zinc-50"}`}>
                   <div className="flex items-center gap-2 mb-2">
@@ -369,27 +464,39 @@ export default function AdminTicketsPage() {
                     <span className={`text-xs font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{selectedTicket.user}</span>
                     <span className={`text-xs ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{selectedTicket.created}</span>
                   </div>
-                  <p className={`text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                    مرحباً، أواجه مشكلة في: {selectedTicket.subject.toLowerCase()}. أرجو المساعدة في أقرب وقت.
-                  </p>
+                  {selectedTicket.body ? (
+                    <p className={`text-sm whitespace-pre-wrap ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                      {selectedTicket.body}
+                    </p>
+                  ) : (
+                    <p className={`text-sm italic ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                      لا يوجد نص مرفق مع هذه التذكرة — العنوان أعلاه هو كل ما أرسله العميل.
+                    </p>
+                  )}
                 </div>
 
                 {selectedTicket.assignee && (
                   <div className={`p-4 rounded-2xl border-s-4 border-royal ${isDark ? "bg-royal/10" : "bg-[#0B3D2E]/5"}`}>
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2">
                       <SealCheck size={14} className="text-royal" weight="fill" />
-                      <span className={`text-xs font-bold text-royal`}>{selectedTicket.assignee}</span>
-                      <span className={`text-xs ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{selectedTicket.lastReply}</span>
+                      <span className={`text-xs font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                        مُسندة إلى {selectedTicket.assignee}
+                      </span>
+                      <span className={`text-xs ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+                        آخر تحديث {selectedTicket.lastReply}
+                      </span>
                     </div>
-                    <p className={`text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                      تم استلام تذكرتك. فريقنا يعمل على حل المشكلة وسنردّ عليك في أقرب وقت.
-                    </p>
                   </div>
                 )}
               </div>
 
               {/* Reply area */}
               <div className={`p-6 border-t ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
+                {actionErr && (
+                  <p className="mb-3 flex items-center gap-1.5 text-xs font-bold text-rose-500">
+                    <Warning size={13} weight="fill" /> {actionErr}
+                  </p>
+                )}
                 <div className="flex gap-3">
                   <textarea
                     rows={3}

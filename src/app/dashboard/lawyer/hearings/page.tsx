@@ -647,20 +647,35 @@ export default function LawyerHearingsPage() {
     return evs;
   },[events,timeFilter,typeFilter,urgencyFilter,search,showDeadlinesOnly]);
 
+  /**
+   * True only when a read actually succeeded.
+   *
+   * `events` is `[]` while the diary is still loading AND after the read
+   * failed, so every count below is 0 in three different states — and on a
+   * hearings screen «٠ مجدولة» is the single most damaging sentence this
+   * platform can print: it tells a practising lawyer their diary is clear.
+   * Withheld rather than zeroed everywhere a number appears; «٠» is a claim.
+   */
+  const countsKnown   = loadState === "ready";
   const deadlineCount = events.filter(e=>e.type==="deadline"&&!e.done&&e.dateSort>=0).length;
   const todayCount    = events.filter(e=>e.dateSort===0&&!e.done).length;
+  const scheduledCount= events.filter(e=>!e.done&&e.dateSort>=0).length;
   const groups = groupByDate(filtered);
   const typeCounts = Object.entries(EVENT_CONFIG).map(([k,v])=>({key:k as EventType,label:v.label,count:events.filter(e=>e.type===k&&!e.done&&e.dateSort>=0).length})).filter(t=>t.count>0);
 
+  // The two option lists bake their counts into the LABEL string, so they are
+  // gated at the point of construction: an unread diary offers «طعون» and
+  // «الكل» with no figure beside them rather than «طعون (٠)», which reads as
+  // "you have no appeal deadlines".
   const TIME_OPTIONS = [
     {key:"all" as const,    label:"الكل"},
     {key:"today" as const,  label:"اليوم"},
     {key:"week" as const,   label:"هذا الأسبوع"},
     {key:"month" as const,  label:"هذا الشهر"},
-    {key:"deadlines" as const, label:`طعون (${deadlineCount})`},
+    {key:"deadlines" as const, label: countsKnown ? `طعون (${deadlineCount})` : "طعون"},
     {key:"archive" as const,label:"الأرشيف"},
   ];
-  const TYPE_OPTIONS  = [{key:"all" as const,label:`الكل (${events.filter(e=>!e.done&&e.dateSort>=0).length})`},...typeCounts];
+  const TYPE_OPTIONS  = [{key:"all" as const,label: countsKnown ? `الكل (${scheduledCount})` : "الكل"},...typeCounts];
   const URGENCY_OPTIONS = [
     {key:"all" as const,      label:"جميع المستويات"},
     {key:"critical" as const, label:"حرجة",  dot:"bg-red-500"},
@@ -755,9 +770,20 @@ export default function LawyerHearingsPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className={`text-xl font-bold mb-1 ${isDark?"text-white":"text-slate-800"}`}>المواعيد والجلسات</h1>
+            {/* This line used to read «٠ مجدولة» whenever the read had not
+                landed — including on the failure path, directly under the red
+                «تعذّر قراءة جدول المواعيد» banner. A lawyer who is told their
+                diary is empty stops looking, and that is how a court date is
+                missed. The number is now printed only when it has a source. */}
             <p className={`text-[12px] ${isDark?"text-zinc-500":"text-slate-500"}`}>
-              {todayCount>0&&<span className="text-red-500 font-bold">{todayCount} موعد اليوم · </span>}
-              {events.filter(e=>!e.done&&e.dateSort>=0).length} مجدولة 
+              {loadState==="loading"
+                ? "جارٍ قراءة جدول مواعيدك…"
+                : loadState==="error"
+                  ? <span className="text-red-500 font-bold">تعذّرت قراءة المواعيد — العدد غير معروف</span>
+                  : <>
+                      {todayCount>0&&<span className="text-red-500 font-bold">{todayCount} موعد اليوم · </span>}
+                      {scheduledCount} مجدولة
+                    </>}
             </p>
           </div>
           

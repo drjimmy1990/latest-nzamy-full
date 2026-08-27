@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { isSupabaseMode, apiGet } from "@/lib/services/api";
+import { itemsOf, listFailed, listOk, listViewState, type ListRead } from "@/lib/services/listRead";
 import type { LawyerClientApiRow } from "@/components/dashboard/lawyer/ClientDrawer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -75,6 +76,17 @@ function mapRequestStatus(s: string | undefined): "active" | "pending" | "closed
   }
 }
 
+/**
+ * How many of this client's requests to read in one page.
+ *
+ * The endpoint takes no `type` parameter, so cases and consultations come back
+ * in one stream and are split in the browser — which means this budget is
+ * shared between them. It was an unnamed literal `100` whose `total` was never
+ * compared against what came back, so a client past it lost the remainder with
+ * nothing on screen saying so.
+ */
+const RELATED_FETCH_LIMIT = 200;
+
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
@@ -98,9 +110,34 @@ export default function ClientDetailPage() {
   const [clientLoading, setClientLoading] = useState(true);
   const [clientError, setClientError] = useState<string | null>(null);
 
-  const [cases, setCases] = useState<CaseRow[]>([]);
-  const [consultations, setConsultations] = useState<ConsultationRow[]>([]);
+  /**
+   * The client's cases and consultations, as READS rather than as arrays.
+   *
+   * Both used to be plain `useState<Row[]>([])` with no loading flag at all, so
+   * «لا توجد قضايا», «لا توجد استشارات» and the «الاستشارات ٠» KPI tile were
+   * painted from the very first frame — before the fetch was even issued, and
+   * again for every read that failed. Only ONE of those three situations means
+   * the client has no cases, and it is the only one that may say so.
+   *
+   * `ListRead` is the shape that makes that impossible to get wrong: there is
+   * no way to reach `.items` without first deciding about failure, and
+   * `listViewState` fixes the precedence (loading beats unreadable beats empty)
+   * in one shared place instead of in the order of the `&&` guards below.
+   *
+   * `null` = not asked yet. Both halves come from a SINGLE request, so they
+   * share one loading flag and one error.
+   */
+  const [casesRead, setCasesRead] = useState<ListRead<CaseRow> | null>(null);
+  const [consultsRead, setConsultsRead] = useState<ListRead<ConsultationRow> | null>(null);
+  const [relatedLoading, setRelatedLoading] = useState(isSupabaseMode);
   const [relatedError, setRelatedError] = useState<string | null>(null);
+  /**
+   * Set when the server holds more of this client's requests than the one page
+   * below asked for. There was no check at all before: a client with more than
+   * RELATED_FETCH_LIMIT requests had the remainder silently dropped, and the
+   * two lists read as complete.
+   */
+  const [relatedTruncated, setRelatedTruncated] = useState(false);
 
   // Calls /api/v1/lawyer/clients directly rather than through
   // getLawyerClients(), whose `catch { return []; }` turns any failure into an
@@ -155,21 +192,33 @@ export default function ClientDetailPage() {
   // The client's own service requests (cases + consultations), by
   // requester_user_id.
   const loadRelated = useCallback(() => {
-    if (!isSupabaseMode) return;
+    if (!isSupabaseMode) {
+      // Demo build has no API routes, so nothing is ever read here. It used to
+      // fall through with both arrays still `[]`, which drew «لا توجد قضايا» —
+      // a claim about a client, made without asking anything. Say what is true
+      // instead. Module-level constant, so this is eliminated in production.
+      setCasesRead(listFailed<CaseRow>());
+      setConsultsRead(listFailed<ConsultationRow>());
+      setRelatedError("غير متاح في الوضع التجريبي — لا توجد قاعدة بيانات مرتبطة.");
+      return;
+    }
+    setRelatedLoading(true);
     setRelatedError(null);
-    apiGet<{ data: any[]; total: number; degraded?: boolean }>("/api/v1/service-requests", {
+    apiGet<{ data: any[]; total?: number | null; degraded?: boolean }>("/api/v1/service-requests", {
       requester_user_id: clientId,
-      limit: 100,
+      limit: RELATED_FETCH_LIMIT,
     })
       .then((res) => {
         // That route reports a failed query as HTTP 200 with
         // { data: [], degraded: true }, so the catch below never sees it and
         // the failure would otherwise be drawn as «لا توجد قضايا».
-        if (res?.degraded) {
+        if (res?.degraded || !Array.isArray(res?.data)) {
           setRelatedError("تعذّر تحميل القضايا والاستشارات المرتبطة.");
+          setCasesRead(listFailed<CaseRow>());
+          setConsultsRead(listFailed<ConsultationRow>());
           return;
         }
-        const rows = Array.isArray(res?.data) ? res.data : [];
+        const rows = res.data;
         const caseRows: CaseRow[] = [];
         const consultRows: ConsultationRow[] = [];
         for (const r of rows) {
@@ -192,13 +241,23 @@ export default function ClientDetailPage() {
             caseRows.push(row);
           }
         }
-        setCases(caseRows);
-        setConsultations(consultRows);
+        // NO `total` is passed into either listOk, deliberately. The route's
+        // `total` counts EVERY request this client has, and each list here
+        // holds only its own half of that split — so handing it over would make
+        // listOk compute `truncated: true` and print «يُعرض أحدث ٣ من ٩» on the
+        // cases card purely because six of the rows were consultations. The
+        // real cap is checked once, against the whole page, below.
+        setCasesRead(listOk(caseRows));
+        setConsultsRead(listOk(consultRows));
+        setRelatedTruncated(typeof res.total === "number" && res.total > rows.length);
       })
       .catch((e) => {
         console.error("[lawyer client detail] related fetch failed:", e);
         setRelatedError("تعذّر تحميل القضايا والاستشارات المرتبطة.");
-      });
+        setCasesRead(listFailed<CaseRow>());
+        setConsultsRead(listFailed<ConsultationRow>());
+      })
+      .finally(() => setRelatedLoading(false));
   }, [clientId]);
 
   useEffect(() => { loadClient(); loadRelated(); }, [loadClient, loadRelated]);
@@ -216,6 +275,14 @@ export default function ClientDetailPage() {
   const sortedNotes = [...notes].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   const client = liveClient;
+
+  // One state machine per list, both fed by the shared helper so «جارٍ التحميل»,
+  // «تعذّرت القراءة» and «لا توجد» can never collapse into each other here the
+  // way they did before.
+  const casesView    = listViewState(relatedLoading, casesRead);
+  const consultsView = listViewState(relatedLoading, consultsRead);
+  const relatedCases    = itemsOf(casesRead);
+  const relatedConsults = itemsOf(consultsRead);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -291,11 +358,34 @@ export default function ClientDetailPage() {
         <div className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50"}`}>
           <Warning size={18} className="text-red-500 flex-shrink-0" />
           <p className={`text-[12px] font-semibold flex-1 ${isDark ? "text-red-400" : "text-red-600"}`}>
-            {relatedError} — القوائم أدناه فارغة لأن القراءة فشلت، لا لأنه لا توجد بيانات.
+            {relatedError} — القائمتان أدناه لا تعرضان بيانات لأن القراءة لم تنجح، لا لأن الموكّل بلا سجلات.
           </p>
-          <button onClick={loadRelated} className="flex items-center gap-1.5 text-[11px] font-bold text-red-500 hover:underline flex-shrink-0">
-            <ArrowClockwise size={13} /> إعادة المحاولة
-          </button>
+          {/* No retry in demo mode: there is no route to call, so the button
+              could only ever re-run the same refusal. */}
+          {isSupabaseMode && (
+            <button onClick={loadRelated} className="flex items-center gap-1.5 text-[11px] font-bold text-red-500 hover:underline flex-shrink-0">
+              <ArrowClockwise size={13} /> إعادة المحاولة
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* The server holds more of this client's requests than one page carries.
+          There was no check at all before — the two lists below simply ended
+          where the page ended and read as complete.
+
+          The wording says «سجلات» rather than «قضايا»: the endpoint returns
+          cases and consultations in ONE stream and they are split in the
+          browser, so what was cut short is the shared page, and there is no
+          honest way to say how many of the missing rows were cases. */}
+      {relatedTruncated && !relatedError && (
+        <div className={`rounded-2xl px-4 py-2.5 border flex items-center gap-2 text-[11px] ${
+          isDark ? "border-amber-500/20 bg-amber-500/[0.06] text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"
+        }`}>
+          <Warning size={14} weight="fill" className="flex-shrink-0" />
+          <span>
+            لهذا الموكّل سجلات أكثر من {RELATED_FETCH_LIMIT} — القائمتان أدناه غير مكتملتين.
+          </span>
         </div>
       )}
 
@@ -362,7 +452,20 @@ export default function ClientDetailPage() {
           // `const contracts = []` that nothing ever fills: there is no
           // per-client contracts backend. A zero from a hardcoded empty array
           // is the same fabrication as the fee tile below, so it goes too.
-          { icon: ChatDots,          label: "الاستشارات",    value: consultations.length, color: "text-blue-500", sub: "مسجّلة" },
+          //
+          // «—» whenever the consultations read has not succeeded. This tile
+          // printed a hard «٠» through the whole first paint and over every
+          // failed read; a rendered ٠ next to the word «مسجّلة» is a statement
+          // that this client has never had a consultation.
+          {
+            icon: ChatDots,
+            label: "الاستشارات",
+            value: consultsView === "ready" || consultsView === "empty" ? relatedConsults.length : "—",
+            color: "text-blue-500",
+            sub: consultsView === "loading" ? "جارٍ القراءة"
+              : consultsView === "unreadable" ? "تعذّرت القراءة"
+              : "مسجّلة",
+          },
           // The fee tile appears only for a client with a fee agreement on
           // record. It used to render «0 ﷼ · مسدّدة بالكامل» for every client
           // on the platform, off two hardcoded zeros.
@@ -399,21 +502,38 @@ export default function ClientDetailPage() {
               <div className="flex items-center gap-2">
                 <Gavel size={15} className="text-[#0B3D2E] dark:text-emerald-400" weight="duotone" />
                 <span className={`text-[13px] font-black ${isDark ? "text-zinc-200" : "text-slate-700"}`}>القضايا</span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-500"}`}>{cases.length}</span>
+                {/* Count only for a read that landed — «٠» here is the claim
+                    "this client has no cases with you". */}
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-500"}`}>
+                  {casesView === "ready" || casesView === "empty" ? relatedCases.length : "—"}
+                </span>
               </div>
               <Link href={`/dashboard/lawyer/cases?client=${clientId}`}
                 className={`text-[11px] font-semibold flex items-center gap-0.5 ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-royal"}`}>
                 عرض الكل <ArrowRight size={10} />
               </Link>
             </div>
-            {cases.length === 0 ? (
+            {casesView === "loading" ? (
+              <div className="p-8 text-center">
+                <div className="inline-block w-6 h-6 rounded-full border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] animate-spin" />
+                <p className={`text-[12px] mt-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>جارٍ قراءة القضايا…</p>
+              </div>
+            ) : casesView === "unreadable" ? (
+              <div className="p-8 text-center">
+                <Warning size={28} weight="duotone" className="mx-auto mb-2 text-red-500" />
+                <p className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّرت قراءة القضايا</p>
+                <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                  هذه ليست قائمة فارغة — قد تكون لهذا الموكّل قضايا لم تُقرأ.
+                </p>
+              </div>
+            ) : casesView === "empty" ? (
               <div className="p-8 text-center">
                 <Scales size={28} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} weight="duotone" />
                 <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد قضايا</p>
               </div>
             ) : (
               <div className="divide-y divide-white/[0.04] dark:divide-white/[0.04]">
-                {cases.map(c => {
+                {relatedCases.map(c => {
                   const st = STATUS_CASE[c.status];
                   return (
                     <Link key={c.id} href={`/dashboard/lawyer/cases/${c.id}`}
@@ -445,10 +565,25 @@ export default function ClientDetailPage() {
               <div className="flex items-center gap-2">
                 <ChatDots size={15} className="text-blue-500" weight="duotone" />
                 <span className={`text-[13px] font-black ${isDark ? "text-zinc-200" : "text-slate-700"}`}>الاستشارات</span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-500"}`}>{consultations.length}</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-500"}`}>
+                  {consultsView === "ready" || consultsView === "empty" ? relatedConsults.length : "—"}
+                </span>
               </div>
             </div>
-            {consultations.length === 0 ? (
+            {consultsView === "loading" ? (
+              <div className="p-8 text-center">
+                <div className="inline-block w-6 h-6 rounded-full border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] animate-spin" />
+                <p className={`text-[12px] mt-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>جارٍ قراءة الاستشارات…</p>
+              </div>
+            ) : consultsView === "unreadable" ? (
+              <div className="p-8 text-center">
+                <Warning size={28} weight="duotone" className="mx-auto mb-2 text-red-500" />
+                <p className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّرت قراءة الاستشارات</p>
+                <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                  هذه ليست قائمة فارغة — قد تكون لهذا الموكّل استشارات لم تُقرأ.
+                </p>
+              </div>
+            ) : consultsView === "empty" ? (
               <div className="p-8 text-center">
                 <ChatDots size={28} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} weight="duotone" />
                 <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد استشارات</p>
@@ -458,7 +593,7 @@ export default function ClientDetailPage() {
                 {/* The green check used to be drawn on every row regardless of
                     status — a pending consultation shown as done. `q.status` is
                     computed from the request's real status; use it. */}
-                {consultations.map(q => (
+                {relatedConsults.map(q => (
                   <div key={q.id} className="flex items-center gap-3 px-4 py-3">
                     {q.status === "done"
                       ? <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" weight="duotone" />

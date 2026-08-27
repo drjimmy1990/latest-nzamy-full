@@ -21,8 +21,17 @@ import { requireAdmin } from "@/lib/access-control";
  *   - limit  (default 50)
  *   - offset (default 0)
  *
- * Resilient: on any error returns { data: [] } (200) so the page degrades to its
- * local fallback instead of crashing (the tables may not be applied remotely yet).
+ * FAILURE IS A 500, NOT AN EMPTY LIST. This used to return `{ data: [] }` at
+ * HTTP 200 "so the page degrades to its local fallback", and the page reads an
+ * empty array as «لا توجد منشورات مجتمع بعد»
+ * (src/app/dashboard/admin/community/moderation/page.tsx:102) — a moderation
+ * queue reporting itself clear over a query that never ran. That page already
+ * throws on `!res.ok` into its own distinct toast («تعذر الاتصال بطابور
+ * الإشراف»), so the honest branch already exists and nothing depends on the 200.
+ *
+ * `total` is now returned alongside `data`: the `.range()` below is a silent cap
+ * without it, and a queue that shows 50 of 300 pending posts with no notice is
+ * the same understatement in a quieter form.
  */
 
 // Map the DB post status → the UI CommunityModerationStatus vocabulary.
@@ -67,6 +76,7 @@ export async function GET(request: NextRequest) {
       .from("community_posts")
       .select(
         "id, title, body, category, status, visibility, author_id, created_at, profiles:author_id(id, display_name, display_name_en)",
+        { count: "exact" },
       )
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
@@ -79,7 +89,7 @@ export async function GET(request: NextRequest) {
       query = query.or(`title.ilike.%${search}%,body.ilike.%${search}%`);
     }
 
-    const { data, error } = await query;
+    const { data, count, error } = await query;
 
     if (error) {
       console.error(
@@ -89,8 +99,7 @@ export async function GET(request: NextRequest) {
         error.hint,
         error.code,
       );
-      // Degrade gracefully — the page keeps its local fallback.
-      return NextResponse.json({ data: [] });
+      return NextResponse.json({ error: "تعذّر تحميل طابور الإشراف." }, { status: 500 });
     }
 
     const items = (data ?? []).map((row) => {
@@ -118,9 +127,13 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ data: items });
+    // `count` is the total matching the SAME filters `data` was drawn from
+    // (the status/search filters are applied in SQL above, not in memory), so
+    // it is directly comparable to `items.length` — unlike the audit-log route,
+    // where the severity filter runs after the fetch.
+    return NextResponse.json({ data: items, total: count ?? null });
   } catch (err) {
     console.error("[admin/community/moderation GET] Unexpected error:", err);
-    return NextResponse.json({ data: [] });
+    return NextResponse.json({ error: "تعذّر تحميل طابور الإشراف." }, { status: 500 });
   }
 }

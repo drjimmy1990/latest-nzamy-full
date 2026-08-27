@@ -258,6 +258,19 @@ export default function ConsultationRoomPage() {
 
   const [consultation, setConsultation] = useState<Consultation | null>(null);
   const [loading, setLoading] = useState(true);
+  /**
+   * The read did not answer — as distinct from `consultation === null`, which
+   * means it answered and this id is not in the client's records.
+   *
+   * These are two different sentences and they must not share a screen.
+   * «الاستشارة غير موجودة» is a statement about the client's own file; saying
+   * it after a dropped request tells them a booking they paid for is gone.
+   * `listClientWorkflowRequests` NO LONGER REJECTS (it answers `ok: false`), so
+   * the `.catch()` below stopped being the place this was detected.
+   */
+  const [readFailed, setReadFailed] = useState(false);
+  // Bumped by «إعادة المحاولة» so the read is retried without a page reload.
+  const [reloadKey, setReloadKey] = useState(0);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
@@ -276,7 +289,19 @@ export default function ConsultationRoomPage() {
   // the lookup has run.
   const [chatLoading, setChatLoading] = useState(true);
   // Honest, user-facing chat banner (no fabricated lawyer/AI messages).
+  // Transient: sendMessage() writes here too, so nothing that must survive a
+  // failed send belongs in it — see `chatUnreadable`.
   const [chatNotice, setChatNotice] = useState<string | null>(null);
+  /**
+   * A chat READ did not answer — the room list, or the message history.
+   *
+   * Separate from `chatRoomId === null`, which means the lookup succeeded and
+   * this request has no room. «لا توجد محادثة مباشرة لهذا الطلب» is a claim
+   * about the request; after a failed read it is not one this page can make.
+   */
+  const [chatUnreadable, setChatUnreadable] = useState(false);
+  // Bumped by the chat «إعادة المحاولة», which re-runs the room/history lookup.
+  const [chatReloadKey, setChatReloadKey] = useState(0);
   // A required SessionChatPane prop that the pane does not render. A real
   // countdown needs a session-clock API that does not exist; never put a
   // ticking figure here.
@@ -288,12 +313,24 @@ export default function ConsultationRoomPage() {
     // statement about the client's records that would be made before we knew
     // whose records they are.
     if (user.loading) return;
+    let cancelled = false;
+    setLoading(true);
+    setReadFailed(false);
     // Fetch the consultation from the dynamic workflow repository (real data only).
     // No mock fallback: an unknown id leaves consultation null and the not-found UI
     // renders honestly.
     listClientWorkflowRequests({ requesterUserId: user.userId })
-      .then((requests) => {
-        const found = requests.find(r => r.id === id);
+      .then((read) => {
+        if (cancelled) return;
+        // The read failed. NOT "the consultation is missing" — we never got a
+        // list to look in, so nothing may be concluded about this id.
+        if (!read.ok) {
+          setReadFailed(true);
+          setConsultation(null);
+          setLoading(false);
+          return;
+        }
+        const found = read.items.find(r => r.id === id);
         if (found) {
           // ── WHY `metadata.mode` AND NOT `receiver` ────────────────────────
           //
@@ -361,9 +398,15 @@ export default function ConsultationRoomPage() {
         setLoading(false);
       })
       .catch(() => {
+        // Retained for the throws the fetch layer can still raise. A rejection
+        // is a failed read, never an absent consultation.
+        if (cancelled) return;
+        setReadFailed(true);
+        setConsultation(null);
         setLoading(false);
       });
-  }, [id, user.userId, user.loading]);
+    return () => { cancelled = true; };
+  }, [id, user.userId, user.loading, reloadKey]);
 
   // Wire the real chat room for this consultation — only for rows that render
   // the chat panel at all. Every other row renders the request record below and
@@ -377,7 +420,12 @@ export default function ConsultationRoomPage() {
       if (!user.userId) {
         // No account, no room to look up — and no reason to leave the pane on a
         // loading state for a lookup that will never be attempted.
+        //
+        // Flagged unreadable, not empty: no lookup happened, so «لا توجد محادثة
+        // مباشرة لهذا الطلب» would be a verdict on the request reached without
+        // asking about it. The specific reason is kept in `chatNotice`.
         setChatLoading(false);
+        setChatUnreadable(true);
         setChatRoomId(null);
         setMessages([]);
         setChatNotice("تعذّر تحميل المحادثة: لم يتم التعرف على الحساب.");
@@ -385,20 +433,41 @@ export default function ConsultationRoomPage() {
       }
       setChatLoading(true);
       setChatNotice(null);
+      setChatUnreadable(false);
       try {
         const rooms = await getChatRooms();
         if (cancelled) return;
-        const existing = rooms.find(r => r.related_id === consultation.id);
+        // getChatRooms() NO LONGER REJECTS on failure — it answers `ok: false`,
+        // so the catch below can no longer see this. Two things hang on it:
+        //
+        //  1. `rooms.items` would be [] on a failure, so `existing` would be
+        //     undefined and the branch after it would CREATE A SECOND ROOM for
+        //     a consultation that already has one — a write performed on the
+        //     strength of a read that never happened.
+        //  2. The screen would fall to the «لا توجد محادثة مباشرة لهذا الطلب»
+        //     card, which is a claim about this request, not about the network.
+        if (!rooms.ok) {
+          setChatUnreadable(true);
+          setChatRoomId(null);
+          setMessages([]);
+          return;
+        }
+        const existing = rooms.items.find(r => r.related_id === consultation.id);
         let roomId = existing?.id ?? null;
         if (!roomId && lawyerUserId) {
           try {
+            // createChatRoom now returns the ACTUAL room. It previously handed
+            // back the `{ data: room }` envelope, so `created.id` was undefined
+            // and `roomId` fell to null on EVERY successful creation — the room
+            // was made server-side and this screen then said it could not open
+            // it. Read `.id` directly now that there is one.
             const created = await createChatRoom({
               participant_ids: [user.userId as string, lawyerUserId],
               type: "direct",
               related_id: consultation.id,
               name: `استشارة ${consultation.id}`,
             });
-            roomId = created?.id ?? null;
+            roomId = created.id;
           } catch {
             roomId = null;
           }
@@ -408,7 +477,19 @@ export default function ConsultationRoomPage() {
         if (roomId) {
           const history = await getChatMessages(roomId);
           if (cancelled) return;
-          setMessages(history.map(cm => mapChatMessage(cm, user.userId)));
+          // Same trap one level down: an unreadable history would render as an
+          // empty thread, and an empty thread in a room that HAS messages tells
+          // the client their lawyer never wrote back.
+          if (!history.ok) {
+            setMessages([]);
+            // Held in its own flag, NOT in `chatNotice`: sendMessage() writes
+            // that same field, so the next failed send would quietly replace
+            // «the history could not be read» with a sentence about one message
+            // — and the thread would go back to looking merely empty.
+            setChatUnreadable(true);
+          } else {
+            setMessages(history.items.map(cm => mapChatMessage(cm, user.userId)));
+          }
         } else {
           setMessages([]);
           // No «قريباً»: nothing here schedules the room, so a promised date
@@ -421,16 +502,16 @@ export default function ConsultationRoomPage() {
         }
       } catch {
         if (!cancelled) {
+          setChatUnreadable(true);
           setChatRoomId(null);
           setMessages([]);
-          setChatNotice("تعذّر تحميل المحادثة الآن.");
         }
       } finally {
         if (!cancelled) setChatLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [consultation, lawyerUserId, user.userId, user.loading]);
+  }, [consultation, lawyerUserId, user.userId, user.loading, chatReloadKey]);
 
   async function sendMessage() {
     const text = input.trim();
@@ -759,6 +840,38 @@ export default function ConsultationRoomPage() {
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-4 border-[#C8A762]/30 border-t-[#C8A762] rounded-full animate-spin" />
           <p className="text-sm font-semibold">جارٍ تحميل بيانات الاستشارة...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Unreadable: we asked and got no answer ──
+  //
+  // This branch comes BEFORE the not-found one on purpose. They are two
+  // different statements and the wrong one is the damaging one: telling a
+  // client that a consultation they booked does not exist, because a request
+  // timed out, is precisely the defect this contract exists to end.
+  if (readFailed) {
+    return (
+      <div className="h-[100dvh] flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 gap-4 px-6 text-center" dir="rtl">
+        <Warning size={40} className="text-rose-500" />
+        <h3 className="text-lg font-black">تعذّرت قراءة بيانات الاستشارة</h3>
+        <p className="max-w-sm text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+          لم تصل بيانات استشاراتك من الخادم. هذا لا يعني أن الاستشارة غير موجودة — لم نتمكن من قراءتها.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setReloadKey(k => k + 1)}
+            className="px-5 py-2.5 bg-[#0B3D2E] text-white text-xs font-bold rounded-xl"
+          >
+            إعادة المحاولة
+          </button>
+          <Link href="/dashboard/client/consultation">
+            <button className="px-4 py-2.5 text-xs font-bold rounded-xl border border-zinc-300 dark:border-white/10 text-zinc-700 dark:text-zinc-200">
+              الرجوع لاستشاراتي
+            </button>
+          </Link>
         </div>
       </div>
     );
@@ -1093,6 +1206,25 @@ export default function ConsultationRoomPage() {
         </div>
       ) : chatRoomId ? (
         <>
+          {/* The room opened but its history did not. Its own banner, above the
+              transient one: what is on screen below is NOT the whole thread,
+              and an empty-looking thread says the lawyer never replied. */}
+          {chatUnreadable && (
+            <div className={`flex-shrink-0 flex items-center justify-center gap-2 px-4 py-2 text-center text-[11px] font-bold border-b ${
+              isDark
+                ? "bg-rose-900/20 border-rose-700/20 text-rose-300"
+                : "bg-rose-50 border-rose-200 text-rose-700"
+            }`}>
+              <span>تعذّرت قراءة الرسائل السابقة — ما يظهر أدناه ليس كامل المحادثة.</span>
+              <button
+                type="button"
+                onClick={() => setChatReloadKey(k => k + 1)}
+                className="underline underline-offset-2"
+              >
+                إعادة المحاولة
+              </button>
+            </div>
+          )}
           {chatNotice && (
             <div className={`flex-shrink-0 px-4 py-2 text-center text-[11px] font-bold border-b ${
               isDark
@@ -1159,18 +1291,39 @@ export default function ConsultationRoomPage() {
             isDark ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-zinc-200/70"
           }`}>
             <div className="flex justify-center">
-              <Warning size={30} weight="fill" className="text-amber-500" />
+              <Warning size={30} weight="fill" className={chatUnreadable ? "text-rose-500" : "text-amber-500"} />
             </div>
+            {/* THE HEADING VARIES, not just the sentence under it. «لا توجد
+                محادثة مباشرة لهذا الطلب» is a verdict on the request; after a
+                failed room read it is a verdict we are not entitled to. */}
             <h3 className={`text-[14px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>
-              لا توجد محادثة مباشرة لهذا الطلب
+              {chatUnreadable ? "تعذّرت قراءة المحادثة" : "لا توجد محادثة مباشرة لهذا الطلب"}
             </h3>
             <p className={`text-[12px] font-semibold leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-              {chatNotice ?? "تعذّر تحميل المحادثة الآن."}
+              {/* A specific reason when there is one (no session, for
+                  instance); otherwise the general one. Either way the heading
+                  above already says this is a failed read, not an absence. */}
+              {chatUnreadable
+                ? chatNotice ?? "لم تصل قائمة المحادثات من الخادم، فلا يمكننا تأكيد وجود محادثة لهذا الطلب من عدمه. لم يُنشأ شيء ولم يُفقد شيء."
+                : chatNotice ?? "تعذّر تحميل المحادثة الآن."}
             </p>
             <p className={`text-[11px] font-bold leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
               لمتابعة طلبك رقم {consultation.id}، راسل فريق نظامي مباشرة.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              {/* `user.userId` is part of the condition because without a
+                  session the effect returns at its first line: the retry would
+                  re-run the lookup, land in the identical state, and present as
+                  a button that does nothing when pressed. */}
+              {chatUnreadable && user.userId && (
+                <button
+                  type="button"
+                  onClick={() => setChatReloadKey(k => k + 1)}
+                  className="px-5 py-2.5 rounded-xl bg-[#0B3D2E] text-white text-[11px] font-black border border-[#C8A762]/20"
+                >
+                  إعادة المحاولة
+                </button>
+              )}
               <a href={supportHref} target="_blank" rel="noopener noreferrer">
                 <motion.button
                   whileHover={{ scale: 1.02 }}

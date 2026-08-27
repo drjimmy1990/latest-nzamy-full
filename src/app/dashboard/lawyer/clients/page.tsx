@@ -68,6 +68,21 @@ export default function ClientsPage() {
     });
   }, [clients, search, activeFlags, sortKey, clientView, archiveSearch]);
 
+  /**
+   * True only when the directory on screen is the directory the server holds.
+   *
+   * `clients` is `[]` in three different situations — before the first fetch
+   * resolves, after one fails, and when the lawyer genuinely has no clients —
+   * and only the third one licenses a number. The subtitle and the
+   * active/archive tabs used to print «٠ موكّل» and «الموكلون النشطون ٠» in
+   * all three, the failure case included: those zeros sat directly under the
+   * red «تعذّر تحميل دليل الموكّلين» banner on the same screen.
+   *
+   * Withheld, not zeroed. Same flag, same reasoning as
+   * dashboard/client/requests/page.tsx:606.
+   */
+  const countsKnown = !loading && !loadError;
+
   // Only clients with a fee agreement on record contribute; a client with no
   // figures is absent from the total, not a zero in it.
   const withFees = clients.filter(c => c.totalFees !== null && c.paidFees !== null);
@@ -177,11 +192,14 @@ export default function ClientsPage() {
                 : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"
             }`}>
             {tab.label}
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-              clientView === tab.key
-                ? isDark ? "bg-white/15 text-white" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
-                : isDark ? "bg-white/[0.05] text-zinc-600" : "bg-slate-200 text-slate-400"
-            }`}>{tab.count}</span>
+            {/* Number only when a read is behind it — see `countsKnown`. */}
+            {countsKnown && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                clientView === tab.key
+                  ? isDark ? "bg-white/15 text-white" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
+                  : isDark ? "bg-white/[0.05] text-zinc-600" : "bg-slate-200 text-slate-400"
+              }`}>{tab.count}</span>
+            )}
           </button>
         ))}
       </div>
@@ -227,10 +245,16 @@ export default function ClientsPage() {
             style={{ fontFamily: "var(--font-brand)" }}>
             {clientView === "archive" ? "أرشيف الموكلين" : "الموكلّون"}
           </h1>
+          {/* The failure case was missing from this ternary, so a directory
+              that could not be read printed «٠ موكّل · ٠ لديهم طلبات نشطة» —
+              two confident figures on a screen already admitting the read did
+              not succeed. */}
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
             {loading
               ? "جارٍ التحميل…"
-              : `${filtered.length} موكّل · ${clientView === "active" ? `${clients.filter(c => !isArchived(c) && c.activeRequests > 0).length} لديهم طلبات نشطة` : "تاريخ سابق — سجل دائم"}`}
+              : loadError
+                ? <span className="text-red-500 font-semibold">تعذّرت قراءة الدليل — العدد غير معروف</span>
+                : `${filtered.length} موكّل · ${clientView === "active" ? `${clients.filter(c => !isArchived(c) && c.activeRequests > 0).length} لديهم طلبات نشطة` : "تاريخ سابق — سجل دائم"}`}
           </p>
         </div>
         {clientView === "active" && (
@@ -300,12 +324,21 @@ export default function ClientsPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="col-span-2">
+            {/* THREE nothings, not two. «لا يوجد موكّلون مطابقون» blames the
+                search box, and it was printed for a lawyer with no clients at
+                all — whose search is not at fault and for whom resetting a
+                filter changes nothing. Same distinction the cases page draws
+                between «لا توجد قضايا بعد» and «لا توجد قضايا مطابقة». */}
             <EmptyState
               icon={<User />}
-              title={loadError ? "تعذّر تحميل القائمة" : "لا يوجد موكّلون مطابقون"}
+              title={loadError
+                ? "تعذّر تحميل القائمة"
+                : clients.length === 0 ? "لا يوجد موكّلون بعد" : "لا يوجد موكّلون مطابقون"}
               description={loadError
                 ? "فشلت قراءة دليل الموكّلين — هذه ليست قائمة فارغة، بل قراءة لم تنجح."
-                : "لم يتم العثور على موكّلين يطابقون شروط البحث أو الفلترة الحالية."}
+                : clients.length === 0
+                  ? "أضف موكّلاً جديداً، أو انتظر أول طلب يُوجَّه إليك من المنصة."
+                  : "لم يتم العثور على موكّلين يطابقون شروط البحث أو الفلترة الحالية."}
               action={loadError
                 ? { label: "إعادة المحاولة", onClick: loadClients }
                 : { label: "إضافة موكّل", onClick: () => setShowModal(true) }}

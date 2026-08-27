@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { addToDesktop, addToSession, getActiveSessions, createSession, type CollectorSession } from "@/lib/services/researchService";
+import { listViewState, type ListRead } from "@/lib/services/listRead";
 import { ClientMediaResultTab, CLIENT_MEDIA_FLAGS } from "./ClientMediaPanel";
 import InputPhase, { type CaseFile, type MediaItem } from "./InputPhase";
 
@@ -70,6 +71,17 @@ function generateSqueezerQuestions(fileCount: number, fileNames: string[]): DynQ
   return qs.slice(0, 3);
 }
 
+/**
+ * A session's creation date, or `null` when it has none to show. Server rows
+ * arrive unmapped from `research_sessions` (`created_at`, not `createdAt`), so
+ * this printed «Invalid Date» under real session names. Withheld instead.
+ */
+function sessionDate(createdAt: string | undefined): string | null {
+  if (!createdAt) return null;
+  const d = new Date(createdAt);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString("ar-SA");
+}
+
 const sp = { type: "spring" as const, stiffness: 280, damping: 26 };
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.09 } } };
 const fadeUp = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: sp } };
@@ -96,7 +108,19 @@ export default function AttachmentSqueezer({ isDark, isRTL }: Props) {
   const [activeTab, setActiveTab]   = useState<string>("admissions");
   const [exportDone, setExportDone] = useState(false);
   const [showExportPopup, setShowExportPopup] = useState(false);
-  const [sessions, setSessions]     = useState<CollectorSession[]>([]);
+  /*
+    THE SESSION LIST IN THE EXPORT POPUP IS A READ, NOT AN ARRAY.
+
+    `setSessions(await getActiveSessions())` used to turn a failed session query
+    into `[]`, and the popup renders its session picker only when the array is
+    non-empty — so a failed read looked exactly like "you have no sessions" and
+    quietly pushed the user toward creating a duplicate of a session they
+    already had. The read is kept so the popup can say which one it is.
+  */
+  const [sessionsRead, setSessionsRead] = useState<ListRead<CollectorSession> | null>(null);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  /** Arabic error from the last failed export. Null while nothing has failed. */
+  const [exportError, setExportError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const router  = useRouter();
   const [newSessionName, setNewSessionName] = useState("");
@@ -111,6 +135,10 @@ export default function AttachmentSqueezer({ isDark, isRTL }: Props) {
   const border = isDark ? "border-white/10" : "border-zinc-200";
   const cardBg = isDark ? "bg-zinc-900/50 backdrop-blur-xl" : "bg-white shadow-lg";
   const card = `rounded-[2rem] border ${border} ${cardBg}`;
+
+  // Rendered only inside the export popup, each under its own state branch.
+  const sessionsState = listViewState(sessionsLoading, sessionsRead);
+  const sessions = sessionsRead?.ok ? sessionsRead.items : [];
 
   async function startThinking() {
     setPhase("thinking");
@@ -151,18 +179,42 @@ export default function AttachmentSqueezer({ isDark, isRTL }: Props) {
     ].join("\n");
   }
 
-  async function openExportPopup() {
-    setSessions(await getActiveSessions());
-    setShowExportPopup(true);
+  async function loadSessions() {
+    setSessionsLoading(true);
+    setSessionsRead(await getActiveSessions());
+    setSessionsLoading(false);
   }
 
+  async function openExportPopup() {
+    setExportError(null);
+    setShowExportPopup(true);
+    await loadSessions();
+  }
+
+  /*
+    addToDesktop / addToSession THROW in supabase mode now.
+
+    Before this, a rejection here meant `setExportDone(true)` simply never ran:
+    the popup sat open, nothing was saved, and the user was told nothing at all
+    — the worst of the three possible outcomes. The failure is caught and shown
+    IN the popup, and `exportDone` (which swaps the button for «تم الإضافة —
+    افتح المجمع») is only set once the write actually succeeded.
+  */
   async function doExport(target: "desktop" | string) {
     const md = buildReportMarkdown();
     const title = `ملف مرجعي — ${files.map(f=>f.name).join(" · ").slice(0, 50)}`;
-    if (target === "desktop") {
-      await addToDesktop("attachment-squeezer", "case", title, md);
-    } else {
-      await addToSession(target, "attachment-squeezer", "case", title, md);
+    setExportError(null);
+    try {
+      if (target === "desktop") {
+        await addToDesktop("attachment-squeezer", "case", title, md);
+      } else {
+        await addToSession(target, "attachment-squeezer", "case", title, md);
+      }
+    } catch (error) {
+      console.error("[AttachmentSqueezer] export failed:", error);
+      // The popup stays open so the user can retry a different target.
+      setExportError("تعذّر حفظ الملف المرجعي — لم يُضَف للمجمع. أعد المحاولة.");
+      return;
     }
     setExportDone(true);
     setShowExportPopup(false);
@@ -171,7 +223,17 @@ export default function AttachmentSqueezer({ isDark, isRTL }: Props) {
   }
 
   async function handleCreateAndExport() {
-    const s = await createSession(newSessionName.trim() || undefined);
+    let s: CollectorSession;
+    try {
+      // createSession now returns the actual row — `s.id` was `undefined`
+      // before (the `{ data }` envelope was returned unwrapped), so this
+      // exported into a session id that did not exist.
+      s = await createSession(newSessionName.trim() || undefined);
+    } catch (error) {
+      console.error("[AttachmentSqueezer] createSession failed:", error);
+      setExportError("تعذّر إنشاء الجلسة — لم يُحفظ شيء. أعد المحاولة.");
+      return;
+    }
     await doExport(s.id);
   }
 
@@ -421,20 +483,53 @@ export default function AttachmentSqueezer({ isDark, isRTL }: Props) {
               <div><p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>الديسك توب</p>
                 <p className={`text-[11px] ${ts}`}>مساحة عامة مشتركة</p></div>
             </button>
-            {sessions.length > 0 && <>
+            {sessionsState === "loading" && (
+              <p className={`text-[11px] font-bold ${ts}`}>يجري تحميل الجلسات…</p>
+            )}
+
+            {/* An unreadable session list is not an absence of sessions. Saying
+                so here stops the user creating a duplicate of a session that
+                already exists on the server. */}
+            {sessionsState === "unreadable" && (
+              <div className={`rounded-xl border p-3 space-y-2 ${isDark ? "border-amber-500/20 bg-amber-500/5" : "border-amber-200 bg-amber-50"}`}>
+                <p className={`text-[11px] font-bold flex items-center gap-1.5 ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+                  <Warning size={13} weight="fill" /> تعذّرت قراءة جلساتك
+                </p>
+                <p className={`text-[10px] leading-relaxed ${isDark ? "text-amber-400/70" : "text-amber-700/80"}`}>
+                  قد تكون لديك جلسات لم تصل قائمتها. يمكنك الحفظ في الديسك توب،
+                  أو إعادة المحاولة قبل إنشاء جلسة جديدة.
+                </p>
+                <button onClick={() => { void loadSessions(); }}
+                  className={`text-[10px] font-bold underline underline-offset-2 ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+                  إعادة المحاولة
+                </button>
+              </div>
+            )}
+
+            {sessionsState === "ready" && <>
               <p className={`text-[11px] font-bold ${ts}`}>أو اختر جلسة:</p>
               <div className="space-y-2 max-h-40 overflow-y-auto">
                 {sessions.map(s => (
                   <button key={s.id} onClick={() => doExport(s.id)}
                     className={`w-full flex items-center gap-3 p-3 rounded-xl border text-start transition-all ${isDark ? "border-white/10 hover:bg-white/5" : "border-zinc-200 hover:bg-zinc-50"}`}>
                     <FolderOpen size={16} className="text-blue-500" weight="duotone" />
-                    <div><p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{s.name}</p>
-                      <p className={`text-[10px] ${ts}`}>{new Date(s.createdAt).toLocaleDateString("ar-SA")}</p></div>
+                    <div><p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{s.name || "بلا اسم"}</p>
+                      {/* No date rather than «Invalid Date»: server rows are
+                          unmapped and carry `created_at`, not `createdAt`. */}
+                      {sessionDate(s.createdAt) && (
+                        <p className={`text-[10px] ${ts}`}>{sessionDate(s.createdAt)}</p>
+                      )}</div>
                   </button>
                 ))}
               </div>
             </>
             }
+
+            {exportError && (
+              <p role="alert" className={`text-[11px] font-bold flex items-start gap-1.5 rounded-xl border p-2.5 ${isDark ? "border-red-500/25 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-700"}`}>
+                <Warning size={13} weight="fill" className="mt-0.5 flex-shrink-0" /> {exportError}
+              </p>
+            )}
             {/* ── إنشاء جلسة جديدة ── */}
             {!showNewSessionInput ? (
               <button onClick={() => setShowNewSessionInput(true)}

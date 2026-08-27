@@ -5,8 +5,19 @@ import { requireAdmin } from "@/lib/access-control";
 /**
  * GET /api/v1/admin/articles — List ALL articles (any status) for the admin CMS.
  *
- * Admin-gated. Uses the service-role client. Resilient: on error returns
- * { data: [] } (200) so the admin page degrades gracefully.
+ * Admin-gated. Uses the service-role client.
+ *
+ * FAILURE IS A NON-2xx, NOT AN EMPTY LIST. Both branches below used to answer a
+ * failed read with `{ data: [] }` and HTTP 200, under a docblock that called it
+ * "degrades gracefully". It does not: an empty `data` array is the CMS stating
+ * that the platform has no articles, and the admin page (
+ * src/app/dashboard/admin/content/articles/page.tsx:132) reads exactly that
+ * array. A 500 was chosen over keeping the 200 with a `degraded: true` marker
+ * (the /api/v1/service-requests compromise) because no caller here depends on
+ * the 200 — that page already has an `!res.ok` branch on the very next line,
+ * so this lands without a consumer edit — and a real status code is the
+ * stronger answer: it also reaches fetch-level tooling, logs and monitors that
+ * never look inside the body.
  */
 export async function GET() {
   const gate = await requireAdmin();
@@ -23,13 +34,13 @@ export async function GET() {
 
     if (error) {
       console.error("[admin/articles GET] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ data: [] });
+      return NextResponse.json({ error: "تعذّر تحميل المقالات." }, { status: 500 });
     }
 
     return NextResponse.json({ data: data ?? [] });
   } catch (err) {
     console.error("[admin/articles GET] Unexpected error:", err);
-    return NextResponse.json({ data: [] });
+    return NextResponse.json({ error: "تعذّر تحميل المقالات." }, { status: 500 });
   }
 }
 

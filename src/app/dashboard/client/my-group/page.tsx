@@ -1,41 +1,69 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSearchParams } from "next/navigation";
+// Ten more icons were imported here and used nowhere — CreditCard, Clock,
+// Gavel, ShareNetwork, Bell, ArrowLeft, SealPercent, PaperPlaneTilt, Star and
+// Confetti. They are the leftovers of the rotation/billing UI this page shed,
+// and each one is a `import` cost on a client bundle for a control that does
+// not exist.
 import {
-  UsersThree, Crown, CreditCard, CheckCircle, Clock, Gavel,
-  Warning, Plus, ShareNetwork, Repeat, Bell,
-  ArrowLeft, UserPlus, SealPercent, ArrowClockwise,
-  PaperPlaneTilt, ChartBar, Star, Confetti, X, Copy,
+  UsersThree, Crown, CheckCircle, Warning, Plus, Repeat,
+  UserPlus, ArrowClockwise, ChartBar, X, Copy,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
 import { createGroup, joinGroup, inviteToGroup, getGroupState, getGroupMembers, getGroups } from "@/lib/services/groupService";
+import {
+  listOk,
+  listFailed,
+  listViewState,
+  itemsOf,
+  type ListRead,
+} from "@/lib/services/listRead";
 import { SkeletonCard } from "../_components/DashboardSkeleton";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ── Types ────────────────────────────────────────────────────────────────────
+/**
+ * A member row, reduced to the four fields this page actually renders.
+ *
+ * WHAT CAME OFF IT: `queriesUsed`, `queriesTotal`, `rotationIndex`,
+ * `skippedTurns` and `status`. Every one was filled in by the mapper below
+ * with a literal — `queriesUsed: 0`, `queriesTotal: 25`, `skippedTurns: 0` —
+ * and none of the five has a column behind it: GET /api/v1/groups/[id]/members
+ * returns id, user_id, role, joined_at, status and an embedded profile, and
+ * nothing anywhere counts a member's queries. They were invisible today only
+ * because the rotation UI that read them was gated behind DashboardComingSoon;
+ * left in the shape, they are «٠ / ٢٥ استفسار» waiting to be re-rendered by
+ * whoever ungates it. `RotationEntry` went with them — it had no producer and
+ * no consumer at all.
+ */
 interface Member {
-  id: string; name: string; initials: string;
-  role: "admin" | "member"; queriesUsed: number; queriesTotal: number;
-  rotationIndex: number; skippedTurns: number; status: "active" | "inactive";
-}
-interface RotationEntry {
-  month: string; memberId: string; memberName: string;
-  status: "paid" | "current" | "upcoming" | "skipped"; amount: number; paidAt?: string;
+  id: string;
+  name: string;
+  initials: string;
+  role: "admin" | "member";
 }
 
-// ── Default fallback data ──────────────────────────────────────────────────────────
-const DEFAULT_GROUP = {
-  id: "", name: "الربع القانونية",
-  plan: "الربع القانونية", totalCost: 499, perPerson: 99,
-  lawyerConsultsLeft: 1, caseUsed: false,
-  maxMembers: 5, skipGraceDays: 3,
-  totalUsed: 0, totalQuota: 100,
-};
+/**
+ * The name a new group is created with when the client leaves the field blank.
+ *
+ * This is the ONE survivor of the `DEFAULT_GROUP` literal that used to sit
+ * here, and it survives because it is a value being SENT, not a fact being
+ * displayed: `createGroup` writes it to `groups.name`. Everything else in that
+ * object was a display fallback — a plan «الربع القانونية», «٤٩٩ ر.س» total,
+ * «٩٩ ر.س» per head, «١/شهر» lawyer consultations, a five-seat cap and a
+ * «١٠٠» query quota — and a page that could not read a group rendered every
+ * one of them as that group's own terms. There is no billing backend to price
+ * anything (the card below says so in the client's own language), and the seat
+ * cap is a real column that is now read from the row instead of assumed.
+ */
+const NEW_GROUP_FALLBACK_NAME = "الربع القانونية";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-const card = "relative rounded-[1.5rem] border border-white/10 bg-white/[0.03] backdrop-blur-md overflow-hidden";
+// A module-level `card` string stood here, shadowed by a theme-aware `card` in
+// both components below and therefore read by nothing.
 const sp = { type:"spring" as const, stiffness:120, damping:20 };
 const stagger = { hidden:{}, visible:{ transition:{ staggerChildren:0.07 } } };
 const fadeUp = { hidden:{ opacity:0, y:16 }, visible:{ opacity:1, y:0, transition:sp } };
@@ -146,9 +174,36 @@ export default function MyGroupPage() {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteCode, setInviteCode] = useState<string>("");
 
-  // Dynamic data from service
-  const [groupData, setGroupData] = useState<{ group: any; members: Member[] } | null>(null);
+  // ── The group, in the three states a read has ──────────────────────────────
+  //
+  // `groupUnreadable` is the one this page did not have. `getGroupState()` now
+  // THROWS in supabase mode instead of answering a failed request with this
+  // browser's last known group (groupService.ts), and the `.catch(() =>
+  // setGroupData(null))` that stood here turned that throw straight back into
+  // «لا توجد مجموعة» — the same false statement one layer up.
+  //
+  // BEWARE OF ONE MORE LAYER ABOVE THIS ONE, which is not fixed here because
+  // it is not this change's file: useClientGroupMembership swallows the same
+  // throw back to `readClientGroupState()` (src/hooks/useClientGroupMembership.ts:26),
+  // so `hasGroup` can still be true purely because this browser once joined a
+  // group — under another account, or before being removed from it. That is
+  // reported as a follow-up. What this page can guarantee is that it never
+  // DRAWS a group out of local defaults: every figure below comes from the row
+  // or is withheld.
+  const [groupUnreadable, setGroupUnreadable] = useState(false);
+  /**
+   * The group's own row-derived facts, or null for "the server says this
+   * account is in no group". `capacity` is `groups.max_members`, read from the
+   * row rather than assumed to be five; null when the groups list could not be
+   * read, and then no seat arithmetic is printed at all.
+   */
+  const [groupInfo, setGroupInfo] = useState<
+    { id: string; name: string; capacity: number | null } | null
+  >(null);
+  const [membersRead, setMembersRead] = useState<ListRead<Member> | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Bumped by «إعادة المحاولة»; the loader below refetches when it changes. */
+  const [attempt, setAttempt] = useState(0);
 
   // The pricing page's «ابدأ مجموعتك» CTA links to /dashboard/client/my-group
   // ?action=create. `searchParams` was read on line 126 and then used by
@@ -165,54 +220,113 @@ export default function MyGroupPage() {
       setLoading(false);
       return;
     }
-    getGroupState()
-      .then(async (state) => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const state = await getGroupState();
+        if (cancelled) return;
         if (state.status === "none") {
-          setGroupData(null);
+          setGroupInfo(null);
+          setMembersRead(null);
           return;
         }
-        // Fetch members + the group's join_code (for the invite link) in parallel.
-        let members: Member[] = [];
-        let code = "";
-        if (state.groupId) {
-          try {
-            const [apiMembers, groups] = await Promise.all([
-              getGroupMembers(state.groupId),
-              getGroups(),
-            ]);
-            members = apiMembers.map((m, i) => ({
-              id: m.user_id,
-              name: m.profile?.display_name || m.user_id,
-              initials: (m.profile?.display_name || "--").slice(0, 2),
-              role: m.role === "owner" ? "admin" as const : "member" as const,
-              queriesUsed: 0,
-              queriesTotal: 25,
-              rotationIndex: i,
-              skippedTurns: 0,
-              status: m.status === "active" ? "active" as const : "inactive" as const,
-            }));
-            const matched = groups.find((g) => g.id === state.groupId);
-            code = matched?.join_code ?? "";
-          } catch { /* keep empty */ }
+        const groupId = state.groupId ?? "";
+        if (!groupId) {
+          // The membership is known and the group is not. Nothing can be read
+          // about it, so nothing is claimed about it either.
+          setGroupInfo({ id: "", name: state.groupName ?? "", capacity: null });
+          setMembersRead(listFailed<Member>());
+          return;
         }
-        setInviteCode(code);
-        setGroupData({
-          group: { ...DEFAULT_GROUP, id: state.groupId || "", name: state.groupName || DEFAULT_GROUP.name, invite_code: code },
-          members,
+        // Members and the group row (for its join_code and its real
+        // max_members) in parallel. Each carries its own outcome now, so the
+        // `catch { /* keep empty */ }` that used to wrap both — and rendered a
+        // roster that could not be read as a group with no members — is gone
+        // rather than merely narrowed.
+        const [apiMembers, groups] = await Promise.all([
+          getGroupMembers(groupId),
+          getGroups(),
+        ]);
+        if (cancelled) return;
+        const matched = groups.ok ? groups.items.find((g) => g.id === groupId) ?? null : null;
+        setInviteCode(matched?.join_code ?? "");
+        setGroupInfo({
+          id: groupId,
+          // The row's own name first, then the membership state's. Neither is
+          // invented: what is gone is the third fallback, DEFAULT_GROUP.name,
+          // which printed «الربع القانونية» as the name of a group nobody had
+          // named that.
+          name: matched?.name || state.groupName || "",
+          capacity: typeof matched?.max_members === "number" ? matched.max_members : null,
         });
-      })
-      .catch(() => setGroupData(null))
-      .finally(() => setLoading(false));
-  }, [hasGroup]);
+        setMembersRead(
+          apiMembers.ok
+            ? listOk(
+                apiMembers.items.map((m) => ({
+                  id: m.user_id,
+                  name: m.profile?.display_name || m.user_id,
+                  initials: (m.profile?.display_name || "--").slice(0, 2),
+                  role: m.role === "owner" ? ("admin" as const) : ("member" as const),
+                })),
+              )
+            : listFailed<Member>(),
+        );
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[my-group] group state read failed:", err);
+        setGroupUnreadable(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [hasGroup, attempt]);
 
-  // Derive display data from service response
-  const GROUP = groupData?.group || DEFAULT_GROUP;
-  const MEMBERS: Member[] = groupData?.members || [];
+  const retry = useCallback(() => {
+    setLoading(true);
+    setGroupUnreadable(false);
+    setGroupInfo(null);
+    setMembersRead(null);
+    setAttempt((n) => n + 1);
+  }, []);
+
   // Rotation/payer/billing derivations removed — there is no rotation or billing
   // backend, so those values were pure array-index fiction rendered to real
   // users as "money owed". The billing/rotation UI is gated behind
   // DashboardComingSoon below; only the real membership features remain.
-  const activeGroup = { ...GROUP, name: membership.groupName ?? GROUP.name };
+  const membersView = listViewState(loading, membersRead);
+  const MEMBERS = itemsOf(membersRead);
+  const capacity = groupInfo?.capacity ?? null;
+  // `displayGroupName`, not `groupName` — that name belongs to the create
+  // modal's input state a few lines above.
+  const displayGroupName = groupInfo?.name || membership.groupName || "";
+  /**
+   * «٣ من ٥ أعضاء», «٣ أعضاء», or null.
+   *
+   * NULL IS A REAL ANSWER HERE and it is the point of the function. This line
+   * used to be `{MEMBERS.length}/{GROUP.maxMembers} أعضاء`, printed in two
+   * places, with `maxMembers` coming from a local literal — so a group whose
+   * roster could not be read announced «٠/٥ أعضاء»: a membership count of zero
+   * and a five-seat plan, neither of which anything had said. The seat half is
+   * dropped when the group row could not be read, and the whole line is dropped
+   * when the roster could not be.
+   */
+  const membersLabel = membersView === "ready" || membersView === "empty"
+    ? (capacity === null
+        ? `${MEMBERS.length.toLocaleString("ar-SA")} أعضاء`
+        : `${MEMBERS.length.toLocaleString("ar-SA")}/${capacity.toLocaleString("ar-SA")} أعضاء`)
+    : null;
+  /**
+   * Whether there is provably room for one more member.
+   *
+   * BOTH halves have to be known. The «أضف عضواً جديداً» slot used to appear
+   * whenever `MEMBERS.length < GROUP.maxMembers`, which on an unreadable roster
+   * is `0 < 5` — so a full group was offered another seat, and told how many
+   * were «متبقي».
+   */
+  const seatsLeft = (membersView === "ready" || membersView === "empty") && capacity !== null
+    ? Math.max(0, capacity - MEMBERS.length)
+    : null;
 
   const card = isDark
     ? "relative rounded-[1.5rem] border border-white/10 bg-white/[0.03] backdrop-blur-md overflow-hidden"
@@ -228,7 +342,37 @@ export default function MyGroupPage() {
     );
   }
 
-  if (!hasGroup) {
+  // The membership itself could not be read. NOT the create/join screen below:
+  // that screen states «ليست لديك مجموعة» in everything but words — it opens
+  // with «أنشئ مجموعة جديدة» — and a client who is in a group would be invited
+  // to start a second one.
+  if (groupUnreadable) {
+    return (
+      <div className={`p-6 md:p-10 min-h-[60vh] flex flex-col items-center justify-center gap-4 text-center ${isDark ? "text-white" : "text-zinc-900"}`} dir="rtl">
+        <div className={`w-16 h-16 rounded-[1.25rem] flex items-center justify-center ${isDark ? "bg-white/5 border border-white/10" : "bg-rose-50 border border-rose-100"}`}>
+          <Warning size={30} weight="duotone" className={isDark ? "text-rose-400" : "text-rose-600"} />
+        </div>
+        <div className="space-y-1.5">
+          <h1 className="text-xl font-bold">تعذّرت قراءة بيانات مجموعتك</h1>
+          <p className={`text-sm max-w-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+            لم نتمكن من قراءة عضويتك من الخادم، ولا يمكننا تأكيد ما إذا كنت ضمن مجموعة.
+          </p>
+        </div>
+        <motion.button onClick={retry} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} transition={sp}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-[1rem] border text-sm font-bold transition-colors ${isDark ? "border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10" : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 shadow-sm"}`}>
+          <ArrowClockwise size={16} weight="bold" />
+          إعادة المحاولة
+        </motion.button>
+      </div>
+    );
+  }
+
+  // `!groupInfo` covers BOTH "this account is in no group" answers: the hook's
+  // (`hasGroup === false`) and the server's (`getGroupState()` returned
+  // `status: "none"` while the hook's cached localStorage state still said
+  // otherwise). The server's answer wins, which is what stops a stale browser
+  // from rendering a group page for a membership that has ended.
+  if (!groupInfo) {
     return (
       <div className={`p-6 md:p-10 min-h-[80vh] flex flex-col items-center justify-center ${isDark ? "text-white" : "text-zinc-900"}`}>
         <EmptyState onCreate={() => setShowCreate(true)} onJoin={() => setShowJoin(true)} isDark={isDark} />
@@ -298,7 +442,7 @@ export default function MyGroupPage() {
                   onClick={async () => {
                     setCreateError(null);
                     try {
-                      await createGroup({ name: groupName.trim() || GROUP.name, max_members: maxMembers });
+                      await createGroup({ name: groupName.trim() || NEW_GROUP_FALLBACK_NAME, max_members: maxMembers });
                       setShowCreate(false);
                       await membership.refresh();
                     } catch (err) {
@@ -382,7 +526,7 @@ export default function MyGroupPage() {
   // Generate/fetch the group's invite code, then reveal the invite banner.
   async function handleInvite() {
     setInviteError(null);
-    const groupId = groupData?.group?.id;
+    const groupId = groupInfo?.id;
     if (!groupId) return;
     setInviteLoading(true);
     try {
@@ -407,13 +551,30 @@ export default function MyGroupPage() {
               <UsersThree size={24} className={isDark ? "text-emerald-400" : "text-emerald-600"} weight="duotone" />
             </div>
             <div>
-              <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{activeGroup.name}</h1>
+              {/* The group's own name, or the section's. «الربع القانونية» —
+                  the DEFAULT_GROUP literal that used to be the last fallback
+                  here — is a plan on /pricing, not the name of this client's
+                  group, and printing it as an <h1> named a group nobody named. */}
+              <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
+                {displayGroupName || "مجموعتي"}
+              </h1>
               <div className="flex items-center gap-2 mt-1">
-                <span className={`text-xs font-mono ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{GROUP.plan}</span>
-                <span className={`w-1 h-1 rounded-full ${isDark ? "bg-zinc-700" : "bg-zinc-300"}`} />
-                <span className={`text-xs font-medium ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>{MEMBERS.length}/{GROUP.maxMembers} أعضاء</span>
-                <span className={`w-1 h-1 rounded-full ${isDark ? "bg-zinc-700" : "bg-zinc-300"}`} />
-                <span className="text-xs px-2 py-0.5 rounded-full bg-gold/10 border border-gold/20 text-gold font-medium">محامٍ متخصص</span>
+                {/* TWO CLAIMS CAME OFF THIS LINE.
+                    «{GROUP.plan}» was DEFAULT_GROUP.plan, the literal string
+                    «الربع القانونية», printed as this group's subscription
+                    plan — `groups` has no plan column and nothing in this
+                    platform grants one.
+                    «محامٍ متخصص» was an unconditional gold badge asserting a
+                    specialist lawyer is attached to the group. No column, no
+                    route and no assignment exists for that either.
+                    What is left is the membership line, which is read off the
+                    roster and the row's own max_members — and is dropped
+                    entirely when either could not be read. */}
+                {membersLabel ? (
+                  <span className={`text-xs font-medium ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>{membersLabel}</span>
+                ) : (
+                  <span className={`text-xs font-medium ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>تعذّرت قراءة الأعضاء</span>
+                )}
               </div>
             </div>
           </div>
@@ -442,14 +603,27 @@ export default function MyGroupPage() {
                 <p className={`text-sm font-medium ${isDark ? "text-white" : "text-zinc-800"}`}>رابط دعوة المجموعة</p>
                 <button onClick={() => setShowInvite(false)} className={`transition-colors ${isDark ? "text-zinc-500 hover:text-white" : "text-zinc-400 hover:text-zinc-800"}`}><X size={16} /></button>
               </div>
-              <div className="flex gap-2">
-                <div className={`flex-1 rounded-xl border px-4 py-2.5 text-sm font-mono truncate ${isDark ? "border-white/10 bg-white/5 text-zinc-400" : "border-zinc-200 bg-zinc-50 text-zinc-600"}`}>{inviteLink}</div>
-                <motion.button onClick={copyLink} whileTap={{ scale:0.95 }} transition={sp}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors ${isDark ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20" : "bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100"}`}>
-                  {copied ? <CheckCircle size={16} weight="fill" /> : <Copy size={16} />}
-                  {copied ? "تم" : "نسخ"}
-                </motion.button>
-              </div>
+              {/* NO LINK WITHOUT A CODE. `inviteLink` was built as
+                  `${origin}/group/join/${inviteCode || ''}`, so whenever the
+                  join_code had not been read — which is every time getGroups()
+                  failed, and every time this banner was opened from the «أضف
+                  عضواً جديداً» slot rather than from «دعوة عضو» — the box
+                  displayed a URL ending in a slash and «نسخ» copied it. A
+                  client would have sent that to a relative. */}
+              {inviteCode ? (
+                <div className="flex gap-2">
+                  <div className={`flex-1 rounded-xl border px-4 py-2.5 text-sm font-mono truncate ${isDark ? "border-white/10 bg-white/5 text-zinc-400" : "border-zinc-200 bg-zinc-50 text-zinc-600"}`}>{inviteLink}</div>
+                  <motion.button onClick={copyLink} whileTap={{ scale:0.95 }} transition={sp}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors ${isDark ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20" : "bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100"}`}>
+                    {copied ? <CheckCircle size={16} weight="fill" /> : <Copy size={16} />}
+                    {copied ? "تم" : "نسخ"}
+                  </motion.button>
+                </div>
+              ) : (
+                <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                  لم نتمكن من قراءة كود الدعوة. اضغط «دعوة عضو» أعلاه لإنشائه.
+                </p>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -467,11 +641,34 @@ export default function MyGroupPage() {
           {/* Header */}
           <div className="flex items-center justify-between">
             <p className={`text-sm font-semibold ${isDark ? "text-white" : "text-zinc-900"}`}>أعضاء المجموعة</p>
+            {/* «—», not «٠/٥», when the roster could not be read. A rendered
+                zero is the same claim as a rendered 42 — and here it would be
+                a claim that a group with members has none. */}
             <div className={`flex items-center gap-1.5 text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
               <UsersThree size={13} />
-              <span className={`font-mono font-semibold ${isDark ? "text-white" : "text-zinc-800"}`}>{MEMBERS.length}/{GROUP.maxMembers} أعضاء</span>
+              <span className={`font-mono font-semibold ${isDark ? "text-white" : "text-zinc-800"}`}>
+                {membersLabel ?? "—"}
+              </span>
             </div>
           </div>
+
+          {/* The roster itself could not be read. Never an empty list here: a
+              group always has at least the member reading this page, so «لا
+              يوجد أعضاء» would be false on its face — and the list simply
+              rendering nothing is the silent version of the same thing. */}
+          {membersView === "unreadable" && (
+            <div className={`${card} flex flex-col items-start gap-3 p-4`}>
+              <p className={`flex items-center gap-2 text-[13px] font-medium ${isDark ? "text-rose-400" : "text-rose-600"}`}>
+                <Warning size={16} weight="fill" className="flex-shrink-0" />
+                تعذّرت قراءة قائمة أعضاء المجموعة.
+              </p>
+              <motion.button onClick={retry} whileTap={{ scale: 0.97 }} transition={sp}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-colors ${isDark ? "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10" : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"}`}>
+                <ArrowClockwise size={13} weight="bold" />
+                إعادة المحاولة
+              </motion.button>
+            </div>
+          )}
 
           {/* Members as a clean vertical list */}
           <div className="space-y-2">
@@ -506,13 +703,23 @@ export default function MyGroupPage() {
               );
             })}
 
-            {/* Add member slot */}
-            {MEMBERS.length < GROUP.maxMembers && (
+            {/* Add member slot — offered only when BOTH the roster and the
+                group's own max_members were read, and there is provably a seat
+                left. The gate used to be `MEMBERS.length < GROUP.maxMembers`,
+                which on an unreadable roster reads `0 < 5` off a local literal:
+                a full group was invited to add a sixth member and told «متبقي ٥
+                مقعد».
+
+                The press now runs handleInvite() rather than opening the banner
+                directly, because opening it directly is how the banner came up
+                with no join_code in it. */}
+            {seatsLeft !== null && seatsLeft > 0 && (
               <motion.button
                 initial={{ opacity:0, x:12 }} animate={{ opacity:1, x:0 }}
                 transition={{ ...sp, delay: MEMBERS.length * 0.06 }}
                 whileHover={{ scale:1.01 }} whileTap={{ scale:0.99 }}
-                onClick={() => setShowInvite(true)}
+                disabled={inviteLoading}
+                onClick={() => { void handleInvite(); }}
                 className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl border border-dashed transition-colors group ${isDark ? "border-white/10 bg-transparent hover:border-white/20" : "border-zinc-300 bg-transparent hover:border-emerald-300 hover:bg-emerald-50/50"}`}
               >
                 <div className={`w-11 h-11 rounded-full border border-dashed flex items-center justify-center transition-colors flex-shrink-0 ${isDark ? "border-white/10 text-zinc-500 group-hover:border-emerald-500/30 group-hover:text-emerald-400" : "border-zinc-300 text-zinc-400 group-hover:border-emerald-400 group-hover:text-emerald-500"}`}>
@@ -520,7 +727,7 @@ export default function MyGroupPage() {
                 </div>
                 <div className="text-right">
                   <p className={`text-sm font-medium ${isDark ? "text-zinc-500 group-hover:text-zinc-300" : "text-zinc-600 group-hover:text-emerald-700"}`}>أضف عضواً جديداً</p>
-                  <p className={`text-xs mt-0.5 ${isDark ? "text-zinc-600" : "text-zinc-500"}`}>متبقي {GROUP.maxMembers - MEMBERS.length} مقعد</p>
+                  <p className={`text-xs mt-0.5 ${isDark ? "text-zinc-600" : "text-zinc-500"}`}>متبقي {seatsLeft.toLocaleString("ar-SA")} مقعد</p>
                 </div>
               </motion.button>
             )}

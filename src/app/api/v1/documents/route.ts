@@ -4,6 +4,19 @@ import { createClient } from "@/lib/supabase/server";
 /**
  * GET /api/v1/documents — List user's documents
  * Auth required.
+ *
+ * FAILURE IS A 500, NOT AN EMPTY VAULT. This route's empty-200 was the single
+ * most-cited instance of the defect in this codebase: three other modules had
+ * already been written AROUND it, each explaining that a zero from here is
+ * ambiguous and refusing to render a number because of it —
+ * src/lib/services/businessOverview.ts:20 and :248-250, and
+ * src/app/dashboard/business/page.tsx:480. Those comments are now out of date
+ * (see the followUps); the ambiguity they describe is what this change removes.
+ *
+ * A 500, not a `degraded: true` 200: `documentService.getDocuments`
+ * (src/lib/services/documentService.ts:314) reaches this through `apiGet`,
+ * which already throws on any non-2xx — so a real status is what its callers
+ * are built to receive, and no caller reads a marker inside the body.
  */
 export async function GET() {
   try {
@@ -25,13 +38,13 @@ export async function GET() {
 
     if (error) {
       console.error("[documents GET] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ data: [] });
+      return NextResponse.json({ error: "تعذّر تحميل مستنداتك." }, { status: 500 });
     }
 
     return NextResponse.json({ data: data ?? [] });
   } catch (err) {
     console.error("[documents GET] Unexpected error:", err);
-    return NextResponse.json({ data: [] });
+    return NextResponse.json({ error: "تعذّر تحميل مستنداتك." }, { status: 500 });
   }
 }
 

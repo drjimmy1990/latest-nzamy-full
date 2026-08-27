@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FolderOpen, UploadSimple, Trash, DownloadSimple } from "@phosphor-icons/react";
+import { ArrowClockwise, FolderOpen, UploadSimple, Trash, DownloadSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { isSupabaseMode } from "@/lib/runtimeMode";
 import {
@@ -11,6 +11,13 @@ import {
   getDocumentFileUrl,
   type Document,
 } from "@/lib/services/documentService";
+import {
+  listOk,
+  listFailed,
+  listViewState,
+  itemsOf,
+  type ListRead,
+} from "@/lib/services/listRead";
 
 /**
  * خزنة وثائق المنشأة — owner item ٨.
@@ -30,29 +37,59 @@ import {
  * Attaching from here COPIES (POST /api/v1/documents/[id]/copy) rather than
  * binding the original, because binding is a move — see that route for why
  * this distinction is the difference between a vault and a one-shot inbox.
+ *
+ * ── THE READ, IN THREE STATES ────────────────────────────────────────────────
+ *
+ * The rule this page already stated in its own words — «Never fall through to
+ * the empty state on a failure: «لا توجد وثائق» over a vault that could not be
+ * read is the same screen as a genuinely empty one, and a company would
+ * re-upload everything» — is now spelled with the shared helper, `ListRead` +
+ * `listViewState()` (src/lib/services/listRead.ts), so this page and the nine
+ * others in this sweep say it the same way.
+ *
+ * TWO PIECES OF STATE, NOT ONE, and that is deliberate. `read` is the LATEST
+ * attempt's outcome; `lastGood` is the rows of the most recent SUCCESSFUL one.
+ * Collapsing them into a single `ListRead` would empty the list whenever a
+ * refresh failed — including the refresh that runs immediately after an upload
+ * — so a company that had just watched a file save would be shown a vault with
+ * nothing in it. The rows stay on screen, under a banner that says they are the
+ * last list we managed to read rather than the current one.
  */
 export default function BusinessDocumentsPage() {
   const { isDark } = useTheme();
-  const [docs, setDocs] = useState<Document[]>([]);
+  /** The latest attempt. null until the first one settles. */
+  const [read, setRead] = useState<ListRead<Document> | null>(null);
+  /** The rows of the last read that succeeded, kept across a failed refresh. */
+  const [lastGood, setLastGood] = useState<Document[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
+  /**
+   * A failed upload/open/delete — NOT a failed load. They were one `err` string
+   * before, which meant an unrelated «تعذّر فتح الوثيقة» also suppressed the
+   * empty state (the old guard was `docs.length === 0 && !err`), so a company
+   * with a genuinely empty vault that pressed a broken control saw neither the
+   * empty state nor an explanation of the gap. Same split as
+   * dashboard/client/documents/page.tsx, which separated the two for the same
+   * reason.
+   */
+  const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
-    setErr("");
     try {
       const all = await getDocuments();
       // Only the unbound ones. A document already attached to an order belongs
       // to that order's file and is reachable from it; listing it here would
       // invite an admin-facing document to be re-attached somewhere else.
-      setDocs(all.filter((d) => !d.request_id));
-    } catch {
-      // Never fall through to the empty state on a failure: «لا توجد وثائق»
-      // over a vault that could not be read is the same screen as a genuinely
-      // empty one, and a company would re-upload everything.
-      setErr("تعذّر تحميل وثائق المنشأة. حاول مرة أخرى.");
+      const vault = all.filter((d) => !d.request_id);
+      setRead(listOk(vault));
+      setLastGood(vault);
+    } catch (e) {
+      // getDocuments() THROWS on failure (documentService.ts) — it does not
+      // return []. That is what lets this branch exist at all.
+      console.error("[business documents] load failed:", e);
+      setRead(listFailed<Document>());
     } finally {
       setLoading(false);
     }
@@ -62,7 +99,7 @@ export default function BusinessDocumentsPage() {
 
   async function upload(file: File) {
     setBusy(true);
-    setErr("");
+    setActionError("");
     setNotice("");
     try {
       await uploadDocumentFile(file);
@@ -73,33 +110,33 @@ export default function BusinessDocumentsPage() {
       // UploadTimeoutError); anything else falls back rather than showing the
       // client a raw cause.
       const message = e instanceof Error && /[؀-ۿ]/.test(e.message) ? e.message : "";
-      setErr(message || "تعذّر رفع الوثيقة. تحقق من اتصالك وحاول مرة أخرى.");
+      setActionError(message || "تعذّر رفع الوثيقة. تحقق من اتصالك وحاول مرة أخرى.");
     } finally {
       setBusy(false);
     }
   }
 
   async function open(doc: Document) {
-    setErr("");
+    setActionError("");
     try {
       const url = await getDocumentFileUrl(doc.storage_path ?? "");
-      if (!url) { setErr("تعذّر فتح الوثيقة."); return; }
+      if (!url) { setActionError("تعذّر فتح الوثيقة."); return; }
       window.open(url, "_blank", "noopener,noreferrer");
     } catch {
-      setErr("تعذّر فتح الوثيقة.");
+      setActionError("تعذّر فتح الوثيقة.");
     }
   }
 
   async function remove(doc: Document) {
     setBusy(true);
-    setErr("");
+    setActionError("");
     setNotice("");
     try {
       await deleteDocument(String(doc.id), doc.storage_path);
       setNotice("تم حذف الوثيقة من الخزنة.");
       await load();
     } catch {
-      setErr("تعذّر حذف الوثيقة.");
+      setActionError("تعذّر حذف الوثيقة.");
     } finally {
       setBusy(false);
     }
@@ -108,6 +145,11 @@ export default function BusinessDocumentsPage() {
   const card = isDark
     ? "bg-zinc-900 border border-white/[0.06] rounded-2xl"
     : "bg-white border border-zinc-200/70 rounded-2xl";
+
+  const view = listViewState(loading, read);
+  // On an unreadable read the rows shown are the last ones we managed to read,
+  // and the banner above them says so. On a readable one they are the read.
+  const rows = view === "unreadable" ? (lastGood ?? []) : itemsOf(read);
 
   return (
     <div className="p-5 md:p-7 max-w-3xl mx-auto space-y-4" dir="rtl">
@@ -146,19 +188,43 @@ export default function BusinessDocumentsPage() {
           </label>
 
           {notice && <p className="text-[12px] text-emerald-600">{notice}</p>}
-          {err && <p className="text-[12px] text-red-500">{err}</p>}
+          {actionError && <p className="text-[12px] text-red-500">{actionError}</p>}
 
-          {loading ? (
+          {view === "unreadable" && (
+            <div className={`${card} space-y-2 p-4`}>
+              <p className="text-[12px] font-bold text-red-500">
+                {/* The wording separates the two facts a company needs kept
+                    apart: the vault could not be read, and — when rows are
+                    still on screen below — they are not proof of what is in it
+                    now. */}
+                تعذّرت قراءة خزنة وثائق المنشأة.
+                {rows.length > 0 && " ما يظهر أدناه هو آخر قائمة تم تحميلها بنجاح، وقد تكون قديمة."}
+              </p>
+              <button
+                type="button"
+                onClick={() => { void load(); }}
+                disabled={busy}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold transition disabled:opacity-40 ${
+                  isDark ? "border-white/[0.12] text-zinc-200 hover:bg-white/[0.06]" : "border-zinc-300 text-zinc-700 hover:bg-zinc-50"
+                }`}
+              >
+                <ArrowClockwise size={13} weight="bold" />
+                إعادة المحاولة
+              </button>
+            </div>
+          )}
+
+          {view === "loading" ? (
             <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>جارٍ التحميل…</p>
-          ) : docs.length === 0 && !err ? (
+          ) : view === "empty" ? (
             <div className={`${card} p-5`}>
               <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                 لا توجد وثائق محفوظة بعد.
               </p>
             </div>
-          ) : (
+          ) : rows.length > 0 ? (
             <ul className="space-y-2">
-              {docs.map((d) => (
+              {rows.map((d) => (
                 <li key={String(d.id)} className={`${card} flex items-center gap-3 p-4`}>
                   <div className="min-w-0 flex-1">
                     <p className={`truncate text-[13px] font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
@@ -180,7 +246,10 @@ export default function BusinessDocumentsPage() {
                 </li>
               ))}
             </ul>
-          )}
+          ) : null
+          /* view === "unreadable" with nothing to fall back on. The banner
+             above has already said why the list is missing; «لا توجد وثائق»
+             would be a claim about a vault we never managed to open. */}
         </>
       )}
     </div>

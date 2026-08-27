@@ -12,6 +12,7 @@
 "use client";
 
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { listOk, listFailed, type ListRead } from "@/lib/services/listRead";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -87,17 +88,38 @@ export function taskStatusToDbStatus(status: string): string {
 
 // ─── Service functions ────────────────────────────────────────────────────────
 
-export async function getLawyerTasks(opts?: { caseId?: string }): Promise<LawyerTask[]> {
+/**
+ * The lawyer's task list.
+ *
+ * This used to be `try { … } catch { return [] }`, and the tasks page
+ * (src/app/dashboard/lawyer/tasks/page.tsx:79) says in a comment that it calls
+ * the endpoint directly *because of* that swallow. A failed read arriving as
+ * «لا توجد مهام» is a deadline the lawyer is told they do not have — so it now
+ * returns `ListRead<LawyerTask>` and the "no answer" case is unmissable.
+ */
+export async function getLawyerTasks(
+  opts?: { caseId?: string },
+): Promise<ListRead<LawyerTask>> {
+  // Demo mode: no task store exists behind this endpoint. Hardcoded, not read.
   if (!isSupabaseMode) {
-    return [];
+    return listOk([]);
   }
 
   try {
-    return await apiGet<LawyerTask[]>("/api/v1/lawyer/tasks", {
+    // The route returns a bare array and 500s on failure (its own comment at
+    // /api/v1/lawyer/tasks/route.ts:149 records dropping an empty-200), so
+    // there is no `{ data, degraded }` envelope for `listFromApi` to read.
+    const rows = await apiGet<LawyerTask[]>("/api/v1/lawyer/tasks", {
       caseId: opts?.caseId,
     });
-  } catch {
-    return [];
+    if (!Array.isArray(rows)) return listFailed<LawyerTask>();
+    // No `total`: the route sends no count, and passing `rows.length` would
+    // manufacture one — `listOk` would then compute `truncated: false` from a
+    // number nobody reported. An unknown total stays unknown.
+    return listOk(rows);
+  } catch (error) {
+    console.error("[lawyerTasksService] getLawyerTasks failed:", error);
+    return listFailed<LawyerTask>();
   }
 }
 

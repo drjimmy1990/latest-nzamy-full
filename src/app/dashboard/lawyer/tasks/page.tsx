@@ -163,6 +163,22 @@ export default function LawyerTasksPage() {
     archived: archived.length,
   };
 
+  /**
+   * True only when there is a board behind these numbers.
+   *
+   * `counts` is derived from `tasks`, which is `[]` both before the first fetch
+   * resolves and after one fails — so every count above is 0 in three states
+   * and only one of them means the lawyer has no tasks. The subtitle printed
+   * «٠ معلقة · ٠ قيد التنفيذ · ٠ مكتملة» directly under the red
+   * «تعذّر قراءة مهامك» banner: a figure asserted on the very screen that
+   * admits its source could not be read.
+   *
+   * Withheld, not zeroed — «٠» is a claim, and on a task board it is the claim
+   * "you have nothing outstanding". Same flag the client requests page uses
+   * (dashboard/client/requests/page.tsx:606).
+   */
+  const countsKnown = loadState === "ready";
+
   const shouldShowArchived = filter === "archived" || showArchive;
   const archivedCaseIds = new Set(
     SHARED_CASES.filter(c => c.status === "archived" || c.status === "closed").map(c => c.id)
@@ -494,8 +510,14 @@ export default function LawyerTasksPage() {
             قائمة المهام
           </h1>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {counts.todo} معلقة · {counts.in_progress} قيد التنفيذ · {counts.done} مكتملة
-            {counts.archived > 0 && ` · ${counts.archived} مؤرشفة`}
+            {loadState === "loading"
+              ? "جارٍ تحميل مهامك…"
+              : loadState === "error"
+                ? <span className="text-red-500 font-semibold">تعذّر قراءة المهام</span>
+                : <>
+                    {counts.todo} معلقة · {counts.in_progress} قيد التنفيذ · {counts.done} مكتملة
+                    {counts.archived > 0 && ` · ${counts.archived} مؤرشفة`}
+                  </>}
           </p>
         </div>
           {/* View toggle */}
@@ -626,7 +648,8 @@ export default function LawyerTasksPage() {
             showArchive?"bg-amber-500 text-white border-amber-500":isDark?"border-white/[0.06] text-zinc-500 hover:text-zinc-300":"border-slate-200 text-slate-500 hover:border-amber-400 hover:text-amber-600"
           }`}>
           <Archive size={12}/>
-          الأرشيف {counts.archived>0&&`(${counts.archived})`}
+          {/* Label always, number only when there is a read behind it. */}
+          الأرشيف {countsKnown&&counts.archived>0&&`(${counts.archived})`}
         </button>
       </motion.div>
 

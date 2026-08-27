@@ -22,8 +22,13 @@ function roleToUserType(role: string): string {
 
 /**
  * GET /api/v1/admin/coupons — List all coupons (admin, service-role read).
- * Resilient: on error returns { data: [] } (200) so the page degrades to its
- * local fallback instead of crashing.
+ *
+ * FAILURE IS A 500, NOT AN EMPTY LIST. The page treats an empty `data` array as
+ * "no coupons are saved yet" and shows INITIAL_COUPONS as a demo
+ * (src/app/dashboard/admin/subscriptions/coupons/page.tsx:198-202) — so a
+ * failed read used to put invented coupon codes on screen under a message
+ * saying the table is empty. It already throws on `!res.ok` into a different,
+ * honest toast («تعذّر الاتصال بالخادم»), which is the branch this now takes.
  */
 export async function GET() {
   try {
@@ -40,13 +45,13 @@ export async function GET() {
 
     if (error) {
       console.error("[admin/coupons GET] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ data: [] });
+      return NextResponse.json({ error: "تعذّر تحميل الكوبونات." }, { status: 500 });
     }
 
     return NextResponse.json({ data: data ?? [] });
   } catch (err) {
     console.error("[admin/coupons GET] Unexpected error:", err);
-    return NextResponse.json({ data: [] });
+    return NextResponse.json({ error: "تعذّر تحميل الكوبونات." }, { status: 500 });
   }
 }
 

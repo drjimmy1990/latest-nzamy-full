@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ArrowClockwise,
   CalendarBlank,
   Check,
   FloppyDisk,
@@ -9,6 +10,7 @@ import {
   Plus,
   Prohibit,
   Tag,
+  Warning,
   WarningCircle,
   X,
   FileText,
@@ -18,6 +20,7 @@ import {
 } from "@phosphor-icons/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
+import { listFailed, listFromApi, listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import type { AdminCoupon, AdminCouponStatus, AdminDiscountType, AdminEligibleRole, AdminCouponType } from "@/types/adminBackendReady";
 
 // ─── DB row → AdminCoupon mapping ──────────────────────────────────────────────
@@ -112,60 +115,24 @@ const STATUS_LABEL: Record<AdminCouponStatus, string> = {
   disabled: "معطل",
 };
 
-const INITIAL_COUPONS: AdminCoupon[] = [
-  {
-    code: "NZAMY25",
-    couponType: "discount",
-    discountType: "percentage",
-    value: 25,
-    usedCount: 143,
-    usageLimit: 500,
-    startsAt: "2026-05-01",
-    expiresAt: "2026-06-30",
-    status: "active",
-    eligibleRoles: ["client", "business", "micro"],
-    createdAt: "2026-04-20 10:00 AST",
-    createdByAdmin: "سعود القحطاني",
-    createdFromDevice: "Mac OS Safari",
-    usageLog: [
-      { usedBy: "أحمد العبدالله", usedByRole: "client", usedAt: "2026-05-15 14:30 AST", usedFromDevice: "iPhone iOS Safari", appliedTo: "استشارة قانونية", discountApplied: 50 },
-      { usedBy: "شركة النماء", usedByRole: "business", usedAt: "2026-05-16 09:15 AST", usedFromDevice: "Windows Chrome", appliedTo: "مراجعة عقد تأسيس", discountApplied: 250 },
-    ]
-  },
-  {
-    code: "LAWYER100",
-    couponType: "discount",
-    discountType: "fixed",
-    value: 100,
-    usedCount: 52,
-    usageLimit: 100,
-    startsAt: "2026-05-01",
-    expiresAt: "2026-05-15",
-    status: "expired",
-    eligibleRoles: ["lawyer", "firm"],
-    createdAt: "2026-04-15 08:00 AST",
-    createdByAdmin: "فريق التسويق",
-    createdFromDevice: "Windows Edge",
-    usageLog: []
-  },
-  {
-    code: "GOV2026",
-    couponType: "points",
-    discountType: "fixed",
-    value: 0,
-    pointsGranted: 500,
-    usedCount: 21,
-    usageLimit: 200,
-    startsAt: "2026-05-20",
-    expiresAt: "2026-12-31",
-    status: "scheduled",
-    eligibleRoles: ["government", "ngo"],
-    createdAt: "2026-05-18 11:20 AST",
-    createdByAdmin: "النظام الذكي",
-    createdFromDevice: "System",
-    usageLog: []
-  },
-];
+/* ── No demo coupons ─────────────────────────────────────────────────────────
+ *
+ * `INITIAL_COUPONS` — NZAMY25, LAWYER100, GOV2026 — used to be this page's
+ * initial state AND its fallback, shown whenever the fetch failed or the table
+ * came back empty, under a toast reading «تُعرض بيانات تجريبية».
+ *
+ * Three separate problems, on a screen that decides what money the office gives
+ * away. The codes looked real and an admin could read one out to a client who
+ * would then find it invalid at checkout. The «استخدامات» figures (143 of 500,
+ * 52 of 100) were invented usage of coupons that do not exist. And NZAMY25
+ * carried a two-row usage log naming «أحمد العبدالله» and «شركة النماء» with
+ * timestamps, devices and amounts — a fabricated audit trail about named
+ * customers, sitting under a heading that literally says «سجل الاستخدام (Audit
+ * Log)».
+ *
+ * GET /api/v1/admin/coupons now returns 500 + {error} on a failed read, so the
+ * page can tell "no coupons saved" from "could not read" and say which.
+ */
 
 const EMPTY_COUPON: AdminCoupon = {
   code: "",
@@ -183,43 +150,62 @@ const EMPTY_COUPON: AdminCoupon = {
 
 export default function AdminCouponsPage() {
   const { isDark } = useTheme();
-  const [coupons, setCoupons] = useState<AdminCoupon[]>(INITIAL_COUPONS);
+  const [read, setRead] = useState<ListRead<AdminCoupon> | null>(null);
+  // Starts `true`: nothing may be asserted about the coupon table before the
+  // first response, least of all that it is empty.
+  const [loading, setLoading] = useState(true);
   // Maps the page's coupon `code` → the DB row `id` so mutations can target it.
   const [codeToId, setCodeToId] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState<AdminCoupon | null>(null);
   const [selectedCoupon, setSelectedCoupon] = useState<AdminCoupon | null>(null);
-  const [toast, setToast] = useState("جارٍ تحميل الكوبونات…");
+  // Now only ever reports what a WRITE did. The read has its own three states
+  // below; a toast could not distinguish them and was the reason a failed load
+  // could sit above three fake coupons saying «تُعرض بيانات تجريبية».
+  const [toast, setToast] = useState("");
 
-  async function loadCoupons() {
+  const loadCoupons = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await fetch("/api/v1/admin/coupons");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = (await res.json()) as { data?: Record<string, unknown>[] };
-      const rows = json.data ?? [];
-      if (rows.length === 0) {
-        // Keep INITIAL_COUPONS as a visual fallback when the table is empty.
-        setToast("لا توجد كوبونات محفوظة بعد — تُعرض بيانات تجريبية.");
+      if (!res.ok) {
+        setRead(listFailed<AdminCoupon>());
+        setCodeToId({});
+        return;
+      }
+      const json = await res.json();
+      const base = listFromApi<Record<string, unknown>>(json);
+      if (!base.ok) {
+        setRead(listFailed<AdminCoupon>());
+        setCodeToId({});
         return;
       }
       const idMap: Record<string, string> = {};
-      const mapped = rows.map((row) => {
+      const mapped = base.items.map((row) => {
         const coupon = mapRowToCoupon(row);
         if (typeof row.id === "string") idMap[coupon.code] = row.id;
         return coupon;
       });
-      setCoupons(mapped);
       setCodeToId(idMap);
-      setToast(`تم تحميل ${mapped.length} كوبون من قاعدة البيانات.`);
+      setRead(listOk(mapped, base.total));
     } catch (err) {
       console.error("[coupons] load failed:", err);
-      setToast("تعذّر الاتصال بالخادم — تُعرض بيانات تجريبية.");
+      setRead(listFailed<AdminCoupon>());
+      setCodeToId({});
+    } finally {
+      setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    loadCoupons();
   }, []);
 
+  useEffect(() => {
+    void loadCoupons();
+  }, [loadCoupons]);
+
+  const state = listViewState(loading, read);
+  const coupons = itemsOf(read);
+  // Only meaningful once a read succeeded. Rendered as «—» otherwise: «٠
+  // كوبونات نشطة» over a failed read tells the office no discount is live,
+  // which is a decision-grade claim about money.
+  const countsKnown = state === "empty" || state === "ready";
   const activeCount = coupons.filter((coupon) => coupon.status === "active").length;
   const totalUsage = useMemo(() => coupons.reduce((sum, coupon) => sum + coupon.usedCount, 0), [coupons]);
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-white/10" : "bg-white border-gray-200 shadow-sm"}`;
@@ -269,15 +255,12 @@ export default function AdminCouponsPage() {
       await loadCoupons();
     } catch (err) {
       console.error("[coupons] save failed:", err);
-      // Optimistic local fallback so the admin still sees the change.
-      setCoupons((current) => {
-        const exists = current.some((coupon) => coupon.code === code);
-        return exists
-          ? current.map((coupon) => (coupon.code === code ? normalized : coupon))
-          : [normalized, ...current];
-      });
-      setDraft(null);
-      setToast(`تعذّر الاتصال بالخادم — تم تحديث ${code} محلياً فقط.`);
+      // NO optimistic local insert. This used to push the unsaved coupon into
+      // the list, so a code that exists nowhere but in this browser tab sat in
+      // the table looking exactly like a live one — and an admin could hand it
+      // to a client. The draft is deliberately LEFT OPEN so the work is not
+      // lost and the failure is visibly unresolved.
+      setToast(`تعذّر الاتصال بالخادم — لم يُحفظ ${code}. الكوبون غير موجود بعد.`);
     }
   }
 
@@ -287,11 +270,11 @@ export default function AdminCouponsPage() {
     const id = codeToId[code];
 
     if (!id) {
-      // No DB row (fallback/demo coupon) — toggle in the UI only.
-      setCoupons((list) =>
-        list.map((coupon) => (coupon.code === code ? { ...coupon, status: nextStatus } : coupon)),
-      );
-      setToast(`تم تغيير حالة ${code} محلياً (كوبون تجريبي غير محفوظ).`);
+      // Every row on screen now comes from the database, so this only fires if
+      // the row arrived without an id. Previously it flipped the badge in local
+      // state and said so quietly — the coupon then read as «معطل» to anyone
+      // looking, while remaining fully active at checkout.
+      setToast(`تعذّر تحديد ${code} على الخادم — لم يتغيّر شيء.`);
       return;
     }
 
@@ -333,7 +316,12 @@ export default function AdminCouponsPage() {
               </div>
               <div>
                 <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-gray-900"}`}>الكوبونات والخصومات</h1>
-                <p className={`text-xs ${muted}`}>واجهة إدارة محلية جاهزة لعقد AdminCoupon بدون باك إند.</p>
+                {/* The old subtitle said «واجهة إدارة محلية … بدون باك إند»,
+                    which stopped being true when /api/v1/admin/coupons landed.
+                    A screen that writes real coupons while describing itself as
+                    a local mock invites an admin to treat a live change as a
+                    rehearsal. */}
+                <p className={`text-xs ${muted}`}>كوبونات محفوظة في قاعدة البيانات — أي تغيير هنا يسري على العملاء.</p>
               </div>
             </div>
           </div>
@@ -343,20 +331,30 @@ export default function AdminCouponsPage() {
           </button>
         </div>
 
-        <div className={`flex items-start gap-2 text-sm p-4 rounded-2xl border ${isDark ? "border-blue-500/20 bg-blue-500/10 text-blue-100" : "border-blue-100 bg-blue-50 text-blue-800"}`}>
-          <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
-          <span>{toast}</span>
-        </div>
+        {/* Only rendered when a write actually said something. It used to be
+            permanent, and its default text («جارٍ تحميل الكوبونات…») was the
+            page's only loading signal — under a table already full of demo
+            coupons. */}
+        {toast && (
+          <div className={`flex items-start gap-2 text-sm p-4 rounded-2xl border ${isDark ? "border-blue-500/20 bg-blue-500/10 text-blue-100" : "border-blue-100 bg-blue-50 text-blue-800"}`}>
+            <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
+            <span>{toast}</span>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[
+          {([
             ["إجمالي الكوبونات", coupons.length],
             ["كوبونات نشطة", activeCount],
-            ["استخدامات محفوظة محلياً", totalUsage],
-          ].map(([label, value]) => (
+            // Was «استخدامات محفوظة محلياً» — nothing is stored locally any
+            // more, and the figure is the sum of used_count off the rows.
+            ["إجمالي مرات الاستخدام", totalUsage],
+          ] as [string, number][]).map(([label, value]) => (
             <div key={label} className={`${card} p-5`}>
               <p className={`text-xs mb-2 ${muted}`}>{label}</p>
-              <p className={`text-2xl font-black font-mono ${isDark ? "text-white" : "text-gray-900"}`}>{value}</p>
+              <p className={`text-2xl font-black font-mono ${
+                countsKnown ? (isDark ? "text-white" : "text-gray-900") : (isDark ? "text-gray-600" : "text-gray-300")
+              }`}>{countsKnown ? value : "—"}</p>
             </div>
           ))}
         </div>
@@ -434,7 +432,9 @@ export default function AdminCouponsPage() {
               </button>
               <button onClick={saveDraft} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0B3D2E] text-white text-sm font-bold hover:bg-[#0a3328]">
                 <FloppyDisk size={16} />
-                حفظ محلي
+                {/* It has POSTed/PATCHed to the server since the coupons API
+                    landed; the label «حفظ محلي» outlived the behaviour. */}
+                حفظ
               </button>
             </div>
           </motion.div>
@@ -451,7 +451,29 @@ export default function AdminCouponsPage() {
             <span className="col-span-1"></span>
           </div>
           <div className={`divide-y ${isDark ? "divide-white/10" : "divide-gray-100"}`}>
-            {coupons.map((coupon, index) => (
+            {state === "loading" && (
+              <div className={`px-5 py-12 text-center text-sm ${muted}`}>جارٍ تحميل الكوبونات…</div>
+            )}
+
+            {state === "unreadable" && (
+              <div className="px-5 py-12 text-center">
+                <Warning size={24} weight="fill" className="mx-auto mb-2 text-amber-500" />
+                <p className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>تعذّرت قراءة الكوبونات</p>
+                <p className={`text-xs mt-1 ${muted}`}>
+                  هذه ليست قائمة فارغة — لم نتمكن من القراءة. قد تكون هناك كوبونات فعّالة لا تظهر هنا، فلا تُنشئ كوبوناً جديداً بناءً على هذه الشاشة.
+                </p>
+                <button type="button" onClick={() => { void loadCoupons(); }}
+                  className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-white font-bold text-xs hover:bg-amber-600 transition">
+                  <ArrowClockwise size={12} weight="bold" /> إعادة المحاولة
+                </button>
+              </div>
+            )}
+
+            {state === "empty" && (
+              <div className={`px-5 py-12 text-center text-sm ${muted}`}>لا توجد كوبونات محفوظة بعد.</div>
+            )}
+
+            {state === "ready" && coupons.map((coupon, index) => (
               <motion.div key={coupon.code} onClick={() => setSelectedCoupon(coupon)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.04 }} className={`grid grid-cols-12 items-center gap-2 px-5 py-4 cursor-pointer transition ${isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50"}`}>
                 <span className={`col-span-2 font-mono text-sm font-black ${isDark ? "text-[#C8A762]" : "text-amber-600"}`}>{coupon.code}</span>
                 
@@ -461,12 +483,28 @@ export default function AdminCouponsPage() {
                    `${coupon.value}${coupon.discountType === "percentage" ? "%" : " ر.س"}`}
                 </span>
 
+                {/* `max_uses` is nullable and maps to 0 here, which means "no
+                    cap" — not "a cap of zero". Read the other way, this column
+                    printed «٥/٠» in red with a full bar over a coupon that is
+                    working perfectly, i.e. it reported a live coupon as
+                    exhausted. Now an uncapped coupon says so and draws no bar,
+                    because a progress bar with no denominator has nothing to
+                    show. */}
                 <div className="col-span-2">
-                  <span className={`text-xs font-bold ${coupon.usedCount >= coupon.usageLimit ? "text-rose-500" : isDark ? "text-gray-300" : "text-gray-700"}`}>{coupon.usedCount}</span>
-                  <span className={`text-xs ${muted}`}>/{coupon.usageLimit}</span>
-                  <div className={`h-1 rounded-full mt-1 ${isDark ? "bg-gray-800" : "bg-gray-200"} w-20`}>
-                    <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min((coupon.usedCount / coupon.usageLimit) * 100, 100)}%` }} />
-                  </div>
+                  {coupon.usageLimit > 0 ? (
+                    <>
+                      <span className={`text-xs font-bold ${coupon.usedCount >= coupon.usageLimit ? "text-rose-500" : isDark ? "text-gray-300" : "text-gray-700"}`}>{coupon.usedCount}</span>
+                      <span className={`text-xs ${muted}`}>/{coupon.usageLimit}</span>
+                      <div className={`h-1 rounded-full mt-1 ${isDark ? "bg-gray-800" : "bg-gray-200"} w-20`}>
+                        <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min((coupon.usedCount / coupon.usageLimit) * 100, 100)}%` }} />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>{coupon.usedCount}</span>
+                      <span className={`text-xs ${muted}`}> — بلا حد</span>
+                    </>
+                  )}
                 </div>
                 <div className={`col-span-2 flex items-center gap-1 text-xs ${muted}`}>
                   <CalendarBlank size={12} />

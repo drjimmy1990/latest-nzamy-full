@@ -603,8 +603,16 @@ export default function ConsultationsPage() {
               which the booking form never collects and always stores as 0 — a
               money figure with no source, on a platform through which no money
               has ever moved. */}
+          {/* The KPI grid and the mode breakdown below both withhold their
+              numbers on a failed read; this subtitle did not, so it printed
+              «٠ قادمة · ٠ إجمالاً» over a query that never answered — the one
+              number on the screen still making a claim. Now all three agree. */}
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {loading ? "جارٍ التحميل…" : `${upcoming.length} قادمة · ${consults.length} إجمالاً`}
+            {loading
+              ? "جارٍ التحميل…"
+              : loadError
+                ? <span className="text-red-500 font-semibold">تعذّرت القراءة — العدد غير معروف</span>
+                : `${upcoming.length} قادمة · ${consults.length} إجمالاً`}
           </p>
         </div>
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}

@@ -1,60 +1,24 @@
+/**
+ * lawyerCasesData — mappers and display config for the lawyer's case list.
+ *
+ * NO CASE DATA LIVES HERE. It used to: a seven-row `MOCK_CASES` array with
+ * named clients («شركة الأفق», «ريم المطيري»), court dates and case values, all
+ * invented. It was removed on 27 August 2026 because grep found no importer —
+ * `src/app/dashboard/lawyer/cases/page.tsx` builds its list from
+ * `getWorkflowRequestsByReceiver` through `workflowToCase` below, and
+ * `src/components/ui/CasePicker.tsx` only takes `workflowTypeToCaseType`. So
+ * the array was not a fallback anybody rendered; it was a loaded gun sitting in
+ * a module two live screens import, one careless `?? MOCK_CASES` away from
+ * showing a real lawyer somebody else's fabricated docket.
+ *
+ * If a case list ever needs an empty-state, it belongs in the page as one of
+ * the three honest states (loading / unreadable / empty) — not as rows here.
+ */
 import {
   Warning, TrendUp, Dot, SquaresFour, User, Handshake, UsersThree
 } from "@phosphor-icons/react";
 import { type WorkflowRequest } from "@/lib/workflowStore";
 import type { CaseStatus, CaseType, CourtDegree, Priority, KanbanCol, CollabFilter, Case } from "@/app/dashboard/lawyer/cases/_types";
-
-export const MOCK_CASES: Case[] = [
-  {
-    id: "1", title: "نزاع تجاري — شركة الأفق", client: "شركة الأفق للتجارة",
-    court: "المحكمة التجارية", type: "commercial", status: "active", priority: "critical",
-    nextDate: "٢٠ أبريل", nextDateSort: 0, filedDate: "يناير ٢٠٢٤", degree: "appeal", stage: "مرحلة الاستئناف",
-    kanbanCol: "appeal", team: ["فهد", "نورة"], hasDeadline: true, value: "٣٠٠,٠٠٠ ر", lastActivity: "اليوم",
-    tags: ["عاجل", "طعن"], collab: "team",
-  },
-  {
-    id: "2", title: "فسخ عقد إيجار — المالك وزاهد", client: "أحمد الزاهد",
-    court: "المحكمة العامة", type: "civil", status: "pending", priority: "high",
-    nextDate: "٢٥ أبريل", nextDateSort: 5, filedDate: "مارس ٢٠٢٤", degree: "primary", stage: "انتظار رد الخصم",
-    kanbanCol: "hearing", team: ["فهد"], value: "٨٠,٠٠٠ ر", lastActivity: "أمس",
-    tags: ["تجاري"], collab: "solo",
-  },
-  {
-    id: "3", title: "قضية عمالية — فصل تعسفي ٤٥٦٧", client: "خالد محمد القحطاني",
-    court: "المحكمة العمالية", type: "labor", status: "active", priority: "high",
-    nextDate: "٢٨ أبريل", nextDateSort: 8, filedDate: "فبراير ٢٠٢٤", degree: "primary", stage: "إعداد صك صلح",
-    kanbanCol: "docs_prep", team: ["فهد", "علي"], value: "٥٠,٠٠٠ ر", lastActivity: "٣ أيام",
-    tags: ["عمالي"], collab: "shared",
-  },
-  {
-    id: "4", title: "استئناف العقار ٢١٣", client: "سارة الدوسري",
-    court: "محكمة الاستئناف", type: "real_estate", status: "active", priority: "critical",
-    nextDate: "٢ مايو", nextDateSort: 12, filedDate: "أبريل ٢٠٢٤", degree: "appeal", stage: "جلسة استماع",
-    kanbanCol: "appeal", team: ["نورة"], hasDeadline: true, value: "٥٠٠,٠٠٠ ر", lastActivity: "اليوم",
-    tags: ["طعن", "عقاري"], collab: "solo",
-  },
-  {
-    id: "5", title: "طلاق وحضانة — المطيري", client: "ريم المطيري",
-    court: "المحكمة العامة", type: "family", status: "suspended", priority: "normal",
-    filedDate: "نوفمبر ٢٠٢٣", degree: "primary", stage: "تعليق بطلب الطرفين",
-    kanbanCol: "hearing", team: ["فهد"], value: "", lastActivity: "أسبوع",
-    tags: ["شخصية"], collab: "solo",
-  },
-  {
-    id: "6", title: "مطالبة إدارية — التأمينات", client: "علي السبيعي",
-    court: "المحكمة الإدارية", type: "admin", status: "closed", priority: "low",
-    filedDate: "يوليو ٢٠٢٣", degree: "supreme", stage: "صدر حكم نهائي",
-    kanbanCol: "closed", team: ["علي"], value: "١٢٠,٠٠٠ ر", lastActivity: "شهر",
-    tags: ["إداري", "منتهية"], collab: "shared",
-  },
-  {
-    id: "7", title: "نزاع ملكية فكرية — براءة اختراع", client: "مجموعة الذهبي",
-    court: "المحكمة التجارية", type: "commercial", status: "active", priority: "high",
-    nextDate: "٥ مايو", nextDateSort: 15, filedDate: "مارس ٢٠٢٤", degree: "primary", stage: "جلسة أولى",
-    kanbanCol: "new", team: ["فهد", "نورة", "علي"], value: "٢٠٠,٠٠٠ ر", lastActivity: "٢ أيام",
-    tags: ["تجاري"], collab: "team",
-  },
-];
 
 export function workflowTypeToCaseType(request: WorkflowRequest): CaseType {
   const raw = String(request.metadata?.requestedType ?? request.metadata?.serviceId ?? request.title);

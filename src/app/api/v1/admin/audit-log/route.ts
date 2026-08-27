@@ -50,7 +50,18 @@ function deriveSeverity(action: string): Severity {
  *
  * Requires: authenticated admin user. Uses the service-role client because
  * admin_audit_events has no user-facing SELECT policy (blocked by RLS).
- * Resilient: on any failure returns { data: [] } (200) so the page degrades.
+ *
+ * FAILURE IS A 500, NOT AN EMPTY LIST. This used to answer any failure with
+ * `{ data: [] }` and HTTP 200 — an audit log is the one screen where "nothing
+ * happened" and "I could not read what happened" must never look alike. The
+ * page (src/app/dashboard/admin/audit-log/page.tsx:131) already has an
+ * `!res.ok` branch, so nothing depends on the 200 and the real status is the
+ * stronger answer.
+ *
+ * `total` is now returned so the page can say «يُعرض أحدث ٢٠٠ من ٩٤١» instead
+ * of silently presenting the newest `limit` rows as the whole log — see
+ * truncationNoticeAr in src/lib/services/listRead.ts. It is `null`, not a
+ * number, whenever `?severity=` is set; see the filter at the bottom.
  */
 export async function GET(request: NextRequest) {
   const gate = await requireAdmin();
@@ -70,6 +81,11 @@ export async function GET(request: NextRequest) {
       .from("admin_audit_events")
       .select(
         "id, actor_id, actor_type, action, target_type, target_id, before_state, after_state, metadata, created_at",
+        // The `.limit()` below is a silent cap without this: the route hands
+        // back the newest `limit` rows and the page has no way to know the log
+        // is longer. `exact` costs a COUNT over the action-filtered set, which
+        // is the price of being able to say how much was cut.
+        { count: "exact" },
       )
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -78,7 +94,7 @@ export async function GET(request: NextRequest) {
       query = query.eq("action", action);
     }
 
-    const { data: events, error } = await query;
+    const { data: events, count, error } = await query;
 
     if (error) {
       console.error(
@@ -88,7 +104,7 @@ export async function GET(request: NextRequest) {
         error.hint,
         error.code,
       );
-      return NextResponse.json({ data: [] });
+      return NextResponse.json({ error: "تعذّر تحميل سجل التدقيق." }, { status: 500 });
     }
 
     const rows = (events ?? []) as Array<Record<string, unknown>>;
@@ -139,14 +155,33 @@ export async function GET(request: NextRequest) {
     });
 
     // Severity is derived, so filter it in memory after mapping.
-    const filtered =
-      severity && ["info", "warning", "critical"].includes(severity)
-        ? data.filter((d) => d.severity === severity)
-        : data;
+    const severityApplied = !!severity && ["info", "warning", "critical"].includes(severity);
+    const filtered = severityApplied
+      ? data.filter((d) => d.severity === severity)
+      : data;
 
-    return NextResponse.json({ data: filtered });
+    // `total` must count the SAME set `data` was drawn from, or the truncation
+    // notice built from it is a false statement. Without a severity filter that
+    // set is the action-filtered query, and `count` is exactly it.
+    //
+    // With one, it is not: severity is derived from action keywords in memory,
+    // so the database counted rows of every severity while `filtered` holds one
+    // severity out of the newest `limit`. Reporting `count` there would render
+    // «يُعرض ٣ من ٩٤١» — implying 938 hidden critical events when almost all of
+    // those 941 are `info`. `null` is the honest answer: the total is unknown.
+    //
+    // What that costs, stated plainly: a severity-filtered view can no longer
+    // show a truncation notice at all, so an admin filtering to «critical» on a
+    // log longer than `limit` may be seeing a partial answer with nothing
+    // saying so. Under-claiming truncation is permitted by listRead.ts
+    // ("Only claim truncation when the server actually said there is more");
+    // over-claiming is not. Making it exact needs the severity classification
+    // pushed into SQL, which needs a migration — out of scope here.
+    const total = severityApplied ? null : count ?? null;
+
+    return NextResponse.json({ data: filtered, total });
   } catch (err) {
     console.error("[admin/audit-log GET] Unexpected error:", err);
-    return NextResponse.json({ data: [] });
+    return NextResponse.json({ error: "تعذّر تحميل سجل التدقيق." }, { status: 500 });
   }
 }
