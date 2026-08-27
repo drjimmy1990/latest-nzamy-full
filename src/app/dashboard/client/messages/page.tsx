@@ -16,6 +16,7 @@ import {
   Warning,
   Archive,
   ArrowSquareOut,
+  ArrowClockwise,
   ChatSlash,
 } from "@phosphor-icons/react";
 import Link from "next/link";
@@ -328,7 +329,21 @@ export default function MessagesPage() {
     closed:  { label: "مؤرشف",         cls: "text-gray-400" },
   };
 
-  if (loading || !activeThread) {
+  /*
+    THIS GUARD USED TO READ `loading || !activeThread`, AND THAT «||» WAS A
+    PERMANENT SPINNER.
+
+    `activeThread` is `threads.find(...) || threads[0]`, so `!activeThread` is
+    exactly `threads.length === 0` — and a client with no chat rooms therefore
+    sat on the loading skeleton for ever, being told their conversations were
+    on the way. A spinner that never resolves is the same defect as «لا توجد
+    محادثات» over a broken read, only slower: it is a claim about what is
+    coming that nothing supports.
+
+    The two are separated below. Loading is loading; nothing to show is its own
+    screen.
+  */
+  if (loading) {
     return (
       <div className="flex h-[calc(100vh-4rem)]" dir="rtl">
         <div className="w-full md:w-[380px] p-4">
@@ -336,6 +351,58 @@ export default function MessagesPage() {
         </div>
         <div className="hidden md:flex flex-1 items-center justify-center">
           <SkeletonMessages count={5} />
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeThread) {
+    /*
+      WHY THIS SCREEN DOES NOT SAY «لا توجد محادثات», AND WHY IT DOES NOT SAY
+      «تعذّرت القراءة» EITHER.
+
+      Both would be guesses. The rooms arrive through useChat(), whose
+      `UseChatReturn` (src/hooks/useChat.ts:20-27) exposes `rooms`, `messages`,
+      `loading` and nothing else — and whose `refreshRooms` swallows a failure
+      into an empty catch block at :41-45 ("Keep existing state"), leaving
+      `rooms` at its initial `[]`. So from this page an unreadable room list and
+      a client with no rooms are byte-identical, and asserting either one would
+      be inventing the distinction this whole sweep exists to preserve.
+
+      What is said instead is only what is true: there is nothing to show, here
+      is where a conversation comes from, and here is a button that asks again.
+      The hook is not this change's file; exposing the failure — as a
+      `ListRead<ChatRoom>` or a `roomsUnreadable` flag — is reported as a
+      follow-up, and the day it lands this branch splits into the honest two.
+    */
+    return (
+      <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6" dir="rtl">
+        <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 dark:bg-white/5">
+            <ChatCircle size={30} weight="duotone" className="text-gray-400 dark:text-zinc-500" />
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-base font-bold text-gray-900 dark:text-white">لا توجد محادثات لعرضها</p>
+            <p className="text-sm leading-relaxed text-gray-500 dark:text-zinc-400">
+              تُفتح المحادثة مع فريق نظامي من صفحة الاستشارة أو الطلب. وإن كنت
+              تتوقع محادثة قائمة، فقد لا تكون القائمة قد وصلت — أعد المحاولة.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              onClick={() => { void chat.refreshRooms(); }}
+              className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-50 dark:border-white/10 dark:text-zinc-200 dark:hover:bg-white/5"
+            >
+              <ArrowClockwise size={14} weight="bold" />
+              إعادة المحاولة
+            </button>
+            <Link
+              href="/dashboard/client/consultation"
+              className="rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#0a3328]"
+            >
+              استشاراتي
+            </Link>
+          </div>
         </div>
       </div>
     );

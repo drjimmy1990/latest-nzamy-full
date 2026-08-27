@@ -1,15 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  CalendarBlank, ChatCircle, SealCheck,
+  ArrowClockwise, CalendarBlank, ChatCircle, SealCheck,
   Plus, Robot, MagnifyingGlass, Warning,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { listClientWorkflowRequests } from "@/lib/clientWorkflowRepository";
 import type { WorkflowRequest, WorkflowRequestStatus } from "@/lib/workflowStore";
 import { getConsultations } from "@/lib/services";
+import {
+  listOk,
+  listFailed,
+  listViewState,
+  itemsOf,
+  type ListRead,
+} from "@/lib/services/listRead";
 import { SkeletonList } from "../_components/DashboardSkeleton";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -306,133 +313,206 @@ function ConsultCard({ c, isDark }: { c: Consultation; isDark: boolean }) {
 
 type FilterStatus = "all" | ConsultStatus;
 
+/**
+ * One `service_requests` row of type `consultation` → the card this page draws.
+ *
+ * Hoisted out of the effect it used to live in so the loader below can be a
+ * plain `useCallback`; it closes over nothing but module constants.
+ */
+const toConsultation = (request: WorkflowRequest): Consultation => {
+  // The channel comes from `metadata.mode`, NOT from `receiver`. Every
+  // consultation booking is written with `receiver: "ai_workspace"` because
+  // that literal is the whole of "the fulfilment queue can see this row"
+  // (api/v1/admin/service-orders/route.ts:54) — it says nothing about who
+  // does the work. Keying the AI badge off it labelled every human booking
+  // «نظامي AI». `metadata.mode` is "ai" exactly on the AI path and one of
+  // the four LawyerMode values otherwise.
+  //
+  // readConsultChannel() is the shared reader — the detail page needs the
+  // identical decision on the identical keys. It also reads
+  // /book/consultation's `consultTypeId`, whose three HUMAN values are the
+  // same vocabulary: those rows used to get no badge at all, and the
+  // comment that stood here said so, but the fact was recorded on them the
+  // whole time under the other name.
+  //
+  // That reader deliberately refuses "ai" from `consultTypeId` — read its
+  // comment before widening it. This card is why: the avatar below draws a
+  // robot and `provider` reads «نظامي AI» for an "ai" channel, and a
+  // /book/consultation «نظامي AI» booking opens no assistant — its own
+  // form says the نظامي team executes it. That would be this page's old
+  // receiver-keyed defect walked back in through a different key.
+  const channel = readConsultChannel(request.metadata);
+  return {
+    id: request.id,
+    channel,
+    status: CONSULT_STATUS_BY_REQUEST_STATUS[request.status] ?? "upcoming",
+    requestStatusLabel: REQUEST_STATUS_AR[request.status] ?? "حالة غير معروفة",
+    title: metaString(request.title) ?? "طلب استشارة",
+    // `metadata.lawyerName` — the key the booking wizard actually writes.
+    // Both consultation pages used to read `metadata.lawyer`, which nothing
+    // writes, so a client who picked a specific lawyer never saw that choice
+    // reflected anywhere.
+    provider: channel === "ai"
+      ? "نظامي AI"
+      : metaString(request.metadata?.lawyerName) ?? "بانتظار تعيين المحامي",
+    specialty: metaString(request.metadata?.specialty),
+    topic: request.description ?? "",
+    date: formatDate(request.createdAt),
+    scheduledDate: "",
+    price: request.payment.amount,
+  };
+};
+
 export default function ConsultationListPage() {
   const { isDark } = useTheme();
   const user = useUser();
   const [filter, setFilter]     = useState<FilterStatus>("all");
   const [search, setSearch]     = useState("");
-  const [consultations, setConsultations] = useState<Consultation[]>([]);
+  /**
+   * ONE `ListRead` PER SOURCE, NOT ONE FOR THE MERGE.
+   *
+   * This page reads two independent lists — the `consultations` table and this
+   * client's `service_requests` rows — and it has always been able to say that
+   * one of them failed while the other answered. A single merged read cannot
+   * express that: «تعذّر تحميل بعض مصادر الاستشارات» needs to know WHICH half
+   * is missing, and a merge that succeeded once and failed once is neither
+   * `ok: true` nor `ok: false`.
+   *
+   * ── THE BUG THIS REPLACES ───────────────────────────────────────────────
+   * `serviceFailed` and `workflowFailed` were set inside `.catch()` blocks
+   * attached to `getConsultations()` and `listClientWorkflowRequests()`. Both
+   * now return `ok: false` instead of rejecting (see listRead.ts — a value
+   * that carries its own failure survives a Promise.all, which is the whole
+   * reason it is a value), and neither can reject on the paths these two
+   * calls take: `getConsultations` ends in `catch { return listFailed() }`
+   * (casesService.ts), and `listClientWorkflowRequests` reads `page.degraded`
+   * off `fetchWorkflowRequests`, whose own catch returns
+   * `{ requests: [], degraded: true }` rather than throwing
+   * (clientWorkflowRepository.ts). So those two catches could no longer fire,
+   * and the amber banner they drive would have died silently: the page would
+   * have gone back to answering an unreadable source with «لا توجد استشارات».
+   * Satisfying the compiler alone — casting `[]` to a `ListRead` — would have
+   * shipped exactly that. The check moved to `.ok`, which is a property of the
+   * value rather than of either module's internals; the `.catch()` on the
+   * effect below is what still covers a reader that starts throwing again.
+   */
+  const [serviceRead, setServiceRead] = useState<ListRead<Consultation> | null>(null);
+  const [workflowRead, setWorkflowRead] = useState<ListRead<Consultation> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  /** Bumped by «إعادة المحاولة»; the effect below refetches when it changes. */
+  const [attempt, setAttempt] = useState(0);
+
+  /**
+   * Both sources, mapped to this page's card shape, RETURNED rather than
+   * written to state: the effect below owns the write, so a reply that arrives
+   * after a retry (or after unmount) cannot overwrite a newer one.
+   */
+  const load = useCallback(async (): Promise<{
+    service: ListRead<Consultation>;
+    workflow: ListRead<Consultation>;
+  }> => {
+    const [serviceRes, workflowRes] = await Promise.all([
+      getConsultations(),
+      listClientWorkflowRequests({ requesterUserId: user.userId }),
+    ]);
+
+    return {
+      service: serviceRes.ok
+        ? listOk(
+            // `sc` is a raw `consultations` row (casesService.ts), not this
+            // page's card shape — the mapping is inline so its type stays
+            // inferred rather than re-declared under a name that collides
+            // with the local `Consultation` interface.
+            serviceRes.items.map((sc): Consultation => {
+              const scStatus = sc.status as ServiceConsultStatus;
+              return {
+                id: sc.id,
+                // `sc.type` is a free-text column, so it is only trusted when
+                // it is one of the five channels this page can name.
+                channel: sc.type in CHANNEL_CONFIG ? (sc.type as ConsultChannel) : null,
+                status: CONSULT_STATUS_BY_SERVICE_STATUS[scStatus] ?? "upcoming",
+                requestStatusLabel: SERVICE_STATUS_AR[scStatus] ?? "حالة غير معروفة",
+                title: sc.topic || sc.description || "طلب استشارة",
+                // `sc.lawyer_id` is a uuid. It was rendered straight into the
+                // lawyer-name slot, so the card showed the client a raw
+                // identifier and called it their lawyer. We know one is
+                // assigned; we do not know the name, and this says exactly
+                // that much.
+                provider: sc.lawyer_id ? "محامٍ معيَّن" : "بانتظار تعيين المحامي",
+                specialty: null,
+                topic: sc.description || "",
+                date: formatDate(sc.created_at),
+                scheduledDate: formatDate(sc.scheduled_at),
+                // These rows carry no amount column at all. It used to be
+                // filled in as 0, which rendered «٠ ر.س» — a stated price,
+                // invented.
+                price: null,
+                notes: sc.notes,
+              };
+            }),
+          )
+        : listFailed<Consultation>(),
+
+      workflow: workflowRes.ok
+        ? listOk(workflowRes.items.filter((r) => r.type === "consultation").map(toConsultation))
+        : listFailed<Consultation>(),
+    };
+  }, [user.userId]);
 
   useEffect(() => {
     // Wait for the session. Querying with an unresolved userId returns nothing,
     // and this page answers "nothing" with «لا توجد استشارات» — a statement
     // about the client's own records, made before we know whose they are.
+    // `loading` is deliberately NOT cleared here: while the session is
+    // resolving the page is still waiting, and listViewState(false, null)
+    // would call that 'unreadable' and flash a failure at every visitor.
     if (user.loading) return;
-
-    const toConsultation = (request: WorkflowRequest): Consultation => {
-      // The channel comes from `metadata.mode`, NOT from `receiver`. Every
-      // consultation booking is written with `receiver: "ai_workspace"` because
-      // that literal is the whole of "the fulfilment queue can see this row"
-      // (api/v1/admin/service-orders/route.ts:54) — it says nothing about who
-      // does the work. Keying the AI badge off it labelled every human booking
-      // «نظامي AI». `metadata.mode` is "ai" exactly on the AI path and one of
-      // the four LawyerMode values otherwise.
-      //
-      // readConsultChannel() is the shared reader — the detail page needs the
-      // identical decision on the identical keys. It also reads
-      // /book/consultation's `consultTypeId`, whose three HUMAN values are the
-      // same vocabulary: those rows used to get no badge at all, and the
-      // comment that stood here said so, but the fact was recorded on them the
-      // whole time under the other name.
-      //
-      // That reader deliberately refuses "ai" from `consultTypeId` — read its
-      // comment before widening it. This card is why: the avatar below draws a
-      // robot and `provider` reads «نظامي AI» for an "ai" channel, and a
-      // /book/consultation «نظامي AI» booking opens no assistant — its own
-      // form says the نظامي team executes it. That would be this page's old
-      // receiver-keyed defect walked back in through a different key.
-      const channel = readConsultChannel(request.metadata);
-      return {
-        id: request.id,
-        channel,
-        status: CONSULT_STATUS_BY_REQUEST_STATUS[request.status] ?? "upcoming",
-        requestStatusLabel: REQUEST_STATUS_AR[request.status] ?? "حالة غير معروفة",
-        title: metaString(request.title) ?? "طلب استشارة",
-        // `metadata.lawyerName` — the key the booking wizard actually writes.
-        // Both consultation pages used to read `metadata.lawyer`, which nothing
-        // writes, so a client who picked a specific lawyer never saw that choice
-        // reflected anywhere.
-        provider: channel === "ai"
-          ? "نظامي AI"
-          : metaString(request.metadata?.lawyerName) ?? "بانتظار تعيين المحامي",
-        specialty: metaString(request.metadata?.specialty),
-        topic: request.description ?? "",
-        date: formatDate(request.createdAt),
-        scheduledDate: "",
-        price: request.payment.amount,
-      };
-    };
-
-    // Track failures per source so we can surface an error banner without
-    // hiding a partial success (one source may legitimately return []).
-    let serviceFailed = false;
-    let workflowFailed = false;
-
-    Promise.all([
-      getConsultations().catch((e) => {
-        console.error("[consultation list] getConsultations failed:", e);
-        serviceFailed = true;
-        return [] as Awaited<ReturnType<typeof getConsultations>>;
-      }),
-      listClientWorkflowRequests({ requesterUserId: user.userId }).catch((e) => {
-        console.error("[consultation list] listClientWorkflowRequests failed:", e);
-        workflowFailed = true;
-        return [] as WorkflowRequest[];
-      }),
-    ])
-      .then(([serviceConsultations, workflowRequests]) => {
-        if (serviceFailed && workflowFailed) {
-          setFetchError("تعذّر تحميل الاستشارات. حاول مرة أخرى لاحقاً.");
-        } else if (serviceFailed || workflowFailed) {
-          setFetchError("تعذّر تحميل بعض مصادر الاستشارات — قد لا تكون القائمة كاملة.");
-        }
-        // Map service consultations to page shape
-        const fromService: Consultation[] = serviceConsultations.map(sc => {
-          const scStatus = sc.status as ServiceConsultStatus;
-          return {
-            id: sc.id,
-            // `sc.type` is a free-text column, so it is only trusted when it is
-            // one of the five channels this page can name.
-            channel: sc.type in CHANNEL_CONFIG ? (sc.type as ConsultChannel) : null,
-            status: CONSULT_STATUS_BY_SERVICE_STATUS[scStatus] ?? "upcoming",
-            requestStatusLabel: SERVICE_STATUS_AR[scStatus] ?? "حالة غير معروفة",
-            title: sc.topic || sc.description || "طلب استشارة",
-            // `sc.lawyer_id` is a uuid. It was rendered straight into the
-            // lawyer-name slot, so the card showed the client a raw identifier
-            // and called it their lawyer. We know one is assigned; we do not
-            // know the name, and this says exactly that much.
-            provider: sc.lawyer_id ? "محامٍ معيَّن" : "بانتظار تعيين المحامي",
-            specialty: null,
-            topic: sc.description || "",
-            date: formatDate(sc.created_at),
-            scheduledDate: formatDate(sc.scheduled_at),
-            // These rows carry no amount column at all. It used to be filled in
-            // as 0, which rendered «٠ ر.س» — a stated price, invented.
-            price: null,
-            notes: sc.notes,
-          };
-        });
-
-        // Map workflow requests to page shape
-        const fromWorkflow = workflowRequests
-          .filter((r: WorkflowRequest) => r.type === "consultation")
-          .map(toConsultation);
-
-        // Merge both sources, workflow requests first
-        const merged = [...fromWorkflow, ...fromService];
-        // Deduplicate by id
-        const seen = new Set<string>();
-        const unique = merged.filter(c => {
-          if (seen.has(c.id)) return false;
-          seen.add(c.id);
-          return true;
-        });
-        setConsultations(unique);
+    let cancelled = false;
+    // Every setState below runs after an await, so nothing here is synchronous
+    // with the effect body — which is also why no eslint-disable is needed for
+    // react-hooks/set-state-in-effect on this one.
+    load()
+      .then(({ service, workflow }) => {
+        if (cancelled) return;
+        setServiceRead(service);
+        setWorkflowRead(workflow);
       })
-      .finally(() => setLoading(false));
-  }, [user.userId, user.loading]);
+      .catch((err) => {
+        // Neither reader rejects any more — they return `ok: false`. This is
+        // for a fault in the mapping above, which would otherwise leave the
+        // page spinning for ever.
+        console.error("[consultation list] load failed:", err);
+        if (cancelled) return;
+        setServiceRead(listFailed<Consultation>());
+        setWorkflowRead(listFailed<Consultation>());
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [load, user.loading, attempt]);
+
+  const retry = useCallback(() => {
+    setLoading(true);
+    setServiceRead(null);
+    setWorkflowRead(null);
+    setAttempt((n) => n + 1);
+  }, []);
+
+  const serviceView = listViewState(loading, serviceRead);
+  const workflowView = listViewState(loading, workflowRead);
+  const bothUnreadable = serviceView === "unreadable" && workflowView === "unreadable";
+  const anyUnreadable = serviceView === "unreadable" || workflowView === "unreadable";
+
+  // Workflow requests first, then the consultations table, deduplicated by id —
+  // unchanged. itemsOf() answers [] for a source that failed, so a half-broken
+  // read shows the half that answered instead of nothing.
+  const consultations = useMemo(() => {
+    const seen = new Set<string>();
+    return [...itemsOf(workflowRead), ...itemsOf(serviceRead)].filter((c) => {
+      if (seen.has(c.id)) return false;
+      seen.add(c.id);
+      return true;
+    });
+  }, [workflowRead, serviceRead]);
 
   const filtered = consultations.filter(c => {
     if (filter !== "all" && c.status !== filter) return false;
@@ -450,6 +530,15 @@ export default function ConsultationListPage() {
     cancelled: consultations.filter(c => c.status === "cancelled").length,
   };
 
+  /**
+   * True only when BOTH sources answered. A count over a half-read merge is
+   * not this client's consultation count, and «الكل ٣» printed under a banner
+   * admitting a source could not be read is the same figure-beside-an-
+   * admission this sweep removed from «طلباتي» and «قضاياي». Withheld rather
+   * than zeroed — «٠» is a claim.
+   */
+  const countsKnown = !anyUnreadable && !loading;
+
   const FILTERS: { key: FilterStatus; label: string; count: number }[] = [
     { key: "all",       label: "الكل",         count: counts.all },
     { key: "upcoming",  label: "قيد المتابعة", count: counts.upcoming },
@@ -464,17 +553,33 @@ export default function ConsultationListPage() {
         <div className="mt-8"><SkeletonList count={4} /></div>
       ) : (
       <>
-      {/* Error banner */}
-      {fetchError && (
+      {/* Error banner. Two sentences, because two facts: everything is missing,
+          or half of it is. Both carry a retry that refetches both sources —
+          re-reading the one that answered costs a request and keeps the merge
+          consistent. */}
+      {anyUnreadable && (
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
           className={`mb-6 rounded-2xl border p-4 flex items-center gap-3 ${isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50"}`}>
           <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-red-500/15" : "bg-red-100"}`}>
             <Warning size={18} weight="fill" className="text-red-500" />
           </div>
-          <div>
-            <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>خطأ في تحميل الاستشارات</p>
-            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-red-600/70"}`}>{fetchError}</p>
+          <div className="flex-1 min-w-0">
+            <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>تعذّرت قراءة الاستشارات</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-red-600/70"}`}>
+              {bothUnreadable
+                ? "لم نتمكن من قراءة سجل استشاراتك، ولا يمكننا تأكيد ما إذا كانت لديك استشارات."
+                : "تعذّرت قراءة أحد مصدري الاستشارات — القائمة أدناه غير مكتملة."}
+            </p>
           </div>
+          <button
+            onClick={retry}
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold transition ${
+              isDark ? "border-red-500/30 text-red-400 hover:bg-red-500/10" : "border-red-300 text-red-700 hover:bg-red-100"
+            }`}
+          >
+            <ArrowClockwise size={13} weight="bold" />
+            إعادة المحاولة
+          </button>
         </motion.div>
       )}
 
@@ -530,11 +635,16 @@ export default function ConsultationListPage() {
               >
                 {isActive && <motion.div layoutId="consultTabActive" className={`absolute inset-0 rounded-xl ${isDark ? "bg-zinc-800" : "bg-white"} shadow-sm -z-10`} />}
                 {f.label}
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                  isActive ? "bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-emerald-500/20 dark:text-emerald-400" : isDark ? "bg-white/10 text-zinc-400" : "bg-zinc-200 text-zinc-500"
-                }`}>
-                  {f.count}
-                </span>
+                {/* Withheld, not zeroed, whenever either source failed — see
+                    `countsKnown`. The tab still filters what is on screen and
+                    claims nothing about what is not. */}
+                {countsKnown && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                    isActive ? "bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-emerald-500/20 dark:text-emerald-400" : isDark ? "bg-white/10 text-zinc-400" : "bg-zinc-200 text-zinc-500"
+                  }`}>
+                    {f.count.toLocaleString("ar-SA")}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -550,15 +660,68 @@ export default function ConsultationListPage() {
               <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5 shadow-inner ${isDark ? "bg-white/5 text-zinc-600" : "bg-white border border-zinc-100 text-zinc-300"}`}>
                 <ChatCircle size={36} weight="duotone" />
               </div>
-              <p className={`text-lg font-bold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>لا توجد استشارات</p>
-              <p className={`text-sm mb-6 ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>لا توجد استشارات تطابق بحثك المحدّد أو هذا الفلتر.</p>
-              <Link href="/dashboard/client/consultation/new">
-                <motion.button whileTap={{ scale: 0.97 }}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-[#0B3D2E] text-white rounded-xl text-sm font-bold shadow-md hover:bg-[#0a3328] transition-colors"
-                >
-                  <Plus size={16} weight="bold" /> احجز استشارتك الأولى
-                </motion.button>
-              </Link>
+              {/*
+                FOUR DIFFERENT EMPTY SCREENS, because they are four different
+                facts, and only the last is allowed to say the client has no
+                consultations.
+
+                What stood here was one screen for all four: «لا توجد استشارات»
+                over «لا توجد استشارات تطابق بحثك المحدّد أو هذا الفلتر», with
+                «احجز استشارتك الأولى» underneath — printed unchanged when BOTH
+                sources had failed, directly below the red banner saying so. A
+                client whose read broke was told, in the page's largest type,
+                that they have never booked a consultation, and invited to book
+                their first one.
+              */}
+              {bothUnreadable ? (
+                <>
+                  <p className={`text-lg font-bold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>تعذّر عرض استشاراتك</p>
+                  <p className={`text-sm mb-6 max-w-sm mx-auto ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                    لم نتمكن من قراءة سجلّك من الخادم، ولا يمكننا تأكيد ما إذا كانت لديك استشارات.
+                  </p>
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={retry}
+                    className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-colors ${
+                      isDark ? "bg-white/[0.05] text-zinc-200 hover:bg-white/[0.1]" : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                    }`}
+                  >
+                    <ArrowClockwise size={16} weight="bold" /> إعادة المحاولة
+                  </motion.button>
+                </>
+              ) : anyUnreadable ? (
+                <>
+                  {/* One source answered and had nothing; the other could not
+                      be read. That is not «لا توجد استشارات» — the missing half
+                      may well hold some. The banner above carries the retry. */}
+                  <p className={`text-lg font-bold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>لا توجد استشارات لعرضها</p>
+                  <p className={`text-sm max-w-sm mx-auto ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                    تعذّرت قراءة أحد المصدرين، والمصدر الآخر لم يُرجع أي استشارة — لذلك لا يمكننا تأكيد أنه ليست لديك استشارات.
+                  </p>
+                </>
+              ) : consultations.length > 0 ? (
+                <>
+                  <p className={`text-lg font-bold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>لا توجد استشارات مطابقة</p>
+                  <p className={`text-sm mb-6 ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>لا تطابق أي من استشاراتك هذا البحث أو هذا الفلتر.</p>
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setSearch(""); setFilter("all"); }}
+                    className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-colors ${
+                      isDark ? "bg-white/[0.05] text-zinc-200 hover:bg-white/[0.1]" : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                    }`}
+                  >
+                    إعادة ضبط البحث
+                  </motion.button>
+                </>
+              ) : (
+                <>
+                  <p className={`text-lg font-bold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>لا توجد استشارات بعد</p>
+                  <p className={`text-sm mb-6 ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>لم تحجز أي استشارة حتى الآن — ستظهر هنا فور إرسالها.</p>
+                  <Link href="/dashboard/client/consultation/new">
+                    <motion.button whileTap={{ scale: 0.97 }}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-[#0B3D2E] text-white rounded-xl text-sm font-bold shadow-md hover:bg-[#0a3328] transition-colors"
+                    >
+                      <Plus size={16} weight="bold" /> احجز استشارتك الأولى
+                    </motion.button>
+                  </Link>
+                </>
+              )}
             </motion.div>
           ) : (
             filtered.map(c => <ConsultCard key={c.id} c={c} isDark={isDark} />)

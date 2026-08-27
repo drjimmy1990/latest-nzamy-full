@@ -172,12 +172,38 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    // Fetch free items setting
-    const { data: freeItemsRow } = await adminClient
+    // Fetch free items setting.
+    //
+    // `.maybeSingle()`, not `.single()`, and the error is now read. `.single()`
+    // raises PGRST116 when the settings row does not exist yet, so the two
+    // cases — "nobody has marked anything free" and "the settings read failed"
+    // — arrived identically as an error that was discarded, and BOTH defaulted
+    // to the all-empty object below. On a failed read that object is a lie
+    // rendered on every row of the tab: LibraryTab derives each item's
+    // free/paid badge from it (src/app/dashboard/admin/tabs/LibraryTab.tsx:57),
+    // so an admin would see paid content marked paid, free content marked paid
+    // too, and no way to tell. A 500 lets that tab show its own error state,
+    // which it already has (line 73).
+    //
+    // With maybeSingle, a genuinely absent row is `data: null, error: null` and
+    // still takes the empty default — that one IS true.
+    const { data: freeItemsRow, error: freeItemsError } = await adminClient
       .from("platform_settings")
       .select("value")
       .eq("key", "library_free_items")
-      .single();
+      .maybeSingle();
+
+    if (freeItemsError) {
+      console.error(
+        "[admin/library] GET free items read error:",
+        freeItemsError.message,
+        freeItemsError.code,
+      );
+      return NextResponse.json(
+        { error: "تعذّرت قراءة إعدادات الوصول المجاني للمكتبة." },
+        { status: 500 },
+      );
+    }
 
     const freeItems = (freeItemsRow?.value as Record<string, string[]>) || {
       laws: [],
@@ -314,12 +340,35 @@ export async function PATCH(request: NextRequest) {
 
     const adminClient = await createServiceClient();
 
-    // Read current free items
-    const { data: row } = await adminClient
+    // Read current free items.
+    //
+    // THIS ONE DESTROYS DATA, not just a badge. The write at the bottom of this
+    // handler is a read-modify-write UPSERT of the whole `value` object, and
+    // the read used `.single()` with the error thrown away: any failure to read
+    // the existing list defaulted it to empty here, appended the one id being
+    // toggled, and upserted that over the real setting — every previously-free
+    // law, decree, principle and book silently reverted to paid, from one click
+    // that appeared to succeed.
+    //
+    // So a read error stops the write. An absent row (`data: null, error: null`
+    // under maybeSingle) is still the legitimate first-ever toggle and proceeds.
+    const { data: row, error: readError } = await adminClient
       .from("platform_settings")
       .select("value")
       .eq("key", "library_free_items")
-      .single();
+      .maybeSingle();
+
+    if (readError) {
+      console.error(
+        "[admin/library] PATCH free items read error:",
+        readError.message,
+        readError.code,
+      );
+      return NextResponse.json(
+        { error: "تعذّرت قراءة إعدادات الوصول الحالية، ولم يتم حفظ التغيير." },
+        { status: 500 },
+      );
+    }
 
     const freeItems: Record<string, string[]> = (row?.value as Record<string, string[]>) || {
       laws: [],

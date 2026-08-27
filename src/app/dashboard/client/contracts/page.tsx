@@ -7,10 +7,11 @@ import { SkeletonList } from '../_components/DashboardSkeleton';
 import {
   FileText, Pen, CheckCircle, Clock, WarningCircle, PlusCircle, MagnifyingGlass,
   ArrowUpRight, FolderOpen, CalendarBlank, ArrowRight, ClockClockwise, SealCheck,
-  UserCircle, DotOutline, ArrowDown, Eye, PencilSimple, X, Robot,
+  UserCircle, DotOutline, ArrowDown, Eye, PencilSimple, X, Robot, ArrowClockwise,
 } from '@phosphor-icons/react';
 import { listClientWorkflowRequests } from '@/lib/clientWorkflowRepository';
 import type { WorkflowRequest } from '@/lib/workflowStore';
+import { itemsOf, listFailed, listViewState, type ListRead } from '@/lib/services/listRead';
 import { useTheme } from '@/components/ThemeProvider';
 import { useUser } from '@/hooks/useUser';
 
@@ -80,6 +81,27 @@ const statusConfig: Record<ContractStatus, { label: string; lightBadge: string; 
   expired: { label: 'منتهي', lightBadge: 'bg-red-50 text-red-600 border-red-200', darkBadge: 'bg-red-900/30 text-red-400 border-red-700/50', icon: WarningCircle },
   draft: { label: 'مسودة', lightBadge: 'bg-slate-100 text-slate-600 border-slate-200', darkBadge: 'bg-white/5 text-gray-400 border-white/10', icon: FileText },
 };
+
+const toContract = (request: WorkflowRequest): Contract => ({
+  id: request.id,
+  title: request.title,
+  party: request.requester.name || 'العميل',
+  type: String(request.metadata?.contractType ?? 'مسودة AI'),
+  status: mapContractStatus(request.status),
+  signedAt: request.status === 'completed' ? request.createdAt : null,
+  expiresAt: null,
+  value: request.payment.amount ? `${request.payment.amount} ر.س` : null,
+});
+
+const toActivity = (request: WorkflowRequest): ActivityEvent => ({
+  id: `act-${request.id}`,
+  type: 'created',
+  actor: 'نظامي AI',
+  actorRole: 'ai',
+  message: `تم إنشاء مسودة: ${request.title}`,
+  date: request.createdAt || '',
+  contractId: request.id,
+});
 
 function ActivityTimeline({ events, isDark }: { events: ActivityEvent[]; isDark: boolean }) {
   if (events.length === 0) {
@@ -190,47 +212,57 @@ export default function ClientContractsPage() {
   const user = useUser();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ContractStatus | 'all'>('all');
-  const [selectedId, setSelectedId] = useState<string | null>('1');
-  const [contracts, setContracts] = useState<Contract[]>([]);
-  const [activityLog, setActivityLog] = useState<ActivityEvent[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /**
+   * The read itself, not the rows it produced.
+   *
+   * `listClientWorkflowRequests` NO LONGER REJECTS — it answers `ok: false`.
+   * The `.catch()` that used to set this page's error banner therefore stopped
+   * firing, and a failed read fell through to «لا توجد عقود»: a client whose
+   * request never reached the server was told, on the page listing their own
+   * contracts, that they have none. The failure check now lives on `read.ok`,
+   * where the failure actually arrives.
+   */
+  const [read, setRead] = useState<ListRead<WorkflowRequest> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Bumped by «إعادة المحاولة» so the read is retried in place rather than the
+  // client being told to reload the page.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    const toContract = (request: WorkflowRequest): Contract => ({
-      id: request.id,
-      title: request.title,
-      party: request.requester.name || 'العميل',
-      type: String(request.metadata?.contractType ?? 'مسودة AI'),
-      status: mapContractStatus(request.status),
-      signedAt: request.status === 'completed' ? request.createdAt : null,
-      expiresAt: null,
-      value: request.payment.amount ? `${request.payment.amount} ر.س` : null,
-    });
-    const toActivity = (request: WorkflowRequest): ActivityEvent => ({
-      id: `act-${request.id}`,
-      type: 'created',
-      actor: 'نظامي AI',
-      actorRole: 'ai',
-      message: `تم إنشاء مسودة: ${request.title}`,
-      date: request.createdAt || '',
-      contractId: request.id,
-    });
+    let cancelled = false;
+    setLoading(true);
     listClientWorkflowRequests({ requesterUserId: user.userId })
-      .then((requests) => {
-        const drafts = requests.filter((r) => r.type === 'ai_draft');
-        const mapped = drafts.map(toContract);
-        const activities = drafts.map(toActivity);
-        setContracts(mapped);
-        setActivityLog(activities);
-        if (mapped.length) setSelectedId(mapped[0]?.id ?? null);
-      })
+      .then((result) => { if (!cancelled) setRead(result); })
       .catch((err) => {
+        // Kept for the throws this reader can still produce (an unexpected one
+        // from the fetch layer). A rejection is a failed read like any other.
         console.error('[contracts] failed to load workflow requests:', err);
-        setError('تعذر تحميل العقود. حاول مرة أخرى لاحقاً.');
+        if (!cancelled) setRead(listFailed<WorkflowRequest>());
       })
-      .finally(() => setLoading(false));
-  }, [user.userId]);
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [user.userId, reloadKey]);
+
+  const view = listViewState(loading, read);
+  // itemsOf() is reached only past the failure check above: on an unreadable
+  // read it answers [], and every count and list below is gated on `view`.
+  const contracts = useMemo(
+    () => itemsOf(read).filter((r) => r.type === 'ai_draft').map(toContract),
+    [read],
+  );
+  const activityLog = useMemo(
+    () => itemsOf(read).filter((r) => r.type === 'ai_draft').map(toActivity),
+    [read],
+  );
+
+  // Open the first contract of a fresh read, as this page always has. Keyed on
+  // `read` so it runs once per load and does not fight the panel's × button.
+  useEffect(() => {
+    if (!read?.ok) return;
+    const first = read.items.find((r) => r.type === 'ai_draft');
+    if (first) setSelectedId(first.id);
+  }, [read]);
 
   const filtered = useMemo(() => {
     return contracts.filter((c) => {
@@ -258,16 +290,30 @@ export default function ClientContractsPage() {
     { key: 'draft', label: 'مسودات' },
   ];
 
-  if (loading) return <div className="p-6 md:p-8 max-w-[1300px] mx-auto" dir="rtl"><SkeletonList count={4} /></div>;
+  if (view === 'loading') return <div className="p-6 md:p-8 max-w-[1300px] mx-auto" dir="rtl"><SkeletonList count={4} /></div>;
 
-  if (error) {
+  if (view === 'unreadable') {
     return (
       <div className="p-6 md:p-8 max-w-[1300px] mx-auto" dir="rtl">
         <div className={`flex items-start gap-3 p-5 rounded-2xl border ${isDark ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-800"}`}>
           <WarningCircle size={20} weight="fill" className="mt-0.5 flex-shrink-0" />
-          <div>
+          <div className="flex-1">
             <p className="text-sm font-bold">تعذر تحميل العقود</p>
-            <p className="text-xs mt-1 opacity-80">{error}</p>
+            {/* The sentence says what is and is not known. This screen is not
+                entitled to say the client has no contracts. */}
+            <p className="text-xs mt-1 opacity-80">
+              لم تصل قائمة عقودك من الخادم. هذه ليست قائمة فارغة — قد تكون لديك عقود لم تُقرأ.
+            </p>
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                isDark ? "border-red-500/40 hover:bg-red-500/10" : "border-red-300 hover:bg-red-100"
+              }`}
+            >
+              <ArrowClockwise size={13} weight="bold" />
+              إعادة المحاولة
+            </button>
           </div>
         </div>
       </div>

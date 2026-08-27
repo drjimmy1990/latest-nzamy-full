@@ -137,6 +137,9 @@ export default function CasesPage() {
   const [loadError,     setLoadError]     = useState(false);
   const [truncated,     setTruncated]     = useState(false);
   const [reloadKey,     setReloadKey]     = useState(0);
+  // A write the server refused. The Kanban drag is optimistic, so without this
+  // a rejected move just slid the card back with no explanation at all.
+  const [saveError,     setSaveError]     = useState<string | null>(null);
   const [showAddCase,   setShowAddCase]   = useState(false);
   const [collabFilter,  setCollabFilter]  = useState<CollabFilter>("all"); // S59
   const [archiveSearch, setArchiveSearch] = useState(""); // S82
@@ -193,13 +196,18 @@ export default function CasesPage() {
     if (!nextStatus) return;
     updateWorkflowRequestById(caseId, { status: nextStatus })
       .then(updated => {
-        // A rejected PATCH does NOT reject this promise: workflowService catches
-        // it and falls back to the localStorage store, which returns null when it
-        // has never seen the row (the normal case for a server-fetched case). So a
-        // null result is a failed write and must revert, exactly like a throw —
-        // without this check a 403 from the status guard looked like a success.
+        // TWO failure shapes, and both must revert AND say so.
+        //
+        // `updated === null` is the DEMO path: updateLocal() returns null for a
+        // row the local store has never seen. In supabase mode the helper now
+        // RETHROWS a failed PATCH (workflowService.ts:104-110) rather than
+        // quietly patching localStorage and handing back a row — that fallback
+        // is what used to make a 403 from the status guard look like a success,
+        // and it is gone. The .catch() below is what catches it now; this null
+        // check is still load-bearing for demo mode.
         if (!updated) {
           revert();
+          setSaveError("تعذّر نقل القضية. لم يتغيّر شيء على الخادم.");
           return;
         }
         // Dispatch the refresh event so list/kanban views re-sync from the
@@ -208,7 +216,14 @@ export default function CasesPage() {
           window.dispatchEvent(new Event("nzamy-workflow-updated"));
         }
       })
-      .catch(revert);
+      .catch(err => {
+        // The card used to slide back into its old column with nothing said, so
+        // a refused move was indistinguishable from a clumsy drag — and the
+        // lawyer's next move was to try again against the same refusal.
+        console.error("[cases] kanban status move failed:", err);
+        revert();
+        setSaveError("تعذّر نقل القضية. لم يتغيّر شيء على الخادم.");
+      });
   }, []);
 
   useEffect(() => {
@@ -300,6 +315,25 @@ export default function CasesPage() {
     // Nothing rewrites this for us: the React Compiler is not enabled here (no
     // `reactCompiler` in next.config.ts, no babel-plugin-react-compiler).
   }, [activeCases, archivedCases, collabFilter, statusFilter, typeFilter, degreeFilter, courtFilter, teamFilter, timeFilter, priorityFilter, search, viewMode]);
+
+  /**
+   * True only when there is a real list behind every figure on this page.
+   *
+   * `cases` is `[]` before the first fetch resolves and after one fails, so
+   * every count below is 0 in three different states. The header, the quick
+   * status pills and the footer already gated on exactly this expression; the
+   * collaboration rail and the status chips inside the filter drawer did not,
+   * so they printed «الكل ٠ · قضاياي ٠ · مشتركة ٠» during the whole first
+   * paint and again over a failed read.
+   *
+   * The `cases.length === 0` half is deliberate and is NOT the same as
+   * `!loadError`: when a background refresh fails but an earlier load
+   * succeeded, the last good list stays on screen under an amber
+   * «قد لا يكون محدّثاً» banner, and the counts then describe exactly the rows
+   * the lawyer is looking at. Withholding them there would be its own
+   * inaccuracy.
+   */
+  const countsKnown = !loading && !(loadError && cases.length === 0);
 
   // No `suspended` key: nothing can produce a case in that state (see the drag
   // handler above), so the counter could only ever have printed a hard 0.
@@ -611,6 +645,19 @@ export default function CasesPage() {
   return (
     <div className="max-w-[1200px] mx-auto space-y-4" dir="rtl">
 
+      {/* A move the server refused, already rolled back on screen. Same shape as
+          the tasks board's `saveError` — an optimistic write that silently
+          reverts is indistinguishable from a save that worked and then undid
+          itself. */}
+      {saveError && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-[12px] font-semibold text-red-500">
+          <Warning size={14} weight="fill" className="mt-0.5 flex-shrink-0" />
+          <span className="flex-1">{saveError}</span>
+          <button onClick={() => setSaveError(null)} className="opacity-70 hover:opacity-100">إخفاء</button>
+        </motion.div>
+      )}
+
       {/* Critical Banner */}
       {criticalCount > 0 && (
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
@@ -725,9 +772,13 @@ export default function CasesPage() {
                       }`}>
                       {s !== "all" && <span className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[s]?.dot}`} />}
                       {s === "all" ? "الكل" : STATUS_CONFIG[s].label}
-                      <span className={`text-[9px] px-1.5 rounded-full ${statusFilter === s ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                        {s === "all" ? counts.all : counts[s]}
-                      </span>
+                      {/* Number only when a read is behind it — the quick pills
+                          outside this drawer already did this; these did not. */}
+                      {countsKnown && (
+                        <span className={`text-[9px] px-1.5 rounded-full ${statusFilter === s ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
+                          {s === "all" ? counts.all : counts[s]}
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -841,11 +892,17 @@ export default function CasesPage() {
                 <span className="relative flex items-center gap-2">
                   <Icon size={13} weight={isActive ? "fill" : "regular"} />
                   {tab.label}
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                    isActive
-                      ? isDark ? "bg-white/15 text-white" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
-                      : isDark ? "bg-white/[0.05] text-zinc-600" : "bg-slate-200/80 text-slate-400"
-                  }`}>{count}</span>
+                  {/* Withheld until a read has succeeded. This rail was the one
+                      place on the page still printing «٠» through the whole
+                      first paint and over a failed load — the tab stays
+                      selectable, it just makes no claim about how many. */}
+                  {countsKnown && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                      isActive
+                        ? isDark ? "bg-white/15 text-white" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
+                        : isDark ? "bg-white/[0.05] text-zinc-600" : "bg-slate-200/80 text-slate-400"
+                    }`}>{count}</span>
+                  )}
                 </span>
               </motion.button>
             );
@@ -870,7 +927,7 @@ export default function CasesPage() {
       </div>
 
       {/* Quick status pills — hidden while the counts have no data behind them */}
-      {!showFilters && !loading && !(loadError && cases.length === 0) && (
+      {!showFilters && countsKnown && (
         <div className="flex gap-1.5 flex-wrap">
           {(["all", "active", "pending", "closed"] as const).map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
@@ -949,7 +1006,7 @@ export default function CasesPage() {
             which nothing in the repo ever sets, so it was a permanent «0» next to
             a pulsing red dot — an all-clear on a deadline check that is not
             performed. Omitted rather than zero-filled. */}
-        {!loading && !(loadError && cases.length === 0) && (
+        {countsKnown && (
           <>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />

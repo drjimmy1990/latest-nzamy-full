@@ -275,7 +275,13 @@ export default function ContractsPage() {
    */
   async function patchStatus(id: string, status: ContractStatus, auditEvent: string): Promise<void> {
     if (!isSupabaseMode) {
-      await updateWorkflowRequestById(id, { status: workflowStatusFor[status] }, auditEvent);
+      // The local store returns null for a row it has never seen, and that is a
+      // failed write — the result was being discarded, so moveStatus() took the
+      // success path and toasted «تم تحديث حالة العقد» over a row nothing had
+      // updated. Demo-only (module-level constant), but a false «تم» is a false
+      // «تم» wherever it is printed.
+      const updated = await updateWorkflowRequestById(id, { status: workflowStatusFor[status] }, auditEvent);
+      if (!updated) throw new Error("local store did not hold this contract row");
       return;
     }
     await apiMutate(`/api/v1/service-requests/${id}`, "PATCH", {

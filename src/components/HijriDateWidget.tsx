@@ -4,18 +4,35 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, CalendarBlank, ArrowsLeftRight, SunDim, CaretLeft, CaretRight } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import {
+  hijriPartsOf,
+  gregorianFromHijri,
+  toArabicDigits,
+} from "@/lib/services/hijri";
 
 // ── Hijri conversion ──────────────────────────────────────────────────
-const HM = ["محرم","صفر","ربيع الأول","ربيع الثاني","جمادى الأولى","جمادى الثانية","رجب","شعبان","رمضان","شوال","ذو القعدة","ذو الحجة"];
+//
+// THE ARITHMETIC THAT USED TO LIVE HERE WAS A DAY WRONG. `toJD`/`toHijri`/
+// `fromHijri` were a JS port of a tabular C routine that relies on truncation
+// toward zero; `Math.floor` is not that for the negative `(14 - m) / 12` term,
+// so the Julian day came out wrong for most months. Measured on 2026-08-27:
+// Umm al-Qura — the calendar Saudi courts file against — said 14 Rabiʿ al-Awwal
+// 1448; this widget said 13. It is mounted in three places, including
+// SharedSidebar, so every account type saw it.
+//
+// The lawyer hearings page hit the same class of bug and was repaired by asking
+// the runtime instead of re-deriving. That answer now lives in one module with
+// a 400-day round-trip test, and this file is its second caller.
+//
+// Every helper there returns `null` when the runtime has no Umm al-Qura data,
+// and this component renders NOTHING for the Hijri half in that case. A gap is
+// honest; a Gregorian day printed under a «هـ» is not.
 const GM_AR = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
 const DAYS_AR = ["أح","اث","ث","أر","خ","ج","س"];
 const DAYS_FULL = ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
 
-function toJD(y:number,m:number,d:number){const a=Math.floor((14-m)/12);const yr=y+4800-a;const mn=m+12*a-3;return d+Math.floor((153*mn+2)/5)+365*yr+Math.floor(yr/4)-Math.floor(yr/100)+Math.floor(yr/400)-32045;}
-function jdToG(jd:number){const a=jd+32044;const b=Math.floor((4*a+3)/146097);const c=a-Math.floor(146097*b/4);const d=Math.floor((4*c+3)/1461);const e=c-Math.floor(1461*d/4);const mn=Math.floor((5*e+2)/153);return{day:e-Math.floor((153*mn+2)/5)+1,month:mn+3-12*Math.floor(mn/10),year:100*b+d-4800+Math.floor(mn/10)};}
-function toHijri(date:Date){const jd=toJD(date.getFullYear(),date.getMonth()+1,date.getDate());let l=jd-1948440+10632;const n=Math.floor((l-1)/10631);l=l-10631*n+354;const J=Math.floor((10985-l)/5316)*Math.floor(50*l/17719)+Math.floor(l/5670)*Math.floor(43*l/15238);const lf=l-Math.floor((30-J)/15)*Math.floor(17719*J/50)-Math.floor(J/16)*Math.floor(15238*J/43)+29;const hm=Math.floor(24*lf/709);const hd=lf-Math.floor(709*hm/24);return{d:hd,m:hm,y:30*n+J-30,monthName:HM[(hm-1)%12]};}
-function fromHijri(hd:number,hm:number,hy:number):Date{const n=Math.floor((hy-1)/30);const yr=hy-30*n-1;const J=Math.floor((yr*11+3)/30)+354*yr+30*hm-Math.floor((hm-1)/2)+hd+29+10631*n+1948440-385;const{year,month,day}=jdToG(J);return new Date(year,month-1,day);}
-function ar(n:number|string){return String(n).replace(/[0-9]/g,d=>"٠١٢٣٤٥٦٧٨٩"[+d]);}
+/** Kept as a local alias so the JSX below reads unchanged. */
+const ar = toArabicDigits;
 
 // ── This widget shows dates. It does NOT show a schedule. ─────────────
 //
@@ -58,10 +75,14 @@ export default function HijriDateWidget() {
 
   useEffect(()=>{const t=setInterval(()=>setNow(new Date()),60_000);return()=>clearInterval(t);},[]);
 
-  const hijriToday = toHijri(now);
+  const hijriToday = hijriPartsOf(now);
   const dayName = DAYS_FULL[now.getDay()];
   const gStr = `${ar(now.getDate())} ${GM_AR[now.getMonth()]} ${ar(now.getFullYear())} م`;
-  const hStr = `${ar(hijriToday.d)} ${hijriToday.monthName} ${ar(hijriToday.y)} هـ`;
+  // null on a runtime without Umm al-Qura data. Callers below render the
+  // Gregorian half alone rather than a Hijri date nobody can stand behind.
+  const hStr = hijriToday
+    ? `${ar(hijriToday.day)} ${hijriToday.monthName} ${ar(hijriToday.year)} هـ`
+    : null;
 
   // Calendar grid
   const firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
@@ -78,8 +99,21 @@ export default function HijriDateWidget() {
 
   const convert=useCallback(()=>{
     setResult(null);
-    if(dir==="g2h"){const d=+gD,m=+gM,y=+gY;if(!d||!m||!y||m>12||d>31){setResult("تحقق من الأرقام");return;}const h=toHijri(new Date(y,m-1,d));setResult(`${ar(h.d)} ${h.monthName} ${ar(h.y)} هـ`);}
-    else{const d=+hD,m=+hM,y=+hY;if(!d||!m||!y||m>12||d>30){setResult("تحقق من الأرقام");return;}const g=fromHijri(d,m,y);setResult(`${ar(g.getDate())} ${GM_AR[g.getMonth()]} ${ar(g.getFullYear())} م`);}
+    if(dir==="g2h"){
+      const d=+gD,m=+gM,y=+gY;
+      if(!d||!m||!y||m>12||d>31){setResult("تحقق من الأرقام");return;}
+      const h=hijriPartsOf(new Date(y,m-1,d));
+      setResult(h ? `${ar(h.day)} ${h.monthName} ${ar(h.year)} هـ` : "تعذّر التحويل على هذا الجهاز");
+    } else {
+      const d=+hD,m=+hM,y=+hY;
+      if(!d||!m||!y||m>12||d>30){setResult("تحقق من الأرقام");return;}
+      // null has two meanings and both are honest answers: the runtime cannot
+      // convert, or that Hijri day does not exist (the 30th of a 29-day month).
+      // The old code returned a nearby Gregorian date for the second case,
+      // which is a silently shifted deadline.
+      const g=gregorianFromHijri(d,m,y);
+      setResult(g ? `${ar(g.getDate())} ${GM_AR[g.getMonth()]} ${ar(g.getFullYear())} م` : "لا يوجد هذا التاريخ في التقويم الهجري");
+    }
   },[dir,gD,gM,gY,hD,hM,hY]);
 
   const inputCls=`w-full px-2 py-2 rounded-xl border text-[13px] text-center font-bold outline-none transition-all ${isDark?"bg-zinc-800 border-white/[0.08] text-white placeholder:text-zinc-600 focus:border-royal/40":"bg-slate-50 border-slate-200 text-slate-800 focus:border-royal/40"}`;
@@ -95,9 +129,13 @@ export default function HijriDateWidget() {
       <button onClick={()=>setOpen(true)} className={`flex items-center gap-2 px-3 py-2 rounded-2xl text-[12px] font-semibold transition-all cursor-pointer ${chipBase}`}>
         <SunDim size={14} weight="duotone" className="text-amber-500 flex-shrink-0"/>
         <span className="hidden sm:block">{dayName}</span>
-        {(calendarType==="hijri"||calendarType==="both") && (
+        {/* `hijriToday &&` is load-bearing, not defensive noise: the chip is the
+            one part of this widget that renders in the header of every page, so
+            a runtime with no Umm al-Qura data would otherwise put «undefined»
+            next to the date on every screen in the app. */}
+        {(calendarType==="hijri"||calendarType==="both") && hijriToday && (
           <span className={`px-1.5 py-0.5 rounded-lg text-[10px] font-bold ${isDark?"bg-emerald-500/15 text-emerald-400":"bg-emerald-50 text-emerald-700"}`}>
-            {ar(hijriToday.d)} {hijriToday.monthName.split(" ")[0]}
+            {ar(hijriToday.day)} {hijriToday.monthName.split(" ")[0]}
           </span>
         )}
         {(calendarType==="miladi"||calendarType==="both") && (
@@ -133,10 +171,22 @@ export default function HijriDateWidget() {
                 </div>
                 {/* Today display — Hijri primary, Miladi secondary */}
                 <p className={`text-[11px] font-semibold mb-0.5 ${isDark?"text-zinc-500":"text-slate-400"}`}>{dayName}</p>
-                <p className={`text-[18px] font-black leading-tight ${isDark?"text-emerald-400":"text-emerald-700"}`} style={{fontFamily:"var(--font-brand)"}}>
-                  {hStr}
-                </p>
-                <p className={`text-[12px] font-semibold mt-0.5 ${isDark?"text-[#C8A762]":"text-amber-700"}`}>{gStr}</p>
+                {/* When the runtime has no Umm al-Qura data the Gregorian date
+                    takes the primary line instead of leaving an empty one above
+                    it. Rare, but «التقويم الهجري» over a blank is a worse
+                    screen than a Gregorian date shown plainly. */}
+                {hStr ? (
+                  <>
+                    <p className={`text-[18px] font-black leading-tight ${isDark?"text-emerald-400":"text-emerald-700"}`} style={{fontFamily:"var(--font-brand)"}}>
+                      {hStr}
+                    </p>
+                    <p className={`text-[12px] font-semibold mt-0.5 ${isDark?"text-[#C8A762]":"text-amber-700"}`}>{gStr}</p>
+                  </>
+                ) : (
+                  <p className={`text-[18px] font-black leading-tight ${isDark?"text-[#C8A762]":"text-amber-700"}`} style={{fontFamily:"var(--font-brand)"}}>
+                    {gStr}
+                  </p>
+                )}
               </div>
 
               {/* Tabs */}
@@ -159,7 +209,10 @@ export default function HijriDateWidget() {
                     <div className="text-center">
                       {/* Hijri month = primary */}
                       <p className={`text-[14px] font-bold ${isDark?"text-white":"text-slate-800"}`}>
-                        {toHijri(firstDay).monthName} {ar(toHijri(firstDay).y)} هـ
+                        {(() => {
+                          const h = hijriPartsOf(firstDay);
+                          return h ? `${h.monthName} ${ar(h.year)} هـ` : "";
+                        })()}
                       </p>
                       {/* Miladi month = secondary */}
                       <p className={`text-[10px] font-semibold ${isDark?"text-[#C8A762]":"text-amber-600"}`}>
@@ -184,7 +237,7 @@ export default function HijriDateWidget() {
                       if(!cell) return <div key={i}/>;
                       const isToday = cell.toDateString()===now.toDateString();
                       const isSelected = selectedDay?.toDateString()===cell.toDateString();
-                      const hijriDay = toHijri(cell).d;
+                      const hijriDay = hijriPartsOf(cell)?.day ?? null;
                       return (
                         <button key={i} onClick={()=>setSelectedDay(isSelected?null:cell)}
                           className={`relative flex flex-col items-center py-1.5 rounded-xl transition-all ${
@@ -194,7 +247,7 @@ export default function HijriDateWidget() {
                           }`}
                         >
                           {/* Hijri day = primary (big, emerald) */}
-                          <span className={`text-[13px] font-bold leading-none ${isSelected?"text-white":isDark?"text-emerald-400":"text-emerald-700"}`}>{ar(hijriDay)}</span>
+                          <span className={`text-[13px] font-bold leading-none ${isSelected?"text-white":isDark?"text-emerald-400":"text-emerald-700"}`}>{hijriDay === null ? "" : ar(hijriDay)}</span>
                           {/* Miladi day = secondary (small, muted) */}
                           <span className={`text-[9px] mt-0.5 ${isSelected?"text-white/60":isDark?"text-zinc-500":"text-slate-400"}`}>{ar(cell.getDate())}</span>
                         </button>
@@ -215,7 +268,10 @@ export default function HijriDateWidget() {
                             {DAYS_FULL[selectedDay.getDay()]}
                           </p>
                           <p className={`text-[13px] font-bold ${isDark?"text-emerald-400":"text-emerald-700"}`}>
-                            {ar(toHijri(selectedDay).d)} {toHijri(selectedDay).monthName} {ar(toHijri(selectedDay).y)} هـ
+                            {(() => {
+                              const h = hijriPartsOf(selectedDay);
+                              return h ? `${ar(h.day)} ${h.monthName} ${ar(h.year)} هـ` : "";
+                            })()}
                           </p>
                           <p className={`text-[11px] font-semibold mt-0.5 ${isDark?"text-[#C8A762]":"text-amber-700"}`}>
                             {ar(selectedDay.getDate())} {GM_AR[selectedDay.getMonth()]} {ar(selectedDay.getFullYear())} م

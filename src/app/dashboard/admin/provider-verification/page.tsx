@@ -7,7 +7,7 @@ import {
   MagnifyingGlass, Check, X, Clock, Warning,
   FileText, Robot, Eye,
   CheckCircle, IdentificationCard, Buildings,
-  SpinnerGap,
+  SpinnerGap, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import {
@@ -16,6 +16,13 @@ import {
   rejectVerification,
 } from "@/lib/services/adminService";
 import type { VerificationRequest } from "@/lib/services/adminService";
+import {
+  listOk,
+  listFailed,
+  listViewState,
+  itemsOf,
+  type ListRead,
+} from "@/lib/services/listRead";
 
 /* ── Config ──────────────────────────────────────────────────────────────────── */
 
@@ -48,14 +55,25 @@ function ScoreBadge({ score }:{ score:number }) {
 }
 
 /* ── Page ──────────────────────────────────────────────────────────────────── */
+
+/**
+ * The KYC queue. Whether a lawyer is verified is decided here, and every one of
+ * the six lawyers on production is currently unverified — so an empty queue is
+ * a state this office genuinely sees, several times a day.
+ *
+ * That is exactly what makes «لا توجد طلبات تحقق» over a FAILED read the
+ * expensive sentence on this screen: it is indistinguishable from the normal
+ * day, it reads as "nothing to do", and the queue it hides is the one thing
+ * standing between the lawyer directory and having anybody in it. So the three
+ * outcomes are kept apart here down to the last KPI digit.
+ */
 export default function ProviderVerificationPage() {
   const { isDark } = useTheme();
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
-  const [requests, setRequests] = useState<VerificationRequest[]>([]);
+  const [read, setRead] = useState<ListRead<VerificationRequest> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const card = isDark
@@ -65,12 +83,14 @@ export default function ProviderVerificationPage() {
   // ── Fetch data ─────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    // getVerificationRequests no longer rejects — it answers `ok: false`, so
+    // the `catch { setError(…) }` that used to be the only failure branch here
+    // could never fire again. The try/catch stays as a floor for an unexpected
+    // throw, but the real failure signal is now the value itself.
     try {
-      const data = await getVerificationRequests();
-      setRequests(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "فشل في تحميل البيانات");
+      setRead(await getVerificationRequests());
+    } catch {
+      setRead(listFailed<VerificationRequest>());
     } finally {
       setLoading(false);
     }
@@ -80,18 +100,29 @@ export default function ProviderVerificationPage() {
     fetchData();
   }, [fetchData]);
 
+  /**
+   * Reflect a decision the server has already confirmed. Called only AFTER the
+   * write resolved, so this never invents a status the database does not hold.
+   *
+   * `map` preserves length, so `total` and `truncated` carry through untouched —
+   * rewriting a row must not change what the read claims about how much of the
+   * queue it covers.
+   */
+  const applyStatus = useCallback((id: string, status: VerificationRequest["status"]) => {
+    setRead((prev) =>
+      prev && prev.ok
+        ? listOk(prev.items.map((req) => (req.id === id ? { ...req, status } : req)), prev.total)
+        : prev,
+    );
+  }, []);
+
   // ── Approve handler ────────────────────────────────────────────────────────
   const handleApprove = async (r: VerificationRequest) => {
     setActionLoading(r.id);
     try {
       const result = await approveVerification(r.user_id);
       setToast(result.message);
-      // Update local state optimistically
-      setRequests((prev) =>
-        prev.map((req) =>
-          req.id === r.id ? { ...req, status: "approved" as const } : req,
-        ),
-      );
+      applyStatus(r.id, "approved");
     } catch (err) {
       setToast(err instanceof Error ? err.message : "فشل في اعتماد الطلب");
     } finally {
@@ -105,12 +136,7 @@ export default function ProviderVerificationPage() {
     try {
       const result = await rejectVerification(r.user_id, "مرفوض من قبل المسؤول");
       setToast(result.message);
-      // Update local state optimistically
-      setRequests((prev) =>
-        prev.map((req) =>
-          req.id === r.id ? { ...req, status: "rejected" as const } : req,
-        ),
-      );
+      applyStatus(r.id, "rejected");
     } catch (err) {
       setToast(err instanceof Error ? err.message : "فشل في رفض الطلب");
     } finally {
@@ -119,6 +145,9 @@ export default function ProviderVerificationPage() {
   };
 
   // ── Derived state ──────────────────────────────────────────────────────────
+  const state = listViewState(loading, read);
+  const requests = itemsOf(read);
+
   const filtered = requests.filter(r =>
     (filter==="all" || r.status===filter) &&
     (r.name.includes(search) || r.id.includes(search))
@@ -130,6 +159,14 @@ export default function ProviderVerificationPage() {
     rejected: requests.filter(r=>r.status==="rejected").length,
     needsDocs: requests.filter(r=>r.status==="needs_docs").length,
   };
+
+  /**
+   * Whether these counts stand for anything. On an unreadable queue `requests`
+   * is `[]`, so every stat above computes to 0 — and «٠ قيد المراجعة» on this
+   * screen is not a missing number, it is the office being told there is no one
+   * waiting to be verified. Withhold the digit instead.
+   */
+  const countsKnown = state === "empty" || state === "ready";
 
   // Chart data — weekly applications
   const weeklyData = [
@@ -172,11 +209,16 @@ export default function ProviderVerificationPage() {
         </motion.div>
       )}
 
-      {/* Error banner */}
-      {error && (
-        <div className="flex items-start gap-2 rounded-2xl border p-4 text-sm border-red-500/20 bg-red-500/10 text-red-400">
+      {/* Unreadable banner. Deliberately worded as a warning about what is NOT
+          on screen, not as a technical error: the risk here is an admin reading
+          the rest of the page — the KPIs, the donut, the list — as facts. */}
+      {state === "unreadable" && (
+        <div className="flex items-start gap-2 rounded-2xl border p-4 text-sm border-amber-500/20 bg-amber-500/10 text-amber-400">
           <Warning size={18} weight="fill" className="mt-0.5 shrink-0" />
-          <span className="flex-1">{error}</span>
+          <span className="flex-1">
+            تعذّرت قراءة طلبات التحقق — الأرقام أدناه غير معروفة، ولا يمكن الاستنتاج
+            من هذه الشاشة أنه لا توجد طلبات بانتظار المراجعة.
+          </span>
           <button onClick={fetchData} className="shrink-0 text-[11px] font-bold underline">
             إعادة المحاولة
           </button>
@@ -198,7 +240,11 @@ export default function ProviderVerificationPage() {
             </div>
             <div>
               <p className={`text-[10px] ${isDark?"text-zinc-500":"text-slate-400"}`}>{k.label}</p>
-              <p className={`text-[20px] font-bold ${k.c}`}>{loading ? "—" : k.val}</p>
+              {/* Was `loading ? "—" : k.val`, which printed ٠ the moment a
+                  failed read finished loading. */}
+              <p className={`text-[20px] font-bold ${countsKnown ? k.c : isDark ? "text-zinc-600" : "text-slate-300"}`}>
+                {countsKnown ? k.val : "—"}
+              </p>
             </div>
           </motion.div>
         ))}
@@ -234,7 +280,7 @@ export default function ProviderVerificationPage() {
               })()}
               <text x="60" y="60" textAnchor="middle" dominantBaseline="central"
                 className={`text-[22px] font-bold ${isDark?"fill-white":"fill-slate-800"}`}>
-                {loading ? "—" : requests.length}
+                {countsKnown ? requests.length : "—"}
               </text>
             </svg>
           </div>
@@ -248,7 +294,11 @@ export default function ProviderVerificationPage() {
               <div key={i} className="flex items-center gap-2">
                 <div className={`h-2 w-2 rounded-full ${s.c}`}/>
                 <span className={`text-[10px] flex-1 ${isDark?"text-zinc-400":"text-slate-500"}`}>{s.label}</span>
-                <span className={`text-[10px] font-bold ${isDark?"text-zinc-300":"text-slate-600"}`}>{s.val}</span>
+                {/* This legend was ungated entirely and printed a bare 0 per row
+                    on a failed read — four separate false statements. */}
+                <span className={`text-[10px] font-bold ${isDark?"text-zinc-300":"text-slate-600"}`}>
+                  {countsKnown ? s.val : "—"}
+                </span>
               </div>
             ))}
           </div>
@@ -304,15 +354,38 @@ export default function ProviderVerificationPage() {
       </div>
 
       {/* Loading state */}
-      {loading && (
+      {state === "loading" && (
         <div className="flex items-center justify-center py-16">
           <SpinnerGap size={32} className="animate-spin text-[#C8A762]" />
           <span className={`mr-3 text-sm ${isDark ? "text-zinc-400" : "text-slate-500"}`}>جاري تحميل الطلبات...</span>
         </div>
       )}
 
-      {/* Empty state */}
-      {!loading && filtered.length === 0 && (
+      {/* Unreadable state — occupies the same place the empty state would, which
+          is the whole reason it has to exist separately: «لا توجد طلبات تحقق»
+          here is the office being told its KYC queue is clear. */}
+      {state === "unreadable" && (
+        <div className={`${card} p-12 text-center`}>
+          <Warning size={48} weight="duotone" className="mx-auto mb-3 text-amber-500" />
+          <p className={`text-sm font-bold mb-1 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+            تعذّرت قراءة طلبات التحقق
+          </p>
+          <p className={`text-xs mb-4 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+            هذه ليست قائمة فارغة — لم نتمكّن من القراءة، فقد يكون هناك محامون بانتظار
+            التوثيق لا تظهر طلباتهم هنا.
+          </p>
+          <button
+            type="button"
+            onClick={fetchData}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-[11px] font-black text-[#C8A762] transition hover:bg-[#0a3328]"
+          >
+            <ArrowClockwise size={12} weight="bold" /> إعادة المحاولة
+          </button>
+        </div>
+      )}
+
+      {/* Empty state — reached only after a read that actually answered. */}
+      {(state === "empty" || (state === "ready" && filtered.length === 0)) && (
         <div className={`${card} p-12 text-center`}>
           <IdentificationCard size={48} weight="duotone" className={`mx-auto mb-3 ${isDark ? "text-zinc-600" : "text-slate-300"}`} />
           <p className={`text-sm font-bold mb-1 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
@@ -325,7 +398,7 @@ export default function ProviderVerificationPage() {
       )}
 
       {/* Requests List */}
-      {!loading && (
+      {state === "ready" && (
         <div className="space-y-3">
           {filtered.map((r,i)=>{
             const tc = TYPE_CFG[r.type] ?? { label: r.type, color: "text-zinc-400" };

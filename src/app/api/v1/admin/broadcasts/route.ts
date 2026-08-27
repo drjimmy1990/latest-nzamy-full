@@ -7,9 +7,16 @@ import { fanOutBroadcast } from "@/lib/broadcastFanout";
  * GET /api/v1/admin/broadcasts — List all broadcasts (newest first)
  *
  * Requires: authenticated admin user
- * Resilient: on any error returns { data: [] } (200) so the admin page can
- * fall back to its local mock gracefully (the broadcasts table may not yet
- * be applied to the remote DB).
+ *
+ * FAILURE IS A 500, NOT AN EMPTY LIST. Both branches used to return
+ * `{ data: [] }` at HTTP 200 so the page could "fall back to its local mock
+ * gracefully". Two separate problems with that: an empty array is a claim that
+ * no broadcast has ever been sent, and the page could not distinguish it from a
+ * missing table, so it substituted mock broadcasts for real ones with no marker
+ * of any kind. src/app/dashboard/admin/broadcasts/page.tsx:70 already throws on
+ * `!res.ok` into the same fallback, so this lands without a consumer edit — and
+ * the mock substitution is now something that page can be fixed to stop doing,
+ * because it can finally tell the two cases apart.
  */
 export async function GET() {
   try {
@@ -26,13 +33,13 @@ export async function GET() {
 
     if (error) {
       console.error("[admin/broadcasts GET] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ data: [] });
+      return NextResponse.json({ error: "تعذّر تحميل الرسائل الجماعية." }, { status: 500 });
     }
 
     return NextResponse.json({ data: data ?? [] });
   } catch (err) {
     console.error("[admin/broadcasts GET] Unexpected error:", err);
-    return NextResponse.json({ data: [] });
+    return NextResponse.json({ error: "تعذّر تحميل الرسائل الجماعية." }, { status: 500 });
   }
 }
 

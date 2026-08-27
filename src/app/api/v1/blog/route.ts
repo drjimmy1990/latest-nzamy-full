@@ -13,8 +13,19 @@ import { createServiceClient } from "@/lib/supabase/server";
  * public list is always served, and works before RLS policies are applied to
  * the remote DB). Only `status = 'published'` rows, newest first.
  *
- * Returns { data, total, hasMore }. Resilient: on any error returns an empty,
- * non-crashing payload so the blog page degrades to its static fallback.
+ * Returns { data, total, hasMore }.
+ *
+ * FAILURE IS A 500, NOT AN EMPTY PAGE. The old branches returned
+ * `{ data: [], total: 0, hasMore: false }` — and `total: 0` is what the page
+ * keys its "is the DB seeded?" test on (`usingDb`, src/app/blog/page.tsx:260),
+ * so a failed query did not just show an empty blog: it made the page publish
+ * the hardcoded ARTICLES catalog as if those were real posts. The page's
+ * `!res.ok` branch (line 232) keeps whatever is already on screen instead,
+ * which is true either way.
+ *
+ * This route is read only by the client-side list at /blog; the article pages
+ * server-render from Supabase directly, so a 500 here cannot blank an
+ * indexable page.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -40,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("[blog GET] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ data: [], total: 0, hasMore: false });
+      return NextResponse.json({ error: "تعذّر تحميل المقالات." }, { status: 500 });
     }
 
     const rows = data ?? [];
@@ -52,6 +63,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     console.error("[blog GET] Unexpected error:", err);
-    return NextResponse.json({ data: [], total: 0, hasMore: false });
+    return NextResponse.json({ error: "تعذّر تحميل المقالات." }, { status: 500 });
   }
 }

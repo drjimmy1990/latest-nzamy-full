@@ -30,7 +30,30 @@ export interface Case {
   tags?:       string[];
 }
 
-// ─── Mock Data ─────────────────────────────────────────────────────────────────
+// ─── Invented data — STILL RENDERED, and that is the open defect ─────────────
+/**
+ * MOCK_CASES is fabricated. Seven cases with named clients («شركة الأفق»,
+ * «ريم المطيري»), court dates, stages and values in riyals — none of it sourced
+ * from anything.
+ *
+ * IT IS KEPT ONLY BECAUSE DELETING IT WOULD BREAK A PAGE, not because it is
+ * defensible. src/app/dashboard/business/cases/page.tsx imports it at line 23
+ * and seeds state from it unconditionally — `useState(MOCK_CASES)` (page.tsx:54),
+ * `MOCK_CASES.forEach` to build the team filter (:76), and
+ * `MOCK_CASES.filter(c => c.hasDeadline).length` as `criticalCount` (:118),
+ * which is rendered in a red banner reading «N قضية لديها مواعيد طعون قادمة —
+ * تتطلب متابعة فورية» (:319, and again at :336 and :537). There is no
+ * `isSupabaseMode` branch on that page: production shows these rows. A company
+ * logging in reads seven cases it never filed and an urgent-appeal-deadline
+ * warning counted from them.
+ *
+ * The lawyer-side twin of this array was deleted in the same pass because
+ * nothing imported it (see constants/lawyerCasesData.ts). This one could not be,
+ * and the fix belongs in the page — it must read real cases, or say «لا توجد
+ * قضايا»/«تعذّرت القراءة». Removing the array without doing that work just
+ * trades a false list for a crash. Reported as a follow-up rather than fixed
+ * here: cases/page.tsx is not this change's file.
+ */
 export const MOCK_CASES: Case[] = [
   {
     id: "1", title: "نزاع تجاري — شركة الأفق", client: "شركة الأفق للتجارة",

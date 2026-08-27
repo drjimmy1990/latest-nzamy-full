@@ -10,10 +10,17 @@ import {
   ArrowUpRight, CheckCircle, Warning, PencilSimple, Scales,
   MapPin, MoneyWavy, Robot, FolderOpen, Eye, CheckSquare,
   Graph, UsersThree, Circle, DotsThree,
-  ArrowsOut, ArrowsIn, Spinner,
+  ArrowsOut, ArrowsIn, Spinner, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import dynamic from "next/dynamic";
+import {
+  itemsOf,
+  listFailed,
+  listOk,
+  listViewState,
+  type ListRead,
+} from "@/lib/services/listRead";
 import {
   getServiceRequestDetail,
   type ServiceRequestDetail,
@@ -225,8 +232,18 @@ export default function CaseDetailPage() {
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id ?? "";
 
   const [request, setRequest] = useState<ServiceRequestDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  /**
+   * The four outcomes of loading one case, kept apart.
+   *
+   * `getServiceRequestDetail` keeps its `... | null` signature but null now
+   * means HTTP 404 AND NOTHING ELSE — every other failure throws. So "this case
+   * does not exist" and "we could not read this case" are finally separable,
+   * and they must be: the second one wearing the first one's words tells a
+   * lawyer that a live matter has been deleted.
+   */
+  const [detailState, setDetailState] = useState<"loading" | "unreadable" | "notfound" | "ready">("loading");
+  // Bumped by «إعادة المحاولة» so a failed read is retried in place.
+  const [reloadKey, setReloadKey] = useState(0);
 
   // `?tab=` makes every tab linkable — the dashboard's «جراف القضايا» shortcut
   // is a link straight to ?tab=graph. Validated against TABS rather than trusted:
@@ -243,10 +260,15 @@ export default function CaseDetailPage() {
   const [graphFullscreen, setGraphFullscreen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // "The file is stored, the screen may be stale" — a different message from
+  // uploadError, because it is a different fact. See handleUpload.
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [fileInputEl, setFileInputEl] = useState<HTMLInputElement | null>(null);
 
-  // Tasks tab
-  const [tasks, setTasks] = useState<CaseTask[]>([]);
+  // Tasks tab — held as a ListRead, not an array. As `CaseTask[]` the old
+  // `.catch(() => setTasks([]))` turned a failed read into an empty board, and
+  // the counts below then printed ٠ open tasks over a case that has ten.
+  const [tasksRead, setTasksRead] = useState<ListRead<CaseTask> | null>(null);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [taskFilter, setTaskFilter] = useState<TaskStatus | "all">("all");
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -255,22 +277,22 @@ export default function CaseDetailPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setFetchError(null);
+    setDetailState("loading");
     getServiceRequestDetail(id)
       .then((r) => {
         if (cancelled) return;
         setRequest(r);
-        if (!r) setFetchError("لم يتم العثور على القضية.");
+        // null is a 404 and only a 404 — see the note on `detailState`.
+        setDetailState(r ? "ready" : "notfound");
       })
       .catch((e) => {
         if (cancelled) return;
         console.error("[lawyer case detail] fetch failed:", e);
-        setFetchError("تعذّر تحميل بيانات القضية.");
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
+        setRequest(null);
+        setDetailState("unreadable");
+      });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, reloadKey]);
 
   const caseData = request;
 
@@ -371,12 +393,40 @@ export default function CaseDetailPage() {
     if (!id) return;
     setTasksLoading(true);
     getLawyerTasks({ caseId: id })
-      .then(rows => setTasks((rows ?? []).filter(t => t.status !== "archived").map(toCaseTask)))
-      .catch(() => setTasks([]))
+      .then(read => {
+        // The failure travels with the value now: `ok: false` in, `ok: false`
+        // out. No `total` is carried across because the archived rows are
+        // filtered out here, so the server's count would no longer describe
+        // this list — and getLawyerTasks reports none to begin with.
+        setTasksRead(
+          read.ok
+            ? listOk(read.items.filter(t => t.status !== "archived").map(toCaseTask))
+            : listFailed<CaseTask>(),
+        );
+      })
+      .catch(() => setTasksRead(listFailed<CaseTask>()))
       .finally(() => setTasksLoading(false));
   }, [id]);
 
   useEffect(() => { loadCaseTasks(); }, [loadCaseTasks]);
+
+  const tasksView = listViewState(tasksLoading, tasksRead);
+  const tasks = itemsOf(tasksRead);
+  // Every count on this page is gated on this. A number rendered over an
+  // unreadable read is a claim about the lawyer's workload, and «٠ لم تبدأ» on
+  // a case with eight open tasks is the version of it that gets someone hurt.
+  const tasksKnown = tasksView === "ready" || tasksView === "empty";
+
+  /**
+   * Apply an in-place edit to the loaded tasks.
+   *
+   * Only a read that SUCCEEDED can be edited: patching items into a failed read
+   * would rebuild the very "empty list plus one row" that the ListRead contract
+   * exists to prevent.
+   */
+  const patchTasks = useCallback((fn: (prev: CaseTask[]) => CaseTask[]) => {
+    setTasksRead(prev => (prev?.ok ? listOk(fn(prev.items), prev.total) : prev));
+  }, []);
 
   const taskStats = {
     done:       tasks.filter(t => t.status === "done").length,
@@ -399,7 +449,10 @@ export default function CaseDetailPage() {
         caseId: id,
         caseRef: caseData?.title || undefined,
       });
-      setTasks(prev => [toCaseTask(created), ...prev]);
+      // On a list that was never read there is nothing to prepend to — re-read
+      // instead, so the new task appears in a list that is actually complete.
+      if (tasksRead?.ok) patchTasks(prev => [toCaseTask(created), ...prev]);
+      else loadCaseTasks();
       setNewTaskTitle("");
     } catch (e) {
       console.error("[lawyer case detail] addTask failed:", e);
@@ -414,10 +467,10 @@ export default function CaseDetailPage() {
   const cycleTaskStatus = async (task: CaseTask) => {
     const next = NEXT_TASK_STATUS[task.status];
     const previous = task.status;
-    setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: next } : t)));
+    patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: next } : t)));
     const ok = await updateLawyerTaskStatus(task.id, taskStatusToDbStatus(PAGE_TO_API_STATUS[next]));
     if (!ok) {
-      setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: previous } : t)));
+      patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: previous } : t)));
       setTaskError("تعذّر تحديث حالة المهمة.");
     }
   };
@@ -428,10 +481,10 @@ export default function CaseDetailPage() {
   const toggleCaseSubtask = async (task: CaseTask, subtaskId: string) => {
     const previous = task.subtasks;
     const next = previous.map(s => (s.id === subtaskId ? { ...s, done: !s.done } : s));
-    setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, subtasks: next } : t)));
+    patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, subtasks: next } : t)));
     const ok = await updateLawyerTaskSubtasks(task.id, next);
     if (!ok) {
-      setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, subtasks: previous } : t)));
+      patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, subtasks: previous } : t)));
       setTaskError("تعذّر حفظ خطوة العمل.");
     }
   };
@@ -457,14 +510,30 @@ export default function CaseDetailPage() {
     if (!file) return;
     setUploading(true);
     setUploadError(null);
+    setUploadNotice(null);
+    // ── TWO STEPS, TWO VERDICTS ──────────────────────────────────────────────
+    // The upload and the refresh that follows it used to share one try/catch,
+    // and `getServiceRequestDetail` now THROWS on any failure that is not a
+    // 404. So a document that reached storage, followed by a dropped refetch,
+    // reported «تعذّر رفع المستند» — the lawyer re-uploads a file that is
+    // already there, or gives up on filing it at all. The upload's own verdict
+    // is decided before the refresh is even attempted.
     try {
       await uploadDocumentFile(file, { requestId: id });
-      // Refetch the case to pick up the new attachment row.
-      const r = await getServiceRequestDetail(id);
-      if (r) setRequest(r);
     } catch (e: any) {
       console.error("[lawyer case detail] upload failed:", e);
       setUploadError(e?.message ?? "تعذّر رفع المستند.");
+      setUploading(false);
+      return;
+    }
+    // Past this line the file IS stored. Nothing below may say otherwise.
+    try {
+      const r = await getServiceRequestDetail(id);
+      if (r) setRequest(r);
+      else setUploadNotice("تم رفع المستند. تعذّرت إعادة قراءة القضية، فقد لا تظهر القائمة أدناه محدَّثة.");
+    } catch (e) {
+      console.error("[lawyer case detail] post-upload refetch failed:", e);
+      setUploadNotice("تم رفع المستند بنجاح، لكن تعذّرت إعادة قراءة القضية. حدّث الصفحة لعرضه في القائمة.");
     } finally {
       setUploading(false);
     }
@@ -482,7 +551,7 @@ export default function CaseDetailPage() {
   };
 
   // ── Render: loading ──
-  if (loading) {
+  if (detailState === "loading") {
     return (
       <div className="max-w-[1100px] mx-auto py-20 text-center" dir="rtl">
         <div className="inline-flex flex-col items-center gap-3">
@@ -493,13 +562,40 @@ export default function CaseDetailPage() {
     );
   }
 
-  // ── Render: error / not-found ──
-  if (fetchError || !caseData) {
+  // ── Render: unreadable ──
+  //
+  // Its OWN screen, deliberately not sharing one with «القضية غير موجودة».
+  // The old subtitle — «قد يكون الرابط غير صحيح أو أن القضية محذوفة» — is a
+  // guess about the case, and printing it after a 500 or a dropped connection
+  // told a lawyer their live matter had been deleted.
+  if (detailState === "unreadable") {
+    return (
+      <div className="max-w-[1100px] mx-auto py-20 text-center" dir="rtl">
+        <div className={`inline-flex flex-col items-center gap-3 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
+          <Warning size={40} weight="duotone" className="text-red-500" />
+          <p className="text-lg font-bold">تعذّرت قراءة بيانات القضية</p>
+          <p className={`text-sm max-w-md ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+            لم تنجح القراءة — هذا لا يعني أن القضية غير موجودة أو محذوفة.
+          </p>
+          <button
+            onClick={() => setReloadKey(k => k + 1)}
+            className="mt-1 flex items-center gap-1.5 text-sm font-bold text-royal hover:underline"
+          >
+            <ArrowClockwise size={14} /> إعادة المحاولة
+          </button>
+          <Link href="/dashboard/lawyer/cases" className="text-sm text-[#0B3D2E] hover:underline">← العودة للقضايا</Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render: not-found (HTTP 404, and only that) ──
+  if (detailState === "notfound" || !caseData) {
     return (
       <div className="max-w-[1100px] mx-auto py-20 text-center" dir="rtl">
         <div className={`inline-flex flex-col items-center gap-3 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
           <Warning size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
-          <p className="text-lg font-bold">{fetchError ?? "القضية غير موجودة"}</p>
+          <p className="text-lg font-bold">القضية غير موجودة</p>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>قد يكون الرابط غير صحيح أو أن القضية محذوفة.</p>
           <Link href="/dashboard/lawyer/cases" className="mt-2 text-sm text-[#0B3D2E] hover:underline">← العودة للقضايا</Link>
         </div>
@@ -664,7 +760,11 @@ export default function CaseDetailPage() {
                     <ArrowUpRight size={10} />تحليل تفصيلي
                   </Link>
                 </div>
-                {/* Task quick summary */}
+                {/* Task quick summary.
+                    «٠ لم تبدأ» over a failed read is a statement that this case
+                    has no open work — the one thing a lawyer glancing at an
+                    overview would act on. On anything but a completed read the
+                    figures are withheld and the reason is printed instead. */}
                 <div className={`grid grid-cols-3 gap-2 p-3 rounded-xl ${isDark ? "bg-white/[0.03]" : "bg-slate-50"}`}>
                   {[
                     { label: "مكتملة",     value: taskStats.done,       color: "text-emerald-500" },
@@ -672,11 +772,20 @@ export default function CaseDetailPage() {
                     { label: "لم تبدأ",    value: taskStats.todo,        color: "text-slate-400" },
                   ].map((s, i) => (
                     <div key={i} className="text-center">
-                      <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+                      <p className={`text-lg font-bold ${tasksKnown ? s.color : isDark ? "text-zinc-600" : "text-slate-300"}`}>
+                        {tasksKnown ? s.value : "—"}
+                      </p>
                       <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{s.label}</p>
                     </div>
                   ))}
                 </div>
+                {!tasksKnown && (
+                  <p className={`text-[11px] -mt-2 text-center font-semibold ${
+                    tasksView === "loading" ? isDark ? "text-zinc-600" : "text-slate-400" : "text-amber-500"
+                  }`}>
+                    {tasksView === "loading" ? "جارٍ قراءة المهام…" : "تعذّرت قراءة المهام — الأرقام أعلاه غير معروفة."}
+                  </p>
+                )}
               </div>
               {/* Timeline */}
               <div className={`${card} p-5`}>
@@ -727,8 +836,10 @@ export default function CaseDetailPage() {
                         }`}>
                         {s !== "all" && <span className={`w-1.5 h-1.5 rounded-full ${TASK_STATUS[s].dot}`} />}
                         {s === "all" ? "الكل" : TASK_STATUS[s].label}
+                        {/* Same rule as the overview tiles: a chip reading ٠ is
+                            a count, and there is no count behind a failed read. */}
                         <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                          {count}
+                          {tasksKnown ? count : "—"}
                         </span>
                       </button>
                     );
@@ -765,10 +876,25 @@ export default function CaseDetailPage() {
                 </div>
               )}
 
-              {tasksLoading ? (
+              {tasksView === "loading" ? (
                 <div className={`${card} p-10 flex items-center justify-center gap-2`}>
                   <Spinner size={20} className="text-royal animate-spin" />
                   <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جاري تحميل المهام...</span>
+                </div>
+              ) : tasksView === "unreadable" ? (
+                /* The board that used to appear here after a failed read was
+                   empty and said «لا توجد مهام لهذه القضية بعد» — a verdict on
+                   the case file, delivered by a request that never arrived. */
+                <div className={`${card} p-10 flex flex-col items-center justify-center`}>
+                  <Warning size={32} weight="duotone" className="mb-3 text-red-500" />
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّرت قراءة المهام</p>
+                  <p className={`text-[11px] mt-1 text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                    هذه ليست لوحة فارغة — قد تكون لهذه القضية مهام لم تُقرأ.
+                  </p>
+                  <button onClick={loadCaseTasks}
+                    className="mt-3 flex items-center gap-1.5 text-[12px] font-bold text-royal hover:underline">
+                    <ArrowClockwise size={13} /> إعادة المحاولة
+                  </button>
                 </div>
               ) : visibleTasks.length === 0 ? (
                 <div className={`${card} p-10 flex flex-col items-center justify-center`}>
@@ -949,6 +1075,11 @@ export default function CaseDetailPage() {
               {uploadError && (
                 <div className={`p-3 rounded-xl border text-[12px] ${isDark ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-red-200 bg-red-50 text-red-600"}`}>
                   <Warning size={12} className="inline ml-1" />{uploadError}
+                </div>
+              )}
+              {uploadNotice && (
+                <div className={`p-3 rounded-xl border text-[12px] ${isDark ? "border-amber-500/20 bg-amber-500/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                  <CheckCircle size={12} weight="fill" className="inline ml-1" />{uploadNotice}
                 </div>
               )}
               {documents.length === 0 ? (

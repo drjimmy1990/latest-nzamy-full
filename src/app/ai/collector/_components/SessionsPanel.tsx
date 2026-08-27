@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   FolderOpen, Plus, Check, X, Trash, ArrowsMerge, CheckCircle,
   Archive, Link as LinkIcon, PencilSimple, ArrowCounterClockwise,
-  UsersThree, Clock, MagnifyingGlass, FloppyDisk,
+  UsersThree, Clock, MagnifyingGlass, FloppyDisk, WarningCircle, ArrowClockwise,
 } from "@phosphor-icons/react";
 import {
   getActiveSessions, getArchivedSessions, getSessionItems,
@@ -14,28 +14,49 @@ import {
   SOURCE_LABELS, SOURCE_COLORS,
   type InboxItem, type CollectorSession, type InboxSource,
 } from "@/lib/services/researchService";
-import { VoiceInput } from "@/components/ui/VoiceInput";
+import { listViewState, type ListRead } from "@/lib/services/listRead";
 import { useTheme } from "@/components/ThemeProvider";
 
 interface Props {
-  onToast: (msg: string) => void;
+  onToast: (msg: string, kind?: "success" | "error") => void;
 }
 
 // Days until auto-archive
 const ARCHIVE_DAYS = 7;
 
-function daysLeft(createdAt: string): number {
+/**
+ * Days until auto-archive, or `null` when the session carries no readable
+ * creation date. In supabase mode `research_sessions` rows arrive unmapped
+ * (`created_at`, not `createdAt`), which made this NaN — and «تُؤرشف بعد NaN
+ * يوم» was printed to lawyers. A deadline nobody can compute is withheld.
+ */
+function daysLeft(createdAt: string | undefined): number | null {
+  if (!createdAt) return null;
+  const created = new Date(createdAt).getTime();
+  if (Number.isNaN(created)) return null;
   const ms = ARCHIVE_DAYS * 24 * 60 * 60 * 1000;
-  const elapsed = Date.now() - new Date(createdAt).getTime();
+  const elapsed = Date.now() - created;
   return Math.max(0, Math.ceil((ms - elapsed) / (24 * 60 * 60 * 1000)));
 }
 
 export function SessionsPanel({ onToast }: Props) {
   const { isDark } = useTheme();
-  const [sessions, setSessions] = useState<CollectorSession[]>([]);
-  const [archived, setArchived] = useState<CollectorSession[]>([]);
+  /*
+    EVERY LIST HERE IS A ListRead, NOT AN ARRAY.
+
+    `setSessions(await getActiveSessions())` turned a failed query into `[]`,
+    and `[]` renders «لا توجد جلسات» — a lawyer whose session list did not load
+    was told they had never opened one, next to a button offering to create the
+    first. The read is held and `listViewState` picks the screen.
+  */
+  const [sessionsRead, setSessionsRead] = useState<ListRead<CollectorSession> | null>(null);
+  const [archivedRead, setArchivedRead] = useState<ListRead<CollectorSession> | null>(null);
+  const [loading, setLoading] = useState(true);
   const [activeSession, setActiveSession] = useState<string | null>(null);
-  const [sessionItems, setSessionItems] = useState<InboxItem[]>([]);
+  const [itemsRead, setItemsRead] = useState<ListRead<InboxItem> | null>(null);
+  /** Which session `itemsRead` describes — never render it for another one. */
+  const [itemsFor, setItemsFor] = useState<string | null>(null);
+  const [itemsLoading, setItemsLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showNewSession, setShowNewSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState("");
@@ -52,38 +73,133 @@ export function SessionsPanel({ onToast }: Props) {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemContent, setEditItemContent] = useState("");
   const [editItemTitle, setEditItemTitle] = useState("");
-  const [sessionItemCounts, setSessionItemCounts] = useState<Record<string, number>>({});
+  /** `null` for a session whose items could not be counted — NOT `0`. */
+  const [sessionItemCounts, setSessionItemCounts] = useState<Record<string, number | null>>({});
   const [archivedItemsMap, setArchivedItemsMap] = useState<Record<string, InboxItem[]>>({});
+  /**
+   * True when at least one archived session's items could not be read, so the
+   * archive search index below is incomplete. Without it «لم يُعثر على نتائج»
+   * would be asserted over sessions nobody managed to look inside.
+   */
+  const [archiveIndexPartial, setArchiveIndexPartial] = useState(false);
+
+  async function loadSessionItems(sessionId: string) {
+    setItemsFor(sessionId);
+    setItemsLoading(true);
+    const read = await getSessionItems(sessionId);
+    setItemsRead(read);
+    setItemsLoading(false);
+  }
 
   async function reload() {
-    const active = await getActiveSessions();
-    const arch = await getArchivedSessions();
-    setSessions(active);
-    setArchived(arch);
-    if (activeSession) setSessionItems(await getSessionItems(activeSession));
-    // Pre-compute item counts for all sessions
-    const counts: Record<string, number> = {};
-    for (const s of [...active, ...arch]) {
-      counts[s.id] = (await getSessionItems(s.id)).length;
+    setLoading(true);
+    const [active, arch] = await Promise.all([getActiveSessions(), getArchivedSessions()]);
+    setSessionsRead(active);
+    setArchivedRead(arch);
+    setLoading(false);
+
+    // Only re-read the open session's items if that session is still in the
+    // list we just got back. After a delete it is not, and asking for a deleted
+    // session's items would record a failed read for a card nobody can see.
+    const listed = [
+      ...(active.ok ? active.items : []),
+      ...(arch.ok ? arch.items : []),
+    ].some(s => s.id === activeSession);
+    if (activeSession && listed) await loadSessionItems(activeSession);
+
+    // Item counts, and the archived search index, from ONE pass over each
+    // session — the two loops here used to fetch every archived session twice.
+    // A session whose items fail to load gets `null`, which renders as "could
+    // not count" rather than as «٠ عنصر».
+    const counts: Record<string, number | null> = {};
+    const archMap: Record<string, InboxItem[]> = {};
+    let partial = false;
+    const archivedIds = new Set(arch.ok ? arch.items.map(s => s.id) : []);
+    for (const s of [...(active.ok ? active.items : []), ...(arch.ok ? arch.items : [])]) {
+      const read = await getSessionItems(s.id);
+      counts[s.id] = read.ok ? read.items.length : null;
+      if (archivedIds.has(s.id)) {
+        if (read.ok) archMap[s.id] = read.items;
+        else partial = true;
+      }
     }
     setSessionItemCounts(counts);
-    // Pre-fetch archived items for search
-    const archMap: Record<string, InboxItem[]> = {};
-    for (const s of arch) {
-      archMap[s.id] = await getSessionItems(s.id);
-    }
     setArchivedItemsMap(archMap);
+    setArchiveIndexPartial(partial);
   }
   useEffect(() => { reload(); }, []);
   useEffect(() => {
-    if (activeSession) { getSessionItems(activeSession).then(setSessionItems); }
+    // Nothing is cleared when a session closes: the card is collapsing and
+    // AnimatePresence still renders its last content on the way out. Blanking
+    // `itemsRead` here would flash «تعذّرت قراءة عناصر هذه الجلسة» through the
+    // exit animation. Staleness is handled by `itemsFor` instead.
+    if (activeSession) { loadSessionItems(activeSession); }
   }, [activeSession]);
 
+  /*
+    createSession THROWS in supabase mode and now returns the ACTUAL row — it
+    previously returned the `{ data }` envelope, so `s.id` here was `undefined`
+    and the panel opened a session that did not exist while the toast announced
+    it by an undefined name.
+  */
   async function handleCreateSession() {
-    const s = await createSession(newSessionName.trim() || undefined);
+    let s: CollectorSession;
+    try {
+      s = await createSession(newSessionName.trim() || undefined);
+    } catch (error) {
+      console.error("[SessionsPanel] createSession failed:", error);
+      onToast("تعذّر إنشاء الجلسة — لم تُحفظ على الخادم. أعد المحاولة.", "error");
+      return;
+    }
     setNewSessionName(""); setShowNewSession(false);
     await reload(); setActiveSession(s.id);
-    onToast(`جلسة "${s.name}" جديدة ✓`);
+    onToast(s.name ? `جلسة "${s.name}" جديدة ✓` : "أُنشئت الجلسة ✓");
+  }
+
+  /*
+    THE FOUR SESSION MUTATIONS BELOW NOW REJECT IN SUPABASE MODE.
+
+    They used to mutate localStorage and resolve, so the screen showed the
+    rename/archive/delete and the server never saw it — a "deleted" session came
+    back at the next reload. Each one reports its own failure now instead of
+    raising an unhandled rejection behind a green checkmark.
+  */
+  async function handleArchiveSession(id: string) {
+    try {
+      await archiveSession(id);
+    } catch (error) {
+      console.error("[SessionsPanel] archiveSession failed:", error);
+      onToast("تعذّرت أرشفة الجلسة — لم يُحفظ التغيير.", "error");
+      return;
+    }
+    await reload();
+    setActiveSession(null);
+    onToast("أُرشفت الجلسة");
+  }
+
+  async function handleDeleteSession(id: string, finalNotice = false) {
+    try {
+      await deleteSession(id);
+    } catch (error) {
+      console.error("[SessionsPanel] deleteSession failed:", error);
+      onToast("تعذّر حذف الجلسة — ما زالت موجودة على الخادم.", "error");
+      return;
+    }
+    if (activeSession === id) setActiveSession(null);
+    await reload();
+    onToast(finalNotice ? "حُذفت الجلسة نهائياً" : "حُذفت الجلسة");
+  }
+
+  async function handleRestoreSession(id: string) {
+    try {
+      await restoreSession(id);
+    } catch (error) {
+      console.error("[SessionsPanel] restoreSession failed:", error);
+      onToast("تعذّرت استعادة الجلسة — لم يُحفظ التغيير.", "error");
+      return;
+    }
+    await reload();
+    onToast("تم استعادة الجلسة");
   }
 
   function handleDelete(id: string) { removeFromInbox(id); reload(); onToast("حُذف"); }
@@ -96,9 +212,18 @@ export function SessionsPanel({ onToast }: Props) {
     reload(); onToast("تم الدمج ✓");
   }
 
+  // addToSession THROWS in supabase mode. The form keeps the user's text when
+  // the save fails — losing what they typed on top of not saving it is two
+  // failures, not one.
   async function handleAddItem() {
     if (!addTitle.trim() || !addContent.trim() || !activeSession) return;
-    await addToSession(activeSession, "manual", "text", addTitle.trim(), addContent.trim());
+    try {
+      await addToSession(activeSession, "manual", "text", addTitle.trim(), addContent.trim());
+    } catch (error) {
+      console.error("[SessionsPanel] addToSession failed:", error);
+      onToast("تعذّر حفظ العنصر — لم يُضَف للجلسة. نصّك ما زال في النموذج.", "error");
+      return;
+    }
     setAddTitle(""); setAddContent(""); setShowAddItem(false);
     await reload(); onToast("أُضيف للجلسة ✓");
   }
@@ -109,9 +234,18 @@ export function SessionsPanel({ onToast }: Props) {
     onToast("رابط الجلسة نُسخ ✓");
   }
 
-  function handleRename(id: string) {
+  async function handleRename(id: string) {
     if (!editName.trim()) { setEditingId(null); return; }
-    renameSession(id, editName.trim()); reload(); setEditingId(null);
+    try {
+      await renameSession(id, editName.trim());
+    } catch (error) {
+      console.error("[SessionsPanel] renameSession failed:", error);
+      // The edit box stays open with the typed name still in it.
+      onToast("تعذّرت إعادة التسمية — لم يُحفظ الاسم الجديد.", "error");
+      return;
+    }
+    setEditingId(null);
+    await reload();
     onToast("تم التغيير ✓");
   }
 
@@ -121,8 +255,11 @@ export function SessionsPanel({ onToast }: Props) {
 
   function handleEditItem(item: InboxItem) {
     setEditingItemId(item.id);
-    setEditItemTitle(item.title);
-    setEditItemContent(item.content);
+    // `?? ""` keeps the inputs controlled: a server row has no `title` column,
+    // so `item.title` is undefined and React would switch the input to
+    // uncontrolled mid-edit.
+    setEditItemTitle(item.title ?? "");
+    setEditItemContent(item.content ?? "");
   }
 
   function handleSaveItemEdit(id: string) {
@@ -134,7 +271,22 @@ export function SessionsPanel({ onToast }: Props) {
   }
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-slate-200/70 rounded-2xl shadow-sm";
-  const activeS = sessions.find(s => s.id === activeSession);
+
+  // Reached only under the `ready` branch of each state below — the arrays are
+  // empty in every other case and nothing renders them there.
+  const sessionsState = listViewState(loading, sessionsRead);
+  const archivedState = listViewState(loading, archivedRead);
+  const sessions = sessionsRead?.ok ? sessionsRead.items : [];
+  const archived = archivedRead?.ok ? archivedRead.items : [];
+  /*
+    A read belongs to ONE session. Between opening session B and its items
+    arriving, `itemsRead` still describes session A — rendering it under B's
+    header would attribute one matter's clippings to another. A mismatch counts
+    as 'loading', which is exactly what it is: B's items have not arrived.
+  */
+  const itemsMatch = itemsFor === activeSession;
+  const itemsState = listViewState(itemsLoading || !itemsMatch, itemsMatch ? itemsRead : null);
+  const sessionItems = itemsMatch && itemsRead?.ok ? itemsRead.items : [];
 
   return (
     <div className="space-y-4">
@@ -142,7 +294,9 @@ export function SessionsPanel({ onToast }: Props) {
       {/* Sessions list */}
       <div className="flex items-center justify-between gap-3">
         <span className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
-          الجلسات النشطة ({sessions.length})
+          {/* «الجلسات النشطة (٠)» over a failed read is a claim about the
+              lawyer's work, not a placeholder. The number is withheld. */}
+          الجلسات النشطة{sessionsState === "ready" || sessionsState === "empty" ? ` (${sessions.length})` : ""}
         </span>
         <button onClick={() => setShowNewSession(v => !v)}
           className={`flex items-center gap-1 text-[11px] font-bold px-3 py-1.5 rounded-xl border transition-all ${
@@ -176,8 +330,35 @@ export function SessionsPanel({ onToast }: Props) {
         )}
       </AnimatePresence>
 
-      {/* Session cards */}
-      {sessions.length === 0 && (
+      {/* Session cards — loading, unreadable and empty are three screens. */}
+      {sessionsState === "loading" && (
+        <div className="space-y-2" aria-busy="true">
+          {[0, 1].map(i => (
+            <div key={i} className={`${card} px-4 py-3 animate-pulse`}>
+              <div className={`h-3 w-2/5 rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-200"}`} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {sessionsState === "unreadable" && (
+        <div className={`${card} p-10 flex flex-col items-center gap-3 text-center`}>
+          <WarningCircle size={32} weight="duotone" className="text-amber-500" />
+          <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>تعذّرت قراءة الجلسات</p>
+          <p className={`text-[11px] leading-relaxed max-w-xs ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+            لم يصل رد من الخادم. جلساتك قد تكون موجودة — لا نعرف. أعد المحاولة
+            قبل إنشاء جلسة جديدة حتى لا تتكرّر.
+          </p>
+          <button onClick={() => { reload(); }}
+            className={`flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[11px] font-bold transition-colors ${
+              isDark ? "border-white/10 text-zinc-200 hover:bg-white/5" : "border-slate-200 text-slate-700 hover:bg-slate-50"
+            }`}>
+            <ArrowClockwise size={13} weight="bold" /> إعادة المحاولة
+          </button>
+        </div>
+      )}
+
+      {sessionsState === "empty" && (
         <div className={`${card} p-10 flex flex-col items-center gap-2 text-center`}>
           <FolderOpen size={32} weight="duotone" className={isDark ? "text-zinc-700" : "text-slate-300"} />
           <p className={`text-[13px] font-bold ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد جلسات</p>
@@ -190,7 +371,9 @@ export function SessionsPanel({ onToast }: Props) {
           const isOpen = activeSession === s.id;
           const days = daysLeft(s.createdAt);
           const sItems = isOpen ? sessionItems : [];
-          const itemCount = sessionItemCounts[s.id] ?? 0;
+          // undefined = not counted yet, null = the count query failed.
+          // Neither is `0`, and neither may be rendered as one.
+          const itemCount = sessionItemCounts[s.id];
           return (
             <div key={s.id} className={`${card} overflow-hidden transition-all`}>
               {/* Session header */}
@@ -204,12 +387,22 @@ export function SessionsPanel({ onToast }: Props) {
                     autoFocus
                     className={`flex-1 rounded-lg border px-2 py-1 text-[12px] outline-none ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-100" : "border-slate-200 bg-white text-zinc-800"}`} />
                 ) : (
-                  <span className={`flex-1 text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{s.name}</span>
+                  <span className={`flex-1 text-[13px] font-bold ${s.name ? (isDark ? "text-zinc-200" : "text-zinc-700") : (isDark ? "text-zinc-500 italic" : "text-slate-400 italic")}`}>
+                    {s.name || "بلا اسم"}
+                  </span>
                 )}
 
-                <span className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.05] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>{itemCount} عنصر</span>
+                {itemCount === null ? (
+                  <span title="تعذّرت قراءة عناصر هذه الجلسة"
+                    className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-amber-500/15 text-amber-400" : "bg-amber-100 text-amber-700"}`}>
+                    تعذّر العدّ
+                  </span>
+                ) : itemCount !== undefined && (
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.05] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>{itemCount} عنصر</span>
+                )}
 
-                {days <= 2 && (
+                {/* No creation date ⇒ no countdown. NaN was being printed here. */}
+                {days !== null && days <= 2 && (
                   <span className="text-[10px] font-bold text-amber-500 flex items-center gap-0.5">
                     <Clock size={10} /> {days}ي
                   </span>
@@ -227,12 +420,12 @@ export function SessionsPanel({ onToast }: Props) {
                     className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? "text-zinc-600 hover:text-purple-400" : "text-slate-300 hover:text-purple-600"}`}>
                     <LinkIcon size={12} />
                   </button>
-                  <button onClick={() => { archiveSession(s.id); reload(); setActiveSession(null); onToast("أُرشفت الجلسة"); }}
+                  <button onClick={() => { handleArchiveSession(s.id); }}
                     title="أرشفة"
                     className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? "text-zinc-600 hover:text-amber-400" : "text-slate-300 hover:text-amber-600"}`}>
                     <Archive size={12} />
                   </button>
-                  <button onClick={() => { deleteSession(s.id); reload(); if (activeSession === s.id) setActiveSession(null); onToast("حُذفت الجلسة"); }}
+                  <button onClick={() => { handleDeleteSession(s.id); }}
                     title="حذف"
                     className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? "text-zinc-600 hover:text-red-400" : "text-slate-300 hover:text-red-500"}`}>
                     <Trash size={12} />
@@ -256,9 +449,11 @@ export function SessionsPanel({ onToast }: Props) {
                           className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border ${isDark ? "border-white/[0.07] text-zinc-400 hover:text-zinc-200" : "border-slate-200 text-slate-500"}`}>
                           <UsersThree size={10} /> دعوة فريق / مشاركة
                         </button>
-                        <span className={`text-[9px] ms-auto ${isDark ? "text-zinc-700" : "text-slate-300"}`}>
-                          تُؤرشف بعد {days} يوم
-                        </span>
+                        {days !== null && (
+                          <span className={`text-[9px] ms-auto ${isDark ? "text-zinc-700" : "text-slate-300"}`}>
+                            تُؤرشف بعد {days} يوم
+                          </span>
+                        )}
                       </div>
 
                       {/* Add item form */}
@@ -309,10 +504,36 @@ export function SessionsPanel({ onToast }: Props) {
                         )}
                       </AnimatePresence>
 
-                      {/* Items */}
-                      {sItems.length === 0 ? (
+                      {/* Items — the same three states, one level down. */}
+                      {itemsState === "loading" && (
+                        <div className="space-y-1.5" aria-busy="true">
+                          {[0, 1].map(i => (
+                            <div key={i} className={`rounded-xl border p-3 animate-pulse ${isDark ? "border-white/[0.05] bg-zinc-800/30" : "border-slate-100 bg-slate-50"}`}>
+                              <div className={`h-3 w-1/3 rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-200"}`} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {itemsState === "unreadable" && (
+                        <div className={`rounded-xl border p-4 flex flex-col items-center gap-2 text-center ${isDark ? "border-amber-500/20 bg-amber-500/5" : "border-amber-200 bg-amber-50"}`}>
+                          <WarningCircle size={20} weight="duotone" className="text-amber-500" />
+                          <p className={`text-[12px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}>تعذّرت قراءة عناصر هذه الجلسة</p>
+                          <p className={`text-[11px] ${isDark ? "text-amber-400/70" : "text-amber-700/80"}`}>
+                            الجلسة قد تحتوي على عناصر — لم يصل رد من الخادم.
+                          </p>
+                          <button onClick={() => { loadSessionItems(s.id); }}
+                            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[10px] font-bold ${isDark ? "border-amber-500/30 text-amber-300" : "border-amber-300 text-amber-800"}`}>
+                            <ArrowClockwise size={11} weight="bold" /> إعادة المحاولة
+                          </button>
+                        </div>
+                      )}
+
+                      {itemsState === "empty" && (
                         <p className={`text-[12px] text-center py-6 ${isDark ? "text-zinc-700" : "text-slate-300"}`}>لا توجد عناصر في هذه الجلسة</p>
-                      ) : (
+                      )}
+
+                      {itemsState === "ready" && (
                         <div className="space-y-1.5">
                           {sItems.map(item => {
                             const isSel = selected.has(item.id);
@@ -329,7 +550,7 @@ export function SessionsPanel({ onToast }: Props) {
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border text-${col}-500 border-${col}-500/30 bg-${col}-500/10`}>
-                                      {SOURCE_LABELS[item.source as InboxSource]}
+                                      {SOURCE_LABELS[item.source as InboxSource] ?? "مصدر غير محدد"}
                                     </span>
                                     {item.used && <span className="text-[9px] text-emerald-500"><CheckCircle size={9} weight="fill" className="inline" />مستخدم</span>}
                                   </div>
@@ -359,7 +580,11 @@ export function SessionsPanel({ onToast }: Props) {
                                     </div>
                                   ) : (
                                     <>
-                                      <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{item.title}</p>
+                                      {/* Items saved through the API come back
+                                          titleless — no such column exists. */}
+                                      <p className={`text-[12px] font-semibold ${item.title ? (isDark ? "text-zinc-200" : "text-zinc-800") : (isDark ? "text-zinc-500 italic" : "text-slate-400 italic")}`}>
+                                        {item.title || "بلا عنوان"}
+                                      </p>
                                       <p className={`text-[11px] line-clamp-2 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{item.content}</p>
                                     </>
                                   )}
@@ -412,8 +637,18 @@ export function SessionsPanel({ onToast }: Props) {
         )}
       </AnimatePresence>
 
+      {/* The archive read failed — say so rather than hide the section, which
+          would assert there is nothing archived. */}
+      {archivedState === "unreadable" && (
+        <div className={`flex items-center gap-2 text-[11px] font-semibold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+          <WarningCircle size={13} weight="duotone" />
+          تعذّرت قراءة الأرشيف
+          <button onClick={() => { reload(); }} className="underline underline-offset-2">إعادة المحاولة</button>
+        </div>
+      )}
+
       {/* Archive toggle */}
-      {archived.length > 0 && (
+      {archivedState === "ready" && archived.length > 0 && (
         <div>
           <button onClick={() => setShowArchived(v => !v)}
             className={`flex items-center gap-2 text-[11px] font-semibold ${isDark ? "text-zinc-600 hover:text-zinc-400" : "text-slate-400 hover:text-slate-600"}`}>
@@ -439,18 +674,30 @@ export function SessionsPanel({ onToast }: Props) {
                     </button>
                   )}
                 </div>
+                {/* The search reads a pre-fetched index of every archived
+                    session's items. When part of that index is missing, "no
+                    results" is not a fact about the archive. */}
+                {archiveIndexPartial && (
+                  <p className={`text-[10px] flex items-center gap-1 ${isDark ? "text-amber-400/80" : "text-amber-700"}`}>
+                    <WarningCircle size={11} weight="duotone" />
+                    تعذّرت قراءة عناصر بعض الجلسات المؤرشفة — البحث داخلها ناقص.
+                  </p>
+                )}
                 {/* Filtered archive list */}
                 <div className="space-y-2">
                   {archived
                     .filter(s => {
                       if (!archiveSearch.trim()) return true;
                       const q = archiveSearch.toLowerCase();
-                      // search in session name + all item titles/content
-                      if (s.name.toLowerCase().includes(q)) return true;
+                      // search in session name + all item titles/content.
+                      // `?? ""` throughout: server rows carry no `title` and an
+                      // unmapped session carries no `name`, and a crash inside a
+                      // filter would blank the whole archive.
+                      if ((s.name ?? "").toLowerCase().includes(q)) return true;
                       const items = archivedItemsMap[s.id] ?? [];
                       return items.some(it =>
-                        it.title.toLowerCase().includes(q) ||
-                        it.content.toLowerCase().includes(q)
+                        (it.title ?? "").toLowerCase().includes(q) ||
+                        (it.content ?? "").toLowerCase().includes(q)
                       );
                     })
                     .map(s => (
@@ -459,18 +706,24 @@ export function SessionsPanel({ onToast }: Props) {
                     }`}>
                       <Archive size={14} className={isDark ? "text-zinc-600" : "text-slate-400"} />
                       <div className="flex-1 min-w-0">
-                        <span className={`block text-[12px] font-semibold truncate ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{s.name}</span>
+                        <span className={`block text-[12px] font-semibold truncate ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{s.name || "بلا اسم"}</span>
                         <span className={`text-[10px] ${isDark ? "text-zinc-700" : "text-slate-300"}`}>
                           {s.archivedAt ? new Date(s.archivedAt).toLocaleDateString("ar-SA") : ""}
-                          {" · "}{sessionItemCounts[s.id] ?? 0} عنصر
+                          {/* «٠ عنصر» would be a claim about an archived session
+                              whose items nobody could read. */}
+                          {sessionItemCounts[s.id] === null
+                            ? " · تعذّر عدّ العناصر"
+                            : sessionItemCounts[s.id] !== undefined
+                              ? ` · ${sessionItemCounts[s.id]} عنصر`
+                              : ""}
                         </span>
                       </div>
-                      <button onClick={() => { restoreSession(s.id); reload(); onToast("تم استعادة الجلسة"); }}
+                      <button onClick={() => { handleRestoreSession(s.id); }}
                         title="استعادة"
                         className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? "text-zinc-600 hover:text-emerald-400" : "text-slate-300 hover:text-emerald-600"}`}>
                         <ArrowCounterClockwise size={12} />
                       </button>
-                      <button onClick={() => { deleteSession(s.id); reload(); onToast("حُذفت الجلسة نهائياً"); }}
+                      <button onClick={() => { handleDeleteSession(s.id, true); }}
                         title="حذف نهائي"
                         className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? "text-zinc-600 hover:text-red-400" : "text-slate-300 hover:text-red-500"}`}>
                         <Trash size={12} />
@@ -480,14 +733,16 @@ export function SessionsPanel({ onToast }: Props) {
                   {archived.filter(s => {
                     if (!archiveSearch.trim()) return false;
                     const q = archiveSearch.toLowerCase();
-                    if (s.name.toLowerCase().includes(q)) return true;
+                    if ((s.name ?? "").toLowerCase().includes(q)) return true;
                     const items = archivedItemsMap[s.id] ?? [];
                     return items.some(it =>
-                      it.title.toLowerCase().includes(q) || it.content.toLowerCase().includes(q)
+                      (it.title ?? "").toLowerCase().includes(q) || (it.content ?? "").toLowerCase().includes(q)
                     );
                   }).length === 0 && archiveSearch.trim() && (
                     <p className={`text-[12px] text-center py-4 ${isDark ? "text-zinc-700" : "text-slate-300"}`}>
-                      لم يُعثر على نتائج في الأرشيف
+                      {archiveIndexPartial
+                        ? "لم يُعثر على نتائج فيما أمكن قراءته من الأرشيف"
+                        : "لم يُعثر على نتائج في الأرشيف"}
                     </p>
                   )}
                 </div>

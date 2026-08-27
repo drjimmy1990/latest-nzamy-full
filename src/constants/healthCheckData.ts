@@ -12,7 +12,35 @@ export type Severity = "critical" | "warning" | "ok";
 export type Finding = { id: string; title: string; severity: Severity; category: Category; detail: string; action: string };
 export type WizardStep = "upload" | "classifying" | "results" | "dashboard";
 
-// ── Mock data ─────────────────────────────────────────────────────────
+// ── Invented data — ALL FOUR ARRAYS ARE STILL RENDERED ────────────────
+/**
+ * Everything below this line is fabricated, and every piece of it is imported
+ * and rendered by src/app/dashboard/business/health-check/page.tsx (lines
+ * 20–24). There is no `isSupabaseMode` branch on that page, so this is what a
+ * paying company sees in production. None of it is deleted here, because
+ * deleting it breaks that page; the fix is to make the screen real or to mark
+ * it «غير متاح حالياً», and that page is not this change's file.
+ *
+ * Four arrays, not the two the brief listed — worst first:
+ *
+ * • PREDICTIVE_INSIGHTS — the most damaging thing in this file. Five risks with
+ *   invented PROBABILITIES (`prob: 92`, `prob: 88`) and invented dates and fine
+ *   amounts («غرامة تصل إلى ١٠٠,٠٠٠ ﷼»), rendered as analysis of the reader's
+ *   own company at page.tsx:512. A percentage is a claim to have measured
+ *   something. Nothing was measured.
+ * • MOCK_FINDINGS — twelve legal findings about documents that do not exist:
+ *   an expired Dammam warehouse lease, an unregistered trademark, an employee
+ *   missing from GOSI. Rendered at page.tsx:86-91, 344, 607, and its
+ *   `critical`/`warning` counts drive the headline badges.
+ * • SCORE_BARS — five compliance percentages (68٪, 62٪, 35٪ …) drawn as bars
+ *   at page.tsx:299 and :448.
+ * • MOCK_FILES — twelve uploaded filenames. Also drives the counter «تم تحليل
+ *   N وثيقة» (page.tsx:292, :411, :479) and is loaded into state by the fake
+ *   upload flow at :66-68 regardless of what the user actually uploaded.
+ *
+ * CATEGORY_CONFIG carries a `count` per category for the same reason; those
+ * counts describe MOCK_FILES, not the reader's documents.
+ */
 export const MOCK_FILES: FileItem[] = [
   { id: "f1", name: "عقد_توريد_شركة_الأفق.pdf", size: "2.4 MB", type: "pdf", status: "done" },
   { id: "f2", name: "عقد_خدمات_نظافة.pdf", size: "1.1 MB", type: "pdf", status: "done" },

@@ -3,6 +3,17 @@ import { createClient } from "@/lib/supabase/server";
 
 /**
  * GET /api/v1/groups — List groups where the current user is a member
+ *
+ * FAILURE IS A 500, NOT AN EMPTY LIST. All three failure branches used to
+ * return `{ data: [], total: 0 }` at HTTP 200, which
+ * `groupService.getGroupState` (src/lib/services/groupService.ts:53) reads as
+ * `status: "none"` — the client is told they belong to no group, and the join
+ * screen invites them to create one they may already be in.
+ *
+ * `groupIds.length === 0` keeps its 200 with an empty list on purpose: that one
+ * IS a genuine answer — the membership query succeeded and returned nothing.
+ * Keeping the failure branches and the honest-empty branch distinguishable is
+ * the entire point of the change.
  */
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -29,7 +40,7 @@ export async function GET(request: NextRequest) {
 
     if (memError) {
       console.error("[groups] group_members query failed:", memError.message);
-      return NextResponse.json({ data: [], total: 0 });
+      return NextResponse.json({ error: "تعذّر تحميل مجموعاتك." }, { status: 500 });
     }
 
     const groupIds = (memberships ?? []).map((m) => m.group_id);
@@ -48,13 +59,15 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("[groups] groups query failed:", error.message);
-      return NextResponse.json({ data: [], total: 0 });
+      return NextResponse.json({ error: "تعذّر تحميل مجموعاتك." }, { status: 500 });
     }
 
-    return NextResponse.json({ data, total: count });
+    // `data` can be null even with no error; `?? []` keeps the success shape a
+    // real array so a caller cannot mistake a null for a failure marker.
+    return NextResponse.json({ data: data ?? [], total: count ?? null });
   } catch (err) {
     console.error("[groups] Unexpected error:", err);
-    return NextResponse.json({ data: [], total: 0 });
+    return NextResponse.json({ error: "تعذّر تحميل مجموعاتك." }, { status: 500 });
   }
 }
 

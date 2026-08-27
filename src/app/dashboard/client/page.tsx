@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useCallback, useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   Gavel, CalendarBlank, FolderOpen, Coins, Robot, Sparkle,
-  ArrowLeft, Clock, ChatCircle,
+  ArrowClockwise, ArrowLeft, Clock, ChatCircle,
   FileText, Wallet, Shield,
   Headset, Users, PencilSimple,
   Package, Lightning, WarningCircle,
@@ -17,6 +17,13 @@ import { CaseCard } from "./_components/CaseCard";
 import { DashboardPageSkeleton } from "./_components/DashboardSkeleton";
 import { getDashboardSummary, getDocuments } from "@/lib/services";
 import type { DashboardSummary, Document as ApiDocument } from "@/lib/services";
+import {
+  listOk,
+  listFailed,
+  listViewState,
+  itemsOf,
+  type ListRead,
+} from "@/lib/services/listRead";
 import {
   toClientCases,
   toClientDocumentRows,
@@ -226,12 +233,38 @@ export default function ClientDashboard() {
   const [aiInput, setAiInput] = useState("");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  // null while the request is still in flight — the card must not print
-  // «لا توجد مستندات بعد» over a list it has not finished reading.
-  const [documents, setDocuments] = useState<ApiDocument[] | null>(null);
-  const [documentsFailed, setDocumentsFailed] = useState(false);
+  /**
+   * The documents card's read, in the shared three-state shape
+   * (`ListRead` + `listViewState()`, src/lib/services/listRead.ts). It was a
+   * `documents: ApiDocument[] | null` plus a `documentsFailed` boolean, which
+   * said the same thing correctly and said it in a spelling only this file
+   * used.
+   */
+  const [docsRead, setDocsRead] = useState<ListRead<ApiDocument> | null>(null);
+  const [docsLoading, setDocsLoading] = useState(true);
+  /** Bumped by the card's retry; the documents effect refetches when it moves. */
+  const [docsAttempt, setDocsAttempt] = useState(0);
 
   useEffect(() => {
+    // `.catch(console.error)` IS DEAD CODE AND IS LEFT AS A BACKSTOP, not
+    // because it does anything. getDashboardSummary() cannot reject: its own
+    // body ends in `catch { return { ...DEMO_SUMMARY } }`
+    // (src/lib/services/dashboardService.ts:71).
+    //
+    // THAT FALLBACK IS A DEFECT THIS PAGE CANNOT FIX FROM HERE, and it is worth
+    // naming precisely. A failed summary request arrives at this component as a
+    // fully-formed object with `activeCases: []`, `communityPreview: []`,
+    // `nextAppointment: null` and a `subscription` reading «مجانية» — so the
+    // «قضاياي» section silently disappears for a client who has cases, and the
+    // welcome line stops mentioning them. It is not a false sentence on screen
+    // (the plan card below already refuses to name a plan for exactly this
+    // reason, and «قضاياي» hides rather than printing «٠»), but it is an
+    // absence asserted where an unreadable state is the truth, and no signal
+    // reaches this file to tell the two apart. Sniffing for the fixture — the
+    // missing `activeCasesTotal`, say — would be inventing an oracle out of an
+    // optional field. dashboardService.ts is not this change's file; making
+    // getDashboardSummary() throw, or return a read that carries its failure,
+    // is reported as a follow-up.
     getDashboardSummary()
       .then(setSummary)
       .catch(console.error)
@@ -246,14 +279,20 @@ export default function ClientDashboard() {
   useEffect(() => {
     let cancelled = false;
     getDocuments()
-      .then((docs) => { if (!cancelled) setDocuments(docs); })
+      .then((docs) => { if (!cancelled) setDocsRead(listOk(docs)); })
       .catch((e) => {
         if (cancelled) return;
         console.error("[client dashboard] documents fetch failed:", e);
-        setDocumentsFailed(true);
-        setDocuments([]);
-      });
+        setDocsRead(listFailed<ApiDocument>());
+      })
+      .finally(() => { if (!cancelled) setDocsLoading(false); });
     return () => { cancelled = true; };
+  }, [docsAttempt]);
+
+  const retryDocuments = useCallback(() => {
+    setDocsLoading(true);
+    setDocsRead(null);
+    setDocsAttempt((n) => n + 1);
   }, []);
 
   // ── Derived data from summary ──────────────────────────────────────────
@@ -303,8 +342,10 @@ export default function ClientDashboard() {
   // is worse than silence.
   const ACTIVE_PHRASE = activeCasesPhraseAr(ACTIVE_TOTAL);
 
-  // Three real files at most. `documents` is null until the fetch settles.
-  const DOC_ROWS = toClientDocumentRows(documents, 3);
+  // Three real files at most. itemsOf() answers [] on every branch but
+  // 'ready', so the card cannot list rows it did not read.
+  const docsView = listViewState(docsLoading, docsRead);
+  const DOC_ROWS = toClientDocumentRows(itemsOf(docsRead), 3);
 
   // ── Subscription / Plan ───────────────────────────────────────────────
   //
@@ -815,11 +856,11 @@ export default function ClientDashboard() {
               /dashboard/client/documents reads, and shows nothing when there is
               nothing. */}
           <div className="p-4 space-y-2">
-            {documents === null ? (
+            {docsView === "loading" ? (
               <p className={`text-[12px] py-6 text-center ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                 جارٍ تحميل المستندات…
               </p>
-            ) : documentsFailed ? (
+            ) : docsView === "unreadable" ? (
               // NOT «لا توجد مستندات» — the files may well be there and only the
               // request failed. Saying they are absent would be a false
               // statement about the client's own library.
@@ -829,7 +870,21 @@ export default function ClientDashboard() {
                   : "bg-amber-50 border border-amber-200 text-amber-700"
               }`}>
                 <WarningCircle size={14} weight="fill" className="flex-shrink-0 mt-0.5" />
-                <span>تعذّر تحميل المستندات. حدّث الصفحة أو حاول بعد قليل.</span>
+                <span className="flex-1">تعذّرت قراءة المستندات.</span>
+                {/* A retry that refetches, in place of «حدّث الصفحة»: this card
+                    is one of six on the page, and reloading the whole dashboard
+                    to re-ask one question throws away five answers that
+                    arrived. */}
+                <button
+                  type="button"
+                  onClick={retryDocuments}
+                  className={`flex-shrink-0 inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 font-bold ${
+                    isDark ? "border-amber-700/40 hover:bg-amber-900/30" : "border-amber-300 hover:bg-amber-100"
+                  }`}
+                >
+                  <ArrowClockwise size={11} weight="bold" />
+                  إعادة المحاولة
+                </button>
               </div>
             ) : DOC_ROWS.length === 0 ? (
               <div className="py-6 text-center">

@@ -2,11 +2,32 @@
  * casesService.ts
  * ─────────────────────────────────────────────────────────
  * Dual-mode cases & consultations service.
+ *
+ * ── TWO SHAPES IN ONE FILE, DELIBERATELY ────────────────────────────────────
+ *
+ * LIST readers (`getCases`, `getActiveCases`, `getConsultations`) return
+ * `ListRead<T>`: they all used to end in `catch { return [] }`, which told a
+ * client «لا توجد قضايا» over a failed query.
+ *
+ * SINGLE-item readers (`getCaseDetail`, `getServiceRequestDetail`) keep
+ * returning `T | null`, but `null` now means ONE thing — the server said 404,
+ * the row is genuinely not there — and every other failure throws. That was the
+ * ambiguity: `catch { return null }` made "this case does not exist" and "we
+ * could not reach the server" the same answer, and the detail pages render the
+ * first one as «القضية غير موجودة».
+ *
+ * Distinguishing the two requires the HTTP status, which `apiGet` discards when
+ * it throws, so both fetch directly. This is the same trade already made and
+ * documented in src/lib/services/serviceOrders.ts:106 — the cost is two
+ * hand-rolled fetches that do not share the helper's header/params handling.
+ * (No `ServiceOrderNotFoundError` here: these callers already branch on `null`,
+ * so a sentinel class would be churn without a reader.)
  */
 
 "use client";
 
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { listOk, listFailed, type ListRead } from "@/lib/services/listRead";
 import {
   SHARED_CASES,
   getActiveCases as getActiveCasesLocal,
@@ -42,41 +63,54 @@ export async function getCases(opts?: {
   type?: CaseType;
   limit?: number;
   offset?: number;
-}): Promise<SharedCase[]> {
+}): Promise<ListRead<SharedCase>> {
+  // Demo path unchanged — SHARED_CASES is the backend in that mode.
   if (!isSupabaseMode) {
     let cases = [...SHARED_CASES];
     if (opts?.status) cases = cases.filter(c => c.status === opts.status);
     if (opts?.type) cases = cases.filter(c => c.type === opts.type);
-    return cases;
+    return listOk(cases, cases.length);
   }
   try {
-    const response = await apiGet<{ data: SharedCase[] }>("/api/v1/cases", {
+    const response = await apiGet<{ data: SharedCase[]; total?: number }>("/api/v1/cases", {
       status: opts?.status,
       type: opts?.type,
       limit: opts?.limit,
       offset: opts?.offset,
     });
-    return response.data;
+    // /api/v1/cases 500s on a Supabase error (route.ts:44) rather than serving
+    // an empty 200, so it carries no `degraded` flag for `listFromApi` to read
+    // — a throw is the failure, and a 200 without `data` is a broken contract.
+    if (!Array.isArray(response?.data)) return listFailed<SharedCase>();
+    // `total` is the server's own `count`, which is what makes the caller's
+    // truncation notice honest when `limit` cut the result.
+    return listOk(response.data, response.total);
   } catch (error) {
     console.error('[Nzamy] getCases API failed:', error);
-    return [];
+    return listFailed<SharedCase>();
   }
 }
 
-export async function getActiveCases(): Promise<SharedCase[]> {
-  if (!isSupabaseMode) return getActiveCasesLocal();
+export async function getActiveCases(): Promise<ListRead<SharedCase>> {
+  if (!isSupabaseMode) return listOk(getActiveCasesLocal());
   return getCases({ status: "active" });
 }
 
 export async function getCaseDetail(id: string): Promise<SharedCase | null> {
   if (!isSupabaseMode) return SHARED_CASES.find(c => c.id === id) || null;
-  try {
-    const response = await apiGet<{ data: SharedCase }>(`/api/v1/cases/${id}`);
-    return response.data ?? null;
-  } catch (error) {
-    console.error('[Nzamy] getCaseDetail API failed:', error);
-    return null;
-  }
+  // Direct fetch, not apiGet: see the file header. 404 → null (absent);
+  // anything else → throw (unreadable).
+  const res = await fetch(`/api/v1/cases/${encodeURIComponent(id)}`, {
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("تعذّر تحميل القضية");
+  const body = await res.json().catch(() => null);
+  // A 200 with no `data` is a contract violation, not an absence — a
+  // single-resource GET has no "empty" state to report.
+  if (!body?.data) throw new Error("تعذّر تحميل القضية");
+  return body.data as SharedCase;
 }
 
 // ─── Service Request Detail (workflow / Kanban source-of-truth) ───────────────
@@ -136,15 +170,19 @@ export async function getServiceRequestDetail(
     if (!found) return null;
     return mapLocalWorkflowRequest(found);
   }
-  try {
-    const r = await apiGet<{ data: ServiceRequestDetail }>(
-      `/api/v1/service-requests/${id}`,
-    );
-    return r.data ?? null;
-  } catch (e) {
-    console.error("[casesService] getServiceRequestDetail failed:", e);
-    return null;
-  }
+  // Direct fetch, not apiGet: see the file header. This is the function behind
+  // both case-detail screens (client and lawyer), and its `catch { return null }`
+  // meant a dropped connection rendered as «القضية غير موجودة» — telling a
+  // lawyer their case does not exist. 404 → null; everything else → throw.
+  const res = await fetch(`/api/v1/service-requests/${encodeURIComponent(id)}`, {
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("تعذّر تحميل الطلب");
+  const body = await res.json().catch(() => null);
+  if (!body?.data) throw new Error("تعذّر تحميل الطلب");
+  return body.data as ServiceRequestDetail;
 }
 
 /** Map a local WorkflowRequest (demo store) to the ServiceRequestDetail shape. */
@@ -183,17 +221,20 @@ export async function getConsultations(opts?: {
   status?: string;
   limit?: number;
   offset?: number;
-}): Promise<Consultation[]> {
-  if (!isSupabaseMode) return []; // No demo data for consultations
+}): Promise<ListRead<Consultation>> {
+  // No demo store for consultations — a hardcoded absence, not a read.
+  if (!isSupabaseMode) return listOk([]);
   try {
-    const response = await apiGet<{ data: Consultation[] }>("/api/v1/consultations", {
+    const response = await apiGet<{ data: Consultation[]; total?: number }>("/api/v1/consultations", {
       status: opts?.status,
       limit: opts?.limit,
       offset: opts?.offset,
     });
-    return response.data;
-  } catch {
-    return [];
+    if (!Array.isArray(response?.data)) return listFailed<Consultation>();
+    return listOk(response.data, response.total);
+  } catch (error) {
+    console.error("[casesService] getConsultations failed:", error);
+    return listFailed<Consultation>();
   }
 }
 
@@ -245,20 +286,31 @@ export async function createConsultation(data: {
   return r.data;
 }
 
+/**
+ * THROWS on failure, like `createConsultation` above and unlike the old
+ * `catch { return null }`. A write that silently reports "nothing came back"
+ * is how a rescheduled hearing date ends up shown as saved when the PATCH was
+ * refused — the caller has to be able to tell the user it did not take.
+ *
+ * Demo mode has no consultations store to patch, so it says so rather than
+ * resolving with `null`, which reads as a completed no-op.
+ *
+ * (No call site today outside the barrel export; written this way so the first
+ * one inherits the honest behaviour.)
+ */
 export async function updateConsultation(
   id: string,
   patch: { status?: string; scheduled_at?: string; notes?: string },
-): Promise<Consultation | null> {
-  if (!isSupabaseMode) return null;
-  try {
-    // C12 — route returns { data: Consultation }; unwrap.
-    const r = await apiMutate<{ data: Consultation }>(
-      `/api/v1/consultations/${id}`,
-      "PATCH",
-      patch,
-    );
-    return r.data ?? null;
-  } catch {
-    return null;
+): Promise<Consultation> {
+  if (!isSupabaseMode) {
+    throw new Error("تعديل الاستشارات غير متاح في وضع العرض التجريبي");
   }
+  // C12 — route returns { data: Consultation }; unwrap.
+  const r = await apiMutate<{ data: Consultation }>(
+    `/api/v1/consultations/${id}`,
+    "PATCH",
+    patch,
+  );
+  if (!r?.data) throw new Error("لم يصل تأكيد الحفظ من الخادم");
+  return r.data;
 }

@@ -110,6 +110,26 @@ type LawyerClientPayload = {
  * rendered as «لا توجد موكلون بعد» — the lawyer was told they have no clients
  * on top of a failed query. A lawyer has to be able to tell a broken read from
  * an empty address book.
+ *
+ * ── SHAPE WARNING FOR CALLERS: DO NOT USE listFromApi() ON THIS ─────────────
+ *
+ * The success body is a BARE ARRAY (`NextResponse.json(clients)`), not the
+ * `{ data, total }` envelope the rest of the list endpoints use. Failure is a
+ * non-2xx carrying `{ error }`. listFromApi() in src/lib/services/listRead.ts
+ * looks for `body.data` and returns listFailed() when it is not an array — so
+ * pointing it at this body turns a lawyer with a genuinely empty address book
+ * (the honest `[]` a few lines below) into «تعذّرت القراءة». That is the same
+ * false statement as the defect, inverted.
+ *
+ * Map it on the status instead:
+ *     res.ok ? listOk(await res.json()) : listFailed()
+ *
+ * The envelope was NOT changed here to match the others, deliberately: three
+ * call sites read the array directly (src/lib/services/lawyerClientsService.ts:33,
+ * src/app/dashboard/lawyer/clients/page.tsx:93,
+ * src/app/dashboard/lawyer/clients/[id]/page.tsx:118) and would each break on
+ * an object. Route and callers have to move in one commit, and those files
+ * belong to another group in this pass.
  */
 export async function GET() {
   try {

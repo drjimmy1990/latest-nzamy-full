@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { addToDesktop, addToSession, getActiveSessions, type CollectorSession } from "@/lib/services/researchService";
+import { itemsOf, listViewState, type ListRead } from "@/lib/services/listRead";
 
 interface Props {
   isDark: boolean;
@@ -79,7 +80,19 @@ export function CrossExamResultView({ isDark, card, onReset }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("foundation");
   const [exported, setExported] = useState(false);
   const [showExportPopup, setShowExportPopup] = useState(false);
-  const [sessions, setSessions] = useState<CollectorSession[]>([]);
+  // The session list is a READ that can fail, so it is held as a ListRead and
+  // not as an array. As a `CollectorSession[]` an unreadable read was
+  // indistinguishable from "this lawyer has no sessions", and the popup below
+  // simply hid the session picker — silently offering the desktop as if it
+  // were the only place this battery could go.
+  const [sessionsRead, setSessionsRead] = useState<ListRead<CollectorSession> | null>(null);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  // addToDesktop / addToSession now THROW in supabase mode instead of writing
+  // to localStorage and returning a fully-formed item. Without this state the
+  // rejection skipped `setExported(true)` and the popup just sat there: the
+  // lawyer clicked «الديسك توب», nothing moved, and nothing said why.
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const ts = isDark ? "text-zinc-500" : "text-zinc-400";
 
@@ -102,21 +115,45 @@ export function CrossExamResultView({ isDark, card, onReset }: Props) {
   }
 
   async function openExport() {
-    setSessions(await getActiveSessions());
+    setExportError(null);
     setShowExportPopup(true);
+    setSessionsLoading(true);
+    try {
+      setSessionsRead(await getActiveSessions());
+    } finally {
+      setSessionsLoading(false);
+    }
   }
 
   async function doExport(target: "desktop" | string) {
+    if (exporting) return;
     const md = buildReport();
     const title = "بطارية أسئلة الاستجواب";
-    if (target === "desktop") {
-      await addToDesktop("attachment-squeezer", "research", title, md);
-    } else {
-      await addToSession(target, "attachment-squeezer", "research", title, md);
+    setExporting(true);
+    setExportError(null);
+    try {
+      if (target === "desktop") {
+        await addToDesktop("attachment-squeezer", "research", title, md);
+      } else {
+        await addToSession(target, "attachment-squeezer", "research", title, md);
+      }
+      // Only after the server confirmed the row. «تم — افتح المجمع» sends the
+      // lawyer to a collector that would not have the battery in it.
+      setExported(true);
+      setShowExportPopup(false);
+    } catch (e) {
+      setExportError(
+        e instanceof Error && e.message ? e.message : "تعذّر الحفظ في المجمع ولم يُحفظ شيء.",
+      );
+    } finally {
+      setExporting(false);
     }
-    setExported(true);
-    setShowExportPopup(false);
   }
+
+  // loading / unreadable / empty / ready — the picker below must not treat a
+  // failed read as "no sessions".
+  const sessionsView = listViewState(sessionsLoading, sessionsRead);
+  const sessions = itemsOf(sessionsRead);
 
   const tabs: { id: TabId; label: string; icon: React.ElementType; color: string; count: number }[] = [
     { id: "foundation", label: "أسئلة تأسيسية", icon: LockSimple, color: "text-blue-500", count: FOUNDATION_QUESTIONS.length },
@@ -267,20 +304,48 @@ export function CrossExamResultView({ isDark, card, onReset }: Props) {
               <UserFocus size={16} className="text-rose-500" weight="duotone" />
               <p className={`text-[13px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>أين تريد حفظ بطارية الأسئلة؟</p>
             </div>
-            <button onClick={() => doExport("desktop")}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl border text-start ${isDark ? "border-white/[0.07] hover:bg-white/5" : "border-slate-200 hover:bg-slate-50"}`}>
+            {exportError && (
+              <div className={`flex items-start gap-2 rounded-xl border p-3 ${isDark ? "border-rose-500/25 bg-rose-500/10" : "border-rose-200 bg-rose-50"}`}>
+                <Warning size={14} weight="fill" className="text-rose-500 mt-0.5 flex-shrink-0" />
+                <p className={`text-[11px] font-bold ${isDark ? "text-rose-300" : "text-rose-700"}`}>{exportError}</p>
+              </div>
+            )}
+            <button onClick={() => doExport("desktop")} disabled={exporting}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl border text-start disabled:opacity-50 ${isDark ? "border-white/[0.07] hover:bg-white/5" : "border-slate-200 hover:bg-slate-50"}`}>
               <Monitor size={16} className="text-purple-500" weight="duotone" />
               <div>
                 <p className={`text-[12px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>الديسك توب</p>
                 <p className={`text-[10px] ${ts}`}>متاح من كل القضايا</p>
               </div>
             </button>
-            {sessions.length > 0 && (
+
+            {/* The session picker's four states. It used to render on
+                `sessions.length > 0` alone, so a failed read looked exactly
+                like an account with no sessions — the popup quietly became
+                desktop-only and never said a list was missing. */}
+            {sessionsView === "loading" && (
+              <p className={`text-[10px] font-bold ${ts}`}>جارٍ قراءة الجلسات…</p>
+            )}
+            {sessionsView === "unreadable" && (
+              <div className={`flex items-start gap-2 rounded-xl border p-3 ${isDark ? "border-amber-500/25 bg-amber-500/5" : "border-amber-200 bg-amber-50"}`}>
+                <Warning size={14} weight="fill" className="text-amber-500 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className={`text-[11px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}>تعذّرت قراءة الجلسات</p>
+                  <p className={`text-[10px] mt-0.5 ${isDark ? "text-amber-200/70" : "text-amber-700"}`}>
+                    قد تكون لديك جلسات لم تُقرأ — الحفظ في الديسك توب متاح.
+                  </p>
+                  <button onClick={openExport} className={`mt-1 text-[10px] font-bold underline ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+                    إعادة المحاولة
+                  </button>
+                </div>
+              </div>
+            )}
+            {sessionsView === "ready" && (
               <div className="space-y-2">
                 <p className={`text-[10px] font-bold ${ts}`}>أو اختر جلسة:</p>
                 {sessions.map(s => (
-                  <button key={s.id} onClick={() => doExport(s.id)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl border text-start ${isDark ? "border-white/[0.07] hover:bg-white/5" : "border-slate-200 hover:bg-slate-50"}`}>
+                  <button key={s.id} onClick={() => doExport(s.id)} disabled={exporting}
+                    className={`w-full flex items-center gap-3 p-3 rounded-xl border text-start disabled:opacity-50 ${isDark ? "border-white/[0.07] hover:bg-white/5" : "border-slate-200 hover:bg-slate-50"}`}>
                     <FolderOpen size={14} className="text-blue-500" weight="duotone" />
                     <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{s.name}</p>
                   </button>

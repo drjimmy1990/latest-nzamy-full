@@ -8,6 +8,7 @@
 "use client";
 
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { listOk, listFailed, type ListRead } from "@/lib/services/listRead";
 import type { VerificationStatus } from "@/types/database";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -84,10 +85,16 @@ const MOCK_REQUESTS: VerificationRequest[] = [
 
 /**
  * Fetches all verification requests, optionally filtered.
+ *
+ * The failure case here is not cosmetic: an empty queue means "nobody is
+ * waiting to be verified", so the old `catch { return [] }` told the admin
+ * there was no pending KYC work while the query was in fact broken — and a
+ * lawyer waiting on approval keeps waiting. Returns `ListRead` so the console
+ * can distinguish an empty queue from an unread one.
  */
 export async function getVerificationRequests(
   filters?: VerificationFilters,
-): Promise<VerificationRequest[]> {
+): Promise<ListRead<VerificationRequest>> {
   if (!isSupabaseMode) {
     let requests = [...MOCK_REQUESTS];
 
@@ -104,7 +111,7 @@ export async function getVerificationRequests(
       requests = requests.filter((r) => r.type === filters.type);
     }
 
-    return requests;
+    return listOk(requests, requests.length);
   }
 
   try {
@@ -116,10 +123,16 @@ export async function getVerificationRequests(
         type: filters?.type,
       },
     );
-    return response.verifications;
+    // This route's envelope is `{ verifications, total }`, not `{ data }`, so
+    // `listFromApi` does not fit it — and it 500s on a Supabase error instead
+    // of serving an empty 200, so it emits no `degraded` flag either.
+    if (!Array.isArray(response?.verifications)) {
+      return listFailed<VerificationRequest>();
+    }
+    return listOk(response.verifications, response.total);
   } catch (error) {
     console.error("[Nzamy] Admin verifications API failed:", error);
-    return [];
+    return listFailed<VerificationRequest>();
   }
 }
 

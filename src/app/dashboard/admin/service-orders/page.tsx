@@ -677,6 +677,13 @@ export default function AdminServiceOrdersPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [loadErr, setLoadErr] = useState("");
+  // The third state this screen was missing. `orders` starts as `[]` and
+  // `loadErr` as `""`, so between first paint and the first response the empty
+  // block below rendered «لا توجد طلبات.» — the same false statement as a
+  // swallowed failure, just briefer, and on the busiest screen the office has.
+  // Starts `true` because the effect below fires immediately: starting `false`
+  // would put that sentence on screen for one frame before the fetch begins.
+  const [loading, setLoading] = useState(true);
 
   // Deliberate deviation from the brief's literal load(): the original has
   // no error path, so a 403/500/dropped connection leaves `orders` at its
@@ -687,6 +694,7 @@ export default function AdminServiceOrdersPage() {
   // established in src/app/ai/orders/[id]/page.tsx.
   const load = useCallback(async (kept: AdminOrder | null = null) => {
     setLoadErr("");
+    setLoading(true);
     try {
       const params = new URLSearchParams();
       if (filter) params.set("status", filter);
@@ -705,6 +713,11 @@ export default function AdminServiceOrdersPage() {
       setOrders(mergeKeptOrder(body.data ?? [], kept));
     } catch {
       setLoadErr("تعذّر تحميل الطلبات. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.");
+    } finally {
+      // `finally`, not a line per branch: the early `return` in the !res.ok
+      // path above would otherwise leave this stuck on and the queue would
+      // read as permanently loading behind its own error message.
+      setLoading(false);
     }
   }, [filter, assigneeFilter]);
 
@@ -1460,7 +1473,18 @@ export default function AdminServiceOrdersPage() {
           </div>
           );
         })}
-        {!loadErr && visibleOrders.length === 0 && (
+        {/* Only while there is nothing on screen yet. A refetch triggered by a
+            status chip, «توجيه» or a completed action deliberately leaves the
+            loaded rows up instead of collapsing to this: the admin is working
+            the queue with a panel open and a note half-drafted, and swapping
+            the list for a placeholder every few seconds would throw that away
+            to say something they can already see. */}
+        {loading && visibleOrders.length === 0 && (
+          <div className={`${card} p-8 text-center text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+            جارٍ تحميل الطلبات…
+          </div>
+        )}
+        {!loading && !loadErr && visibleOrders.length === 0 && (
           <div className={`${card} p-8 text-center text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
             {/* An empty result under an active search is a different fact from
                 an empty queue, and the admin must not read one as the other.

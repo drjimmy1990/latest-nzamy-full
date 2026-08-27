@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
   ChatCircle, FileText, Gavel, ShieldStar,
   Clock, CheckCircle, XCircle, HourglassSimple,
-  ArrowLeft, Plus, MagnifyingGlass, Storefront,
+  ArrowClockwise, ArrowLeft, Plus, MagnifyingGlass, Storefront,
   Users, CalendarCheck, X, Copy, Check, DownloadSimple,
   NotePencil, Scales, Lightbulb, Warning, Info, ArrowSquareOut,
 } from "@phosphor-icons/react";
@@ -17,6 +17,13 @@ import {
   WorkflowApiError,
 } from "@/lib/clientWorkflowRepository";
 import type { WorkflowRequest, WorkflowRequestStatus } from "@/lib/workflowStore";
+import {
+  listOk,
+  listFailed,
+  listViewState,
+  itemsOf,
+  type ListRead,
+} from "@/lib/services/listRead";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CFG: Record<WorkflowRequestStatus, {
@@ -528,7 +535,24 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function MyRequestsPage() {
   const user = useUser();
-  const [requests, setRequests] = useState<WorkflowRequest[]>([]);
+  /**
+   * The read, in the one shape the whole platform now uses for a list —
+   * `ListRead` + `listViewState()` (src/lib/services/listRead.ts).
+   *
+   * WHAT THIS REPLACES, AND WHAT IT DOES NOT CHANGE. This page already told
+   * the three states apart with a `hasLoaded`/`loadFailed` pair and a
+   * `countsKnown` flag, and every sentence it prints is unchanged. The pair is
+   * gone only so that this page, «قضاياي», «استشاراتي», the two document
+   * pages, the business overview and /ai/orders express the same distinction
+   * the same way instead of six times in six spellings.
+   *
+   * `loading` remains a separate flag: `listViewState(false, null)` answers
+   * 'unreadable' by design — a read nobody attempted is not an empty one — so
+   * the first paint, and the wait while useUser() resolves, must be told they
+   * are still waiting rather than allowed to fall into the failure branch.
+   */
+  const [read, setRead] = useState<ListRead<WorkflowRequest> | null>(null);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter]     = useState<FilterKey>("all");
   const [search, setSearch]     = useState("");
   const [selectedRequest, setSelectedRequest] = useState<WorkflowRequest | null>(null);
@@ -536,35 +560,60 @@ export default function MyRequestsPage() {
   // is stated on screen rather than truncating in silence — see
   // CLIENT_REQUESTS_FETCH_LIMIT in clientWorkflowRepository.ts.
   const [truncatedAt, setTruncatedAt] = useState<number | null>(null);
-  // The load itself failed (or came back degraded). Without this the page
-  // renders "لا توجد طلبات بعد" over a broken query — a false statement about
-  // the client's own data.
-  const [loadFailed, setLoadFailed] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
-  // False until the first load has actually finished. Without it the empty
-  // state says «لا توجد طلبات بعد» before anything has been fetched, which is
-  // a statement about the client's data that the page cannot yet make.
-  const [hasLoaded, setHasLoaded] = useState(false);
+
+  /**
+   * Only the NEWEST load may write.
+   *
+   * `load()` runs from four places here — the mount effect, the
+   * `nzamy-workflow-updated` listener, the `finally` of every cancel, and
+   * «إعادة المحاولة» — so overlapping loads are the normal case, not the edge
+   * one. Without this check the slower reply lands last, and the damaging
+   * direction is a retry that succeeds followed by the earlier failure
+   * arriving: «تعذّرت قراءة طلباتك» would reappear over the list it just read,
+   * and the count chips would go with it.
+   */
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     try {
       const page = await listClientWorkflowRequestsPage({ requesterUserId: user.userId });
-      setRequests(page.requests);
-      setLoadFailed(page.degraded);
+      if (seq !== loadSeq.current) return;
+      // `degraded` IS the failure, and it now arrives with `requests: []`
+      // rather than with localStorage rows, so there is nothing to keep beside
+      // the flag any more.
+      //
+      // NO `total` IS PASSED TO listOk(). It counts what the SERVER matched,
+      // before the requester filter inside listClientWorkflowRequestsPage
+      // dropped the rows that are not this client's, so it would make
+      // `truncated` true on a list that was never cut. The cap below is
+      // computed from `total` vs `fetched`, two numbers that are comparable.
+      setRead(page.degraded ? listFailed<WorkflowRequest>() : listOk(page.requests));
       // Compare the server's total against the rows it actually returned
       // (pre-filter), not against what survives the requester filter: the
       // question is only ever "did the limit cut rows off".
       setTruncatedAt(page.total !== null && page.total > page.fetched ? page.limit : null);
     } catch (err) {
       console.error("[client requests] load failed:", err);
-      setRequests([]);
+      if (seq !== loadSeq.current) return;
+      setRead(listFailed<WorkflowRequest>());
       setTruncatedAt(null);
-      setLoadFailed(true);
     } finally {
-      setHasLoaded(true);
+      // A superseded load leaves `loading` alone — the newer one owns it, and
+      // clearing it here would drop the page out of «جارٍ تحميل طلباتك…» while
+      // the read that will actually be rendered is still in flight.
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [user.userId]);
+
+  /** The retry the failure banner presses — a refetch, not a page reload. */
+  const retry = useCallback(() => {
+    setLoading(true);
+    setRead(null);
+    void load();
+  }, [load]);
 
   // Load from store + listen for updates
   useEffect(() => {
@@ -592,6 +641,11 @@ export default function MyRequestsPage() {
     return () => window.removeEventListener("nzamy-workflow-updated", onUpdated);
   }, [load, user.loading]);
 
+  const view = listViewState(loading, read);
+  // itemsOf() is [] on every branch but 'ready', which is exactly what the
+  // filter and the counts below are entitled to see.
+  const requests = itemsOf(read);
+
   const filtered = requests.filter(r => {
     if (!matchesFilter(r.status, filter)) return false;
     if (search && !r.title.includes(search) && !r.description?.includes(search)) return false;
@@ -603,7 +657,7 @@ export default function MyRequestsPage() {
   // True only when the list on screen is the list the server actually holds.
   // While loading we have nothing; after a failure we have nothing we can
   // stand behind. Either way the chips show a label and no number.
-  const countsKnown = hasLoaded && !loadFailed;
+  const countsKnown = view === "ready" || view === "empty";
 
   const FILTERS: { key: FilterKey; label: string; count: number }[] = (
     [
@@ -745,14 +799,27 @@ export default function MyRequestsPage() {
         </div>
       )}
 
-      {/* The list could not be loaded. Says so instead of showing an empty page. */}
-      {loadFailed && (
+      {/* The list could not be loaded. Says so instead of showing an empty page.
+
+          «قد تكون هذه القائمة غير مكتملة» is gone: it was written when a
+          degraded page could still carry localStorage rows, and
+          listClientWorkflowRequestsPage now returns none in that case, so there
+          is no partial list under the banner to warn about. The retry refetches
+          in place instead of asking the client to reload the page. */}
+      {view === "unreadable" && (
         <div
           role="alert"
           className="flex items-start gap-2 mb-4 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/15 px-4 py-3 text-xs font-bold text-amber-800 dark:text-amber-300"
         >
           <Warning size={16} weight="fill" className="flex-shrink-0 mt-0.5" />
-          <span>تعذّر تحميل طلباتك من الخادم. قد تكون هذه القائمة غير مكتملة — حدّث الصفحة وحاول مجدداً.</span>
+          <span className="flex-1">تعذّرت قراءة طلباتك من الخادم.</span>
+          <button
+            onClick={retry}
+            className="flex-shrink-0 inline-flex items-center gap-1 rounded-lg border border-amber-300 dark:border-amber-700/50 px-2.5 py-1 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+          >
+            <ArrowClockwise size={12} weight="bold" />
+            إعادة المحاولة
+          </button>
         </div>
       )}
 
@@ -776,21 +843,23 @@ export default function MyRequestsPage() {
               <Storefront size={48} className="mx-auto mb-3 text-gray-200 dark:text-white/10" weight="duotone" />
               <p className="text-sm font-semibold text-gray-400">
                 {/* Never claim "no requests yet" over a failed load, and never
-                    claim it before the first load has come back at all. */}
-                {!hasLoaded
+                    claim it before the first load has come back at all. The
+                    four arms are the four `listViewState` answers, in the same
+                    order the union declares them. */}
+                {view === "loading"
                   ? "جارٍ تحميل طلباتك…"
-                  : loadFailed
-                    ? "تعذّر تحميل الطلبات"
-                    : requests.length === 0 ? "لا توجد طلبات بعد" : "لا توجد طلبات في هذا الفلتر"}
+                  : view === "unreadable"
+                    ? "تعذّرت قراءة الطلبات"
+                    : view === "empty" ? "لا توجد طلبات بعد" : "لا توجد طلبات في هذا الفلتر"}
               </p>
               <p className="text-xs text-gray-300 dark:text-gray-600 mt-1 mb-4">
-                {!hasLoaded
+                {view === "loading"
                   ? ""
-                  : loadFailed
-                    ? "لا يعني هذا أنه لا توجد لديك طلبات — حدّث الصفحة وحاول مجدداً."
-                    : requests.length === 0 ? "اطلب خدمة قانونية وستظهر هنا فور الإرسال" : "جرّب فلتراً آخر"}
+                  : view === "unreadable"
+                    ? "لا يعني هذا أنه لا توجد لديك طلبات — استخدم «إعادة المحاولة» أعلاه."
+                    : view === "empty" ? "اطلب خدمة قانونية وستظهر هنا فور الإرسال" : "جرّب فلتراً آخر"}
               </p>
-              {hasLoaded && requests.length === 0 && !loadFailed && (
+              {view === "empty" && (
                 <Link href="/dashboard/client/services">
                   <motion.button
                     whileTap={{ scale: 0.97 }}

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Check, MagnifyingGlass, Sparkle, ArrowClockwise,
-  Plus, CheckCircle, PencilSimple, Tray, PaperPlaneTilt,
+  Plus, CheckCircle, PencilSimple, Tray, PaperPlaneTilt, Warning,
 } from "@phosphor-icons/react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { MOCK_LAWS } from "@/components/draft/draftConstants";
@@ -14,6 +14,7 @@ import {
   SOURCE_LABELS, SOURCE_COLORS,
   type InboxItem, type CollectorSession,
 } from "@/lib/services/researchService";
+import { itemsOf, listViewState, type ListRead } from "@/lib/services/listRead";
 import BetaReviewGate from "@/components/BetaReviewGate";
 
 interface StepLawsProps {
@@ -30,6 +31,20 @@ const MOCK_EXTRA_LAWS = [
 type PanelMode = "closed" | "search" | "manual" | "inbox";
 type SearchMode = "idle" | "searching" | "done";
 
+/**
+ * The collector badge on the «المجمع القانوني» tab.
+ *
+ * A count is a claim about EVERYTHING the collector holds, and it is assembled
+ * here from one desktop read plus one read per session. If any single one of
+ * them fails, the sum of the rest is not a smaller truth — it is a confident
+ * wrong number, and the lawyer reads «لا يوجد وارد» over clippings that are
+ * sitting on the server. So the count is either fully known or withheld; there
+ * is no partial total.
+ */
+type InboxCount =
+  | { known: true; value: number }
+  | { known: false; reason: "loading" | "unreadable" };
+
 export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: StepLawsProps) {
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
 
@@ -42,37 +57,98 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
   const [extraLaws, setExtraLaws] = useState<typeof MOCK_EXTRA_LAWS>([]);
   const [selectedExtra, setSelectedExtra] = useState<Set<number>>(new Set());
 
-  // inbox state
+  // inbox state — every one of these is a READ that can fail, so each is held
+  // as a ListRead rather than as an array. As bare arrays an unreadable read
+  // was byte-identical to an empty collector, and this panel answered a dropped
+  // request with «لا توجد عناصر هنا» and a ٠ badge.
   const [inboxSubTab, setInboxSubTab] = useState<"desktop" | "session">("desktop");
-  const [inboxDesktop, setInboxDesktop] = useState<InboxItem[]>([]);
-  const [inboxSessions, setInboxSessions] = useState<CollectorSession[]>([]);
+  const [desktopRead, setDesktopRead] = useState<ListRead<InboxItem> | null>(null);
+  const [sessionsRead, setSessionsRead] = useState<ListRead<CollectorSession> | null>(null);
   const [activeInboxSession, setActiveInboxSession] = useState<string | null>(null);
-  const [inboxSessionItems, setInboxSessionItems] = useState<InboxItem[]>([]);
+  const [sessionItemsRead, setSessionItemsRead] = useState<ListRead<InboxItem> | null>(null);
+  const [inboxLoading, setInboxLoading] = useState(true);
+  const [sessionItemsLoading, setSessionItemsLoading] = useState(false);
+  // Bumped by «إعادة المحاولة» so a failed read can be retried in place.
+  const [inboxReloadKey, setInboxReloadKey] = useState(0);
   const [selectedInbox, setSelectedInbox] = useState<Set<string>>(new Set());
   const [addedInbox, setAddedInbox] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    const load = async () => {
-      setInboxDesktop(await getDesktopItems());
-      setInboxSessions(await getActiveSessions());
-      if (activeInboxSession) setInboxSessionItems(await getSessionItems(activeInboxSession));
-    };
-    load();
-  }, [panelMode, activeInboxSession]);
+  /** Re-read the desktop and the session list together. */
+  const loadInbox = useCallback(async () => {
+    setInboxLoading(true);
+    try {
+      // Both reads carry their own failure, so Promise.all is safe here: one
+      // unreadable list no longer takes the other down with it.
+      const [desktop, sessions] = await Promise.all([getDesktopItems(), getActiveSessions()]);
+      setDesktopRead(desktop);
+      setSessionsRead(sessions);
+    } finally {
+      setInboxLoading(false);
+    }
+  }, []);
 
-  const currentInboxItems = inboxSubTab === "desktop" ? inboxDesktop : inboxSessionItems;
-  const [inboxCount, setInboxCount] = useState(0);
+  useEffect(() => { loadInbox(); }, [panelMode, inboxReloadKey, loadInbox]);
+
+  // The items of the picked session. Kept in its own read so switching sessions
+  // does not re-fetch the desktop, and so a session whose items fail to load
+  // does not blank the desktop tab beside it.
   useEffect(() => {
+    if (!activeInboxSession) { setSessionItemsRead(null); return; }
+    let cancelled = false;
+    setSessionItemsLoading(true);
+    getSessionItems(activeInboxSession)
+      .then(read => { if (!cancelled) setSessionItemsRead(read); })
+      .finally(() => { if (!cancelled) setSessionItemsLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeInboxSession, inboxReloadKey]);
+
+  const sessionsView = listViewState(inboxLoading, sessionsRead);
+  const inboxSessions = itemsOf(sessionsRead);
+
+  // The visible item list. The session sub-tab with no session picked has made
+  // NO read at all — neither ready nor empty nor unreadable — so it is handled
+  // separately below rather than being folded into one of the three.
+  const currentRead = inboxSubTab === "desktop" ? desktopRead : sessionItemsRead;
+  const currentView = listViewState(
+    inboxSubTab === "desktop" ? inboxLoading : sessionItemsLoading,
+    currentRead,
+  );
+  const currentInboxItems = itemsOf(currentRead);
+  const noSessionPicked = inboxSubTab === "session" && !activeInboxSession;
+
+  // The desktop sub-tab's own badge — withheld, not zeroed, on a failed read.
+  const desktopUnadded = desktopRead?.ok
+    ? desktopRead.items.filter(i => !addedInbox.has(i.id)).length
+    : null;
+
+  const [inboxCount, setInboxCount] = useState<InboxCount>({ known: false, reason: "loading" });
+  useEffect(() => {
+    let cancelled = false;
     const calcCount = async () => {
-      let count = inboxDesktop.filter(i => !addedInbox.has(i.id)).length;
-      for (const s of inboxSessions) {
-        const items = await getSessionItems(s.id);
-        count += items.filter(i => !addedInbox.has(i.id)).length;
+      setInboxCount({ known: false, reason: "loading" });
+      // Either half unreadable and there is no honest total to print.
+      if (!desktopRead?.ok || !sessionsRead?.ok) {
+        if (!cancelled) {
+          setInboxCount({
+            known: false,
+            reason: desktopRead === null && sessionsRead === null ? "loading" : "unreadable",
+          });
+        }
+        return;
       }
-      setInboxCount(count);
+      let count = desktopRead.items.filter(i => !addedInbox.has(i.id)).length;
+      for (const s of sessionsRead.items) {
+        const read = await getSessionItems(s.id);
+        if (cancelled) return;
+        // One unreadable session poisons the whole total — see InboxCount.
+        if (!read.ok) { setInboxCount({ known: false, reason: "unreadable" }); return; }
+        count += read.items.filter(i => !addedInbox.has(i.id)).length;
+      }
+      if (!cancelled) setInboxCount({ known: true, value: count });
     };
     calcCount();
-  }, [inboxDesktop, inboxSessions, addedInbox]);
+    return () => { cancelled = true; };
+  }, [desktopRead, sessionsRead, addedInbox]);
 
   /* helpers */
   function openPanel(mode: "search" | "manual" | "inbox") {
@@ -118,9 +194,8 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
     markUsed(Array.from(selectedInbox));
     setAddedInbox(prev => new Set([...prev, ...selectedInbox]));
     setSelectedInbox(new Set());
-    setInboxDesktop(await getDesktopItems());
-    setInboxSessions(await getActiveSessions());
-    if (activeInboxSession) setInboxSessionItems(await getSessionItems(activeInboxSession));
+    await loadInbox();
+    if (activeInboxSession) setSessionItemsRead(await getSessionItems(activeInboxSession));
   }
 
   return (
@@ -169,8 +244,13 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
         <div className={`flex items-stretch border-b ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
 
           {/* Tab 1 — Inbox from tools */}
+          {/* No explicit loadInbox() here: openPanel() always changes
+              `panelMode`, and the effect above already reads on that. Calling
+              both fired two identical requests with no ordering guard — and now
+              that a read carries its own failure, the loser of that race can
+              put «تعذّرت القراءة» back over items that were just read. */}
           <button
-            onClick={async () => { openPanel("inbox"); setInboxDesktop(await getDesktopItems()); setInboxSessions(await getActiveSessions()); }}
+            onClick={() => openPanel("inbox")}
             className={`flex-1 relative flex items-center gap-2 px-3 py-3.5 text-right transition-colors border-l ${isDark ? "border-white/[0.06]" : "border-zinc-100"} ${
               panelMode === "inbox"
                 ? isDark ? "bg-purple-900/10" : "bg-purple-50/60"
@@ -181,9 +261,17 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
               panelMode === "inbox" ? "bg-purple-600 text-white" : isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"
             }`}>
               <Tray size={13} />
-              {inboxCount > 0 && (
+              {/* Only a KNOWN, non-zero count gets a badge. An unreadable read
+                  wears the amber «!» instead — a missing badge would say the
+                  collector is empty, which is the claim this pass removes. */}
+              {inboxCount.known && inboxCount.value > 0 && (
                 <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-purple-500 text-white text-[8px] font-black flex items-center justify-center">
-                  {inboxCount}
+                  {inboxCount.value}
+                </span>
+              )}
+              {!inboxCount.known && inboxCount.reason === "unreadable" && (
+                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-amber-500 text-white text-[8px] font-black flex items-center justify-center">
+                  !
                 </span>
               )}
             </div>
@@ -191,8 +279,14 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
               <p className={`text-[11px] font-bold leading-tight ${
                 panelMode === "inbox" ? "text-purple-400" : isDark ? "text-zinc-300" : "text-zinc-700"
               }`}>المجمع القانوني</p>
-              <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                {inboxCount > 0 ? `${inboxCount} عنصر وارد` : "لا يوجد وارد"}
+              <p className={`text-[10px] mt-0.5 ${
+                !inboxCount.known && inboxCount.reason === "unreadable"
+                  ? "text-amber-500"
+                  : isDark ? "text-zinc-600" : "text-slate-400"
+              }`}>
+                {inboxCount.known
+                  ? inboxCount.value > 0 ? `${inboxCount.value} عنصر وارد` : "لا يوجد وارد"
+                  : inboxCount.reason === "loading" ? "جارٍ القراءة…" : "تعذّرت القراءة"}
               </p>
             </div>
           </button>
@@ -269,18 +363,43 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
                       <button onClick={() => { setInboxSubTab("desktop"); setSelectedInbox(new Set()); }}
                         className={`flex-1 text-[11px] font-bold py-1.5 rounded-lg transition-all ${inboxSubTab === "desktop" ? isDark ? "bg-white/[0.08] text-white" : "bg-white text-slate-800 shadow-sm" : isDark ? "text-zinc-600" : "text-slate-400"}`}>
                         الديسك توب
-                        {inboxDesktop.filter(i => !addedInbox.has(i.id)).length > 0 && (
-                          <span className="ms-1 text-[9px] font-black text-purple-500">{inboxDesktop.filter(i => !addedInbox.has(i.id)).length}</span>
-                        )}
+                        {/* Withheld rather than zeroed when the desktop read failed. */}
+                        {desktopUnadded === null
+                          ? inboxLoading
+                            ? null
+                            : <span className="ms-1 text-[9px] font-black text-amber-500">؟</span>
+                          : desktopUnadded > 0 && (
+                            <span className="ms-1 text-[9px] font-black text-purple-500">{desktopUnadded}</span>
+                          )}
                       </button>
                       <button onClick={() => { setInboxSubTab("session"); setSelectedInbox(new Set()); }}
                         className={`flex-1 text-[11px] font-bold py-1.5 rounded-lg transition-all ${inboxSubTab === "session" ? isDark ? "bg-white/[0.08] text-white" : "bg-white text-slate-800 shadow-sm" : isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                        الجلسات ({inboxSessions.length})
+                        {/* «الجلسات (٠)» over a failed read is a statement that
+                            this lawyer has no research sessions. «—» is not. */}
+                        الجلسات ({sessionsView === "ready" || sessionsView === "empty" ? inboxSessions.length : "—"})
                       </button>
                     </div>
 
-                    {/* Session picker */}
-                    {inboxSubTab === "session" && inboxSessions.length > 0 && (
+                    {/* Session picker — its three states. It used to render only
+                        on `inboxSessions.length > 0`, so an unreadable session
+                        list simply vanished and the sub-tab looked like an
+                        account that had never opened a session. */}
+                    {inboxSubTab === "session" && sessionsView === "unreadable" && (
+                      <div className={`flex items-start gap-2 rounded-xl border p-2.5 ${isDark ? "border-amber-500/25 bg-amber-500/5" : "border-amber-200 bg-amber-50"}`}>
+                        <Warning size={13} weight="fill" className="text-amber-500 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className={`text-[11px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}>تعذّرت قراءة الجلسات</p>
+                          <p className={`text-[10px] mt-0.5 ${isDark ? "text-amber-200/70" : "text-amber-700"}`}>
+                            قد تكون لديك جلسات لم تُقرأ — هذه ليست قائمة فارغة.
+                          </p>
+                        </div>
+                        <button onClick={() => setInboxReloadKey(k => k + 1)}
+                          className={`flex items-center gap-1 text-[10px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+                          <ArrowClockwise size={11} /> إعادة المحاولة
+                        </button>
+                      </div>
+                    )}
+                    {inboxSubTab === "session" && sessionsView === "ready" && (
                       <div className="flex flex-wrap gap-1.5">
                         {inboxSessions.map(s => (
                           <button key={s.id}
@@ -296,14 +415,38 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
                       </div>
                     )}
 
-                    {currentInboxItems.length === 0 ? (
+                    {/* FOUR outcomes, not two. «لا توجد عناصر هنا» is now said
+                        only for a read that came back empty; a read that never
+                        answered says so, and a session sub-tab with nothing
+                        picked has made no read at all. */}
+                    {noSessionPicked ? (
                       <div className={`flex flex-col items-center gap-2 py-6 text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                         <Tray size={28} weight="duotone" className="opacity-30" />
                         <p className="text-[11px] font-semibold">
-                          {inboxSubTab === "session" && !activeInboxSession
-                            ? "اختر جلسة لعرض عناصرها"
-                            : "لا توجد عناصر هنا"}
+                          {sessionsView === "unreadable" ? "تعذّرت قراءة الجلسات" : "اختر جلسة لعرض عناصرها"}
                         </p>
+                      </div>
+                    ) : currentView === "loading" ? (
+                      <div className={`flex flex-col items-center gap-2 py-6 text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                        <ArrowClockwise size={22} className="animate-spin opacity-40" />
+                        <p className="text-[11px] font-semibold">جارٍ قراءة العناصر…</p>
+                      </div>
+                    ) : currentView === "unreadable" ? (
+                      <div className="flex flex-col items-center gap-2 py-6 text-center">
+                        <Warning size={26} weight="duotone" className="text-amber-500" />
+                        <p className={`text-[11px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}>تعذّرت قراءة العناصر</p>
+                        <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                          هذه ليست قائمة فارغة — قد تكون هناك عناصر لم تُقرأ.
+                        </p>
+                        <button onClick={() => setInboxReloadKey(k => k + 1)}
+                          className={`flex items-center gap-1 text-[10px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+                          <ArrowClockwise size={11} /> إعادة المحاولة
+                        </button>
+                      </div>
+                    ) : currentView === "empty" ? (
+                      <div className={`flex flex-col items-center gap-2 py-6 text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                        <Tray size={28} weight="duotone" className="opacity-30" />
+                        <p className="text-[11px] font-semibold">لا توجد عناصر هنا</p>
                       </div>
                     ) : (
                       <>

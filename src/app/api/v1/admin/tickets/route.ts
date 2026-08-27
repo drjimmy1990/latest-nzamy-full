@@ -8,9 +8,11 @@ import { requireAdmin } from "@/lib/access-control";
  * Query params:
  *   - status (optional filter: open | pending | resolved | closed)
  *
- * Resilient: on any error returns { data: [] } (200) so the admin page can
- * fall back to its mock data gracefully. The support_tickets table may not yet
- * be applied on the remote DB.
+ * FAILURE IS A 500, NOT AN EMPTY LIST. A support queue that answers a broken
+ * read with «لا توجد تذاكر» tells the admin there is nothing waiting on them —
+ * the worst possible false statement for this particular screen. The page
+ * (src/app/dashboard/admin/tickets/page.tsx:152) already throws on `!res.ok`,
+ * so nothing depends on the 200.
  */
 export async function GET(request: NextRequest) {
   const gate = await requireAdmin();
@@ -36,13 +38,13 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("[admin/tickets GET] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ data: [] });
+      return NextResponse.json({ error: "تعذّر تحميل تذاكر الدعم." }, { status: 500 });
     }
 
     return NextResponse.json({ data: data ?? [] });
   } catch (err) {
     console.error("[admin/tickets GET] Unexpected error:", err);
-    return NextResponse.json({ data: [] });
+    return NextResponse.json({ error: "تعذّر تحميل تذاكر الدعم." }, { status: 500 });
   }
 }
 

@@ -106,13 +106,21 @@ export default function DocumentsPage() {
    * appeared nowhere in the JSX, so even the first paint (before the fetch
    * resolved) already asserted an empty store.
    *
-   * HONEST LIMIT OF THIS FIX: getDocuments() throws on a non-2xx and on the
-   * 15-second timeout, and those now land on the COULD-NOT-READ panel. It does
-   * NOT throw when the query itself errors, because GET /api/v1/documents
-   * answers a Supabase error with HTTP 200 and `{ data: [] }` and carries no
-   * `degraded` marker to read (unlike /api/v1/service-requests, which does).
-   * That one case is still indistinguishable from an empty store from here;
-   * closing it needs a change in the route, which is not this file.
+   * THE GAP THIS COMMENT USED TO DECLARE IS NOW CLOSED. It said the fix could
+   * not reach a failed QUERY, because GET /api/v1/documents answered a Supabase
+   * error with HTTP 200 and `{ data: [] }` and carried no `degraded` marker —
+   * so a broken query was still indistinguishable from an empty store here, and
+   * closing it needed a change in the route rather than in this file.
+   *
+   * That route change has landed: src/app/api/v1/documents/route.ts:39-41 now
+   * logs the Supabase error and returns 500 `{ error: "تعذّر تحميل مستنداتك." }`.
+   * getDocuments() goes through apiGet, which throws on any non-2xx, so a failed
+   * query now reaches the catch below exactly like a 401 or a dropped
+   * connection, and lands on the COULD-NOT-READ panel with the rest.
+   *
+   * All three failure kinds — non-2xx, the 15-second timeout, and a query that
+   * errored server-side — are now one state on this screen, and none of them
+   * can be drawn as «لم ترفع أي مستند بعد».
    */
   const loadDocs = useCallback(async () => {
     // Does not flip to "loading" itself — the initial state already is, and

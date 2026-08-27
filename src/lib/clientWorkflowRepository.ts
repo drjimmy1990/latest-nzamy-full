@@ -1,5 +1,6 @@
 "use client";
 
+import { listOk, listFailed, type ListRead } from "@/lib/services/listRead";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 
 type WorkflowRequestInput = Omit<WorkflowRequest, "createdAt" | "auditTrail"> & {
@@ -182,9 +183,11 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 /**
  * What a list fetch actually knows, as opposed to what it returns.
  *
- * `listWorkflowRequests` throws all of this away and hands back a bare array,
- * which is why a failed load and a genuinely empty list have been
- * indistinguishable on every page that calls it.
+ * `listWorkflowRequests` used to throw all of this away and hand back a bare
+ * array, which is why a failed load and a genuinely empty list were
+ * indistinguishable on every page that called it. It now maps this onto a
+ * `ListRead`; this type stays as the internal shape because
+ * `listClientWorkflowRequestsPage` needs `total` separately from the rows.
  */
 type WorkflowFetchResult = {
   /** Rows as the server returned them — before any client-side requester filtering. */
@@ -196,10 +199,11 @@ type WorkflowFetchResult = {
    */
   total: number | null;
   /**
-   * True when the rows are a failure standing in for data: either the route
-   * answered `200 { degraded: true }` (its Supabase-error shape) or the fetch
-   * itself failed and we fell back to localStorage. Callers that care can say
-   * so instead of rendering "no requests yet" over a broken query.
+   * True when this read got no answer: either the route replied
+   * `200 { degraded: true }` (its Supabase-error shape) or the fetch itself
+   * failed. `requests` is then EMPTY — it used to be a localStorage fallback,
+   * i.e. stale browser rows standing in for the server's, which is the thing
+   * this flag exists to prevent anyone rendering as data.
    */
   degraded: boolean;
 };
@@ -207,11 +211,15 @@ type WorkflowFetchResult = {
 async function fetchWorkflowRequests(
   options: WorkflowListOptions & { limit?: number } = {},
 ): Promise<WorkflowFetchResult> {
-  const localRequests = readWorkflowRequestsLocal()
-    .filter((request) => !options.receiver || request.receiver === options.receiver)
-    .filter((request) => !options.requesterUserId || requesterUserIdOf(request) === options.requesterUserId);
-
-  if (!BACKEND_ENABLED) return { requests: localRequests, total: null, degraded: false };
+  // Demo mode only. localStorage IS the backend there, so this is a real read
+  // and `degraded: false` is the truth. It used to be computed unconditionally
+  // and then re-used as the failure fallback below — see the catch.
+  if (!BACKEND_ENABLED) {
+    const localRequests = readWorkflowRequestsLocal()
+      .filter((request) => !options.receiver || request.receiver === options.receiver)
+      .filter((request) => !options.requesterUserId || requesterUserIdOf(request) === options.requesterUserId);
+    return { requests: localRequests, total: null, degraded: false };
+  }
   try {
     // Repointed to the authed, RLS-scoped /api/v1/service-requests endpoint. The
     // old /api/client-workflow path used the service-role key with a
@@ -240,22 +248,44 @@ async function fetchWorkflowRequests(
       degraded: false,
     };
   } catch {
-    return { requests: localRequests, total: null, degraded: true };
+    // NO local rows here. In supabase mode this browser's localStorage is not a
+    // cache of the server — it holds whatever this machine last wrote, possibly
+    // under a different account, and handing those back dressed as the server's
+    // answer is the same defect workflowService.ts was fixed for. An empty list
+    // carrying `degraded: true` says "we could not read", which the caller can
+    // render; stale rows say "here is your data", which it cannot.
+    return { requests: [], total: null, degraded: true };
   }
 }
 
-export async function listWorkflowRequests(options: WorkflowListOptions = {}): Promise<WorkflowRequest[]> {
-  return (await fetchWorkflowRequests({ ...options, limit: CLIENT_REQUESTS_FETCH_LIMIT })).requests;
+/**
+ * Every request matching `options`, as a `ListRead`.
+ *
+ * This used to hand back `result.requests` and throw `degraded` away, so a
+ * failed fetch and a client with no requests were the same bare `[]` at every
+ * call site. `listClientWorkflowRequestsPage` below is the richer form and is
+ * unchanged — it already reports `degraded`, `total` and `limit`, which is more
+ * than `ListRead` carries, and the two pages built on it read those fields.
+ */
+export async function listWorkflowRequests(
+  options: WorkflowListOptions = {},
+): Promise<ListRead<WorkflowRequest>> {
+  const result = await fetchWorkflowRequests({ ...options, limit: CLIENT_REQUESTS_FETCH_LIMIT });
+  if (result.degraded) return listFailed<WorkflowRequest>();
+  return listOk(result.requests, result.total);
 }
 
 /**
  * Only requests belonging to this client, plus the two facts a list page needs
  * to be honest about what it is showing.
  *
- * `listClientWorkflowRequests` is the thin array-returning wrapper the other
- * client pages already use; this is the same query with `total`/`degraded`
+ * `listClientWorkflowRequests` is the thin `ListRead` wrapper the other client
+ * pages already use; this is the same query with `total`/`fetched`/`limit`
  * kept, so «طلباتي» can state a cap instead of truncating in silence and can
  * say a load failed instead of claiming the client has no requests.
+ *
+ * Kept in this shape rather than folded into `ListRead`: it carries three facts
+ * the union has no room for, and its two callers already read them.
  */
 export type ClientWorkflowRequestsPage = {
   requests: WorkflowRequest[];
@@ -314,13 +344,27 @@ export async function listClientWorkflowRequestsPage(
   };
 }
 
-export async function listClientWorkflowRequests(options: Pick<WorkflowListOptions, "requesterUserId"> = {}): Promise<WorkflowRequest[]> {
-  return (await listClientWorkflowRequestsPage(options)).requests;
+/**
+ * The array-shaped wrapper over `listClientWorkflowRequestsPage`, now a
+ * `ListRead`. `total` is deliberately NOT forwarded from the page result: that
+ * number counts rows the SERVER matched, before the requester filter above
+ * removed the ones that are not this client's, so passing it would make
+ * `listOk` compute `truncated: true` — and print «يُعرض أحدث ٣ من ٩» — purely
+ * because six of the nine belonged to somebody else. A caller that needs the
+ * real cap should use `listClientWorkflowRequestsPage`, which reports `fetched`
+ * and `limit` alongside it.
+ */
+export async function listClientWorkflowRequests(
+  options: Pick<WorkflowListOptions, "requesterUserId"> = {},
+): Promise<ListRead<WorkflowRequest>> {
+  const page = await listClientWorkflowRequestsPage(options);
+  if (page.degraded) return listFailed<WorkflowRequest>();
+  return listOk(page.requests);
 }
 
 export async function listWorkflowRequestsByReceiver(
   receiver: WorkflowRequest["receiver"],
-): Promise<WorkflowRequest[]> {
+): Promise<ListRead<WorkflowRequest>> {
   return listWorkflowRequests({ receiver });
 }
 

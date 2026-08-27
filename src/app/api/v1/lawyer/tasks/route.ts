@@ -47,6 +47,24 @@ const VALID_DB_STATUSES = new Set([
  *     plain `.eq()` on `metadata->>caseId` — same pattern as the admin
  *     service-orders route — so every other consumer of this GET (the Kanban
  *     at /dashboard/lawyer/tasks calls it with no params) is untouched.
+ *
+ * ── TWO THINGS CALLERS MUST KNOW ───────────────────────────────────────────
+ *
+ * 1. SILENT CAP, STILL UNFIXED. The `.limit(50)` below returns the 50 newest
+ *    matching requests and the response says nothing about how many there
+ *    were, so a lawyer with 60 open items sees a board that looks complete.
+ *    The fix is `{ count: "exact" }` plus a `total` in the body — but the body
+ *    is a bare array with nowhere to put one, and changing it to
+ *    `{ data, total }` breaks three call sites in the same breath
+ *    (src/app/dashboard/lawyer/tasks/page.tsx:91,
+ *    src/lib/services/lawyerTasksService.ts:96,
+ *    src/app/dashboard/lawyer/cases/[id]/page.tsx:367 — each does `.map` on
+ *    the response). Route and callers must change together, in one commit.
+ *
+ * 2. BARE ARRAY — DO NOT USE listFromApi(). Same trap as
+ *    /api/v1/lawyer/clients: no `data` key means listFromApi() reports a
+ *    lawyer with genuinely zero tasks as an unreadable board. Map on the
+ *    status: `res.ok ? listOk(await res.json()) : listFailed()`.
  */
 export async function GET(request: NextRequest) {
   try {

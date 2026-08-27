@@ -5,14 +5,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Clock, Robot, Gavel, CheckCircle, FileText, Receipt,
   User, Scales, ChatCircle, ArrowSquareOut, MagnifyingGlass,
-  CalendarBlank, Download, Warning, Archive, X,
+  CalendarBlank, Warning, Archive, X,
   FunnelSimple, CaretDown, ClipboardText, Package, XCircle, Bell,
-  ArrowClockwise,
+  ArrowClockwise, CircleNotch,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import HijriDateWidget from "@/components/HijriDateWidget";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
+import { listFailed, listOk, listViewState } from "@/lib/services/listRead";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 // The first eight are the demo vocabulary; the last four are what real
@@ -282,10 +283,23 @@ export default function ActivityLogPage() {
   // makes the four cards mean something. Null index = cards stay inert.
   const [cardFilter, setCardFilter] = useState<StatKey | null>(null);
   const [orderIndex, setOrderIndex] = useState<OrderIndex | null>(null);
-  // Set when the feed could not be read. Not inventing history was already
-  // right; asserting there is none is a different claim, and «لا يوجد نشاط
-  // مسجَّل بعد» is a positive statement about this lawyer's account.
-  const [feedError, setFeedError] = useState(false);
+  /**
+   * THREE states, not two. This used to be a single `feedError` boolean, which
+   * left «has not been read yet» and «was read and is empty» sharing one
+   * rendering — and the empty one won, because `activities` starts `[]` and
+   * `feedError` starts `false`. So the FIRST PAINT of this page, before the
+   * fetch had even been issued, told every lawyer «لا يوجد نشاط مسجَّل بعد».
+   * That is the same false statement as the failure case, just briefer: a
+   * positive claim about the account, made with no answer from the server.
+   *
+   * Demo mode starts "ready" on purpose: it never calls the API at all and
+   * MOCK_ACTIVITIES is already in state, so there is nothing to wait for.
+   * `isSupabaseMode` is a module-level constant, so this branch is resolved at
+   * build time. Same shape as dashboard/lawyer/tasks/page.tsx.
+   */
+  const [feedState, setFeedState] = useState<"loading" | "error" | "ready">(
+    isSupabaseMode ? "loading" : "ready",
+  );
 
   // Fetch the real feed; in supabase mode an empty result stays empty. Demo
   // mode never calls the API at all, so MOCK_ACTIVITIES stands untouched.
@@ -297,18 +311,18 @@ export default function ActivityLogPage() {
       // so they are still shown; only the FEED is marked unreadable.
       setStats(res.stats);
       if (res.degraded) {
-        setFeedError(true);
+        setFeedState("error");
         setCursor(null);
         return;
       }
       setActivities((res.items ?? []).map(toActivity));
       setCursor(res.nextCursor);
-      setFeedError(false);
+      setFeedState("ready");
     } catch (err) {
       // Still no invented history — but now the page says the read failed
       // instead of telling the lawyer they have none.
       console.error("[activity] failed to load the feed:", err);
-      setFeedError(true);
+      setFeedState("error");
     }
   }, []);
 
@@ -414,6 +428,29 @@ export default function ActivityLogPage() {
     return order.filter(k=>groups[k]).map(k=>[k,groups[k]] as [string,Activity[]]);
   },[filtered]);
 
+  /**
+   * Which of the four states the timeline is in, decided by the shared helper
+   * rather than by the order of the `&&` guards in the JSX below.
+   *
+   * WHY THE HELPER AND NOT A LOCAL TERNARY: `listViewState` is the one place in
+   * the app that fixes the precedence — loading beats unreadable beats empty —
+   * so the same read cannot be drawn as "empty" here and as "loading" on the
+   * next screen. Getting that order wrong by hand is precisely what produced
+   * the first-paint «لا يوجد نشاط مسجَّل بعد» this page used to show.
+   *
+   * WHY THE `ListRead` IS BUILT AT RENDER RATHER THAN HELD IN STATE: this feed
+   * is cursor-paginated and `loadMore` APPENDS to `activities`, and the route
+   * returns no count at all — so `total` is permanently null, `truncated`
+   * permanently false, and `truncationNoticeAr` permanently null. Holding a
+   * ListRead in state would carry two fields that can never say anything here
+   * while making every append rebuild the envelope. The value of the contract
+   * on this page is the state machine, and that is what is used.
+   */
+  const feedView = listViewState(
+    feedState === "loading",
+    feedState === "error" ? listFailed<Activity>() : listOk(activities),
+  );
+
   // Only offer a chip for a type the feed actually contains — the vocabulary
   // now spans both the demo set and the live one, and listing all twelve would
   // hand the user ten filters that can only ever return nothing.
@@ -492,11 +529,13 @@ export default function ActivityLogPage() {
             تتبع كافة أنشطتك — جلسات، مهام، استشارات AI، عقود، وموكلين
           </p>
         </div>
+        {/* A «تصدير PDF» button stood here with no onClick and no handler
+            anywhere — no export route, no PDF generator, nothing bound to it.
+            It was a promise the platform cannot keep, on a page whose whole
+            subject is an accurate record, so it is removed rather than wired
+            to a stub. */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <HijriDateWidget/>
-          <button className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold border transition-colors ${isDark?"border-white/[0.06] text-zinc-400 hover:text-zinc-200":"border-slate-200 text-slate-500 hover:text-slate-700"}`}>
-            <Download size={13}/>تصدير PDF
-          </button>
         </div>
       </div>
 
@@ -642,14 +681,21 @@ export default function ActivityLogPage() {
 
       {/* Timeline */}
       <div className="space-y-6">
-        {/* Two different nothings: a feed with no rows at all, and a feed whose
-            rows the current filters excluded. The second one is recoverable
-            and says so. */}
-        {/* A read that FAILED is its own state. It used to land on «لا يوجد نشاط
-            مسجَّل بعد» — the same sentence as a genuinely empty history — so a
-            lawyer offline, with an expired session, or refused by RLS was told
-            their account had no history at all. */}
-        {feedError&&(
+        {/* FOUR renderings, one per state of `feedView`, and no two of them can
+            overlap because they all read the same value.
+
+            «لا يوجد نشاط مسجَّل بعد» is a positive claim about this lawyer's
+            account, and it used to be printed for three completely different
+            facts: a read that failed, a read that had not happened yet, and a
+            genuinely empty history. A fourth nothing — a feed whose rows the
+            current filters excluded — is recoverable and says so. */}
+        {feedView==="loading"&&(
+          <div className={`${card} p-12 text-center`}>
+            <CircleNotch size={28} weight="bold" className={`mx-auto mb-3 animate-spin ${isDark?"text-zinc-700":"text-slate-300"}`}/>
+            <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>جارٍ تحميل سجل نشاطك…</p>
+          </div>
+        )}
+        {feedView==="unreadable"&&(
           <div className={`${card} p-8 text-center`}>
             <Warning size={32} weight="fill" className="mx-auto mb-3 text-red-500"/>
             <p className={`text-sm font-semibold ${isDark?"text-red-400":"text-red-700"}`}>تعذّر قراءة سجل النشاط</p>
@@ -657,32 +703,32 @@ export default function ActivityLogPage() {
               هذه ليست قائمة فارغة — لم نتمكّن من قراءة سجلك، وقد تكون هناك حركة لا تظهر هنا الآن.
               {stats!==null&&" الأرقام في البطاقات أعلاه صحيحة ومقروءة من الخادم."}
             </p>
-            <button onClick={()=>{ setFeedError(false); void loadFeed(); }}
+            {/* Back to "loading" first, so the retry shows the spinner rather
+                than leaving the failure panel up while the refetch runs. */}
+            <button onClick={()=>{ setFeedState("loading"); void loadFeed(); }}
               className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11px] font-bold bg-red-500 text-white hover:bg-red-600 transition">
               <ArrowClockwise size={12} weight="bold"/>إعادة المحاولة
             </button>
           </div>
         )}
-        {!feedError&&grouped.length===0&&(
+        {feedView==="empty"&&(
           <div className={`${card} p-12 text-center`}>
             <Archive size={36} weight="duotone" className={`mx-auto mb-3 ${isDark?"text-zinc-700":"text-slate-300"}`}/>
-            {activities.length===0?(
-              <>
-                <p className={`text-sm font-semibold ${isDark?"text-zinc-400":"text-slate-500"}`}>لا يوجد نشاط مسجَّل بعد</p>
-                <p className={`text-[12px] mt-1 ${isDark?"text-zinc-600":"text-slate-400"}`}>ستظهر هنا حركة طلباتك ومواعيدك فور بدء العمل عليها.</p>
-              </>
-            ):(
-              <>
-                <p className={`text-sm font-semibold ${isDark?"text-zinc-400":"text-slate-500"}`}>لا توجد أنشطة مطابقة للفلتر</p>
-                <p className={`text-[12px] mt-1 ${isDark?"text-zinc-600":"text-slate-400"}`}>
-                  السجل يحتوي على {arNum(activities.length)} نشاطًا، لكن لا شيء منها يطابق الفلاتر الحالية.
-                </p>
-                <button onClick={clearAllFilters}
-                  className={`mt-4 px-4 py-2 rounded-xl text-[11px] font-bold border transition-colors ${isDark?"border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10":"border-amber-300 text-amber-700 hover:bg-amber-50"}`}>
-                  مسح كل الفلاتر
-                </button>
-              </>
-            )}
+            <p className={`text-sm font-semibold ${isDark?"text-zinc-400":"text-slate-500"}`}>لا يوجد نشاط مسجَّل بعد</p>
+            <p className={`text-[12px] mt-1 ${isDark?"text-zinc-600":"text-slate-400"}`}>ستظهر هنا حركة طلباتك ومواعيدك فور بدء العمل عليها.</p>
+          </div>
+        )}
+        {feedView==="ready"&&grouped.length===0&&(
+          <div className={`${card} p-12 text-center`}>
+            <Archive size={36} weight="duotone" className={`mx-auto mb-3 ${isDark?"text-zinc-700":"text-slate-300"}`}/>
+            <p className={`text-sm font-semibold ${isDark?"text-zinc-400":"text-slate-500"}`}>لا توجد أنشطة مطابقة للفلتر</p>
+            <p className={`text-[12px] mt-1 ${isDark?"text-zinc-600":"text-slate-400"}`}>
+              السجل يحتوي على {arNum(activities.length)} نشاطًا، لكن لا شيء منها يطابق الفلاتر الحالية.
+            </p>
+            <button onClick={clearAllFilters}
+              className={`mt-4 px-4 py-2 rounded-xl text-[11px] font-bold border transition-colors ${isDark?"border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10":"border-amber-300 text-amber-700 hover:bg-amber-50"}`}>
+              مسح كل الفلاتر
+            </button>
           </div>
         )}
         {grouped.map(([dayKey,activities])=>(
