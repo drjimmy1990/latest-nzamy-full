@@ -6,6 +6,7 @@ import {
   buildLeadRow,
   isHoneypotTripped,
   leadReference,
+  resolveLeadSourcePath,
   validateBusinessLead,
 } from "./lead";
 
@@ -153,7 +154,16 @@ export async function POST(request: NextRequest) {
     const row = buildLeadRow(check.value, {
       id,
       requesterUserId,
-      sourcePath: "/services/business",
+      // The page the visitor actually filed from, resolved against an
+      // allowlist — this endpoint is unauthenticated, so a raw string from the
+      // body must not reach a stored provenance column. An unrecognised value
+      // silently becomes the default rather than failing the lead.
+      // `body` is `unknown` here on purpose — nothing on this route trusts its
+      // shape — so the read is narrowed at the call site rather than by casting
+      // the whole object into a type it has not been proved to have.
+      sourcePath: resolveLeadSourcePath(
+        (body as { sourcePath?: unknown } | null)?.sourcePath,
+      ),
     });
 
     const admin = await createServiceClient();

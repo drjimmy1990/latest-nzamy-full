@@ -50,6 +50,15 @@ export const LEGAL_NEEDS = [
   { id: "construction", labelAr: "عقود مقاولات وإنشاء" },
   { id: "ip", labelAr: "ملكية فكرية وعلامات تجارية" },
   { id: "real_estate", labelAr: "نزاعات العقارات والإيجارات" },
+  // Added 2026-08-27. /services/corporate/health-check sells «الفحص القانوني
+  // ٣٦٠°» and its call-to-action opens THIS modal — but the needs picker is a
+  // required gate (the step-2 button is disabled until something is chosen) and
+  // there was no option that meant "the audit I just read about". The page's own
+  // instruction was to type it into the optional notes field, which is on the
+  // next step and which the modal's own backdrop covers the instruction with.
+  // So the one thing the visitor came to ask for depended on an optional field
+  // and an instruction they could no longer see.
+  { id: "legal_audit", labelAr: "فحص قانوني شامل للمنشأة" },
 ] as const;
 
 export type LegalNeedId = (typeof LEGAL_NEEDS)[number]["id"];
@@ -92,6 +101,38 @@ export type BusinessLead = {
   contactPhone: string;
   notes: string;
 };
+
+/**
+ * The public pages allowed to file a lead, and therefore the only values that
+ * may reach `service_requests.source_path` from this endpoint.
+ *
+ * An ALLOWLIST rather than a passthrough, because this route is
+ * UNAUTHENTICATED: anybody on the internet can POST to it, and `source_path` is
+ * a stored column that an admin reads to know where an order came from.
+ * Accepting whatever string arrived would let a stranger write
+ * «/dashboard/admin» — or a sentence — into the provenance of a real lead.
+ *
+ * Anything unrecognised resolves to the default. It does NOT reject: a lead
+ * from a real prospective client must never be lost over a value that only
+ * affects reporting.
+ */
+export const LEAD_SOURCE_PATHS = [
+  "/services/business",
+  "/services/corporate/health-check",
+] as const;
+
+export type LeadSourcePath = (typeof LEAD_SOURCE_PATHS)[number];
+
+export const DEFAULT_LEAD_SOURCE_PATH: LeadSourcePath = "/services/business";
+
+/** The allowed source path `value` names, or the default for anything else. */
+export function resolveLeadSourcePath(value: unknown): LeadSourcePath {
+  if (typeof value !== "string") return DEFAULT_LEAD_SOURCE_PATH;
+  const trimmed = value.trim();
+  return (LEAD_SOURCE_PATHS as readonly string[]).includes(trimmed)
+    ? (trimmed as LeadSourcePath)
+    : DEFAULT_LEAD_SOURCE_PATH;
+}
 
 export type LeadValidation =
   | { ok: true; value: BusinessLead }
@@ -279,7 +320,11 @@ export function buildLeadRow(
       source: "public_lead",
     },
     payment: { amount: 0, status: "not_required" },
-    source_path: opts.sourcePath ?? "/services/business",
+    // Never the caller's raw string — resolveLeadSourcePath() in this file is
+    // the gate, and route.ts is where it runs. Before 2026-08-27 this was the
+    // hardcoded literal below, so every lead filed from the 360° health-check
+    // page recorded that the visitor came from /services/business.
+    source_path: opts.sourcePath ?? DEFAULT_LEAD_SOURCE_PATH,
     metadata: {
       service: "business_assessment",
       // «طلباتي» and the order detail page both print

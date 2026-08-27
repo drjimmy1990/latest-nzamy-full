@@ -123,10 +123,17 @@ export function StepConfirm({
                 </li>
               )}
             </ul>
+            {/* «أو أرفقها من صفحة الطلب» stood here and named a control that
+                does not exist: neither /ai/orders nor /ai/orders/[id] has an
+                attach input — the only attachments on that screen are the
+                deliverables the team uploads. Sending a client to look for a
+                button we never built is the same defect as the failed upload
+                it was apologising for, so this now says the one thing that is
+                actually true: the team asks for the files when it calls. */}
             <p className="mt-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
               {isAr
-                ? "الطلب نفسه وصل. أرسل الملفات للفريق عند تواصله معك، أو أرفقها من صفحة الطلب."
-                : "The request itself arrived. Send the files when the team contacts you, or attach them from the request page."}
+                ? "الطلب نفسه وصل، ويراجعه الفريق بما وصله من بيانات. احتفظ بالملفات معك وأرسلها للفريق عند تواصله معك."
+                : "The request itself arrived and the team reviews it with what it has. Keep the files to hand and send them when the team contacts you."}
             </p>
           </div>
         )}

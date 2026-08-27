@@ -36,9 +36,25 @@ import type { SidebarGroup } from "./navigation.types";
 // Kept because each one resolves to something that is really there today:
 // the overview shell, the blog, notifications and settings.
 //
-// NOT re-added yet, and each is somebody else's file — see the cluster report:
-//   «طلب خدمة جديدة» / «متابعة الطلبات»  — the real intake lives under /dashboard/client/*,
-//        which src/proxy.ts:16 refuses to a corporate account.
+// RE-ADDED 2026-08-27 — «اطلب خدمة جديدة» / «طلباتي» / «استشاراتي».
+// These three point at /dashboard/client/*, and that is not an oversight: the
+// owner ruled (س٢, 26 August) that «الشركة تستخدم نفس النموذج ذي الثلاث خطوات»
+// — a company files through the SAME three-step form, not a second one built
+// beside it. The reason they were withheld was that ROUTE_ACCESS refused a
+// corporate account that prefix; src/lib/auth/routeAccess.ts now lists the
+// three intake subtrees for `individual` AND `corporate`, and nothing else
+// under /dashboard/client moved.
+//
+// A corporate account keeps THIS sidebar on those pages — SharedSidebar picks
+// by profiles.user_type, not by pathname (navigation.sidebars.ts:420) — so a
+// company ordering a service never sees an individual's menu.
+//
+// labelEn "My Orders", deliberately NOT "My Requests": CORP_ROLE_ALLOWED_ITEMS
+// (navigation.sidebars.ts) filters by labelEn, and "My Requests" is already
+// spent on «طلباتي في السوق», the marketplace section. Reusing it would hand
+// four roles a link the ruling withheld from them.
+//
+// NOT re-added, and still somebody else's file — see the cluster report:
 //   «باقتنا والاشتراك»          — no destination that is not fabricated.
 //
 // «خزنة وثائق الشركة» came BACK on 26 August (owner item ٨): the reason it was
@@ -52,6 +68,14 @@ export const CORPORATE_SIDEBAR: SidebarGroup[] = [
       { label: "نظرة عامة", labelEn: "Overview", href: "/dashboard/business", icon: "SquaresFour" },
       // Owner item ٨ — «ارفع وثائق المنشأة مرة واحدة وأرفقها بنقرة».
       { label: "خزنة وثائق المنشأة", labelEn: "Company Documents", href: "/dashboard/business/documents", icon: "FolderOpen" },
+    ],
+  },
+  {
+    title: "الخدمات القانونية", titleEn: "Legal Services",
+    items: [
+      { label: "اطلب خدمة جديدة", labelEn: "Request a Service", href: "/dashboard/client/services",     icon: "Plus", badge: "ابدأ هنا" },
+      { label: "طلباتي",          labelEn: "My Orders",         href: "/dashboard/client/requests",     icon: "ListChecks" },
+      { label: "استشاراتي",       labelEn: "Consultations",     href: "/dashboard/client/consultation", icon: "ChatDots" },
     ],
   },
   {
@@ -313,4 +337,38 @@ export function isVisibleBusinessRoute(
     if (allowed === BUSINESS_ROOT) return path === BUSINESS_ROOT;
     return path === allowed || path.startsWith(`${allowed}/`);
   });
+}
+
+/**
+ * True when `pathname` is a /dashboard/business section the 26 August ruling
+ * hid — and ONLY then.
+ *
+ * This is the predicate BusinessDashboardLayout must ask, and asking the one
+ * above instead was a real, shipped defect. That layout is not mounted only
+ * over the /dashboard/business subtree: src/app/ai/layout.tsx wraps EVERY
+ * /ai/* page in it for any account whose user_type is `corporate`, so it is
+ * the chrome for /ai/orders/[id] too. `isVisibleBusinessRoute("/ai/orders/x")`
+ * is false — correctly, because that is not a visible business route; it is
+ * not a business route at all — and the layout read that `false` as "this is a
+ * hidden section" and painted «هذا القسم قيد الإعداد … ما كان يظهر فيه لم يكن
+ * يخصّك» over it.
+ *
+ * The cost of that, once a corporate account could order (2026-08-27): a
+ * company filed a request, saw it listed, clicked it, and was told the section
+ * was not ready and the data was not its own — about its own order. The whole
+ * ordering path terminated in that notice.
+ *
+ * "Outside /dashboard/business" and "inside it but hidden" are two different
+ * answers and only the second is this guard's business. Anything else is
+ * somebody else's route with its own rules — src/lib/auth/routeAccess.ts at
+ * the edge, and each page's own guard in the browser.
+ */
+export function isHiddenBusinessSection(
+  pathname: string,
+  visibleRoutes: readonly string[] = VISIBLE_BUSINESS_ROUTES,
+): boolean {
+  const path = normalisePath(pathname);
+  const insideBusiness = path === BUSINESS_ROOT || path.startsWith(`${BUSINESS_ROOT}/`);
+  if (!insideBusiness) return false;
+  return !isVisibleBusinessRoute(path, visibleRoutes);
 }

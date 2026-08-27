@@ -251,10 +251,26 @@ export default function RegisterClientPage() {
                           setAuthError(null);
                           try {
                             const supabase = createClient();
+                            // `phone` is inside options.data, NOT a top-level
+                            // signUp argument. SignUpWithPasswordCredentials is a
+                            // UNION — { email, password } OR { phone, password } —
+                            // and supabase-js branches on `email` first, so the
+                            // number passed beside an email was dropped in the
+                            // browser and never reached the server at all. That is
+                            // why profiles.phone is empty for every account created
+                            // through this form, which in turn is why the WhatsApp
+                            // dispatch has no recipient (src/lib/n8n/payload.ts) and
+                            // why the onboarding gate sends people back to re-type a
+                            // number they already gave (src/lib/auth/onboardingGate.ts).
+                            // handle_new_user() reads it from metadata — see
+                            // supabase/migrations/20260827_signup_contact_fields.sql,
+                            // WITHOUT WHICH THIS KEY IS STILL IGNORED.
+                            const phoneE164 = formData.phone
+                              ? `+${formData.countryCode || "966"}${formData.phone.replace(/\D/g, "")}`
+                              : null;
                             const { error } = await supabase.auth.signUp({
                               email: formData.email,
                               password: formData.password,
-                              phone: formData.phone ? `+${formData.countryCode || "966"}${formData.phone}` : undefined,
                               options: {
                                 data: {
                                   user_type: userType,
@@ -262,16 +278,34 @@ export default function RegisterClientPage() {
                                   full_name: displayName,
                                   tier: "free",
                                   sub_role: null,
+                                  phone: phoneE164,
                                   country_code: formData.country || "SA",
                                   city: formData.city || null,
                                   credit_balance: 0,
                                   credits_max: 0,
                                   display_mode: "full",
                                   onboarding_completed: true,
-                                  // Type-specific metadata
-                                  ...(clientType === "individual" && {
-                                    id_number: formData.idNumber,
-                                  }),
+                                  // Type-specific metadata.
+                                  //
+                                  // The individual branch used to send
+                                  // `id_number: formData.idNumber` — رقم الهوية /
+                                  // الإقامة, collected on every individual signup.
+                                  // NOTHING reads that key: there is no column for it
+                                  // on `profiles` or anywhere else in the schema, and
+                                  // no reader in the app. Both the key and the input
+                                  // are gone (see components/Steps.tsx).
+                                  //
+                                  // Removed rather than persisted, deliberately. A
+                                  // national ID is regulated personal data; giving it
+                                  // a column is a retention decision with a legal
+                                  // owner, not a wiring task, and storing it "for now"
+                                  // in metadata would make that decision silently. The
+                                  // services that actually need the number — توثيق
+                                  // وكالة، قسمة تركة — collect it in their own intake,
+                                  // where it travels to the team inside
+                                  // `metadata.intake` and is scoped to that one order.
+                                  // One line here and one field in Steps.tsx restore it
+                                  // the day the office decides it wants it on file.
                                   // The whole form→trigger contract lives in
                                   // ./components/_corporateIdentity.ts. `company_name`
                                   // and `business_name` are the keys
@@ -282,12 +316,31 @@ export default function RegisterClientPage() {
                                   // «شركة جديدة» with no commercial registration number.
                                   ...(clientType === "company" && corporateSignupMetadata(formData)),
                                   ...(clientType === "micro" && microSignupMetadata(formData)),
+                                  // `entity_name` and `org_name` are the keys
+                                  // public.handle_new_user() actually reads for these
+                                  // two branches. The form collected «اسم الجهة»
+                                  // (Steps.tsx:168) and «اسم الجمعية» (:206) and sent
+                                  // NEITHER, so the trigger's COALESCE always took its
+                                  // fallback and every such row read «جهة حكومية
+                                  // جديدة» / «منظمة جديدة» — the same defect owner
+                                  // item ٧ fixed for companies, on the two account
+                                  // types nobody had checked. Both tables are empty in
+                                  // production today, so this fixes them before the
+                                  // first row rather than after it.
+                                  //
+                                  // `ngo_reg_number` is kept out: ngo_profiles has no
+                                  // column for a national-centre registration number
+                                  // (20260603_phase1_002_entities.sql:567-587) and its
+                                  // `metadata` jsonb is not written by this trigger.
+                                  // The input is gone from the form rather than left
+                                  // collecting a number that reaches nothing.
                                   ...(clientType === "government" && {
+                                    entity_name: formData.entityName?.trim() || undefined,
                                     government_role: formData.governmentRole || "gov_counsel",
                                     officer_specialty: formData.officerSpecialty || null,
                                   }),
                                   ...(clientType === "ngo" && {
-                                    ngo_reg_number: formData.ngoRegNumber,
+                                    org_name: formData.ngoName?.trim() || undefined,
                                   }),
                                 },
                               },

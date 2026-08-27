@@ -35,6 +35,18 @@ export interface SettingsRolePolicy {
   showPayments: boolean;
   showSubscription: boolean;
   visibleTabs: SettingsTabId[];
+  /**
+   * 2026-08-27 — NEVER POPULATED. Four literals lived here, one per account
+   * type: «مقاعد المكتب ٧/١٠», «مقاعد الشركة ١٢/٢٥», «مستخدمي الجهة ٢٨/٥٠»,
+   * «أعضاء ومتطوعون ٥/١٠». Every corporate account in the country was shown
+   * the same "12 of 25 seats used" progress bar as its own live figure.
+   *
+   * Nothing counts seats. There is no seat table, no plan quota anywhere in
+   * the schema, and no query behind any of those numbers. The type is kept —
+   * both consumers already branch on its absence (RoleScopeTab, and
+   * TeamManagementTab which falls back to the length of its own list) — so
+   * that the day a real count exists it has somewhere to go.
+   */
   seatPolicy?: SettingsSeatPolicy;
   inviteRoles: SettingsRoleOption[];
   personalOnlyNotice?: string;
@@ -235,7 +247,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
         ...(canManageBilling ? ["invoice" as const, "payments" as const, "subscription" as const] : []),
         "security", "notifications", "privacy", "help",
       ]),
-      seatPolicy: { label: "مقاعد المكتب", used: 7, included: 10, unit: "مقعد", overLimitMessage: "المقاعد المضمنة ممتلئة؛ يمكن طلب مقعد إضافي من مدير الخطة." },
       inviteRoles: canManageTeam ? FIRM_INVITE_ROLES : [],
     };
   }
@@ -267,7 +278,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
         ...(canManageCompliance ? ["compliance" as const] : []),
         "security", "notifications", "privacy", "help",
       ]),
-      seatPolicy: { label: "مقاعد الشركة", used: 12, included: 25, unit: "مستخدم", overLimitMessage: "وصلت الشركة إلى حد المقاعد؛ اطلب مقاعد إضافية من المالك أو مدير الفوترة." },
       inviteRoles: canManageEntity ? CORPORATE_INVITE_ROLES : [],
     };
   }
@@ -315,7 +325,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
         ...(canManageEntity ? ["entity" as const, "team" as const, "delegation" as const, "compliance" as const] : []),
         "nafath", "security", "notifications", "privacy", "help",
       ]),
-      seatPolicy: { label: "مستخدمي الجهة", used: 28, included: 50, unit: "مستخدم", overLimitMessage: "عدد المستخدمين الحكوميين يحتاج موافقة عقد/SSO من أدمن نظامي." },
       inviteRoles: canManageEntity ? GOVERNMENT_INVITE_ROLES : [],
     };
   }
@@ -337,7 +346,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
       showPayments: false,
       showSubscription: true,
       visibleTabs: uniqueTabs(["profile", "role-scope", "entity", "team", "delegation", "compliance", "subscription", "security", "notifications", "privacy", "help"]),
-      seatPolicy: { label: "أعضاء ومتطوعون", used: 5, included: 10, unit: "عضو", overLimitMessage: "الحد الحالي للأعضاء ممتلئ؛ تحتاج تفعيل خطة مؤسسية أو زيادة حد المتطوعين." },
       inviteRoles: NGO_INVITE_ROLES,
     };
   }

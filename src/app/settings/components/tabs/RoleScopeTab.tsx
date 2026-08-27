@@ -84,8 +84,12 @@ export function RoleScopeTab() {
               <p className="text-xs leading-6 text-zinc-500 dark:text-zinc-400">{policy.seatPolicy.overLimitMessage}</p>
             </div>
           ) : (
+            // The old copy — «لا توجد مقاعد فريق لهذا النوع من الحساب» — became
+            // wrong the moment seatPolicy stopped being populated: a company
+            // DOES have team members, they are simply not counted anywhere.
             <p className="text-xs leading-6 text-zinc-500 dark:text-zinc-400">
-              لا توجد مقاعد فريق لهذا النوع من الحساب في الإعدادات المختصرة.
+              لا يُحتسب عدد المقاعد أو حدود الاستخدام في هذه الصفحة. لمعرفة ما
+              يشمله اشتراك حسابك، تواصل مع إدارة المنصة.
             </p>
           )}
         </div>

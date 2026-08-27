@@ -7,10 +7,32 @@ import {
   Robot, Gavel, Paperclip,
 } from "@phosphor-icons/react";
 import { ArrowLeft, ArrowRight } from "@phosphor-icons/react";
-import { MOCK_DAYS } from "../types";
+import { useMemo } from "react";
+import {
+  buildConsultationDays,
+  type ConsultationDaySlot,
+} from "@/components/consultation/consultationCalendar";
 import { rowBtnClass, staggerListVariants, staggerItemVariants } from "./WaShared";
 import type { WaStep, UserCategory } from "../types";
 import type { FloatingActorContext } from "../roleContext";
+
+/**
+ * What `calDay` carries to the office: «الجمعة 28 أغسطس», not «الجمعة».
+ *
+ * The step used to store `d.date` alone («9 أبر») and throw the weekday away;
+ * the sibling calendar at /book/consultation stores the weekday alone and
+ * throws the date away. Neither is something anyone can write in a diary, and
+ * this string is the whole of what the office receives — `calDay` and `calSlot`
+ * travel as free text on the request and nothing reads them back.
+ *
+ * Composed here rather than added to consultationCalendar.ts because that
+ * module already exports both halves; only the joining is this caller's taste.
+ * Unique across the seven cards for the `.find()` below: seven consecutive days
+ * repeat neither a weekday nor a day-of-month.
+ */
+function calendarDayValue(day: ConsultationDaySlot): string {
+  return `${day.dayAr} ${day.date}`;
+}
 
 interface Props {
   step: WaStep;
@@ -42,6 +64,15 @@ export default function StepConsult({
   const NavArrow = isRTL
     ? <ArrowLeft size={14} className="text-gray-400 shrink-0" />
     : <ArrowRight size={14} className="text-gray-400 shrink-0" />;
+
+  // Seven real days from today. `new Date()` at render is safe here and only
+  // here: the whole widget is mounted with `ssr: false`
+  // (src/components/FloatingButtons.tsx:13), so there is no server render for a
+  // client clock to disagree with. The empty dependency list pins the window
+  // for as long as the panel stays mounted — a tab left open across midnight
+  // keeps yesterday's first card until it is reloaded, which is a day, not the
+  // five months the hard-coded April table was out by.
+  const calendarDays = useMemo(() => buildConsultationDays(new Date()), []);
 
   // ── consult-timing ──
   if (step === "consult-timing") {
@@ -266,22 +297,31 @@ export default function StepConsult({
   if (step === "consult-calendar") {
     return (
       <motion.div variants={staggerListVariants} initial="hidden" animate="show" className="flex flex-col gap-3 relative">
+        {/* Said outright, because the grid looks like a live diary and is not
+            one: nothing in this codebase knows the office's availability, so
+            every day is offered and every time is a wish. */}
+        <motion.p variants={staggerItemVariants} className="text-[11px] font-medium text-[#0B3D2E] dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/40 rounded-xl px-3 py-2">
+          اختر اليوم والوقت اللذين يناسبانك — يؤكد الفريق الموعد النهائي معك.
+        </motion.p>
         <motion.nav variants={staggerItemVariants} aria-label="اختر اليوم" className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide snap-x">
-          {MOCK_DAYS.map(d => (
-            <button
-              key={d.date}
-              aria-pressed={calDay === d.date}
-              onClick={() => { setCalDay(d.date); setCalSlot(null); }}
-              className={`shrink-0 flex flex-col items-center rounded-2xl border px-3 py-2.5 transition-all active:scale-[0.98] snap-start ${
-                calDay === d.date
-                  ? "bg-[#0B3D2E] border-[#0B3D2E] text-white shadow-md shadow-[#0B3D2E]/20"
-                  : isDark ? "border-white/[0.08] bg-white/[0.02] text-gray-300 hover:bg-white/[0.06]" : "border-gray-200/70 bg-white text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <span className="font-bold text-[13px]">{d.label}</span>
-              <span className="text-[10px] opacity-70 font-medium mt-0.5">{d.date}</span>
-            </button>
-          ))}
+          {calendarDays.map(d => {
+            const value = calendarDayValue(d);
+            return (
+              <button
+                key={value}
+                aria-pressed={calDay === value}
+                onClick={() => { setCalDay(value); setCalSlot(null); }}
+                className={`shrink-0 flex flex-col items-center rounded-2xl border px-3 py-2.5 transition-all active:scale-[0.98] snap-start ${
+                  calDay === value
+                    ? "bg-[#0B3D2E] border-[#0B3D2E] text-white shadow-md shadow-[#0B3D2E]/20"
+                    : isDark ? "border-white/[0.08] bg-white/[0.02] text-gray-300 hover:bg-white/[0.06]" : "border-gray-200/70 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <span className="font-bold text-[13px]">{d.dayAr}</span>
+                <span className="text-[10px] opacity-70 font-medium mt-0.5">{d.date}</span>
+              </button>
+            );
+          })}
         </motion.nav>
         <AnimatePresence mode="wait">
           {calDay && (
@@ -292,7 +332,7 @@ export default function StepConsult({
               exit={{ opacity: 0, height: 0 }}
               className="flex flex-wrap gap-2 pt-1" role="group" aria-label="اختر الوقت المناسب"
             >
-              {MOCK_DAYS.find(d => d.date === calDay)?.slots.map((s, idx) => (
+              {calendarDays.find(d => calendarDayValue(d) === calDay)?.times.map((s, idx) => (
                 <motion.button
                   initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: idx * 0.05 }}
                   key={s}

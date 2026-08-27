@@ -1,5 +1,77 @@
 'use client';
 
+/**
+ * /dashboard/client/find-lawyer — the public lawyer directory.
+ *
+ * ── What was wrong ───────────────────────────────────────────────────────────
+ * This page rendered the MOCK-directory model (`Lawyer` from ./data) over rows
+ * the API had never returned. `getLawyers()` cast instead of mapping, so every
+ * field the card read was `undefined`: the search box called
+ * `l.name.includes(q)` and THREW on the first keystroke, and `l.priceMin <=
+ * maxPrice` was `undefined <= 1200` → `false`, which filtered out every card
+ * that survived. On top of that the card advertised a star rating, a review
+ * count, a success rate and a response time, and the header advertised a 4.7/5
+ * platform rating and «1,900+ استشارة مكتملة». NONE of those five fields has a
+ * table, a column or a computation anywhere in this codebase.
+ *
+ * ── What it renders now ──────────────────────────────────────────────────────
+ * `DirectoryLawyer` (src/lib/services/lawyerDirectory.ts) — only the columns
+ * the schema has. Every field is optional and every one of them is rendered
+ * inside a guard: no dash, no zero, no «غير محدد» standing in for a number the
+ * lawyer never stated. If that leaves a sparse card, the card is sparse. That
+ * is what the database says.
+ *
+ * ── The empty directory is the NORMAL case ───────────────────────────────────
+ * Verified against production on 2026-08-27: all five `lawyer_profiles` rows
+ * are `verification_status: "pending"` with `marketplace_visible: false`, and
+ * GET /api/v1/lawyers filters on verified AND marketplace_visible. This page
+ * therefore shows the empty state to every visitor today, which is why that
+ * state is written as a real destination — the office's own intake — and not
+ * as «لا توجد نتائج مطابقة».
+ *
+ * ── Why there is no booking button here ──────────────────────────────────────
+ * There was one, and it wrote `receiver: 'lawyer'` — a value NOTHING in this
+ * codebase reads. The admin fulfilment queue hard-filters
+ * `.eq("receiver", "ai_workspace")` (src/app/api/v1/admin/service-orders/route.ts:54),
+ * so every booking made from this page was written to the database and shown to
+ * no human being; the success notice said as much out loud
+ * («سيظهر للمحامي المعيّن بعد ربط صلاحيات الباك اند»). It also invented its own
+ * price from `hourly_rate` and sent flat metadata with no `metadata.intake`,
+ * which is the only thing the fulfilment brief reads.
+ *
+ * Rather than repair a second, worse copy of an intake that already exists, the
+ * card now links to it: /dashboard/client/consultation/new?lawyer=<id> resolves
+ * the lawyer from the database, pre-selects the lawyer path, and submits with
+ * the right receiver, a real quoted total and a real `metadata.intake`. One
+ * intake, one queue.
+ *
+ * ── Why this page counts rows only when it knows it holds all of them ─────────
+ * Everything on this screen — the search, the city and specialisation chips,
+ * the ordering, and the two counts — is computed IN THE CLIENT over the array
+ * this component holds. That design is only truthful over the complete
+ * directory, and the fetch was not complete: `getLawyers()` sends no `limit`,
+ * the route defaults it to 20 and issues `.range(0, 19)`, so «٢٠ محامياً» was
+ * printed as the size of a directory that might hold two hundred, and the chips
+ * offered filters derived from one arbitrary page of it.
+ *
+ * The route already computes the truth — it selects with `{ count: "exact" }`
+ * and returns it as `total` — and `getLawyers()` drops it on the floor. Raising
+ * the limit would not have fixed anything: a bigger cap is still a cap, and the
+ * page would still have no way to know when it bit. So the fetch happens here,
+ * through `apiGet`, with an explicit limit, and `complete` compares the number
+ * of ROWS THE SERVER SENT against the `total` it reported. Every directory-wide
+ * claim — both counts and both chip rows — is gated on that boolean; when it is
+ * false they are simply absent, with no notice standing in for them, because a
+ * notice about truncation would be one more assertion resting on the same
+ * `total`. Cards, search and ordering still work: they describe what is on
+ * screen and never claim to describe more.
+ *
+ * `getLawyers()` (src/lib/services/lawyerService.ts:132) cannot express this —
+ * it returns `DirectoryLawyer[]` with `total` discarded, and `LawyerFilters`
+ * has no `limit`/`offset` — which is the whole reason this page calls one level
+ * down. src/app/lawyers/browse/page.tsx reaches for `apiGet` too.
+ */
+
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import {
   motion, AnimatePresence, useInView,
@@ -7,61 +79,72 @@ import {
 } from 'framer-motion';
 import Link from 'next/link';
 import {
-  MagnifyingGlass, Star, MapPin, Briefcase, CalendarCheck,
-  SealCheck, Clock, X, SlidersHorizontal,
-  CheckCircle, CaretUpDown, Info,
-  Buildings, House, Users, ShieldCheck,
-  Lightbulb, Handshake, Factory,
-  Scales,
+  MagnifyingGlass, MapPin, Briefcase, CalendarCheck,
+  SealCheck, X, CheckCircle, CaretUpDown, Scales,
+  Coins, WarningCircle, ArrowLeft,
 } from '@phosphor-icons/react';
-import { useUser } from '@/hooks/useUser';
-import { usePaymentsStatus } from '@/hooks/usePaymentsStatus';
-import { createWorkflowId, createWorkflowRequest } from '@/lib/clientWorkflowRepository';
-import { normalizeCategoryId, categoryLabelFor } from '@/constants/taxonomies';
-import { createPaymentIntentStub } from '@/lib/paymentAdapter';
-import { type Lawyer } from './data';
-import { getLawyers } from '@/lib/services';
+import { apiGet } from '@/lib/services';
+import {
+  toDirectoryLawyers,
+  matchesDirectoryQuery,
+  directoryFacet,
+  acceptingClientsCount,
+  sortDirectoryLawyers,
+  arabicYearsOfPractice,
+  arabicLawyerCount,
+  arabicAcceptingClientsPredicate,
+  type DirectoryLawyer,
+  type DirectoryLawyerRow,
+  type DirectorySortKey,
+} from '@/lib/services/lawyerDirectory';
 import { SkeletonList } from '../_components/DashboardSkeleton';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-// Lawyer interface is now imported from ./data
-
-type SortKey = 'rating' | 'price_asc' | 'price_desc' | 'experience' | 'reviews';
-
 // ─── Constants ───────────────────────────────────────────────────────────────
-const CITIES = [
-  { id: 'all', label: 'كل المدن' },
-  { id: 'الرياض', label: 'الرياض' },
-  { id: 'جدة', label: 'جدة' },
-  { id: 'الدمام', label: 'الدمام' },
-  { id: 'مكة', label: 'مكة المكرمة' },
-  { id: 'المدينة', label: 'المدينة المنورة' },
-  { id: 'الشرقية', label: 'المنطقة الشرقية' },
-  { id: 'أبها', label: 'أبها' },
+
+/** The office's own intake — the only booking path that reaches a human. */
+const CONSULTATION_HREF = '/dashboard/client/consultation/new';
+
+/**
+ * What GET /api/v1/lawyers answers with. `total` is `count` from a
+ * `{ count: "exact" }` select over the same filtered query — the route's line
+ * 38 — and is typed nullable because Supabase types it that way; a null one
+ * means we cannot verify completeness, which this page treats as "not
+ * complete" and therefore prints nothing.
+ */
+interface LawyerListResponse {
+  lawyers?: DirectoryLawyerRow[] | null;
+  total?: number | null;
+}
+
+/**
+ * One request, explicitly bounded, sized far above the whole verified directory
+ * (five lawyer_profiles rows exist in production and none is published yet).
+ * This is still a cap — the point is not that it is large, it is that `total`
+ * tells us when it bit and the page then stops making claims about the whole.
+ */
+const FETCH_LIMIT = 200;
+
+/**
+ * Every option here maps to a column that exists.
+ *
+ * «الأعلى تقييماً» and «الأكثر تقييماً» are gone with the ratings they sorted
+ * by; `getLawyers` used to silently rewrite `sort: 'rating'` into
+ * `sort: 'experience'`, so the directory said it was ordering by rating while
+ * ordering by years of practice.
+ */
+const SORT_OPTIONS: { id: DirectorySortKey; label: string }[] = [
+  { id: 'experience', label: 'الأطول ممارسة' },
+  { id: 'fee_asc',    label: 'الأقل أتعاباً بالساعة' },
+  { id: 'name',       label: 'أبجدياً' },
 ];
 
-const SPECIALTIES = [
-  { id: 'all',        label: 'الكل',             icon: Scales },
-  { id: 'labor',      label: 'عمالي',             icon: Briefcase },
-  { id: 'commercial', label: 'تجاري',             icon: Buildings },
-  { id: 'real-estate',label: 'عقاري',             icon: House },
-  { id: 'family',     label: 'أسرة',              icon: Users },
-  { id: 'criminal',   label: 'جنائي',             icon: ShieldCheck },
-  { id: 'ip',         label: 'ملكية فكرية',       icon: Lightbulb },
-  { id: 'civil',      label: 'مدني',              icon: Handshake },
-  { id: 'corporate',  label: 'شركات',             icon: Factory },
-];
+const ALL = 'all';
 
-const SORT_OPTIONS: { id: SortKey; label: string }[] = [
-  { id: 'rating',     label: 'الأعلى تقييماً' },
-  { id: 'reviews',    label: 'الأكثر تقييماً' },
-  { id: 'experience', label: 'الأكثر خبرة' },
-  { id: 'price_asc',  label: 'السعر: الأقل' },
-  { id: 'price_desc', label: 'السعر: الأعلى' },
-];
-
-// MOCK_LAWYERS is now imported from ./data (single source of truth for all 8 lawyers)
-
+// The comparators themselves — and the "unstated last, in BOTH directions" rule
+// they share — now live in src/lib/services/lawyerDirectory.ts, under test.
+// They were here, and «أبجدياً» was the one of the three that quietly did not
+// follow the rule: it compared `(a.name ?? '')`, and '' collates before every
+// real name, so the single card that renders with no heading was ranked first.
 
 // ─── AvailabilityPulse — isolated to prevent re-renders ──────────────────────
 const AvailabilityPulse = memo(function AvailabilityPulse() {
@@ -77,23 +160,8 @@ const AvailabilityPulse = memo(function AvailabilityPulse() {
   );
 });
 
-// ─── StarRow ─────────────────────────────────────────────────────────────────
-const StarRow = memo(function StarRow({ rating }: { rating: number }) {
-  return (
-    <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((s) => (
-        <Star
-          key={s} size={11}
-          weight={rating >= s ? 'fill' : rating >= s - 0.5 ? 'duotone' : 'regular'}
-          className={rating >= s ? 'text-[#C8A762]' : 'text-slate-200'}
-        />
-      ))}
-    </div>
-  );
-});
-
 // ─── LawyerCard — Spotlight Border + Parallax Tilt ───────────────────────────
-function LawyerCard({ l, index, onBook }: { l: Lawyer; index: number; onBook: (lawyer: Lawyer) => void }) {
+function LawyerCard({ l, index }: { l: DirectoryLawyer; index: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: '-40px' });
@@ -109,6 +177,10 @@ function LawyerCard({ l, index, onBook }: { l: Lawyer; index: number; onBook: (l
   // Spotlight
   const spotX = useMotionValue(0);
   const spotY = useMotionValue(0);
+  const spotlight = useTransform(
+    [spotX, spotY],
+    ([x, y]) => `radial-gradient(280px circle at ${x}px ${y}px, rgba(200,167,98,0.12), transparent 60%)`,
+  );
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = cardRef.current?.getBoundingClientRect();
@@ -124,7 +196,17 @@ function LawyerCard({ l, index, onBook }: { l: Lawyer; index: number; onBook: (l
     mouseY.set(0);
   }, [mouseX, mouseY]);
 
-  const priceLabel = `${l.priceMin.toLocaleString('ar-SA')}–${l.priceMax.toLocaleString('ar-SA')} ر.س`;
+  // Two initials off the display name. Replaces the ui-avatars.com URL the mock
+  // rows carried: a third-party image service is not somewhere a licensed
+  // advocate's name should be sent, and there is nothing to send when the row
+  // has no avatar anyway.
+  const initials = (l.name ?? '')
+    .replace(/^(الأستاذ|الأستاذة|المحامي|المحامية)\s+/u, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('');
 
   return (
     <motion.div
@@ -141,27 +223,24 @@ function LawyerCard({ l, index, onBook }: { l: Lawyer; index: number; onBook: (l
         onMouseLeave={handleMouseLeave}
         whileHover={{ scale: 1.015 }}
         transition={{ type: 'spring', stiffness: 200, damping: 28 }}
-        className="group relative flex flex-col overflow-hidden rounded-[1.75rem] bg-white border border-slate-200/60 shadow-[0_20px_40px_-15px_rgba(11,61,46,0.06)] cursor-pointer select-none h-full"
+        className="group relative flex flex-col overflow-hidden rounded-[1.75rem] bg-white border border-slate-200/60 shadow-[0_20px_40px_-15px_rgba(11,61,46,0.06)] select-none h-full"
       >
         {/* Spotlight border glow */}
         <motion.div
           className="pointer-events-none absolute inset-0 rounded-[1.75rem] opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-          style={{
-            background: useTransform(
-              [spotX, spotY],
-              ([x, y]) => `radial-gradient(280px circle at ${x}px ${y}px, rgba(200,167,98,0.12), transparent 60%)`
-            ),
-          }}
+          style={{ background: spotlight }}
         />
 
         {/* Top gradient bar */}
         <div className="h-1 w-full bg-gradient-to-r from-[#0B3D2E] via-[#C8A762] to-[#0B3D2E]" />
 
-        {/* Availability pill */}
-        {l.available && (
+        {/* Accepting-clients pill — ONLY on an explicit yes. `null` means the
+            lawyer never answered the question, and a card is not the place to
+            answer it for him. */}
+        {l.isAcceptingClients === true && (
           <div className="absolute top-5 left-4 flex items-center gap-1.5 bg-emerald-500 text-white text-[9px] font-black px-2.5 py-1 rounded-full shadow-lg shadow-emerald-500/25 z-10">
             <AvailabilityPulse />
-            متاح الآن
+            يستقبل موكلين
           </div>
         )}
 
@@ -169,90 +248,100 @@ function LawyerCard({ l, index, onBook }: { l: Lawyer; index: number; onBook: (l
         <div className="px-6 pt-6 pb-4 flex items-start gap-4">
           <div className="relative flex-shrink-0">
             <div className="p-[2px] rounded-2xl bg-gradient-to-br from-[#0B3D2E] via-[#1a5e42] to-[#C8A762]">
-              <img
-                src={l.avatar}
-                alt={l.name}
-                className="w-[58px] h-[58px] rounded-[14px] object-cover"
-                loading="lazy"
-              />
+              {l.avatarUrl ? (
+                <img
+                  src={l.avatarUrl}
+                  alt={l.name ?? ''}
+                  className="w-[58px] h-[58px] rounded-[14px] object-cover bg-white"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="w-[58px] h-[58px] rounded-[14px] bg-[#0B3D2E] text-white flex items-center justify-center font-black text-[17px]">
+                  {initials || <Scales size={24} weight="duotone" className="text-white/70" />}
+                </div>
+              )}
             </div>
-            {l.verified && (
-              <div className="absolute -bottom-1.5 -right-1.5 w-[22px] h-[22px] rounded-full bg-white flex items-center justify-center shadow-md">
-                <SealCheck size={15} weight="fill" className="text-[#0B3D2E]" />
-              </div>
-            )}
+            {/* A real claim, not a decoration: GET /api/v1/lawyers returns only
+                rows whose verification_status is 'verified'. */}
+            <div className="absolute -bottom-1.5 -right-1.5 w-[22px] h-[22px] rounded-full bg-white flex items-center justify-center shadow-md" title="ملف موثّق">
+              <SealCheck size={15} weight="fill" className="text-[#0B3D2E]" />
+            </div>
           </div>
 
           <div className="flex-1 min-w-0 pt-0.5">
-            <h3 className="font-black text-zinc-900 text-[15px] tracking-tight leading-tight mb-0.5 truncate">
-              {l.name}
-            </h3>
-            <p className="text-[11.5px] text-[#0B3D2E] font-semibold mb-2 truncate">{l.specialty}</p>
-            <div className="flex items-center gap-1.5">
-              <StarRow rating={l.rating} />
-              <span className="text-[12px] font-black text-zinc-900 tabular-nums">{l.rating}</span>
-              <span className="text-[10px] text-slate-400 tabular-nums">({l.reviewCount})</span>
-            </div>
+            {/* No name in either language ⇒ no heading. The old cast rendered
+                «undefined» here for every real row. */}
+            {l.name && (
+              <h3 className="font-black text-zinc-900 text-[15px] tracking-tight leading-tight mb-1 truncate">
+                {l.name}
+              </h3>
+            )}
+            {l.specialties.length > 0 && (
+              <p className="text-[11.5px] text-[#0B3D2E] font-semibold truncate">
+                {l.specialties[0]}
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Stats chips */}
-        <div className="px-6 pb-4 flex gap-1.5 flex-wrap">
-          <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-100 text-[10px] text-slate-500 font-semibold">
-            <Briefcase size={9} weight="fill" className="text-[#0B3D2E]" />
-            {l.experienceYears} سنة
-          </span>
-          <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 border border-emerald-100 text-[10px] text-emerald-700 font-semibold">
-            <CheckCircle size={9} weight="fill" />
-            {l.successRate}%
-          </span>
-          <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-sky-50 border border-sky-100 text-[10px] text-sky-600 font-semibold">
-            <Clock size={9} weight="fill" />
-            {l.responseTime}
-          </span>
-          <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-100 text-[10px] text-slate-400 font-medium">
-            <MapPin size={9} weight="fill" />
-            {l.city}
-          </span>
-        </div>
-
-        {/* Tags */}
-        <div className="px-6 pb-4 flex flex-wrap gap-1.5">
-          {l.expertise.slice(0, 3).map((e) => (
-            <span key={e} className="px-2 py-0.5 text-[10px] border border-slate-200 rounded-lg text-slate-500 bg-white">
-              {e}
-            </span>
-          ))}
-        </div>
-
-        {/* Price + CTA */}
-        <div className="mt-auto px-6 pb-6 space-y-3">
-          <div className="flex items-center justify-between px-3 py-2.5 rounded-2xl bg-slate-50 border border-slate-100/80">
-            <span className="text-[10px] text-slate-400 font-medium">سعر الاستشارة</span>
-            <span className="text-[13px] font-black text-[#0B3D2E] tabular-nums">{priceLabel}</span>
+        {/* Stated facts only. Each chip is guarded: nothing renders a 0, and an
+            empty row simply produces no chips. */}
+        {(l.yearsExperience !== undefined || l.city || l.hourlyRate !== undefined) && (
+          <div className="px-6 pb-4 flex gap-1.5 flex-wrap">
+            {l.yearsExperience !== undefined && (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-100 text-[10px] text-slate-500 font-semibold">
+                <Briefcase size={9} weight="fill" className="text-[#0B3D2E]" />
+                {arabicYearsOfPractice(l.yearsExperience)}
+              </span>
+            )}
+            {l.city && (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-100 text-[10px] text-slate-400 font-medium">
+                <MapPin size={9} weight="fill" />
+                {l.city}
+              </span>
+            )}
+            {/* «الأتعاب بالساعة», never «سعر الاستشارة»: hourly_rate is the
+                lawyer's own stated rate and is NOT what an office consultation
+                costs. The old card printed it as a consultation price range. */}
+            {l.hourlyRate !== undefined && (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-[#C8A762]/10 border border-[#C8A762]/20 text-[10px] text-[#8a6f2e] font-semibold">
+                <Coins size={9} weight="fill" />
+                الأتعاب بالساعة {l.hourlyRate.toLocaleString('ar-SA')} ر.س
+              </span>
+            )}
           </div>
+        )}
 
-          <div className="flex gap-2">
-            <Link
-              href={`/lawyers/${l.id}`}
-              className="flex-[0.85] flex items-center justify-center py-2.5 border border-slate-200 rounded-2xl text-[11px] font-semibold text-slate-600 hover:border-[#0B3D2E]/30 hover:text-[#0B3D2E] hover:bg-[#0B3D2E]/[0.02] transition-all duration-200 active:scale-[0.98]"
-            >
-              عرض الملف
-            </Link>
-            <button
-              type="button"
-              onClick={() => onBook(l)}
-              disabled={!l.available}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-[12px] font-black transition-all duration-200 active:scale-[0.98] ${
-                l.available
-                  ? 'bg-[#0B3D2E] text-white hover:bg-[#0a3328] shadow-[0_4px_14px_0_rgba(11,61,46,0.25)]'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-              }`}
-            >
-              <CalendarCheck size={13} weight="fill" />
-              {l.available ? 'احجز الآن' : 'غير متاح'}
-            </button>
+        {/* Remaining specialties */}
+        {l.specialties.length > 1 && (
+          <div className="px-6 pb-4 flex flex-wrap gap-1.5">
+            {l.specialties.slice(1, 4).map((s) => (
+              <span key={s} className="px-2 py-0.5 text-[10px] border border-slate-200 rounded-lg text-slate-500 bg-white">
+                {s}
+              </span>
+            ))}
           </div>
+        )}
+
+        {l.bio && (
+          <p className="px-6 pb-4 text-[11.5px] leading-relaxed text-slate-500 line-clamp-3">
+            {l.bio}
+          </p>
+        )}
+
+        {/* CTA — the office intake, the only booking path that reaches a human.
+            The old «عرض الملف» link went to /lawyers/[id], which
+            src/app/lawyers/layout.tsx:27 redirects to the marketing page
+            /services/lawyers while BETA_MONOPOLY_MODE is on: it promised a
+            profile that cannot be shown. */}
+        <div className="mt-auto px-6 pb-6">
+          <Link
+            href={`${CONSULTATION_HREF}?lawyer=${encodeURIComponent(l.id)}`}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-[12px] font-black bg-[#0B3D2E] text-white hover:bg-[#0a3328] shadow-[0_4px_14px_0_rgba(11,61,46,0.25)] transition-all duration-200 active:scale-[0.98]"
+          >
+            <CalendarCheck size={13} weight="fill" />
+            احجز استشارة عبر المكتب
+          </Link>
         </div>
       </motion.div>
     </motion.div>
@@ -271,6 +360,7 @@ function FilterChip({
 
   return (
     <motion.button
+      type="button"
       onClick={onClick}
       whileTap={{ scale: 0.96 }}
       className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[11.5px] font-semibold border transition-all duration-200 ${
@@ -284,403 +374,329 @@ function FilterChip({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function FindLawyerPage() {
-  const user = useUser();
-  const payments = usePaymentsStatus();
-  const [lawyers, setLawyers]         = useState<Lawyer[]>([]);
+  const [lawyers, setLawyers]         = useState<DirectoryLawyer[]>([]);
   const [loading, setLoading]         = useState(true);
   const [fetchError, setFetchError]   = useState(false);
   const [search, setSearch]           = useState('');
-  const [city, setCity]               = useState('all');
-  const [specialty, setSpecialty]     = useState('all');
-  const [sort, setSort]               = useState<SortKey>('rating');
-  const [availableOnly, setAvailable] = useState(false);
-  const [maxPrice, setMaxPrice]       = useState(1200);
-  const [showFilters, setShowFilters] = useState(false);
+  const [city, setCity]               = useState(ALL);
+  const [specialty, setSpecialty]     = useState(ALL);
+  const [sort, setSort]               = useState<DirectorySortKey>('experience');
+  const [acceptingOnly, setAcceptingOnly] = useState(false);
   const [sortOpen, setSortOpen]       = useState(false);
-  const [bookingNotice, setBookingNotice] = useState<{ id: string; lawyer: string } | null>(null);
-  const [paymentsNotice, setPaymentsNotice] = useState(false);
+  /**
+   * Are the rows in `lawyers` the WHOLE published directory? Only then may this
+   * page print a number about it, or derive a filter list from it.
+   * Defaults to false, so every degradation — a null `total`, a truncated
+   * page, a shape we did not expect — hides the claim rather than guessing.
+   */
+  const [complete, setComplete]       = useState(false);
 
   useEffect(() => {
-    getLawyers()
-      .then(data => {
-        setLawyers(data ?? []);
+    apiGet<LawyerListResponse>('/api/v1/lawyers', { limit: FETCH_LIMIT })
+      .then((response) => {
+        const rows = Array.isArray(response?.lawyers) ? response.lawyers : [];
+        setLawyers(toDirectoryLawyers(rows));
+        // Compare the RAW row count, not the mapped length: `toDirectoryLawyers`
+        // drops rows with no id, and reading a dropped row as a missing page
+        // would hide the counts for a reason that has nothing to do with paging.
+        setComplete(typeof response?.total === 'number' && rows.length >= response.total);
         setFetchError(false);
       })
       .catch(() => {
+        // `apiGet` throws on a non-2xx or a dead network, which is what keeps
+        // "we could not ask" from rendering as "no lawyer has published a
+        // profile" — two different facts with two different screens below.
         setFetchError(true);
         setLawyers([]);
+        setComplete(false);
       })
       .finally(() => setLoading(false));
   }, []);
 
+  // Chip options come from the rows that actually arrived. The hard-coded lists
+  // this page used to carry — eight cities and nine `specialtyKey` ids — were
+  // matched against a field the API has never returned, so every chip was a
+  // filter that could only ever return nothing.
+  const cityOptions = useMemo(() => directoryFacet(lawyers, 'city'), [lawyers]);
+  const specialtyOptions = useMemo(() => directoryFacet(lawyers, 'specialties'), [lawyers]);
+  const acceptingCount = useMemo(() => acceptingClientsCount(lawyers), [lawyers]);
+
   const sorted = useMemo(() => {
     const result = lawyers.filter((l) => {
-      const q = search.trim().toLowerCase();
-      const matchSearch = !q || l.name.includes(q) || l.specialty.includes(q) || l.expertise.some((e) => e.includes(q));
-      const matchCity   = city === 'all'      || l.city === city;
-      const matchSpec   = specialty === 'all' || l.specialtyKey === specialty;
-      const matchAvail  = !availableOnly      || l.available;
-      const matchPrice  = l.priceMin          <= maxPrice;
-      return matchSearch && matchCity && matchSpec && matchAvail && matchPrice;
+      const matchSearch = matchesDirectoryQuery(l, search);
+      const matchCity   = city === ALL || l.city === city;
+      const matchSpec   = specialty === ALL || l.specialties.includes(specialty);
+      const matchAccept = !acceptingOnly || l.isAcceptingClients === true;
+      return matchSearch && matchCity && matchSpec && matchAccept;
     });
 
-    switch (sort) {
-      case 'rating':     return [...result].sort((a, b) => b.rating - a.rating);
-      case 'reviews':    return [...result].sort((a, b) => b.reviewCount - a.reviewCount);
-      case 'experience': return [...result].sort((a, b) => b.experienceYears - a.experienceYears);
-      case 'price_asc':  return [...result].sort((a, b) => a.priceMin - b.priceMin);
-      case 'price_desc': return [...result].sort((a, b) => b.priceMin - a.priceMin);
-    }
-  }, [lawyers, search, city, specialty, sort, availableOnly, maxPrice]);
+    return sortDirectoryLawyers(result, sort);
+  }, [lawyers, search, city, specialty, sort, acceptingOnly]);
 
-  const activeFiltersCount = [
-    city !== 'all', specialty !== 'all', availableOnly, maxPrice < 1200,
-  ].filter(Boolean).length;
+  const activeFiltersCount = [city !== ALL, specialty !== ALL, acceptingOnly].filter(Boolean).length;
 
   const clearAll = useCallback(() => {
-    setCity('all'); setSpecialty('all');
-    setAvailable(false); setMaxPrice(1200);
-    setSearch(''); setSort('rating');
+    setCity(ALL); setSpecialty(ALL);
+    setAcceptingOnly(false);
+    setSearch(''); setSort('experience');
   }, []);
 
   const sortLabel = SORT_OPTIONS.find((s) => s.id === sort)?.label ?? 'الترتيب';
-  const availableCount = lawyers.filter((l) => l.available).length;
-
-  const handleBook = useCallback(async (lawyer: Lawyer) => {
-    // Payment gate: block booking while the admin gateway is disabled.
-    // Ignore the default-disabled state while the status is still loading so
-    // live gateways don't flash the "unavailable" notice on first click.
-    if (!payments.loading && payments.disabled) {
-      setPaymentsNotice(true);
-      return;
-    }
-    const requestId = createWorkflowId('LAW-CON');
-    const paymentIntent = await createPaymentIntentStub({
-      amount: lawyer.priceMin,
-      requestId,
-      serviceId: 'find-lawyer-consultation',
-    });
-    const request = await createWorkflowRequest({
-      id: requestId,
-      type: 'consultation',
-      title: `حجز استشارة مع ${lawyer.name}`,
-      description: `طلب حجز استشارة من دليل المحامين في تخصص ${lawyer.specialty}.`,
-      requester: {
-        userId: user.userId,
-        name: user.name,
-        role: user.userType,
-        tier: user.tier,
-        businessRole: user.businessRole,
-      },
-      receiver: 'lawyer',
-      status: 'pending_payment',
-      payment: {
-        amount: lawyer.priceMin,
-        status: 'pending',
-      },
-      sourcePath: '/dashboard/client/find-lawyer',
-      metadata: {
-        lawyerId: lawyer.id,
-        lawyerName: lawyer.name,
-        // Owner item ١٦ — the canonical SA-xx, not this page's private
-        // `real-estate`/`labor` spelling. This value goes into the database
-        // and was one of three incompatible spellings of the same
-        // specialisation across the app; normalizeCategoryId() is now the
-        // single answer. The human-readable name is kept beside it so the
-        // fulfilment team never has to resolve an id to read the order.
-        specialty: normalizeCategoryId(lawyer.specialtyKey) ?? lawyer.specialtyKey,
-        specialtyLabel: categoryLabelFor(lawyer.specialtyKey),
-        city: lawyer.city,
-        mode: 'video',
-        serviceId: 'find-lawyer-consultation',
-        paymentIntentId: paymentIntent.id,
-        paymentProvider: paymentIntent.provider,
-      },
-      auditEvent: 'find_lawyer_consultation_requested',
-    });
-    setBookingNotice({ id: request.id, lawyer: lawyer.name });
-  }, [user.businessRole, user.name, user.tier, user.userType, payments.disabled, payments.loading]);
+  const hasLawyers = lawyers.length > 0;
 
   return (
     <div className="min-h-[100dvh] bg-[#f9fafb]" dir="rtl">
       <div className="max-w-7xl mx-auto px-4 md:px-8 py-8">
-        {paymentsNotice && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 flex items-start gap-2"
-          >
-            <Info size={16} className="flex-shrink-0 mt-0.5" />
-            <span>الدفع غير متاح حالياً — سيتم تفعيل بوابة الدفع قريباً. تعذّر إنشاء طلب الحجز حتى التفعيل.</span>
-          </motion.div>
-        )}
-        {bookingNotice && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="font-bold">تم إنشاء طلب حجز مع {bookingNotice.lawyer} برقم {bookingNotice.id}</span>
-              <div className="flex items-center gap-3 text-xs font-bold">
-                <Link href="/dashboard/client/requests" className="underline">متابعة الطلب</Link>
-                <span>سيظهر للمحامي المعيّن بعد ربط صلاحيات الباك اند</span>
-              </div>
-            </div>
-          </motion.div>
-        )}
 
-        {/* ── Asymmetric Header (DESIGN_VARIANCE: 8) ─────────────────────── */}
+        {/* ── Header ───────────────────────────────────────────────────────
+            The right-hand «live stats» block used to sit here with two tiles:
+            «متوسط التقييم 4.7 / 5» and «استشارة مكتملة 1,900+». Both were
+            literals in the JSX. There is no ratings table and no completed-
+            consultation counter in this platform, so they are deleted rather
+            than zeroed — a rendered 0 would be the same claim, only smaller. */}
         <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-6 mb-10">
-          {/* Left: copy */}
           <div>
             <div className="flex items-center gap-2 mb-3">
               <span className="h-[3px] w-8 rounded-full bg-[#C8A762] inline-block" />
-              <span className="text-[11px] font-black tracking-widest text-[#C8A762] uppercase">محامون معتمدون</span>
+              <span className="text-[11px] font-black tracking-widest text-[#C8A762] uppercase">محامون موثّقون</span>
             </div>
             <h1 className="text-3xl md:text-4xl font-black tracking-tight text-zinc-900 leading-tight mb-3">
               ابحث عن المحامي<br />
               <span className="text-[#0B3D2E]">المناسب لقضيتك</span>
             </h1>
             <p className="text-slate-500 text-[13.5px] leading-relaxed max-w-[55ch]">
-              {lawyers.length > 0
-                ? `${lawyers.length}+ محامٍ مرخص ومعتمد من وزارة العدل — قارن التخصصات والأسعار والتقييمات واحجز استشارتك في دقائق.`
-                : 'ابحث عن المحامين المرخصين والمعتمدين من وزارة العدل — قارن التخصصات والأسعار والتقييمات واحجز استشارتك في دقائق.'
-              }
+              محامون وثّق المكتب تراخيصهم واختاروا نشر ملفاتهم في الدليل — اطّلع على
+              التخصص وسنوات الممارسة، ثم احجز استشارتك عبر المكتب.
             </p>
           </div>
 
-          {/* Right: live stats — asymmetric data block */}
-          <div className="flex flex-col justify-end gap-3">
-            <div className="flex items-center gap-3 p-4 rounded-2xl bg-white border border-slate-200/70 shadow-[0_4px_16px_-4px_rgba(0,0,0,0.04)]">
-              <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <AvailabilityPulse />
-              </div>
-              <div>
-                <p className="text-xl font-black text-zinc-900 tabular-nums leading-none">{availableCount}</p>
-                <p className="text-[10.5px] text-slate-400 mt-0.5">محامٍ متاح الآن</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { label: 'متوسط التقييم', value: '4.7', unit: '/ 5' },
-                { label: 'استشارة مكتملة', value: '1,900+', unit: '' },
-              ].map((s) => (
-                <div key={s.label} className="p-3 rounded-xl bg-white border border-slate-200/70 text-center shadow-[0_2px_8px_-2px_rgba(0,0,0,0.04)]">
-                  <p className="text-[15px] font-black text-zinc-900 tabular-nums leading-none">
-                    {s.value}<span className="text-[10px] text-slate-400 font-medium">{s.unit}</span>
-                  </p>
-                  <p className="text-[9.5px] text-slate-400 mt-0.5">{s.label}</p>
+          {/* One derived count — and only when there is something to count AND
+              this page holds the whole directory to count it over. The verb
+              comes from the same module as the noun, so «محامٍ واحد» is never
+              printed above a plural «يستقبلون» again. */}
+          {complete && acceptingCount > 0 && (
+            <div className="flex flex-col justify-end">
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-white border border-slate-200/70 shadow-[0_4px_16px_-4px_rgba(0,0,0,0.04)]">
+                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                  <AvailabilityPulse />
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Search bar ────────────────────────────────────────────────── */}
-        <div className="relative mb-5">
-          <MagnifyingGlass size={17} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="اسم المحامي، التخصص، أو الكلمة المفتاحية…"
-            className="w-full pr-11 pl-10 py-3.5 text-[13.5px] border border-slate-200 rounded-2xl bg-white focus:outline-none focus:border-[#0B3D2E]/40 focus:ring-2 focus:ring-[#0B3D2E]/8 transition-all shadow-sm placeholder:text-slate-400"
-          />
-          <AnimatePresence>
-            {search && (
-              <motion.button
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                onClick={() => setSearch('')}
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                <X size={15} />
-              </motion.button>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* ── City chips ──────────────────────────────────────────────── */}
-        <div className="flex gap-2 mb-3 overflow-x-auto pb-1 scrollbar-hide">
-          {CITIES.map((c) => (
-            <FilterChip key={c.id} active={city === c.id} onClick={() => setCity(c.id)}>
-              {c.label}
-            </FilterChip>
-          ))}
-        </div>
-
-        {/* ── Specialty chips ──────────────────────────────────────────── */}
-        <div className="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide">
-          {SPECIALTIES.map((s) => {
-            const Icon = s.icon;
-            return (
-              <FilterChip key={s.id} active={specialty === s.id} onClick={() => setSpecialty(s.id)} variant="gold">
-                <Icon size={11} weight={specialty === s.id ? 'fill' : 'regular'} />
-                {s.label}
-              </FilterChip>
-            );
-          })}
-        </div>
-
-        {/* ── Controls row ─────────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 mb-5 flex-wrap">
-          {/* Filters toggle */}
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[11.5px] font-semibold border transition-all ${
-              showFilters || activeFiltersCount > 0
-                ? 'bg-[#0B3D2E]/5 border-[#0B3D2E]/30 text-[#0B3D2E]'
-                : 'border-slate-200 text-slate-500 bg-white hover:border-slate-300'
-            }`}
-          >
-            <SlidersHorizontal size={13} />
-            فلاتر
-            {activeFiltersCount > 0 && (
-              <span className="bg-[#0B3D2E] text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
-                {activeFiltersCount}
-              </span>
-            )}
-          </motion.button>
-
-          {/* Available toggle */}
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            onClick={() => setAvailable(!availableOnly)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[11.5px] font-semibold border transition-all ${
-              availableOnly
-                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                : 'border-slate-200 text-slate-500 bg-white hover:border-slate-300'
-            }`}
-          >
-            {availableOnly ? <AvailabilityPulse /> : <span className="w-2 h-2 rounded-full bg-slate-300" />}
-            متاح الآن
-          </motion.button>
-
-          {/* Sort */}
-          <div className="relative ms-auto">
-            <motion.button
-              whileTap={{ scale: 0.96 }}
-              onClick={() => setSortOpen(!sortOpen)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-[11.5px] font-semibold border border-slate-200 bg-white text-slate-600 hover:border-slate-300 transition-all"
-            >
-              <CaretUpDown size={12} />
-              {sortLabel}
-            </motion.button>
-            <AnimatePresence>
-              {sortOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.96 }}
-                  transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-                  className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-[0_12px_30px_-8px_rgba(0,0,0,0.1)] py-1.5 z-20 min-w-[168px]"
-                >
-                  {SORT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.id}
-                      onClick={() => { setSort(opt.id); setSortOpen(false); }}
-                      className={`w-full text-right px-4 py-2.5 text-[11.5px] font-medium flex items-center gap-2 transition-colors ${
-                        sort === opt.id
-                          ? 'text-[#0B3D2E] bg-[#0B3D2E]/5 font-semibold'
-                          : 'text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      {sort === opt.id && <CheckCircle size={11} className="text-[#0B3D2E]" weight="fill" />}
-                      {opt.label}
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Count */}
-          <span className="text-[11px] text-slate-400 font-mono tabular-nums">{sorted.length} نتيجة</span>
-        </div>
-
-        {/* ── Advanced Filters Panel ────────────────────────────────────── */}
-        <AnimatePresence>
-          {showFilters && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="overflow-hidden"
-            >
-              <div className="mb-5 p-5 rounded-2xl border border-slate-200 bg-white shadow-[0_4px_16px_-4px_rgba(0,0,0,0.04)] grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
-                  <div className="flex justify-between mb-2">
-                    <label className="text-[11.5px] font-semibold text-slate-600">الحد الأقصى للسعر</label>
-                    <span className="text-[11.5px] font-black text-[#0B3D2E] tabular-nums">{maxPrice.toLocaleString('ar-SA')} ر.س</span>
-                  </div>
-                  <input
-                    type="range" min={100} max={1200} step={50}
-                    value={maxPrice}
-                    onChange={(e) => setMaxPrice(Number(e.target.value))}
-                    className="w-full accent-[#0B3D2E] cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-                    <span>١٠٠ ر.س</span><span>١٢٠٠ ر.س</span>
-                  </div>
-                </div>
-                <div className="flex items-end">
-                  <button
-                    onClick={clearAll}
-                    className="flex items-center gap-1.5 text-[11.5px] text-rose-600 hover:text-rose-700 font-semibold px-4 py-2 rounded-xl border border-rose-200 hover:bg-rose-50 transition-all active:scale-[0.97]"
-                  >
-                    <X size={12} />
-                    مسح كل الفلاتر
-                  </button>
+                  <p className="text-[15px] font-black text-zinc-900 leading-none">
+                    {arabicLawyerCount(acceptingCount)}
+                  </p>
+                  <p className="text-[10.5px] text-slate-400 mt-1">
+                    {arabicAcceptingClientsPredicate(acceptingCount)}
+                  </p>
                 </div>
               </div>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+        </div>
 
-        {/* ── Results Grid (2-col base, 3-col xl) — staggered ─────────── */}
+        {/* ── Search + filters — only meaningful once there is something to
+            filter. Showing a search box over an empty directory is how «لا توجد
+            نتائج مطابقة» came to stand in for «لا يوجد أحد». ─────────────── */}
+        {hasLawyers && (
+          <>
+            <div className="relative mb-5">
+              <MagnifyingGlass size={17} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="اسم المحامي، التخصص، أو المدينة…"
+                className="w-full pr-11 pl-10 py-3.5 text-[13.5px] border border-slate-200 rounded-2xl bg-white focus:outline-none focus:border-[#0B3D2E]/40 focus:ring-2 focus:ring-[#0B3D2E]/8 transition-all shadow-sm placeholder:text-slate-400"
+              />
+              <AnimatePresence>
+                {search && (
+                  <motion.button
+                    type="button"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    onClick={() => setSearch('')}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                    aria-label="مسح البحث"
+                  >
+                    <X size={15} />
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Both chip rows are gated on `complete` as well as on having more
+                than one option. A facet derived from one page of the directory
+                offers a city list with cities missing from it, and silently
+                filters the cards over a subset — «كل المدن» would be a button
+                that says all and means some. */}
+            {complete && cityOptions.length > 1 && (
+              <div className="flex gap-2 mb-3 overflow-x-auto pb-1 scrollbar-hide">
+                <FilterChip active={city === ALL} onClick={() => setCity(ALL)}>كل المدن</FilterChip>
+                {cityOptions.map((c) => (
+                  <FilterChip key={c} active={city === c} onClick={() => setCity(c)}>{c}</FilterChip>
+                ))}
+              </div>
+            )}
+
+            {complete && specialtyOptions.length > 1 && (
+              <div className="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide">
+                <FilterChip active={specialty === ALL} onClick={() => setSpecialty(ALL)} variant="gold">
+                  كل التخصصات
+                </FilterChip>
+                {specialtyOptions.map((s) => (
+                  <FilterChip key={s} active={specialty === s} onClick={() => setSpecialty(s)} variant="gold">
+                    {s}
+                  </FilterChip>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 mb-5 flex-wrap">
+              {/* Offered only when at least one lawyer actually answered yes —
+                  otherwise it is a toggle whose only outcome is an empty list. */}
+              {acceptingCount > 0 && (
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => setAcceptingOnly(!acceptingOnly)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[11.5px] font-semibold border transition-all ${
+                    acceptingOnly
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                      : 'border-slate-200 text-slate-500 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  {acceptingOnly ? <AvailabilityPulse /> : <span className="w-2 h-2 rounded-full bg-slate-300" />}
+                  يستقبل موكلين
+                </motion.button>
+              )}
+
+              {activeFiltersCount > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="flex items-center gap-1.5 text-[11.5px] text-rose-600 hover:text-rose-700 font-semibold px-3 py-2 rounded-xl border border-rose-200 hover:bg-rose-50 transition-all active:scale-[0.97]"
+                >
+                  <X size={12} />
+                  مسح الفلاتر ({activeFiltersCount})
+                </button>
+              )}
+
+              <div className="relative ms-auto">
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => setSortOpen(!sortOpen)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-[11.5px] font-semibold border border-slate-200 bg-white text-slate-600 hover:border-slate-300 transition-all"
+                >
+                  <CaretUpDown size={12} />
+                  {sortLabel}
+                </motion.button>
+                <AnimatePresence>
+                  {sortOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+                      className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-[0_12px_30px_-8px_rgba(0,0,0,0.1)] py-1.5 z-20 min-w-[190px]"
+                    >
+                      {SORT_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => { setSort(opt.id); setSortOpen(false); }}
+                          className={`w-full text-right px-4 py-2.5 text-[11.5px] font-medium flex items-center gap-2 transition-colors ${
+                            sort === opt.id
+                              ? 'text-[#0B3D2E] bg-[#0B3D2E]/5 font-semibold'
+                              : 'text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {sort === opt.id && <CheckCircle size={11} className="text-[#0B3D2E]" weight="fill" />}
+                          {opt.label}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* «٧ محامين» beside the sort control reads as the size of the
+                  directory, not as the length of one truncated page of it — so
+                  it is printed only when those two are the same number. */}
+              {complete && sorted.length > 0 && (
+                <span className="text-[11px] text-slate-400 font-semibold">{arabicLawyerCount(sorted.length)}</span>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── Results ──────────────────────────────────────────────────────── */}
         <AnimatePresence mode="wait">
           {loading ? (
             <SkeletonList count={6} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5" />
-          ) : lawyers.length === 0 ? (
-            /* ── No verified lawyers exist at all ──────────────────── */
+          ) : fetchError ? (
+            /* ── The request failed. A DIFFERENT fact from an empty directory,
+                  and it must not be told as one. ─────────────────────────── */
+            <motion.div
+              key="error"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 120, damping: 18 }}
+              className="flex flex-col items-center py-24 gap-5 text-center"
+            >
+              <div className="w-20 h-20 rounded-3xl bg-white border border-amber-200 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.06)] flex items-center justify-center">
+                <WarningCircle size={32} className="text-amber-500" weight="duotone" />
+              </div>
+              <div className="max-w-[330px] space-y-1.5">
+                <p className="font-black text-zinc-800 text-lg">تعذّر تحميل دليل المحامين</p>
+                <p className="text-slate-500 text-[13px] leading-relaxed">
+                  لم نتمكّن من الوصول إلى الخادم. هذه مشكلة في التحميل ولا تعني أن الدليل فارغ.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="text-[12px] text-[#0B3D2E] font-semibold px-5 py-2.5 rounded-xl border border-[#0B3D2E]/20 hover:bg-[#0B3D2E]/5 transition-all"
+              >
+                إعادة المحاولة
+              </button>
+            </motion.div>
+          ) : !hasLawyers ? (
+            /* ── Nobody has published a public profile. TODAY'S NORMAL STATE:
+                  all five lawyer_profiles rows are pending and not marked
+                  marketplace_visible, and the API filters on both. So this says
+                  what is true and hands the client a door that opens. ────── */
             <motion.div
               key="no-lawyers"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ type: 'spring', stiffness: 120, damping: 18 }}
-              className="flex flex-col items-center py-28 gap-6 text-center"
+              className="flex flex-col items-center py-24 gap-6 text-center"
             >
-              {/* Icon container */}
-              <div className="relative">
-                <div className="w-24 h-24 rounded-[1.75rem] bg-gradient-to-br from-[#0B3D2E]/5 via-white to-[#C8A762]/5 border border-slate-200/80 shadow-[0_12px_32px_-8px_rgba(11,61,46,0.08)] flex items-center justify-center">
-                  <Scales size={40} className="text-[#0B3D2E]/30" weight="duotone" />
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center">
-                  <Clock size={14} className="text-[#C8A762]" weight="fill" />
-                </div>
+              <div className="w-24 h-24 rounded-[1.75rem] bg-gradient-to-br from-[#0B3D2E]/5 via-white to-[#C8A762]/5 border border-slate-200/80 shadow-[0_12px_32px_-8px_rgba(11,61,46,0.08)] flex items-center justify-center">
+                <Scales size={40} className="text-[#0B3D2E]/30" weight="duotone" />
               </div>
 
-              {/* Arabic main message */}
-              <div className="max-w-[340px] space-y-2">
+              <div className="max-w-[420px] space-y-2.5">
                 <p className="font-black text-zinc-800 text-xl leading-tight">
-                  لا يوجد محامون متاحون حالياً
+                  لم يَنشُر أي محامٍ ملفاً عاماً في الدليل بعد
                 </p>
-                <p className="text-slate-400 text-[13px] leading-relaxed">
-                  No verified lawyers available yet
+                <p className="text-slate-500 text-[13px] leading-relaxed">
+                  يظهر المحامي هنا بعد أن يوثّق المكتب ترخيصه ويختار هو نشر ملفه للعموم.
+                  ولا يعني خلوّ الدليل تعذُّر الحصول على استشارة: مكتب نظامي يستقبل طلبك
+                  ويُسنده إلى المحامي المختص.
                 </p>
               </div>
 
-              {/* Subtle info box */}
-              <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-[#0B3D2E]/[0.03] border border-[#0B3D2E]/10 max-w-sm">
-                <SealCheck size={18} weight="duotone" className="text-[#0B3D2E]/40 flex-shrink-0" />
-                <p className="text-[11.5px] text-slate-500 leading-relaxed text-right">
-                  يتم التحقق من المحامين قبل ظهورهم في الدليل — سيتوفر محامون قريباً إن شاء الله
-                </p>
-              </div>
+              <Link
+                href={CONSULTATION_HREF}
+                className="flex items-center gap-2 bg-[#0B3D2E] text-white text-[12.5px] font-black px-6 py-3 rounded-2xl shadow-[0_4px_14px_0_rgba(11,61,46,0.25)] hover:bg-[#0a3328] transition-all active:scale-[0.98]"
+              >
+                <CalendarCheck size={15} weight="fill" />
+                احجز استشارة عبر المكتب
+                <ArrowLeft size={13} weight="bold" />
+              </Link>
             </motion.div>
           ) : sorted.length > 0 ? (
             <motion.div
@@ -691,10 +707,11 @@ export default function FindLawyerPage() {
               transition={{ duration: 0.18 }}
               className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5"
             >
-              {sorted.map((l, i) => <LawyerCard key={l.id} l={l} index={i} onBook={handleBook} />)}
+              {sorted.map((l, i) => <LawyerCard key={l.id} l={l} index={i} />)}
             </motion.div>
           ) : (
-            /* ── No results matching current filters ───────────────── */
+            /* ── Filters matched nothing. Only reachable when the directory is
+                  NOT empty, so «جرّب تغيير الفلاتر» is honest advice here. ── */
             <motion.div
               key="empty"
               initial={{ opacity: 0, y: 20 }}
@@ -711,6 +728,7 @@ export default function FindLawyerPage() {
                 <p className="text-slate-400 text-[13px] leading-relaxed">جرّب تغيير الفلاتر أو توسيع نطاق البحث</p>
               </div>
               <motion.button
+                type="button"
                 whileTap={{ scale: 0.96 }}
                 onClick={clearAll}
                 className="text-[12px] text-[#0B3D2E] font-semibold px-5 py-2.5 rounded-xl border border-[#0B3D2E]/20 hover:bg-[#0B3D2E]/5 transition-all"

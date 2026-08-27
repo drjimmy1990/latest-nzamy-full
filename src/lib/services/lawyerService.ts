@@ -7,15 +7,27 @@
 "use client";
 
 import { apiGet } from "@/lib/services/api";
+import { toDirectoryLawyers } from "@/lib/services/lawyerDirectory";
+import type {
+  DirectoryLawyer,
+  DirectoryLawyerRow,
+} from "@/lib/services/lawyerDirectory";
 import type { Lawyer } from "@/app/dashboard/client/find-lawyer/data";
 
 // Re-export the Lawyer type for consumers
 export type { Lawyer as LawyerProfile };
+export type { DirectoryLawyer };
 
 // ─── API types ────────────────────────────────────────────────────────────────
 
+/**
+ * What GET /api/v1/lawyers really answers with: PROFILE rows carrying an
+ * embedded `lawyer_profiles`. It was typed `Lawyer[]` here — the mock-directory
+ * interface — which made `getLawyers()` a cast rather than a mapping and left
+ * every field the card read `undefined` at runtime.
+ */
 interface LawyerListResponse {
-  lawyers: Lawyer[];
+  lawyers: DirectoryLawyerRow[];
   total: number;
 }
 
@@ -82,32 +94,50 @@ export type PublicLawyerResult =
 
 // ─── Filter types ─────────────────────────────────────────────────────────────
 
+/**
+ * `sort` used to accept "rating", which the caller then had to translate to
+ * "experience" because the route has no such ordering — there is no ratings
+ * table to order by. Offering an option that silently becomes a different one
+ * is how «الأعلى تقييماً» ended up on screen sorting by years of practice.
+ *
+ * `city` is likewise gone: the route (src/app/api/v1/lawyers/route.ts) reads
+ * `specialty`, `sort`, `available`, `limit` and `offset` and NOTHING else, so
+ * `city` was serialised into the query string and discarded by the server
+ * while the UI showed a city chip as active. The directory filters by city on
+ * the client instead, over rows it actually holds.
+ */
 export interface LawyerFilters {
   specialty?: string;
-  city?: string;
-  sort?: "rating" | "price" | "experience";
+  sort?: "price" | "experience";
   available?: boolean;
 }
 
 // ─── Service functions ────────────────────────────────────────────────────────
 
+/**
+ * The public directory, MAPPED — see src/lib/services/lawyerDirectory.ts for
+ * why the view model has no rating, review count, success rate, consultation
+ * count or response time.
+ *
+ * THROWS on a failed request instead of returning `[]`.
+ *
+ * The old body caught everything and handed back an empty array, which
+ * collapsed two different facts into one screen: "no lawyer has published a
+ * public profile" and "we could not reach the server". The directory's empty
+ * state names the first of those, so on any network hiccup the page told the
+ * client something about the profession that it had not actually checked. The
+ * page has always had a `.catch()` and a `fetchError` state; this is what makes
+ * that branch reachable.
+ */
 export async function getLawyers(
   filters?: LawyerFilters,
-): Promise<Lawyer[]> {
-  try {
-    // API only supports 'price' and 'experience' sort — map 'rating' to 'experience'
-    const sortParam = filters?.sort === "rating" ? "experience" : filters?.sort;
-    const response = await apiGet<LawyerListResponse>("/api/v1/lawyers", {
-      specialty: filters?.specialty,
-      city: filters?.city,
-      sort: sortParam,
-      available: filters?.available,
-    });
-    return response.lawyers ?? [];
-  } catch (error) {
-    console.warn("[Nzamy] Failed to fetch lawyers:", error);
-    return [];
-  }
+): Promise<DirectoryLawyer[]> {
+  const response = await apiGet<LawyerListResponse>("/api/v1/lawyers", {
+    specialty: filters?.specialty,
+    sort: filters?.sort,
+    available: filters?.available,
+  });
+  return toDirectoryLawyers(response?.lawyers);
 }
 
 /**

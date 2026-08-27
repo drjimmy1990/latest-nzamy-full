@@ -197,7 +197,20 @@ export async function getConsultations(opts?: {
   }
 }
 
+/**
+ * `request_id` is REQUIRED and has been since this function was written — the
+ * column is `not null unique references service_requests(id)`
+ * (20260518_client_workflow_backend_ready.sql:54). It was missing from this
+ * signature and from the POST handler, so every call raised 23502 and came back
+ * as a 500. `public.consultations` holds zero rows in production, and this is
+ * why. Both halves were fixed on 2026-08-27; the parameter is required here so
+ * the next caller cannot reintroduce the omission.
+ *
+ * A consultation is a FACET of an order, not a thing on its own: create the
+ * service_request first (createWorkflowRequest), then pass its id here.
+ */
 export async function createConsultation(data: {
+  request_id: string;
   lawyer_id?: string;
   type: string;
   topic: string;
@@ -221,6 +234,7 @@ export async function createConsultation(data: {
     "/api/v1/consultations",
     "POST",
     {
+      request_id: data.request_id,
       lawyer_user_id: data.lawyer_id,
       mode: data.type,
       specialty: data.topic,

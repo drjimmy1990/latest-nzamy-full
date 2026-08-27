@@ -107,11 +107,36 @@ export function ServiceCard({ service, index, isAr, isSelected, onSelect }: {
 
 type SubmitState = "idle" | "submitting" | "error";
 
-export function AssessmentModal({ onClose, isAr }: { onClose: () => void; isAr: boolean }) {
+/**
+ * `sourcePath` and `presetNeeds` exist because this modal has two homes.
+ *
+ * /services/corporate/health-check imports it whole rather than growing a
+ * second lead form. Without these two props that reuse told two small lies: the
+ * stored lead recorded «/services/business» as the page the visitor came from,
+ * and the visitor could not name the one thing they had just read a price for —
+ * the needs picker is a required gate and «فحص قانوني شامل» was not on it.
+ *
+ * `presetNeeds` PRE-SELECTS, it does not lock: a visitor who wants something
+ * else ticks it, and can untick this. Anything the caller passes that is not a
+ * real LegalNeedId is dropped here, and the server drops it again.
+ */
+export function AssessmentModal({
+  onClose,
+  isAr,
+  sourcePath,
+  presetNeeds,
+}: {
+  onClose: () => void;
+  isAr: boolean;
+  sourcePath?: string;
+  presetNeeds?: readonly LegalNeedId[];
+}) {
   const [step, setStep]                   = useState(1);
   const [companyName, setCompanyName]     = useState("");
   const [companySize, setCompanySize]     = useState<CompanySizeId | null>(null);
-  const [selectedNeeds, setSelectedNeeds] = useState<LegalNeedId[]>([]);
+  const [selectedNeeds, setSelectedNeeds] = useState<LegalNeedId[]>(() =>
+    (presetNeeds ?? []).filter((need) => LEGAL_NEEDS.some((known) => known.id === need)),
+  );
   const [contactName, setContactName]     = useState("");
   const [contactPhone, setContactPhone]   = useState("");
   const [contactEmail, setContactEmail]   = useState("");
@@ -143,6 +168,10 @@ export function AssessmentModal({ onClose, isAr }: { onClose: () => void; isAr: 
       contactPhone,
       contactEmail,
       notes,
+      // The page this was actually filed from. The server resolves it against
+      // its own allowlist (resolveLeadSourcePath) and falls back to the default
+      // for anything it does not recognise, so this is a hint, not a claim.
+      sourcePath,
       [HONEYPOT_FIELD]: honeypot,
     };
 

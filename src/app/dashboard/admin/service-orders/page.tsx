@@ -15,6 +15,27 @@ interface AdminOrder {
   id: string; title: string; description: string; status: string;
   created_at: string; metadata: Record<string, unknown>;
   profile: { display_name?: string; email?: string; phone?: string; user_type?: string } | null;
+  /**
+   * The registered entity behind a CORPORATE order — null for every individual
+   * one, and for a company whose business_profiles row does not exist yet.
+   *
+   * Added 2026-08-27, when a corporate account gained the ability to file
+   * through the same three-step form as an individual. Before it, all a
+   * fulfilment officer had was a trading name and a badge; an إنذار or a وكالة
+   * is issued in the name of the registered entity, by its ممثل نظامي, quoting
+   * the CR — and all three were already on file (owner item ٧), just never put
+   * in front of the person doing the work.
+   *
+   * Every field is optional at runtime whatever its declared type says: a row
+   * created before 20260826 has no legal representative and cannot have one
+   * recovered, because no form ever asked. Render nothing for an absent field.
+   */
+  entity: {
+    company_name_ar?: string;
+    cr_number?: string | null;
+    legal_rep_name?: string | null;
+    legal_rep_capacity?: string | null;
+  } | null;
   // Owner item ١٣ — who this order was routed to. Resolved by the LIST route
   // (never here), because `assigned_to` is a bare UUID on the row and printing
   // it would tell an admin nothing. `null` = nobody has been given it yet,
@@ -100,6 +121,22 @@ const ACCOUNT_BADGE: Record<string, { label: string; cls: string }> = {
   provider:   { label: "مزوّد خدمة",   cls: "bg-fuchsia-500/10 text-fuchsia-500" },
   government: { label: "جهة حكومية",   cls: "bg-violet-500/10 text-violet-500" },
   ngo:        { label: "جهة غير ربحية", cls: "bg-violet-500/10 text-violet-500" },
+};
+
+/**
+ * business_profiles.legal_rep_capacity → Arabic. The six values are the CHECK
+ * list in 20260826_corporate_identity_persisted.sql and the picker in
+ * src/app/register/client/components/_corporateIdentity.ts; an unrecognised
+ * value (or NULL, which is what every pre-20260826 row carries) resolves to ""
+ * and the card prints no capacity rather than a raw English word.
+ */
+const LEGAL_REP_CAPACITY_AR: Record<string, string> = {
+  owner: "مالك",
+  partner: "شريك",
+  manager: "مدير",
+  authorized_signatory: "مفوّض بالتوقيع",
+  legal_counsel: "مستشار قانوني",
+  other: "صفة أخرى",
 };
 
 const SERVICE_BADGE: Record<string, string> = {
@@ -446,6 +483,12 @@ function matchesSearch(o: AdminOrder, needle: string): boolean {
     matchesOrderReference(o.id, needle) ||
     o.id.toLowerCase().includes(q) ||
     (o.profile?.display_name ?? "").toLowerCase().includes(q) ||
+    // A corporate order is found by the company's registered name or its
+    // commercial registration number, not only by whatever trading name the
+    // account happens to carry — an officer chasing an إنذار has the CR in
+    // front of them, on the client's own paperwork.
+    (o.entity?.company_name_ar ?? "").toLowerCase().includes(q) ||
+    (o.entity?.cr_number ?? "").toLowerCase().includes(q) ||
     (o.title ?? "").toLowerCase().includes(q)
   );
 }
@@ -748,6 +791,12 @@ export default function AdminServiceOrdersPage() {
             ? {
                 ...(previous ?? {} as AdminOrder), ...(body.data as AdminOrder),
                 profile: previous?.profile ?? null,
+                // Carried over for the same reason as `profile`: the PATCH
+                // response is the raw service_requests row, so spreading it
+                // would blank every enrichment the LIST route added and the
+                // company block would vanish off the card the moment an admin
+                // routed or updated the order.
+                entity: previous?.entity ?? null,
                 whatsappNotice: previous?.whatsappNotice ?? null,
                 assignee: nextAssignee,
               }
@@ -1064,6 +1113,28 @@ export default function AdminServiceOrdersPage() {
                   <span className="font-mono font-bold">{orderReference(o.id)}</span> · {o.profile?.display_name ?? "—"} · {o.profile?.phone ?? "لا يوجد جوال"}
                   {o.profile?.email ? ` · ${o.profile.email}` : ""} · {new Date(o.created_at).toLocaleDateString("ar-SA")}
                 </p>
+                {/* The registered entity, for a corporate order only. Each of
+                    the three parts renders only if it is actually there — an
+                    absent CR shows no «س.ت» label at all rather than an empty
+                    one, and «شركة جديدة» (the placeholder a company that never
+                    typed a name still carries) is treated as no name, because
+                    printing it would tell the officer something false about
+                    who they are acting for. */}
+                {o.entity && (() => {
+                  const name = (o.entity.company_name_ar ?? "").trim();
+                  const realName = name && name !== "شركة جديدة" ? name : "";
+                  const cr = (o.entity.cr_number ?? "").trim();
+                  const rep = (o.entity.legal_rep_name ?? "").trim();
+                  const capacity = LEGAL_REP_CAPACITY_AR[o.entity.legal_rep_capacity ?? ""] ?? "";
+                  if (!realName && !cr && !rep) return null;
+                  return (
+                    <p className={`text-[11px] ${isDark ? "text-amber-400/80" : "text-amber-700"}`}>
+                      🏢 {realName || "المنشأة"}
+                      {cr ? ` · س.ت ${cr}` : ""}
+                      {rep ? ` · الممثل: ${rep}${capacity ? ` (${capacity})` : ""}` : ""}
+                    </p>
+                  );
+                })()}
               </div>
               {/* Deliberately a <span>, not a <button> — the whole header row
                   above is the control now. See the header comment. */}

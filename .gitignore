@@ -90,3 +90,6 @@ library-toolkit/output/
 library_last/
 last_owner/
 blog-toolkit/_articles-backup-*.json
+
+# Playwright MCP scratch output (console logs, snapshots) from browser verification runs.
+.playwright-mcp/

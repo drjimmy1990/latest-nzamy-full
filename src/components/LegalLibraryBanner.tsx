@@ -7,48 +7,73 @@ import { BookOpen, X, ArrowLeft, ArrowRight, Star, MagnifyingGlass } from "@phos
 import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Bilingual text ───────────────────────────────────────────────────────────
+//
+// EVERY NUMBER BELOW WAS COUNTED, on 2026-08-27, against the production
+// `library` schema. What was here before was not:
+//
+//   «٥,٠٠٠+ نظام ولائحة سعودية»   — the real figure is 386. The 5,000 appears to
+//                                    have been a guess at the article count, and
+//                                    even that was low by 8,000.
+//   «بحث ذكي بالذكاء الاصطناعي»   — /laws search is Postgres full-text search
+//                                    (see LIBRARY_FTS_CONFIG in
+//                                    src/utils/normalizeArabic). No model runs.
+//   «تحديثات فورية عند صدور أنظمة  — nothing watches for new legislation. The
+//     جديدة» / «تحديث يومي»          library is loaded by a seeding script.
+//   «٢٧ قسم قانوني»               — no such division exists in the schema.
+//
+// The counts are written as FLOORS («+», rounded DOWN to a round number) on
+// purpose. An exact figure printed in a component goes stale the first time
+// anyone seeds a row, and then this banner is lying again in the other
+// direction. A floor stays true as the library grows and is re-checkable with
+// one query per table:
+//
+//   select count(*) from library.laws;               -- 386     → «٣٨٦»
+//   select count(*) from library.articles;           -- 13,436  → «١٣٬٠٠٠+»
+//   select count(*) from library.principles;         -- 17,940  → «١٧٬٠٠٠+»
+//   select count(*) from library.decrees_circulars;  --  2,078  → «٢٬٠٠٠+»
+//
+// 386 is exact rather than a floor because it is small enough that a floor
+// would read as evasive, and it is the headline number.
 const txt = {
   ar: {
     badge: "اشتراك منفصل",
     title: "المكتبة القانونية",
-    subtitle: "٥,٠٠٠+ نظام ولائحة سعودية — بحث ذكي بالذكاء الاصطناعي",
+    subtitle: "٣٨٦ نظاماً ولائحة و١٣٬٠٠٠+ مادة — بحث بالنص الكامل",
     features: [
-      "بحث بالنص الكامل في جميع الأنظمة واللوائح",
-      "السوابق والمبادئ القضائية",
-      "تحديثات فورية عند صدور أنظمة جديدة",
+      "بحث بالنص الكامل في الأنظمة واللوائح ومَوادّها",
+      "١٧٬٠٠٠+ مبدأ قضائي، و٢٬٠٠٠+ قرار وتعميم",
       "تصفية حسب الجهة والتاريخ والموضوع",
     ],
     price: "٤٩ ﷼/شهر",
     pricePeriod: "أو ٤٩٠ ﷼/سنة",
-    cta: "اشترك الآن",
+    cta: "تفاصيل الاشتراك",
     explore: "تصفح المكتبة",
-    stat1: "٥,٠٠٠+",
+    stat1: "٣٨٦",
     stat1Label: "نظام ولائحة",
-    stat2: "٢٧",
-    stat2Label: "قسم قانوني",
-    stat3: "يومي",
-    stat3Label: "تحديث",
+    stat2: "١٣٬٠٠٠+",
+    stat2Label: "مادة",
+    stat3: "١٧٬٠٠٠+",
+    stat3Label: "مبدأ قضائي",
   },
   en: {
     badge: "Separate Subscription",
     title: "Legal Library",
-    subtitle: "5,000+ Saudi laws & regulations — AI-powered smart search",
+    subtitle: "386 Saudi laws & regulations, 13,000+ articles — full-text search",
     features: [
-      "Full-text search across all laws & regulations",
-      "Judicial principles & precedents",
-      "Real-time updates on new legislation",
+      "Full-text search across laws, regulations and their articles",
+      "17,000+ judicial principles and 2,000+ decrees & circulars",
       "Filter by authority, date, and subject",
     ],
     price: "SAR 49/mo",
     pricePeriod: "or SAR 490/year",
-    cta: "Subscribe Now",
+    cta: "Subscription details",
     explore: "Browse Library",
-    stat1: "5,000+",
+    stat1: "386",
     stat1Label: "Laws & Regulations",
-    stat2: "27",
-    stat2Label: "Legal Sections",
-    stat3: "Daily",
-    stat3Label: "Updates",
+    stat2: "13,000+",
+    stat2Label: "Articles",
+    stat3: "17,000+",
+    stat3Label: "Judicial Principles",
   },
 };
 

@@ -48,10 +48,16 @@ export function InvoiceTab() {
           ].map((f) => (
             <div key={f.label}>
               <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">{f.label}</label>
+              {/* NO defaultValue. Every one of these five fields used to open
+                  pre-filled with `f.placeholder` — which is نظامي's OWN
+                  identity: its trading name, its Riyadh address and
+                  invoices@nezamy.sa. A corporate customer opened this tab and
+                  found another company's billing details entered as its own,
+                  ready to be saved onto its invoices. A placeholder shows the
+                  expected FORMAT; a defaultValue asserts the VALUE. */}
               <input
                 type="text"
                 placeholder={f.placeholder}
-                defaultValue={f.placeholder}
                 className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-dark-bg text-zinc-800 dark:text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-royal/30 transition-colors"
               />
             </div>

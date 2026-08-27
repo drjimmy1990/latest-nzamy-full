@@ -207,17 +207,11 @@ export function Step2({
                   className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`} />
               </div>
             </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
-                {isAr ? "رقم تسجيل المركز الوطني" : "National Center Registration No."}
-              </label>
-              <div className="relative">
-                <IdentificationCard size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
-                <input type="text" dir="ltr" placeholder="NGO-XXXX"
-                  value={data.ngoRegNumber || ""} onChange={(e) => onChange("ngoRegNumber", e.target.value)}
-                  className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`} />
-              </div>
-            </div>
+            {/* «رقم تسجيل المركز الوطني» was here until 2026-08-27. ngo_profiles
+                has no column for it and handle_new_user() does not write that
+                table's `metadata` jsonb, so every number typed here was
+                discarded on submit. Removed rather than left collecting; the
+                field comes back the day a column does. */}
           </>
         )}
         {/* Company/Micro Fields */}
@@ -323,22 +317,6 @@ export function Step2({
                   value={data.lastName || ""}
                   onChange={(e) => onChange("lastName", e.target.value)}
                   className={inputCls}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
-                {isAr ? "رقم الهوية / الإقامة" : "ID / Iqama Number"}
-              </label>
-              <div className="relative">
-                <IdentificationCard size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
-                <input
-                  type="text"
-                  dir="ltr"
-                  placeholder="1XXXXXXXXX"
-                  value={data.idNumber || ""}
-                  onChange={(e) => onChange("idNumber", e.target.value)}
-                  className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
                 />
               </div>
             </div>

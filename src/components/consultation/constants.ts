@@ -1,19 +1,15 @@
+// Eight further icons and `IconProps` were imported here and used by nothing —
+// left behind when the specialty list moved to LEGAL_TAXONOMY. Dropped while
+// this file was open; they were pulling dead weight into the client bundle.
 import {
   Brain,
   Microphone,
   VideoCamera,
   User,
-  Buildings,
-  Gavel,
-  FileText,
-  Scales,
-  Heart,
-  House,
-  ShieldCheck,
-  IconProps
 } from "@phosphor-icons/react";
 import * as PhosphorIcons from "@phosphor-icons/react";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
+import { buildConsultationDays } from "./consultationCalendar";
 
 export type ConsultationType = "ai" | "voice" | "video" | "in-person";
 export type ScheduleMode = "instant" | "asap" | "calendar" | null;
@@ -93,12 +89,26 @@ export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
   ],
 };
 
-export const calendarSlots = [
-  { dayAr: "الأحد", dayEn: "Sun", date: "6 أبر", dateEn: "Apr 6", times: ["10:00", "14:00", "16:30"] },
-  { dayAr: "الاثنين", dayEn: "Mon", date: "7 أبر", dateEn: "Apr 7", times: ["09:00", "11:00", "15:00"] },
-  { dayAr: "الثلاثاء", dayEn: "Tue", date: "8 أبر", dateEn: "Apr 8", times: [] },
-  { dayAr: "الأربعاء", dayEn: "Wed", date: "9 أبر", dateEn: "Apr 9", times: ["10:00", "13:00", "17:00"] },
-  { dayAr: "الخميس", dayEn: "Thu", date: "10 أبر", dateEn: "Apr 10", times: ["09:00", "12:00", "15:30"] },
-  { dayAr: "الجمعة", dayEn: "Fri", date: "11 أبر", dateEn: "Apr 11", times: [] },
-  { dayAr: "السبت", dayEn: "Sat", date: "12 أبر", dateEn: "Apr 12", times: ["11:00"] },
-];
+/**
+ * The seven day-cards the booking calendar offers.
+ *
+ * This used to be a literal 6–12 April table, two of whose days carried an
+ * empty `times` array — which StepScheduling renders as a greyed-out,
+ * un-clickable day. So a visitor in August was shown a week from April, told
+ * that two days of it were unavailable, and allowed to book the other five.
+ * The dates are real now: see ./consultationCalendar.ts, which is a pure
+ * function over a date so the whole grid could be put under `node --test`
+ * (consultationCalendar.test.ts).
+ *
+ * WHY THIS IS EVALUATED AT MODULE LOAD, AND WHAT THAT COSTS
+ * StepScheduling consumes `calendarSlots` as a plain array — `.map`, `.find` —
+ * so turning it into a hook or a function call would mean editing that
+ * component, which another change owns. Evaluating once per module load is
+ * therefore the shape that fits. The cost: a browser tab left open across
+ * midnight keeps yesterday's window until it is reloaded. That is a day-old
+ * FIRST card, not a five-month-old week, and the grid is a stated preference
+ * the team confirms rather than a slot anyone holds. Note the grid never
+ * appears in server-rendered HTML — it is behind `scheduleMode === "calendar"`,
+ * which starts null — so no build-time date is ever baked into the page.
+ */
+export const calendarSlots = buildConsultationDays(new Date());

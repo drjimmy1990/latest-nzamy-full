@@ -9,7 +9,6 @@ import type { WaStep, UserCategory } from "../types";
 import type { WhatsAppQuickRequestDefinition } from "../whatsappWorkflow";
 import {
   AddressBook,
-  Bank,
   BookOpen,
   Briefcase,
   Buildings,
@@ -87,22 +86,32 @@ function addSupport(items: ServiceItem[], label = "دعم مباشر"): ServiceI
   ];
 }
 
+/**
+ * One quick-action card's request.
+ *
+ * `receiver` used to be the third parameter, and every call but two passed
+ * something other than "ai_workspace" — `lawyer`, `firm`, `business_legal`,
+ * `ngo_admin`, `government_reviewer`, `provider`. The admin fulfilment queue
+ * filters `.eq("receiver","ai_workspace")`
+ * (src/app/api/v1/admin/service-orders/route.ts:54), so those cards created
+ * rows nobody in the office could open. The parameter is deleted, not
+ * defaulted: `createQuickWhatsAppWorkflow` now writes the literal, and a knob
+ * that can only select invisibility should not exist for the next card author
+ * to reach for. `status`/`paymentStatus` went the same way — every widget
+ * request is free at submission and there is no gateway to make it otherwise.
+ *
+ * `description` is NOT shown on the card (StepServiceSelect renders `label`,
+ * `sub` and `badge` only). It becomes the created request's description, which
+ * buildOrderPrompt prints verbatim under «## وصف الطلب» — so it is written for
+ * the officer who fulfils the request, in the same Arabic the client would use.
+ */
 function quickRequest(
   title: string,
   description: string,
-  receiver: WhatsAppQuickRequestDefinition["receiver"],
   requestType: WhatsAppQuickRequestDefinition["requestType"] = "service",
   metadata: WhatsAppQuickRequestDefinition["metadata"] = {},
 ): WhatsAppQuickRequestDefinition {
-  return {
-    title,
-    description,
-    receiver,
-    requestType,
-    status: "pending_assignment",
-    paymentStatus: "not_required",
-    metadata,
-  };
+  return { title, description, requestType, metadata };
 }
 
 // ─── Guest / service-requester flows ────────────────────────────────────────
@@ -144,7 +153,7 @@ function getGuestServicesForCategory(cat: UserCategory | "guest"): ServiceItem[]
     return addSupport([
       { key: "guest-provider-notary", icon: <Stamp {...iconProps} />, label: "أحتاج موثقاً", sub: "وكالة • إقرار • عقد", next: "notary-type" },
       { key: "guest-provider-market", icon: <Storefront {...iconProps} />, label: "تصفح مقدمي الخدمة", sub: "موثق • معقب • محكم", href: "/marketplace" },
-      { key: "guest-provider-onboarding", icon: <SealCheck {...iconProps} />, label: "انضم كمقدم خدمة", sub: "اعتماد مهني جاهز للربط", href: "/register" },
+      { key: "guest-provider-onboarding", icon: <SealCheck {...iconProps} />, label: "انضم كمقدم خدمة", sub: "إنشاء حساب موثق أو معقب أو محكم", href: "/register" },
     ], "دعم مقدمي الخدمة");
   }
 
@@ -193,12 +202,10 @@ const MICRO_SERVICES: ServiceItem[] = [
     key: "micro-quick-help",
     icon: <Warning {...iconProps} />,
     label: "طلب سريع للمنشأة",
-    sub: "يسجل طلباً محلياً ويرسله لواتساب",
-    badge: "Backend-ready",
+    sub: "يفتح طلباً لفريق نظامي ويرسل نسخة على واتساب",
     quickRequest: quickRequest(
       "طلب سريع لمنشأة صغيرة",
-      "طلب وارد من زر واتساب العائم لمنشأة صغيرة: الرخص أو العقود أو المطالبات تظل واجهة محلية لحين ربط الباك إند.",
-      "lawyer",
+      "طلب سريع من صاحب منشأة صغيرة عبر زر واتساب في الموقع — رخصة أو اشتراط أو عقد أو مطالبة. لم يحدد الطالب التفاصيل في هذه الشاشة؛ يلزم التواصل معه لتحديد ما يحتاجه بالضبط.",
       "service",
       { sector: "micro" },
     ),
@@ -219,11 +226,9 @@ function getLawyerServices(user: ServiceSession): ServiceItem[] {
       icon: <Warning {...iconProps} />,
       label: "طلب دعم مهني",
       sub: "مشكلة جلسة أو اعتماد أو سوق خدمات",
-      badge: "Backend-ready",
       quickRequest: quickRequest(
         "طلب دعم مهني لمحام",
-        "طلب محلي من زر واتساب لمحام: دعم في الجلسات أو السوق أو الاعتماد، جاهز للربط بنظام التذاكر.",
-        "ai_workspace",
+        "محام مشترك في نظامي يطلب دعماً في جلسة أو في اعتماد ملفه المهني أو في سوق الخدمات. لم يحدد الطالب التفاصيل في هذه الشاشة؛ يلزم التواصل معه.",
         "service",
         { persona: "lawyer" },
       ),
@@ -270,12 +275,13 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
     key: `firm-${role}-quick`,
     icon: <Warning {...iconProps} />,
     label: "طلب دعم للمكتب",
-    sub: "يسجل سياق دورك ويرسل متابعة واتساب",
-    badge: "Backend-ready",
+    sub: "يفتح طلباً باسم المكتب ويرسل نسخة على واتساب",
     quickRequest: quickRequest(
       "طلب دعم عمليات مكتب محاماة",
-      `طلب محلي من زر واتساب لمكتب محاماة حسب دور ${role}. لا يوجد حفظ خادمي حتى الآن.`,
-      "firm",
+      // The role is a machine id (managing_partner, hr_manager, …), so it stays
+      // out of the sentence and goes to metadata instead — the fulfilment brief
+      // is Arabic, and «حسب دور hr_manager» is not.
+      "مكتب محاماة مشترك في نظامي يطلب دعماً في تشغيل المكتب. لم يحدد الطالب التفاصيل في هذه الشاشة؛ يلزم التواصل معه لتحديد ما يحتاجه.",
       "service",
       { firmRole: role },
     ),
@@ -359,9 +365,9 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
   const role = user?.businessRole ?? "owner";
   const serviceMode = user?.businessType === "service" || user?.tier === "shield";
   const roleQuick = quickRequest(
-    "طلب سريع للشركة التجارية",
-    `طلب محلي من زر واتساب للشركة التجارية حسب دور ${role}. يظهر في واجهة الطلبات فقط حتى ربط الباك إند.`,
-    "business_legal",
+    "طلب سريع من حساب شركة",
+    // `role` is a machine id and stays in metadata, not in the Arabic brief.
+    "موظف في شركة مشتركة في نظامي يرفع طلباً عاجلاً من زر واتساب في الموقع. لم يحدد الطالب التفاصيل في هذه الشاشة؛ يلزم التواصل معه لتحديد الموضوع والمستندات المطلوبة.",
     role === "employee" || role === "department_head" ? "service" : "business_case",
     { businessRole: role, serviceMode },
   );
@@ -372,7 +378,7 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
       { key: "corp-hr-ai", icon: <Robot {...iconProps} />, label: "مستشار HR القانوني", sub: "فصل • إنذار • مخالصة", href: "/ai/corp/hr" },
       { key: "corp-hr-review", icon: <ClipboardText {...iconProps} />, label: "طلب مراجعة", sub: "أرسل ملفاً للفريق القانوني", href: "/dashboard/business/reviews/new" },
       { key: "corp-hr-cases", icon: <Scales {...iconProps} />, label: "نزاعات عمالية", sub: "قضايا موظفين ومطالبات", href: "/dashboard/business/cases" },
-      { key: "corp-hr-quick", icon: <Warning {...iconProps} />, label: "تصعيد HR سريع", sub: "يوثق الطلب محلياً ويرسله لواتساب", badge: "Backend-ready", quickRequest: roleQuick },
+      { key: "corp-hr-quick", icon: <Warning {...iconProps} />, label: "تصعيد HR سريع", sub: "يفتح طلباً للفريق القانوني ويرسل نسخة على واتساب", quickRequest: roleQuick },
     ], "دعم شؤون الموظفين");
   }
 
@@ -382,7 +388,7 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
       { key: "corp-finance-wallet", icon: <Money {...iconProps} />, label: "المحفظة والفواتير", sub: "مدفوعات وأمانات الخدمة", href: "/dashboard/business/wallet" },
       { key: "corp-finance-review", icon: <ClipboardText {...iconProps} />, label: "مراجعة مستند", sub: "عقد أو مطالبة مالية", href: "/dashboard/business/reviews/new" },
       { key: "corp-finance-risk", icon: <ShieldCheck {...iconProps} />, label: "تقييم مخاطر", sub: "طرف تعاقدي أو مطالبة", href: "/ai/corp/risk-assessment" },
-      { key: "corp-finance-quick", icon: <Warning {...iconProps} />, label: "تصعيد مالي سريع", sub: "طلب محلي للفريق القانوني/المالي", badge: "Backend-ready", quickRequest: roleQuick },
+      { key: "corp-finance-quick", icon: <Warning {...iconProps} />, label: "تصعيد مالي سريع", sub: "يفتح طلباً للفريق القانوني/المالي وينسخه لواتساب", quickRequest: roleQuick },
     ], "دعم مالي/قانوني");
   }
 
@@ -391,7 +397,7 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
       { key: "corp-employee-requests", icon: <ClipboardText {...iconProps} />, label: "طلباتي", sub: "متابعة ما أرسلته للإدارة", href: "/dashboard/business/requests" },
       { key: "corp-employee-new", icon: <Warning {...iconProps} />, label: "ارفع طلباً جديداً", sub: "عقد أو مشكلة أو موافقة", href: "/dashboard/business/reviews/new" },
       { key: "corp-employee-board", icon: <Briefcase {...iconProps} />, label: "مهامي اليومية", sub: "ما يخصني فقط في لوحة العمل", href: "/dashboard/business/kanban" },
-      { key: "corp-employee-quick", icon: <ChatCircle {...iconProps} />, label: "طلب عاجل", sub: "يسجل الطلب محلياً ويرسله لواتساب", badge: "Backend-ready", quickRequest: roleQuick },
+      { key: "corp-employee-quick", icon: <ChatCircle {...iconProps} />, label: "طلب عاجل", sub: "يفتح طلباً للفريق القانوني ويرسل نسخة على واتساب", quickRequest: roleQuick },
     ], "دعم الموظف");
   }
 
@@ -400,7 +406,7 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
       { key: "corp-head-dept", icon: <Buildings {...iconProps} />, label: "قسمك", sub: "طلبات القسم ونطاقه", href: "/dashboard/business/departments" },
       { key: "corp-head-review", icon: <ClipboardText {...iconProps} />, label: "طلب مراجعة", sub: "إرسال مستند للفريق القانوني", href: "/dashboard/business/reviews/new" },
       { key: "corp-head-requests", icon: <FileText {...iconProps} />, label: "طلبات القسم", sub: "متابعة الحالة والتصعيد", href: "/dashboard/business/requests" },
-      { key: "corp-head-quick", icon: <Warning {...iconProps} />, label: "تصعيد قسم سريع", sub: "طلب محلي موجه للشؤون القانونية", badge: "Backend-ready", quickRequest: roleQuick },
+      { key: "corp-head-quick", icon: <Warning {...iconProps} />, label: "تصعيد قسم سريع", sub: "يفتح طلباً باسم قسمك للشؤون القانونية", quickRequest: roleQuick },
     ], "دعم مدير القسم");
   }
 
@@ -410,7 +416,7 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
       { key: "corp-legal-reviews", icon: <ClipboardText {...iconProps} />, label: "مراجعات الأقسام", sub: "طلبات قادمة من الإدارات", href: "/dashboard/business/reviews" },
       { key: "corp-legal-draft", icon: <PencilSimple {...iconProps} />, label: "صياغة عقد", sub: "صياغة ومراجعة مؤسسية", href: "/ai/corp/contracts" },
       { key: "corp-legal-mail", icon: <FileText {...iconProps} />, label: "LegalMail", sub: "مخاطبات ومهام قانونية", href: "/ai/mail-advisor" },
-      { key: "corp-legal-quick", icon: <Warning {...iconProps} />, label: "طلب داخلي سريع", sub: "يربط الطلب بدورك ونطاقك", badge: "Backend-ready", quickRequest: roleQuick },
+      { key: "corp-legal-quick", icon: <Warning {...iconProps} />, label: "طلب داخلي سريع", sub: "يفتح طلباً باسمك ويرسل نسخة على واتساب", quickRequest: roleQuick },
     ], role === "seconded" ? "دعم المستشار المنتدب" : "دعم الأخصائي القانوني");
   }
 
@@ -420,7 +426,7 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
       { key: "corp-compliance-risk", icon: <Warning {...iconProps} />, label: "تقييم مخاطر", sub: "طرف تعاقدي أو سياسة", href: "/ai/corp/risk-assessment" },
       { key: "corp-compliance-health", icon: <TrendUp {...iconProps} />, label: "فحص 360", sub: "مخاطر وثغرات واشتراطات", href: "/dashboard/business/health-check" },
       { key: "corp-compliance-reports", icon: <ChartBar {...iconProps} />, label: "تقارير الامتثال", sub: "لوحات وتقارير تنفيذية", href: "/dashboard/business/reports" },
-      { key: "corp-compliance-quick", icon: <ChatCircle {...iconProps} />, label: "تصعيد امتثال سريع", sub: "طلب محلي قابل للمتابعة", badge: "Backend-ready", quickRequest: roleQuick },
+      { key: "corp-compliance-quick", icon: <ChatCircle {...iconProps} />, label: "تصعيد امتثال سريع", sub: "يفتح طلب امتثال للفريق ويرسل نسخة على واتساب", quickRequest: roleQuick },
     ], "دعم الامتثال");
   }
 
@@ -437,7 +443,7 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
     { key: "corp-contract-ai", icon: <FileText {...iconProps} />, label: "عقود الشركات", sub: "صياغة أو مراجعة مؤسسية", href: "/ai/corp/contracts" },
     { key: "corp-compliance", icon: <ShieldCheck {...iconProps} />, label: "امتثال وحوكمة", sub: "PDPL • زكاة • لوائح", href: "/dashboard/business/governance" },
     { key: "corp-ai-chat", icon: <Robot {...iconProps} />, label: "مساعد قانوني داخلي", sub: "سؤال سريع حسب سياق الشركة", next: "ai-chat", badge: "AI" },
-    { key: "corp-owner-quick", icon: <ChatCircle {...iconProps} />, label: "طلب سريع للإدارة", sub: "يسجل طلباً محلياً ويرسله لواتساب", badge: "Backend-ready", quickRequest: roleQuick },
+    { key: "corp-owner-quick", icon: <ChatCircle {...iconProps} />, label: "طلب سريع للإدارة", sub: "يفتح طلباً لفريق نظامي ويرسل نسخة على واتساب", quickRequest: roleQuick },
   ], "دعم الشركة");
 }
 
@@ -476,12 +482,12 @@ function getGovernmentServices(user: ServiceSession): ServiceItem[] {
       key: "gov-role-quick",
       icon: <Warning {...iconProps} />,
       label: "طلب دعم حكومي سريع",
-      sub: "يسجل الدور الحكومي ويجهز المتابعة",
-      badge: "Backend-ready",
+      sub: "يفتح طلباً باسم الجهة ويرسل نسخة على واتساب",
       quickRequest: quickRequest(
-        "طلب دعم حكومي من زر واتساب",
-        `طلب محلي من جهة حكومية حسب دور ${role}: صلاحيات وأدوات AI وتكاملات B2G جاهزة للربط.`,
-        "government_reviewer",
+        "طلب دعم من جهة حكومية",
+        // `role` is a machine id (judge / prosecutor / officer / gov_counsel)
+        // and stays in metadata; the brief is Arabic.
+        "جهة حكومية مشتركة في نظامي تطلب دعماً — صلاحيات مستخدمين أو مراجعة عقد أو تكامل مع أنظمة الجهة. لم يحدد الطالب التفاصيل في هذه الشاشة؛ يلزم التواصل معه.",
         "service",
         { governmentRole: role },
       ),
@@ -499,12 +505,10 @@ const NGO_SERVICES: ServiceItem[] = addSupport([
     key: "ngo-quick-support",
     icon: <Warning {...iconProps} />,
     label: "طلب دعم للجمعية/الوقف",
-    sub: "حوكمة أو برنامج أو تقرير",
-    badge: "Backend-ready",
+    sub: "حوكمة أو برنامج أو تقرير — يفتح طلباً وينسخه لواتساب",
     quickRequest: quickRequest(
       "طلب دعم جمعية أو وقف",
-      "طلب محلي من زر واتساب لجمعية/وقف: حوكمة، برامج، تقارير، أو أصول وقفية. جاهز للربط بالباك إند.",
-      "ngo_admin",
+      "جمعية أو وقف مشترك في نظامي يطلب دعماً في الحوكمة أو في برنامج أو في تقرير دوري أو في أصل وقفي. لم يحدد الطالب التفاصيل في هذه الشاشة؛ يلزم التواصل معه.",
       "service",
       { sector: "ngo_awqaf" },
     ),
@@ -519,11 +523,11 @@ function getProviderServices(user: ServiceSession): ServiceItem[] {
     icon: <Warning {...iconProps} />,
     label,
     sub: "اعتماد أو طلب أو مشكلة تشغيل",
-    badge: "Backend-ready",
     quickRequest: quickRequest(
       label,
-      `طلب محلي من زر واتساب لمقدم خدمة بدور ${role}. جاهز للربط بتذاكر الدعم والاعتماد.`,
-      "provider",
+      // `role` is a machine id (notary / bailiff / arbitrator / provider) and
+      // stays in metadata; `label` above is already the Arabic the card shows.
+      `${label}: مقدم خدمة مشترك في نظامي يطلب دعماً في اعتماد ملفه أو في طلب قائم أو في مشكلة تشغيلية. لم يحدد الطالب التفاصيل في هذه الشاشة؛ يلزم التواصل معه.`,
       "service",
       { providerRole: role },
     ),
@@ -580,12 +584,10 @@ const ADMIN_SERVICES: ServiceItem[] = [
     key: "admin-ops-ticket",
     icon: <Warning {...iconProps} />,
     label: "تذكرة تشغيل داخلية",
-    sub: "لا تفتح عميل؛ تسجل ملاحظة إدارة محلية",
-    badge: "Backend-ready",
+    sub: "تذكرة داخلية للفريق — لا تُنشئ طلب عميل",
     quickRequest: quickRequest(
-      "تذكرة تشغيل من أدمن المنصة",
-      "تذكرة محلية من زر واتساب للأدمن: متابعة خلل أو سطح تحكم، جاهزة للربط بنظام Incident/Audit.",
-      "ai_workspace",
+      "تذكرة تشغيل من إدارة المنصة",
+      "تذكرة تشغيل داخلية رفعها أحد مسؤولي المنصة من زر واتساب — خلل أو ملاحظة على أحد أسطح التحكم. ليست طلب عميل. لم تُحدَّد التفاصيل في هذه الشاشة؛ راجعها مع من رفعها.",
       "service",
       { persona: "admin" },
     ),

@@ -292,7 +292,11 @@ export default function ClientContractsPage() {
         </Link>
       </div>
 
-      {/* Pending signature alert */}
+      {/* Pending signature alert.
+          «عرض» used to be a <button> with no onClick, so the one control on the
+          one banner urging the client to act did nothing. It now selects that
+          contract, which is what opens the detail panel on the right — the
+          same thing clicking its row in the list does. */}
       {contracts.some((c) => c.status === 'pending_signature') && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -308,9 +312,15 @@ export default function ClientContractsPage() {
             <p className="text-sm font-bold">عقد بانتظار توقيعك</p>
             <p className={`text-xs mt-0.5 ${isDark ? "text-amber-400/80" : "text-amber-700/80"}`}>يوجد لديك عقد بانتظار توقيعك. يرجى المراجعة والتوقيع.</p>
           </div>
-          <button className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl transition-colors ${
-            isDark ? "bg-amber-500/20 hover:bg-amber-500/30 text-amber-300" : "bg-amber-200 hover:bg-amber-300 text-amber-800"
-          }`}>
+          <button
+            type="button"
+            onClick={() => {
+              const pending = contracts.find((c) => c.status === 'pending_signature');
+              if (pending) setSelectedId(pending.id);
+            }}
+            className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl transition-colors ${
+              isDark ? "bg-amber-500/20 hover:bg-amber-500/30 text-amber-300" : "bg-amber-200 hover:bg-amber-300 text-amber-800"
+            }`}>
             عرض <ArrowUpRight size={14} weight="bold" />
           </button>
         </motion.div>

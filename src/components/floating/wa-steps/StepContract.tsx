@@ -103,17 +103,29 @@ export default function StepContract({ step, isDark, selections, contractNotes, 
   if (step === "contract-details") {
     return (
       <motion.div variants={staggerListVariants} initial="hidden" animate="show" className="flex flex-col gap-3 relative">
-        <motion.button
+        {/* This was a dashed dropzone reading «اضغط لرفع العقد · PDF, DOCX,
+            JPG — حتى 10MB» on a <button> with NO onClick and no file input
+            anywhere in the component. A visitor pressed it, nothing happened,
+            and there was no other way to tell them so.
+            Not re-wired, and the reason is the surface rather than the effort:
+            this widget is mounted site-wide for ANONYMOUS visitors, and every
+            upload path in this app (POST /api/v1/documents → Supabase Storage)
+            requires a session — so a real picker here would fail for most of
+            the people who see it, which is the same dead end with more steps.
+            What is true is that the flow ends by opening WhatsApp with the
+            office, and a contract sent in that conversation does reach the
+            team. So that is what it says now. */}
+        <motion.div
           variants={staggerItemVariants}
-          className={`w-full flex flex-col items-center justify-center gap-2 rounded-[1.25rem] border-2 border-dashed py-6 transition-all group active:scale-[0.98] ${isDark ? "border-white/20 text-gray-400 hover:border-emerald-500/50 hover:bg-white/5" : "border-gray-300 text-gray-500 hover:border-[#0B3D2E]/40 hover:bg-gray-50 hover:text-[#0B3D2E]"}`}
-          aria-label="اضغط لرفع ملف العقد"
+          className={`w-full flex items-start gap-3 rounded-[1.25rem] border px-4 py-3.5 ${isDark ? "border-white/10 bg-white/[0.02] text-zinc-400" : "border-gray-200/70 bg-white text-gray-600"}`}
         >
-          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-100 dark:bg-white/5 group-hover:bg-[#0B3D2E]/10 dark:group-hover:bg-emerald-500/20 transition-colors">
-            <Paperclip size={20} className={isDark ? "group-hover:text-emerald-400" : "group-hover:text-[#0B3D2E]"} />
-          </div>
-          <span className="text-[13px] font-bold">اضغط لرفع العقد</span>
-          <span className="text-[10px] text-gray-400 font-medium">PDF, DOCX, JPG — حتى 10MB</span>
-        </motion.button>
+          <span className="shrink-0 pt-0.5 text-[#0B3D2E] dark:text-emerald-400" aria-hidden="true">
+            <Paperclip size={18} />
+          </span>
+          <p className="text-[12px] font-medium leading-relaxed">
+            أرسل نسخة العقد في محادثة واتساب التي تُفتح بعد إتمام الطلب — يستلمها الفريق مع تفاصيل طلبك.
+          </p>
+        </motion.div>
         <motion.input
           variants={staggerItemVariants}
           type="text"

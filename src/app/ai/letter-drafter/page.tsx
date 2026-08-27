@@ -37,11 +37,17 @@ export default function LetterDrafterPage() {
             <h1 className={`text-3xl font-black leading-none mb-2 tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`} style={{ fontFamily: 'var(--font-brand)' }}>
               صائغ الخطابات
             </h1>
+            {/* This page and /dashboard/client/letters host the SAME
+                ClientLetterWorkflow behind different chrome. That component was
+                relabelled on 2026-08-27 — it is a TEMPLATE COMPOSER, not an AI
+                drafter; nothing generative runs in it — and this header still
+                said «AI · فوري» and «جاهز في دقيقة» over the corrected tool.
+                Two hosts, one component: the chrome has to agree with it. */}
             <p className={`text-[15px] font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-              إنذار · مطالبة · اعتراض · شكوى — جاهز في دقيقة
+              إنذار · مطالبة · اعتراض · شكوى — قوالب استرشادية تُعدّلها بنفسك
             </p>
           </div>
-          <span className="rounded-full bg-blue-500/10 border border-blue-500/30 px-3 py-1 text-[11px] font-black text-blue-500 ms-auto shadow-[0_0_15px_rgba(59,130,246,0.15)]">AI · فوري</span>
+          <span className="rounded-full bg-blue-500/10 border border-blue-500/30 px-3 py-1 text-[11px] font-black text-blue-500 ms-auto shadow-[0_0_15px_rgba(59,130,246,0.15)]">قالب استرشادي</span>
         </div>
 
         {/* Credits exhausted banner */}
@@ -51,9 +57,19 @@ export default function LetterDrafterPage() {
         <div className={`mb-8 px-6 py-4 rounded-[1.5rem] border text-[13px] leading-relaxed font-medium flex items-start gap-3 ${
           isDark ? "border-amber-500/20 bg-amber-500/5 text-amber-500/90" : "border-amber-200 bg-amber-50 text-amber-800"
         }`}>
+          {/* Two claims replaced. «الخطاب يُعدّه الذكاء الاصطناعي» was never
+              true of this component. And the link went to
+              /dashboard/client/find-lawyer, a directory that returns zero rows
+              in production (every lawyer_profiles row is unverified and
+              unpublished) AND is closed to every account type except
+              `individual` by src/lib/auth/routeAccess.ts — so for a company it
+              was a redirect, and for a client an empty page. Owner ruling س٣
+              already settled what this control should be: «طلب التدقيق
+              والاعتماد من محامي المكتب», which the composer itself now offers
+              as a real order that reaches the fulfilment queue. */}
           <div>
-            الخطاب يُعدّه الذكاء الاصطناعي — يُنصح بمراجعته من محامٍ متخصص قبل الإرسال الرسمي.
-            <Link href="/dashboard/client/find-lawyer" className={`font-bold underline ms-2 transition-colors ${isDark ? "hover:text-amber-400" : "hover:text-amber-600"}`}>احجز مراجعة من محامٍ متخصص</Link>
+            هذا الخطاب قالب استرشادي تُعدّله بنفسك، وليس عملاً قانونياً معتمداً.
+            لاعتماده رسمياً اطلب تدقيقه من محامي المكتب من زر الاعتماد أسفل الخطاب.
           </div>
         </div>
 

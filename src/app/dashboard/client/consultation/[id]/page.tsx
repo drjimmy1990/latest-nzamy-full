@@ -15,6 +15,11 @@ import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
 import { listClientWorkflowRequests } from "@/lib/clientWorkflowRepository";
 import type { WorkflowRequestStatus } from "@/lib/workflowStore";
 import {
+  CHANNEL_LABEL,
+  readConsultChannel,
+  type ConsultChannel,
+} from "@/constants/clientConsultationData";
+import {
   getChatRooms,
   createChatRoom,
   getChatMessages,
@@ -24,27 +29,56 @@ import {
 
 // ─── Types & Configurations ──────────────────────────────────────────────────
 
-type ConsultType   = "in-person" | "video" | "ai";
 type ConsultStatus = "upcoming" | "active" | "completed" | "cancelled";
 
 interface Consultation {
   id: string;
-  type: ConsultType;
+  /**
+   * How the session is delivered — read from `metadata.mode`, the SAME
+   * discriminator the list page keys its badge off (consultation/page.tsx).
+   * null when the row records no mode: bookings made at /book/consultation
+   * (useConsultationForm) write none, and a null channel renders NO session-type
+   * row rather than a guessed one.
+   */
+  channel: ConsultChannel | null;
+  /**
+   * Does this row have a live chat thread — i.e. does this page render the chat
+   * panel instead of the request record?
+   *
+   * True only for rows written with a receiver other than "ai_workspace", which
+   * today means rows created BEFORE the receiver fix. Every consultation is now
+   * written with `receiver: "ai_workspace"` because that literal is the whole of
+   * "the fulfilment queue can see this row"
+   * (api/v1/admin/service-orders/route.ts:54); it says nothing about who does
+   * the work, and the field that does say so is `channel` above.
+   *
+   * WHY THIS IS NOT `metadata.mode`, which is what a reading of the finding
+   * would suggest: pointing the render branch at the mode would send a ٧٠٠ ر.س
+   * in-person booking — `assignedTo: null`, so no chat room can be created —
+   * into the chat panel, where it renders «لا توجد محادثة مباشرة لهذا الطلب»
+   * and LOSES the request facts, the client's own submitted text, the copy
+   * button and the printable copy. That is a worse version of the same defect.
+   * The mode decides what the record SAYS; the receiver decides which record
+   * this page is able to show at all.
+   */
+  hasChatThread: boolean;
   status: ConsultStatus;
   /** The request's own status wording — see REQUEST_STATUS_AR. */
   requestStatusLabel: string;
-  lawyerName: string;
-  lawyerSpecialty: string;
-  lawyerInitial: string;
-  lawyerColor: string;
+  /**
+   * `metadata.lawyerName` — the lawyer the client picked in the wizard. null
+   * when the row names none (the beta assigns one later, and this page has no
+   * source for who that is).
+   */
+  lawyerName: string | null;
+  /** `metadata.specialty` — the legal branch the client picked. null when absent. */
+  specialty: string | null;
   /** The stored request title, exactly as the booking wizard wrote it. */
   title: string;
   /** The client's own submitted text (`service_requests.description`). Never an answer. */
   topic: string;
   /** Formatted submission date, or "" when the row carries no usable timestamp. */
   date: string;
-  time: string;
-  duration: string;
   price: number;
   /**
    * Where the fulfilled document actually appears, for `ai_workspace` rows only
@@ -72,10 +106,13 @@ interface Message {
 function mapChatMessage(
   cm: ChatMessage,
   currentUserId: string | undefined,
-  consultType: ConsultType,
 ): Message {
   const isSelf = cm.sender_id === currentUserId;
-  const sender: Message["sender"] = isSelf ? "client" : consultType === "ai" ? "ai" : "lawyer";
+  // Never "ai". A thread only exists on a row with `hasChatThread`, and the
+  // chat effect below returns early for anything else — so the counterpart in
+  // a rendered thread is the assigned lawyer, never an assistant. This used to
+  // branch on a `type` that was the literal "ai" for every row on the page.
+  const sender: Message["sender"] = isSelf ? "client" : "lawyer";
   const d = new Date(cm.created_at);
   const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
   return {
@@ -159,6 +196,31 @@ function formatRequestDate(iso: string | null | undefined): string {
 }
 
 /**
+ * `metadata.x` as a non-empty string, or null. Never "null"/"undefined".
+ *
+ * Load-bearing, not defensive: the booking wizard writes `lawyerName` and
+ * `lawyerId` as an explicit `null` when the client picked no lawyer
+ * (consultation/new/page.tsx), and `specialty` is `string | null` there too.
+ * `String(found.metadata?.lawyerName)` — which is what this file used to do —
+ * turns that null into the four characters «null» and passes every truthiness
+ * test after it, so a row with no lawyer would render «المحامي: null».
+ *
+ * Copied from the list page (consultation/page.tsx), which needs the identical
+ * guard on the identical keys. See the follow-up on extracting both pages'
+ * shared readers into src/lib.
+ */
+function metaString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** The Arabic wording for how this consultation is delivered, or null when the row records none. */
+function channelLabelOf(c: Consultation): string | null {
+  return c.channel ? CHANNEL_LABEL[c.channel] : null;
+}
+
+/**
  * Escapes text interpolated into the printable document.
  *
  * The printed copy's entire claim is that it reproduces the client's own words.
@@ -234,11 +296,29 @@ export default function ConsultationRoomPage() {
       .then((requests) => {
         const found = requests.find(r => r.id === id);
         if (found) {
-          const type = found.receiver === "ai_workspace" ? "ai" : (found.metadata?.mode as ConsultType) || "video";
+          // ── WHY `metadata.mode` AND NOT `receiver` ────────────────────────
+          //
+          // `receiver` is the unconditional literal "ai_workspace" in BOTH
+          // creators of a consultation row (consultation/new/page.tsx and
+          // useConsultationForm.ts), so the ternary that stood here —
+          // `found.receiver === "ai_workspace" ? "ai" : …` — resolved to "ai"
+          // for every row this page can load. Everything downstream of it was
+          // therefore dead: the read of `metadata.lawyerName` sat in the
+          // branch that never runs, and a ٧٠٠ ر.س in-person booking with a
+          // named lawyer showed that lawyer NOWHERE on the page.
+          //
+          // `metadata.mode` is the discriminator that actually varies, and it
+          // is the one the list page already keys its badge off. A value this
+          // codebase cannot name (or none at all) leaves `channel` null, and
+          // every row built from it disappears rather than being guessed.
+          // readConsultChannel() also covers /book/consultation's own key —
+          // see its comment.
+          const channel: ConsultChannel | null = readConsultChannel(found.metadata);
           setLawyerUserId(found.assignedTo ?? null);
           setConsultation({
             id: found.id,
-            type,
+            channel,
+            hasChatThread: found.receiver !== "ai_workspace",
             // BOTH fallbacks are load-bearing, not defensive noise: the DB's
             // `service_requests_status_check` allows a value the TypeScript
             // union does not — supabase/migrations/20260616_production_readiness_fixes.sql
@@ -250,22 +330,24 @@ export default function ConsultationRoomPage() {
             // sign that one was missing.
             status: CONSULT_STATUS_BY_REQUEST_STATUS[found.status] ?? "upcoming",
             requestStatusLabel: REQUEST_STATUS_AR[found.status] ?? "حالة غير معروفة",
-            lawyerName: found.receiver === "ai_workspace" ? "نظامي AI" : String(found.metadata?.lawyer ?? "بانتظار تأكيد المحامي"),
-            lawyerSpecialty: found.receiver === "ai_workspace" ? "مساعد قانوني ذكي" : String(found.metadata?.specialty ?? "استشارة قانونية"),
-            lawyerInitial: found.receiver === "ai_workspace" ? "AI" : "ن",
-            lawyerColor: found.receiver === "ai_workspace" ? "bg-[#0B3D2E]" : "bg-emerald-600",
+            // `metadata.lawyerName`, not `metadata.lawyer`. The booking wizard
+            // writes the client's chosen lawyer under `lawyerName`
+            // (consultation/new/page.tsx) and both consultation pages read
+            // `lawyer`, a key NOTHING writes — so a client who picked a specific
+            // lawyer was shown «بانتظار تأكيد المحامي» on every screen after,
+            // as if the choice had not been made. Reconciled on the reader side
+            // in both files rather than papered over with a fallback chain.
+            //
+            // Stored RAW and nullable, with no fallback wording baked in. The
+            // one fallback lives at the one site that cannot render an absence
+            // — `lawyerDisplayName`, which the chat header and the pane share.
+            // Every other site omits its whole row instead, which is the only
+            // way «المحامي» can be absent rather than asserted.
+            lawyerName: metaString(found.metadata?.lawyerName),
+            specialty: metaString(found.metadata?.specialty),
             title: found.title ?? "",
             topic: found.description ?? "",
             date: formatRequestDate(found.createdAt),
-            // Neither field has a source. No creator of these rows writes
-            // `metadata.time`, and the hardcoded "60 دق" was wrong for every
-            // 30-minute booking (`video-short`) — SessionChatPane prints it
-            // verbatim under «المدة» in its session panel, so it was a duration
-            // the client never bought. The request carries no recorded duration,
-            // and saying so is the only honest value available here; deriving
-            // one needs a real minutes field on the service catalogue.
-            time: "",
-            duration: "غير محددة",
             price: found.payment.amount,
             orderHref: found.receiver === "ai_workspace" ? `/ai/orders/${encodeURIComponent(found.id)}` : null,
           });
@@ -284,10 +366,12 @@ export default function ConsultationRoomPage() {
       });
   }, [id, user.userId, user.loading]);
 
-  // Wire the real chat room for this consultation (lawyer consultations only —
-  // the AI branch renders its own panel and never reaches SessionChatPane).
+  // Wire the real chat room for this consultation — only for rows that render
+  // the chat panel at all. Every other row renders the request record below and
+  // never reaches SessionChatPane, so looking a room up for it would be a
+  // request made on behalf of a screen that does not exist.
   useEffect(() => {
-    if (!consultation || consultation.type === "ai") return;
+    if (!consultation || !consultation.hasChatThread) return;
     if (user.loading) return;
     let cancelled = false;
     (async () => {
@@ -325,7 +409,7 @@ export default function ConsultationRoomPage() {
         if (roomId) {
           const history = await getChatMessages(roomId);
           if (cancelled) return;
-          setMessages(history.map(cm => mapChatMessage(cm, user.userId, consultation.type)));
+          setMessages(history.map(cm => mapChatMessage(cm, user.userId)));
         } else {
           setMessages([]);
           // No «قريباً»: nothing here schedules the room, so a promised date
@@ -376,7 +460,7 @@ export default function ConsultationRoomPage() {
     try {
       const saved = await sendChatMessage(chatRoomId, text);
       setMessages(prev => prev.map(m =>
-        m.id === localId ? mapChatMessage(saved, user.userId, consultation?.type ?? "video") : m
+        m.id === localId ? mapChatMessage(saved, user.userId) : m
       ));
     } catch {
       // A rejected POST must not leave the optimistic bubble sitting in the
@@ -402,10 +486,19 @@ export default function ConsultationRoomPage() {
   const handleCopyReport = () => {
     if (!consultation) return;
 
+    // Same three rows the screen gained, in the same order. A client who copies
+    // this to send it on must not end up with a shorter record than the one
+    // they were looking at. Every one is conditional: a row with no stored
+    // lawyer, mode or specialty loses the whole line rather than printing a
+    // label with nothing after it.
+    const channelLabel = channelLabelOf(consultation);
     const lines = [
       "نسخة من طلب استشارة قانونية — منصة نظامي",
       `رقم الطلب: ${consultation.id}`,
       ...(consultation.title ? [`عنوان الطلب: ${consultation.title}`] : []),
+      ...(channelLabel ? [`نوع الجلسة: ${channelLabel}`] : []),
+      ...(consultation.specialty ? [`التخصص: ${consultation.specialty}`] : []),
+      ...(consultation.lawyerName ? [`المحامي: ${consultation.lawyerName}`] : []),
       ...(consultation.date ? [`تاريخ الإرسال: ${consultation.date}`] : []),
       ...(consultation.requestStatusLabel ? [`حالة الطلب: ${consultation.requestStatusLabel}`] : []),
       "=========================================",
@@ -471,6 +564,21 @@ export default function ConsultationRoomPage() {
     const dateLine = consultation.date ? ` | تاريخ الإرسال: ${escapeHtml(consultation.date)}` : "";
     const titleRow = consultation.title
       ? `<tr><th>عنوان الطلب</th><td>${escapeHtml(consultation.title)}</td></tr>`
+      : "";
+    // The session type, the branch of law and the named lawyer — the three
+    // facts a client hands this document to someone else in order to state.
+    // escapeHtml on all three: the specialty and the lawyer name are stored
+    // values, and a stored value goes through the escape on the way into
+    // document.write like every other one on this page.
+    const channelLabel = channelLabelOf(consultation);
+    const channelRow = channelLabel
+      ? `<tr><th>نوع الجلسة</th><td>${escapeHtml(channelLabel)}</td></tr>`
+      : "";
+    const specialtyRow = consultation.specialty
+      ? `<tr><th>التخصص</th><td>${escapeHtml(consultation.specialty)}</td></tr>`
+      : "";
+    const lawyerRow = consultation.lawyerName
+      ? `<tr><th>المحامي</th><td>${escapeHtml(consultation.lawyerName)}</td></tr>`
       : "";
     const statusRow = consultation.requestStatusLabel
       ? `<tr><th>حالة الطلب</th><td>${escapeHtml(consultation.requestStatusLabel)}</td></tr>`
@@ -608,6 +716,9 @@ export default function ConsultationRoomPage() {
               <td>${escapeHtml(consultation.id)}</td>
             </tr>
             ${titleRow}
+            ${channelRow}
+            ${specialtyRow}
+            ${lawyerRow}
             ${statusRow}
             ${priceRow}
           </table>
@@ -671,21 +782,36 @@ export default function ConsultationRoomPage() {
 
   // ─── 1. REQUEST RECORD RENDER ───────────────────────────────────────────────
   //
-  // Reached by every `ai_workspace` row — which includes the human consultation
-  // bookings made at /book/consultation (useConsultationForm posts them with
+  // Reached by every `ai_workspace` row — which is EVERY consultation booked
+  // today, AI path and lawyer path alike, plus the bookings made at
+  // /book/consultation (useConsultationForm posts them with
   // `receiver: "ai_workspace"` and no `metadata.mode`). That is why nothing on
-  // this screen may present itself as an AI assistant's work: for a large share
-  // of these rows there is no AI in the picture at all, and for the rest there
-  // is still no stored output.
+  // this screen may present itself as an AI assistant's work: for most of these
+  // rows there is no AI in the picture at all, and for the rest there is still
+  // no stored output.
+  //
+  // It is also why the lawyer, the session type and the specialty belong HERE.
+  // This is the render a client actually gets; a fix that put them anywhere
+  // else put them on a screen nobody reaches.
 
-  if (consultation.type === "ai") {
+  if (!consultation.hasChatThread) {
     const bg = isDark ? "bg-[#111418]" : "bg-zinc-50/50";
     const cardBg = isDark ? "bg-zinc-900/60 backdrop-blur-md border-white/10" : "bg-white border-zinc-200/60";
     const requestText = consultation.topic.trim();
+    const channelLabel = channelLabelOf(consultation);
 
     const infoRows: Array<{ k: string; v: string }> = [
       { k: "رقم الطلب", v: consultation.id },
       ...(consultation.title ? [{ k: "عنوان الطلب", v: consultation.title }] : []),
+      // The three facts that used to reach no render at all. Each one is
+      // present only when the row stores it: an AI question carries a channel
+      // and no lawyer, a beta booking carries a mode and a specialty but no
+      // lawyer until one is assigned, and a /book/consultation row carries none
+      // of the three. A missing value takes its label with it — «المحامي» with
+      // nothing after it would be the assertion this pass exists to remove.
+      ...(channelLabel ? [{ k: "نوع الجلسة", v: channelLabel }] : []),
+      ...(consultation.specialty ? [{ k: "التخصص", v: consultation.specialty }] : []),
+      ...(consultation.lawyerName ? [{ k: "المحامي", v: consultation.lawyerName }] : []),
       ...(consultation.date ? [{ k: "تاريخ الإرسال", v: consultation.date }] : []),
       ...(consultation.requestStatusLabel ? [{ k: "حالة الطلب", v: consultation.requestStatusLabel }] : []),
       ...(consultation.price > 0
@@ -888,8 +1014,18 @@ export default function ConsultationRoomPage() {
   }
 
   // ─── 2. LAWYER INTERACTIVE CHAT PANEL RENDER ────────────────────────────────
+  //
+  // Rows written with a receiver other than "ai_workspace" — in practice, rows
+  // created before the receiver fix. There is no AI counterpart down here: the
+  // AI path has always been written to `ai_workspace`, so it takes the record
+  // render above.
 
   const bg = isDark ? "bg-zinc-950" : "bg-zinc-50";
+  const chatChannelLabel = channelLabelOf(consultation);
+  // The one place a name has to be non-empty: this header prints it as the
+  // person the client is talking to. Everywhere else the row is omitted
+  // instead. «بانتظار تعيين المحامي» states the absence rather than filling it.
+  const lawyerDisplayName = consultation.lawyerName ?? "بانتظار تعيين المحامي";
 
   return (
     <div className={`flex h-[100dvh] flex-col ${bg}`} dir="rtl">
@@ -906,18 +1042,27 @@ export default function ConsultationRoomPage() {
         {/* Lawyer Info details */}
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div className="relative flex-shrink-0">
-            <div className={`h-10 w-10 rounded-full ${consultation.lawyerColor} flex items-center justify-center shadow-md`}>
-              <span className="text-white font-extrabold text-sm">{consultation.lawyerInitial}</span>
+            {/* Fixed mark, not a receiver-derived one: this render is only
+                reached by non-`ai_workspace` rows, so the counterpart is
+                always a lawyer. The old code chose between an «AI» avatar and
+                this one on `receiver`, which meant every row got the AI mark. */}
+            <div className="h-10 w-10 rounded-full bg-emerald-600 flex items-center justify-center shadow-md">
+              <span className="text-white font-extrabold text-sm">ن</span>
             </div>
           </div>
           <div className="min-w-0">
             <p className={`text-[14px] font-bold truncate ${isDark ? "text-white" : "text-zinc-900"}`}>
-              {consultation.lawyerName}
+              {lawyerDisplayName}
             </p>
-            <div className="flex items-center gap-1.5">
-              <SealCheck size={11} weight="fill" className="text-[#C8A762]" />
-              <span className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{consultation.lawyerSpecialty}</span>
-            </div>
+            {/* The client's chosen branch of law, when the row records one. It
+                used to fall back to «استشارة قانونية» — a specialisation
+                asserted under a verification seal for a row that names none. */}
+            {consultation.specialty && (
+              <div className="flex items-center gap-1.5">
+                <SealCheck size={11} weight="fill" className="text-[#C8A762]" />
+                <span className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{consultation.specialty}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -959,7 +1104,42 @@ export default function ConsultationRoomPage() {
             </div>
           )}
           <SessionChatPane
-            consultation={consultation}
+            // Built explicitly rather than spread. The pane's own Consultation
+            // shape is not this page's — it asks for four lawyer fields, a
+            // `time` and a `duration` — and spreading hid which of its labels
+            // each value ends up under. Every line below names where the value
+            // is going.
+            consultation={{
+              id: consultation.id,
+              // The pane's union is "in-person" | "video" | "ai"; the four
+              // LawyerMode values do not fit it and nothing in
+              // SessionChatPane.tsx reads this field. Never "ai": an AI row is
+              // written to `ai_workspace` and takes the record render above.
+              type: consultation.channel === "in-person" ? "in-person" : "video",
+              status: consultation.status,
+              lawyerName: lawyerDisplayName,
+              // The pane prints this under «النوع» (SessionChatPane.tsx:413),
+              // not as a specialisation — so it gets the session type, which is
+              // what that label asks for. Never "": an empty value under a
+              // label is a field claiming to exist with nothing behind it.
+              lawyerSpecialty: chatChannelLabel ?? "غير محددة",
+              lawyerInitial: "ن",
+              lawyerColor: "bg-emerald-600",
+              topic: consultation.topic,
+              date: consultation.date,
+              // NEITHER FIELD HAS A SOURCE, and both are required by the pane.
+              // No creator of these rows writes `metadata.time`, and the
+              // hardcoded "60 دق" that used to sit in `duration` was wrong for
+              // every 30-minute booking (`video-short`) — the pane prints it
+              // verbatim under «المدة» in its session panel, so it was a
+              // duration the client never bought. The request carries no
+              // recorded duration, and saying so is the only honest value
+              // available; deriving one needs a real minutes field on the
+              // service catalogue.
+              time: "",
+              duration: "غير محددة",
+              price: consultation.price,
+            }}
             messages={messages}
             input={input}
             setInput={setInput}

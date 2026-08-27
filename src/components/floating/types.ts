@@ -36,13 +36,23 @@ export type UserCategory = "individual" | "business" | "corporate" | "micro" | "
 
 // ─── Shared Constants ─────────────────────────────────────────────────────────
 
-export const MOCK_DAYS = [
-  { label: "الأحد",    date: "6 أبر",  slots: ["10:00 ص", "12:00 م", "3:00 م"] },
-  { label: "الاثنين",  date: "7 أبر",  slots: ["9:00 ص",  "11:00 ص", "4:00 م"] },
-  { label: "الثلاثاء", date: "8 أبر",  slots: ["10:30 ص", "2:00 م"] },
-  { label: "الأربعاء", date: "9 أبر",  slots: ["9:00 ص",  "1:00 م",  "5:00 م"] },
-  { label: "الخميس",  date: "10 أبر", slots: ["11:00 ص", "3:30 م"] },
-];
+// MOCK_DAYS was here: a hand-written table of «6 أبر» … «10 أبر» with fixed
+// time slots, rendered by StepConsult's consult-calendar step. The widget is
+// mounted on every page of the site (src/components/FloatingButtons.tsx), so
+// through August this was a PUBLIC booking calendar offering appointments in a
+// week of April that had already gone — and the string a visitor picked,
+// «الأربعاء 9 أبر», is what travelled to the office.
+//
+// The days now come from src/components/consultation/consultationCalendar.ts,
+// the same pure, tested module the /book/consultation calendar uses after the
+// identical defect was found there. One generator, so the two cannot drift
+// apart again — which is how this bug came to have two copies.
+//
+// The time slots went with it: they varied per day ("10:30 ص" on Tuesday,
+// "3:30 م" on Thursday) and nothing in this codebase knows the office's diary,
+// so a day-specific list was an invented claim about availability. Every day
+// now offers the same CONSULTATION_PREFERRED_TIMES, which is what they always
+// were — a preference the team confirms.
 
 // ─── AI Responses ─────────────────────────────────────────────────────────────
 

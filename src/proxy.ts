@@ -6,35 +6,10 @@ import {
   isDbUserType,
   FALLBACK_DASHBOARD_PATH,
 } from "@/lib/auth/userTypes";
-
-// ─── Route → required userTypes mapping ────────────────────────────────────────
-// The types below are `profiles.user_type` values, read from the database — not
-// from `auth.user_metadata`, which an OAuth provider never writes.
-const ROUTE_ACCESS: { prefix: string; allowedTypes: string[] }[] = [
-  { prefix: "/dashboard/lawyer",   allowedTypes: ["lawyer"] },
-  { prefix: "/dashboard/firm",     allowedTypes: ["firm"] },
-  { prefix: "/dashboard/client",   allowedTypes: ["individual"] },
-  { prefix: "/dashboard/business", allowedTypes: ["corporate"] },
-  { prefix: "/dashboard/micro",    allowedTypes: ["micro"] },
-  { prefix: "/dashboard/provider", allowedTypes: ["provider"] },
-  { prefix: "/dashboard/government", allowedTypes: ["government"] },
-  { prefix: "/dashboard/ngo",      allowedTypes: ["ngo"] },
-  // /dashboard/admin had no rule here, so this middleware had no opinion on the
-  // highest-privilege prefix in the app: any signed-in user could load the
-  // route's HTML and JavaScript. No admin data was exposed by that — every admin
-  // API goes through requireAdmin() (src/lib/access-control.ts:101-120) — and the
-  // layout renders a refusal instead of the page (UserTypeGuard,
-  // src/app/dashboard/admin/layout.tsx:14), but that check runs in the browser
-  // after the page is served. This rule makes the same decision at the edge.
-  //
-  // `admin` here is a value being CHECKED, never one being assigned: nothing in
-  // this file writes user_type. What this entry actually does is refuse
-  // everyone whose profiles.user_type is not 'admin'. The admin itself never
-  // reaches the comparison — the `isAdmin` short-circuit in Gate 2 answers
-  // first — so the value is spelled out to say who the prefix is for, not
-  // because this list is what lets the admin in.
-  { prefix: "/dashboard/admin",    allowedTypes: ["admin"] },
-];
+// Both tables moved to src/lib/auth/routeAccess.ts so they could be tested:
+// this file imports next/server, so nothing could import it to make a claim
+// about who is allowed where. See routeAccess.test.ts for what is pinned.
+import { routeAccessRuleFor, isProtectedApiPath } from "@/lib/auth/routeAccess";
 
 // ─── Protected route prefixes (require authentication) ─────────────────────────
 const PROTECTED = [
@@ -53,11 +28,6 @@ const PROTECTED = [
   "/notifications",
   "/onboarding",
 ];
-
-// ─── Protected API prefixes (require an authenticated session) ─────────────────
-// Defense-in-depth: unauthenticated hits get a JSON 401 here; per-endpoint role
-// authorization (lawyer/firm/admin) is enforced by assertRole() in the handlers.
-const PROTECTED_API = ["/api/v1/lawyer", "/api/v1/admin", "/api/v1/firm"];
 
 // ─── Deprecated route redirects ────────────────────────────────────────────────
 const REDIRECTS: Record<string, string> = {
@@ -85,7 +55,7 @@ export default async function proxy(req: NextRequest) {
 
   // 1b. Protect sensitive API prefixes with a middleware-level JSON 401 when the
   //     session is missing (defense-in-depth on top of the handler assertRole()).
-  if (isSupabaseMode && PROTECTED_API.some((p) => pathname.startsWith(p))) {
+  if (isSupabaseMode && isProtectedApiPath(pathname)) {
     const apiResponse = NextResponse.next({ request: req });
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -166,7 +136,7 @@ export default async function proxy(req: NextRequest) {
     // supabase/migrations/20260603_phase1_001_profiles.sql:66-68). It is
     // skipped whenever neither gate could act on the answer — which is exactly
     // the /onboarding pages, i.e. the pages a gated user loads most often.
-    const rbacRule = ROUTE_ACCESS.find((r) => pathname.startsWith(r.prefix));
+    const rbacRule = routeAccessRuleFor(pathname);
     const onboardingGateApplies =
       // The wizard itself is exempt, or the redirect below would loop on it.
       !pathname.startsWith("/onboarding") &&
@@ -326,7 +296,7 @@ export default async function proxy(req: NextRequest) {
     if (
       rbacRule &&
       !isAdmin &&
-      (knownType === null || !rbacRule.allowedTypes.includes(knownType))
+      (knownType === null || !(rbacRule.allowedTypes as readonly string[]).includes(knownType))
     ) {
       const url = req.nextUrl.clone();
       // A type outside the CHECK-constraint vocabulary (or a missing row) is
@@ -337,8 +307,19 @@ export default async function proxy(req: NextRequest) {
       // Neither branch can loop. FALLBACK_DASHBOARD_PATH is "/", which no
       // PROTECTED prefix matches, so none of this runs there; and for each of
       // the eight known types that can reach this line — admin was answered by
-      // the short-circuit above — DASHBOARD_PATHS sends it to the one prefix
-      // above whose rule allows exactly that type.
+      // the short-circuit above — DASHBOARD_PATHS sends it to a prefix whose
+      // rule admits that type.
+      //
+      // Note the wording: "a prefix whose rule admits it", not "the one prefix
+      // reserved for it". Since 2026-08-27 three /dashboard/client/* intake
+      // subtrees admit BOTH `individual` and `corporate`
+      // (src/lib/auth/routeAccess.ts), so the table is no longer one-prefix-
+      // per-type. The no-loop property is unaffected and is worth re-deriving
+      // rather than assuming: a corporate account refused at, say,
+      // /dashboard/client/cases is sent to /dashboard/business, whose rule
+      // admits `corporate`, so the redirected request passes this gate. The
+      // property that matters is that DASHBOARD_PATHS[t] always resolves to a
+      // rule that admits `t` — which routeAccess.test.ts pins.
       url.pathname = knownType ? dashboardPathFor(knownType) : FALLBACK_DASHBOARD_PATH;
       return NextResponse.redirect(url);
     }

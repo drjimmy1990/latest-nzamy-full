@@ -5,10 +5,9 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   Gavel, CalendarBlank, FolderOpen, Coins, Robot, Sparkle,
-  ArrowLeft, MagnifyingGlass,
-  CheckCircle, Clock, Warning, ChatCircle, Phone,
+  ArrowLeft, Clock, ChatCircle,
   FileText, Wallet, Shield,
-  ChatDots, Headset, ArrowUp, SealCheck, Users, PencilSimple,
+  Headset, Users, PencilSimple,
   Package, Lightning, WarningCircle,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -23,8 +22,203 @@ import {
   toClientDocumentRows,
   activeCasesPhraseAr,
   toArabicDigits,
+  formatArabicDate,
 } from "@/lib/services/clientDashboardCards";
+import { MODE_COPY } from "@/constants/clientConsultationData";
 import { fadeUp } from "./_data";
+
+// ─── Row readers ──────────────────────────────────────────────────────────────
+//
+// /api/v1/dashboard/summary hands this page raw database rows, so every field
+// below is read defensively — the same discipline clientDashboardCards.ts
+// applies to the case and document rows.
+//
+// WHY THEY LIVE IN THE PAGE — pure helpers in this codebase belong in
+// src/lib/services/ beside a colocated `node --test` file, and that is where
+// these should end up. This change is scoped to two files and may not create a
+// third; extracting them with tests is the follow-up. readNextAppointment()
+// below is the one that most wants it — it is the only helper here with real
+// branching.
+
+function readText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/** A plain JSON object — not null, not an array. */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// ─── Next appointment ─────────────────────────────────────────────────────────
+
+/**
+ * The Arabic name of a `consultations.mode` value.
+ *
+ * The keys are the column's own CHECK list
+ * (20260518_client_workflow_backend_ready.sql:57), and the four lawyer labels
+ * are read off MODE_COPY rather than retyped, so the channel a client sees on
+ * this card and the button they pressed in the booking wizard cannot drift
+ * apart — the same rule /dashboard/client/consultation follows at
+ * page.tsx:79-82. «بالذكاء الاصطناعي» is the wizard's own wording for the AI
+ * path (consultation/new/page.tsx:371).
+ *
+ * A value outside the list gets no channel at all rather than a heading
+ * printing the raw English token at an Arabic reader.
+ */
+const CONSULT_MODE_AR: Record<string, string> = {
+  "in-person": MODE_COPY["in-person"].label,
+  video: MODE_COPY.video.label,
+  voice: MODE_COPY.voice.label,
+  text: MODE_COPY.text.label,
+  ai: "بالذكاء الاصطناعي",
+};
+
+/**
+ * Statuses that mean this row is NOT an appointment the client is still
+ * waiting for.
+ *
+ * The summary route filters only on `scheduled_at > now()`, so a consultation
+ * that was cancelled last week but was booked for next Tuesday still comes
+ * back as the client's "next appointment". A deny-list rather than an
+ * allow-list because two status vocabularies reach this column: the DDL
+ * defaults it to `pending_assignment` (the service_requests words) while
+ * casesService.ts:32 types these rows as requested/scheduled/completed/
+ * cancelled. An unrecognised status therefore keeps the card — the row really
+ * is a future booking — and only a word that positively means "closed" drops
+ * it. The route is where this filter belongs; see the follow-up.
+ */
+const CLOSED_CONSULT_STATUSES = new Set([
+  "cancelled", "canceled", "completed", "rejected", "refunded",
+]);
+
+/**
+ * «اليوم» / «غداً», or null.
+ *
+ * Deliberately only these two. They are the one thing a client cannot read off
+ * the date line beside them, and neither needs Arabic number agreement — «بعد
+ * ٣ أيام» would, and that is plural logic with no test behind it in a page
+ * file. Anything further out gets no pill, which is why the pill's whole
+ * element is conditional below.
+ *
+ * Compared at local midnight, not by elapsed hours: an appointment at 09:00
+ * tomorrow is «غداً» whether it is 22:00 or 02:00 now. Saudi keeps no DST, and
+ * Math.round absorbs a ±1h offset anywhere else.
+ */
+function appointmentDayPillAr(value: unknown): string | null {
+  const ms = Date.parse(readText(value));
+  if (!Number.isFinite(ms)) return null;
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round(
+    (startOfDay(new Date(ms)) - startOfDay(new Date())) / 86_400_000,
+  );
+  if (days === 0) return "اليوم";
+  if (days === 1) return "غداً";
+  return null;
+}
+
+/**
+ * One raw `consultations` row → the appointment card, or null when there is no
+ * honest card to draw.
+ *
+ * WHAT THE ROUTE SENDS. /api/v1/dashboard/summary query #2 (route.ts:63-73) is
+ *   .from("consultations").select("*")
+ *     .eq("requester_user_id", uid).gt("scheduled_at", now())
+ *     .order("scheduled_at").limit(1).single()
+ * so this receives a RAW row: id, request_id, requester_user_id,
+ * lawyer_user_id, mode, specialty, scheduled_at, status, metadata, created_at,
+ * updated_at (20260518_client_workflow_backend_ready.sql:52-64 — the only later
+ * migration adds two reminder flags, 20260706_reminder_flags.sql).
+ *
+ * THE CAST THIS REPLACES claimed `title`, `lawyer`, `lawyerPhone`, `date`,
+ * `time`, `type` and `countdown`. Not one of the seven is a column on that
+ * table, so the card rendered an empty amber urgency pill, a blank heading, a
+ * «مع » with nothing after it, a bare em dash where the appointment time was
+ * promised — and `href="tel:undefined"`, a call button that looked live and
+ * dialled nothing. It never white-paged, which is how it shipped, and
+ * DEMO_SUMMARY.nextAppointment is null (dashboardService.ts:52), so it fired
+ * only for a client who really had a consultation booked.
+ *
+ * NO TIME OF DAY IS PRINTED, and that is the deliberate half of this. It would
+ * have been one line beside the date, and the date line is exactly where the em
+ * dash used to be — but nothing in this repository writes a clock time into
+ * `scheduled_at`. Its two writers are POST /api/v1/consultations:87
+ * (`body.preferred_date ?? null` — a field named for a day, whose only caller,
+ * casesService.createConsultation:200, is itself called from nowhere) and the
+ * PATCH allow-list at consultations/[id]/route.ts:79. A date-only ISO string is
+ * parsed as UTC midnight by the language spec, so rendering its clock in Riyadh
+ * would have printed «٣:٠٠ ص» — a 3 AM appointment, invented from a value that
+ * was never a time. The date is stated; the hour is omitted with its label.
+ *
+ * NO LAWYER NAME AND NO PHONE NUMBER, for the same reason as before: the row
+ * carries `lawyer_user_id`, a uuid, and the route joins no profile. Whether one
+ * is assigned is a fact the row does state, and that is all this says.
+ */
+function readNextAppointment(value: unknown): {
+  heading: string;
+  dateLabel: string;
+  dayPill: string | null;
+  assignedLabel: string | null;
+} | null {
+  if (!isPlainRecord(value)) return null;
+
+  if (CLOSED_CONSULT_STATUSES.has(readText(value.status).toLowerCase())) return null;
+
+  // The date IS the card. Without a readable `scheduled_at` there is no
+  // appointment to announce, so the whole card goes rather than a heading over
+  // a missing date.
+  const dateLabel = formatArabicDate(value.scheduled_at);
+  if (!dateLabel) return null;
+
+  const modeAr = CONSULT_MODE_AR[readText(value.mode)];
+  return {
+    // «استشارة» alone when the channel is unrecognised: the row is a
+    // consultation whatever its mode column says, so the bare word stays true.
+    heading: modeAr ? `استشارة ${modeAr}` : "استشارة",
+    dateLabel,
+    dayPill: appointmentDayPillAr(value.scheduled_at),
+    // Omitted, not inverted. A null `lawyer_user_id` means nobody is recorded
+    // against the row; «بانتظار تعيين المحامي» would assert an assignment
+    // process is under way, which no column here states.
+    //
+    // EXPECT THIS LINE NEVER TO APPEAR TODAY, and do not go hunting for a bug
+    // when it doesn't. Nothing in this repository sets `lawyer_user_id` after
+    // the row exists — the PATCH allow-list is ["status", "scheduled_at",
+    // "notes"] (consultations/[id]/route.ts:79) — and the booking wizard does
+    // not set it at creation either (IS_BETA is true in
+    // clientConsultationData.ts, so the system assigns and the client never
+    // picks). The branch is kept because the column is real and the day
+    // something writes it this card is already correct; it is not kept to
+    // display anything now.
+    assignedLabel: readText(value.lawyer_user_id) ? "تم تعيين محامٍ" : null,
+  };
+}
+
+/**
+ * The Arabic label for a `community_posts.category` value.
+ *
+ * The keys are the table's own CHECK list
+ * (supabase/migrations/20260603_phase1_004_community_features.sql:39) — this
+ * translates a known enum, it does not invent a taxonomy. A value outside the
+ * list gets NO pill rather than a pill printing the raw English token.
+ *
+ * CATEGORIES in src/constants/communityData.ts is not reused: it spells the
+ * real-estate key with a hyphen where the column uses an underscore, it is
+ * missing four of the column's values, and each of its entries carries a
+ * hardcoded `count` this page must not repeat.
+ */
+const COMMUNITY_CATEGORY_AR: Record<string, string> = {
+  general: "عام",
+  labor: "عمالي",
+  commercial: "تجاري",
+  criminal: "جنائي",
+  family: "أحوال شخصية",
+  real_estate: "عقاري",
+  administrative: "إداري",
+  intellectual_property: "ملكية فكرية",
+  international: "دولي",
+  other: "أخرى",
+};
 
 export default function ClientDashboard() {
   const { isDark } = useTheme();
@@ -68,9 +262,31 @@ export default function ClientDashboard() {
   // does not exist — and CaseCard then read `.bg` off `undefined`, crashing the
   // whole page for every client who had ever placed an order.
   const MY_CASES = toClientCases(summary?.activeCases);
-  const NEXT_APPOINTMENT = summary?.nextAppointment as { title: string; lawyer: string; lawyerPhone: string; date: string; time: string; type: string; countdown: string } | null;
-  const RECENT_MESSAGES = (summary?.recentMessages ?? []) as { from: string; msg: string; time: string; unread: boolean }[];
-  const COMMUNITY_PREVIEW = (summary?.communityPreview ?? []) as { id: number; title: string; tag: string; answers: number; votes: number; isAnswered: boolean; ago: string }[];
+
+  // readNextAppointment(), not `as {…}`. DashboardSummary already types this
+  // field `unknown` (dashboardService.ts:40) — the cast that stood here was the
+  // page asserting seven columns onto a row that has none of them. See the
+  // function for what the row really carries.
+  const NEXT_APPOINTMENT = useMemo(
+    () => readNextAppointment(summary?.nextAppointment),
+    [summary?.nextAppointment],
+  );
+
+  // `summary.recentMessages` is READ NOWHERE ON THIS PAGE ANY MORE — see the
+  // note where the «رسائل المحامين» card used to be, above the documents card.
+
+  // Only the four fields the summary route actually selects
+  // (route.ts query #5: `id, title, category, created_at`). The cast this
+  // replaces also claimed `tag`, `answers`, `votes`, `isAnswered` and `ago`;
+  // not one of them was in the payload, so the card below rendered an empty
+  // vote number, an empty category pill, a bare « إجابة» and a «محامٍ»
+  // verified badge over a question no lawyer had answered.
+  const COMMUNITY_PREVIEW = (summary?.communityPreview ?? []) as {
+    id: string;
+    title: string;
+    category: string;
+    created_at: string;
+  }[];
 
   // How many open orders the client really has. The route caps `activeCases`
   // at three rows and returns the exact filtered count beside them, so
@@ -91,42 +307,137 @@ export default function ClientDashboard() {
   const DOC_ROWS = toClientDocumentRows(documents, 3);
 
   // ── Subscription / Plan ───────────────────────────────────────────────
-  const sub = summary?.subscription;
-  const USER_PLAN = useMemo(() => {
-    const planId = (sub?.plan ?? "free") as "free" | "shield" | "ai-individual" | "legal-protection";
-    const isLegalProtection = planId === "legal-protection";
-    const isAiIndividual = planId === "ai-individual";
-    return {
-      id: planId,
-      name: sub?.name ?? "مجانية",
-      priceLabel: planId === "free" ? "مجاناً" : planId === "ai-individual" ? "٩٩ ر.س/شهر" : planId === "shield" ? "١٩٩ ر.س/شهر" : "٤٩٩ ر.س/شهر",
-      renewDate: "—",
-      limits: sub?.limits ?? { aiQueries: 1, contractDrafts: 0, consultations: 0 },
-      used: sub?.used ?? { aiQueries: 0, contractDrafts: 0, consultations: 0 },
-      consultationIncluded: isLegalProtection,
-      contractReviewIncluded: isLegalProtection,
-      contractDraftIncluded: isAiIndividual || isLegalProtection,
-      payPerUse: {
-        consultation: 250,
-        aiConsultation: 49,
-        contractReview: 300,
-        extraAiQuery: 5,
-      },
-    };
-  }, [sub]);
+  //
+  // WHAT THE ROUTE ACTUALLY SENDS. /api/v1/dashboard/summary query #4 is
+  //   .from("subscriptions").select("*, subscription_plans(*)")
+  // so `summary.subscription` is a RAW `subscriptions` row — plan_id, tier,
+  // billing_cycle, current_period_end, auto_renew — with the catalogue row
+  // embedded under `subscription_plans` (name_ar, price_monthly, price_yearly).
+  //
+  // The block this replaces read `sub.plan`, `sub.name`, `sub.limits` and
+  // `sub.used`. NOT ONE of those four is a column on `subscriptions`
+  // (supabase/migrations/20260603_phase1_003_subscriptions_billing.sql:29).
+  // `sub.plan` was therefore undefined on every account in production, the
+  // `?? "free"` turned that into a fact, and the banner told paying
+  // subscribers — and companies under contract — «أنت على الباقة المجانية»
+  // over a button reading «اشترك الآن».
+  //
+  // THE THREE USAGE BARS ARE GONE RATHER THAN REPAIRED. `used` has no source
+  // anywhere in this codebase: no table, no route, no counter. Every bar drew
+  // 0/limit for every client. A measured-looking zero for consumption nobody
+  // measures is the same lie as a measured-looking 42.
+  //
+  // The pay-per-use prices went with them. They were hardcoded here and wrong:
+  // «٧٠٠ ر.س» for an AI contract draft that CLIENT_SERVICE_CATALOG prices at
+  // 99, «٥ ر.س» for an extra AI question the catalogue prices at 49.
+  //
+  // NOT useUser().tier either — that is `meta.tier ?? "free"` and cannot tell
+  // "never granted" from "granted free", so a corporate account under contract
+  // would render «مجاني».
+  //
+  // DashboardSummary types this field as SubscriptionSummary, which is the
+  // shape the demo fixture has and the route does not. It is read through a
+  // local narrowing for the same reason ACTIVE_TOTAL is: the interface lives
+  // in dashboardService.ts, outside this change.
+  const subRow = summary?.subscription as unknown as Record<string, unknown> | null | undefined;
 
-  // ── Quick Services (derived from plan) ─────────────────────────────────
-  const QUICK_SERVICES = useMemo(() => [
+  const PLAN = useMemo(() => {
+    if (!subRow) return null;
+
+    // PostgREST returns a to-one embed as an object, and as a one-element
+    // array when it cannot prove the cardinality. Accepting only one of the
+    // two silently drops the plan's Arabic name on the other.
+    const rawEmbed = subRow.subscription_plans;
+    const embedded = Array.isArray(rawEmbed) ? rawEmbed[0] : rawEmbed;
+    const planRow = embedded && typeof embedded === "object"
+      ? (embedded as Record<string, unknown>)
+      : null;
+
+    const nameAr = planRow ? readText(planRow.name_ar) : "";
+    const planId = readText(subRow.plan_id);
+    // Neither field means this is not a subscriptions row at all. In
+    // production that is the DEMO_SUMMARY fallback dashboardService.ts returns
+    // when the request fails, whose `subscription` is the literal
+    // `{ plan: "free", name: "مجانية", … }`. A failed read must never become a
+    // statement that the client is on the free plan — it becomes silence.
+    if (!nameAr && !planId) return null;
+
+    // NO PRICE IS PRINTED, and this is the deliberate half of the fix.
+    // `subscription_plans.price_monthly` is a real column and it would have
+    // been easy to render — but nothing in this platform charges it. There is
+    // no payment provider (access-control.ts:314, `payments_gateway` is
+    // admin-held at "disabled" until one is chosen), and every writer of the
+    // `subscriptions` table is an admin route: a plan here is GRANTED, not
+    // bought. «٤٩ ر.س/شهر» on a client's dashboard asserts a recurring charge
+    // that nothing collects. /pricing sells a different catalogue again —
+    // «نظامي AI ٩٩», «التأمين القانوني ٣٩» — with none of the names or figures
+    // the subscription_plans seed carries, so a price here would also have
+    // contradicted the page the button beside it opens.
+
+    // The validity window, on the other hand, is a plain fact about the row.
+    // «سارية حتى» rather than «يتجدد»: renewal implies a charge for the same
+    // reason the price does, while «سارية حتى X» stays true whether or not the
+    // grant is extended. auto_renew === false adds the one extra thing the row
+    // really does say — that it stops there.
+    const endsAt = formatArabicDate(subRow.current_period_end);
+    const periodLabel = !endsAt
+      ? null
+      : subRow.auto_renew === false
+        ? `تنتهي في ${endsAt}`
+        : `سارية حتى ${endsAt}`;
+
+    return {
+      // The plan's own Arabic name («الذكية», «الاحترافية»). When the embed
+      // came back empty — the catalogue row was deactivated, so the
+      // "active plans are public" RLS policy hid it — the plan id is shown
+      // rather than a guessed name.
+      name: nameAr || planId,
+      periodLabel,
+    };
+  }, [subRow]);
+
+  // ── Quick Services ─────────────────────────────────────────────────────
+  //
+  // THREE CARDS, NOT FOUR. The fourth was «ابحث عن محامٍ» →
+  // /dashboard/client/find-lawyer, badged «مجاني دائماً».
+  //
+  // THE REASON THAT STANDS ON ITS OWN is a fact about this code:
+  // BETA_MONOPOLY_MODE (src/lib/betaConfig.ts) is true, نظامي is the sole
+  // provider for the whole beta, and there is therefore no second lawyer to go
+  // and find. «احجز استشارة» beside it books the office directly.
+  //
+  // THE SUPPORTING FACT IS ABOUT DATA, ON A DATE, AND WAS NOT CHECKED FROM
+  // HERE. GET /api/v1/lawyers filters on verification_status = 'verified' AND
+  // marketplace_visible = true. On 2026-08-27 the controller of this work read
+  // lawyer_profiles directly — a REST call with the service key, not an
+  // inference drawn from this file — and reported all five rows still
+  // `pending` / `false`, so the directory returned zero rows that day and the
+  // page could only render empty. That is a snapshot, not an invariant: one
+  // admin verifying a lawyer and flipping marketplace_visible ends it, and the
+  // emptiness argument goes with it. The line above is what still holds after
+  // that.
+  //
+  // The sidebar entry went the same way; see
+  // src/constants/navigation.sidebars.primary.ts for what replaced it there
+  // and for what flipping the flag back should restore.
+  //
+  // NO `planBadge` ON ANY CARD. Those badges were the plan fiction above,
+  // rendered four times: «مشمولة ٠/٠», «١/يوم فقط», and two invented prices.
+  // Nothing here can price a consultation honestly in any case — the
+  // consultation category alone runs from 250 to 700 ر.س across four
+  // sub-services in CLIENT_SERVICE_CATALOG, so no single badge is true for
+  // the card. /dashboard/client/services prices each one where it is ordered.
+  //
+  // Constant, so no useMemo: it closes over nothing.
+  const QUICK_SERVICES = [
     {
+      // The booking wizard itself, not the catalogue — «كل الخدمات» in the
+      // section header is the catalogue.
       label: "احجز استشارة",
-      href: "/dashboard/client/services",
+      href: "/dashboard/client/consultation/new",
       icon: ChatCircle,
       color: "from-[#b5883a] to-[#C8A762]",
-      desc: "مع محامٍ متخصص",
-      planBadge: USER_PLAN.consultationIncluded
-        ? `مشمولة ${USER_PLAN.used.consultations}/${USER_PLAN.limits.consultations}`
-        : `${USER_PLAN.payPerUse.consultation} ر.س`,
-      planBadgeOk: USER_PLAN.consultationIncluded,
+      desc: "مع محامي المكتب",
     },
     {
       label: "اسأل نظامي AI",
@@ -134,10 +445,6 @@ export default function ClientDashboard() {
       icon: Robot,
       color: "from-[#0B3D2E] to-[#1a6b50]",
       desc: "إجابات فورية",
-      planBadge: USER_PLAN.id === "free"
-        ? "١/يوم فقط"
-        : `${USER_PLAN.limits.aiQueries - USER_PLAN.used.aiQueries} استفسار متبق`,
-      planBadgeOk: USER_PLAN.id !== "free",
     },
     {
       label: "صياغة عقد",
@@ -145,21 +452,8 @@ export default function ClientDashboard() {
       icon: FileText,
       color: "from-[#155c40] to-[#1e7a55]",
       desc: "AI يصيغ لك العقد",
-      planBadge: USER_PLAN.contractDraftIncluded
-        ? `${USER_PLAN.limits.contractDrafts - USER_PLAN.used.contractDrafts} عقود متبقية`
-        : `٧٠٠ ر.س`,
-      planBadgeOk: USER_PLAN.contractDraftIncluded && USER_PLAN.used.contractDrafts < USER_PLAN.limits.contractDrafts,
     },
-    {
-      label: "ابحث عن محامٍ",
-      href: "/dashboard/client/find-lawyer",
-      icon: MagnifyingGlass,
-      color: "from-[#8a6520] to-[#b5883a]",
-      desc: "متخصص في مجالك",
-      planBadge: "مجاني دائماً",
-      planBadgeOk: true,
-    },
-  ], [USER_PLAN]);
+  ];
 
   if (loading || !summary) return <DashboardPageSkeleton />;
 
@@ -252,44 +546,79 @@ export default function ClientDashboard() {
               </div>
               <p className={`text-[13px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>موعدك القادم</p>
             </div>
-            <span className="text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-700/30">
-              {NEXT_APPOINTMENT.countdown}
-            </span>
+            {/* THE WHOLE PILL IS CONDITIONAL, not just the word inside it.
+                This was an unconditional amber chip — padding, border and all —
+                wrapped around `{countdown}`, a field with no column behind it,
+                so every client with a booking got a small empty badge where an
+                urgency signal was promised. An empty chip is the same defect as
+                a wrong one. */}
+            {NEXT_APPOINTMENT.dayPill && (
+              <span className="text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-700/30">
+                {NEXT_APPOINTMENT.dayPill}
+              </span>
+            )}
           </div>
 
           <div className={`rounded-2xl p-4 ${isDark ? "bg-zinc-800" : "bg-amber-50/60 border border-amber-100"}`}>
-            <p className={`text-[14px] font-bold mb-1 ${isDark ? "text-white" : "text-zinc-800"}`}>
-              {NEXT_APPOINTMENT.title}
+            {/* The channel, which the row states, in place of a `title` the
+                table has no column for. */}
+            <p className={`text-[14px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>
+              {NEXT_APPOINTMENT.heading}
             </p>
-            <p className={`text-[12px] mb-3 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-              مع {NEXT_APPOINTMENT.lawyer}
-            </p>
-            <div className="flex items-center gap-2 text-[12px] font-medium">
+            {/* Replaces «مع {lawyer}», which printed «مع » and stopped. */}
+            {NEXT_APPOINTMENT.assignedLabel && (
+              <p className={`text-[12px] mt-0.5 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                {NEXT_APPOINTMENT.assignedLabel}
+              </p>
+            )}
+            {/* The date alone. The line it replaces read «{date} — {time}» off
+                two fields that do not exist, so it rendered as a bare em dash —
+                which the comment at the plan card below already condemns in so
+                many words: an em dash is not a date. */}
+            <div className="mt-3 flex items-center gap-2 text-[12px] font-medium">
               <Clock size={13} className="text-amber-500" />
               <span className={isDark ? "text-zinc-300" : "text-zinc-700"}>
-                {NEXT_APPOINTMENT.date} — {NEXT_APPOINTMENT.time}
+                {NEXT_APPOINTMENT.dateLabel}
               </span>
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <Link href="/dashboard/client/consultation" className="flex-1">
-              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                className="w-full flex items-center justify-center gap-1.5 bg-royal/10 text-royal text-[12px] font-bold py-2.5 rounded-xl transition-colors hover:bg-royal/20 cursor-pointer"
-              >
-                <CalendarBlank size={13} /> كل المواعيد
-              </motion.div>
-            </Link>
-            <motion.a
-              href={`tel:${NEXT_APPOINTMENT.lawyerPhone}`}
-              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 cursor-pointer ${
-                isDark ? "bg-zinc-800 text-zinc-400 hover:text-emerald-400" : "bg-zinc-100 text-zinc-500 hover:text-emerald-600"
-              }`}
+          {/* ONE BUTTON. The `tel:` call button beside it resolved to
+              `tel:undefined` on every render — a live-looking control that
+              dialled nothing — and it cannot be repaired here: the row carries
+              `lawyer_user_id`, a uuid, and no route on this page joins a phone
+              number to it. Removed rather than left dark.
+
+              /dashboard/client/consultation is the destination because it reads
+              the same `consultations` table this card was drawn from: it calls
+              getConsultations() alongside listClientWorkflowRequests() and
+              merges both results (consultation/page.tsx:356-406).
+
+              NOT because it is guaranteed to contain this row, and the
+              difference is worth writing down. getConsultations() is called
+              with no arguments (casesService.ts:189), so the route applies its
+              default `limit=20` ordered by created_at DESC
+              (api/v1/consultations/route.ts:25-33) — while this card picks the
+              soonest scheduled_at. An appointment booked long ago for next week
+              can sit outside the twenty most recently created, and the list
+              would not show it.
+
+              A DEEP LINK WOULD NOT ESCAPE THAT, which is why it was rejected
+              rather than preferred. The row's `request_id` is a service_requests
+              id, and that IS the id /dashboard/client/consultation/[id]
+              resolves — but it resolves it by scanning the client's hundred
+              most recent requests (CLIENT_REQUESTS_FETCH_LIMIT,
+              clientWorkflowRepository.ts:36) and answers a miss with
+              «الاستشارة غير موجودة». Both routes have a ceiling; only one of
+              them, on hitting it, tells the client that a real appointment does
+              not exist. A list that may be short is the lesser failure. */}
+          <Link href="/dashboard/client/consultation" className="block">
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+              className="w-full flex items-center justify-center gap-1.5 bg-royal/10 text-royal text-[12px] font-bold py-2.5 rounded-xl transition-colors hover:bg-royal/20 cursor-pointer"
             >
-              <Phone size={16} />
-            </motion.a>
-          </div>
+              <CalendarBlank size={13} /> كل المواعيد
+            </motion.div>
+          </Link>
         </motion.div>
         )}
       </motion.div>
@@ -319,164 +648,77 @@ export default function ClientDashboard() {
       </motion.div>
       )}
 
-      {/* ══ Section 2.5 — Plan Banner (Subscription-Aware) ═══════════════════════ */}
+      {/* ══ Section 2.5 — الباقة ════════════════════════════════════════════════ */}
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={2}>
-
-        {/* ── Scenario A: NO PLAN (free tier) ── */}
-        {USER_PLAN.id === "free" && (
-          <div className={`relative overflow-hidden rounded-3xl border p-5 flex items-center justify-between gap-4 ${
-            isDark ? "bg-[#1a1f27] border-[#C8A762]/20" : "bg-gradient-to-l from-amber-50 to-white border-amber-200/70 shadow-sm"
-          }`}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                <Warning size={20} weight="fill" className="text-amber-500" />
-              </div>
-              <div>
-                <p className={`text-[13px] font-black ${isDark ? "text-white" : "text-zinc-800"}`}>أنت على الباقة المجانية</p>
-                <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                  ١ استفسار AI يومياً فقط — الاستشارات والعقود بالعمل القانوني
-                </p>
-              </div>
+        <div className={`relative overflow-hidden rounded-3xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+          isDark
+            ? "bg-gradient-to-l from-[#0B3D2E]/20 to-[#161b22] border-white/[0.07]"
+            : "bg-gradient-to-l from-emerald-50 to-white border-emerald-100/80 shadow-sm"
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+              <Package size={19} weight="duotone" className="text-emerald-500" />
             </div>
-            <Link href="/dashboard/client/wallet">
-              <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold text-white bg-[#C8A762] hover:bg-[#b8974f] transition flex-shrink-0 cursor-pointer shadow-sm"
-              >
-                <Lightning size={13} weight="fill" /> اشترك الآن
-              </motion.div>
-            </Link>
-          </div>
-        )}
-
-        {/* ── Scenario B: ACTIVE PLAN (ai-individual / shield / legal-protection) ── */}
-        {USER_PLAN.id !== "free" && (
-          <div className={`relative overflow-hidden rounded-3xl border p-5 ${
-            isDark
-              ? "bg-gradient-to-l from-[#0B3D2E]/20 to-[#161b22] border-white/[0.07]"
-              : "bg-gradient-to-l from-emerald-50 to-white border-emerald-100/80 shadow-sm"
-          }`}>
-            {/* Top row */}
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                  <Package size={18} weight="duotone" className="text-emerald-500" />
-                </div>
-                <div>
+            <div>
+              {PLAN ? (
+                <>
                   <p className={`text-[13px] font-black ${isDark ? "text-white" : "text-zinc-800"}`}>
-                    باقة {USER_PLAN.name}
-                    <span className={`ms-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-100 text-emerald-700"
-                    }`}>{USER_PLAN.priceLabel}</span>
+                    باقتك: {PLAN.name}
                   </p>
-                  <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                    الاشتراك نشط · يتجدد {USER_PLAN.renewDate}
+                  {/* Dropped entirely when current_period_end is null or
+                      unreadable. The line it replaces read
+                      «الاشتراك نشط · يتجدد —»: an em dash is not a date, and
+                      «يتجدد» was asserted whatever auto_renew said. */}
+                  {PLAN.periodLabel && (
+                    <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                      {PLAN.periodLabel}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* NO CLAIM ABOUT WHICH PLAN THIS CLIENT IS ON. We arrive here
+                      when there is no active subscription row, when the plan
+                      cannot be identified from the row, and — indistinguishably
+                      from either — when the summary request failed and
+                      dashboardService.ts handed back its demo fixture. Those
+                      three cannot be told apart from the browser, so the card
+                      names none of them and states only what is true of the
+                      link beside it. */}
+                  <p className={`text-[13px] font-black ${isDark ? "text-white" : "text-zinc-800"}`}>
+                    الباقات والأسعار
                   </p>
-                </div>
-              </div>
-              <Link href="/dashboard/client/wallet">
-                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[#0B3D2E] border border-[#0B3D2E]/20 bg-[#0B3D2E]/5 hover:bg-[#0B3D2E]/10 transition cursor-pointer"
-                >
-                  <Lightning size={12} weight="fill" /> ترقية الباقة
-                </motion.div>
-              </Link>
+                  <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                    اطّلع على باقات نظامي وما تشمله كل باقة.
+                  </p>
+                </>
+              )}
             </div>
-
-            {/* Usage bars — ما هو مشمول */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
-              {[
-                {
-                  label: "المستشار AI",
-                  used: USER_PLAN.used.aiQueries,
-                  limit: USER_PLAN.limits.aiQueries,
-                  unit: "استفسار",
-                  icon: Robot,
-                  included: true,
-                  extraPrice: USER_PLAN.payPerUse.extraAiQuery,
-                },
-                {
-                  label: "صياغة العقود AI",
-                  used: USER_PLAN.used.contractDrafts,
-                  limit: USER_PLAN.limits.contractDrafts,
-                  unit: "عقد",
-                  icon: FileText,
-                  included: USER_PLAN.contractDraftIncluded,
-                  extraPrice: 700,
-                },
-                {
-                  label: "استشارة محامٍ",
-                  used: USER_PLAN.used.consultations,
-                  limit: USER_PLAN.consultationIncluded ? USER_PLAN.limits.consultations : 0,
-                  unit: "استشارة",
-                  icon: ChatCircle,
-                  included: USER_PLAN.consultationIncluded,
-                  extraPrice: USER_PLAN.payPerUse.consultation,
-                },
-              ].map((item) => {
-                const pct = item.included ? Math.round((item.used / item.limit) * 100) : 0;
-                const barColor = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-amber-500" : "bg-emerald-500";
-                const Icon = item.icon;
-                return (
-                  <div key={item.label} className={`rounded-xl p-3 ${
-                    isDark ? "bg-white/[0.04]" : "bg-gray-50 border border-gray-100"
-                  }`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-1.5">
-                        <Icon size={13} className={isDark ? "text-zinc-400" : "text-zinc-500"} />
-                        <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{item.label}</span>
-                      </div>
-                      <span className={`text-[10px] font-bold font-mono ${
-                        !item.included
-                          ? "text-amber-500"
-                          : pct >= 90 ? "text-red-500" : pct >= 70 ? "text-amber-500" : isDark ? "text-zinc-400" : "text-zinc-500"
-                      }`}>
-                        {item.included ? `${item.used}/${item.limit} ${item.unit}` : `غير مشمول`}
-                      </span>
-                    </div>
-                    {item.included ? (
-                      <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-zinc-700" : "bg-gray-200"}`}>
-                        <motion.div
-                          className={`h-full rounded-full ${barColor}`}
-                          initial={{ width: 0 }}
-                          animate={{ width: `${pct}%` }}
-                          transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
-                        />
-                      </div>
-                    ) : (
-                      <p className={`text-[10px] font-medium ${
-                        isDark ? "text-zinc-500" : "text-zinc-400"
-                      }`}>
-                        بالعمل القانوني: <strong className="text-amber-500">{item.extraPrice} ر.س</strong>
-                        {" · "}
-                        <Link href="/dashboard/client/wallet" className="underline text-royal">ارقِّ الباقة</Link>
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Warning if >70% on AI */}
-            {(() => {
-              const aiPct = Math.round((USER_PLAN.used.aiQueries / USER_PLAN.limits.aiQueries) * 100);
-              if (aiPct < 70) return null;
-              return (
-                <div className={`flex items-center gap-2 rounded-xl p-3 text-[11px] ${
-                  aiPct >= 90
-                    ? isDark ? "bg-red-900/20 border border-red-700/30 text-red-300" : "bg-red-50 border border-red-200 text-red-700"
-                    : isDark ? "bg-amber-900/20 border border-amber-700/30 text-amber-300" : "bg-amber-50 border border-amber-200 text-amber-700"
-                }`}>
-                  <Warning size={13} weight="fill" />
-                  {aiPct >= 90
-                    ? `وصلت لـ ${aiPct}% من حد AI الشهري — ${USER_PLAN.payPerUse.extraAiQuery} ر.س للاستفسار الإضافي أو `
-                    : `اقتربت من حد AI الشهري (${aiPct}%) — تبقّى ${USER_PLAN.limits.aiQueries - USER_PLAN.used.aiQueries} استفساراً `
-                  }
-                  <Link href="/dashboard/client/wallet" className="underline font-bold">ارقِّ الباقة</Link>
-                </div>
-              );
-            })()}
           </div>
-        )}
+
+          {/* /pricing, NOT /dashboard/client/wallet.
+              All four buttons this banner used to carry — «اشترك الآن»،
+              «ترقية الباقة» and «ارقِّ الباقة» twice — pointed at the wallet
+              page, and src/app/dashboard/client/wallet/page.tsx holds a
+              balance, coupons, referral rewards and a transaction log: no
+              plan, no subscription, no upgrade flow. The word «باقة» does not
+              occur anywhere in that file. They were four buttons that looked
+              alive and arrived nowhere.
+              /pricing is the page that really lists the plans, and the label
+              promises exactly that and nothing further — there is no payment
+              gateway here to promise a subscription with. */}
+          <Link href="/pricing" className="flex-shrink-0">
+            <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold transition cursor-pointer ${
+                isDark
+                  ? "text-emerald-300 border border-emerald-400/20 bg-emerald-400/10 hover:bg-emerald-400/15"
+                  : "text-[#0B3D2E] border border-[#0B3D2E]/20 bg-[#0B3D2E]/5 hover:bg-[#0B3D2E]/10"
+              }`}
+            >
+              <Lightning size={12} weight="fill" /> عرض الباقات
+            </motion.div>
+          </Link>
+        </div>
       </motion.div>
 
       {/* ══ Section 3 — اطلب خدمة (Primary Services CTA) ══════════════════════ */}
@@ -492,10 +734,12 @@ export default function ClientDashboard() {
             كل الخدمات <ArrowLeft size={10} />
           </Link>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* lg:grid-cols-3, matching the three cards. It was grid-cols-4 for a
+            fourth card — «ابحث عن محامٍ» — that has been removed; see the
+            QUICK_SERVICES comment above. */}
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
           {QUICK_SERVICES.map((svc) => {
             const Icon = svc.icon;
-            const isPayPerUse = !svc.planBadgeOk;
             return (
               <Link key={svc.href} href={svc.href}>
                 <motion.div
@@ -506,14 +750,11 @@ export default function ClientDashboard() {
                   <Icon size={22} weight="duotone" className="mb-2 opacity-90" />
                   <p className="text-[13px] font-bold leading-tight">{svc.label}</p>
                   <p className="text-[10px] opacity-70 mt-0.5">{svc.desc}</p>
-                  {/* Plan badge — أحمر للدفع المنفرد، شفاف للمشمول */}
-                  <span className={`absolute bottom-2 end-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                    isPayPerUse
-                      ? "bg-black/30 text-amber-300"
-                      : "bg-white/20 text-white"
-                  }`}>
-                    {svc.planBadge}
-                  </span>
+                  {/* The price/quota pill that sat here is gone with the plan
+                      fiction that fed it — «مشمولة ٠/٠» over a quota nothing
+                      counts, and two prices that contradicted
+                      CLIENT_SERVICE_CATALOG. Each service is priced where it is
+                      ordered, on /dashboard/client/services. */}
                 </motion.div>
               </Link>
             );
@@ -521,49 +762,38 @@ export default function ClientDashboard() {
         </div>
       </motion.div>
 
-      {/* ══ Section 4 — Messages + Documents (2-col) ════════════════════════════ */}
-      <motion.div variants={fadeUp} initial="hidden" animate="show" custom={4}
-        className="grid grid-cols-1 lg:grid-cols-2 gap-5"
-      >
-        {/* Messages */}
-        {RECENT_MESSAGES.length > 0 && (
-        <div className={card}>
-          <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
-            <div className="flex items-center gap-2">
-              <ChatDots size={16} weight="fill" className="text-royal" />
-              <h3 className={`font-bold text-[14px] ${isDark ? "text-white" : "text-zinc-800"}`}>رسائل المحامين</h3>
-              <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
-                ظ،
-              </span>
-            </div>
-            <Link href="/dashboard/client/messages" className="text-xs text-royal hover:underline flex items-center gap-0.5">
-              الكل <ArrowLeft size={11} />
-            </Link>
-          </div>
-          <div className="p-4 space-y-3">
-            {RECENT_MESSAGES.map((msg, i) => (
-              <Link key={i} href="/dashboard/client/messages" className={`flex items-start gap-3 p-3 rounded-xl transition-colors cursor-pointer ${
-                msg.unread
-                  ? isDark ? "bg-royal/10 hover:bg-royal/15" : "bg-royal/5 border border-royal/10 hover:bg-royal/10"
-                  : isDark ? "hover:bg-white/[0.04]" : "hover:bg-zinc-50"
-              }`}>
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-royal to-emerald-500 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">
-                  {msg.from.charAt(0)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{msg.from}</p>
-                    <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{msg.time}</span>
-                  </div>
-                  <p className={`text-[12px] truncate ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{msg.msg}</p>
-                </div>
-                {msg.unread && <div className="w-2 h-2 rounded-full bg-royal flex-shrink-0 mt-1.5" />}
-              </Link>
-            ))}
-          </div>
-        </div>
-        )}
+      {/* ══ Section 4 — مستنداتي ════════════════════════════════════════════════ */}
+      {/*
+        THE «رسائل المحامين» CARD THAT STOOD BESIDE THIS ONE IS GONE.
 
+        It read `summary.recentMessages` as `{ from, msg, time, unread }`. The
+        summary route's query #3 is `.from("chat_messages").select("*")`, and
+        `chat_messages` has none of those four columns — it has sender_id,
+        body, created_at (migration 20260603_phase1_004_community_features.sql:349).
+        The cast was fiction top to bottom, and the first line of the card,
+        `msg.from.charAt(0)`, threw a TypeError on undefined: the whole client
+        landing page went white for any client who had ever exchanged a chat
+        message. That is the same crash toClientCases() was written to stop, in
+        the card next door.
+
+        WHY IT WAS NOT REPAIRED INSTEAD. A card needs a sender, and the route
+        returns `sender_id` — a uuid — without joining profiles, so there is no
+        name to print and no initial for the avatar. `unread` needs
+        chat_participants.last_read_at, which the route does not return either.
+        And the header «رسائل المحامين» was wrong on its own terms: the query
+        takes the three most recent messages in the client's rooms, which
+        includes the messages the CLIENT sent. What was left after removing
+        every unsupported field was an empty box.
+
+        The unread badge went with it: a hardcoded «ظ،» — a mis-encoded ١,
+        printed on every visit, for a count nothing in the app computes.
+
+        /dashboard/client/messages, reachable from «رسائلي» in the sidebar, is
+        the real page and reads the rooms properly. Restoring a preview here
+        needs the summary route to return a sender name and an unread flag;
+        until it does there is nothing honest to preview.
+      */}
+      <motion.div variants={fadeUp} initial="hidden" animate="show" custom={4}>
         {/* Documents */}
         <div className={card}>
           <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
@@ -650,7 +880,38 @@ export default function ClientDashboard() {
         </div>
       </motion.div>
 
-      {/* ══ Section 5 — Wallet Banner ════════════════════════════════════════════ */}
+      {/* ══ Section 5 — المحفظة ═════════════════════════════════════════════════ */}
+      {/*
+        FOUR CLAIMS CAME OFF THIS BANNER, AND THE BALANCE FIGURE WITH THEM.
+
+        1. «لديك أيضاً ٣ كوبونات خصم نشطة» was a hardcoded literal, printed to
+           every client on every visit. Nothing counted coupons; the `coupons`
+           table is read by /api/v1/wallet, not by the summary route, and this
+           page never asked.
+
+        2. «كسبتها من إحالة أصدقائك» invented where the money came from.
+           `walletBalance` is the sum of every wallet_transactions row for the
+           user — admin grants included — and says nothing about referrals. On
+           a zero balance the sentence was not even grammatical about anything.
+
+        3. «تُخصم تلقائياً عند دفع أي خدمة قانونية» promised a mechanism that
+           does not exist. Nothing in src/ writes a wallet debit: entitlements.ts
+           is the only writer and it writes credits.
+
+        4. THE NUMBER ITSELF, which is the reason no figure is printed here
+           any more. The summary route sums `amount` across every
+           wallet_transactions row and ignores `kind`. /api/v1/wallet — the
+           authority, the one the wallet page renders — adds credits,
+           SUBTRACTS debits and reversals, and holds `pending` rewards out of
+           the spendable balance entirely. Today the two agree only by luck:
+           entitlements.ts is the sole writer and it only ever inserts
+           `kind: "credit"`. The first debit, reversal or pending reward makes
+           them diverge silently, and this page would be the one telling the
+           client the wrong number about their own money. The arithmetic lives
+           in src/app/api/v1/dashboard/summary/route.ts, which this change does
+           not own, so the balance is not shown here rather than shown from a
+           second, weaker sum. The wallet page states it correctly.
+      */}
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={5}>
         <div className={`relative overflow-hidden flex flex-col md:flex-row items-start md:items-center gap-5 rounded-3xl border p-6 ${
           isDark
@@ -664,14 +925,13 @@ export default function ClientDashboard() {
           </div>
 
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <p className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>
-                رصيد محفظتك — <span className="text-amber-500">{summary.walletBalance > 0 ? `${summary.walletBalance} ر.س` : '٠ ر.س'}</span> جاهزة للاستخدام
-              </p>
-            </div>
+            <p className={`text-[15px] font-bold mb-1 ${isDark ? "text-white" : "text-zinc-800"}`}>
+              محفظتي
+            </p>
+            {/* A description of the page behind the button, not a statement
+                about this client's balance or coupons. */}
             <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
-              كسبتها من إحالة أصدقائك ← تُخصم تلقائياً عند دفع أي خدمة قانونية.
-              لديك أيضاً <strong className={isDark ? "text-amber-400" : "text-amber-600"}>٣ كوبونات خصم</strong> نشطة.
+              الرصيد والكوبونات وسجل المعاملات — في صفحة المحفظة.
             </p>
           </div>
 
@@ -686,6 +946,27 @@ export default function ClientDashboard() {
       </motion.div>
 
       {/* ══ Section 5.5 — المجتمع القانوني ══════════════════════════════════════ */}
+      {/*
+        WHAT THIS PREVIEW MAY SAY ABOUT A QUESTION.
+
+        The summary route selects exactly four columns from `community_posts`
+        (route.ts query #5: `id, title, category, created_at`), so exactly four
+        things can be shown. The rows this card used to draw claimed five more
+        — `votes`, `answers`, `isAnswered`, `tag`, `ago` — and not one of them
+        was in the payload: the vote counter rendered blank, the pill rendered
+        blank, and «{q.answers} إجابة» rendered as a bare « إجابة».
+
+        The «محامٍ» SealCheck badge was the worst of them. It was unconditional
+        markup, attached to every row, telling the client a licensed lawyer had
+        answered a question that in general nobody had answered. `vote_count`,
+        `answer_count` and `accepted_answer_id` are real columns — the route
+        just does not select them. Restoring the counts means widening that
+        select, in a file this change does not own; the «محامٍ» badge needs more
+        than that, because nothing on a post says who answered it.
+
+        `category` and `created_at` were already in the payload and were simply
+        being read under the wrong names. They are now shown for real.
+      */}
       {COMMUNITY_PREVIEW.length > 0 && (
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={5}>
         <div className={`overflow-hidden rounded-3xl border ${
@@ -697,11 +978,14 @@ export default function ClientDashboard() {
           }`}>
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-[#0B3D2E]/10 flex items-center justify-center">
-                <Users size={16} weight="duotone" className="text-[#0B3D2E]" />
+                <Users size={16} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
               </div>
               <div>
                 <h3 className={`font-bold text-[14px] ${isDark ? "text-white" : "text-zinc-800"}`}>المجتمع القانوني</h3>
-                <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>أسئلة يُجيب عليها محامون معتمدون</p>
+                {/* «أسئلة يُجيب عليها محامون معتمدون» stood here and was a
+                    promise about who answers: community_answers is open to any
+                    member and carries no verification of the author. */}
+                <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>أحدث الأسئلة المطروحة</p>
               </div>
             </div>
             <Link href="/community" className="text-xs text-royal hover:underline flex items-center gap-0.5">
@@ -711,61 +995,55 @@ export default function ClientDashboard() {
 
           {/* Questions Preview */}
           <div className="divide-y divide-zinc-100 dark:divide-white/[0.04]">
-            {COMMUNITY_PREVIEW.map((q) => (
-              <Link key={q.id} href={`/community/${q.id}`}>
-                <motion.div
-                  whileHover={{ x: -2 }}
-                  className={`flex items-start gap-3 px-5 py-3.5 transition-colors group ${
-                    isDark ? "hover:bg-white/[0.02]" : "hover:bg-zinc-50"
-                  }`}
-                >
-                  {/* Vote count */}
-                  <div className={`flex flex-col items-center gap-0.5 pt-0.5 flex-shrink-0 w-8`}>
-                    <ArrowUp size={12} className="text-emerald-500" />
-                    <span className={`text-[11px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{q.votes}</span>
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-[13px] font-medium leading-snug mb-1.5 group-hover:text-royal transition-colors ${
-                      isDark ? "text-zinc-200" : "text-zinc-700"
-                    }`}>
-                      {q.title}
-                    </p>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                        isDark ? "bg-[#0B3D2E]/20 text-emerald-400" : "bg-emerald-50 text-emerald-700"
-                      }`}>{q.tag}</span>
-                      <span className={`flex items-center gap-0.5 text-[10px] ${
-                        q.isAnswered ? "text-emerald-500" : isDark ? "text-zinc-500" : "text-zinc-400"
+            {COMMUNITY_PREVIEW.map((q) => {
+              // Unknown category → no pill, rather than a pill printing the raw
+              // English token at an Arabic reader.
+              const categoryAr = COMMUNITY_CATEGORY_AR[readText(q.category)] ?? null;
+              const askedAt = formatArabicDate(q.created_at);
+              return (
+                <Link key={q.id} href={`/community/${q.id}`}>
+                  <motion.div
+                    whileHover={{ x: -2 }}
+                    className={`flex items-start gap-3 px-5 py-3.5 transition-colors group ${
+                      isDark ? "hover:bg-white/[0.02]" : "hover:bg-zinc-50"
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[13px] font-medium leading-snug mb-1.5 group-hover:text-royal transition-colors ${
+                        isDark ? "text-zinc-200" : "text-zinc-700"
                       }`}>
-                        {q.isAnswered
-                          ? <><CheckCircle size={10} weight="fill" /> أُجيب ({q.answers})</>
-                          : <><ChatCircle size={10} /> {q.answers} إجابة</>}
-                      </span>
-                      <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{q.ago}</span>
+                        {q.title}
+                      </p>
+                      {(categoryAr || askedAt) && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {categoryAr && (
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                              isDark ? "bg-[#0B3D2E]/20 text-emerald-400" : "bg-emerald-50 text-emerald-700"
+                            }`}>{categoryAr}</span>
+                          )}
+                          {askedAt && (
+                            <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{askedAt}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-
-                  {/* Lawyer badge */}
-                  <div className="flex-shrink-0 self-center">
-                    <span className={`flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                      isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"
-                    }`}>
-                      <SealCheck size={9} weight="fill" /> محامٍ
-                    </span>
-                  </div>
-                </motion.div>
-              </Link>
-            ))}
+                    <ArrowLeft size={12} className={`flex-shrink-0 self-center ${isDark ? "text-zinc-600" : "text-zinc-300"}`} />
+                  </motion.div>
+                </Link>
+              );
+            })}
           </div>
 
           {/* Footer CTA */}
           <div className={`flex items-center justify-between px-5 py-3 border-t ${
             isDark ? "border-white/[0.06] bg-white/[0.01]" : "border-zinc-100 bg-zinc-50"
           }`}>
-            <p className={`text-[11px] flex items-center gap-1.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-              <MagnifyingGlass size={11} className="flex-shrink-0" />
-              الأسئلة + الإجابات مُفهرسة على Google — تساعد نظامي في السيو
+            {/* «الأسئلة + الإجابات مُفهرسة على Google — تساعد نظامي في السيو»
+                was here. It is a note to the marketing team, shown to a client
+                who came for legal help, and it asserted an indexing outcome
+                nothing on this page can verify. */}
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              شارك سؤالك مع أعضاء المجتمع
             </p>
             <Link href="/community/ask">
               <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
