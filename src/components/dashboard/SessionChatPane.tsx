@@ -7,8 +7,6 @@ import {
   ArrowRight,
   PaperPlaneTilt,
   Microphone,
-  MicrophoneSlash,
-  Paperclip,
   Robot,
   Clock,
   Phone,
@@ -162,8 +160,6 @@ interface SessionChatPaneProps {
   messages: Message[];
   input: string;
   setInput: React.Dispatch<React.SetStateAction<string>>;
-  isRecording: boolean;
-  setIsRecording: React.Dispatch<React.SetStateAction<boolean>>;
   showAIPanel: boolean;
   setShowAIPanel: React.Dispatch<React.SetStateAction<boolean>>;
   sessionTimeLeft: string;
@@ -176,8 +172,6 @@ export default function SessionChatPane({
   messages,
   input,
   setInput,
-  isRecording,
-  setIsRecording,
   showAIPanel,
   setShowAIPanel,
   sessionTimeLeft,
@@ -185,7 +179,6 @@ export default function SessionChatPane({
   sendMessage,
 }: SessionChatPaneProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -288,18 +281,16 @@ export default function SessionChatPane({
                   : "border-zinc-200 bg-zinc-50 focus-within:border-[#0B3D2E]/40"
               }`}
             >
-              {/* Attach */}
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={() => fileRef.current?.click()}
-                className={`flex-shrink-0 p-1 ${
-                  isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"
-                }`}
-              >
-                <Paperclip size={18} />
-              </motion.button>
-              <input ref={fileRef} type="file" className="hidden" />
+              {/* The paperclip opened a real file picker whose selection was
+                  read by NOTHING — no onChange on the input, no upload, no
+                  message. A client attaching evidence in the middle of a paid
+                  consultation got silence, which is worse than no control.
+                  Not re-wired here: chat_messages can carry a file
+                  (file_url/file_name/file_size) but `attachments` is
+                  owner-scoped by RLS, so the lawyer on the other side could not
+                  open what was "sent" — a delivered attachment the recipient
+                  cannot read is the same lie in a different place. The client's
+                  documents page is the path that works today. */}
 
               <textarea
                 value={input}
@@ -318,17 +309,11 @@ export default function SessionChatPane({
                 style={{ maxHeight: "120px" }}
               />
 
-              {/* Voice */}
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={() => setIsRecording(!isRecording)}
-                className={`flex-shrink-0 p-1 transition-colors ${
-                  isRecording ? "text-red-500" : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"
-                }`}
-              >
-                {isRecording ? <MicrophoneSlash size={18} /> : <Microphone size={18} />}
-              </motion.button>
+              {/* A microphone button used to sit here. Pressing it turned its
+                  own icon red and did nothing else — no getUserMedia, no
+                  MediaRecorder, no upload, no message. It looked exactly like a
+                  voice note being recorded, in a room where the client believes
+                  they are talking to their lawyer. */}
 
               {/* Send */}
               <motion.button

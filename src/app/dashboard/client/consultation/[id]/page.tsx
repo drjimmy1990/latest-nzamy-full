@@ -268,7 +268,6 @@ export default function ConsultationRoomPage() {
   // Chat panel states
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [isRecording, setIsRecording] = useState(false);
   const [showAIPanel, setShowAIPanel] = useState(false);
   // Real chat room id for this consultation (looked up / created via chatService).
   const [chatRoomId, setChatRoomId] = useState<string | null>(null);
@@ -1143,8 +1142,6 @@ export default function ConsultationRoomPage() {
             messages={messages}
             input={input}
             setInput={setInput}
-            isRecording={isRecording}
-            setIsRecording={setIsRecording}
             showAIPanel={showAIPanel}
             setShowAIPanel={setShowAIPanel}
             sessionTimeLeft={sessionTimeLeft}
