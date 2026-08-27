@@ -32,28 +32,27 @@ import {
 // If the runtime has no Umm al-Qura data the label is omitted entirely rather
 // than filled with an approximation: a wrong Hijri date under a hearing is worse
 // than no Hijri date.
-const HIJRI_DAY_FORMAT: Intl.DateTimeFormat | null = (() => {
-  try {
-    const fmt = new Intl.DateTimeFormat("en-u-ca-islamic-umalqura", { day: "numeric" });
-    // Verify the runtime honoured the request instead of silently falling back
-    // to Gregorian, which would print the Gregorian day under a "هـ" suffix.
-    return fmt.resolvedOptions().calendar === "islamic-umalqura" ? fmt : null;
-  } catch {
-    return null;
-  }
-})();
+// The Umm al-Qura conversion that stood here — an Intl.DateTimeFormat built and
+// probed inline, plus a hijriDayLabel() wrapper — moved to
+// src/lib/services/hijri.ts on 2026-08-27, unchanged in behaviour.
+//
+// It moved because it was the CORRECT half of a pair. This page had already
+// been repaired to ask the runtime; HijriDateWidget was still doing tabular
+// arithmetic and was a full day out (Umm al-Qura 14 Rabiʿ al-Awwal 1448, the
+// widget 13). Two implementations is how they came to disagree on 674 of 730
+// days in the first place, so fixing the second one by copying this one would
+// have rebuilt the same trap. There is now one module, with a 400-day
+// round-trip test, and two callers.
 
-function hijriDayLabel(gDate: Date): string | null {
-  if (!HIJRI_DAY_FORMAT) return null;
-  try {
-    return HIJRI_DAY_FORMAT.formatToParts(gDate).find(part => part.type === "day")?.value ?? null;
-  } catch {
-    return null;
-  }
+/** The Hijri day NUMBER for the calendar strip, or null when unavailable. */
+function hijriDayOnly(gDate: Date): string | null {
+  const parts = hijriPartsOf(gDate);
+  return parts ? String(parts.day) : null;
 }
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
+import { hijriPartsOf } from "@/lib/services/hijri";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { useUser } from "@/hooks/useUser";
@@ -505,7 +504,7 @@ function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
             const hasHigh = dayEvs.some(e=>e.urgency==="high");
             const isSelected = selectedDay===day;
             const gDate = new Date(calYear,calMonth,day);
-            const hijri = hijriDayLabel(gDate);
+            const hijri = hijriDayOnly(gDate);
             return (
               <button key={day} onClick={()=>setSelectedDay(isSelected?null:day)}
                 className={`relative flex flex-col items-center py-1.5 px-0.5 rounded-xl transition-all ${
