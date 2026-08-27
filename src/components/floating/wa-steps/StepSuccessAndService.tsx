@@ -1,65 +1,27 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CheckCircle, WhatsappLogo, Headset } from "@phosphor-icons/react";
+import { WhatsappLogo, Headset } from "@phosphor-icons/react";
 import { staggerListVariants, staggerItemVariants } from "./WaShared";
 
-interface SuccessStepProps {
-  isDark: boolean;
-  onClose: () => void;
-  workflow?: {
-    id: string;
-    href: string;
-  } | null;
-}
-
-// ─── Order number is stable per widget open — stored in ref ──────────────────
-export function StepSuccess({ isDark, onClose, workflow }: SuccessStepProps) {
-  const orderId = workflow?.id ?? "WA-DEMO";
-
-  return (
-    <motion.div variants={staggerListVariants} initial="hidden" animate="show" className="flex flex-col items-center gap-4 py-2 text-center relative">
-      <motion.div
-        variants={staggerItemVariants}
-        className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center relative before:absolute before:inset-0 before:rounded-full before:bg-emerald-400/20 before:animate-ping"
-      >
-        <CheckCircle size={36} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400 relative z-10" />
-      </motion.div>
-
-      <motion.div variants={staggerItemVariants}>
-        <p className={`text-[15px] font-black ${isDark ? "text-white" : "text-gray-900"}`}>
-          رقم الطلب: <span className="font-mono text-[#C8A762] ml-1 bg-[#C8A762]/10 px-2 py-0.5 rounded-md">{orderId}</span>
-        </p>
-      </motion.div>
-
-      <motion.div variants={staggerItemVariants} className={`w-full rounded-[1.25rem] border px-4 py-3.5 text-[12px] space-y-2 text-start font-medium leading-relaxed ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200/70 bg-gray-50/50"}`}>
-        <p className={isDark ? "text-gray-300" : "text-gray-700"}>تم تسجيل الطلب محلياً حسب نوع حسابك ودورك، وهو جاهز للربط بالباك إند.</p>
-        <p className={isDark ? "text-gray-300" : "text-gray-700"}>لا يوجد إرسال تلقائي الآن؛ زر واتساب يفتح رسالة متابعة واضحة لإرسالها بنفسك.</p>
-      </motion.div>
-
-      {workflow && (
-        <motion.a
-          variants={staggerItemVariants}
-          href={workflow.href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-[1.25rem] bg-[#25D366] text-white text-[13px] font-bold hover:bg-[#1ebe5d] active:scale-[0.98] transition-all shadow-lg shadow-[#25D366]/20"
-          aria-label="إرسال تفاصيل الطلب عبر واتساب"
-        >
-          <WhatsappLogo size={20} weight="fill" /> إرسال التفاصيل عبر واتساب
-        </motion.a>
-      )}
-
-      <motion.button
-        variants={staggerItemVariants}
-        onClick={onClose}
-        className={`w-full py-3.5 rounded-[1.25rem] border-2 text-[13px] font-bold active:scale-[0.98] transition-all group overflow-hidden relative ${isDark ? "border-white/10 text-white hover:bg-white/5" : "border-gray-200/70 text-gray-800 hover:bg-gray-50"}`}
-      >
-        <span className={isDark ? "text-white" : "text-gray-800"}>إغلاق</span>
-      </motion.button>
-    </motion.div>
-  );
-}
+// ─── StepSuccess lived here and is DELETED ───────────────────────────────────
+//
+// It was replaced on 2026-08-27 by the success screen inside WhatsAppWidget.tsx
+// (which is why that file carries a note saying this one is deliberately not
+// imported), and what it left behind could not be allowed to sit in the tree
+// waiting for someone to re-import it:
+//
+//   • `const orderId = workflow?.id ?? "WA-DEMO"` — it printed «رقم الطلب:
+//     WA-DEMO» to a real client whenever no request had been created.
+//   • «تم تسجيل الطلب محلياً … وهو جاهز للربط بالباك إند» — developer copy,
+//     shown to the client, and false twice over now that the widget files a
+//     real order.
+//
+// The widget's own success step states the actual outcome instead: the
+// server's reference when a row was created, and a plain sentence saying
+// WhatsApp is the only channel when one was not.
+//
+// StepCustomerService below is still used.
 
 // ─── Customer Service step ────────────────────────────────────────────────────
 

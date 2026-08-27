@@ -1,23 +1,25 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, type ElementType } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Robot, SealCheck, ArrowRight, ArrowLeft,
-  Check, Warning, CreditCard, Sparkle,
+  Check, Warning, Sparkle,
   Info, CheckCircle,
   Paperclip, X, Lightning, Clock, FileText,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
-import { useSubscription } from "@/hooks/useSubscription";
 import { useUser } from "@/hooks/useUser";
 import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
-import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
-import { createPaymentIntentStub } from "@/lib/paymentAdapter";
-import { getClientServiceById, getConsultationModeServiceId } from "@/lib/pricingRepository";
+import type { ClientServiceCatalogItem } from "@/constants/clientServiceCatalog";
+import {
+  getClientServiceById,
+  getConsultationModeServiceId,
+  formatClientServicePrice,
+} from "@/lib/pricingRepository";
 import { LEGAL_BRANCHES_REGULAR } from "@/components/draft/draftConstants";
 import { getLawyerById, type LawyerProfile } from "@/lib/services/lawyerService";
 import { uploadDocumentFile, isUploadTimeoutError } from "@/lib/services/documentService";
@@ -26,9 +28,10 @@ import {
   type ConsultPath,
   type LawyerMode,
   MODE_COPY,
+  MODES_BORROWING_ANOTHER_SERVICE_ENTRY,
   IS_BETA,
 } from "@/constants/clientConsultationData";
-import { StepBar, PlanBadge } from "@/components/consultation/ClientConsultationComponents";
+import { StepBar } from "@/components/consultation/ClientConsultationComponents";
 
 // ─── Attachment failure reporting ─────────────────────────────────────────────
 
@@ -67,16 +70,66 @@ function attachmentErrorAr(err: unknown): string {
   return "تعذّر رفع الملف — تحقق من الاتصال وحاول مجدداً.";
 }
 
+// ─── Price wording ────────────────────────────────────────────────────────────
+
+/**
+ * The catalogue's own price wording, or an honest stand-in.
+ *
+ * formatClientServicePrice() indexes a six-entry map by `priceMode` and has no
+ * fallback branch. `price_mode` is a bare `text` column with NO check constraint
+ * (supabase/migrations/20260518_client_workflow_backend_ready.sql:107) which
+ * pricingRepository.ts:41 merely ASSERTS into the union when it reads the admin
+ * catalog back, so a row an admin saved with any other value makes that lookup
+ * `undefined` — and the review screen's single price line would render blank.
+ *
+ * A price that silently disappears from the last screen before sending is its
+ * own small lie. The stand-in states what is true in that case and is already
+ * true in every other case on this page: the team sets the amount.
+ */
+function servicePriceLabel(service: ClientServiceCatalogItem): string {
+  return formatClientServicePrice(service) || "يحدده الفريق بعد مراجعة الطلب";
+}
+
+// ─── Urgency ──────────────────────────────────────────────────────────────────
+
+type Urgency = "normal" | "urgent" | "critical";
+
+/**
+ * The Arabic wording of «درجة الأولوية», in ONE place.
+ *
+ * It is both what the button says and what is written to
+ * `metadata.intake.urgency`. Hoisted out of the JSX for that reason: the client
+ * picked «حرجة جداً», so «حرجة جداً» is what the fulfilment team must read — not
+ * the machine id "critical", and not a second translation of it that can drift
+ * from the button.
+ *
+ * `urgency` already carries a label in src/lib/services/intakeValues.ts:453
+ * («مستوى الأهمية / الاستعجال»), and the comment above it records the ruling
+ * this follows: the VALUES for this field arrive already in Arabic from the
+ * urgency buttons, so they need no INTAKE_VALUE_AR entry — only the label, which
+ * exists. No edit outside this file is required, and sending the raw English key
+ * WOULD have required one.
+ */
+const URGENCY_LABEL_AR: Record<Urgency, string> = {
+  normal: "عادية",
+  urgent: "عاجلة",
+  critical: "حرجة جداً",
+};
+
+const URGENCY_OPTIONS: ReadonlyArray<{ key: Urgency; Icon: ElementType }> = [
+  { key: "normal", Icon: Clock },
+  { key: "urgent", Icon: Lightning },
+  { key: "critical", Icon: Warning },
+];
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function NewConsultationPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { theme } = useTheme();
-  const subscription = useSubscription();
   const user = useUser();
   const { catalog, source: pricingSource } = useClientPricingCatalog();
-  const payments = usePaymentsStatus();
   const isDark = theme === "dark";
   const [selectedLawyer, setSelectedLawyer] = useState<LawyerProfile | null>(null);
   const urlLawyerId = searchParams.get("lawyer");
@@ -91,14 +144,18 @@ export default function NewConsultationPage() {
       ]),
     ) as Record<LawyerMode, typeof MODE_COPY[LawyerMode] & { price: number }>
   ), [catalog]);
-  const aiConsultPrice = getClientServiceById("ai-consult", catalog).basePrice;
-  const writtenOpinionPrice = getClientServiceById("written-opinion", catalog).basePrice;
+  // The whole catalogue entry, not `.basePrice`. The AI question carries
+  // `priceMode: "free"` with a `basePrice` of ٤٩ (the charge for a SECOND
+  // question the same day), so the card used to advertise «٤٩ ر.س» over a
+  // service this wizard bills nothing for. formatClientServicePrice() is the one
+  // function that reads priceMode, and its `priceNote` is where the ٤٩ belongs.
+  const aiConsultService = getClientServiceById("ai-consult", catalog);
 
   const [step, setStep] = useState(1);
   const [path, setPath] = useState<ConsultPath | null>(null);
   const [specialty, setSpecialty] = useState<string | null>(null);
   const [topic, setTopic] = useState("");
-  const [urgency, setUrgency] = useState<"normal" | "urgent" | "critical">("normal");
+  const [urgency, setUrgency] = useState<Urgency>("normal");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [aiQuestion, setAiQuestion] = useState("");
   const [mode, setMode] = useState<LawyerMode>("video");
@@ -176,43 +233,71 @@ export default function NewConsultationPage() {
   // `requiresPayment`, not the raw basePrice — the same rule quoteClientService()
   // applies in pricingRepository.ts and the requests wizard applies at
   // requests/new/page.tsx. Reading basePrice raw priced the free daily AI
-  // question at ٤٩, which made needsPayment true and left the only free service
-  // on the platform permanently stuck behind the disabled payment gate.
-  const total = service.requiresPayment ? service.basePrice : 0;
-  const consultationLimit = subscription.tierRank >= 3 ? 5 : subscription.tierRank >= 2 ? 1 : 0;
-  // TODO: derive consultationsUsed from a real consultations-count endpoint
-  // (count of the user's consultation workflow requests). 0 is the honest
-  // default until that endpoint exists — it does not fake a number.
-  const consultationsUsed = 0;
-  // A service the catalog marks free carries its own allowance and is covered
-  // whatever the tier is; a paid one is covered only while the tier's
-  // consultation allowance lasts. The old `path === "lawyer" &&` guard sent
-  // every AI consultation down the «باقتك لا تشمل استشارات» branch even when it
-  // costs nothing.
+  // question at ٤٩ and put it behind the disabled payment gate, which is how the
+  // only free service on the platform became permanently unorderable.
   //
-  // The allowance is a value and not a boolean because PlanBadge re-checks
-  // `used < limit` itself before it shows the covered branch: handing it the
-  // same expression this page decides on is what stops the two from disagreeing
-  // and dropping a free consultation into the «٠ ر.س» blue banner.
-  const includedAllowance = service.requiresPayment ? consultationLimit : 1;
-  const consultationIncluded = consultationsUsed < includedAllowance;
-  const payableTotal = consultationIncluded ? 0 : total;
-  // Payment gate: when the admin has disabled the gateway, block paid submissions.
-  const needsPayment = payableTotal > 0;
-  const paymentsBlocked = !payments.loading && payments.disabled && needsPayment;
+  // Used ONLY to choose between «السعر التقديري» and «سعر الخدمة» on the review
+  // screen; the figure itself is rendered by formatClientServicePrice(), which
+  // is the one function that knows «مجانا» from «٥٠٠ ر.س».
+  const estimate = service.requiresPayment ? service.basePrice : 0;
+  // Does the catalogue entry's own `priceNote` describe the session the client
+  // actually picked?
+  //
+  // The note belongs to the ENTRY, and for every mode but one the entry IS the
+  // session. «صوتية (أونلاين)» is the exception: it has no catalogue row, so
+  // `serviceId` above resolves to "video-full" and its note reads «مرئية
+  // أونلاين - 60 دقيقة» — printed directly under a «النوع» row saying «مع محامٍ
+  // — صوتية (أونلاين)». See MODES_BORROWING_ANOTHER_SERVICE_ENTRY for why the
+  // test is that set and not a count of modes sharing a serviceId.
+  //
+  // Nothing takes the note's place when it is suppressed. This wizard has no
+  // recorded duration for a voice session and no note of its own to print, and
+  // the last pass removed the hardcoded «60 دق» from the detail page for
+  // exactly that reason — putting a duration back here through a borrowed note
+  // would be the same invention by another route.
+  const priceNoteDescribesSelection =
+    path === "ai" || !MODES_BORROWING_ANOTHER_SERVICE_ENTRY.has(mode);
   // Step 1 has no type selected, so it can only name a floor: the cheapest
-  // amount this wizard is able to bill. That is the cheapest session mode —
-  // the AI path is free by catalog rule and bills ٠, so folding its ٤٩ in here
-  // would quote a figure no order on this page ever charges. Derived from the
-  // modes rather than pinned to written-opinion, so an admin catalog that
-  // reprices a mode moves the floor with it.
+  // amount a session on this page is quoted at. That is the cheapest session
+  // mode — the AI path is free by catalog rule, so folding its ٤٩ in here would
+  // quote a figure no booking on this page carries. Derived from the modes
+  // rather than pinned to written-opinion, so an admin catalog that reprices a
+  // mode moves the floor with it.
   const lowestConsultationPrice = Math.min(
     ...Object.values(modeConfig).map((cfg) => cfg.price),
   );
 
+  // ── WHY THERE IS NO «مشمولة في باقتك» ON THIS PAGE ANY MORE ────────────────
+  //
+  // A PlanBadge stood here reading `used < limit`, where `limit` came from the
+  // tier and `used` was the literal `0`. Nothing counts a client's consultations
+  // — there is no usage column, no endpoint, and useSubscription() exposes
+  // entitlements but no consumption — so «مشمولة في باقتك — بدون تكلفة إضافية»
+  // was asserted for every tier-2+ client on every booking, however many they
+  // had already made, and the request was billed ٠ on the strength of it.
+  //
+  // The badge's OTHER branch is not a safe place to fall back to either:
+  // «باقتك لا تشمل استشارات» asserts the package excludes them, which is just as
+  // unverifiable from here. Both branches state a fact about an allowance this
+  // page cannot see.
+  //
+  // What replaces it is the model the sibling wizard already ships under the
+  // owner's 26 August ruling (src/app/dashboard/client/requests/new/page.tsx):
+  // submitting is FREE, the team reads the request and quotes afterwards, and
+  // the catalogue figure stays on screen labelled «السعر التقديري». That
+  // sentence stays true whether the office ends up billing ٥٠٠ or nothing at
+  // all because of a package — it asserts neither inclusion nor a final charge.
+  //
+  // It also removes a wall. `paymentsBlocked` used to refuse the submit whenever
+  // anything was owed, and no payment gateway exists, so a client without a
+  // subscription wrote out their whole consultation and could not send it. That
+  // is the identical defect requests/new/page.tsx documents fixing for the
+  // 22-of-27 paid services. Nothing branches on `payment.status === "included"`
+  // anywhere in src (checked), so `not_required` is the correct status.
+  const payableTotal = 0;
+
   const confirmConsultation = async () => {
     if (!path) return;
-    if (paymentsBlocked) return; // do not create a request when payments are disabled
     if (submitting) return;      // one click, one request — see `submitting` above
     setSubmitting(true);
     setSubmitError("");
@@ -220,11 +305,14 @@ export default function NewConsultationPage() {
     setSkippedNames([]);
     try {
       const newRequestId = createWorkflowId(path === "ai" ? "AIC" : "CON");
-      const paymentIntent = await createPaymentIntentStub({
-        amount: payableTotal,
-        requestId: newRequestId,
-        serviceId,
-      });
+      // NO createPaymentIntentStub() call any more. It is a pure local function
+      // (src/lib/paymentAdapter.ts — no network, no row), and with nothing owed
+      // it could only ever mint `pi_not_required_<id>` / provider "stub" and
+      // stamp them into metadata as `paymentIntentId` / `paymentProvider`. That
+      // is a payment-intent identifier on a request that took no payment, for a
+      // gateway that does not exist; nothing in src reads either key (checked).
+      // An artifact that implies a payment happened is the exact thing this pass
+      // is removing, so it goes rather than getting a comment.
       const request = await createWorkflowRequest({
         id: newRequestId,
         type: "consultation",
@@ -257,17 +345,17 @@ export default function NewConsultationPage() {
         // is. `metadata.mode` and `metadata.path` still carry what kind of
         // consultation it is, and the admin card reads them.
         receiver: "ai_workspace",
-        // Driven by what is actually owed, the same way requests/new/page.tsx
-        // decides it. Keyed off the path, a free AI question was born
-        // «بانتظار الدفع» priced ٤٩ — a charge it never owed, and one the
-        // client could not clear while the gateway is off.
-        status: payableTotal > 0 ? "pending_payment" : "pending_assignment",
-        payment: {
-          amount: payableTotal,
-          status: service.requiresPayment
-            ? (payableTotal > 0 ? "pending" : "included")
-            : "not_required",
-        },
+        // Nothing is owed at submit — see the `payableTotal` block above. A row
+        // born «بانتظار الدفع» is a row waiting on a gateway that does not
+        // exist, and the client has no way to clear it.
+        status: "pending_assignment",
+        // NOT `status: "included"`. That word claims the booking was covered by
+        // the client's package, which is precisely the assertion this page can
+        // no longer make. `not_required` says the only true thing: no payment
+        // was required to submit. It is also what keeps POST
+        // /api/v1/service-requests' 402 gate (route.ts:166, fires on
+        // `Number(payment.amount) > 0`) from refusing the request outright.
+        payment: { amount: payableTotal, status: "not_required" },
         sourcePath: "/dashboard/client/consultation/new",
         metadata: {
           path,
@@ -277,8 +365,6 @@ export default function NewConsultationPage() {
           quoteSource: pricingSource,
           lawyerId: selectedLawyer?.id ?? null,
           lawyerName: selectedLawyer?.name ?? null,
-          paymentIntentId: paymentIntent.id,
-          paymentProvider: paymentIntent.provider,
           attachmentCount: attachments.length,
           // The fulfilment brief (buildOrderPrompt, src/lib/services/orderPrompt.ts)
           // reads `metadata.intake` and NOTHING ELSE — the flat keys above are
@@ -288,18 +374,30 @@ export default function NewConsultationPage() {
           // here has an Arabic label in src/lib/services/intakeValues.ts;
           // adding one without a label prints the raw English key to the team.
           intake: {
-            // The three real values of `mode` are "text" | "voice" |
-            // "in-person" (ConsultMode). Written out in Arabic here rather
-            // than passed through raw, because this string is read by the
-            // fulfilment team off the brief.
+            // Read off MODE_COPY rather than re-translated, so the type the
+            // fulfilment team is briefed with is character-for-character the
+            // button the client pressed.
+            //
+            // The ternary chain that stood here named in-person, voice and text
+            // and let EVERYTHING ELSE fall through to «استشارة مكتوبة» — and
+            // "video" is what fell through. LawyerMode has four values, not the
+            // three its comment claimed, and "video" is both the default state
+            // of this wizard and the mode every «استشارة مرئية» entry point
+            // lands on. So the brief for a ٥٠٠ ر.س scheduled video session told
+            // the team to write an opinion, and no video call was ever booked.
             consultationType:
-              path === "ai" ? "استشارة بالذكاء الاصطناعي"
-                : mode === "in-person" ? "استشارة حضورية"
-                : mode === "voice" ? "استشارة صوتية / مرئية"
-                : "استشارة مكتوبة",
+              path === "ai" ? "استشارة بالذكاء الاصطناعي" : `استشارة ${MODE_COPY[mode].label}`,
             specialty,
             ...(selectedLawyer?.name ? { lawyerName: selectedLawyer.name } : {}),
             subject: activeTopic,
+            // «درجة الأولوية». The client has always been asked this and the
+            // answer has never left the browser — three buttons whose only
+            // effect was to change their own border colour. It belongs in
+            // `intake` and nowhere else: buildOrderPrompt() renders the brief
+            // from `metadata.intake` and reads no flat key, so an `urgency`
+            // sitting beside `specialty` above would be invisible to the very
+            // team the client is trying to tell «حرجة جداً».
+            urgency: URGENCY_LABEL_AR[urgency],
           },
         },
         auditEvent: "client_consultation_created",
@@ -360,9 +458,10 @@ export default function NewConsultationPage() {
     : "rounded-2xl border border-slate-200 bg-white";
 
   // One const for the submit button's wording because the notice above it
-  // quotes that wording back. The notice used to hardcode «تأكيد وادفع», which
-  // named a button that is not on screen whenever the consultation is covered.
-  const confirmLabel = consultationIncluded ? "تأكيد بدون رسوم" : "تأكيد وادفع";
+  // quotes that wording back — keeping the two from naming different buttons.
+  // It no longer says «وادفع» in any branch: this step takes no payment, and a
+  // button that says it does would be the same claim in miniature.
+  const confirmLabel = "إرسال الطلب";
 
   if (confirmed) {
     // The attachment outcome decides whether this is a success screen at all.
@@ -396,7 +495,10 @@ export default function NewConsultationPage() {
           <h2 className={`text-[22px] font-black mb-2 ${isDark ? "text-white" : "text-zinc-900"}`}>
             {attachmentsIncomplete
               ? "تم تسجيل الطلب — لكن بعض المرفقات لم تُرفق"
-              : path === "ai" ? "جاهز لتشغيل المساعد" : "تم تجهيز معاينة الحجز"}
+              /* «تم تجهيز معاينة الحجز» stood in the last branch — a "preview"
+                 that does not exist; the row is created and queued by this
+                 point, and the sentence under it already says so. */
+              : path === "ai" ? "جاهز لتشغيل المساعد" : "تم تسجيل طلب الاستشارة"}
           </h2>
           <p className={`text-[13px] mb-2 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
             {path === "ai"
@@ -463,7 +565,12 @@ export default function NewConsultationPage() {
           {path === "lawyer" && (
             <div className={`mt-4 mb-5 p-3 rounded-xl text-[11px] flex items-start gap-2 ${isDark ? "bg-amber-900/20 border border-amber-700/20 text-amber-400" : "bg-amber-50 border border-amber-200 text-amber-700"}`}>
               <Info size={13} className="flex-shrink-0 mt-0.5" />
-              <span>رقم الطلب <strong>{requestId}</strong>. يظهر الآن في طلباتك ولوحة المحامي كطلب وارد.</span>
+              {/* NOT «ولوحة المحامي». The row is written with
+                  `receiver: "ai_workspace"` — unconditionally, see the comment
+                  on that field — and the only queue that reads it is the نظامي
+                  team's fulfilment queue. No lawyer dashboard is shown this
+                  request, so the sentence now names the desk that does see it. */}
+              <span>رقم الطلب <strong>{requestId}</strong>. يظهر الآن في طلباتك، ووصل إلى فريق نظامي كطلب وارد.</span>
             </div>
           )}
           {path === "ai" && requestId && (
@@ -525,19 +632,6 @@ export default function NewConsultationPage() {
           {/* ── Step 1: Type ── */}
           {step === 1 && (
             <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              {/* The floor, not a price — no type is chosen yet. Same ٢٥٠ as
-                  before while written-opinion happens to be the cheapest mode,
-                  but read off the catalog instead of hardcoded, and it now
-                  matches the «من ٢٥٠» on the lawyer card below. */}
-              <PlanBadge
-                isDark={isDark}
-                included={consultationIncluded}
-                used={consultationsUsed}
-                limit={includedAllowance}
-                basePrice={lowestConsultationPrice}
-                priceIsFrom={true}
-              />
-
               <p className={`text-[13px] font-bold mb-4 ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
                 كيف تريد استشارتك؟
               </p>
@@ -559,8 +653,13 @@ export default function NewConsultationPage() {
                   <div className="text-right w-full">
                     <p className={`text-[14px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>نظامي AI</p>
                     <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                      استشارة فورية · {aiConsultPrice.toLocaleString("ar-SA")} ر.س
+                      استشارة فورية · {servicePriceLabel(aiConsultService)}
                     </p>
+                    {aiConsultService.priceNote && (
+                      <p className={`text-[10px] mt-0.5 leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                        {aiConsultService.priceNote}
+                      </p>
+                    )}
                     <div className="flex flex-col gap-1 mt-2.5">
                       {["إجابة فورية ٢٤/٧", "استناد للأنظمة السعودية", "سرية تامة"].map(f => (
                         <span key={f} className={`flex items-center gap-1 text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
@@ -590,7 +689,7 @@ export default function NewConsultationPage() {
                   <div className="text-right w-full">
                     <p className={`text-[14px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>مع محامٍ</p>
                     <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                      جلسة مجدولة · من {writtenOpinionPrice.toLocaleString("ar-SA")} ر.س
+                      جلسة مجدولة · من {lowestConsultationPrice.toLocaleString("ar-SA")} ر.س
                     </p>
                     <div className="flex flex-col gap-1 mt-2.5">
                       {[
@@ -672,7 +771,7 @@ export default function NewConsultationPage() {
                           <Icon size={16} />
                           <span>{cfg.label}</span>
                           <span className={`text-[10px] font-black ${mode === key ? "text-[#C8A762]" : isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                            {cfg.price} ر.س
+                            {cfg.price.toLocaleString("ar-SA")} ر.س
                           </span>
                         </motion.button>
                       );
@@ -689,9 +788,14 @@ export default function NewConsultationPage() {
                 <textarea
                   value={path === "ai" ? aiQuestion : topic}
                   onChange={e => path === "ai" ? setAiQuestion(e.target.value) : setTopic(e.target.value)}
+                  // Both examples must fit a company as well as an individual:
+                  // since the routeAccess change of 27 August a corporate
+                  // account reaches this same wizard. The AI example used to be
+                  // «فُصلت دون إشعار بعد ٥ سنوات خدمة، ما حقوقي؟» — an employee
+                  // describing their own dismissal, put in front of an employer.
                   placeholder={path === "ai"
-                    ? "صِف مشكلتك بالتفصيل... مثال: فُصلت دون إشعار بعد ٥ سنوات خدمة، ما حقوقي؟"
-                    : "صِف موضوع الاستشارة بوضوح... مثال: نزاع مع المؤجر حول شروط تجديد عقد الإيجار التجاري"}
+                    ? "صِف مسألتك بالتفصيل... مثال: ما الإجراء النظامي لإنهاء عقد عمل خلال فترة التجربة؟"
+                    : "صِف موضوع الاستشارة بوضوح... مثال: نزاع حول شروط تجديد عقد الإيجار التجاري"}
                   rows={4}
                   className={`w-full rounded-xl border px-4 py-3 text-[13px] outline-none resize-none leading-relaxed transition-colors ${
                     isDark
@@ -710,11 +814,7 @@ export default function NewConsultationPage() {
                   درجة الأولوية
                 </p>
                 <div className="grid grid-cols-3 gap-2">
-                  {([
-                    { key: "normal",   label: "عادية",    Icon: Clock,      color: isDark ? "text-zinc-400" : "text-slate-500" },
-                    { key: "urgent",   label: "عاجلة",    Icon: Lightning,  color: "text-amber-500" },
-                    { key: "critical", label: "حرجة جداً", Icon: Warning,    color: "text-red-500" },
-                  ] as const).map(({ key, label, Icon, color }) => (
+                  {URGENCY_OPTIONS.map(({ key, Icon }) => (
                     <motion.button
                       key={key}
                       whileTap={{ scale: 0.97 }}
@@ -727,11 +827,17 @@ export default function NewConsultationPage() {
                           : isDark ? "border-white/[0.08] text-zinc-500" : "border-slate-200 text-slate-500"
                       }`}
                     >
-                      <Icon size={13} className={urgency === key ? "" : color} />
-                      {label}
+                      <Icon
+                        size={13}
+                        className={urgency === key ? "" : key === "critical" ? "text-red-500" : key === "urgent" ? "text-amber-500" : isDark ? "text-zinc-400" : "text-slate-500"}
+                      />
+                      {URGENCY_LABEL_AR[key]}
                     </motion.button>
                   ))}
                 </div>
+                <p className={`text-[10px] mt-1.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                  تصل درجة الأولوية إلى فريق نظامي مع طلبك.
+                </p>
               </div>
 
               {/* ⑤ Attachments */}
@@ -793,6 +899,13 @@ export default function NewConsultationPage() {
                 </button>
               </div>
 
+              {/* The «مرحلة البيتا» notice that stood here — «تقوم المنصة
+                  بتعيين أفضل محام متخصص تلقائيا. سيتواصل معك لتأكيد الموعد» —
+                  was deleted by د. محمد on his own branch, and that deletion is
+                  kept here rather than overwritten by the merge. It is also the
+                  honest direction: no assignment engine exists, and «أفضل محام
+                  متخصص» is a claim about a selection nothing performs. */}
+
               <div className="flex justify-between pt-1">
                 <button
                   onClick={() => setStep(1)}
@@ -812,19 +925,20 @@ export default function NewConsultationPage() {
             </motion.div>
           )}
 
-          {/* ── Step 3: Review + Payment ── */}
+          {/* ── Step 3: Review + Send ── */}
           {step === 3 && (
             <motion.div key="s3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
 
-              {/* The type is chosen by now, so the badge and «الإجمالي» below it
-                  have to quote the one same figure. */}
-              <PlanBadge
-                isDark={isDark}
-                included={consultationIncluded}
-                used={consultationsUsed}
-                limit={includedAllowance}
-                basePrice={total}
-              />
+              {/* What replaced PlanBadge. Nothing here states whether the client
+                  has an allowance left, because nothing on the platform knows —
+                  see the `payableTotal` block. It states only what this step
+                  does: it sends, and it charges nothing. */}
+              <div className={`flex items-start gap-2 p-3.5 rounded-xl mb-5 text-[12px] font-semibold leading-relaxed ${
+                isDark ? "bg-emerald-900/20 border border-emerald-700/30 text-emerald-300" : "bg-emerald-50 border border-emerald-200 text-emerald-800"
+              }`}>
+                <CheckCircle size={15} weight="fill" className="flex-shrink-0 mt-0.5" />
+                <span>إرسال الطلب مجاني — لا يُطلب منك أي دفع في هذه الخطوة. يراجع فريق نظامي طلبك ثم يتواصل معك بالمبلغ النهائي قبل تنفيذ الاستشارة.</span>
+              </div>
 
               {/* Summary card */}
               <div className={`${isDark ? "border-white/[0.07] bg-zinc-900/60" : "border-slate-200 bg-white"} rounded-2xl border p-5 mb-5`}>
@@ -835,7 +949,10 @@ export default function NewConsultationPage() {
                   <div className="flex justify-between items-start">
                     <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>النوع</span>
                     <span className={`text-[13px] font-bold text-right ${isDark ? "text-white" : "text-zinc-900"}`}>
-                      {path === "ai" ? "نظامي AI — فورية" : `مع محام — ${mode === "video" ? "مرئية" : mode === "in-person" ? "حضورية" : mode === "voice" ? "صوتية" : "نصية"}`}
+                      {/* MODE_COPY again — the same label the mode buttons on
+                          step 2 show, so the review screen cannot describe the
+                          session differently from the button that chose it. */}
+                      {path === "ai" ? "نظامي AI — فورية" : `مع محامٍ — ${MODE_COPY[mode].label}`}
                     </span>
                   </div>
                   {specialty && (
@@ -852,35 +969,46 @@ export default function NewConsultationPage() {
                       </span>
                     </div>
                   )}
+                  {/* «درجة الأولوية» is on the review screen because it is now
+                      part of what gets sent. It was collected on step 2 and
+                      dropped on the floor, so showing it back here would have
+                      been one more claim the submission did not keep. */}
+                  <div className="flex justify-between">
+                    <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>درجة الأولوية</span>
+                    <span className={`text-[13px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{URGENCY_LABEL_AR[urgency]}</span>
+                  </div>
                   {path === "ai" && aiQuestion && (
                     <div className="flex justify-between items-start gap-3">
                       <span className={`text-[12px] flex-shrink-0 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>سؤالك</span>
                       <span className={`text-[12px] text-right line-clamp-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{aiQuestion}</span>
                     </div>
                   )}
+                  {/* «السعر التقديري», never «الإجمالي». An "إجمالي" is a total
+                      owed now; this figure is the catalogue's, the team quotes
+                      the real one, and nothing is charged at this step. Over a
+                      service the catalogue prices at nothing, «السعر التقديري»
+                      would read as if the free-ness itself were an estimate —
+                      the same distinction requests/new/page.tsx draws. */}
                   <div className={`flex justify-between items-center pt-3 border-t ${isDark ? "border-white/[0.07]" : "border-gray-100"}`}>
-                    <span className={`text-[13px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>الإجمالي</span>
-                    <span className="text-[18px] font-black text-[#C8A762]">{total} ر.س</span>
+                    <span className={`text-[13px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
+                      {estimate > 0 ? "السعر التقديري" : "سعر الخدمة"}
+                    </span>
+                    <span className="text-[18px] font-black text-[#C8A762]">{servicePriceLabel(service)}</span>
                   </div>
+                  {service.priceNote && priceNoteDescribesSelection && (
+                    <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                      {service.priceNote}
+                    </p>
+                  )}
                 </div>
               </div>
 
-              {/* Pending / payment-disabled notice */}
-              {paymentsBlocked ? (
-                <div className={`rounded-xl p-3.5 flex items-start gap-2.5 mb-5 text-[11px] ${isDark ? "bg-red-900/15 border border-red-700/25" : "bg-red-50 border border-red-200"}`}>
-                  <Warning size={13} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-red-400" : "text-red-600"}`} weight="fill" />
-                  <p className={isDark ? "text-red-300/80" : "text-red-700"}>
-                    الدفع غير متاح حالياً — سيتم تفعيل بوابة الدفع قريباً. لا يمكن إتمام الطلب المدفوع حتى التفعيل.
-                  </p>
-                </div>
-              ) : (
-                <div className={`rounded-xl p-3.5 flex items-start gap-2.5 mb-5 text-[11px] ${isDark ? "bg-amber-900/15 border border-amber-700/20" : "bg-amber-50 border border-amber-200"}`}>
-                  <Warning size={13} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-amber-400" : "text-amber-600"}`} weight="fill" />
-                  <p className={isDark ? "text-amber-300/80" : "text-amber-700"}>
-                    بعد الضغط على «{confirmLabel}» يُسجَّل طلبك لدى المكتب ويصل فريق نظامي فوراً. لا يُخصم أي مبلغ في هذه الخطوة.
-                  </p>
-                </div>
-              )}
+              <div className={`rounded-xl p-3.5 flex items-start gap-2.5 mb-5 text-[11px] ${isDark ? "bg-amber-900/15 border border-amber-700/20" : "bg-amber-50 border border-amber-200"}`}>
+                <Warning size={13} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-amber-400" : "text-amber-600"}`} weight="fill" />
+                <p className={isDark ? "text-amber-300/80" : "text-amber-700"}>
+                  بعد الضغط على «{confirmLabel}» يُسجَّل طلبك لدى المكتب ويصل فريق نظامي فوراً. لا يُخصم أي مبلغ في هذه الخطوة.
+                </p>
+              </div>
 
               {/* The submit can now take a minute per attachment (the 60s upload
                   ceiling in documentService.ts), so say so instead of leaving a
@@ -916,16 +1044,17 @@ export default function NewConsultationPage() {
                   <ArrowRight size={13} /> رجوع
                 </button>
                 <motion.button
-                  whileHover={{ scale: !paymentsBlocked && !submitting ? 1.02 : 1 }} whileTap={{ scale: !paymentsBlocked && !submitting ? 0.98 : 1 }}
+                  whileHover={{ scale: submitting ? 1 : 1.02 }} whileTap={{ scale: submitting ? 1 : 0.98 }}
                   onClick={confirmConsultation}
-                  disabled={paymentsBlocked || submitting}
+                  disabled={submitting}
                   className={`flex items-center gap-2 px-6 py-3 text-white text-[13px] font-black rounded-xl transition-colors shadow-lg shadow-[#0B3D2E]/20 ${
-                    paymentsBlocked || submitting
+                    submitting
                       ? "bg-zinc-400/60 cursor-not-allowed shadow-none"
                       : "bg-[#0B3D2E] hover:bg-[#0d4d39]"
                   }`}
                 >
-                  <CreditCard size={15} />
+                  {/* Not a credit card. Nothing is paid here. */}
+                  <Sparkle size={15} weight="fill" />
                   {submitting ? "جارٍ إرسال الطلب…" : confirmLabel}
                 </motion.button>
               </div>

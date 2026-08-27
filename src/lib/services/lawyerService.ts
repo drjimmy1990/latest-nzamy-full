@@ -7,98 +7,27 @@
 "use client";
 
 import { apiGet } from "@/lib/services/api";
+import { toDirectoryLawyers } from "@/lib/services/lawyerDirectory";
+import type {
+  DirectoryLawyer,
+  DirectoryLawyerRow,
+} from "@/lib/services/lawyerDirectory";
 import type { Lawyer } from "@/app/dashboard/client/find-lawyer/data";
 
 // Re-export the Lawyer type for consumers
 export type { Lawyer as LawyerProfile };
-
-// ─── Raw API row shapes ─────────────────────────────────────────────────────
-// /api/v1/lawyers and /api/v1/lawyers/[id] both return raw Supabase join rows
-// (snake_case `profiles` columns + a nested `lawyer_profiles` relation) — NOT
-// the `Lawyer` shape below. mapRawLawyerRow() below is the one place that
-// reconciles the two, so every consumer of this service gets real `Lawyer`
-// objects instead of an untransformed DB row wearing the type as a cast.
-interface RawLawyerProfile {
-  specialties?: string[] | null;
-  years_experience?: number | null;
-  hourly_rate?: number | null;
-  bio_ar?: string | null;
-  bio_en?: string | null;
-  verification_status?: string | null;
-  is_accepting_clients?: boolean | null;
-}
-
-interface RawLawyerRow {
-  id?: string | null;
-  display_name?: string | null;
-  display_name_en?: string | null;
-  avatar_url?: string | null;
-  city?: string | null;
-  // Supabase returns the joined row as an object for a to-one relation, but
-  // an array in some query shapes — the API route itself defends against
-  // both (see LAWYER-6.1 in the route), so this service does too.
-  lawyer_profiles?: RawLawyerProfile | RawLawyerProfile[] | null;
-}
-
-// Arabic display label per specialty key. The DB only stores the key
-// (`lawyer_profiles.specialties: text[]`) — there is no label/rating/review
-// column anywhere in the schema, so those fields default to honest
-// zero/empty values below rather than fabricated numbers.
-const SPECIALTY_LABELS: Record<string, string> = {
-  labor: "عمالي",
-  commercial: "تجاري",
-  "real-estate": "عقاري",
-  family: "أسرة",
-  criminal: "جنائي",
-  ip: "ملكية فكرية",
-  civil: "مدني",
-  corporate: "شركات",
-};
-
-function fallbackAvatarUrl(name: string): string {
-  const label = name || "محامٍ";
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(label)}&background=0B3D2E&color=C8A762&size=128&bold=true&font-size=0.4`;
-}
-
-/** Maps a raw Supabase join row (profiles + lawyer_profiles) to the typed `Lawyer` shape. */
-function mapRawLawyerRow(row: unknown): Lawyer {
-  const r = (row ?? {}) as RawLawyerRow;
-  const lpRaw = r.lawyer_profiles;
-  const lp: RawLawyerProfile = (Array.isArray(lpRaw) ? lpRaw[0] : lpRaw) ?? {};
-
-  const name = r.display_name || r.display_name_en || "";
-  const specialties = lp.specialties ?? [];
-  const specialtyKey = specialties[0] ?? "";
-  const rate = lp.hourly_rate ?? 0;
-
-  return {
-    id: r.id ?? "",
-    name,
-    specialty: SPECIALTY_LABELS[specialtyKey] ?? specialtyKey,
-    specialtyKey,
-    city: r.city ?? "",
-    // No reviews/ratings table is wired up yet — honest zeros, never fabricated.
-    rating: 0,
-    reviewCount: 0,
-    experienceYears: lp.years_experience ?? 0,
-    available: lp.is_accepting_clients ?? false,
-    verified: lp.verification_status === "verified",
-    priceMin: rate,
-    priceMax: rate,
-    expertise: specialties,
-    avatar: r.avatar_url || fallbackAvatarUrl(name),
-    // No response-time tracking exists yet — empty, not an invented promise.
-    responseTime: "",
-    successRate: 0,
-    consultationsCount: 0,
-    bio: lp.bio_ar || lp.bio_en || "",
-  };
-}
+export type { DirectoryLawyer };
 
 // ─── API types ────────────────────────────────────────────────────────────────
 
+/**
+ * What GET /api/v1/lawyers really answers with: PROFILE rows carrying an
+ * embedded `lawyer_profiles`. It was typed `Lawyer[]` here — the mock-directory
+ * interface — which made `getLawyers()` a cast rather than a mapping and left
+ * every field the card read `undefined` at runtime.
+ */
 interface LawyerListResponse {
-  lawyers: RawLawyerRow[];
+  lawyers: DirectoryLawyerRow[];
   total: number;
 }
 
@@ -165,32 +94,50 @@ export type PublicLawyerResult =
 
 // ─── Filter types ─────────────────────────────────────────────────────────────
 
+/**
+ * `sort` used to accept "rating", which the caller then had to translate to
+ * "experience" because the route has no such ordering — there is no ratings
+ * table to order by. Offering an option that silently becomes a different one
+ * is how «الأعلى تقييماً» ended up on screen sorting by years of practice.
+ *
+ * `city` is likewise gone: the route (src/app/api/v1/lawyers/route.ts) reads
+ * `specialty`, `sort`, `available`, `limit` and `offset` and NOTHING else, so
+ * `city` was serialised into the query string and discarded by the server
+ * while the UI showed a city chip as active. The directory filters by city on
+ * the client instead, over rows it actually holds.
+ */
 export interface LawyerFilters {
   specialty?: string;
-  city?: string;
-  sort?: "rating" | "price" | "experience";
+  sort?: "price" | "experience";
   available?: boolean;
 }
 
 // ─── Service functions ────────────────────────────────────────────────────────
 
+/**
+ * The public directory, MAPPED — see src/lib/services/lawyerDirectory.ts for
+ * why the view model has no rating, review count, success rate, consultation
+ * count or response time.
+ *
+ * THROWS on a failed request instead of returning `[]`.
+ *
+ * The old body caught everything and handed back an empty array, which
+ * collapsed two different facts into one screen: "no lawyer has published a
+ * public profile" and "we could not reach the server". The directory's empty
+ * state names the first of those, so on any network hiccup the page told the
+ * client something about the profession that it had not actually checked. The
+ * page has always had a `.catch()` and a `fetchError` state; this is what makes
+ * that branch reachable.
+ */
 export async function getLawyers(
   filters?: LawyerFilters,
-): Promise<Lawyer[]> {
-  try {
-    // API only supports 'price' and 'experience' sort — map 'rating' to 'experience'
-    const sortParam = filters?.sort === "rating" ? "experience" : filters?.sort;
-    const response = await apiGet<LawyerListResponse>("/api/v1/lawyers", {
-      specialty: filters?.specialty,
-      city: filters?.city,
-      sort: sortParam,
-      available: filters?.available,
-    });
-    return (response.lawyers ?? []).map(mapRawLawyerRow);
-  } catch (error) {
-    console.warn("[Nzamy] Failed to fetch lawyers:", error);
-    return [];
-  }
+): Promise<DirectoryLawyer[]> {
+  const response = await apiGet<LawyerListResponse>("/api/v1/lawyers", {
+    specialty: filters?.specialty,
+    sort: filters?.sort,
+    available: filters?.available,
+  });
+  return toDirectoryLawyers(response?.lawyers);
 }
 
 /**

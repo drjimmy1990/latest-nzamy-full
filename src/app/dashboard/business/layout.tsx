@@ -9,7 +9,7 @@ import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
 import { Storefront, Wrench, ArrowLeft } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
-import { isVisibleBusinessRoute } from "@/constants/navigation.sidebars.business";
+import { isHiddenBusinessSection } from "@/constants/navigation.sidebars.business";
 
 /**
  * Business (Corporate) Dashboard Layout
@@ -100,7 +100,14 @@ export default function BusinessDashboardLayout({
   // guard that bounced the admin too would remove the only way to inspect them.
   // While useUser is still resolving, userType is not yet "admin" and the
   // notice shows — the safe direction to be wrong in.
-  const sectionHidden = userType !== "admin" && !isVisibleBusinessRoute(pathname);
+  // isHiddenBusinessSection, NOT isVisibleBusinessRoute. This layout is also
+  // the chrome for every /ai/* page a corporate account opens
+  // (src/app/ai/layout.tsx dispatches on user_type, not on path), so asking
+  // "is this a VISIBLE business route" answered `false` for /ai/orders/[id] —
+  // a company that clicked its own order was told the section was not ready
+  // and that what used to be there was not its own data. See the predicate's
+  // docblock for the full trace.
+  const sectionHidden = userType !== "admin" && isHiddenBusinessSection(pathname);
 
   return (
     <UserTypeGuard allowedTypes={["corporate", "admin"]}>

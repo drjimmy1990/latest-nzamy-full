@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import {
   UsersThree, Crown, CreditCard, CheckCircle, Clock, Gavel,
   Warning, Plus, ShareNetwork, Repeat, Bell,
-  ArrowLeft, Gear, UserPlus, SealPercent, ArrowClockwise,
+  ArrowLeft, UserPlus, SealPercent, ArrowClockwise,
   PaperPlaneTilt, ChartBar, Star, Confetti, X, Copy,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -134,6 +134,12 @@ export default function MyGroupPage() {
   const [showJoin, setShowJoin] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [groupName, setGroupName] = useState("");
+  // «حجم المجموعة» used to be a <select> with no value and no onChange, so the
+  // answer never left the modal and createGroup() always fell back to the API
+  // default of 10. `groups.max_members` is a real column
+  // (20260603_phase1_004_community_features.sql:138) and POST /api/v1/groups
+  // already accepts it — the picker just was not wired to anything.
+  const [maxMembers, setMaxMembers] = useState(5);
   const [createError, setCreateError] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -143,6 +149,16 @@ export default function MyGroupPage() {
   // Dynamic data from service
   const [groupData, setGroupData] = useState<{ group: any; members: Member[] } | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // The pricing page's «ابدأ مجموعتك» CTA links to /dashboard/client/my-group
+  // ?action=create. `searchParams` was read on line 126 and then used by
+  // nothing at all, so that button landed on the overview and the visitor had
+  // to hunt for «أنشئ مجموعة» themselves. Guarded on !hasGroup: someone who is
+  // already in a group must not be shown a create dialogue over their own
+  // group's page.
+  useEffect(() => {
+    if (searchParams.get("action") === "create" && !hasGroup) setShowCreate(true);
+  }, [searchParams, hasGroup]);
 
   useEffect(() => {
     if (!hasGroup) {
@@ -242,11 +258,23 @@ export default function MyGroupPage() {
                   </div>
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>حجم المجموعة</label>
-                    <select className={`w-full rounded-xl px-4 py-3 border outline-none appearance-none ${isDark ? "bg-zinc-800 border-white/10" : "bg-zinc-50 border-zinc-200"}`}>
-                      <option>٥ أشخاص (خصم ٣٠٪) - الأفضل</option>
-                      <option>٤ أشخاص (خصم ٢٥٪)</option>
-                      <option>٣ أشخاص (خصم ٢٠٪)</option>
-                      <option>شخصين (خصم ١٥٪)</option>
+                    {/* The discount percentages that used to label these four
+                        options — «خصم ٣٠٪», «٢٥٪», «٢٠٪», «١٥٪» — are gone.
+                        Nothing in this platform can apply a discount: no
+                        payment provider is connected and the note directly
+                        below this field already says the billing and rotation
+                        system is not active. A percentage off a charge that
+                        cannot be made is a price quoted for a transaction that
+                        cannot happen. The SIZE is real and is now saved. */}
+                    <select
+                      value={maxMembers}
+                      onChange={(e) => setMaxMembers(Number(e.target.value))}
+                      className={`w-full rounded-xl px-4 py-3 border outline-none appearance-none ${isDark ? "bg-zinc-800 border-white/10" : "bg-zinc-50 border-zinc-200"}`}
+                    >
+                      <option value={5}>٥ أشخاص</option>
+                      <option value={4}>٤ أشخاص</option>
+                      <option value={3}>٣ أشخاص</option>
+                      <option value={2}>شخصان</option>
                     </select>
                   </div>
                 </div>
@@ -270,7 +298,7 @@ export default function MyGroupPage() {
                   onClick={async () => {
                     setCreateError(null);
                     try {
-                      await createGroup({ name: groupName.trim() || GROUP.name });
+                      await createGroup({ name: groupName.trim() || GROUP.name, max_members: maxMembers });
                       setShowCreate(false);
                       await membership.refresh();
                     } catch (err) {
@@ -398,10 +426,10 @@ export default function MyGroupPage() {
             {inviteError && (
               <span className={`text-xs ${isDark ? "text-rose-400" : "text-rose-600"}`}>{inviteError}</span>
             )}
-            <motion.button whileHover={{ scale:1.05 }} whileTap={{ scale:0.97 }} transition={sp}
-              className={`w-9 h-9 rounded-[0.75rem] border flex items-center justify-center transition-colors ${isDark ? "border-white/10 bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10" : "border-zinc-200 bg-white text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 shadow-sm"}`}>
-              <Gear size={16} />
-            </motion.button>
+            {/* A settings gear with no onClick used to sit here. There are no
+                group settings to open — nothing in groupService edits a group
+                after creation — so the control is gone rather than left
+                inviting a press that does nothing. */}
           </div>
         </motion.div>
 

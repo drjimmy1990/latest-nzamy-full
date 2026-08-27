@@ -213,7 +213,7 @@ export const DASHBOARD_PATHS: Record<DbUserType, string> = {
  *
  * The home page, deliberately, for two reasons. It is not a `/dashboard/*`
  * path — each of those prefixes is restricted to a single user_type by
- * `ROUTE_ACCESS` (src/proxy.ts:13-37), so redirecting an unknown-typed user to
+ * `ROUTE_ACCESS` (src/lib/auth/routeAccess.ts), so redirecting an unknown-typed user to
  * one would bounce them straight back out again. And it is not any account's
  * dashboard, so nobody is silently filed under the wrong type.
  *

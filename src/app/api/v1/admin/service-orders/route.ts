@@ -152,11 +152,66 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // ── The company behind a corporate order ────────────────────────────────
+  //
+  // 2026-08-27: a corporate account can now file through the same three-step
+  // form as an individual (owner ruling س٢; src/lib/auth/routeAccess.ts). What
+  // reaches this queue for such an order is `profiles.display_name` and an
+  // «منشأة تجارية» badge — a trading name and nothing else.
+  //
+  // For a legal office that is not enough to act on. An إنذار or a وكالة is
+  // issued in the name of the registered entity, by its ممثل نظامي, quoting
+  // the commercial registration number. All three ARE on file: owner item ٧
+  // persisted them at signup and 20260826_corporate_identity_persisted.sql
+  // recovered them for the accounts that predate it. They were simply never
+  // put in front of the person doing the work, who then had to ask the client
+  // for details the platform already held.
+  //
+  // ONE query for every corporate requester on the page, in the same shape and
+  // for the same reason as the two enrichments above: this queue renders up to
+  // 200 rows and a per-row lookup would be 200 round-trips. Skipped entirely
+  // when no visible order came from a company, which is the common case.
+  //
+  // A failure here is logged and swallowed. The identity block is extra
+  // context on a card, not the card — losing it must not take the fulfilment
+  // queue down, and an absent block asserts nothing.
+  const corporateOwnerIds = [
+    ...new Set(
+      orders
+        .map((o) => o.requester_user_id as string | null)
+        .filter((id): id is string => {
+          if (!id) return false;
+          return profileMap.get(id)?.user_type === "corporate";
+        }),
+    ),
+  ];
+  let entityMap = new Map<string, Record<string, unknown>>();
+  if (corporateOwnerIds.length > 0) {
+    const { data: entities, error: entityError } = await admin
+      .from("business_profiles")
+      .select("owner_user_id, company_name_ar, cr_number, legal_rep_name, legal_rep_capacity")
+      .in("owner_user_id", corporateOwnerIds);
+    if (entityError) {
+      console.error(
+        "[admin service-orders] corporate identity lookup failed:",
+        entityError.message,
+      );
+    } else {
+      entityMap = new Map(
+        (entities ?? []).map((e) => [e.owner_user_id as string, e]),
+      );
+    }
+  }
+
   return NextResponse.json({
     success: true,
     data: orders.map((o) => ({
       ...o,
       profile: profileMap.get(o.requester_user_id as string) ?? null,
+      // null for every individual order, and for a company whose row has not
+      // been created yet. The card must render nothing at all in that case —
+      // never «شركة جديدة», never a blank CR label.
+      entity: entityMap.get(o.requester_user_id as string) ?? null,
       assignee: assigneeLabel(o.assigned_to),
       whatsappNotice: noticeMap.get(String(o.id)) ?? null,
     })),

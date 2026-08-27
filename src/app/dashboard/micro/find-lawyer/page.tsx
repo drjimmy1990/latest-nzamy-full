@@ -4,12 +4,13 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
-  MagnifyingGlass, Star, SealCheck, MapPin, Briefcase,
+  MagnifyingGlass, MapPin, Briefcase,
   ChatCircle,
-  Headset, UserCircle, Clock,
+  Headset, UserCircle,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { getLawyers, type LawyerProfile } from "@/lib/services";
+import { getLawyers } from "@/lib/services";
+import type { DirectoryLawyer } from "@/lib/services/lawyerDirectory";
 
 // ─── Specialty filter chips ────────────────────────────────────────────────
 // `key` matches LawyerProfile.specialtyKey from the real API. "administrative"
@@ -26,42 +27,48 @@ const SPECIALTIES: { key: string; label: string }[] = [
 ];
 
 // ─── Card shape rendered by this page (mapped from the real LawyerProfile) ─
+/**
+ * 2026-08-27 — REBUILT ON THE COLUMNS THAT EXIST.
+ *
+ * This interface used to carry `rating`, `reviewCount`, `responseTime` and
+ * `consultationPrice`, and the comment beneath it said getLawyers() "guarantees
+ * every field is a real, correctly-typed value". It did not, and could not:
+ * there is no ratings table, no reviews table and no response-time or
+ * consultation-price column anywhere in the schema. The old mapper produced
+ * those numbers by defaulting, so the page rendered five stars and «(٠ تقييم)»
+ * and «يرد فوراً» about a real, licensed professional.
+ *
+ * `DirectoryLawyer` (src/lib/services/lawyerDirectory.ts) is the shared model:
+ * every field optional, `undefined` meaning "not stated", and the rule that a
+ * missing value renders NOTHING — no zero, no dash, no placeholder. The client
+ * directory at /dashboard/client/find-lawyer was rebuilt the same way in the
+ * same pass; these two must not drift apart again.
+ *
+ * `specialtyKey` is gone with the rest: `lawyer_profiles.specialties` is a free
+ * text array a lawyer types into one box, so there is no key to filter on. The
+ * filter matches the specialisation text instead.
+ */
 interface LawyerCard {
   id: string;
-  name: string;
-  specialty: string;
-  specialtyKey: string;
-  city: string;
-  rating: number;
-  reviewCount: number;
-  experience: number;
-  consultationPrice: number;
-  verified: boolean;
-  available: boolean;
-  tags: string[];
-  bio: string;
-  responseTime: string;
+  name?: string;
+  specialties: string[];
+  city?: string;
+  experience?: number;
+  hourlyRate?: number;
+  isAcceptingClients?: boolean;
+  bio?: string;
 }
 
-// lawyerService.getLawyers() now guarantees every field below is a real,
-// correctly-typed value (see mapRawLawyerRow() in lawyerService.ts) — no
-// defensive fallbacks needed here anymore, this is a straight reshape.
-function toCard(l: LawyerProfile): LawyerCard {
+function toCard(l: DirectoryLawyer): LawyerCard {
   return {
     id: l.id,
     name: l.name,
-    specialty: l.specialty,
-    specialtyKey: l.specialtyKey,
+    specialties: l.specialties,
     city: l.city,
-    rating: l.rating,
-    reviewCount: l.reviewCount,
-    experience: l.experienceYears,
-    consultationPrice: l.priceMin,
-    verified: l.verified,
-    available: l.available,
-    tags: l.expertise.slice(0, 3),
+    experience: l.yearsExperience,
+    hourlyRate: l.hourlyRate,
+    isAcceptingClients: l.isAcceptingClients,
     bio: l.bio,
-    responseTime: l.responseTime,
   };
 }
 
@@ -70,20 +77,9 @@ const fadeUp = {
   show: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.07, duration: 0.35 } }),
 };
 
-function StarRating({ rating }: { rating: number }) {
-  return (
-    <div className="flex items-center gap-0.5">
-      {[1,2,3,4,5].map(i => (
-        <Star
-          key={i}
-          size={11}
-          weight={i <= Math.round(rating) ? "fill" : "regular"}
-          className={i <= Math.round(rating) ? "text-[#C8A762]" : "text-zinc-300"}
-        />
-      ))}
-    </div>
-  );
-}
+// StarRating was here. Nothing in this platform has ever recorded a rating for
+// a lawyer — no table, no column, no endpoint — so the stars were drawn from a
+// number the mapper invented.
 
 export default function MicroFindLawyerPage() {
   const { isDark } = useTheme();
@@ -111,10 +107,21 @@ export default function MicroFindLawyerPage() {
     ? "bg-zinc-900 border border-white/[0.07] rounded-2xl"
     : "bg-white border border-zinc-100 rounded-2xl shadow-sm";
 
-  const filtered = lawyers.filter(l =>
-    (specialty === "all" || l.specialtyKey === specialty) &&
-    (l.name.includes(search) || l.specialty.includes(search) || l.city.includes(search))
-  );
+  // Every field is optional now, so every read is guarded — the old version
+  // called .includes() on three values it assumed were strings, which is how
+  // the client directory's search box came to throw on the first keystroke.
+  const filtered = lawyers.filter(l => {
+    const specialtyMatch =
+      specialty === "all" || l.specialties.some(s => s === specialty);
+    if (!specialtyMatch) return false;
+    const q = search.trim();
+    if (!q) return true;
+    return (
+      (l.name ?? "").includes(q) ||
+      (l.city ?? "").includes(q) ||
+      l.specialties.some(s => s.includes(q))
+    );
+  });
 
   return (
     <div className={`p-5 md:p-8 max-w-[1000px] mx-auto space-y-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
@@ -202,71 +209,91 @@ export default function MicroFindLawyerPage() {
             <div className="flex items-start gap-3 mb-3">
               <div className="relative flex-shrink-0">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#0B3D2E] to-[#1a6b50] flex items-center justify-center text-white text-[16px] font-bold">
-                  {lawyer.name.charAt(0)}
+                  {(lawyer.name ?? "؟").charAt(0)}
                 </div>
-                {lawyer.available && (
+                {/* Only a lawyer who actually ANSWERED gets the green dot.
+                    `undefined` means never answered, which is not «متاح». */}
+                {lawyer.isAcceptingClients === true && (
                   <span className="absolute -bottom-0.5 -end-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-white dark:border-zinc-900" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-0.5">
-                  <p className={`font-bold text-[15px] ${isDark ? "text-white" : "text-zinc-800"}`}>{lawyer.name}</p>
-                  {lawyer.verified && <SealCheck size={15} weight="fill" className="text-[#C8A762] flex-shrink-0" />}
+                  <p className={`font-bold text-[15px] ${isDark ? "text-white" : "text-zinc-800"}`}>
+                    {lawyer.name ?? "محامٍ لم يذكر اسمه"}
+                  </p>
+                  {/* The «موثّق» seal is gone. Every lawyer that reaches this
+                      page is already verification_status='verified' — the API
+                      filters on it — so a badge true of every row on screen
+                      distinguishes nothing, and it was drawn from a `verified`
+                      field the old mapper invented anyway. */}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${isDark ? "bg-[#0B3D2E]/20 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
-                    {lawyer.specialty}
-                  </span>
-                  <span className={`flex items-center gap-0.5 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                    <MapPin size={10} /> {lawyer.city}
-                  </span>
-                  <span className={`flex items-center gap-0.5 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                    <Briefcase size={10} /> {lawyer.experience} سنوات
-                  </span>
+                  {lawyer.specialties[0] && (
+                    <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${isDark ? "bg-[#0B3D2E]/20 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
+                      {lawyer.specialties[0]}
+                    </span>
+                  )}
+                  {lawyer.city && (
+                    <span className={`flex items-center gap-0.5 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                      <MapPin size={10} /> {lawyer.city}
+                    </span>
+                  )}
+                  {typeof lawyer.experience === "number" && (
+                    <span className={`flex items-center gap-0.5 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                      <Briefcase size={10} /> {lawyer.experience} سنوات
+                    </span>
+                  )}
                 </div>
               </div>
-              <div className="text-end flex-shrink-0">
-                <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-600"}`}>{lawyer.consultationPrice} ر.س</p>
-                <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>للاستشارة</p>
+              {/* The lawyer's stated HOURLY rate. The old card printed this
+                  figure under «للاستشارة» — a different number, and a quote
+                  this platform is not in a position to give. */}
+              {typeof lawyer.hourlyRate === "number" && (
+                <div className="text-end flex-shrink-0">
+                  <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-600"}`}>{lawyer.hourlyRate} ر.س</p>
+                  <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>للساعة</p>
+                </div>
+              )}
+            </div>
+
+            {/* The rating row stood here: five stars, a score, «(N تقييم)» and
+                «يرد فوراً». Not one of the four has a source in the schema. */}
+
+            {lawyer.bio && (
+              <p className={`text-[12px] leading-relaxed mb-3 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                {lawyer.bio}
+              </p>
+            )}
+
+            {/* The remaining specialisations, after the headline one above. */}
+            {lawyer.specialties.length > 1 && (
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {lawyer.specialties.slice(1, 4).map(tag => (
+                  <span key={tag} className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
+                    {tag}
+                  </span>
+                ))}
               </div>
-            </div>
-
-            {/* Rating */}
-            <div className="flex items-center gap-1.5 mb-2">
-              <StarRating rating={lawyer.rating} />
-              <span className={`text-[11px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{lawyer.rating}</span>
-              <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>({lawyer.reviewCount} تقييم)</span>
-              <span className={`ms-auto text-[10px] flex items-center gap-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                <Clock size={9} /> يرد {lawyer.responseTime}
-              </span>
-            </div>
-
-            {/* Bio */}
-            <p className={`text-[12px] leading-relaxed mb-3 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-              {lawyer.bio}
-            </p>
-
-            {/* Tags */}
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {lawyer.tags.map(tag => (
-                <span key={tag} className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
-                  {tag}
-                </span>
-              ))}
-            </div>
+            )}
 
             {/* Actions */}
             <div className="flex gap-2">
               <Link href={`/dashboard/micro/requests?lawyer=${lawyer.id}&type=consult`} className="flex-1" onClick={e => e.stopPropagation()}>
+                {/* `isAcceptingClients` has THREE states and the old code had
+                    two: an `undefined` (never answered) rendered as «غير متاح
+                    الآن», telling the client this lawyer had declined when the
+                    lawyer had simply not been asked. Only an explicit `false`
+                    closes the button now. */}
                 <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
                   className={`w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold transition-colors cursor-pointer ${
-                    lawyer.available
-                      ? "bg-[#0B3D2E] text-white hover:bg-[#0d5238]"
-                      : isDark ? "bg-zinc-800 text-zinc-500 cursor-not-allowed" : "bg-zinc-100 text-zinc-400 cursor-not-allowed"
+                    lawyer.isAcceptingClients === false
+                      ? isDark ? "bg-zinc-800 text-zinc-500 cursor-not-allowed" : "bg-zinc-100 text-zinc-400 cursor-not-allowed"
+                      : "bg-[#0B3D2E] text-white hover:bg-[#0d5238]"
                   }`}
                 >
                   <Headset size={13} />
-                  {lawyer.available ? "احجز استشارة" : "غير متاح الآن"}
+                  {lawyer.isAcceptingClients === false ? "لا يستقبل موكلين حالياً" : "احجز استشارة"}
                 </motion.div>
               </Link>
               <Link href={`/dashboard/micro/requests?lawyer=${lawyer.id}&type=message`} onClick={e => e.stopPropagation()}>
@@ -313,38 +340,57 @@ export default function MicroFindLawyerPage() {
               <div className={`p-6 border-b ${isDark ? "border-white/[0.07]" : "border-zinc-100"}`}>
                 <div className="flex items-start gap-3">
                   <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#0B3D2E] to-[#1a6b50] flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
-                    {selectedLawyer.name.charAt(0)}
+                    {(selectedLawyer.name ?? "؟").charAt(0)}
                   </div>
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <h2 className={`text-[17px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>{selectedLawyer.name}</h2>
-                      {selectedLawyer.verified && <SealCheck size={16} weight="fill" className="text-[#C8A762]" />}
+                      <h2 className={`text-[17px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>
+                        {selectedLawyer.name ?? "محامٍ لم يذكر اسمه"}
+                      </h2>
                     </div>
-                    <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{selectedLawyer.specialty} · {selectedLawyer.city}</p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <StarRating rating={selectedLawyer.rating} />
-                      <span className={`text-[11px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{selectedLawyer.rating}</span>
-                      <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>({selectedLawyer.reviewCount})</span>
-                    </div>
+                    {/* Joined with a « · » only when BOTH halves are there —
+                        otherwise the line used to open or close with a stray
+                        separator standing where a fact was promised. */}
+                    {(selectedLawyer.specialties[0] || selectedLawyer.city) && (
+                      <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                        {[selectedLawyer.specialties[0], selectedLawyer.city].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
               <div className="p-6 space-y-4">
-                <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                  {selectedLawyer.bio}
-                </p>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { label: "الخبرة", value: `${selectedLawyer.experience} سنوات` },
-                    { label: "وقت الرد", value: selectedLawyer.responseTime },
-                    { label: "الاستشارة", value: `${selectedLawyer.consultationPrice} ر.س` },
-                  ].map(item => (
-                    <div key={item.label} className={`text-center p-3 rounded-xl ${isDark ? "bg-zinc-800" : "bg-zinc-50"}`}>
-                      <p className={`text-[12px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>{item.value}</p>
-                      <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{item.label}</p>
+                {selectedLawyer.bio && (
+                  <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                    {selectedLawyer.bio}
+                  </p>
+                )}
+                {/* Three fixed tiles stood here — «الخبرة» / «وقت الرد» /
+                    «الاستشارة» — and two of the three had no source at all.
+                    The grid is now built from whatever is actually stated, and
+                    renders nothing when nothing is: an empty tile under a label
+                    is the same claim as a wrong number under it. */}
+                {(() => {
+                  const facts = [
+                    typeof selectedLawyer.experience === "number"
+                      ? { label: "الخبرة", value: `${selectedLawyer.experience} سنوات` }
+                      : null,
+                    typeof selectedLawyer.hourlyRate === "number"
+                      ? { label: "أتعاب الساعة", value: `${selectedLawyer.hourlyRate} ر.س` }
+                      : null,
+                  ].filter((f): f is { label: string; value: string } => f !== null);
+                  if (facts.length === 0) return null;
+                  return (
+                    <div className={`grid gap-3 ${facts.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+                      {facts.map(item => (
+                        <div key={item.label} className={`text-center p-3 rounded-xl ${isDark ? "bg-zinc-800" : "bg-zinc-50"}`}>
+                          <p className={`text-[12px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>{item.value}</p>
+                          <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{item.label}</p>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  );
+                })()}
                 <div className="flex gap-2 pt-2">
                   <Link href={`/dashboard/micro/requests?lawyer=${selectedLawyer.id}&type=consult`} className="flex-1">
                     <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}

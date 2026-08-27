@@ -718,7 +718,7 @@ function S5({
 }) {
   // One dashboard map for the whole app (src/lib/auth/userTypes.ts). The local
   // map this replaced sent a government body and an NGO to /dashboard/business
-  // and /dashboard/client — prefixes ROUTE_ACCESS (src/proxy.ts:13-37) reserves
+  // and /dashboard/client — prefixes ROUTE_ACCESS (src/lib/auth/routeAccess.ts) reserves
   // for `corporate` and `individual`, so those links bounced their own owners
   // straight back out.
   const base = userType ? dashboardPathFor(userType) : "/";
@@ -800,7 +800,7 @@ export default function OnboardingPage() {
    * What `profiles.user_type` holds once the writes below are done — which is
    * not always what was picked. The success screen links to this and to nothing
    * else: a link to the dashboard of a type the account does not have would be
-   * bounced straight back out by ROUTE_ACCESS (src/proxy.ts:13-37).
+   * bounced straight back out by ROUTE_ACCESS (src/lib/auth/routeAccess.ts).
    */
   const [resolvedUserType, setResolvedUserType] = useState<DbUserType | null>(null);
   const [services, setServices] = useState<string[]>([]);

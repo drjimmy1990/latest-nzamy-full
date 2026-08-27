@@ -11,6 +11,9 @@ import assert from "node:assert/strict";
 import {
   HONEYPOT_FIELD,
   LEGAL_NEEDS,
+  LEAD_SOURCE_PATHS,
+  DEFAULT_LEAD_SOURCE_PATH,
+  resolveLeadSourcePath,
   LIMITS,
   buildLeadDescription,
   buildLeadRow,
@@ -200,4 +203,59 @@ test("every offered need id is accepted", () => {
 
 test("the reference is derived from the id that was written", () => {
   assert.equal(leadReference("0f8c1a2b-3d4e-5f60-7182-93a4b5c6d7e8"), "0F8C1A2B");
+});
+
+// ── source_path, an allowlist on an UNAUTHENTICATED endpoint ────────────────
+//
+// Anyone on the internet can POST to this route, and `source_path` is a stored
+// column an admin reads to know where a lead came from. It is a hint from the
+// caller, so it is resolved against a list rather than trusted.
+
+test("each real page resolves to itself", () => {
+  for (const path of LEAD_SOURCE_PATHS) {
+    assert.equal(resolveLeadSourcePath(path), path);
+  }
+  assert.equal(resolveLeadSourcePath("/services/corporate/health-check"), "/services/corporate/health-check");
+});
+
+test("surrounding whitespace does not defeat the allowlist", () => {
+  assert.equal(resolveLeadSourcePath("  /services/corporate/health-check  "), "/services/corporate/health-check");
+});
+
+test("anything else becomes the default and is never stored verbatim", () => {
+  for (const hostile of [
+    "/dashboard/admin",
+    "/services/business/../../dashboard/admin",
+    "https://example.com/phish",
+    "javascript:alert(1)",
+    "قال العميل إنه جاء من صفحة أخرى",
+    "",
+    "   ",
+    undefined,
+    null,
+    42,
+    { toString: () => "/dashboard/admin" },
+    ["/services/business"],
+  ]) {
+    assert.equal(
+      resolveLeadSourcePath(hostile),
+      DEFAULT_LEAD_SOURCE_PATH,
+      `${String(hostile)} must not reach source_path`,
+    );
+  }
+});
+
+test("an unrecognised value never rejects the lead — it only loses provenance", () => {
+  // The whole point of resolving instead of validating: a lead from a real
+  // prospective client must not be lost over a field that only affects
+  // reporting.
+  assert.equal(typeof resolveLeadSourcePath("nonsense"), "string");
+  assert.ok(resolveLeadSourcePath("nonsense").startsWith("/"));
+});
+
+test("the 360 audit is offered as a need, so the health-check page needs no free text", () => {
+  const ids = LEGAL_NEEDS.map((n) => n.id);
+  assert.ok(ids.includes("legal_audit"), "legal_audit must exist — /services/corporate/health-check pre-selects it");
+  const out = validateBusinessLead({ ...VALID, needs: ["legal_audit"] });
+  assert.equal(out.ok, true);
 });

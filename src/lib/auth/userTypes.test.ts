@@ -272,6 +272,7 @@ test("the dashboard map agrees with the two maps it replaces", () => {
 
 test("an unrecognised type gets a path that cannot redirect-loop", () => {
   // Not a /dashboard/* path: every /dashboard/* prefix in ROUTE_ACCESS
+  // (src/lib/auth/routeAccess.ts)
   // (src/proxy.ts:13-37) is restricted to one user_type, so bouncing an
   // unknown-typed user to any of them would bounce them again forever.
   assert.equal(dashboardPathFor("nonsense"), FALLBACK_DASHBOARD_PATH);

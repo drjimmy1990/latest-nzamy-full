@@ -278,16 +278,29 @@ function filterSidebarByLabels(groups: SidebarGroup[], allowedLabels: Set<string
 }
 
 // ── Corporate Sidebar Filter ──────────────────────────────────────────────────
+//
+// 2026-08-27 — "Request a Service" / "My Orders" / "Consultations" were added
+// to seven of the nine lists: the same seven as BUSINESS_REQUEST_ROLES in
+// src/constants/entityRouteAccess.ts, which is the set already trusted to raise
+// a request and to open the company document vault. The two left out are
+// `seconded` and `compliance_officer` — an external seconded counsel and a
+// compliance officer are not the company's purchasers, exactly as they are not
+// its document custodians.
+//
+// "My Orders" and not "My Requests": this map is keyed on labelEn, and
+// "My Requests" already means «طلباتي في السوق» (the marketplace section) in
+// four of these lists. Reusing the string would silently re-open a section the
+// 26 August ruling closed.
 const CORP_ROLE_ALLOWED_ITEMS: Record<string, string[]> = {
-  owner: ["Overview", "All Cases", "Circuits & Emails", "Departments", "Team", "Kanban", "HR Contracts", "Reports", "Our Plan", "Contract Drafter", "Deal Intelligence", "Corp Advisor", "Compliance", "Risk Assessment", "Debt Collection", "LegalMail", "HR Advisor", "CorpMind", "Law Monitor", "Doc Analyzer", "Health Check 360°", "Governance", "Governance Matrix", "New Review", "Dept Reviews", "Seconded Counsel", "My Requests", "Browse Market", "Post Request", "Legal Blog", "Notifications", "Settings"],
-  legal_manager: ["Overview", "All Cases", "Circuits & Emails", "Departments", "Kanban", "Contract Drafter", "Corp Advisor", "Compliance", "Risk Assessment", "LegalMail", "CorpMind", "Law Monitor", "Doc Analyzer", "Health Check 360°", "Governance", "Governance Matrix", "New Review", "Dept Reviews", "Seconded Counsel", "Browse Market", "Legal Blog", "Notifications", "Settings"],
-  legal_staff: ["Overview", "All Cases", "Circuits & Emails", "Kanban", "Contract Drafter", "LegalMail", "Doc Analyzer", "New Review", "Dept Reviews", "Legal Blog", "Notifications", "Settings"],
-  department_head: ["Overview", "Departments", "Kanban", "Contract Drafter", "New Review", "Dept Reviews", "My Requests", "Notifications", "Settings"],
-  hr_manager: ["Overview", "Team", "Kanban", "HR Contracts", "Reports", "HR Advisor", "CorpMind", "My Requests", "Notifications", "Settings"],
-  finance_manager: ["Overview", "Reports", "Our Plan", "Deal Intelligence", "Debt Collection", "My Requests", "Notifications", "Settings"],
+  owner: ["Overview", "Request a Service", "My Orders", "Consultations", "All Cases", "Circuits & Emails", "Departments", "Team", "Kanban", "HR Contracts", "Reports", "Our Plan", "Contract Drafter", "Deal Intelligence", "Corp Advisor", "Compliance", "Risk Assessment", "Debt Collection", "LegalMail", "HR Advisor", "CorpMind", "Law Monitor", "Doc Analyzer", "Health Check 360°", "Governance", "Governance Matrix", "New Review", "Dept Reviews", "Seconded Counsel", "My Requests", "Browse Market", "Post Request", "Legal Blog", "Notifications", "Settings"],
+  legal_manager: ["Overview", "Request a Service", "My Orders", "Consultations", "All Cases", "Circuits & Emails", "Departments", "Kanban", "Contract Drafter", "Corp Advisor", "Compliance", "Risk Assessment", "LegalMail", "CorpMind", "Law Monitor", "Doc Analyzer", "Health Check 360°", "Governance", "Governance Matrix", "New Review", "Dept Reviews", "Seconded Counsel", "Browse Market", "Legal Blog", "Notifications", "Settings"],
+  legal_staff: ["Overview", "Request a Service", "My Orders", "Consultations", "All Cases", "Circuits & Emails", "Kanban", "Contract Drafter", "LegalMail", "Doc Analyzer", "New Review", "Dept Reviews", "Legal Blog", "Notifications", "Settings"],
+  department_head: ["Overview", "Request a Service", "My Orders", "Consultations", "Departments", "Kanban", "Contract Drafter", "New Review", "Dept Reviews", "My Requests", "Notifications", "Settings"],
+  hr_manager: ["Overview", "Request a Service", "My Orders", "Consultations", "Team", "Kanban", "HR Contracts", "Reports", "HR Advisor", "CorpMind", "My Requests", "Notifications", "Settings"],
+  finance_manager: ["Overview", "Request a Service", "My Orders", "Consultations", "Reports", "Our Plan", "Deal Intelligence", "Debt Collection", "My Requests", "Notifications", "Settings"],
   compliance_officer: ["Overview", "All Cases", "Reports", "Compliance", "Risk Assessment", "Law Monitor", "Doc Analyzer", "Health Check 360°", "Governance", "Governance Matrix", "Dept Reviews", "Legal Blog", "Notifications", "Settings"],
   seconded: ["Overview", "All Cases", "Seconded Counsel", "Contract Drafter", "Doc Analyzer", "Notifications", "Settings"],
-  employee: ["Overview", "Kanban", "My Requests", "Notifications", "Settings"],
+  employee: ["Overview", "Request a Service", "My Orders", "Consultations", "Kanban", "My Requests", "Notifications", "Settings"],
 };
 
 function getCorporateSidebar(businessRole?: string | null): SidebarGroup[] {

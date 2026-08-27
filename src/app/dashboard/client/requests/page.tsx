@@ -600,6 +600,11 @@ export default function MyRequestsPage() {
 
   // Every count comes from the same predicate the list uses, so a chip can no
   // longer promise rows the chip does not show.
+  // True only when the list on screen is the list the server actually holds.
+  // While loading we have nothing; after a failure we have nothing we can
+  // stand behind. Either way the chips show a label and no number.
+  const countsKnown = hasLoaded && !loadFailed;
+
   const FILTERS: { key: FilterKey; label: string; count: number }[] = (
     [
       { key: "all",       label: "الكل" },
@@ -703,9 +708,18 @@ export default function MyRequestsPage() {
             }`}
           >
             {f.label}
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-              filter === f.key ? "bg-white/20" : "bg-gray-100 dark:bg-white/8 text-gray-500"
-            }`}>{f.count}</span>
+            {/* The count is withheld until the list has actually been read.
+                Before this, a failed load painted «الكل ٠ · معلقة ٠ · جارية ٠»
+                directly under «تعذّر تحميل طلباتك» — a figure asserted on the
+                same screen that admits its source could not be read, which is
+                exactly the class of defect this page's own «لا يمكننا تأكيد»
+                copy exists to avoid. Withheld, not zeroed: «٠» is a claim.
+                Arabic-Indic, like every other number in this Arabic UI. */}
+            {countsKnown && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                filter === f.key ? "bg-white/20" : "bg-gray-100 dark:bg-white/8 text-gray-500"
+              }`}>{f.count.toLocaleString("ar-SA")}</span>
+            )}
           </button>
         ))}
       </div>

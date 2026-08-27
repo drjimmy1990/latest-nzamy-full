@@ -68,9 +68,16 @@ export default function StepPayment({ step, isDark, history, selections, onNavig
           ))}
         </motion.dl>
         <motion.p variants={staggerItemVariants} className="text-[11px] font-bold text-[#0B3D2E] dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/40 rounded-xl px-3 py-2 text-center">
+          {/* Two sentences replaced, both false.
+              «بعد الاستشارة ستصلك نسخة PDF على واتساب بملخص الجلسة» — nothing
+              in this platform generates a session summary PDF or sends one over
+              WhatsApp. It was a promise to a paying client about the deliverable.
+              «الطلب محلي وجاهز للربط بالباك إند» — developer copy, shown to the
+              client, and no longer even true: this widget now files a real
+              order (see whatsappWorkflow.ts). */}
           {requiresPaymentChoice
-            ? "بعد الاستشارة ستصلك نسخة PDF على واتساب بملخص الجلسة"
-            : "لن يتم تحصيل أي مبلغ الآن — الطلب محلي وجاهز للربط بالباك إند"}
+            ? "لن يُطلب منك الدفع في هذه الخطوة — يتواصل معك الفريق لترتيب الأتعاب قبل بدء العمل"
+            : "لن يتم تحصيل أي مبلغ الآن — يصل طلبك إلى فريق نظامي مباشرة"}
         </motion.p>
         <motion.button
           variants={staggerItemVariants}
@@ -117,7 +124,11 @@ export default function StepPayment({ step, isDark, history, selections, onNavig
             <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 tracking-tight ${badge}`}>{badgeLabel}</span>
           </motion.button>
         ))}
-        <motion.p variants={staggerItemVariants} className={`text-[10px] text-center mt-1 font-medium opacity-60 ${isDark ? "text-gray-400" : "text-gray-500"}`}>جاهز للربط ببوابة دفع — بنية تحتية معدّة</motion.p>
+        {/* «جاهز للربط ببوابة دفع — بنية تحتية معدّة» stood here: an engineering
+            status note, in a client-facing panel, describing work that has not
+            been done — no payment provider has been chosen. The line above
+            already tells the client the true thing (nothing is charged here and
+            the team arranges it directly), so this one is simply gone. */}
       </motion.div>
     );
   }

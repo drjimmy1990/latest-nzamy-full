@@ -31,6 +31,13 @@ interface Doc {
   // the foot of the page has to add these up, and «١.٢ MB» does not add.
   sizeBytes: number;
   uploadedAt: string;
+  /**
+   * The raw upload instant, for the same reason `sizeBytes` sits beside
+   * `size`: «١٥‏/٨‏/١٤٤٧ هـ» is a string, and sorting strings by an Arabic
+   * calendar date does not put the newest first. NaN when the row carried no
+   * created_at — such rows sort last rather than jumping to the top.
+   */
+  uploadedAtMs: number;
   format: 'pdf' | 'docx' | 'other';
   storagePath?: string;
 }
@@ -97,6 +104,7 @@ function apiDocToDoc(d: ApiDocument): Doc {
     size: formatBytes(d.size_bytes),
     sizeBytes: d.size_bytes ?? 0,
     uploadedAt: d.created_at ? new Date(d.created_at).toLocaleDateString('ar-SA') : '',
+    uploadedAtMs: d.created_at ? new Date(d.created_at).getTime() : Number.NaN,
     format: docFormatFromName(d.file_name),
     storagePath: d.storage_path,
   };
@@ -459,11 +467,32 @@ export default function ClientDocumentsPage() {
     }
   }, []);
 
+  /**
+   * «ترتيب» was a <button> with no onClick — a control that looked like a sort
+   * and did nothing. Three orders, cycled by that one button, because each is
+   * answerable from data the row already carries and none needs a new query.
+   */
+  const [sortBy, setSortBy] = useState<'newest' | 'name' | 'size'>('newest');
+  const SORT_LABEL: Record<typeof sortBy, string> = {
+    newest: 'الأحدث',
+    name: 'الاسم',
+    size: 'الحجم',
+  };
+
   const filtered = useMemo(() => {
-    return docs.filter(
+    const matching = docs.filter(
       (d) => d.name.includes(search) || d.caseRef.includes(search)
     );
-  }, [docs, search]);
+    // Copy before sorting: Array.prototype.sort mutates, and `docs` is state.
+    return [...matching].sort((a, b) => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name, 'ar');
+      if (sortBy === 'size') return b.sizeBytes - a.sizeBytes;
+      // newest first; a row with no timestamp goes last instead of first.
+      const at = Number.isNaN(a.uploadedAtMs) ? -Infinity : a.uploadedAtMs;
+      const bt = Number.isNaN(b.uploadedAtMs) ? -Infinity : b.uploadedAtMs;
+      return bt - at;
+    });
+  }, [docs, search, sortBy]);
 
   /** Everything stored, not everything matching the search box. */
   const usedBytes = useMemo(
@@ -615,13 +644,18 @@ export default function ClientDocumentsPage() {
             }`}
           />
         </div>
-        <button className={`flex items-center gap-2 px-5 py-3 border rounded-2xl text-sm font-bold transition-colors ${
-          isDark 
-            ? "border-white/10 text-zinc-400 hover:text-white hover:bg-white/5" 
-            : "border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
-        }`}>
+        <button
+          type="button"
+          onClick={() => setSortBy((v) => (v === 'newest' ? 'name' : v === 'name' ? 'size' : 'newest'))}
+          title="اضغط لتغيير الترتيب"
+          className={`flex items-center gap-2 px-5 py-3 border rounded-2xl text-sm font-bold transition-colors ${
+            isDark 
+              ? "border-white/10 text-zinc-400 hover:text-white hover:bg-white/5" 
+              : "border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
+          }`}>
           <SortAscending size={18} weight="bold" />
-          <span className="hidden sm:inline">ترتيب</span>
+          <span className="hidden sm:inline">ترتيب: {SORT_LABEL[sortBy]}</span>
+          <span className="sm:hidden">{SORT_LABEL[sortBy]}</span>
         </button>
       </div>
 

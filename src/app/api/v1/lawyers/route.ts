@@ -7,9 +7,43 @@ import { createServiceClient } from "@/lib/supabase/server";
  *   - specialty (filter by specialization)
  *   - sort ('price' | 'experience', default: 'experience')
  *   - available (true to show only accepting clients)
- *   - limit (default: 20)
+ *   - limit (default: 20, max 200)
  *   - offset (default: 0)
+ *
+ * The body is `{ lawyers, total }`, where `total` is an exact count over the
+ * SAME filters without the range — so a caller can tell whether the page it
+ * received is the whole directory. /dashboard/client/find-lawyer depends on
+ * that: it hides every directory-wide number and every derived filter chip
+ * unless `lawyers.length >= total`.
  */
+
+/** A cap this endpoint will not exceed. Public and unauthenticated. */
+const MAX_LIMIT = 200;
+
+/**
+ * `parseInt("abc", 10)` is `NaN`, and `.range(0, NaN)` makes PostgREST reject
+ * the query — so `?limit=abc` answered 500, which the client directory renders
+ * as «تعذّر تحميل دليل المحامين». A malformed query string is not a fact about
+ * the profession. `?limit=0` was as bad in a quieter way: `.range(0, -1)` is an
+ * inverted range.
+ *
+ * This clamps rather than rejects, which does mean a caller asking for 1000
+ * gets 200 and is not told so in an error — deliberately: `total` is in every
+ * response precisely so a caller can detect a short page, and an endpoint that
+ * 400s on a large limit just moves the same problem into an error branch.
+ */
+function intParam(
+  raw: string | null,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (raw === null) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
+}
+
 export async function GET(request: NextRequest) {
   // Service client, deliberately — see the long note in [id]/route.ts. There is
   // no anonymous SELECT policy on profiles/lawyer_profiles, so under the
@@ -23,8 +57,8 @@ export async function GET(request: NextRequest) {
   const specialty = searchParams.get("specialty");
   const sort = searchParams.get("sort") ?? "experience";
   const available = searchParams.get("available");
-  const limit = parseInt(searchParams.get("limit") ?? "20", 10);
-  const offset = parseInt(searchParams.get("offset") ?? "0", 10);
+  const limit = intParam(searchParams.get("limit"), 20, 1, MAX_LIMIT);
+  const offset = intParam(searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
 
   // LAWYER-6.1: explicit projection — never SELECT profiles.phone/email (raw PII).
   // license_number is projected but stripped per-row below unless show_contact.

@@ -103,18 +103,17 @@ function getFieldsForType(userType: string | null): FieldDef[] {
 export function EntitySettingsTab() {
   const { userType } = useUser();
   const fields = getFieldsForType(userType);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
 
+  // No 1200 ms spinner. Nothing asynchronous happens here — there is no
+  // request — and a progress animation in front of a synchronous state change
+  // is a claim that work is being done somewhere. The «تم الحفظ» tick and the
+  // status line below it are the honest feedback, and they are immediate.
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      setSaved(true);
-      setLocalMessage("تم حفظ بيانات الكيان محلياً فقط؛ الاعتماد والتحديث الرسمي ينتظران الباك إند.");
-      setTimeout(() => setSaved(false), 2500);
-    }, 1200);
+    setSaved(true);
+    setLocalMessage("لم تُحفظ هذه البيانات على الخادم؛ هذه الصفحة لا ترسل شيئاً بعد. لتحديث بيانات المنشأة رسمياً تواصل مع فريق نظامي.");
+    setTimeout(() => setSaved(false), 2500);
   };
 
   const entityLabel: Record<string, string> = {
@@ -158,10 +157,23 @@ export function EntitySettingsTab() {
                 <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
                   {field.label}
                 </label>
+                {/* NO defaultValue. Every field opened pre-filled with its own
+                    placeholder, so a real company found «شركة البناء المتقدمة
+                    المحدودة», a CR number, a GOSI number and «187 موظفاً»
+                    entered as ITS registration data — and a law firm found
+                    نظامي's own name, licence and Riyadh address as its own. A
+                    placeholder shows the expected format; a defaultValue
+                    asserts the value, and this one asserted somebody else's.
+
+                    The corporate half of this data IS real now and IS stored:
+                    business_profiles.company_name_ar / cr_number /
+                    legal_rep_name / legal_rep_capacity, persisted at signup
+                    since 20260826. Reading it back needs a client-scoped
+                    endpoint that does not exist yet — recorded as a follow-up
+                    rather than faked here. */}
                 <input
                   type={field.type ?? "text"}
                   placeholder={field.placeholder}
-                  defaultValue={field.placeholder}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-dark-card text-zinc-800 dark:text-zinc-200 text-sm placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-royal/30 focus:border-royal dark:focus:border-[#C8A762] transition-colors"
                 />
               </div>
@@ -175,15 +187,10 @@ export function EntitySettingsTab() {
       <motion.button
         whileTap={{ scale: 0.98, y: 1 }}
         onClick={handleSave}
-        disabled={saving}
-        className="flex items-center gap-2 px-8 py-3 bg-royal hover:bg-royal/90 text-white rounded-xl font-semibold text-sm transition-all duration-200 disabled:opacity-70 shadow-[0_4px_14px_-4px_rgba(11,61,46,0.4)]"
+        className="flex items-center gap-2 px-8 py-3 bg-royal hover:bg-royal/90 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-[0_4px_14px_-4px_rgba(11,61,46,0.4)]"
       >
-        {saving ? (
-          <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-        ) : saved ? (
-          <CheckCircle size={18} weight="fill" />
-        ) : null}
-        {saving ? "جاري الحفظ..." : saved ? "تم الحفظ" : "حفظ التغييرات"}
+        {saved && <CheckCircle size={18} weight="fill" />}
+        {saved ? "تم الحفظ" : "حفظ التغييرات"}
       </motion.button>
     </div>
   );

@@ -16,6 +16,7 @@ import {
   CORPORATE_SIDEBAR,
   VISIBLE_BUSINESS_ROUTES,
   isVisibleBusinessRoute,
+  isHiddenBusinessSection,
 } from './navigation.sidebars.business.ts';
 
 let passed = 0;
@@ -44,10 +45,26 @@ test('the corporate sidebar links to nothing that renders fabricated data', () =
     // Real: /dashboard/business/documents lists the account's own uploads and
     // nothing else — there is no mock row anywhere in it.
     '/dashboard/business/documents',
+    // 2026-08-27 — the shared intake (owner س٢: «الشركة تستخدم نفس النموذج»).
+    // These are /dashboard/client/* on purpose; routeAccess.ts opens exactly
+    // these three subtrees to a corporate account and nothing else.
+    '/dashboard/client/services',
+    '/dashboard/client/requests',
+    '/dashboard/client/consultation',
     '/notifications',
     '/blog',
     '/settings',
   ]);
+});
+
+test('the intake links do NOT re-open any /dashboard/business section', () => {
+  // VISIBLE_BUSINESS_ROUTES is derived from CORPORATE_SIDEBAR, so anything
+  // added to that array could in principle widen the guard. These three sit
+  // under a different prefix and must be filtered out of it entirely.
+  for (const href of ['/dashboard/client/services', '/dashboard/client/requests', '/dashboard/client/consultation']) {
+    assert.equal(VISIBLE_BUSINESS_ROUTES.includes(href), false, href);
+  }
+  assert.deepEqual(VISIBLE_BUSINESS_ROUTES, ['/dashboard/business', '/dashboard/business/documents']);
 });
 
 test('the vault and its sub-pages are reachable, its look-alikes are not', () => {
@@ -117,6 +134,66 @@ test('a re-added section, and only it, becomes reachable again', () => {
   assert.equal(isVisibleBusinessRoute('/dashboard/business/vault', withVault), true);
   assert.equal(isVisibleBusinessRoute('/dashboard/business/vault/cr', withVault), true);
   assert.equal(isVisibleBusinessRoute('/dashboard/business/kanban', withVault), false);
+});
+
+// ── what the LAYOUT asks, which is a different question ──────────────────────
+//
+// BusinessDashboardLayout is not mounted only over /dashboard/business:
+// src/app/ai/layout.tsx wraps every /ai/* page in it for any corporate
+// account. It used to ask isVisibleBusinessRoute, got `false` for /ai/orders/x
+// — a route that is not a business section at all — and painted the
+// «هذا القسم قيد الإعداد» notice over a company's own order.
+
+test('a route outside /dashboard/business is never a hidden business section', () => {
+  for (const outside of [
+    '/ai/orders',
+    '/ai/orders/abc-123',
+    '/ai/orders/abc-123?tab=files',
+    '/ai/secretary',
+    '/dashboard/client/requests',
+    '/dashboard/client/requests/new',
+    '/dashboard/client/services',
+    '/dashboard/client/consultation/new',
+    '/notifications',
+    '/settings',
+    '/blog',
+    '/',
+    // Starts with the same letters, is a different route.
+    '/dashboard/business-legacy',
+  ]) {
+    assert.equal(
+      isHiddenBusinessSection(outside),
+      false,
+      `${outside} is not a business section — the layout must render it, not refuse it`,
+    );
+  }
+});
+
+test('every hidden business section is still refused', () => {
+  for (const hidden of [
+    '/dashboard/business/kanban',
+    '/dashboard/business/cases',
+    '/dashboard/business/cases/abc-123',
+    '/dashboard/business/team',
+    '/dashboard/business/wallet',
+    '/dashboard/business/reports',
+    '/dashboard/business/reviews/new',
+    '/dashboard/business/health-check?tab=files',
+  ]) {
+    assert.equal(isHiddenBusinessSection(hidden), true, hidden);
+  }
+});
+
+test('the two visible business routes are not refused', () => {
+  for (const visible of [
+    '/dashboard/business',
+    '/dashboard/business/',
+    '/dashboard/business?mode=service',
+    '/dashboard/business/documents',
+    '/dashboard/business/documents/42',
+  ]) {
+    assert.equal(isHiddenBusinessSection(visible), false, visible);
+  }
 });
 
 console.log(`✓ ${passed} tests passed`);

@@ -6,8 +6,6 @@ import {
   ChatCircle,
   PaperPlaneTilt,
   MagnifyingGlass,
-  CheckCircle,
-  Circle,
   Phone,
   VideoCamera,
   DotsThreeVertical,
@@ -35,7 +33,6 @@ interface Message {
   sender: MsgSender;
   text: string;
   time: string;
-  read: boolean;
 }
 
 interface Thread {
@@ -229,7 +226,6 @@ export default function MessagesPage() {
           sender: (m.sender_name === "client" ? "client" : m.message_type === "system" ? "system" : "lawyer") as MsgSender,
           text: m.content,
           time: m.created_at,
-          read: true,
         })),
       };
     }));
@@ -276,7 +272,7 @@ export default function MessagesPage() {
     setThreads((prev) =>
       prev.map((t) =>
         t.id === threadId
-          ? { ...t, unread: 0, messages: t.messages.map((m) => ({ ...m, read: true })) }
+          ? { ...t, unread: 0 }
           : t
       )
     );
@@ -291,7 +287,6 @@ export default function MessagesPage() {
       sender: "client",
       text,
       time: "الآن",
-      read: true,
     };
     setSendError(null);
     // Update local state optimistically
@@ -513,13 +508,17 @@ export default function MessagesPage() {
                     >
                       {msg.text}
                     </div>
+                    {/* No read receipt. Every message the client sent showed a
+                        green «read» tick the instant it appeared, because the
+                        mapper set `read: true` on every row it built — the
+                        server was never asked and never answered. A receipt is
+                        computable in principle (chat_participants.last_read_at
+                        exists and this room's GET already updates it) but
+                        GET /api/v1/chat/rooms/[id]/messages returns messages
+                        only, with no participant row to compare against. Until
+                        it does, the timestamp is the whole truth we have. */}
                     <div className={`flex items-center gap-1 text-[10px] text-gray-400 ${msg.sender === "client" ? "flex-row" : "flex-row-reverse"}`}>
                       <span>{msg.time}</span>
-                      {msg.sender === "client" && (
-                        msg.read
-                          ? <CheckCircle size={12} className="text-emerald-500" weight="fill" />
-                          : <Circle size={12} />
-                      )}
                     </div>
                   </div>
                 )}
@@ -570,9 +569,26 @@ export default function MessagesPage() {
               </div>
             ) : (
               <div className="flex items-center gap-2 bg-white dark:bg-[#161b22] rounded-2xl border border-gray-200 dark:border-white/10 px-4 py-2 shadow-sm">
-                <button className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                {/* The attach button was here. It was a bare <button> with no
+                    onClick — a client attaching evidence to their lawyer got
+                    silence, which is worse than no button at all.
+                    It is NOT re-wired, and the reason is a permission boundary,
+                    not effort: chat_messages already carries file_url/file_name/
+                    file_size and the POST route already forwards `metadata`, so
+                    a file could be uploaded through the existing documents API
+                    and referenced from a message in a few lines — but
+                    `attachments` is owner-scoped by RLS, so the LAWYER on the
+                    other side could not open what the client had just "sent".
+                    A delivered attachment the recipient cannot read is the same
+                    class of lie as the button that did nothing.
+                    Sending the client to the path that does work instead. */}
+                <Link
+                  href="/dashboard/client/documents"
+                  title="لإرسال مستند، ارفعه في «مستنداتي» ثم أرفقه بطلب الخدمة"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                >
                   <Paperclip size={18} />
-                </button>
+                </Link>
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}

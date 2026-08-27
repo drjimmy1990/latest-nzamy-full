@@ -2,16 +2,47 @@
 
 import { useTheme } from "@/components/ThemeProvider";
 import { ClientLetterWorkflow } from "@/app/dashboard/client/_components/ClientLetterWorkflow";
-import { Envelope } from "@phosphor-icons/react";
+import { Envelope, ArrowRight } from "@phosphor-icons/react";
 import Link from "next/link";
-import { ArrowRight } from "@phosphor-icons/react";
-import { useUser } from "@/hooks/useUser";
-import { CreditsBanner } from "@/components/PaywallGate";
+import AdvisoryTemplateNotice from "@/components/ai/AdvisoryTemplateNotice";
 
+/**
+ * /dashboard/client/letters — «صياغة خطاب رسمي».
+ *
+ * Three claims were removed from this page, all of the same kind: they told the
+ * client something was happening that was not.
+ *
+ * THIS PAGE ONLY. src/app/ai/letter-drafter/page.tsx hosts the SAME
+ * ClientLetterWorkflow behind its own chrome and still carries every claim
+ * listed below — the «AI · فوري» badge, «الخطاب يُعدّه الذكاء الاصطناعي», «جاهز
+ * في دقيقة», the find-lawyer link and the credits banner. It was outside this
+ * pass's file list; the tool is honest here and not yet there.
+ *
+ *  - The «AI» badge and «الخطاب يُعدّه الذكاء الاصطناعي». No model is called
+ *    anywhere in ClientLetterWorkflow. The letter is assembled from a template
+ *    by a synchronous pure function (src/lib/services/letterExport.ts).
+ *
+ *  - The «احجز مراجعة من محامٍ متخصص» link into /dashboard/client/find-lawyer.
+ *    Replaced by AdvisoryTemplateNotice, which is the component the owner's
+ *    ruling س٣ / item ١٨ already produced for exactly this class of tool
+ *    («نماذج وقوالب استرشادية فورية» + «طلب التدقيق والاعتماد من محامي
+ *    المكتب»). Rendering it here rather than writing a fourth bespoke banner is
+ *    the point of it existing. Its handoff is `legal-notice` («إنذار قانوني
+ *    رسمي») — the catalogue's human counterpart to this tool; `contract-review`
+ *    is a contract service and would land the client on the wrong form.
+ *    The notice's button is the pre-composition escape hatch; once a letter
+ *    exists, the workflow's own «طلب التدقيق والاعتماد» sends THAT letter as a
+ *    service request instead of navigating to a blank form that would discard
+ *    it.
+ *
+ *  - The credits-exhausted banner. This route spends no credits: there is no
+ *    deduction, no entitlement check and no API call in the whole workflow, and
+ *    the tool works identically at a zero balance. An "you are out of credits"
+ *    upgrade prompt over a feature that never charged one implies a meter that
+ *    does not exist. `useUser` went with it — it had no other reader here.
+ */
 export default function ClientLettersPage() {
   const { isDark } = useTheme();
-  const user = useUser();
-  const isExhausted = user.credits <= 0;
 
   const card = isDark
     ? "bg-zinc-900 border border-white/[0.06] rounded-2xl"
@@ -38,23 +69,14 @@ export default function ClientLettersPage() {
               صياغة خطاب رسمي
             </h1>
             <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-              إنذار · مطالبة · اعتراض · شكوى — جاهز في دقيقة
+              إنذار · مطالبة · اعتراض · شكوى — قوالب تُعبّئها وتعدّلها بنفسك
             </p>
           </div>
-          <span className="rounded-full bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 text-[9px] font-black text-blue-500 ms-2">AI</span>
         </div>
       </div>
 
-      {/* Credits exhausted banner */}
-      {isExhausted && <CreditsBanner isDark={isDark} />}
-
-      {/* Notice */}
-      <div className={`mb-5 px-4 py-3 rounded-2xl border text-[12px] leading-relaxed ${
-        isDark ? "border-amber-700/30 bg-amber-900/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"
-      }`}>
-        الخطاب يُعدّه الذكاء الاصطناعي — يُنصح بمراجعته من محامٍ قبل الإرسال الرسمي.
-        <Link href="/dashboard/client/find-lawyer" className="font-bold underline ms-1.5">احجز مراجعة من محامٍ متخصص</Link>
-      </div>
+      {/* Owner ruling س٣ — what this tool is, said before the client uses it. */}
+      <AdvisoryTemplateNotice handoffServiceId="legal-notice" className="mb-5" />
 
       {/* Client-specific Letter Workflow */}
       <ClientLetterWorkflow

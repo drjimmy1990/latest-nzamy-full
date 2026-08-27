@@ -438,6 +438,16 @@ export const INTAKE_LABELS: Record<string, string> = {
   lawyerName: "المحامي المطلوب",
   preferredTiming: "التوقيت المطلوب",
   estimatedPrice: "السعر التقديري",
+  // ── The floating WhatsApp widget (2026-08-27) ─────────────────────────────
+  // A fourth surface writing a generic intake. It used to save its request to
+  // browser localStorage under a `receiver` nothing reads; it now POSTs a real
+  // order, which means its answers reach this map for the first time. Each
+  // label is the widget's own on-screen wording, copied rather than
+  // re-translated — see the rule stated above.
+  city: "المدينة",
+  contractService: "نوع المراجعة",
+  notaryType: "نوع الوثيقة",
+  notaryLocation: "طريقة التوثيق",
   // The corporate «تسجيل قضية / طلب قانوني جديد» modal
   // (src/app/dashboard/business/_components/AddCaseModal.tsx), which reached
   // localStorage instead of the queue until it was repointed at

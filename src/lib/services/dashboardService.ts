@@ -27,6 +27,16 @@ export interface SubscriptionSummary {
 
 export interface DashboardSummary {
   activeCases: unknown[];
+  /**
+   * How many active orders this account has IN TOTAL, as opposed to how many
+   * are in `activeCases` — that array is a capped page, so counting it and
+   * printing the answer as «لديك N قضايا نشطة» understates a busy account.
+   *
+   * Optional because DEMO_SUMMARY below and any cached older response will not
+   * carry it; a consumer must treat its absence as "unknown", never as zero.
+   * GET /api/v1/dashboard/summary has returned it since 2026-08-27.
+   */
+  activeCasesTotal?: number;
   nextAppointment: unknown | null;
   recentMessages: unknown[];
   subscription: SubscriptionSummary | null;
