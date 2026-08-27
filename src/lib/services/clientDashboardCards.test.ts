@@ -8,6 +8,10 @@ import {
   formatArabicDate,
   toClientDocumentRows,
 } from "./clientDashboardCards.ts";
+// The ORIGINAL of the status wording this module keeps a copy of. Imported
+// here and nowhere in the module itself: the copy exists so the mapper stays
+// clear of the fetch layer, and this test is what stops the copy from drifting.
+import { ORDER_STATUS_AR } from "./serviceOrders.ts";
 
 const ID = "8f14e45f-ceea-467a-9575-1a5b3d8f0e11";
 
@@ -89,6 +93,18 @@ test("a row with no id is dropped rather than rendered as a dead card", () => {
   }
 });
 
+test("a row whose id yields no reference is dropped, not shown with a blank one", () => {
+  // The second way a row can fail to produce a reference: `orderReference`
+  // strips hyphens before slicing, so «---» is a non-empty id that survives the
+  // id guard and still returns "". The card used to render «رقم الطلب: » with
+  // nothing after it — the empty field the id guard exists to prevent, reached
+  // by a different door. No uuid looks like this; the test is here because the
+  // `caseNo` docblock promises the row is dropped and it has to be true.
+  for (const id of ["---", "-", "--------"]) {
+    assert.equal(toClientCase(row({ id })), null, id);
+  }
+});
+
 test("toClientCases keeps order and silently skips the unusable rows", () => {
   const cases = toClientCases([
     row({ id: ID, title: "الأول" }),
@@ -103,6 +119,83 @@ test("toClientCases keeps order and silently skips the unusable rows", () => {
 
 test("the case number is the shared order reference, never a new scheme", () => {
   assert.equal(toClientCase(row())?.caseNo, "ORD-8F14E4");
+});
+
+// ─── Fields the row cannot prove ──────────────────────────────────────────────
+
+test("nothing the schema does not have is ever put on a card", () => {
+  // The module header's central claim: a `service_requests` row carries no
+  // lawyer name, no progress percentage and no urgency flag, so nothing here
+  // produces one. The card this replaced showed all three — a named lawyer, a
+  // filled progress bar and an «عاجل» flag — for every client, off a row that
+  // has none of those columns.
+  //
+  // The row below carries them anyway, which is the case that matters: it is
+  // what a widened schema, a joined view or a demo fixture looks like. A future
+  // `{ ...row }` in the mapper would pass every other test in this file and
+  // start printing them.
+  const card = toClientCase(
+    row({
+      lawyer: "أ. سارة العتيبي",
+      lawyer_name: "أ. سارة العتيبي",
+      progress: 65,
+      urgency: "urgent",
+      urgent: true,
+      assigned_to: "b2c3d4e5-0000-4000-8000-000000000000",
+      internalNotes: "الموكل صعب",
+      nextHearing: "2026-05-01",
+    }),
+  );
+  assert.ok(card);
+  assert.deepEqual(Object.keys(card).sort(), [
+    "caseNo",
+    "createdAtLabel",
+    "id",
+    "serviceLabel",
+    "status",
+    "statusColor",
+    "statusLabel",
+    "title",
+  ]);
+});
+
+test("metadata the row happens to carry does not become a field either", () => {
+  // `metadata` is free-form jsonb and is where a plausible-looking value is
+  // most likely to arrive from. Only `serviceTitleAr` is read out of it.
+  const card = toClientCase(
+    row({ metadata: { serviceTitleAr: "صياغة عقد", progress: 80, lawyerName: "أ. سارة", internalNotes: "خاص" } }),
+  );
+  assert.ok(card);
+  assert.equal(card.serviceLabel, "صياغة عقد");
+  assert.equal(Object.keys(card).length, 8);
+});
+
+// ─── The copied status vocabulary ─────────────────────────────────────────────
+
+test("the status wording here still matches ORDER_STATUS_AR word for word", () => {
+  // STATUS_AR in the module under test is a hand copy of ORDER_STATUS_AR, kept
+  // so this file stays clear of the fetch layer. The KEY SET is fixed by the
+  // type, but the LABELS are not: reword «جاهز» to «مكتمل» on one side and the
+  // client's dashboard and their order page describe the same order
+  // differently, with nothing failing anywhere.
+  for (const [status, entry] of Object.entries(ORDER_STATUS_AR)) {
+    const card = toClientCase(row({ status }));
+    assert.ok(card, status);
+    assert.equal(card.statusLabel, entry.label, status);
+    // A status the vocabulary defines must never fall through to «unknown».
+    assert.equal(card.status, status);
+  }
+});
+
+test("the tones are this dashboard's own and are always ones STATUS_COLOR defines", () => {
+  // Deliberately NOT asserted equal to ORDER_STATUS_AR's tones: `emerald`
+  // there is `green` here, because these keys name entries in STATUS_COLOR
+  // (src/app/dashboard/client/_data.ts), not Tailwind palettes.
+  for (const status of Object.keys(ORDER_STATUS_AR)) {
+    const card = toClientCase(row({ status }));
+    assert.ok(card);
+    assert.ok(["amber", "blue", "green", "zinc"].includes(card.statusColor), `${status} → ${card.statusColor}`);
+  }
 });
 
 // ─── Dates ────────────────────────────────────────────────────────────────────

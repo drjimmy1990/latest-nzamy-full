@@ -8,7 +8,6 @@ import {
   MagnifyingGlass,
   Phone,
   VideoCamera,
-  DotsThreeVertical,
   Lock,
   SealCheck,
   Paperclip,
@@ -537,9 +536,20 @@ export default function MessagesPage() {
                   </button>
                 </>
               )}
-              <button className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
-                <DotsThreeVertical size={17} />
-              </button>
+              {/* The «⋮» overflow button stood here. It was a bare <button>
+                  with no onClick and no menu component behind it anywhere in
+                  the tree — the universal affordance for "more actions on this
+                  conversation", opening nothing.
+
+                  NOT re-wired, and the reason is that there is no action to
+                  put in it: `useChat` returns rooms, messages, sendMessage and
+                  refreshRooms and nothing else (src/hooks/useChat.ts:196-220) —
+                  no archive, no mute, no close, no leave. The `Archive` icon on
+                  this page is decoration inside ClosedBanner, not a control.
+                  A menu whose only entry duplicated the «ملف القضية» link two
+                  lines above would be a menu for the sake of the button.
+                  When a thread action exists on the hook, the menu comes back
+                  with it. */}
             </div>
           </div>
 

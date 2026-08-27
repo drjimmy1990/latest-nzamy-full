@@ -85,6 +85,25 @@ test("the heading and the identity panel agree about placeholders", () => {
   }
 });
 
+test("the placeholder list is matched EXACTLY, not case-insensitively", () => {
+  // businessOverview.ts:104 argues this deliberately: the list mirrors the
+  // backfill guard in 20260826_corporate_identity_persisted.sql, and that guard
+  // is an exact comparison. A looser rule here would start hiding trading names
+  // the migration was willing to keep — «NEW COMPANY LTD» is somebody's actual
+  // registered name in Arabic-market English, and it is not «New Company».
+  //
+  // Pinned because "normalise both sides before comparing" is exactly what the
+  // next reader will reach for, and nothing else in the codebase would object.
+  assert.equal(accountDisplayName("new company"), "new company");
+  assert.equal(accountDisplayName("NEW COMPANY"), "NEW COMPANY");
+  assert.deepEqual(
+    toCompanyIdentityFields({ company_name_ar: "new company" }).map((f) => f.value),
+    ["new company"],
+  );
+  // Inner whitespace is likewise not normalised — only the edges are trimmed.
+  assert.equal(accountDisplayName("شركة  جديدة"), "شركة  جديدة");
+});
+
 // ─── toCompanyIdentityFields ──────────────────────────────────────────────────
 
 test("a row that is not a row produces no identity lines at all", () => {
@@ -215,6 +234,25 @@ test("Arabic number agreement across all four branches", () => {
   assert.equal(vaultDocumentsPhraseAr(42), "٤٢ وثيقة محفوظة");
 });
 
+test("no vault phrase ever leaks a Western digit", () => {
+  // The same sweep activeCasesPhraseAr already has in clientDashboardCards.
+  // A branch added later that formats with `String(n)` instead of
+  // toArabicDigits() reads as a bug in the middle of Arabic-Indic copy, and
+  // the six spot checks above would not catch it above 42.
+  for (let n = 1; n <= 120; n++) {
+    const phrase = vaultDocumentsPhraseAr(n);
+    assert.ok(phrase, String(n));
+    assert.ok(!/[0-9]/.test(phrase), `Western digits in: ${phrase}`);
+  }
+});
+
+test("an infinite count is nothing to say, not a phrase", () => {
+  assert.equal(vaultDocumentsPhraseAr(Infinity), null);
+  assert.equal(vaultDocumentsPhraseAr(-Infinity), null);
+  // A fractional count is floored, matching toArabicDigits' own rule.
+  assert.equal(vaultDocumentsPhraseAr(2.9), "وثيقتان محفوظتان");
+});
+
 // ─── countVaultDocuments ──────────────────────────────────────────────────────
 
 test("the vault is the documents bound to no order", () => {
@@ -241,4 +279,26 @@ test("a genuinely empty list counts zero", () => {
 
 test("junk entries are skipped rather than counted", () => {
   assert.equal(countVaultDocuments([null, "x", 7, { id: "a", request_id: null }]), 1);
+});
+
+test("the count uses the SAME boolean the vault page filters with", () => {
+  // Both surfaces are handed the same unfiltered list from getDocuments(): the
+  // overview counts it here, /dashboard/business/documents:85 filters it with
+  // `!d.request_id`. Any difference is a tile disagreeing with the page it
+  // summarises, silently.
+  //
+  // The empty string is where they used to differ. `!""` is TRUE, so the vault
+  // page lists such a row; this function excluded it, and the docblock's stated
+  // reason — that the company could not see it — was false. One malformed row
+  // meant «وثيقة واحدة محفوظة» over a page listing two.
+  const docs = [
+    { id: "a", request_id: "" },
+    { id: "b", request_id: null },
+    { id: "c" },
+    { id: "d", request_id: "8f14e45f-ceea-467a-9c6f-000000000000" },
+  ];
+  assert.equal(countVaultDocuments(docs), 3);
+  // Stated as the equivalence itself, so a future edit to either side has to
+  // break this rather than merely look different.
+  assert.equal(countVaultDocuments(docs), docs.filter((d) => !d.request_id).length);
 });

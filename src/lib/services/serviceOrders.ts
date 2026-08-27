@@ -4,15 +4,24 @@
  *
  * Thin wrapper over the existing generic POST /api/v1/service-requests route
  * (see src/app/api/v1/service-requests/route.ts) — no new API route.
+ *
+ * The two reads below are NOT thin, and that is why this module has a test:
+ * each one decides whether a 200 is an answer or a failure in disguise, and
+ * every one of those decisions is invisible on screen when it goes wrong.
  */
 
 "use client";
 
-import { apiMutate } from "@/lib/services/api";
+// Relative, with the explicit `.ts` extension, so `node --test` can load this
+// module — the runner does no tsconfig path resolution. Neither import pulls in
+// React or the Supabase client; `api.ts` is `fetch` plus two constants and
+// `orderIntake.ts` is already covered by its own test. Same pattern as
+// intakeGuard.ts and routeAccess.ts.
+import { apiMutate } from "./api.ts";
 import {
   SERVICE_TYPE_BY_KEY, SERVICE_TITLE_AR,
   type ServiceKey, type OrderAttachment,
-} from "@/lib/services/orderIntake";
+} from "./orderIntake.ts";
 
 export interface ServiceOrderDeliverable {
   documentId: string;
@@ -131,7 +140,20 @@ export async function listMyServiceOrders(): Promise<ServiceOrder[]> {
   if (body?.degraded) {
     throw new Error("تعذّر تحميل الطلبات");
   }
-  return (body.data as ServiceOrder[] | undefined) ?? [];
+  // A 200 with no `data` ARRAY is a failure too, and used to be the one hole
+  // left in this function: `?? []` turned a body the route never wrote — an
+  // error envelope from a proxy, a half-serialised response, a future shape
+  // change — into «لم تقم بطلب أي خدمة بعد». That is the same false statement
+  // the `degraded` check above exists to prevent, arriving by a different door,
+  // and it is the case `listFromApi` in the shared contract already rejects
+  // (src/lib/services/listRead.ts:113). Both callers of this function render a
+  // real «تعذّرت القراءة» state from their catch (src/app/ai/orders/page.tsx:52,
+  // src/app/dashboard/business/page.tsx:227), so throwing costs nothing and
+  // makes the two paths agree.
+  if (!Array.isArray(body?.data)) {
+    throw new Error("تعذّر تحميل الطلبات");
+  }
+  return body.data as ServiceOrder[];
 }
 
 export async function getServiceOrder(id: string): Promise<ServiceOrder> {

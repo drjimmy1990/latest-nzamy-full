@@ -226,10 +226,30 @@ function SubServiceCard({ svc }: { svc: SubService }) {
                 </motion.button>
               </Link>
             ) : (
-              <button className="flex items-center gap-1.5 px-4 py-2 bg-[#0B3D2E] text-white text-xs font-bold rounded-xl hover:bg-[#0a3328] transition-colors shadow-sm">
-                اطلب الآن
-                <ArrowLeft size={12} />
-              </button>
+              /* A green «اطلب الآن» stood here — a bare <button> with no
+                 onClick and no <Link> around it, styled identically to the
+                 working CTA one branch above. A client pressing it on a
+                 service the catalog cannot route got silence.
+
+                 NOT re-pointed at `/dashboard/client/requests/new?type=${svc.id}`,
+                 which is the obvious one-line "fix": that fallback is already
+                 applied upstream by `mergeAdminPricingCatalogRows`
+                 (src/lib/pricingRepository.ts:163) whenever a row carries no
+                 `metadata.route`. The only way to reach THIS branch is a row
+                 whose route was stored as an empty string — an admin
+                 deliberately un-routing a service. Re-deriving the URL in the
+                 view would silently overrule that and drop the client on an
+                 intake form for something nobody meant to sell yet. The trade:
+                 a service an admin un-routed by accident now reads as
+                 unavailable instead of quietly working — which is the failure
+                 direction we want, and it is visible to the admin. */
+              <span
+                title="لا توجد وجهة طلب مسجّلة لهذه الخدمة"
+                className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-white/5"
+              >
+                <Warning size={12} />
+                غير متاح حالياً
+              </span>
             )}
           </div>
         </div>

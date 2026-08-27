@@ -636,6 +636,14 @@ function RevisionBox({ revisions, isDark }: { revisions: OrderRevision[]; isDark
 export default function AdminServiceOrdersPage() {
   const { isDark } = useTheme();
   const [orders, setOrders] = useState<AdminOrder[]>([]);
+  /**
+   * How many orders match the current chips on the SERVER, or null when the
+   * route did not say. A sibling of `orders` rather than a ListRead wrapper:
+   * `orders` is threaded through mergeKeptOrder() and act()'s optimistic
+   * update, and this screen already tells loading / failed / empty apart in
+   * three separate pieces of state. One more number is the whole change.
+   */
+  const [total, setTotal] = useState<number | null>(null);
   const [filter, setFilter] = useState("");
   // Owner item ١٣. Two separate pieces of state and deliberately so:
   //   • `team`   — the people an order CAN be routed to. Fetched once.
@@ -711,6 +719,11 @@ export default function AdminServiceOrdersPage() {
       // stay open; the chips themselves are untouched, so a plain refetch
       // still shows exactly what the selected status returns.
       setOrders(mergeKeptOrder(body.data ?? [], kept));
+      // Only a number is a number. An absent or malformed `total` leaves this
+      // null and the notice below simply does not render — an unknown total
+      // must never be filled in from the rows on screen, which would make a
+      // capped page look like the whole queue all over again.
+      setTotal(typeof body.total === "number" ? body.total : null);
     } catch {
       setLoadErr("تعذّر تحميل الطلبات. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.");
     } finally {
@@ -930,6 +943,38 @@ export default function AdminServiceOrdersPage() {
   // broken counter rather than as "none in this view".
   const revisionCount = orders.reduce((n, o) => n + (hasRevisions(o) ? 1 : 0), 0);
 
+  /**
+   * Is the queue on screen the whole queue?
+   *
+   * `total` counts what the SERVER matched for the current chips; `orders` is
+   * what came back under the route's 200-row cap. Guarded with `>` rather than
+   * `!==` because mergeKeptOrder() can legitimately carry one extra card that
+   * the latest response no longer contains, which would otherwise read as
+   * «يُعرض ٢٠١ من ٢٠٠».
+   */
+  const truncated = total !== null && total > orders.length;
+
+  /**
+   * The cap notice — written out here rather than taken from
+   * truncationNoticeAr() (src/lib/services/listRead.ts), because that helper's
+   * sentence ends «استخدم البحث للوصول إلى الباقي» and on THIS screen that is
+   * false: the search box filters `orders` in memory (see matchesSearch's own
+   * header and `visibleOrders` above), so it cannot reach order 201.
+   *
+   * What CAN reach it is named instead, and it is true: the status chips and
+   * the «المسؤول» select are sent to the route as query params (see load()),
+   * so narrowing either one runs a new server query over the whole table.
+   *
+   * The second sentence is the one that matters most on this screen. Support
+   * takes an order number over WhatsApp and types it into that box; with the
+   * cap unreported, «لا توجد طلبات مطابقة لبحثك» was indistinguishable from
+   * "that order does not exist", and the client was told so.
+   */
+  const truncationNotice =
+    truncated && total !== null
+      ? `يُعرض أحدث ${arDigits(orders.length)} طلب من ${arDigits(total)} — ضيّق بالحالة أو بالمسؤول للوصول إلى الباقي. البحث في الأسفل لا يتجاوز الطلبات المعروضة.`
+      : null;
+
   return (
     <div className="p-5 md:p-7 space-y-4" dir="rtl">
       <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>طلبات الخدمات</h1>
@@ -995,6 +1040,19 @@ export default function AdminServiceOrdersPage() {
         className={`w-full md:max-w-sm rounded-xl px-3 py-2 text-[12px] border ${
           isDark ? "bg-zinc-950 border-white/[0.07] text-zinc-200 placeholder:text-zinc-600"
             : "bg-white border-zinc-200 text-zinc-800 placeholder:text-zinc-400"}`} />
+
+      {/* Directly under the search box, because the box is what the sentence
+          is about. Amber, not red: nothing failed — this is the queue telling
+          the truth about its own reach. Rendered only when the server actually
+          reported more rows than arrived, so it never appears on a queue that
+          fits. */}
+      {truncationNotice && (
+        <p className={`text-[11px] leading-relaxed rounded-xl border px-3 py-2 ${
+          isDark ? "border-amber-500/25 bg-amber-900/10 text-amber-400"
+            : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+          {truncationNotice}
+        </p>
+      )}
 
       {err && <p className="text-[12px] text-red-500">{err}</p>}
 
@@ -1503,6 +1561,21 @@ export default function AdminServiceOrdersPage() {
                 : revisionsOnly
                   ? "لا توجد طلبات تعديل ضمن المعروض حالياً. جرّب تبويب «الكل»."
                   : "لا توجد طلبات مطابقة لبحثك."}
+            {/* The single most consequential sentence on this screen, and the
+                reason the count was added at all. «لا توجد طلبات مطابقة
+                لبحثك» above is true of the loaded page and false of the
+                table, and support reads it while a client is on the phone
+                quoting the order number. Shown only when the search is the
+                active narrowing AND rows really were cut — under the revision
+                toggle the copy above already points at «الكل», and repeating
+                a second instruction there would tell them to do two things at
+                once. */}
+            {truncated && total !== null && search.trim() ? (
+              <span className="block mt-2 text-[12px] text-amber-600 dark:text-amber-400">
+                البحث يشمل الطلبات المعروضة فقط ({arDigits(orders.length)} من {arDigits(total)}).
+                الطلب قد يكون موجوداً خارجها — اختر حالته أو المسؤول عنه ثم أعد البحث.
+              </span>
+            ) : null}
           </div>
         )}
       </div>

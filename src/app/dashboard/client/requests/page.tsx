@@ -245,7 +245,6 @@ interface RequestDetailModalProps {
 
 function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps) {
   const [copied, setCopied] = useState(false);
-  const [downloading, setDownloading] = useState(false);
 
   if (!req) return null;
 
@@ -260,25 +259,34 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // The 1200 ms `setTimeout` that used to wrap this, and the `downloading`
+  // spinner labelled «جاري التحميل...» that it drove, are both gone. Nothing
+  // was being fetched: every byte written below is `req.description`, which is
+  // already in memory on this screen. The delay existed only to make a local
+  // Blob write look like a round trip to a server that was never asked, on the
+  // one page where a client goes looking for a deliverable — so the spinner
+  // was a claim that work was happening on their order. This is synchronous
+  // and now presents as synchronous.
   const handleDownload = () => {
-    setDownloading(true);
-    setTimeout(() => {
-      setDownloading(false);
-      const element = document.createElement("a");
-      const file = new Blob([req.description || ""], { type: 'text/plain;charset=utf-8' });
-      element.href = URL.createObjectURL(file);
-      // What this writes is `req.description`, and for a premium service order
-      // that is the client's own 200-character excerpt — not the deliverable.
-      // Naming the file after the order title ("المحاكي الشامل — تجاري-….txt")
-      // would leave a saved artifact that reads like the delivered document on
-      // the very page the client goes to looking for it.
-      element.download = premium
-        ? `ملخص-الطلب-${req.id}.txt`
-        : `${req.title}-${req.id}.txt`;
-      document.body.appendChild(element);
-      element.click();
-      document.body.removeChild(element);
-    }, 1200);
+    const element = document.createElement("a");
+    const file = new Blob([req.description || ""], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(file);
+    element.href = url;
+    // What this writes is `req.description`, and for a premium service order
+    // that is the client's own 200-character excerpt — not the deliverable.
+    // Naming the file after the order title ("المحاكي الشامل — تجاري-….txt")
+    // would leave a saved artifact that reads like the delivered document on
+    // the very page the client goes to looking for it.
+    element.download = premium
+      ? `ملخص-الطلب-${req.id}.txt`
+      : `${req.title}-${req.id}.txt`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+    // Same 10s grace as ClientLetterWorkflow: the object URL was never revoked
+    // here, so every press leaked the blob for the life of the document.
+    // Revoking immediately can race the browser's own fetch of the href.
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
   };
 
   return (
@@ -432,15 +440,10 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
                   <motion.button
                     whileTap={{ scale: 0.95 }}
                     onClick={handleDownload}
-                    disabled={downloading}
-                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-600 dark:text-gray-300 disabled:opacity-50"
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-600 dark:text-gray-300"
                   >
-                    {downloading ? (
-                      <span className="inline-block w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <DownloadSimple size={14} weight="bold" />
-                    )}
-                    {downloading ? "جاري التحميل..." : "تحميل كملف نصي"}
+                    <DownloadSimple size={14} weight="bold" />
+                    تحميل كملف نصي
                   </motion.button>
                 </div>
               )}

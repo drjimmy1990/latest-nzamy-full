@@ -121,8 +121,29 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * How many receipts one read returns.
+ *
+ * 100 because that is what this route has always returned, not because 100 is
+ * a meaningful number of receipts — it was picked as "more than anyone will
+ * ever scroll". Left where it is: the only caller passes `?requestId=`
+ * (ReceiptPanel.tsx:51), and an order carries one receipt, or two when a fee
+ * is collected in instalments. The unfiltered branch has no caller at all.
+ *
+ * What changes is that the cap is no longer silent. Before this, a hundredth
+ * receipt was the last one that existed as far as any reader was concerned.
+ */
+const RECEIPTS_PAGE = 100;
+
+/**
  * GET /api/v1/admin/receipts?requestId=… — the receipts issued against one
  * order, or the latest 100 when no order is named.
+ *
+ * `total` is the count of receipts matching the SAME filter this read applied
+ * — `request_id` is a query predicate, not something derived afterwards, so
+ * the number is comparable to `data.length` and a caller can tell a full list
+ * from a capped one. `null` when PostgREST returned no count: an unknown total
+ * is withheld, never reported as `data.length`, which would make every capped
+ * read look complete.
  */
 export async function GET(request: NextRequest) {
   const gate = await requireAdmin();
@@ -133,10 +154,17 @@ export async function GET(request: NextRequest) {
   const requestId = new URL(request.url).searchParams.get("requestId");
   const admin = await createServiceClient();
   let query = admin
-    .from("receipts").select("*").order("id", { ascending: false }).limit(100);
+    .from("receipts")
+    .select("*", { count: "exact" })
+    .order("id", { ascending: false })
+    .limit(RECEIPTS_PAGE);
   if (requestId) query = query.eq("request_id", requestId);
 
-  const { data, error } = await query;
+  const { data, count, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ success: true, data: data ?? [] });
+  return NextResponse.json({
+    success: true,
+    data: data ?? [],
+    total: typeof count === "number" ? count : null,
+  });
 }
