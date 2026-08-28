@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   UserCircle, Phone, Envelope, MapPin, PencilSimple, SealCheck,
-  Warning, Globe, FilePdf, Certificate, Clock, XCircle, Prohibit,
+  Warning, FilePdf, Certificate, Clock, XCircle, Prohibit,
   Eye, EyeSlash, SpinnerGap, ArrowClockwise, Info,
 } from "@phosphor-icons/react";
 import Link from "next/link";
@@ -68,10 +68,16 @@ import { OverviewTab } from "@/components/dashboard/LawyerProfileForms";
  */
 
 // Honest empty defaults. In supabase mode the effect below overwrites these
-// with the authenticated lawyer's real profiles + lawyer_profiles rows. These
-// blanks are never rendered as fact: the page shows a spinner while loading and
-// an explicit "could not read" card on failure, so an empty field on screen
-// always means the server genuinely returned nothing.
+// with the authenticated lawyer's real profiles + lawyer_profiles rows.
+//
+// CORRECTED: this note used to conclude that "an empty field on screen always
+// means the server genuinely returned nothing", on the grounds that the page
+// spinners while loading and shows a "could not read" card on failure. That
+// covered only a failure of the WHOLE GET. The `lawyer_profiles` sub-query
+// inside a successful GET could fail on its own, and the route reported that
+// as a 200 with `roleProfile: null` — so these blanks reached the screen in the
+// `ready` state after all, and were described there as the lawyer's own empty
+// fields. `roleProfileReadFailed` below is what closes that gap.
 const EMPTY_PROFILE = {
   name: "",
   title: "محامٍ ومستشار قانوني",
@@ -88,27 +94,37 @@ const EMPTY_PROFILE = {
   // The lawyer's stored directory preference. Displayed as a preference, never
   // as "you are listed" — see the visibility panel below for why those differ.
   marketplaceVisible: false,
-  // Whether `lawyer_profiles` was actually read. The route swallows the error
-  // from that sub-query (api/v1/profile/route.ts:100-105), so a 200 can arrive
-  // with roleProfile === null. Everything above sourced from that table is then
-  // a default, not a fact — and «غير مُفعَّل» asserted over an unread column is
-  // exactly the kind of confident blank this pass exists to remove. The status
-  // row checks this before it claims anything.
+  // Whether `lawyer_profiles` was actually read AND held a row. Everything
+  // above that is sourced from that table is otherwise a default, not a fact —
+  // and «غير مُفعَّل» asserted over an unread column is exactly the kind of
+  // confident blank this pass exists to remove.
   hasRoleProfile: false,
+  // Whether that sub-query FAILED, which is NOT the same as it returning no
+  // row: a lawyer can genuinely have no `lawyer_profiles` row yet (see the
+  // provisioning note at
+  // src/app/api/v1/onboarding/account-type/route.ts:155-163). The two license
+  // different sentences — an unread column may not be described at all, while
+  // an absent row may honestly be described as empty — so they are two flags,
+  // not one. The route reports this explicitly now
+  // (api/v1/profile/route.ts, `roleProfileReadFailed`); it used to discard the
+  // error, which is what collapsed both states into a single null here.
+  roleProfileReadFailed: false,
   bio: "",
   expertise: [] as string[],
-  // Empty, not ["العربية"]. The languages card renders a five-segment
-  // proficiency bar whose fill condition is `s <= 5` — always true — so any
-  // language listed here displays permanent full native fluency. Nothing in
-  // the schema or the profile editor collects languages or proficiency, so
-  // there is no honest value to seed. (The always-full bar itself lives in
-  // LawyerProfileForms.tsx and is reported separately.)
-  languages: [] as string[],
-  education: [] as { degree: string; institution: string; year: string }[],
-  courts: [] as string[],
-  linkedin: "",
-  twitter: "",
-  website: "",
+  // REMOVED — `languages`, `education`, `courts`, `linkedin`, `twitter`: keys
+  // that were written here and read nowhere. The OverviewTab cards that mapped
+  // them were deleted (see the header of LawyerProfileForms.tsx) and
+  // `lawyer_profiles` has no column for any of them
+  // (supabase/migrations/20260603_phase1_001_profiles.sql:92-115), so nothing
+  // could ever have filled them. The comment that used to sit on `languages`
+  // described the five-segment proficiency bar in the PRESENT TENSE — «renders
+  // … always true» — for a card that no longer existed.
+  // REMOVED — `website`: the one dead key that was still read, by the Globe
+  // contact chip below. There is no `website` column either and the load effect
+  // never assigned it, so its value was permanently "" and the chips'
+  // `.filter((c) => c.val)` dropped it on every render. Unreachable UI rather
+  // than an empty state, so the chip and the now-unused `Globe` icon import
+  // went with the key.
 };
 
 type VerificationStatus = "pending" | "verified" | "rejected" | "suspended";
@@ -160,6 +176,10 @@ export default function LawyerProfilePage() {
       verification_status?: VerificationStatus | null;
       marketplace_visible?: boolean | null;
     } | null;
+    // Optional so an older deploy of the route (which did not send the key)
+    // reads as `undefined` → `!== true` → "did not fail", the same conclusion
+    // the page drew before the marker existed. The route always sends it.
+    roleProfileReadFailed?: boolean;
   };
 
   const load = useCallback(async () => {
@@ -190,6 +210,7 @@ export default function LawyerProfilePage() {
         verified: r?.verification_status === "verified",
         marketplaceVisible: r?.marketplace_visible === true,
         hasRoleProfile: r != null,
+        roleProfileReadFailed: res.roleProfileReadFailed === true,
       }));
       setLoadState("ready");
     } catch (err) {
@@ -256,7 +277,6 @@ export default function LawyerProfilePage() {
   const contactChips = [
     { icon: Phone, val: profileData.phone },
     { icon: Envelope, val: profileData.email },
-    { icon: Globe, val: profileData.website },
   ].filter((c) => c.val);
 
   return (
@@ -321,11 +341,73 @@ export default function LawyerProfilePage() {
             who has not filled the field in has not practised for zero years.
           */}
           {!profileData.hasRoleProfile ? (
+            /*
+              Two different facts, two different sentences. The banner used to
+              assert a READ FAILURE for both, which was false for the lawyer who
+              simply has no `lawyer_profiles` row yet — a state the account-type
+              route documents as reachable.
+
+              «مرتبط بحسابك» rather than "does not exist", deliberately: a row
+              excluded by RLS returns zero rows without raising, so it reaches
+              the client as "no row" with `roleProfileReadFailed` false — the
+              route says so in its own GET docstring. This page can only speak
+              for what this account can see.
+
+              ABOUT THE «تعديل» LINK IN THE HEADER: it is not gated on any of
+              this, and this comment used to claim the opposite — that neither
+              branch offers it as the way out, because sending the lawyer there
+              would be a promise the page could not keep. The link was never
+              gated (it renders unconditionally about ten lines above), so that
+              described a screen that did not exist. The underlying fact still
+              holds — PATCH /api/v1/profile updates and does not insert
+              (src/app/api/v1/profile/route.ts:368-378), so the row cannot be
+              created from the editor either — but the editor now names these
+              same two states and disables Save in both, so the link leads to a
+              page that REPEATS this sentence rather than to a blank form that
+              contradicts it. Gating it would also take the retry button away —
+              from BOTH of these states, since the editor offers a re-read in
+              each. Hence: narrow the comment, keep the link.
+
+              Why creating the row is still deferred, and the single thing to
+              verify against production before anyone builds it, is recorded at
+              src/app/dashboard/lawyer/profile/edit/page.tsx in the branch that
+              sets the "no-row" banner. Read it before assuming an insert here
+              would work.
+            */
             <div className={`rounded-xl border p-3 mb-4 flex gap-2.5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
               <Warning size={15} weight="fill" className="flex-shrink-0 mt-0.5 text-amber-500" />
               <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-amber-700/80"}`}>
-                تعذّر قراءة بياناتك المهنية (التخصصات، رقم الترخيص، حالة التوثيق، إعداد الظهور في الدليل).
-                ما يظهر أعلاه هو بيانات حسابك فقط. لم نعرض قيماً بديلة عن الحقول التي لم تُقرأ.
+                {profileData.roleProfileReadFailed
+                  ? "تعذّر قراءة بياناتك المهنية (التخصصات، رقم الترخيص، حالة التوثيق، إعداد الظهور في الدليل). ما يظهر أعلاه هو بيانات حسابك فقط. لم نعرض قيماً بديلة عن الحقول التي لم تُقرأ."
+                  /*
+                    Scope, then mechanism, then stop.
+
+                    «من لوحة التحكم», not «من هذه الصفحة», stays: the editor one
+                    click away cannot create the row either, so scoping this to
+                    "this page" would let a lawyer bouncing between the two
+                    infer that some third page can.
+
+                    What went with it is «يرجى التواصل مع الدعم لإنشائه» — an
+                    instruction whose outcome no feature delivers. Re-verified
+                    for this round: nothing in the tree inserts into
+                    `lawyer_profiles` for an account that already exists. The
+                    single insert is in onboarding/account-type through a
+                    DYNAMIC `spec.table` (invisible to a `from("lawyer_profiles")`
+                    grep), and it refuses any caller whose `user_type` is
+                    already set; across the admin routes the table is only
+                    selected from, updated (`verification_status`,
+                    `credit_balance`), or dropped with the user.
+
+                    The row can still come to exist — but by a hand on the
+                    database, not by a request. The admin console says so to the
+                    only person who can do it (`newSectorRowNotes` in
+                    src/app/dashboard/admin/users/[id]/page.tsx: «أنشئ الصف
+                    يدويًا من قاعدة البيانات»). So the sentence names that
+                    mechanism and offers no step: describing how a row comes
+                    into being is not the same as telling a lawyer to go and ask
+                    for one.
+                  */
+                  : "لا يوجد سجل مهني مرتبط بحسابك حتى الآن (التخصصات، رقم الترخيص، حالة التوثيق، إعداد الظهور في الدليل). ما يظهر أعلاه هو بيانات حسابك فقط. ولا يمكن إنشاء هذا السجل من لوحة التحكم؛ إنشاؤه تدخّل يدوي في قاعدة البيانات من مشغّل المنصة."}
               </p>
             </div>
           ) : (
@@ -385,7 +467,8 @@ export default function LawyerProfilePage() {
             Clause 3 is gated on the flag so this copy stops being true-but-
             stale the moment BETA_MONOPOLY_MODE is turned off. The whole block
             is gated on hasRoleProfile because it explains a tile that is not on
-            screen when the read failed.
+            screen whenever the professional row is missing — whether the read
+            failed or there is genuinely no row.
           */}
           {profileData.hasRoleProfile && (
           <div className={`rounded-xl border p-3 mb-4 flex gap-2.5 ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-slate-200 bg-slate-50/60"}`}>

@@ -50,6 +50,76 @@ type ProfileApiResponse = {
     is_accepting_clients?: boolean | null; show_contact?: boolean | null;
     verification_status?: VerificationStatus | null;
   } | null;
+  // Optional so an older deploy of the route (which did not send the key) reads
+  // as `undefined` → `!== true` → "did not fail", which is the same conclusion
+  // this page drew before the marker existed. The route always sends it,
+  // including `false` (src/app/api/v1/profile/route.ts:205-212).
+  roleProfileReadFailed?: boolean;
+};
+
+/**
+ * WHY the form holds no server state — the banner copy below, and nothing else.
+ *
+ *   "read-failed" — the GET threw, or it returned 200 and the route reported
+ *                   that the `lawyer_profiles` read itself failed.
+ *   "no-row"      — the GET succeeded and this account has no professional row
+ *                   it can see.
+ *   "no-server"   — demo build; there is nothing to read from or write to.
+ *
+ * NEVER gate Save on this. `loaded` is the only save gate, and the reason all
+ * three of these exist as one type is that they are equally unsafe to save
+ * through — see the note on `loaded` below.
+ */
+type BlockedReason = "read-failed" | "no-row" | "no-server";
+
+/**
+ * `retry` is BOTH the button's label and the condition that renders it: an
+ * entry without one shows no button. That keeps "may this state be re-read?"
+ * next to the sentence that state puts on screen, instead of in a separate
+ * `blocked === …` test in the JSX that drifts away from it — which is exactly
+ * how the no-row lawyer lost his button once already.
+ */
+const BLOCKED_COPY: Record<
+  BlockedReason,
+  { title: string; body: string; retry?: string }
+> = {
+  // «قد يمسح», not «سيمسح». A failed read tells us nothing about what is in
+  // the row — including whether there is one — so the certain version was
+  // itself a small over-claim of exactly the kind this round is closing. The
+  // warning keeps its force without asserting a consequence we cannot know.
+  "read-failed": {
+    title: "لم تُقرأ بياناتك الحالية — الحفظ معطّل",
+    body: "الحقول أدناه فارغة لأننا لم نتمكن من قراءة ملفك، لا لأن ملفك فارغ. لا نعرف ما هو محفوظ فيه الآن، والحفظ بحقول فارغة قد يمسح نبذتك وتخصصاتك ورقم ترخيصك. لن يُحفظ شيء مما تكتبه هنا قبل أن تنجح القراءة — أعد المحاولة أولاً.",
+    retry: "إعادة المحاولة",
+  },
+  "no-row": {
+    // The reason Save is off here is NOT the overwrite risk — there is nothing
+    // to overwrite. It is that PATCH /api/v1/profile updates an existing row
+    // (the `lawyer_profiles` update in its PATCH handler) and an UPDATE
+    // matching zero rows comes back as PGRST116 → 500. Saying "we could not
+    // read you" here would be the false half of the pair this round opened on.
+    //
+    // The body used to end «يرجى التواصل مع الدعم لإنشائه» — an instruction
+    // whose outcome no feature delivers. Re-verified: no route inserts into
+    // `lawyer_profiles` for an existing account (the tree's only insert is
+    // onboarding/account-type through a dynamic `spec.table`, and it refuses a
+    // caller whose `user_type` is already set), and the admin surface only
+    // selects, updates `verification_status` or `credit_balance`, or deletes.
+    // What replaces it is the MECHANISM rather than a step: the admin console
+    // tells the operator to add the row by hand
+    // (`newSectorRowNotes` in src/app/dashboard/admin/users/[id]/page.tsx —
+    // «أنشئ الصف يدويًا من قاعدة البيانات»). Naming it is also what makes the
+    // retry button below honest: it says what a re-read could ever pick up.
+    title: "لا يوجد سجل مهني مرتبط بحسابك — الحفظ معطّل",
+    body: "قرأنا حسابك بنجاح ولم نجد سجلاً مهنياً مرتبطاً به، فالحقول أدناه فارغة لهذا السبب لا لتعذّر القراءة. الحفظ هنا يُحدّث سجلاً قائماً ولا يُنشئ سجلاً جديداً، ولا توجد في المنصة — لا في هذه الصفحة ولا في لوحة المسؤول — أداة تُنشئ هذا السجل؛ إنشاؤه تدخّل يدوي في قاعدة البيانات من مشغّل المنصة. لن يُحفظ شيء مما تكتبه هنا، وإن أُنشئ السجل فاضغط «إعادة القراءة» أدناه ليظهر دون إعادة تحميل الصفحة.",
+    retry: "إعادة القراءة",
+  },
+  "no-server": {
+    // No `retry`: there is no server in this build, so a re-read is the one
+    // thing that genuinely cannot help here.
+    title: "التعديل غير متاح في هذا الوضع",
+    body: "هذه الصفحة تقرأ ملفك من الخادم وتحفظ إليه، والخادم غير متصل في هذا الوضع. لم نعرض بيانات بديلة، ولن يُحفظ شيء مما تكتبه هنا.",
+  },
 };
 
 export default function LawyerProfileEditPage() {
@@ -83,6 +153,12 @@ export default function LawyerProfileEditPage() {
    * `roleProfile` coming back null. Setting it inside `if (r)` — the one place
    * the form receives server state — covers all three.
    *
+   * `blocked` below names WHICH of them happened, and that is ALL it does. Do
+   * not fold the two together and do not gate the button on `blocked`: the
+   * three reasons read very differently on screen but are identical here —
+   * none of them left the form holding the lawyer's real row, so none of them
+   * may be saved through. One of them is not "milder" than the others.
+   *
    * REJECTED ALTERNATIVE: sending only dirty fields, which would let a lawyer
    * save through a failed load. It changes the `city` semantics — city is on
    * both allowlists, and a body containing city alone carries no lawyer-only
@@ -91,13 +167,16 @@ export default function LawyerProfileEditPage() {
    * why costs one retry click.
    */
   const [loaded, setLoaded] = useState(false);
+  // Null only before load() has resolved, and the banner is not rendered then
+  // (the spinner returns first). Every non-success exit from load() sets it.
+  const [blocked, setBlocked] = useState<BlockedReason | null>(null);
 
   const load = useCallback(async () => {
     // `isSupabaseMode` is a module-level constant, so this branch is
     // dead-code-eliminated from a production build. In a demo build there is no
     // server to read from OR write to, and `loaded` stays false — which is the
     // correct answer for Save too.
-    if (!isSupabaseMode) { setLoading(false); return; }
+    if (!isSupabaseMode) { setBlocked("no-server"); setLoading(false); return; }
     try {
       const res = await apiGet<ProfileApiResponse>("/api/v1/profile");
       const r = res.roleProfile;
@@ -115,15 +194,78 @@ export default function LawyerProfileEditPage() {
           show_contact: r.show_contact ?? false,
         });
         setVerification(r.verification_status ?? null);
+        setBlocked(null);
         setLoaded(true);
       } else {
-        // 200 with no lawyer_profiles row. The route swallows the error from
-        // that sub-query (route.ts:100-105), so this also covers a read that
-        // failed rather than a row that is genuinely absent — and we cannot
-        // tell which from here. Either way there is nothing safe to overwrite.
-        setMsg({ type: "err", text: "تعذّر قراءة بيانات ملفك المهني. لم نعرض بيانات بديلة، والحفظ معطّل حتى تنجح القراءة." });
+        /*
+         * 200 with no professional row. WHICH of the two states this is now
+         * comes from the route rather than from a guess here.
+         *
+         * supabase-js does not throw when a read fails — it returns
+         * `{ data: null, error }` — and the route used to discard that error,
+         * so "no row" and "could not read the row" arrived identical. It now
+         * reads the error and reports it as `roleProfileReadFailed` next to a
+         * null `roleProfile` (src/app/api/v1/profile/route.ts:152-195).
+         *
+         * This is NOT a clean two-way split, and the copy must not imply one:
+         * an RLS-filtered SELECT returns zero rows WITHOUT raising, so a row
+         * this session merely may not read also lands here with the marker
+         * false — the route's own GET docstring says exactly that. A session
+         * whose `user_type` is not "lawyer" lands here too: the route never
+         * reads the table for it at all (route.ts:169-186), so that is a third
+         * way into this branch, marker false. (routeAccess should keep it
+         * unreachable; "should" is not "does".) Hence «لا يوجد سجل مهني مرتبط
+         * بحسابك», a statement about what this account can see, and never "the
+         * record does not exist".
+         *
+         * Both states leave the form empty and `loaded` false, so Save is
+         * disabled either way. Only the sentence differs — and that sentence is
+         * the whole point: the profile page one click away distinguishes these
+         * two, so this page saying "could not read" over a successful read made
+         * two adjacent screens contradict each other.
+         */
+        setBlocked(res.roleProfileReadFailed === true ? "read-failed" : "no-row");
+
+        /*
+         * ─── DEFERRED: creating the missing row from here ────────────────────
+         *
+         * An earlier pass deferred this on the ground that «no owner INSERT
+         * policy exists, and adding one is a migration (banned)». That ground
+         * is FALSE and should not be repeated:
+         * supabase/migrations/20260614_auto_create_role_profiles.sql:195-206
+         * creates policy "users insert own lawyer profile" on
+         * public.lawyer_profiles for insert with check (user_id = auth.uid()).
+         * No migration would be needed to use it.
+         *
+         * It stays deferred on a real ground instead: nobody in a coding
+         * session can verify that 20260614 was ever APPLIED to production, and
+         * in this project migrations are applied by the owner, never by us.
+         *
+         * THE ONE CHECK, against PRODUCTION, before anyone builds this:
+         *   does pg_policies hold a row with tablename = 'lawyer_profiles'
+         *   and policyname = 'users insert own lawyer profile'?
+         * If it does not, an insert from here returns an RLS denial and this
+         * honest banner becomes a runtime failure.
+         *
+         * DO NOT treat the existing provisioning path as evidence that it does.
+         * src/app/api/v1/onboarding/account-type/route.ts:200 really does
+         * create these rows in production — but on `createServiceClient()`
+         * (same file, :310), which bypasses RLS entirely, so its success says
+         * nothing about what an authenticated session is allowed to insert.
+         * Everything this editor writes goes through `createClient()` and is
+         * subject to the policy.
+         *
+         * And the build is not in this file: PATCH /api/v1/profile does
+         * `.update().eq().select().single()`
+         * (src/app/api/v1/profile/route.ts:368-378) — which is precisely why
+         * the no-row save is blocked, since an UPDATE matching zero rows
+         * returns PGRST116 and the route answers 500 «تعذّر حفظ التعديلات».
+         * Building this means changing that call and deciding which columns a
+         * self-created row may carry (verification_status must not be one; it
+         * is admin-only by design).
+         */
       }
-    } catch { setMsg({ type: "err", text: "تعذّر تحميل بيانات الملف" }); }
+    } catch { setBlocked("read-failed"); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -198,25 +340,39 @@ export default function LawyerProfileEditPage() {
       </motion.div>
 
       {/*
-        Load failed (or there is no server). Say so ABOVE the form, and make it
-        the reason the Save button below is disabled — an unexplained disabled
-        button is its own small lie.
+        Why the form is empty and the Save button below is disabled. An
+        unexplained disabled button is its own small lie — but so is ONE
+        explanation for three different states, which is what this block used to
+        be: it told a lawyer who simply has no professional row that we had
+        failed to read him, and that saving «كان سيمسح نبذتك ورقم ترخيصك» when
+        there was nothing there to erase.
+
+        The retry button is driven by `BLOCKED_COPY[blocked].retry`: present for
+        the two states a re-read can actually change, absent for the demo build,
+        where there is no server to re-read from. An earlier pass narrowed it to
+        "read-failed" alone on the ground that re-reading «cannot conjure a
+        row» — true, and beside the point, because the button never claimed to.
+        A re-read is the ONLY in-page way to pick up a row that came into
+        existence outside this dashboard, which is precisely the state the
+        no-row banner describes; without it that lawyer had to reload the whole
+        browser tab, and nothing on screen told him so. (This also restores what
+        the older `isSupabaseMode` guard did in the browser: shown for both
+        server-backed states, hidden in a demo build.)
       */}
-      {!loaded && (
+      {!loaded && blocked && (
         <div className={`rounded-2xl border p-4 flex gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
           <Warning size={18} weight="fill" className="text-amber-500 flex-shrink-0 mt-0.5" />
           <div className="min-w-0">
             <p className={`text-[12px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-              لم تُقرأ بياناتك الحالية — الحفظ معطّل
+              {BLOCKED_COPY[blocked].title}
             </p>
             <p className={`text-[11px] mt-1 leading-relaxed ${isDark ? "text-zinc-400" : "text-amber-700/70"}`}>
-              الحقول أدناه فارغة لأننا لم نتمكن من قراءة ملفك، لا لأن ملفك فارغ.
-              الحفظ الآن كان سيمسح نبذتك وتخصصاتك ورقم ترخيصك. أعد المحاولة أولاً.
+              {BLOCKED_COPY[blocked].body}
             </p>
-            {isSupabaseMode && (
+            {BLOCKED_COPY[blocked].retry && (
               <button onClick={() => { setMsg(null); setLoading(true); load(); }}
                 className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-[11px] font-bold text-[#C8A762] transition-colors hover:bg-[#0a3328]">
-                <ArrowClockwise size={13} weight="bold" /> إعادة المحاولة
+                <ArrowClockwise size={13} weight="bold" /> {BLOCKED_COPY[blocked].retry}
               </button>
             )}
           </div>
@@ -299,8 +455,14 @@ export default function LawyerProfileEditPage() {
         )}
 
         <div className="flex items-center gap-2 pt-2">
+          {/*
+            The tooltip carries the SAME reason as the banner, never a second
+            one. It used to say «الحفظ معطّل حتى تُقرأ بياناتك الحالية»
+            unconditionally — the wrong reason for the lawyer who has no
+            professional row at all, and the right one for only one of three.
+          */}
           <button onClick={handleSave} disabled={saving || !loaded}
-            title={!loaded ? "الحفظ معطّل حتى تُقرأ بياناتك الحالية" : undefined}
+            title={!loaded && blocked ? BLOCKED_COPY[blocked].title : undefined}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             {saving ? <SpinnerGap size={14} className="animate-spin" /> : <CheckCircle size={14} />} حفظ التعديلات
           </button>

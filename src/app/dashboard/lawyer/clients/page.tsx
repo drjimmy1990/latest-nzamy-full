@@ -36,6 +36,23 @@ export default function ClientsPage() {
   const [clientView,   setClientView]   = useState<"active" | "archive">("active"); // S82
   const [archiveSearch, setArchiveSearch] = useState(""); // S82
 
+  /**
+   * client id → the raw `lastActivity` ISO the endpoint sent for that client.
+   *
+   * The default sort («آخر نشاط») used to fall through the comparator's
+   * `return 0`, so picking it reordered nothing — and since GET
+   * /api/v1/lawyer/clients has no `.order()`, the order it preserved was
+   * "whatever the profiles query returned, then the manual clients", which is
+   * not an activity order at all.
+   *
+   * The value the sort needs is on the wire already (`LawyerClientApiRow
+   * .lastActivity`, api/v1/lawyer/clients/route.ts:181) but `toLawyerClientView`
+   * keeps only the formatted Arabic date — and that string is an ar-SA
+   * (Hijri, Arabic-Indic) rendering, which cannot be compared. So the raw ISO
+   * is kept beside the views. Sort input only: never rendered.
+   */
+  const [lastActivityById, setLastActivityById] = useState<Record<string, string>>({});
+
   // S82: auto-inactive = no in-flight requests, OR the lawyer ticked «غير نشط».
   const isArchived = (c: LawyerClientView) => c.activeRequests === 0 || c.flags.includes("inactive");
 
@@ -64,9 +81,15 @@ export default function ClientsPage() {
       // rather than being treated as 0 / 3 — they are unknown, not lowest.
       if (sortKey === "unpaid")      return outstandingOf(b) - outstandingOf(a);
       if (sortKey === "rating")      return (b.rating ?? -1) - (a.rating ?? -1);
-      return 0;
+      // «آخر نشاط», newest first. ISO-8601 is lexicographically ordered by
+      // construction, so a plain string compare is the correct one here.
+      // A client with no activity on record sorts last rather than first.
+      const la = lastActivityById[a.id] ?? "";
+      const lb = lastActivityById[b.id] ?? "";
+      if (la === lb) return 0;
+      return lb > la ? 1 : -1;
     });
-  }, [clients, search, activeFlags, sortKey, clientView, archiveSearch]);
+  }, [clients, search, activeFlags, sortKey, clientView, archiveSearch, lastActivityById]);
 
   /**
    * True only when the directory on screen is the directory the server holds.
@@ -89,7 +112,15 @@ export default function ClientsPage() {
   const totalUnpaid = withFees.reduce((acc, c) => acc + outstandingOf(c), 0);
   const badClients  = clients.filter(c => c.flags.includes("bad") || c.flags.includes("late_pay")).length;
 
-  const onAdd = (c: LawyerClientView) => setClients(prev => [c, ...prev]);
+  const onAdd = (c: LawyerClientView) => {
+    setClients(prev => [c, ...prev]);
+    // A manually-added client's `lastActivity` IS its `created_at`
+    // (route.ts:181), and that row was just written — so this instant is the
+    // value, not a guess standing in for one. Without it the client the lawyer
+    // just typed would sort to the bottom of «آخر نشاط» until the next reload.
+    // Sort input only; the card still renders `lastContact` from the server.
+    setLastActivityById(prev => ({ ...prev, [c.id]: new Date().toISOString() }));
+  };
 
   // ─── Fetch clients ───────────────────────────────────────────────────────────
   // Deliberately calls the endpoint directly instead of getLawyerClients():
@@ -107,7 +138,14 @@ export default function ClientsPage() {
     setLoadError(null);
     apiGet<LawyerClientApiRow[]>("/api/v1/lawyer/clients")
       .then((data) => {
-        setClients(Array.isArray(data) ? data.map(toLawyerClientView) : []);
+        const rows = Array.isArray(data) ? data : [];
+        setClients(rows.map(toLawyerClientView));
+        // Keep the raw ISO the view model drops — see `lastActivityById`.
+        const activity: Record<string, string> = {};
+        for (const r of rows) {
+          if (typeof r.lastActivity === "string" && r.lastActivity) activity[r.id] = r.lastActivity;
+        }
+        setLastActivityById(activity);
         setLoading(false);
       })
       .catch((e) => {
@@ -227,13 +265,22 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* Archive context note */}
+      {/* Archive context note.
+          «تستطيع استعادتهم في أي وقت» was removed: there is no restore control
+          on this page and none anywhere in the lawyer workspace, and there
+          cannot be one — /api/v1/lawyer/clients exports GET and POST only, so
+          the `inactive` flag AddClientModal writes at creation time can never
+          be un-ticked. The note now names the two causes separately, because
+          only one of them reverses itself: `isArchived` is
+          `activeRequests === 0 || flags.includes("inactive")`, so a client
+          archived for having no in-flight requests leaves the archive on their
+          next request, while a client the lawyer ticked «غير نشط» never does. */}
       {clientView === "archive" && (
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] ${
+        <div className={`flex items-start gap-2 px-3 py-2 rounded-xl text-[11px] leading-relaxed ${
           isDark ? "bg-amber-500/5 border border-amber-500/15 text-amber-400" : "bg-amber-50 border border-amber-200 text-amber-700"
         }`}>
-          <span>⚠️</span>
-          <span>الموكلون هنا ليس لديهم طلبات نشطة حالياً أو تم تصنيفهم يدوياً كغير نشطين. لم يتم حذفهم — تستطيع استعادتهم في أي وقت.</span>
+          <span className="flex-shrink-0">⚠️</span>
+          <span>يظهر هنا الموكّلون بلا طلبات نشطة، والموكّلون الذين صُنِّفوا «غير نشط» عند إضافتهم. لم يُحذف أي منهم. من كان هنا لعدم وجود طلبات نشطة يعود إلى القائمة النشطة تلقائياً مع أول طلب جديد يُوجَّه إليك، أمّا تصنيف «غير نشط» فلا توجد حالياً طريقة لإزالته بعد الحفظ.</span>
         </div>
       )}
 
@@ -306,7 +353,13 @@ export default function ClientsPage() {
           <SortAscending size={14} />
           <select value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)}
             className="bg-transparent outline-none text-[12px] cursor-pointer">
-            <option value="lastContact">آخر تواصل</option>
+            {/* «آخر تواصل» renamed. The value behind it is the `created_at` of
+                the client's newest service request — activity on the platform,
+                not a call or a message: there is no contact log in this
+                product. /dashboard/lawyer/clients/[id]:431 already labels the
+                same field «آخر نشاط». The option value stays "lastContact"
+                because `SortKey` lives in src/constants/lawyerClientsData.ts. */}
+            <option value="lastContact">آخر نشاط</option>
             <option value="activeCases">الطلبات النشطة</option>
             <option value="unpaid">الأتعاب المتأخرة</option>
             <option value="rating">التقييم</option>
@@ -345,7 +398,15 @@ export default function ClientsPage() {
             />
           </div>
         ) : filtered.map((client, i) => {
-          const outstanding = client.totalFees !== null && client.paidFees !== null
+          // A fee agreement is on record only when a POSITIVE total is.
+          // `!== null` alone is defeated by a persisted literal 0, and 0 is
+          // exactly what a skipped fee step writes: AddClientModal's fee inputs
+          // are optional and it submits `Number(total) || 0` (:50-51), which
+          // the route stores and `money()` reads back as 0 rather than null
+          // (`v >= 0`, route.ts:46). So «متبقي: مسدَّدة» in green used to
+          // appear for a client whose fees were never entered at all.
+          // Same condition the fee progress bar below already uses.
+          const outstanding = client.totalFees !== null && client.totalFees > 0 && client.paidFees !== null
             ? client.totalFees - client.paidFees
             : null;
           const payPct = client.totalFees && client.paidFees !== null

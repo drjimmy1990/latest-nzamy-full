@@ -88,7 +88,15 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
       const payload = {
         id,
         type: "service" as const,
-        title: caseName.trim() ? `جلسة — ${caseName.trim()}` : typeLabel,
+        // The case-name branch used to hardcode «جلسة» — `جلسة — ${caseName}` —
+        // no matter which type was picked, so «موعد طعن / نهائي» was saved with
+        // the title «جلسة — قضية الأفق» and read as a court sitting everywhere a
+        // title is shown, while `metadata.type` beneath it still said deadline:
+        // the badge and the title disagreed on the same row. `typeLabel` is the
+        // label the lawyer actually chose and was already in hand one line up.
+        // This applies to rows saved from here on; titles already written stay
+        // as they are, since correcting them would take SQL.
+        title: caseName.trim() ? `${typeLabel} — ${caseName.trim()}` : typeLabel,
         description: notes.trim(),
         receiver: "lawyer" as const,
         status: "pending_assignment" as const,

@@ -525,8 +525,43 @@ export default function ActivityLogPage() {
             <Clock size={26} className="text-[#C8A762]" weight="duotone"/>
             سجل النشاط الموحد
           </h1>
+          {/* This line names what the feed can CONTAIN, so every term on it has
+              to have a writer. «استشارات AI» and «كافة» went on 2026-08-28; the
+              same test then failed three of the four terms that were kept, and
+              they went with them on the pass after it.
+              «جلسات» / «عقود» / «موكلين» were the hearing / contract / client
+              badges, and those badges are reachable ONLY from
+              RequestEvent.HEARING_CREATED, CONTRACT_CREATED,
+              CONTRACT_STATUS_CHANGED, CONSULTATION_CREATED and
+              CONSULTATION_STATUS_CHANGED (src/lib/events.ts). Every one of those
+              five constants is written nowhere: they appear in events.ts and in
+              no other file, no raw string literal of their token values exists
+              in src, `namespaceEvent` maps no legacy value onto them (it only
+              ever produces the SERVICE_REQUEST_* tokens), and the one route that
+              could carry an arbitrary token —
+              api/v1/service-requests/[id]/events POST — has no caller, as its
+              own doc-comment says. So the badges exist, the icons exist, the
+              filter chips exist, and no event has ever been able to carry them.
+              Naming them here promised a lawyer three kinds of history this feed
+              cannot hold.
+              What IS reachable, traced through every recordEvent call site:
+                order     — SERVICE_REQUEST_CREATED / _UPDATED / _STATUS_CHANGED,
+                            plus the unknown-token fallback
+                task      — TASK_CREATED, TASK_STATUS_CHANGED (lawyer/tasks
+                            route) and the «بدأ العمل» / «تم توجيه» order events
+                delivery  — SERVICE_REQUEST_COMPLETED
+                cancelled — SERVICE_REQUEST_CANCELLED
+                notice    — notification.* from the n8n callback, and the
+                            admin_audit_events rows the route folds in
+              The line below names those five and nothing else.
+              Not gated on isSupabaseMode even though MOCK_ACTIVITIES does carry
+              hearing/contract/client rows: that constant is module-level, so the
+              demo branch is eliminated from the bundle the six lawyer accounts
+              actually load, and demo mode already carries its own «بيانات
+              تجريبية» banner above. Gating one subtitle on it would add a live
+              branch to say something the banner has said already. */}
           <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>
-            تتبع كافة أنشطتك — جلسات، مهام، استشارات AI، عقود، وموكلين
+            تتبّع حركة طلباتك — تحديثات الطلبات، المهام، التسليم، الإلغاء، والإشعارات
           </p>
         </div>
         {/* A «تصدير PDF» button stood here with no onClick and no handler
@@ -579,6 +614,19 @@ export default function ActivityLogPage() {
           );
         })}
       </div>
+
+      {/* The cards read «—» in two different situations and only one of them is
+          temporary: `stats` is null before the first answer arrives, and null
+          again when the route could not count (it now returns `stats: null`
+          rather than flooring a failed head-count to «٠» — see its
+          `countsFailed` note). Once the read has settled, a null is a failure,
+          and «—» on its own does not say so. Not shown in demo mode, which
+          never calls the route at all. */}
+      {isSupabaseMode && feedState!=="loading" && stats===null && (
+        <div className={`rounded-xl px-3 py-2 text-[11px] leading-relaxed border ${isDark?"border-amber-500/20 bg-amber-900/10 text-amber-400":"border-amber-200 bg-amber-50 text-amber-700"}`}>
+          تعذّر احتساب أرقام البطاقات أعلاه. علامة «—» تعني أن العدد غير معروف الآن، لا أنه صفر.
+        </div>
+      )}
 
       {/* Filters */}
       <div className={`${card} p-4 space-y-3`}>

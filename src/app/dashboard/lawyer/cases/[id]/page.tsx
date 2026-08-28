@@ -30,6 +30,7 @@ import {
 import {
   uploadDocumentFile,
   getDocumentFileUrl,
+  isDocumentTimeoutError,
 } from "@/lib/services/documentService";
 import {
   getLawyerTasks,
@@ -47,7 +48,13 @@ const CaseGraphView = dynamic(
 );
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type CaseStatus = "active" | "pending" | "suspended" | "closed";
+/**
+ * حالات العرض في هذه الصفحة وحدها — ليست `CaseStatus` المشتركة في `_types.ts`.
+ * أُضيفت "cancelled" هنا: كان `mapStatus` يطوي `completed` و`cancelled` في
+ * "closed" الواحدة، فتقرأ القضية الملغاة «مغلقة» ويمتلئ شريط المراحل حتى «إغلاق»
+ * كأنها اكتملت — بينما هي نفسها في قائمة القضايا داخل تبويب الأرشيف.
+ */
+type CaseStatus = "active" | "pending" | "suspended" | "closed" | "cancelled";
 type TaskStatus = "todo" | "inprogress" | "done";
 
 interface HearingRow {
@@ -77,6 +84,7 @@ const STATUS_CONFIG: Record<CaseStatus, { label: string; color: string; dot: str
   pending:   { label: "انتظار", color: "text-amber-500 bg-amber-500/10 border-amber-500/20",       dot: "bg-amber-400" },
   suspended: { label: "معلقة",  color: "text-blue-500 bg-blue-500/10 border-blue-500/20",          dot: "bg-blue-400" },
   closed:    { label: "مغلقة",  color: "text-slate-400 bg-slate-100 border-slate-200",             dot: "bg-slate-300" },
+  cancelled: { label: "ملغاة",  color: "text-rose-500 bg-rose-500/10 border-rose-500/20",          dot: "bg-rose-400" },
 };
 
 const TASK_STATUS: Record<TaskStatus, { label: string; color: string; dot: string }> = {
@@ -143,6 +151,11 @@ const TABS = [
 ];
 
 // Map service_request statuses to the UI CaseStatus.
+//
+// `cancelled` كان يعود "closed" مع `completed`: قضية أُلغيت كانت تُطبع «مغلقة»
+// وتظهر مكتملة المراحل على شريط التقدّم. الحالة الخام موجودة على الصف، والقائمة
+// تعرفها أصلاً (`workflowToCase` تحوّل `cancelled` إلى الأرشيف)، فلا شيء كان
+// ينقص سوى عدم طيّ الحالتين في واحدة هنا.
 function mapStatus(s: string | undefined): CaseStatus {
   switch (s) {
     case "assigned":
@@ -153,8 +166,9 @@ function mapStatus(s: string | undefined): CaseStatus {
     case "draft":
       return "pending";
     case "completed":
-    case "cancelled":
       return "closed";
+    case "cancelled":
+      return "cancelled";
     default:
       return "pending";
   }
@@ -264,6 +278,8 @@ export default function CaseDetailPage() {
   // "The file is stored, the screen may be stale" — a different message from
   // uploadError, because it is a different fact. See handleUpload.
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  // فشل فتح مستند. كان لا مكان له إطلاقاً في هذا الملف — انظر handleDownload.
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [fileInputEl, setFileInputEl] = useState<HTMLInputElement | null>(null);
 
   // Tasks tab — held as a ListRead, not an array. As `CaseTask[]` the old
@@ -365,14 +381,22 @@ export default function CaseDetailPage() {
   const documents = caseData?.attachments ?? [];
 
   // ── Derived: team = assigned lawyer + client ──
+  //
+  // `assignedTo` معرّف حساب (UUID) وليس اسماً: المسار يعيد
+  // `assignedTo: row.assigned_to` بلا أي ضمّ لجدول profiles
+  // (api/v1/service-requests/[id]/route.ts:126). فكان يُعرض هنا اسماً كاملاً تحت
+  // «المحامي المسؤول»، وتُشتق منه الحرف الأول للصورة الرمزية — أي خانة سداسية
+  // عشرية داخل الدائرة. المعرّف ليس اسماً فلا يُعرض كاسم؛ ما نملكه حقاً هو أن
+  // الطلب مُسند، لا إلى مَن. الاسم الحقيقي يحتاج ضمّ profiles على ذلك المسار.
   const team = useMemo(() => {
-    if (!caseData) return [] as { name: string; role: string; avatar: string }[];
-    const members: { name: string; role: string; avatar: string }[] = [];
+    if (!caseData) return [] as { name: string; role: string; avatar: string; nameKnown: boolean }[];
+    const members: { name: string; role: string; avatar: string; nameKnown: boolean }[] = [];
     if (caseData.assignedTo) {
       members.push({
-        name: String(caseData.assignedTo),
+        name: "الاسم غير متاح",
         role: "المحامي المسؤول",
-        avatar: String(caseData.assignedTo).charAt(0),
+        avatar: "",
+        nameKnown: false,
       });
     }
     if (caseData.requester?.name) {
@@ -380,6 +404,7 @@ export default function CaseDetailPage() {
         name: caseData.requester.name,
         role: "الموكل",
         avatar: caseData.requester.name.charAt(0),
+        nameKnown: true,
       });
     }
     return members;
@@ -548,14 +573,36 @@ export default function CaseDetailPage() {
     }
   };
 
+  /**
+   * فتح مستند في تبويب جديد — ويقول ما جرى حين لا يُفتح.
+   *
+   * كان الفشل صامتاً بالكامل: `getDocumentFileUrl` يعيد `null` عند أي خطأ تخزين
+   * (documentService.ts:480) ويرمي `DocumentTimeoutError` عند تجاوز المهلة، ولم
+   * يكن هنا `else` ولا أي حالة تحمل الخبر — فيضغط المحامي «عرض/تحميل» فلا يحدث
+   * شيء إطلاقاً، ثم يضغط مرة أخرى. الفشل كان في اليد أصلاً في كلا الفرعين؛
+   * الناقص كان عرضه. الشرَك نفسه في `uploadError` فوقه، واللافتة أدناه جواره.
+   *
+   * الفعل المكتوب هو «فتح» لا «تنزيل»: الزرّان كلاهما ينادي هذه الدالة، وما تفعله
+   * هو `window.open` — تسمية الفشل بغير ما جرى هي بذاتها جملة غير صحيحة.
+   * واسم الملف داخل الرسالة لأن اللافتة تعلو قائمة قد تحمل عشرة مستندات.
+   */
   const handleDownload = async (doc: ServiceRequestAttachment) => {
+    setDownloadError(null);
+    const label = doc.name || "المستند";
     try {
       const url = await getDocumentFileUrl(doc.storage_path);
-      if (url) {
-        window.open(url, "_blank");
+      if (!url) {
+        setDownloadError(`تعذّر فتح «${label}» — حاول مرة أخرى.`);
+        return;
       }
+      window.open(url, "_blank", "noopener,noreferrer");
     } catch (e) {
       console.error("[lawyer case detail] download failed:", e);
+      setDownloadError(
+        isDocumentTimeoutError(e)
+          ? `تعذّر فتح «${label}» — استغرق إنشاء الرابط وقتاً طويلاً. تحقق من اتصالك وحاول مجدداً.`
+          : `تعذّر فتح «${label}» — حاول مرة أخرى.`,
+      );
     }
   };
 
@@ -628,7 +675,10 @@ export default function CaseDetailPage() {
   const value = valueRaw ? String(valueRaw) : undefined;
   const filedDate = formatDate(caseData.createdAt);
   const referenceNo = caseData.id;
-  const assigneeDisplay = caseData.assignedTo ?? "—";
+  // كان هذا يطبع `assigned_to` كما هو تحت أيقونة شخص في ترويسة القضية — أي UUID
+  // في موضع اسم المحامي. لا اسم في اليد (اقرأ التعليق على `team` أعلاه)، والحقيقة
+  // الوحيدة المتاحة هي وجود إسناد من عدمه، فهي وحدها ما يُعرض.
+  const assigneeDisplay = caseData.assignedTo ? "مُسندة إلى محامٍ" : "غير مُسندة";
 
   return (
     <div className="max-w-[1100px] mx-auto space-y-5" dir="rtl">
@@ -702,6 +752,15 @@ export default function CaseDetailPage() {
             <span className={isDark ? "text-zinc-500" : "text-slate-400"}>الحالة الحالية</span>
             <span className={`font-medium ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{statusConf.label}</span>
           </div>
+          {/* القضية الملغاة لا تُعرض على شريط المراحل: الشريط يقول «كم قطعت هذه
+              القضية من طريقها»، وطيّ `cancelled` في "closed" كان يملؤه حتى «إغلاق»
+              فيقرأ كأنها اكتملت. وشريط فارغ تماماً كان سيُقرأ كهيكل تحميل، فجملة
+              واحدة صريحة مكانه. */}
+          {status === "cancelled" ? (
+            <p className={`text-[12px] font-semibold ${isDark ? "text-rose-400" : "text-rose-600"}`}>
+              أُلغيت هذه القضية — لم تُستكمل مراحل التقاضي.
+            </p>
+          ) : (
           <div className="flex items-center gap-1">
             {["تقديم", "قيد التداول", "مراجعة", "إغلاق"].map((s, i) => {
               const stageIdx =
@@ -716,6 +775,7 @@ export default function CaseDetailPage() {
               );
             })}
           </div>
+          )}
         </div>
       </motion.div>
 
@@ -1091,6 +1151,15 @@ export default function CaseDetailPage() {
                   <CheckCircle size={12} weight="fill" className="inline ml-1" />{uploadNotice}
                 </div>
               )}
+              {/* رابط لم يُنشأ. حتى الآن كان زرّا «عرض/تحميل» و«تحميل» يفشلان بلا أثر
+                  على الشاشة — انظر handleDownload. */}
+              {downloadError && (
+                <div className={`flex items-start gap-2 p-3 rounded-xl border text-[12px] ${isDark ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-red-200 bg-red-50 text-red-600"}`}>
+                  <Warning size={13} weight="fill" className="mt-0.5 flex-shrink-0" />
+                  <span className="flex-1">{downloadError}</span>
+                  <button onClick={() => setDownloadError(null)} className="opacity-70 hover:opacity-100 font-semibold">إخفاء</button>
+                </div>
+              )}
               {documents.length === 0 ? (
                 <div className={`${card} p-10 flex flex-col items-center justify-center`}>
                   <FolderOpen size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
@@ -1141,10 +1210,17 @@ export default function CaseDetailPage() {
                     className={`${card} p-4`}>
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-2xl bg-royal/10 flex items-center justify-center flex-shrink-0">
-                        <span className="text-[17px] font-bold text-royal">{m.avatar}</span>
+                        {/* بلا اسم لا يوجد حرف أول: أيقونة، لا خانة من المعرّف. */}
+                        {m.nameKnown
+                          ? <span className="text-[17px] font-bold text-royal">{m.avatar}</span>
+                          : <User size={20} weight="duotone" className="text-royal" />}
                       </div>
                       <div className="flex-1">
-                        <p className={`text-[14px] font-semibold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{m.name}</p>
+                        <p className={`text-[14px] font-semibold ${
+                          m.nameKnown
+                            ? isDark ? "text-zinc-100" : "text-slate-800"
+                            : isDark ? "text-zinc-500" : "text-slate-400"
+                        }`}>{m.name}</p>
                         <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{m.role}</p>
                       </div>
                     </div>

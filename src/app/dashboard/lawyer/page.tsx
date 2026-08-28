@@ -9,7 +9,7 @@ import {
   CaretLeft, Robot, PencilSimple,
   CalendarCheck, Lightning,
   Warning, ArrowClockwise, Plus,
-  Flag, Lock, Crown, ArrowRight, Storefront,
+  Flag, Storefront,
   Timer, Folder, Money, Briefcase, ShareNetwork, Graph, MapPin,
 } from "@phosphor-icons/react";
 import HijriDateWidget from "@/components/HijriDateWidget";
@@ -17,22 +17,37 @@ import Link from "next/link";
 import { LawyerDashboardSkeleton } from "@/components/ui";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
 
-// ─── Subscription Tiers ───────────────────────────────────────────────────────
-type LawyerTier = "free" | "starter" | "pro" | "premium";
-
-const TIER_CONFIG: Record<LawyerTier, {
-  labelAr: string; labelEn: string;
-  color: string; bg: string; border: string;
-  canDraft: boolean;   // الصائغ القانوني
-  canScribe: boolean;  // مفرغ الجلسات
-  caseLimit: number | null;
-  consultLimit: number | null;
-}> = {
-  free:    { labelAr: "مجاني",         labelEn: "Free",     color: "text-slate-500",   bg: "bg-slate-100",      border: "border-slate-200",   canDraft: false, canScribe: false, caseLimit: 3,  consultLimit: 1 },
-  starter: { labelAr: "الناشئ",        labelEn: "Starter",  color: "text-blue-600",   bg: "bg-blue-50",        border: "border-blue-200",    canDraft: false, canScribe: false, caseLimit: 10, consultLimit: 5 },
-  pro:     { labelAr: "الاحترافي",     labelEn: "Pro",      color: "text-royal",      bg: "bg-royal/8",        border: "border-royal/20",    canDraft: true,  canScribe: true,  caseLimit: null, consultLimit: null },
-  premium: { labelAr: "المميز",        labelEn: "Premium",  color: "text-[#C8A762]",  bg: "bg-[#C8A762]/10",   border: "border-[#C8A762]/30", canDraft: true,  canScribe: true,  caseLimit: null, consultLimit: null },
-};
+// ─── Subscription tiers — REMOVED ─────────────────────────────────────────────
+//
+// Deleted here: `type LawyerTier`, a TIER_CONFIG table (free/starter/pro/premium
+// carrying canDraft / canScribe / caseLimit / consultLimit) and
+// `deriveLawyerTier()`, together with the two surfaces they drove — the
+// «باقة … — الصائغ القانوني ومفرغ الجلسات غير متاحَين» upgrade banner and the
+// «محجوب / متاح في الاحترافي ↑» pill on the AI quick-access grid.
+//
+// Every claim in that table was false:
+//
+//   • canDraft / canScribe gated nothing. src/app/ai/draft/page.tsx and
+//     src/app/ai/contracts/page.tsx contain no tier, plan or entitlement check
+//     of any kind, and src/proxy.ts lists both paths only under PROTECTED —
+//     i.e. «needs a session», not «needs a plan». This very page then linked to
+//     /ai/draft twice with no gate at all (the header button, and the «صيغ
+//     مستند» quick action), so one screen both locked and opened one tool.
+//
+//   • «مفرغ الجلسات» was mapped onto /ai/contracts — «محترف العقود», a
+//     different tool. The real transcriber is /ai/transcriber, which this page
+//     never linked and nothing ever gated.
+//
+//   • caseLimit / consultLimit existed only inside this file. Nothing else in
+//     src/ reads either name, so «حد الاشتراك: ٣ قضايا · ١ استشارة» announced a
+//     ceiling that does not exist to a lawyer who can open a fourth case now.
+//
+// `useUser().tier` reads `user_metadata.tier` and falls back to "free", so this
+// banner was on screen for every practising lawyer, every day, telling them a
+// tool they use daily was unavailable to them.
+//
+// Not rebuilt as a real gate: which plan buys which tool is a pricing decision,
+// and there is no payment path to upgrade through. Git history keeps the old UI.
 
 // Local imports
 import AddCaseModal from "./_components/AddCaseModal";
@@ -229,7 +244,9 @@ async function copyToClipboard(text: string): Promise<boolean> {
 export default function LawyerDashboardPage() {
   const { name, tier: userTier, userId, userType } = useUser();
   const { isDark } = useTheme();
-  const [activityTab, setActivityTab] = useState<"all" | "ai">("all");
+  // `activityTab` — REMOVED. It only ever held "all": the «نشاط AI» filter it
+  // drove could not match a row, because nothing records AI-tool usage. See the
+  // note on the activity card below.
   const [showAddCase, setShowAddCase] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -305,11 +322,24 @@ export default function LawyerDashboardPage() {
   //      src/app/lawyers/layout.tsx), so the copied link would land the
   //      recipient on the firm's intake page instead of this lawyer.
   //
-  // ⚠️ A third defect is not — and cannot be — gated from here: the profile
+  // ⚠️ A third condition is not — and cannot be — gated from here, and it is
+  // the one that would bite first. This paragraph used to read: «the profile
   // page itself never reads its route segment; it renders a module-level mock,
-  // so every id shows the same fabricated lawyer. Whoever flips
-  // BETA_MONOPOLY_MODE to false must fix src/app/lawyers/[slug]/page.tsx first,
-  // or this button starts handing out a link to somebody else's name.
+  // so every id shows the same fabricated lawyer». That was true when it was
+  // written and is FALSE NOW — src/app/lawyers/[slug]/page.tsx was rebuilt: it
+  // reads `params.slug`, treats it as the profiles.id it actually is, fetches
+  // the real advocate, and has its own loading / not-found / error states. The
+  // fabricated lawyer is gone. Do not re-add that warning.
+  //
+  // What stands in its place is a DATA condition, not a code one. That page is
+  // served by /api/v1/lawyers/[id], which requires BOTH
+  // `lawyer_profiles.verification_status = 'verified'` AND
+  // `marketplace_visible = true`. In production every lawyer row is still
+  // «pending» with marketplace_visible false, so that route 404s for every one
+  // of them today. Flipping BETA_MONOPOLY_MODE on its own would therefore turn
+  // this button into a link to a «not found» page — the lawyer's own profile,
+  // publicly missing, handed to their client. Verification has to land before
+  // that flip, or with it.
   //
   // The gate is the compile-time const, not a runtime flag: the admin features
   // screen lists BETA_MONOPOLY_MODE but holds it in a local array with no
@@ -340,26 +370,12 @@ export default function LawyerDashboardPage() {
     return () => window.clearTimeout(timer);
   }, [shareState]);
 
-  // ─── Derived tier ─────────────────────────────────────────────────────────
-  // Map the user's real subscription tier (UserTier) to the lawyer page's
-  // LawyerTier vocabulary so the upgrade banner + AI-tool gating reflect the
-  // actual plan instead of a hardcoded "free".
-  function deriveLawyerTier(t: string | undefined | null): LawyerTier {
-    switch (t) {
-      case "max":
-      case "corp":
-      case "enterprise":
-        return "premium";
-      case "pro":
-        return "pro";
-      case "ai":
-      case "shield":
-        return "starter";
-      default:
-        return "free";
-    }
-  }
-  const lawyerTier: LawyerTier = deriveLawyerTier(userTier);
+  // ─── Derived tier — REMOVED ───────────────────────────────────────────────
+  // `deriveLawyerTier()` translated `useUser().tier` into the four-plan
+  // vocabulary described at the top of this file, and its only two readers were
+  // the upgrade banner and the AI-grid padlock. Both are gone, and this page
+  // now gates nothing, so the mapping had nobody left to answer. `userTier`
+  // itself is real and is still passed to AddCaseModal at the bottom of it.
 
   // ─── Computed stats ───────────────────────────────────────────────────────
   //
@@ -460,15 +476,12 @@ export default function LawyerDashboardPage() {
         action: described.title,
         type: badgeToActivityType(described.badge),
         caseRef: shortRequestRef(e.request_id),
-        // Nothing in `request_events` records AI-tool usage, so no row can
-        // honestly claim it. The old test matched `includes("ai")`, which only
-        // ever fired on the "ai" inside `notification.email_sent` — the «نشاط
-        // AI» tab was really an email-notice tab. It now shows its empty state
-        // until something actually records AI usage.
-        // The widening cast is load-bearing, not ceremony: without it this
-        // infers the literal "manual" and `item.category === "ai"` in
-        // `filteredTimeline` below stops compiling.
-        category: "manual" as "ai" | "manual" | "system",
+        // No `category` field any more. It was pinned to the literal "manual"
+        // for every row — nothing in `request_events` records AI-tool usage —
+        // and its only reader was the «نشاط AI» filter, now removed with the
+        // tab itself. Before that it was derived by matching `includes("ai")`
+        // on the raw token, which fired solely on the "ai" inside
+        // `notification.email_sent`: the AI tab was really an email-notice tab.
       };
     });
   }, [dashboardData]);
@@ -582,9 +595,8 @@ export default function LawyerDashboardPage() {
     ])
   ) as Record<string, { icon: React.ElementType; color: string; bg: string; border: string }>;
 
-  const filteredTimeline = activityTimeline.filter(
-    item => activityTab === "all" || item.category === "ai"
-  );
+  // `filteredTimeline` — REMOVED. It filtered on a category no row could carry,
+  // so with the «نشاط AI» tab gone it is exactly `activityTimeline`.
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-5" dir="rtl">
@@ -750,36 +762,19 @@ export default function LawyerDashboardPage() {
         </motion.div>
       )}
 
-      {/* ── Subscription Banner ── */}
-      {(lawyerTier === "free" || lawyerTier === "starter") && (
-        <motion.div
-          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl p-4 border flex flex-wrap items-center gap-3 ${
-            isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50/70"
-          }`}
-        >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0B3D2E] text-[#C8A762]">
-            <Crown size={17} weight="fill" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>
-              باقة {TIER_CONFIG[lawyerTier].labelAr} — الصائغ القانوني ومفرغ الجلسات غير متاحَين
-            </p>
-            <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-              {lawyerTier === "free"
-                ? `حد الاشتراك: ${TIER_CONFIG.free.caseLimit} قضايا · ${TIER_CONFIG.free.consultLimit} استشارة`
-                : `حد الاشتراك: ${TIER_CONFIG.starter.caseLimit} قضايا · ${TIER_CONFIG.starter.consultLimit} استشارات`
-              } · ترقَّ للاحترافي أو المميز للوصول الكامل
-            </p>
-          </div>
-          <Link
-            href="/settings?tab=subscription"
-            className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-[#C8A762] hover:bg-[#155e41] transition-colors"
-          >
-            ترقية الباقة <ArrowRight size={12} />
-          </Link>
-        </motion.div>
-      )}
+      {/* ── Subscription Banner — REMOVED ─────────────────────────────────────
+          Deleted here: the gold «باقة مجاني — الصائغ القانوني ومفرغ الجلسات غير
+          متاحَين» banner, its «حد الاشتراك: ٣ قضايا · ١ استشارة» sub-line and its
+          «ترقية الباقة» call to action.
+
+          It stated three things, and none of them was true — no tier check
+          exists on either tool, «مفرغ الجلسات» pointed at a different tool
+          entirely, and no case or consultation ceiling is enforced anywhere in
+          src/. The full evidence is in the note at the top of this file.
+
+          Nothing honest was left to put in its place: the plan name alone is
+          not news, and an upgrade prompt is a promise about a purchase this
+          platform cannot yet take. ────────────────────────────────────────── */}
 
       {/* ── Demo Data Banner (only in demo mode) ── */}
       {!isSupabaseMode && (
@@ -846,13 +841,58 @@ export default function LawyerDashboardPage() {
           </span>
           <div className={`h-4 w-px mx-1 shrink-0 ${ isDark ? "bg-white/10" : "bg-slate-200"}`} />
 
+          {/* ── «Q / C / D» keyboard hints — REMOVED ──────────────────────────
+              Deleted here: a `shortcut` field that was on all six of these
+              items — three carried a letter, three an empty string — and the
+              two <kbd> render sites (the button branch and the link branch)
+              that turned it into three chips, so «قضية جديدة» wore a
+              Q, «استشارة جديدة» a C and «صيغ مستند» a D.
+
+              Nothing implemented any of them. There is no keydown listener on
+              this page, in its layout, or anywhere else in src/ that responds
+              to those keys pressed alone — not by `e.key`, and not by the
+              layout-independent `e.code` either. The rule behind that, which
+              outlives any list of files: every global keydown handler in this
+              tree — window-level and document-level alike — either requires
+              Ctrl/⌘ or binds a non-letter key such as Escape. None binds a
+              bare letter. So a lawyer who pressed Q got nothing; the chip was
+              the whole feature.
+
+              Deliberately NOT implemented instead. `e.key` is layout-dependent
+              — the physical Q on an Arabic keyboard reports «ض», and that is
+              the layout these lawyers type in — so an honest handler would have
+              to bind `e.code`, and a bare unmodified letter bound at window
+              level can fire while «قضية جديدة» is half filled in and navigate
+              the form out from under its author. A decorative hint is not worth
+              a global key handler over an open modal. ─────────────────────── */}
           {[
-            { label: "قضية جديدة",      icon: Plus,          action: () => setShowAddCase(true),  shortcut: "Q",  accent: false },
-            { label: "استشارة جديدة",    icon: CalendarCheck, href: "/dashboard/lawyer/consultations?book=1", shortcut: "C",  accent: false },
-            { label: "صيغ مستند",       icon: PencilSimple,  href: "/ai/draft",   shortcut: "D",  accent: true  },
-            { label: "جدول الجلسات",     icon: Gavel,         href: "/dashboard/lawyer/hearings", shortcut: "",   accent: false },
-            { label: "مستنداتي",           icon: Folder,        href: "/dashboard/lawyer/documents", shortcut: "",  accent: false },
-            { label: "تتبع الوقت",        icon: Timer,         href: "/dashboard/lawyer/tasks",    shortcut: "",   accent: false },
+            { label: "قضية جديدة",      icon: Plus,          action: () => setShowAddCase(true),  accent: false },
+            // `?book=1` opens the booking form on arrival — and it is now read.
+            // /dashboard/lawyer/consultations imports `useSearchParams`, derives
+            // `bookParam` from it and seeds `useState(bookParam === "1")`, so
+            // <BookingModal> is mounted on that page's FIRST render instead of
+            // waiting for a second click on «جدولة استشارة». The literal is
+            // load-bearing: the reader tests `=== "1"`, so `?book=true` or a
+            // bare `?book` would arrive inert.
+            //
+            // The history matters, because this link has been wrong in both
+            // directions already. The param was originally here while that page
+            // read nothing at all, i.e. a URL promising an open form over a
+            // plain list; it was removed for that reason, and the reader was
+            // built afterwards — which left working machinery no one could
+            // reach, since nothing in the tree emitted the param. Both halves
+            // exist now. Before deleting this again, grep the destination for
+            // `useSearchParams`: it is the reader that decides whether this is
+            // a promise or a feature.
+            //
+            // Seeded there as an INITIAL state rather than from an effect, so
+            // closing the form is final even while the URL still says book=1 —
+            // the modal cannot re-open itself behind the lawyer.
+            { label: "استشارة جديدة",    icon: CalendarCheck, href: "/dashboard/lawyer/consultations?book=1", accent: false },
+            { label: "صيغ مستند",       icon: PencilSimple,  href: "/ai/draft",   accent: true  },
+            { label: "جدول الجلسات",     icon: Gavel,         href: "/dashboard/lawyer/hearings", accent: false },
+            { label: "مستنداتي",           icon: Folder,        href: "/dashboard/lawyer/documents", accent: false },
+            { label: "تتبع الوقت",        icon: Timer,         href: "/dashboard/lawyer/tasks",    accent: false },
           ].map((item) => {
             const Icon = item.icon;
             const base = `flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all select-none ${
@@ -867,11 +907,6 @@ export default function LawyerDashboardPage() {
                 <Link key={item.label} href={item.href} className={base}>
                   <Icon size={14} weight="duotone" />
                   {item.label}
-                  {item.shortcut && (
-                    <kbd className={`ms-1 hidden sm:inline text-[9px] px-1.5 py-0.5 rounded font-mono ${
-                      item.accent ? "bg-white/10 text-[#C8A762]/70" : isDark ? "bg-white/[0.07] text-zinc-600" : "bg-slate-200 text-slate-400"
-                    }`}>{item.shortcut}</kbd>
-                  )}
                 </Link>
               );
             }
@@ -879,11 +914,6 @@ export default function LawyerDashboardPage() {
               <button key={item.label} onClick={item.action} className={base}>
                 <Icon size={14} weight="duotone" />
                 {item.label}
-                {item.shortcut && (
-                  <kbd className={`ms-1 hidden sm:inline text-[9px] px-1.5 py-0.5 rounded font-mono ${
-                    isDark ? "bg-white/[0.07] text-zinc-600" : "bg-slate-200 text-slate-400"
-                  }`}>{item.shortcut}</kbd>
-                )}
               </button>
             );
           })}
@@ -939,7 +969,23 @@ export default function LawyerDashboardPage() {
         })}
       </div>
 
-      {/* ── Secondment: no real data yet — entry point is the sidebar link to /dashboard/lawyer/secondment (gated there) ── */}
+      {/* ── Secondment: no card here, and no entry point either ───────────────
+          This line used to say the entry point was «the sidebar link to
+          /dashboard/lawyer/secondment (gated there)». Both halves were false,
+          and the next reviewer would have taken them on trust:
+
+            • There is no such sidebar link. Searched today, this comment was
+              the ONLY occurrence of that path anywhere in src/ — nothing links
+              it, nothing lists it, so the route is unreachable by navigation.
+            • It is not «gated». src/app/dashboard/lawyer/secondment/page.tsx
+              renders DashboardComingSoon — «الانتدابات القانونية … غير متاحة
+              حالياً» — which is a placeholder, not a permission check.
+
+          The sidebar's secondment entries belong to a different subtree:
+          /dashboard/firm/secondment/new, which entityRouteAccess.ts opens to
+          managing_partner and partner only. So a lawyer reading THIS dashboard
+          has no secondment surface at all, and there is no data behind one
+          either — which is why nothing is rendered here. ──────────────────── */}
 
       {/* ── Second Grid: Tasks + Hearings + Deadlines ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -1107,30 +1153,32 @@ export default function LawyerDashboardPage() {
             <h2 className={`text-sm font-bold flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
               <Clock size={15} className="text-[#C8A762]" weight="duotone" /> سجل النشاط
             </h2>
-            <div className={`p-0.5 rounded-lg border flex ${isDark ? "bg-black/20 border-white/5" : "bg-slate-100 border-slate-200"}`}>
-              <button
-                onClick={() => setActivityTab("all")}
-                className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${activityTab === "all" ? (isDark ? "bg-[#C8A762] text-zinc-900" : "bg-white text-slate-800 shadow-sm") : (isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700")}`}
-              >الكل</button>
-              <button
-                onClick={() => setActivityTab("ai")}
-                className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 ${activityTab === "ai" ? (isDark ? "bg-[#C8A762] text-zinc-900" : "bg-white text-[#C8A762] shadow-sm") : (isDark ? "text-zinc-500 hover:text-[#C8A762]" : "text-slate-500 hover:text-[#C8A762]")}`}
-              >
-                <Robot size={12} weight={activityTab === "ai" ? "fill" : "regular"} /> نشاط AI
-              </button>
-            </div>
+            {/* ── «الكل / نشاط AI» toggle — REMOVED ──────────────────────────
+                Deleted here: a two-button segmented control whose «نشاط AI»
+                half emptied the card on every account, on every click.
+
+                It filtered the timeline on `category === "ai"`, and this card
+                is built from `request_events` — a table that records requests,
+                claims, deliveries and notifications, and nothing at all about
+                AI-tool usage. So no row could carry that category, and the tab
+                was a live, undisabled control that could only ever answer «لا
+                يوجد». An empty state reached by clicking is still a control
+                that lied about itself before the click.
+
+                Not replaced with a disabled tab: there is no AI-activity log to
+                be temporarily empty of. Recording tool usage would need a new
+                event source, so this is reported as needing a backend rather
+                than dressed up as «قريباً». ─────────────────────────────── */}
           </div>
           <div className="space-y-0 flex-1 relative mt-2">
             <div className={`absolute top-3 bottom-3 w-px ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`} style={{ right: "13px" }} />
-            {sectionFailed("recentActivity") ? readFailedBlock() : filteredTimeline.length === 0 ? (
+            {sectionFailed("recentActivity") ? readFailedBlock() : activityTimeline.length === 0 ? (
               <div className={`text-center py-8 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                <p className="text-xs">
-                  {activityTab === "ai" ? "لا يُسجَّل استخدام أدوات الذكاء الاصطناعي بعد" : "لا يوجد نشاط حالياً"}
-                </p>
+                <p className="text-xs">لا يوجد نشاط حالياً</p>
               </div>
             ) : (
             <AnimatePresence mode="popLayout">
-              {filteredTimeline.map((item, i) => {
+              {activityTimeline.map((item, i) => {
                 const config = activityIconMap[item.type] ?? activityIconMap["info"];
                 const ActivityIcon = config.icon;
                 return (
@@ -1143,11 +1191,18 @@ export default function LawyerDashboardPage() {
                     transition={{ delay: i * 0.04 }}
                     className="flex items-start gap-3 py-2.5 relative"
                   >
+                    {/* No «ai» branch on either of these two. Both used to test
+                        `item.type === "ai"` for gold AI styling, and `type`
+                        comes from badgeToActivityType(), which returns only
+                        success / warning / info — so the branch was unreachable
+                        on every row of every account. It was the last fragment
+                        of the «نشاط AI» tab removed above. Rendering is
+                        byte-for-byte what it already was. */}
                     <div className={`flex-shrink-0 w-[27px] h-[27px] rounded-lg flex items-center justify-center z-10 ${config.bg} border ${config.border}`}>
-                      <ActivityIcon size={12} weight={item.type === "ai" ? "duotone" : "fill"} className={config.color} />
+                      <ActivityIcon size={12} weight="fill" className={config.color} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-[12px] font-bold leading-snug ${item.type === "ai" ? (isDark ? "text-[#C8A762]" : "text-slate-800") : (isDark ? "text-zinc-300" : "text-slate-700")}`}>
+                      <p className={`text-[12px] font-bold leading-snug ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
                         {item.action}
                       </p>
                       <div className={`flex items-center gap-2 mt-1 text-[10px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
@@ -1253,34 +1308,13 @@ export default function LawyerDashboardPage() {
           <Link href="/ai" className={`text-xs font-semibold text-royal hover:underline`}>عرض الكل</Link>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          {/* The «محجوب / متاح في الاحترافي ↑» tile that used to replace
+              الصائغ القانوني and محترف العقود here is gone: neither tool has a
+              plan check behind it, so the padlock turned two working tools away
+              from the lawyers who own them — while the header of this same page
+              linked to /ai/draft with no gate at all. See the top of this file. */}
           {AI_QUICK.map((item) => {
             const Icon = item.icon;
-            // Lock الصائغ ومحترف العقود (can act as المفرغ) for free/starter
-            const isLocked =
-              (item.href === "/ai/draft" && !TIER_CONFIG[lawyerTier].canDraft) ||
-              (item.href === "/ai/contracts" && !TIER_CONFIG[lawyerTier].canScribe);
-
-            if (isLocked) {
-              return (
-                <div key={item.href}
-                  className={`group relative flex flex-col items-center gap-2 px-4 py-4 rounded-xl border text-center opacity-50 cursor-not-allowed select-none ${
-                    isDark ? "border-white/[0.04] bg-white/[0.01]" : "border-slate-100 bg-slate-50"
-                  }`}
-                >
-                  <span className={`absolute -top-1.5 -left-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-600 text-white`}>
-                    محجوب
-                  </span>
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                    isDark ? "bg-white/[0.03]" : "bg-slate-100"
-                  }`}>
-                    <Lock size={18} weight="duotone" className={isDark ? "text-zinc-600" : "text-slate-300"} />
-                  </div>
-                  <span className={`text-[13px] font-semibold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{item.label}</span>
-                  <span className={`text-[10px] ${isDark ? "text-zinc-700" : "text-slate-300"}`}>متاح في الاحترافي ↑</span>
-                </div>
-              );
-            }
-
             return (
               <Link key={item.href} href={item.href}
                 className={`group relative flex flex-col items-center gap-2 px-4 py-4 rounded-xl border text-center transition-all hover:scale-[1.02] ${isDark ? "border-white/[0.06] bg-white/[0.02] hover:bg-[#0B3D2E]/15 hover:border-[#C8A762]/20" : "border-slate-100 hover:border-royal/20 hover:bg-royal/[0.02]"}`}

@@ -15,10 +15,10 @@
  * the three honest states (loading / unreadable / empty) — not as rows here.
  */
 import {
-  Warning, TrendUp, Dot, SquaresFour, User, Handshake, UsersThree
+  Warning, TrendUp, Dot
 } from "@phosphor-icons/react";
 import { type WorkflowRequest } from "@/lib/workflowStore";
-import type { CaseStatus, CaseType, CourtDegree, Priority, KanbanCol, CollabFilter, Case } from "@/app/dashboard/lawyer/cases/_types";
+import type { CaseStatus, CaseType, CourtDegree, Priority, KanbanCol, Case } from "@/app/dashboard/lawyer/cases/_types";
 
 export function workflowTypeToCaseType(request: WorkflowRequest): CaseType {
   const raw = String(request.metadata?.requestedType ?? request.metadata?.serviceId ?? request.title);
@@ -28,6 +28,23 @@ export function workflowTypeToCaseType(request: WorkflowRequest): CaseType {
   if (raw.includes("admin")) return "admin";
   if (raw.includes("real")) return "real_estate";
   return "commercial";
+}
+
+/**
+ * درجة التقاضي مشتقة من المحكمة المدوّنة على الطلب.
+ *
+ * كانت `degree` قيمة ثابتة `"primary"` لكل صف: وسم «ابتدائي» يُطبع على كل بطاقة،
+ * وفلتر «درجة التقاضي» لا يطابق سوى ابتدائي، وأعمدة الكانبان الخمسة الأخرى
+ * (عمالية/جزائية/ديوان المظالم/استئناف/العليا) فارغة دائماً. واسم المحكمة موجود
+ * فعلاً على الصف — `metadata.court` يكتبه AddCaseModal — و COURTS_LIST أدناه
+ * جدول تحويل جاهز من اسم المحكمة إلى الدرجة، بالسلاسل نفسها حرفاً بحرف.
+ *
+ * الصفوف بلا محكمة (كل طلب وارد من عميل عبر المنصة) تبقى "primary": `Case.degree`
+ * حقل إلزامي في `_types.ts`، وهو سلوك اليوم نفسه لتلك الصفوف — لا ادّعاء جديد.
+ * الدقّة الكاملة تحتاج درجة صريحة على الصف = عمود جديد، ليس في هذه الجولة.
+ */
+function courtToDegree(court: string): CourtDegree {
+  return COURTS_LIST.find(c => c.id === court)?.degree ?? "primary";
 }
 
 export function workflowToCase(request: WorkflowRequest): Case {
@@ -44,17 +61,18 @@ export function workflowToCase(request: WorkflowRequest): Case {
       : isAssigned
         ? "active"
         : "pending";
+  const court = (request.metadata?.court as string) || "بانتظار تحديد الجهة";
   return {
     id: request.id,
     title: request.title,
     client: request.requester.name || "عميل نظامي",
-    court: (request.metadata?.court as string) || "بانتظار تحديد الجهة",
+    court,
     type: workflowTypeToCaseType(request),
     status,
     priority: request.payment.amount >= 800 ? "high" : "normal",
     nextDate: String(request.metadata?.deadline ?? "بانتظار الإسناد"),
     filedDate: new Date(request.createdAt).toLocaleDateString("ar-SA"),
-    degree: "primary",
+    degree: courtToDegree(court),
     stage: isAssigned ? "تم قبول الطلب" : "طلب وارد من منصة نظامي",
     kanbanCol: isCompleted ? "closed" : isAssigned ? "docs_prep" : "new",
     team: [],
@@ -62,6 +80,10 @@ export function workflowToCase(request: WorkflowRequest): Case {
     value: request.payment.amount ? `${request.payment.amount.toLocaleString("ar-SA")} ر.س` : "",
     lastActivity: "الآن",
     tags: ["وارد من المنصة"],
+    // لا مصدر لهذا الحقل: لا يوجد على `service_requests` ما يقول إن قضية مشتركة
+    // مع محامٍ آخر أو مع فريق. بقي هنا لأن `Case.collab` إلزامي في `_types.ts`
+    // فقط — لا شيء يقرؤه بعد إزالة شريط التعاون من صفحة القضايا (اقرأ التعليق
+    // هناك). أول قارئ جديد لهذا الحقل يجب أن ينتظر عمود تعاون حقيقياً.
     collab: "solo",
   };
 }
@@ -120,17 +142,29 @@ export const KANBAN_COLS: { key: KanbanCol; label: string; color: string; bg: st
   { key: "closed",    label: "منتهية",     color: "text-emerald-500",  bg: "bg-emerald-50 dark:bg-emerald-500/10" },
 ];
 
-export const TIME_FILTERS = [
-  { key: "all",    label: "الكل" },
-  { key: "today",  label: "اليوم" },
-  { key: "week",   label: "هذا الأسبوع" },
-  { key: "month",  label: "هذا الشهر" },
-  { key: "urgent", label: "طعون قادمة" },
-];
-
-export const COLLAB_TABS: { key: CollabFilter; label: string; desc: string; icon: any }[] = [
-  { key: "all",    label: "جميع القضايا", desc: "كل الملفات المفتوحة",              icon: SquaresFour },
-  { key: "solo",   label: "بمفردي",        desc: "أتولى هذه القضايا منفرداً",         icon: User },
-  { key: "shared", label: "مشتركة",        desc: "مع محامِ خارجي من شبكتي",          icon: Handshake },
-  { key: "team",   label: "فريقي",          desc: "يشاركني فيها فريقي المصغر (Solo+)", icon: UsersThree },
-];
+/**
+ * TIME_FILTERS — أُزيلت. (كانت: الكل / اليوم / هذا الأسبوع / هذا الشهر / طعون قادمة)
+ *
+ * «اليوم» و«هذا الأسبوع» و«هذا الشهر» كانت تُرشّح على `Case.nextDateSort`، وهو حقل
+ * لا يكتبه `workflowToCase` أصلاً — يُكتب في `businessCasesData.ts` وحده (مصفوفة
+ * الشركات التجريبية). فكانت النتيجة مجموعة فارغة لكل محامٍ في كل مرة. و«طعون قادمة»
+ * تُرشّح على `hasDeadline` = `Boolean(metadata.deadline)`، ولا شيء في المستودع يكتب
+ * ذلك المفتاح (اقرأ التعليق على `criticalCount` في صفحة القضايا)، فهي فارغة كذلك.
+ *
+ * خمسة أزرار حيّة المظهر لا يُرجع أيٌّ منها صفاً واحداً — والقاعدة أن زراً يبدو
+ * فاعلاً وليس كذلك أسوأ من غيابه. أُزيل القسم كاملاً من درج الفلاتر.
+ * منطق «urgent» نفسه باقٍ في الصفحة لأن شريط الطعون الأحمر يضبطه بنفسه ويجب أن
+ * يظل صادقاً يوم يوجد كاتب لـ `metadata.deadline`.
+ *
+ * ملاحظة: صفحة الشركات `dashboard/business/cases` لها TIME_FILTERS خاصة بها في
+ * `businessCasesData.ts` ولم تُمسّ.
+ *
+ * COLLAB_TABS — أُزيلت. (كانت: جميع القضايا / بمفردي / مشتركة / فريقي)
+ *
+ * `workflowToCase` يعيد `collab: "solo"` ثابتة لكل صف بلا أي مصدر، فتبويبا «مشتركة»
+ * و«فريقي» يعيدان مجموعة فارغة دائماً — ويقرآن للمحامي: «لا تتعاون في أي قضية».
+ * وتبويب «بمفردي» يعرض القائمة نفسها التي يعرضها «جميع القضايا» بالعدد نفسه، فالضغط
+ * عليه لا يغيّر شيئاً على الشاشة. لا يوجد على الصف ما يميّز قضية مشتركة عن منفردة،
+ * فالشريط كله وعدٌ بلا بيانات: أُزيل بدل أن يُترك يعرض تصنيفاً غير قائم.
+ * إعادته حقيقةً تحتاج عمود/جدول تعاون = عمل خلفي، ليس في هذه الجولة.
+ */

@@ -15,13 +15,20 @@ import { useUser } from "@/hooks/useUser";
 import { getWorkflowRequestsByReceiver, updateWorkflowRequestById } from "@/lib/services/workflowService";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import type { WorkflowRequest } from "@/lib/workflowStore";
-import type { CaseStatus, CaseType, CourtDegree, Priority, CollabFilter, ViewMode, KanbanGroupBy, Case } from "./_types";
+import type { CaseStatus, CaseType, CourtDegree, Priority, ViewMode, KanbanGroupBy, Case } from "./_types";
 import AddCaseModal from "../_components/AddCaseModal";
 import EmptyState from "@/components/ui/EmptyState";
 
 
 
 
+/**
+ * `TIME_FILTERS` و`COLLAB_TABS` لم تعودا مستوردتين: أُزيل القسمان اللذان كانا
+ * يعرضانهما من هذه الصفحة. السبب الكامل مكتوب مكانهما في
+ * `src/constants/lawyerCasesData.ts` — باختصار: خمسة أزرار «نطاق زمني» تُرشّح على
+ * حقلين لا يكتبهما شيء (`nextDateSort` و`metadata.deadline`)، وشريط تعاون تبويباته
+ * مبنية على `collab` ثابتة لا مصدر لها.
+ */
 import {
   workflowToCase,
   COURTS_LIST,
@@ -29,8 +36,6 @@ import {
   STATUS_CONFIG,
   PRIORITY_CONFIG,
   TYPE_LABELS,
-  TIME_FILTERS,
-  COLLAB_TABS
 } from "@/constants/lawyerCasesData";
 
 /**
@@ -141,7 +146,8 @@ export default function CasesPage() {
   // a rejected move just slid the card back with no explanation at all.
   const [saveError,     setSaveError]     = useState<string | null>(null);
   const [showAddCase,   setShowAddCase]   = useState(false);
-  const [collabFilter,  setCollabFilter]  = useState<CollabFilter>("all"); // S59
+  // `timeFilter` بقي رغم إزالة أزرار «نطاق زمني»: شريط الطعون الأحمر أدناه يضبطه
+  // بنفسه على "urgent"، وحذف الحالة كان سيحوّل زر ذلك الشريط إلى زر بلا أثر.
   const [archiveSearch, setArchiveSearch] = useState(""); // S82
 
   // Drag & drop state for Kanban. Column keys are strings (vary by grouping mode);
@@ -285,16 +291,15 @@ export default function CasesPage() {
   const filtered = useMemo(() => {
     const base = viewMode === "archive" ? archivedCases : activeCases;
     return base.filter(c => {
-      if (collabFilter !== "all" && c.collab !== collabFilter) return false; // S59
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
       if (typeFilter !== "all" && c.type !== typeFilter) return false;
       if (degreeFilter !== "all" && c.degree !== degreeFilter) return false;
       if (courtFilter !== "all" && c.court !== courtFilter) return false;
       if (teamFilter !== "all" && !c.team.includes(teamFilter)) return false;
       if (priorityFilter !== "all" && c.priority !== priorityFilter) return false;
-      if (timeFilter === "today"  && (c.nextDateSort === undefined || c.nextDateSort > 0)) return false;
-      if (timeFilter === "week"   && (c.nextDateSort === undefined || c.nextDateSort > 7)) return false;
-      if (timeFilter === "month"  && (c.nextDateSort === undefined || c.nextDateSort > 30)) return false;
+      // شروط "today"/"week"/"month" حُذفت مع أزرارها: كانت تقرأ `c.nextDateSort`،
+      // وهو حقل لا يكتبه `workflowToCase` إطلاقاً، فكانت الثلاثة تُرجع لا شيء دائماً.
+      // "urgent" باقٍ لأن شريط الطعون هو من يضبطه، ولا يظهر إلا حين يوجد ما يطابقه.
       if (timeFilter === "urgent" && !c.hasDeadline) return false;
       if (search && !c.title.includes(search) && !c.client.includes(search) && !c.court.includes(search)) return false;
       return true;
@@ -314,7 +319,9 @@ export default function CasesPage() {
     // because ArchiveView computes its own local `filtered` straight from `cases`.
     // Nothing rewrites this for us: the React Compiler is not enabled here (no
     // `reactCompiler` in next.config.ts, no babel-plugin-react-compiler).
-  }, [activeCases, archivedCases, collabFilter, statusFilter, typeFilter, degreeFilter, courtFilter, teamFilter, timeFilter, priorityFilter, search, viewMode]);
+    // `collabFilter` خرج من هذه المصفوفة لأنه خرج من الحالة نفسها؛ `timeFilter`
+    // باقٍ لأن الشرط الذي يقرؤه ("urgent") ما زال أعلاه.
+  }, [activeCases, archivedCases, statusFilter, typeFilter, degreeFilter, courtFilter, teamFilter, timeFilter, priorityFilter, search, viewMode]);
 
   /**
    * True only when there is a real list behind every figure on this page.
@@ -322,9 +329,10 @@ export default function CasesPage() {
    * `cases` is `[]` before the first fetch resolves and after one fails, so
    * every count below is 0 in three different states. The header, the quick
    * status pills and the footer already gated on exactly this expression; the
-   * collaboration rail and the status chips inside the filter drawer did not,
-   * so they printed «الكل ٠ · قضاياي ٠ · مشتركة ٠» during the whole first
-   * paint and again over a failed read.
+   * status chips inside the filter drawer did not, so they printed «الكل ٠»
+   * during the whole first paint and again over a failed read. (The
+   * collaboration rail was the other ungated counter; it has since been removed
+   * outright — see the note where it stood.)
    *
    * The `cases.length === 0` half is deliberate and is NOT the same as
    * `!loadError`: when a background refresh fails but an earlier load
@@ -356,7 +364,7 @@ export default function CasesPage() {
 
   const resetFilters = () => {
     setStatusFilter("all"); setTypeFilter("all"); setDegreeFilter("all"); setCourtFilter("all");
-    setTeamFilter("all"); setTimeFilter("all"); setPriorityFilter("all"); setCollabFilter("all");
+    setTeamFilter("all"); setTimeFilter("all"); setPriorityFilter("all");
     setSearch("");
   };
 
@@ -748,18 +756,12 @@ export default function CasesPage() {
             className="overflow-hidden">
             <div className={`p-4 rounded-2xl border space-y-4 ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-100 bg-slate-50"}`}>
 
-              {/* Time filters */}
-              <div>
-                <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>نطاق زمني</p>
-                <div className="flex gap-1.5 flex-wrap">
-                  {TIME_FILTERS.map(tf => (
-                    <button key={tf.key} onClick={() => setTimeFilter(tf.key)}
-                      className={`px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
-                        timeFilter === tf.key ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-200 text-slate-500"
-                      }`}>{tf.label}</button>
-                  ))}
-                </div>
-              </div>
+              {/* قسم «نطاق زمني» (الكل · اليوم · هذا الأسبوع · هذا الشهر · طعون قادمة)
+                  أُزيل من هنا كاملاً. الأزرار الثلاثة الوسطى كانت تُرشّح على
+                  `Case.nextDateSort` — حقل لا يكتبه `workflowToCase` — و«طعون قادمة»
+                  تُرشّح على `metadata.deadline` ولا كاتب له في المستودع، فكانت الخمسة
+                  أزراراً حيّة المظهر تُرجع قائمة فارغة لكل محامٍ في كل مرة.
+                  التفصيل الكامل مكان `TIME_FILTERS` في constants/lawyerCasesData.ts. */}
 
               {/* Status filters */}
               <div>
@@ -855,76 +857,14 @@ export default function CasesPage() {
         )}
       </AnimatePresence>
 
-      {/* S59 — Premium Collab Context Rail */}
-      <div className="space-y-2">
-        {/* Segment control */}
-        <div className={`inline-flex items-center gap-1 p-1.5 rounded-[1.5rem] ${
-          isDark ? "bg-zinc-800/70 border border-white/[0.05]" : "bg-slate-100 border border-slate-200/60"
-        }`}>
-          {COLLAB_TABS.map(tab => {
-            const isActive = collabFilter === tab.key;
-            const count = tab.key === "all"
-              ? activeCases.length
-              : activeCases.filter(c => c.collab === tab.key).length;
-            const Icon = tab.icon;
-            return (
-              <motion.button
-                key={tab.key}
-                onClick={() => setCollabFilter(tab.key)}
-                layout
-                className={`relative flex items-center gap-2 px-4 py-2 rounded-2xl text-[12px] font-bold transition-colors ${
-                  isActive
-                    ? isDark ? "text-white" : "text-[#0B3D2E]"
-                    : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"
-                }`}
-              >
-                {isActive && (
-                  <motion.span
-                    layoutId="collab-pill"
-                    className={`absolute inset-0 rounded-2xl ${
-                      isDark
-                        ? "bg-zinc-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                        : "bg-white shadow-sm shadow-slate-200/80"
-                    }`}
-                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                  />
-                )}
-                <span className="relative flex items-center gap-2">
-                  <Icon size={13} weight={isActive ? "fill" : "regular"} />
-                  {tab.label}
-                  {/* Withheld until a read has succeeded. This rail was the one
-                      place on the page still printing «٠» through the whole
-                      first paint and over a failed load — the tab stays
-                      selectable, it just makes no claim about how many. */}
-                  {countsKnown && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                      isActive
-                        ? isDark ? "bg-white/15 text-white" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
-                        : isDark ? "bg-white/[0.05] text-zinc-600" : "bg-slate-200/80 text-slate-400"
-                    }`}>{count}</span>
-                  )}
-                </span>
-              </motion.button>
-            );
-          })}
-        </div>
-
-        {/* Context description — appears on non-all selection */}
-        <AnimatePresence mode="wait">
-          {collabFilter !== "all" && (
-            <motion.p
-              key={collabFilter}
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ type: "spring", stiffness: 200, damping: 25 }}
-              className={`text-[11px] pr-2 ${isDark ? "text-zinc-500" : "text-slate-400"}`}
-            >
-              {COLLAB_TABS.find(t => t.key === collabFilter)?.desc}
-            </motion.p>
-          )}
-        </AnimatePresence>
-      </div>
+      {/* شريط سياق التعاون (S59) — أُزيل بالكامل.
+          كان أربعة تبويبات: جميع القضايا · بمفردي · مشتركة · فريقي، تُرشّح على
+          `Case.collab`. و`workflowToCase` يضع "solo" ثابتة على كل صف بلا أي مصدر
+          على `service_requests`، فـ«مشتركة» و«فريقي» تُرجعان لا شيء لكل محامٍ دائماً —
+          أي أن الشريط كان يقرأ للمحامي: «لا تتعاون في أي قضية» — و«بمفردي» تعرض
+          القائمة نفسها التي يعرضها «جميع القضايا» بالعدد نفسه، فالضغط عليها لا يغيّر
+          شيئاً على الشاشة. تصنيفٌ لا تسنده بيانات، فأُزيل بدل أن يُترك يبدو حيّاً.
+          إعادته حقيقةً تحتاج تسجيل التعاون على الصف = عمل خلفي. */}
 
       {/* Quick status pills — hidden while the counts have no data behind them */}
       {!showFilters && countsKnown && (

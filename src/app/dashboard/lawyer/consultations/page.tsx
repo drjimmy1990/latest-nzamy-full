@@ -11,6 +11,7 @@ import {
   Warning, ArrowLeft,
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
@@ -105,6 +106,69 @@ function workflowToConsultation(request: WorkflowRequest): Consultation {
   };
 }
 
+/**
+ * The moment a booking is actually scheduled for, or null when it carries none.
+ *
+ * WHY THIS EXISTS: the «الاستشارة القادمة» panel renders exactly ONE row and
+ * calls it the lawyer's next appointment. The array it read was built by a bare
+ * `consults.filter(c => c.status === "upcoming")` with NO sort, so the booking
+ * it named was whichever row the query happened to return first — an arbitrary
+ * consultation, presented under a heading that claims it is the soonest one.
+ *
+ * WHY THE PARSE IS STRICT rather than `new Date(...)`: `metadata` is
+ * unvalidated jsonb, and `new Date` accepts a great deal of nonsense and hands
+ * back a plausible-looking instant for it — which here would mean sorting a
+ * real appointment behind a garbage one. The only writer of the rows this list
+ * reads is BookingModal above: the page queries receiver="lawyer", and the two
+ * other consultation writers in the tree (src/hooks/useConsultationForm.ts and
+ * dashboard/client/consultation/new/page.tsx) both post
+ * receiver="ai_workspace", so neither can appear here. That modal writes `day`
+ * from an <input type="date"> ("YYYY-MM-DD") and `time` from an
+ * <input type="time"> ("HH:MM"). Anything that is not that shape is reported as
+ * "this booking has no date on it" — the same thing the card and the panel
+ * already render as «بانتظار التأكيد» — instead of being guessed at.
+ *
+ * `hasTime` is carried because the two cases cannot be compared the same way: a
+ * booking WITH a time has passed once that time has passed, while a booking
+ * dated today with NO time has not passed until the day is over. Collapsing
+ * them would push every date-only booking made for today into the past at
+ * 00:01.
+ */
+interface Scheduled { at: number; hasTime: boolean }
+
+function scheduledOf(c: Consultation): Scheduled | null {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(c.date.trim());
+  if (!d) return null;
+  const year = Number(d[1]);
+  const month = Number(d[2]);
+  const day = Number(d[3]);
+  // Not anchored at the end: some browsers render <input type="time"> as
+  // "HH:MM:SS". The seconds are ignored, not rejected.
+  const t = /^(\d{1,2}):(\d{2})/.exec(c.time.trim());
+  const hours = t ? Number(t[1]) : 0;
+  const minutes = t ? Number(t[2]) : 0;
+  if (hours > 23 || minutes > 59) return null;
+  const when = new Date(year, month - 1, day, hours, minutes, 0, 0);
+  // Reject a rolled-over date instead of sorting by the wrong day:
+  // new Date(2026, 1, 31) is 3 March, not «31 February».
+  if (when.getFullYear() !== year || when.getMonth() !== month - 1 || when.getDate() !== day) return null;
+  const at = when.getTime();
+  return Number.isFinite(at) ? { at, hasTime: Boolean(t) } : null;
+}
+
+/** Local midnight today — the boundary a date-only booking is measured against. */
+function startOfTodayMs(): number {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+}
+
+/** Has this booking's slot not yet passed? Undated bookings are never "ahead". */
+function isStillAhead(c: Consultation): boolean {
+  const s = scheduledOf(c);
+  if (!s) return false;
+  return s.hasTime ? s.at >= Date.now() : s.at >= startOfTodayMs();
+}
+
 const CONSULT_TYPES = [
   { id: "legal-opinion",  label: "رأي قانوني",          icon: Scales },
   { id: "contract",       label: "مراجعة عقد",           icon: NotePencil },
@@ -129,6 +193,42 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
 
   const steps: BookingStep[] = ["type", "mode", "datetime", "confirm"];
   const stepIdx = steps.indexOf(step);
+
+  /**
+   * Why the footer button is gated.
+   *
+   * Nothing in this form was required: «التالي» only ever advanced, and the
+   * payload then filled in whatever the lawyer had skipped —
+   * `title: consultLabel || "استشارة قانونية"`, `name: clientName || "عميل"`
+   * and, worst of the three, `mode: mode ? … : "video"`. A booking made
+   * without touching step 2 was persisted as a video call and read back as one:
+   * «فيديو» on the card, on the «الاستشارة القادمة» panel and in the
+   * توزيع-حسب-الوسيلة counts. That is an invented fact about an appointment
+   * with a real client, not a blank.
+   *
+   * Only the three fields that were being substituted are required. The date
+   * and the time deliberately are NOT: they go through as "" and every read
+   * surface already renders that honestly as «بانتظار التأكيد». `duration`
+   * likewise — 60 is preselected in front of the lawyer and repeated on the
+   * confirm summary, so it is a disclosed default, not a substitution.
+   *
+   * This gate is client-side; the guard in `handleConfirm` is what actually
+   * keeps a substituted value out of the row.
+   */
+  const missingLabel = !consultType
+    ? "اختر نوع الاستشارة للمتابعة."
+    : !clientName.trim()
+      ? "اكتب اسم العميل للمتابعة."
+      : null;
+  const blockedReason =
+    step === "type" ? missingLabel
+      : step === "mode" ? (!mode ? "اختر طريقة الاستشارة للمتابعة." : null)
+        // Unreachable while the two gates above hold — kept so the confirm
+        // button can never be the one that lets an incomplete booking through.
+        : step === "confirm" ? (!consultType || !clientName.trim() || !mode
+          ? "ارجع وأكمل نوع الاستشارة واسم العميل وطريقة الاستشارة."
+          : null)
+          : null;
 
   // L10: persist the consultation as a service_request on confirm.
   //
@@ -162,22 +262,30 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
     setError(null);
     setSubmitting(true);
     try {
-      const consultLabel = CONSULT_TYPES.find((t) => t.id === consultType)?.label ?? consultType;
+      const consultLabel = CONSULT_TYPES.find((t) => t.id === consultType)?.label;
+      // The footer button is disabled without these three, but the gate is
+      // client-side — this is what keeps a substituted value out of the row.
+      // Refusing is the only honest option: a missing type/name/mode has no
+      // correct fill-in, and the three defaults this used to apply
+      // («استشارة قانونية», «عميل», "video") were each read back as fact.
+      if (!consultLabel || !clientName.trim() || !mode) {
+        throw new Error("أكمل نوع الاستشارة واسم العميل وطريقة الاستشارة قبل التأكيد.");
+      }
       const payload = {
         id: createWorkflowId(),
         type: "consultation",
-        title: consultLabel || "استشارة قانونية",
+        title: consultLabel,
         description: notes || "",
         receiver: "lawyer",
         status: "pending_assignment",
-        requester: { name: clientName || "عميل", role: "individual", tier: "free" },
+        requester: { name: clientName.trim(), role: "individual", tier: "free" },
         payment: { amount: 0, status: "not_required" },
         sourcePath: "",
         assignedTo: lawyerUserId ?? null,
         metadata: {
           day: date,
           time,
-          mode: mode ? consultModeToWorkflowMode(mode) : "video",
+          mode: consultModeToWorkflowMode(mode),
           duration,
         },
       };
@@ -353,34 +461,46 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
                     </div>
                   ))}
                 </div>
-                <div className={`flex items-start gap-2 p-3 rounded-xl ${isDark ? "bg-[#C8A762]/5 border border-[#C8A762]/20" : "bg-amber-50 border border-amber-200"}`}>
-                  <Sparkle size={12} weight="fill" className="text-[#C8A762] flex-shrink-0 mt-0.5" />
-                  <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-amber-800"}`}>
-                    بعد انتهاء الجلسة يمكنك توليد ملخص AI وإرساله للعميل تلقائياً
-                  </p>
-                </div>
+                {/* A gold «بعد انتهاء الجلسة يمكنك توليد ملخص AI وإرساله
+                    للعميل تلقائياً» tip sat here. Neither half exists: there is
+                    no consultation-summary generator (the card's «ملخص AI
+                    للاستشارة» panel was removed in Phase 1 for hanging off an
+                    `aiSummary` no code path sets — see ConsultCard), and there
+                    is no lawyer→client message channel at all
+                    (clients/[id]/page.tsx:436-439). Removed rather than
+                    softened: it was the last thing the lawyer read before
+                    confirming a booking. */}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
         {/* Footer */}
-        <div className={`flex items-center gap-3 px-5 py-4 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-          {stepIdx > 0 && (
-            <button onClick={() => setStep(steps[stepIdx - 1])}
-              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-[12px] font-semibold ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
-              <ArrowLeft size={13} /> السابق
-            </button>
+        <div className={`px-5 py-4 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+          {/* The disabled button says why it is disabled. Silently refusing to
+              advance would read as a broken button. */}
+          {blockedReason && (
+            <p className={`text-[11px] font-semibold mb-2.5 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+              {blockedReason}
+            </p>
           )}
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-            disabled={submitting}
-            onClick={() => {
-              if (stepIdx < steps.length - 1) setStep(steps[stepIdx + 1]);
-              else handleConfirm();
-            }}
-            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[13px] font-bold text-[#C8A762] disabled:opacity-60">
-            {step === "confirm" ? <><CheckCircle size={15} weight="fill" /> {submitting ? "جارٍ التأكيد..." : "تأكيد الجدولة"}</> : <>التالي <ArrowRight size={13} /></>}
-          </motion.button>
+          <div className="flex items-center gap-3">
+            {stepIdx > 0 && (
+              <button onClick={() => setStep(steps[stepIdx - 1])}
+                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-[12px] font-semibold ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
+                <ArrowLeft size={13} /> السابق
+              </button>
+            )}
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+              disabled={submitting || blockedReason !== null}
+              onClick={() => {
+                if (stepIdx < steps.length - 1) setStep(steps[stepIdx + 1]);
+                else handleConfirm();
+              }}
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[13px] font-bold text-[#C8A762] disabled:opacity-60 disabled:cursor-not-allowed">
+              {step === "confirm" ? <><CheckCircle size={15} weight="fill" /> {submitting ? "جارٍ التأكيد..." : "تأكيد الجدولة"}</> : <>التالي <ArrowRight size={13} /></>}
+            </motion.button>
+          </div>
         </div>
 
         {/* Error banner */}
@@ -458,7 +578,14 @@ function ConsultCard({ c, isDark, card }: { c: Consultation; isDark: boolean; ca
                 returns nothing. There is no meeting infrastructure in this
                 product, so the buttons are removed rather than wired to a
                 placeholder. */}
-            {(c.status === "completed" || c.notes) && (
+            {/* Gated on the notes themselves, not on the status. The panel
+                below renders on `expanded && c.notes`, so a completed
+                consultation with an empty description — the booking modal
+                writes `description: notes || ""` — gave the lawyer a caret
+                that rotated and revealed nothing. Trimmed, and the panel below
+                is gated on the same expression: the two drifting apart is what
+                made this a defect in the first place. */}
+            {Boolean(c.notes?.trim()) && (
               <button onClick={() => setExpanded(!expanded)}
                 className={`w-7 h-7 rounded-lg flex items-center justify-center border ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-200 text-slate-400"}`}>
                 <CaretDown size={12} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
@@ -473,7 +600,7 @@ function ConsultCard({ c, isDark, card }: { c: Consultation; isDark: boolean; ca
             which no code path ever set, so it was unreachable — and there is no
             consultation-summary generator behind it to reach. Removed. */}
         <AnimatePresence>
-          {expanded && c.notes && (
+          {expanded && c.notes?.trim() && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden">
               <div className={`px-4 pb-4 pt-0 space-y-3 border-t ${isDark ? "border-white/[0.04]" : "border-slate-50"}`}>
@@ -495,9 +622,30 @@ function ConsultCard({ c, isDark, card }: { c: Consultation; isDark: boolean; ca
 export default function ConsultationsPage() {
   const { isDark } = useTheme();
   const user = useUser();
+  const searchParams = useSearchParams();
+  // `?book=1` — the deep link the lawyer dashboard's «استشارة جديدة» quick
+  // action used to carry. It was removed there (see dashboard/lawyer/page.tsx)
+  // because this page read neither `useSearchParams` nor a `searchParams` prop,
+  // so the param was inert and the lawyer landed on a plain list holding a URL
+  // that promised an open booking form. The machinery was always here —
+  // `showBooking` and <BookingModal> below — only the reader was missing.
+  //
+  // Called bare, with no Suspense wrapper, matching the established pattern for
+  // statically-prerendered client pages in this tree:
+  // dashboard/client/my-group/page.tsx:154 and
+  // dashboard/client/requests/new/page.tsx:69 both do exactly this in their
+  // default export with no Suspense in the file, in their layout, or in the
+  // root layout. Optional chaining matches those call sites too.
+  const bookParam = searchParams?.get("book") ?? null;
   const [filter, setFilter] = useState<ConsultStatus | "all">("all");
   const [search, setSearch] = useState("");
-  const [showBooking, setShowBooking] = useState(false);
+  // Seeded from `?book=1` rather than set from an effect: an effect that calls
+  // setState on mount is a cascading render (react-hooks/set-state-in-effect)
+  // and would paint the list once before the modal appeared. As an INITIAL
+  // value it also cannot re-open the form behind the lawyer — an initialiser is
+  // read on the first render only, so closing the modal is final while the URL
+  // still says book=1.
+  const [showBooking, setShowBooking] = useState(bookParam === "1");
   const [consults, setConsults] = useState<Consultation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -558,7 +706,45 @@ export default function ConsultationsPage() {
     return matchStatus && matchSearch;
   });
 
-  const upcoming = consults.filter(c => c.status === "upcoming");
+  // `.filter()` already returns a new array, so the `.sort()` below orders that
+  // copy and never mutates `consults`.
+  //
+  // The ORDER of this array is a factual claim, because the panel below renders
+  // one element of it under «الاستشارة القادمة». Soonest first; bookings with no
+  // usable date sink to the END rather than leading — "no date on it" is not
+  // "the soonest", and floating them to the front is exactly what the unsorted
+  // array did by accident.
+  const upcoming = consults
+    .filter(c => c.status === "upcoming")
+    .sort((a, b) => {
+      const sa = scheduledOf(a);
+      const sb = scheduledOf(b);
+      if (!sa && !sb) return 0;
+      if (!sa) return 1;
+      if (!sb) return -1;
+      return sa.at - sb.at;
+    });
+
+  // What the panel shows, and a heading that is TRUE of it.
+  //
+  // Sorting alone does not finish the job: "upcoming" is a STATUS
+  // (workflowToConsultation maps anything not cancelled/completed to it), not a
+  // statement about the calendar, so the soonest row can easily be a booking
+  // from three weeks ago that was never marked completed. Calling that
+  // «الاستشارة القادمة» is the same false claim in a new form, so the panel
+  // takes the first booking whose slot has NOT passed.
+  //
+  // When there is no such booking but there are undated ones, the panel is kept
+  // and RENAMED instead of hidden: a booking awaiting a date is still real and
+  // still pending, it simply is not "the next one". Only when every upcoming
+  // booking is dated in the past does the panel disappear — there is nothing
+  // coming, and the list below still carries every one of those rows.
+  //
+  // The «قادمة» KPI is deliberately NOT touched by any of this: it counts a
+  // status, so it can honestly read ٣ while this panel shows one or none.
+  const nextAhead = upcoming.find(isStillAhead) ?? null;
+  const nextConsult = nextAhead ?? upcoming.find(c => scheduledOf(c) === null) ?? null;
+  const nextConsultHeading = nextAhead ? "الاستشارة القادمة" : "استشارة بانتظار تحديد الموعد";
 
   return (
     <div className="max-w-3xl mx-auto space-y-5" dir="rtl">
@@ -656,32 +842,34 @@ export default function ConsultationsPage() {
           button had no onClick — a live-session panel for a product with no
           sessions. Removed with the status itself. */}
 
-      {/* Next upcoming */}
-      {!loading && !loadError && upcoming.length > 0 && (
+      {/* Next upcoming. Was `upcoming.length > 0` rendering `upcoming[0]` out of
+          an unsorted array; both the subject and the heading are now chosen
+          above, so this block reads one row and never indexes. */}
+      {!loading && !loadError && nextConsult && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
           className={`${card} p-5 border-royal/20 bg-royal/[0.03]`}>
           <div className="flex items-center gap-2 mb-3">
             <CalendarCheck size={15} weight="duotone" className="text-royal" />
-            <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>الاستشارة القادمة</p>
+            <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{nextConsultHeading}</p>
           </div>
           <div className="flex items-center gap-4">
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-royal/10" : "bg-royal/5"}`}>
-              {upcoming[0].clientType === "company"
+              {nextConsult.clientType === "company"
                 ? <Buildings size={22} weight="duotone" className="text-royal" />
                 : <User size={22} weight="duotone" className="text-royal" />}
             </div>
             <div className="flex-1">
-              <p className={`text-[15px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{upcoming[0].client}</p>
+              <p className={`text-[15px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{nextConsult.client}</p>
               <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                {upcoming[0].topic} · {MODE_LABELS[upcoming[0].mode]}
-                {upcoming[0].duration !== null ? ` · ${upcoming[0].duration}د` : ""}
+                {nextConsult.topic} · {MODE_LABELS[nextConsult.mode]}
+                {nextConsult.duration !== null ? ` · ${nextConsult.duration}د` : ""}
               </p>
             </div>
             <div className="text-left flex-shrink-0">
-              {upcoming[0].time
-                ? <p className="text-[14px] font-bold font-mono text-royal">{upcoming[0].time}</p>
+              {nextConsult.time
+                ? <p className="text-[14px] font-bold font-mono text-royal">{nextConsult.time}</p>
                 : <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>بانتظار التأكيد</p>}
-              {upcoming[0].date && <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{upcoming[0].date}</p>}
+              {nextConsult.date && <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{nextConsult.date}</p>}
             </div>
             {/* No «بدء» button: there is no meeting to start. See ConsultCard. */}
           </div>
@@ -758,11 +946,15 @@ export default function ConsultationsPage() {
         ))}
       </div>
 
-      {/* AI tip */}
+      {/* AI tip. The promise («يمكن للمستشار AI توليد ملخص كامل للجلسة
+          وإرساله للعميل مباشرةً بعد الانتهاء») was false twice over — no
+          summary generator reads a consultation, and no channel sends anything
+          to a client — so it is replaced by what the link actually leads to.
+          The link itself is real navigation to a real tool and is kept. */}
       <div className={`p-4 rounded-2xl border flex gap-3 items-center ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
         <Sparkle size={15} weight="fill" className="text-[#C8A762] flex-shrink-0" />
-        <p className={`text-[12px] flex-1 ${isDark ? "text-zinc-400" : "text-amber-700"}`}>
-          يمكن للمستشار AI توليد ملخص كامل للجلسة وإرساله للعميل مباشرةً بعد الانتهاء.
+        <p className={`text-[12px] flex-1 leading-relaxed ${isDark ? "text-zinc-400" : "text-amber-700"}`}>
+          المستشار AI أداة منفصلة لصياغة رأي قانوني. لا يوجد في المنصة توليد تلقائي لملخص الجلسة، ولا إرسال مباشر للعميل.
         </p>
         <Link href="/ai/legal-opinion" className="flex-shrink-0 text-[12px] font-bold text-[#C8A762] hover:underline flex items-center gap-1">
           المستشار AI <ArrowRight size={12} />
