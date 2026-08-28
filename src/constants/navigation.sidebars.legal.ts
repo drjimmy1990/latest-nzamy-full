@@ -64,7 +64,12 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "مدير العقود",    labelEn: "Contracts",       href: "/dashboard/lawyer/contracts", icon: "FileText" },
       { label: "المستندات",      labelEn: "Documents",        href: "/dashboard/lawyer/documents", icon: "FolderOpen" },
-      { label: "الأرشيف الموحّد", labelEn: "Unified Archive", href: "/dashboard/lawyer/archive",   icon: "Archive",   badge: "جديد" },
+      // badge: "جديد" → "قريباً". /dashboard/lawyer/archive renders
+      // DashboardComingSoon («…غير متاح حالياً…») because no shared archive store
+      // exists yet, so a «جديد» pill was selling an unavailable route as a newly
+      // shipped feature. The destination page is correct and must not change;
+      // only the badge lied. Restore «جديد» when the archive store is wired.
+      { label: "الأرشيف الموحّد", labelEn: "Unified Archive", href: "/dashboard/lawyer/archive",   icon: "Archive",   badge: "قريباً" },
     ],
   },
 

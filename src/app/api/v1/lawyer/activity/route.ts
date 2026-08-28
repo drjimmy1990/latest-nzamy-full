@@ -145,6 +145,28 @@ export async function GET(request: NextRequest) {
     if (auditRes.error) {
       console.error("[lawyer/activity GET] audit query failed:", auditRes.error.message);
     }
+    // The same treatment for the four head-counts. `count` comes back NULL on a
+    // failed count query, and `?? 0` turned that into a printed «٠» on a card
+    // the lawyer can then click as a filter — "you raised no orders this month"
+    // asserted from a query that never answered. The counts are withheld as a
+    // set (`stats: null`, which the page already renders as «—» and leaves
+    // unclickable) rather than per key: the four are the same predicate against
+    // the same table, so one failing means the read is unreliable, and a
+    // per-key null would have to be threaded through the card filter, its
+    // coverage note and `matchesCardFilter` for a case that cannot occur alone.
+    const countResults: { label: string; error: { message: string } | null }[] = [
+      { label: "ordersThisMonth", error: monthRes.error },
+      { label: "ordersActive", error: activeRes.error },
+      { label: "ordersCompleted", error: completedRes.error },
+      { label: "ordersTotal", error: totalRes.error },
+    ];
+    let countsFailed = false;
+    for (const c of countResults) {
+      if (c.error) {
+        countsFailed = true;
+        console.error(`[lawyer/activity GET] ${c.label} count failed:`, c.error.message);
+      }
+    }
     // Purely additive, and named the same as the `degraded` flag
     // GET /api/v1/service-requests already returns for the same situation
     // (route.ts:84), so the client convention is one convention. Only the
@@ -212,12 +234,19 @@ export async function GET(request: NextRequest) {
       // numbers about real orders. The client is responsible for saying that the
       // FEED beneath them could not be read, which is exactly the split the
       // page's existing coverage note already handles for these cards.
-      stats: {
-        ordersThisMonth: monthRes.count ?? 0,
-        ordersActive: activeRes.count ?? 0,
-        ordersCompleted: completedRes.count ?? 0,
-        ordersTotal: totalRes.count ?? 0,
-      },
+      //
+      // `null` when any of the four could not be counted. The shape is not new:
+      // both the page (`stats?arNum(stats[c.key]):"—"`) and
+      // lawyerActivityService's `LawyerActivityFeed` already declare and handle
+      // `stats: … | null`.
+      stats: countsFailed
+        ? null
+        : {
+            ordersThisMonth: monthRes.count ?? 0,
+            ordersActive: activeRes.count ?? 0,
+            ordersCompleted: completedRes.count ?? 0,
+            ordersTotal: totalRes.count ?? 0,
+          },
       // Only the events stream can actually page (the audit stream is empty
       // under RLS); stop once it stops returning a full page.
       nextCursor:

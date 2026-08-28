@@ -2,13 +2,11 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useRef, memo } from "react";
+// Scales / BookOpen / LinkedinLogo / TwitterLogo were imported only by the four
+// permanently-empty OverviewTab cards removed below.
 import {
   X,
   Copy,
-  Scales,
-  BookOpen,
-  LinkedinLogo,
-  TwitterLogo,
   Trophy,
   CheckCircle,
   Lock,
@@ -265,30 +263,63 @@ export function ShareModal({
 
 // ─── Overview Tab ────────────────────────────────────────────────────────────
 
+/*
+ * ─── WHAT THIS TAB NO LONGER CLAIMS ──────────────────────────────────────────
+ * Four cards were removed. None of them could ever hold anything, so each one
+ * was a heading over nothing on every lawyer's screen — not an empty state
+ * waiting to fill:
+ *
+ *   • «المؤهلات»  — mapped `profile.education`.
+ *   • «المحاكم»   — mapped `profile.courts`.
+ *   • «اللغات»    — mapped `profile.languages`, and drew a five-segment
+ *     proficiency bar whose fill condition was `s <= 5`, i.e. always true, so
+ *     any language it ever listed would have shown permanent full fluency.
+ *   • «التواصل الاجتماعي» — worse than empty. It mapped a TWO-ELEMENT LITERAL
+ *     array over `profile.linkedin` / `profile.twitter`, so it painted a
+ *     LinkedIn icon and an X icon beside two blank spans on every render,
+ *     regardless of what the profile contained.
+ *
+ * `lawyer_profiles` (supabase/migrations/20260603_phase1_001_profiles.sql) has
+ * no education, courts, languages, linkedin or twitter column; GET
+ * /api/v1/profile never sets any of them; and nothing in the app collects them.
+ * Making them real needs a schema change plus an editor, so the promise is
+ * removed rather than displayed. The three-column grid went with them: with the
+ * whole side column gone it reserved a third of the page for an empty div.
+ *
+ * What remains is what has a source — `bio_ar` and `specialties`. Both are
+ * rendered only when the server actually returned them: this tab renders only
+ * in the `ready` state (the page early-returns for loading and for a failed
+ * read), so a blank here means the field is genuinely empty, and it says so in
+ * words instead of showing a bare heading.
+ *
+ * The removed UI is preserved in git history and can be restored once the
+ * columns exist.
+ */
+
 interface OverviewTabProps {
   isDark: boolean;
   profile: {
     bio: string;
     expertise: string[];
-    courts: string[];
-    education: { degree: string; institution: string; year: string }[];
-    languages: string[];
-    linkedin: string;
-    twitter: string;
   };
   cardClass: string;
 }
 
 export function OverviewTab({ isDark, profile, cardClass }: OverviewTabProps) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      {/* Bio */}
-      <div className={`lg:col-span-2 ${cardClass} p-5 space-y-4`}>
-        <h2 className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>نبذة مهنية</h2>
+    <div className={`${cardClass} p-5 space-y-4`}>
+      <h2 className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>نبذة مهنية</h2>
+      {profile.bio.trim() ? (
         <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
           {profile.bio}
         </p>
+      ) : (
+        <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+          لم تُضَف نبذة مهنية بعد.
+        </p>
+      )}
 
+      {profile.expertise.length > 0 && (
         <div>
           <p
             className={`text-[11px] font-bold uppercase tracking-wide mb-2 ${
@@ -310,89 +341,7 @@ export function OverviewTab({ isDark, profile, cardClass }: OverviewTabProps) {
             ))}
           </div>
         </div>
-
-        <div>
-          <p
-            className={`text-[11px] font-bold uppercase tracking-wide mb-2 ${
-              isDark ? "text-zinc-600" : "text-slate-400"
-            }`}
-          >
-            المحاكم
-          </p>
-          <div className="space-y-1.5">
-            {profile.courts.map((c) => (
-              <div key={c} className="flex items-center gap-2">
-                <Scales size={11} className="text-[#C8A762]" />
-                <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{c}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Sidebar: education + languages */}
-      <div className="space-y-4">
-        <div className={`${cardClass} p-4 space-y-3`}>
-          <h3 className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>المؤهلات</h3>
-          {profile.education.map((ed, i) => (
-            <div key={i} className="flex gap-3">
-              <div
-                className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                  isDark ? "bg-blue-500/10" : "bg-blue-50"
-                }`}
-              >
-                <BookOpen size={14} weight="duotone" className="text-blue-500" />
-              </div>
-              <div>
-                <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-                  {ed.degree}
-                </p>
-                <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                  {ed.institution} · {ed.year}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className={`${cardClass} p-4`}>
-          <h3 className={`text-[12px] font-bold mb-3 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>اللغات</h3>
-          <div className="space-y-2">
-            {profile.languages.map((l) => (
-              <div key={l} className="flex items-center justify-between">
-                <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{l}</span>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5].map((s) => (
-                    <div
-                      key={s}
-                      className={`w-5 h-1.5 rounded-full ${
-                        s <= 5 ? "bg-[#0B3D2E]" : isDark ? "bg-zinc-700" : "bg-slate-200"
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className={`${cardClass} p-4`}>
-          <h3 className={`text-[12px] font-bold mb-3 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
-            التواصل الاجتماعي
-          </h3>
-          <div className="space-y-2">
-            {[
-              { icon: LinkedinLogo, val: profile.linkedin, color: "text-blue-500" },
-              { icon: TwitterLogo, val: profile.twitter, color: "text-sky-400" },
-            ].map(({ icon: Icon, val, color }, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Icon size={14} className={color} />
-                <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{val}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

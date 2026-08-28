@@ -128,11 +128,16 @@ function workflowToHearing(request: WorkflowRequest): CalEvent | null {
     type,
     title: request.title,
     client: request.requester.name || undefined,
-    // NOTE: this makes the «القضية» chip link to /dashboard/lawyer/cases/<this
-    // hearing's own id>, which is not a case. Left as-is deliberately — it is a
-    // separate defect on a file this pass does not own to fix end-to-end, and
-    // removing the chip would lose the only place the typed case name is shown.
-    caseId: caseName ? request.id : undefined,
+    // `caseId` is no longer set from this row, and the «القضية» chip is no
+    // longer a link (2026-08-28). It used to be `caseName ? request.id : …`,
+    // which pointed the chip at /dashboard/lawyer/cases/<this HEARING's own id>
+    // — an id that is not a case, so the chip opened a case page that could
+    // never resolve. A previous pass knowingly shipped it rather than lose the
+    // chip; the chip did not have to go. `caseName` here is free text the lawyer
+    // typed into AddHearingModal («القضية / الموكل (اختياري)») and is not linked
+    // to any case record, so there is nothing to navigate TO: it is now rendered
+    // as a plain label. Giving it a real destination needs a case reference on
+    // the row, which is a schema question, not a rendering one.
     caseName,
     location: typeof meta.location === "string" && meta.location ? meta.location : undefined,
     // Always the event's own date now. It used to fall back to the row's
@@ -181,14 +186,57 @@ function getEventDate(dateSort: number): Date {
   return d;
 }
 
+/**
+ * "HH:MM" → {h,m}, or null when there is no readable hour.
+ *
+ * Deliberately not `^\d{2}:\d{2}$`: `<input type="time">` emits "HH:MM:SS" once
+ * its step is sub-minute, and `metadata.time` on older rows is whatever string
+ * was stored. A regex that misses would fall back to the all-day URL silently —
+ * i.e. straight back to the defect below — so this accepts a leading H:MM and a
+ * trailing remainder, and range-checks what it read.
+ */
+function parseTimeOfDay(raw: string | undefined): {h:number;m:number} | null {
+  const hit = /^\s*(\d{1,2}):(\d{2})/.exec(raw ?? "");
+  if (!hit) return null;
+  const h = Number(hit[1]);
+  const m = Number(hit[2]);
+  if (h > 23 || m > 59) return null;
+  return { h, m };
+}
+
+const pad2 = (n:number) => String(n).padStart(2,"0");
+const gcalDay = (d:Date) => `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`;
+const gcalStamp = (d:Date) => `${gcalDay(d)}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`;
+
 function googleCalUrl(ev: CalEvent): string {
   const start = getEventDate(Math.max(0, ev.dateSort));
-  const yy = start.getFullYear();
-  const mm = String(start.getMonth()+1).padStart(2,"0");
-  const dd = String(start.getDate()).padStart(2,"0");
-  const dateStr = `${yy}${mm}${dd}`;
+  // `dates` used to carry YYYYMMDD only, so the hour the lawyer typed was
+  // dropped and every hearing reached Google as an ALL-DAY event — no reminder
+  // at the hour of the sitting. `ev.time` was in hand the whole time; the card
+  // that renders this link prints it two lines above.
+  //
+  // The stamp is written with no `Z` and no `ctz` on purpose: a floating local
+  // time is the one Google reads in the viewer's own calendar zone, and that is
+  // exactly the zone the lawyer typed the hour in. Stamping a zone would mean
+  // asserting one — the row records none — so the meaning is left where it
+  // already is rather than pinned to a guess.
+  //
+  // One hour is the TEMPLATE's default block, not a claim about the sitting —
+  // nothing on the row records a duration, and Google's compose screen opens
+  // with the end time editable before anything is saved. A row with no readable
+  // time keeps the old all-day form rather than inventing an hour for it.
+  const at = parseTimeOfDay(ev.time);
+  let dates: string;
+  if (at) {
+    start.setHours(at.h, at.m, 0, 0);
+    const end = new Date(start.getTime() + 60*60*1000);
+    dates = `${gcalStamp(start)}/${gcalStamp(end)}`;
+  } else {
+    const day = gcalDay(start);
+    dates = `${day}/${day}`;
+  }
   const details = [ev.notes||"", ev.client?`الموكل: ${ev.client}`:"", ev.caseName?`القضية: ${ev.caseName}`:"", "منصة نظامي القانونية"].filter(Boolean).join("\n");
-  const p = new URLSearchParams({action:"TEMPLATE",text:ev.title,dates:`${dateStr}/${dateStr}`,details,location:ev.location||""});
+  const p = new URLSearchParams({action:"TEMPLATE",text:ev.title,dates,details,location:ev.location||""});
   return `https://calendar.google.com/calendar/render?${p.toString()}`;
 }
 
@@ -196,12 +244,25 @@ function groupByDate(events: CalEvent[]): [string,CalEvent[]][] {
   const deadlines = events.filter(e => e.type==="deadline");
   const rest = events.filter(e => e.type!=="deadline");
   const groups: Record<string,CalEvent[]> = {};
+  // Both ends of this used to be open. «هذا الشهر» was the final, unbounded
+  // branch, so a hearing ninety days — or three years — out sat under a heading
+  // that said this month; and anything with a NEGATIVE dateSort fell through to
+  // `<=5` and was headed «هذا الأسبوع», which is how the الأرشيف view titled
+  // last year's sittings. Each row prints its own date, so the heading was the
+  // only thing lying, but a heading is what the eye reads first on a diary.
+  // «هذا الشهر» keeps the `<=30` boundary the `month` time-filter already uses,
+  // so the heading and the filter stay one definition.
   rest.forEach(e => {
-    const key = e.dateSort===0?"اليوم":e.dateSort===1?"غداً":e.dateSort<=5?"هذا الأسبوع":"هذا الشهر";
+    const key = e.dateSort<0?"سابقة"
+      :e.dateSort===0?"اليوم"
+      :e.dateSort===1?"غداً"
+      :e.dateSort<=5?"هذا الأسبوع"
+      :e.dateSort<=30?"هذا الشهر"
+      :"لاحقاً";
     if(!groups[key]) groups[key]=[];
     groups[key].push(e);
   });
-  const order = ["اليوم","غداً","هذا الأسبوع","هذا الشهر"];
+  const order = ["سابقة","اليوم","غداً","هذا الأسبوع","هذا الشهر","لاحقاً"];
   const result: [string,CalEvent[]][] = order.filter(k=>groups[k]).map(k=>[k,groups[k].sort((a,b)=>a.dateSort-b.dateSort)]);
   if(deadlines.length) result.unshift(["مواعيد الطعون والنهائية",deadlines.sort((a,b)=>a.dateSort-b.dateSort)]);
   return result;
@@ -309,11 +370,16 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
             </div>
             {/* Links Row */}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
-              {ev.caseId&&ev.caseName&&(
-                <Link href={`/dashboard/lawyer/cases/${ev.caseId}`}
-                  className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors ${isDark?"bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20":"bg-indigo-50 text-indigo-600 hover:bg-indigo-100"}`}>
-                  <Scales size={9}/>{ev.caseName}<ArrowSquareOut size={8}/>
-                </Link>
+              {/* A label, not a link. This was an <a> to
+                  /dashboard/lawyer/cases/<the hearing's own id> — see the note
+                  in workflowToHearing. The name the lawyer typed still shows;
+                  only the navigation that could not work is gone, and with it
+                  the ArrowSquareOut that promised it opened somewhere. */}
+              {ev.caseName&&(
+                <span
+                  className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg ${isDark?"bg-indigo-500/10 text-indigo-400":"bg-indigo-50 text-indigo-600"}`}>
+                  <Scales size={9}/>{ev.caseName}
+                </span>
               )}
               {linkedTasks.length>0&&(
                 <Link href="/dashboard/lawyer/tasks"
@@ -643,7 +709,16 @@ export default function LawyerHearingsPage() {
     if(showDeadlinesOnly) evs=evs.filter(e=>e.type==="deadline");
     if(typeFilter!=="all")   evs=evs.filter(e=>e.type===typeFilter);
     if(urgencyFilter!=="all") evs=evs.filter(e=>e.urgency===urgencyFilter);
-    if(search.trim()){const q=search.toLowerCase();evs=evs.filter(e=>e.title.includes(q)||e.client?.includes(q)||e.location?.includes(q));}
+    // The query was lowercased and none of the three haystacks were, so a Latin
+    // term typed as it appears on screen («Aramco», «SABIC» — the names that
+    // turn up in company and court strings) matched nothing. Arabic has no case
+    // and was never affected, which is why this survived. `caseName` is searched
+    // too: it is on the card, so it is findable.
+    if(search.trim()){
+      const q=search.trim().toLowerCase();
+      const hit=(s?:string)=>!!s&&s.toLowerCase().includes(q);
+      evs=evs.filter(e=>hit(e.title)||hit(e.client)||hit(e.location)||hit(e.caseName));
+    }
     return evs;
   },[events,timeFilter,typeFilter,urgencyFilter,search,showDeadlinesOnly]);
 
@@ -846,8 +921,25 @@ export default function LawyerHearingsPage() {
       )}
       <AnimatePresence mode="wait">
         {loadState !== "ready" ? null : viewMode==="calendar"?(
-          <motion.div key="cal" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
-            <CalendarView events={filtered.length>0?filtered:events} isDark={isDark}/>
+          <motion.div key="cal" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-4">
+            {/* Was `filtered.length>0?filtered:events`: when the active
+                period/type/priority/search filters excluded every row, the
+                calendar quietly fell back to the UNFILTERED diary and drew dots
+                the lawyer had just filtered away — so the two views answered the
+                same question differently, and the calendar's answer was the one
+                that ignored the filter. It now shows exactly what the filter
+                selected, and says so when that is nothing, in the same words the
+                list view directly below already uses — but only when there was
+                something to exclude. On a genuinely empty diary the filter is
+                not the reason, and the «لا توجد مواعيد مسجّلة» card at the top
+                of the page is already saying the true one. */}
+            {events.length>0&&filtered.length===0&&(
+              <div className={`${card} p-8 text-center`}>
+                <CalendarCheck size={32} weight="duotone" className={`mx-auto mb-3 ${isDark?"text-zinc-700":"text-slate-300"}`}/>
+                <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>لا توجد مواعيد مطابقة للفلتر المختار</p>
+              </div>
+            )}
+            <CalendarView events={filtered} isDark={isDark}/>
           </motion.div>
         ):(
           <motion.div key="list" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-6">

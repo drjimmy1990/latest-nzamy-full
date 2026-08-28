@@ -130,6 +130,42 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
   const steps: BookingStep[] = ["type", "mode", "datetime", "confirm"];
   const stepIdx = steps.indexOf(step);
 
+  /**
+   * Why the footer button is gated.
+   *
+   * Nothing in this form was required: «التالي» only ever advanced, and the
+   * payload then filled in whatever the lawyer had skipped —
+   * `title: consultLabel || "استشارة قانونية"`, `name: clientName || "عميل"`
+   * and, worst of the three, `mode: mode ? … : "video"`. A booking made
+   * without touching step 2 was persisted as a video call and read back as one:
+   * «فيديو» on the card, on the «الاستشارة القادمة» panel and in the
+   * توزيع-حسب-الوسيلة counts. That is an invented fact about an appointment
+   * with a real client, not a blank.
+   *
+   * Only the three fields that were being substituted are required. The date
+   * and the time deliberately are NOT: they go through as "" and every read
+   * surface already renders that honestly as «بانتظار التأكيد». `duration`
+   * likewise — 60 is preselected in front of the lawyer and repeated on the
+   * confirm summary, so it is a disclosed default, not a substitution.
+   *
+   * This gate is client-side; the guard in `handleConfirm` is what actually
+   * keeps a substituted value out of the row.
+   */
+  const missingLabel = !consultType
+    ? "اختر نوع الاستشارة للمتابعة."
+    : !clientName.trim()
+      ? "اكتب اسم العميل للمتابعة."
+      : null;
+  const blockedReason =
+    step === "type" ? missingLabel
+      : step === "mode" ? (!mode ? "اختر طريقة الاستشارة للمتابعة." : null)
+        // Unreachable while the two gates above hold — kept so the confirm
+        // button can never be the one that lets an incomplete booking through.
+        : step === "confirm" ? (!consultType || !clientName.trim() || !mode
+          ? "ارجع وأكمل نوع الاستشارة واسم العميل وطريقة الاستشارة."
+          : null)
+          : null;
+
   // L10: persist the consultation as a service_request on confirm.
   //
   // Two things were wrong here and both are fixed by going straight to the API.
@@ -162,22 +198,30 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
     setError(null);
     setSubmitting(true);
     try {
-      const consultLabel = CONSULT_TYPES.find((t) => t.id === consultType)?.label ?? consultType;
+      const consultLabel = CONSULT_TYPES.find((t) => t.id === consultType)?.label;
+      // The footer button is disabled without these three, but the gate is
+      // client-side — this is what keeps a substituted value out of the row.
+      // Refusing is the only honest option: a missing type/name/mode has no
+      // correct fill-in, and the three defaults this used to apply
+      // («استشارة قانونية», «عميل», "video") were each read back as fact.
+      if (!consultLabel || !clientName.trim() || !mode) {
+        throw new Error("أكمل نوع الاستشارة واسم العميل وطريقة الاستشارة قبل التأكيد.");
+      }
       const payload = {
         id: createWorkflowId(),
         type: "consultation",
-        title: consultLabel || "استشارة قانونية",
+        title: consultLabel,
         description: notes || "",
         receiver: "lawyer",
         status: "pending_assignment",
-        requester: { name: clientName || "عميل", role: "individual", tier: "free" },
+        requester: { name: clientName.trim(), role: "individual", tier: "free" },
         payment: { amount: 0, status: "not_required" },
         sourcePath: "",
         assignedTo: lawyerUserId ?? null,
         metadata: {
           day: date,
           time,
-          mode: mode ? consultModeToWorkflowMode(mode) : "video",
+          mode: consultModeToWorkflowMode(mode),
           duration,
         },
       };
@@ -353,34 +397,46 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
                     </div>
                   ))}
                 </div>
-                <div className={`flex items-start gap-2 p-3 rounded-xl ${isDark ? "bg-[#C8A762]/5 border border-[#C8A762]/20" : "bg-amber-50 border border-amber-200"}`}>
-                  <Sparkle size={12} weight="fill" className="text-[#C8A762] flex-shrink-0 mt-0.5" />
-                  <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-amber-800"}`}>
-                    بعد انتهاء الجلسة يمكنك توليد ملخص AI وإرساله للعميل تلقائياً
-                  </p>
-                </div>
+                {/* A gold «بعد انتهاء الجلسة يمكنك توليد ملخص AI وإرساله
+                    للعميل تلقائياً» tip sat here. Neither half exists: there is
+                    no consultation-summary generator (the card's «ملخص AI
+                    للاستشارة» panel was removed in Phase 1 for hanging off an
+                    `aiSummary` no code path sets — see ConsultCard), and there
+                    is no lawyer→client message channel at all
+                    (clients/[id]/page.tsx:436-439). Removed rather than
+                    softened: it was the last thing the lawyer read before
+                    confirming a booking. */}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
         {/* Footer */}
-        <div className={`flex items-center gap-3 px-5 py-4 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-          {stepIdx > 0 && (
-            <button onClick={() => setStep(steps[stepIdx - 1])}
-              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-[12px] font-semibold ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
-              <ArrowLeft size={13} /> السابق
-            </button>
+        <div className={`px-5 py-4 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+          {/* The disabled button says why it is disabled. Silently refusing to
+              advance would read as a broken button. */}
+          {blockedReason && (
+            <p className={`text-[11px] font-semibold mb-2.5 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+              {blockedReason}
+            </p>
           )}
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-            disabled={submitting}
-            onClick={() => {
-              if (stepIdx < steps.length - 1) setStep(steps[stepIdx + 1]);
-              else handleConfirm();
-            }}
-            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[13px] font-bold text-[#C8A762] disabled:opacity-60">
-            {step === "confirm" ? <><CheckCircle size={15} weight="fill" /> {submitting ? "جارٍ التأكيد..." : "تأكيد الجدولة"}</> : <>التالي <ArrowRight size={13} /></>}
-          </motion.button>
+          <div className="flex items-center gap-3">
+            {stepIdx > 0 && (
+              <button onClick={() => setStep(steps[stepIdx - 1])}
+                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-[12px] font-semibold ${isDark ? "border-white/[0.06] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
+                <ArrowLeft size={13} /> السابق
+              </button>
+            )}
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+              disabled={submitting || blockedReason !== null}
+              onClick={() => {
+                if (stepIdx < steps.length - 1) setStep(steps[stepIdx + 1]);
+                else handleConfirm();
+              }}
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[13px] font-bold text-[#C8A762] disabled:opacity-60 disabled:cursor-not-allowed">
+              {step === "confirm" ? <><CheckCircle size={15} weight="fill" /> {submitting ? "جارٍ التأكيد..." : "تأكيد الجدولة"}</> : <>التالي <ArrowRight size={13} /></>}
+            </motion.button>
+          </div>
         </div>
 
         {/* Error banner */}
@@ -458,7 +514,14 @@ function ConsultCard({ c, isDark, card }: { c: Consultation; isDark: boolean; ca
                 returns nothing. There is no meeting infrastructure in this
                 product, so the buttons are removed rather than wired to a
                 placeholder. */}
-            {(c.status === "completed" || c.notes) && (
+            {/* Gated on the notes themselves, not on the status. The panel
+                below renders on `expanded && c.notes`, so a completed
+                consultation with an empty description — the booking modal
+                writes `description: notes || ""` — gave the lawyer a caret
+                that rotated and revealed nothing. Trimmed, and the panel below
+                is gated on the same expression: the two drifting apart is what
+                made this a defect in the first place. */}
+            {Boolean(c.notes?.trim()) && (
               <button onClick={() => setExpanded(!expanded)}
                 className={`w-7 h-7 rounded-lg flex items-center justify-center border ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-200 text-slate-400"}`}>
                 <CaretDown size={12} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
@@ -473,7 +536,7 @@ function ConsultCard({ c, isDark, card }: { c: Consultation; isDark: boolean; ca
             which no code path ever set, so it was unreachable — and there is no
             consultation-summary generator behind it to reach. Removed. */}
         <AnimatePresence>
-          {expanded && c.notes && (
+          {expanded && c.notes?.trim() && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden">
               <div className={`px-4 pb-4 pt-0 space-y-3 border-t ${isDark ? "border-white/[0.04]" : "border-slate-50"}`}>
@@ -758,11 +821,15 @@ export default function ConsultationsPage() {
         ))}
       </div>
 
-      {/* AI tip */}
+      {/* AI tip. The promise («يمكن للمستشار AI توليد ملخص كامل للجلسة
+          وإرساله للعميل مباشرةً بعد الانتهاء») was false twice over — no
+          summary generator reads a consultation, and no channel sends anything
+          to a client — so it is replaced by what the link actually leads to.
+          The link itself is real navigation to a real tool and is kept. */}
       <div className={`p-4 rounded-2xl border flex gap-3 items-center ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
         <Sparkle size={15} weight="fill" className="text-[#C8A762] flex-shrink-0" />
-        <p className={`text-[12px] flex-1 ${isDark ? "text-zinc-400" : "text-amber-700"}`}>
-          يمكن للمستشار AI توليد ملخص كامل للجلسة وإرساله للعميل مباشرةً بعد الانتهاء.
+        <p className={`text-[12px] flex-1 leading-relaxed ${isDark ? "text-zinc-400" : "text-amber-700"}`}>
+          المستشار AI أداة منفصلة لصياغة رأي قانوني. لا يوجد في المنصة توليد تلقائي لملخص الجلسة، ولا إرسال مباشر للعميل.
         </p>
         <Link href="/ai/legal-opinion" className="flex-shrink-0 text-[12px] font-bold text-[#C8A762] hover:underline flex items-center gap-1">
           المستشار AI <ArrowRight size={12} />

@@ -525,8 +525,17 @@ export default function ActivityLogPage() {
             <Clock size={26} className="text-[#C8A762]" weight="duotone"/>
             سجل النشاط الموحد
           </h1>
+          {/* «استشارات AI» was removed from this line on 2026-08-28, and «كافة»
+              with it. Nothing in this feed is an AI usage record: every row is a
+              `request_events` row on a service_request, and describeRequestEvent
+              (src/lib/events.ts) has no AI badge at all — which is the same
+              reason the «استخدامات AI» stat card was replaced rather than
+              counted (see the note above LIVE_STATS). «كافة» went because the
+              feed is scoped to the requests this user participates in, not to
+              everything they do on the platform. The four that remain map to
+              badges the route really emits: hearing / task / contract / client. */}
           <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>
-            تتبع كافة أنشطتك — جلسات، مهام، استشارات AI، عقود، وموكلين
+            تتبّع حركة طلباتك — جلسات، مهام، عقود، وموكلين
           </p>
         </div>
         {/* A «تصدير PDF» button stood here with no onClick and no handler
@@ -579,6 +588,19 @@ export default function ActivityLogPage() {
           );
         })}
       </div>
+
+      {/* The cards read «—» in two different situations and only one of them is
+          temporary: `stats` is null before the first answer arrives, and null
+          again when the route could not count (it now returns `stats: null`
+          rather than flooring a failed head-count to «٠» — see its
+          `countsFailed` note). Once the read has settled, a null is a failure,
+          and «—» on its own does not say so. Not shown in demo mode, which
+          never calls the route at all. */}
+      {isSupabaseMode && feedState!=="loading" && stats===null && (
+        <div className={`rounded-xl px-3 py-2 text-[11px] leading-relaxed border ${isDark?"border-amber-500/20 bg-amber-900/10 text-amber-400":"border-amber-200 bg-amber-50 text-amber-700"}`}>
+          تعذّر احتساب أرقام البطاقات أعلاه. علامة «—» تعني أن العدد غير معروف الآن، لا أنه صفر.
+        </div>
+      )}
 
       {/* Filters */}
       <div className={`${card} p-4 space-y-3`}>
