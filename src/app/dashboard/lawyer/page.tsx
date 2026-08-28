@@ -322,11 +322,24 @@ export default function LawyerDashboardPage() {
   //      src/app/lawyers/layout.tsx), so the copied link would land the
   //      recipient on the firm's intake page instead of this lawyer.
   //
-  // ⚠️ A third defect is not — and cannot be — gated from here: the profile
+  // ⚠️ A third condition is not — and cannot be — gated from here, and it is
+  // the one that would bite first. This paragraph used to read: «the profile
   // page itself never reads its route segment; it renders a module-level mock,
-  // so every id shows the same fabricated lawyer. Whoever flips
-  // BETA_MONOPOLY_MODE to false must fix src/app/lawyers/[slug]/page.tsx first,
-  // or this button starts handing out a link to somebody else's name.
+  // so every id shows the same fabricated lawyer». That was true when it was
+  // written and is FALSE NOW — src/app/lawyers/[slug]/page.tsx was rebuilt: it
+  // reads `params.slug`, treats it as the profiles.id it actually is, fetches
+  // the real advocate, and has its own loading / not-found / error states. The
+  // fabricated lawyer is gone. Do not re-add that warning.
+  //
+  // What stands in its place is a DATA condition, not a code one. That page is
+  // served by /api/v1/lawyers/[id], which requires BOTH
+  // `lawyer_profiles.verification_status = 'verified'` AND
+  // `marketplace_visible = true`. In production every lawyer row is still
+  // «pending» with marketplace_visible false, so that route 404s for every one
+  // of them today. Flipping BETA_MONOPOLY_MODE on its own would therefore turn
+  // this button into a link to a «not found» page — the lawyer's own profile,
+  // publicly missing, handed to their client. Verification has to land before
+  // that flip, or with it.
   //
   // The gate is the compile-time const, not a runtime flag: the admin features
   // screen lists BETA_MONOPOLY_MODE but holds it in a local array with no
@@ -828,22 +841,53 @@ export default function LawyerDashboardPage() {
           </span>
           <div className={`h-4 w-px mx-1 shrink-0 ${ isDark ? "bg-white/10" : "bg-slate-200"}`} />
 
+          {/* ── «Q / C / D» keyboard hints — REMOVED ──────────────────────────
+              Deleted here: a `shortcut` field on three of these six items and
+              the two <kbd> chips that rendered it, so «قضية جديدة» wore a Q,
+              «استشارة جديدة» a C and «صيغ مستند» a D.
+
+              Nothing implemented any of them. There is no keydown listener on
+              this page, in its layout, or anywhere else in src/ that tests
+              those keys — not by `e.key`, and not by the layout-independent
+              `e.code` either. The only window-level listeners in the tree are
+              Escape (modals) and Ctrl+K (GlobalSearch). A lawyer who pressed Q
+              got nothing; the chip was the whole feature.
+
+              Deliberately NOT implemented instead. `e.key` is layout-dependent
+              — the physical Q on an Arabic keyboard reports «ض», and that is
+              the layout these lawyers type in — so an honest handler would have
+              to bind `e.code`, and a bare unmodified letter bound at window
+              level can fire while «قضية جديدة» is half filled in and navigate
+              the form out from under its author. A decorative hint is not worth
+              a global key handler over an open modal. ─────────────────────── */}
           {[
-            { label: "قضية جديدة",      icon: Plus,          action: () => setShowAddCase(true),  shortcut: "Q",  accent: false },
-            // The `?book=1` this href used to carry is gone. Nothing read it:
-            // /dashboard/lawyer/consultations calls neither `useSearchParams`
-            // nor a `searchParams` prop, so the modal it was meant to open
-            // stayed shut and the lawyer landed on the plain list holding a URL
-            // that claimed otherwise. The list's own «جدولة استشارة» button is
-            // the booking control, so the destination is right — only the
-            // promise of arriving with the form already open was false.
-            // Honouring the param is a three-line change in that page, and that
-            // file belongs to another group; reported as a followUp.
-            { label: "استشارة جديدة",    icon: CalendarCheck, href: "/dashboard/lawyer/consultations", shortcut: "C",  accent: false },
-            { label: "صيغ مستند",       icon: PencilSimple,  href: "/ai/draft",   shortcut: "D",  accent: true  },
-            { label: "جدول الجلسات",     icon: Gavel,         href: "/dashboard/lawyer/hearings", shortcut: "",   accent: false },
-            { label: "مستنداتي",           icon: Folder,        href: "/dashboard/lawyer/documents", shortcut: "",  accent: false },
-            { label: "تتبع الوقت",        icon: Timer,         href: "/dashboard/lawyer/tasks",    shortcut: "",   accent: false },
+            { label: "قضية جديدة",      icon: Plus,          action: () => setShowAddCase(true),  accent: false },
+            // `?book=1` opens the booking form on arrival — and it is now read.
+            // /dashboard/lawyer/consultations imports `useSearchParams`, derives
+            // `bookParam` from it and seeds `useState(bookParam === "1")`, so
+            // <BookingModal> is mounted on that page's FIRST render instead of
+            // waiting for a second click on «جدولة استشارة». The literal is
+            // load-bearing: the reader tests `=== "1"`, so `?book=true` or a
+            // bare `?book` would arrive inert.
+            //
+            // The history matters, because this link has been wrong in both
+            // directions already. The param was originally here while that page
+            // read nothing at all, i.e. a URL promising an open form over a
+            // plain list; it was removed for that reason, and the reader was
+            // built afterwards — which left working machinery no one could
+            // reach, since nothing in the tree emitted the param. Both halves
+            // exist now. Before deleting this again, grep the destination for
+            // `useSearchParams`: it is the reader that decides whether this is
+            // a promise or a feature.
+            //
+            // Seeded there as an INITIAL state rather than from an effect, so
+            // closing the form is final even while the URL still says book=1 —
+            // the modal cannot re-open itself behind the lawyer.
+            { label: "استشارة جديدة",    icon: CalendarCheck, href: "/dashboard/lawyer/consultations?book=1", accent: false },
+            { label: "صيغ مستند",       icon: PencilSimple,  href: "/ai/draft",   accent: true  },
+            { label: "جدول الجلسات",     icon: Gavel,         href: "/dashboard/lawyer/hearings", accent: false },
+            { label: "مستنداتي",           icon: Folder,        href: "/dashboard/lawyer/documents", accent: false },
+            { label: "تتبع الوقت",        icon: Timer,         href: "/dashboard/lawyer/tasks",    accent: false },
           ].map((item) => {
             const Icon = item.icon;
             const base = `flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all select-none ${
@@ -858,11 +902,6 @@ export default function LawyerDashboardPage() {
                 <Link key={item.label} href={item.href} className={base}>
                   <Icon size={14} weight="duotone" />
                   {item.label}
-                  {item.shortcut && (
-                    <kbd className={`ms-1 hidden sm:inline text-[9px] px-1.5 py-0.5 rounded font-mono ${
-                      item.accent ? "bg-white/10 text-[#C8A762]/70" : isDark ? "bg-white/[0.07] text-zinc-600" : "bg-slate-200 text-slate-400"
-                    }`}>{item.shortcut}</kbd>
-                  )}
                 </Link>
               );
             }
@@ -870,11 +909,6 @@ export default function LawyerDashboardPage() {
               <button key={item.label} onClick={item.action} className={base}>
                 <Icon size={14} weight="duotone" />
                 {item.label}
-                {item.shortcut && (
-                  <kbd className={`ms-1 hidden sm:inline text-[9px] px-1.5 py-0.5 rounded font-mono ${
-                    isDark ? "bg-white/[0.07] text-zinc-600" : "bg-slate-200 text-slate-400"
-                  }`}>{item.shortcut}</kbd>
-                )}
               </button>
             );
           })}
@@ -930,7 +964,23 @@ export default function LawyerDashboardPage() {
         })}
       </div>
 
-      {/* ── Secondment: no real data yet — entry point is the sidebar link to /dashboard/lawyer/secondment (gated there) ── */}
+      {/* ── Secondment: no card here, and no entry point either ───────────────
+          This line used to say the entry point was «the sidebar link to
+          /dashboard/lawyer/secondment (gated there)». Both halves were false,
+          and the next reviewer would have taken them on trust:
+
+            • There is no such sidebar link. Searched today, this comment was
+              the ONLY occurrence of that path anywhere in src/ — nothing links
+              it, nothing lists it, so the route is unreachable by navigation.
+            • It is not «gated». src/app/dashboard/lawyer/secondment/page.tsx
+              renders DashboardComingSoon — «الانتدابات القانونية … غير متاحة
+              حالياً» — which is a placeholder, not a permission check.
+
+          The sidebar's secondment entries belong to a different subtree:
+          /dashboard/firm/secondment/new, which entityRouteAccess.ts opens to
+          managing_partner and partner only. So a lawyer reading THIS dashboard
+          has no secondment surface at all, and there is no data behind one
+          either — which is why nothing is rendered here. ──────────────────── */}
 
       {/* ── Second Grid: Tasks + Hearings + Deadlines ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -1136,11 +1186,18 @@ export default function LawyerDashboardPage() {
                     transition={{ delay: i * 0.04 }}
                     className="flex items-start gap-3 py-2.5 relative"
                   >
+                    {/* No «ai» branch on either of these two. Both used to test
+                        `item.type === "ai"` for gold AI styling, and `type`
+                        comes from badgeToActivityType(), which returns only
+                        success / warning / info — so the branch was unreachable
+                        on every row of every account. It was the last fragment
+                        of the «نشاط AI» tab removed above. Rendering is
+                        byte-for-byte what it already was. */}
                     <div className={`flex-shrink-0 w-[27px] h-[27px] rounded-lg flex items-center justify-center z-10 ${config.bg} border ${config.border}`}>
-                      <ActivityIcon size={12} weight={item.type === "ai" ? "duotone" : "fill"} className={config.color} />
+                      <ActivityIcon size={12} weight="fill" className={config.color} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-[12px] font-bold leading-snug ${item.type === "ai" ? (isDark ? "text-[#C8A762]" : "text-slate-800") : (isDark ? "text-zinc-300" : "text-slate-700")}`}>
+                      <p className={`text-[12px] font-bold leading-snug ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
                         {item.action}
                       </p>
                       <div className={`flex items-center gap-2 mt-1 text-[10px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>

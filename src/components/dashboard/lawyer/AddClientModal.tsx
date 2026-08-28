@@ -22,19 +22,65 @@ import { apiMutate, isSupabaseMode } from "@/lib/services/api";
  * out of a form step nobody filled in.
  *
  * `undefined` is dropped by JSON.stringify, so an untouched field never reaches
- * the request body and the row simply carries no fee agreement. A typed `0` is
- * still sent as 0 — that is a thing the lawyer did, and it is kept on record
- * even though (see the API's readClientClassification) no screen can currently
- * tell it apart from this blank and so shows neither.
+ * the request body and the row simply carries no fee agreement. A typed `0`
+ * TOTAL is still sent as 0 — that is a thing the lawyer did, and it is kept on
+ * record even though (see the API's readClientClassification) no screen can
+ * tell it apart from this blank and so shows neither. That is a deliberate
+ * call, not an oversight, and the hint under the fee fields says so on screen.
  *
- * A negative or non-numeric entry is dropped for the same reason the API's read
- * guard rejects it: it is not a fee.
+ * A negative or non-numeric entry returns undefined for the same reason the
+ * API's read guard rejects it: it is not a fee. Nothing relies on that silent
+ * drop any more — validateFees below stops such an entry at the button, so the
+ * lawyer is told instead of having it quietly removed. This stays as the last
+ * line of defence, not as the behaviour anyone sees.
  */
 function parseFee(raw: string): number | undefined {
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
   const n = Number(trimmed);
   return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+/**
+ * The fee step's rules, in Arabic, stated once so the button and the message
+ * can never disagree. Returns the sentence to show the lawyer, or null when
+ * there is nothing to say.
+ *
+ * These exist because a figure typed here could previously be accepted, stored,
+ * and then shown nowhere, with no word to the lawyer about it:
+ *
+ *   • An advance with no total. `parseFee` sent `paidFees` on its own, the API
+ *     stored it in metadata, and the read guard then reported both fee keys as
+ *     null because a fee agreement is a POSITIVE total. The amount was in the
+ *     database and on no screen. Suppressing the DISPLAY is right; the missing
+ *     half was telling the lawyer.
+ *   • A negative or non-numeric figure. `parseFee` dropped it and the form
+ *     submitted cheerfully, as though the number had been taken.
+ *
+ * We BLOCK rather than accept-and-warn. The choice is between refusing a figure
+ * out loud and keeping one that no screen will ever show; a warning the lawyer
+ * can click past would still leave the second. Blocking is not a trap: every
+ * message names the way out, and the fee step is optional — both fields empty
+ * always passes.
+ *
+ * A typed 0 advance is treated like any other: it needs a real total too, since
+ * without one it is just as invisible as 5,000 would be.
+ */
+function validateFees(total: string, paid: string): string | null {
+  const t = total.trim();
+  const p = paid.trim();
+  const tNum = parseFee(t);
+
+  if (t && tNum === undefined) {
+    return "أدخل رقمًا غير سالب لإجمالي الأتعاب، أو اترك الحقل فارغًا.";
+  }
+  if (p && parseFee(p) === undefined) {
+    return "أدخل رقمًا غير سالب للمبلغ المقدّم، أو اترك الحقل فارغًا.";
+  }
+  if (p && !(tNum !== undefined && tNum > 0)) {
+    return "لا يُحفظ المبلغ المقدّم دون إجمالي أتعاب أكبر من صفر. أدخل الإجمالي، أو امسح المبلغ المقدّم.";
+  }
+  return null;
 }
 
 export default function AddClientModal({ isDark, onClose, onAdd }: {
@@ -58,9 +104,26 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
     const s = new Set(prev); s.has(f) ? s.delete(f) : s.add(f); return s;
   });
 
-  const canNext = step === 0 ? name.trim().length > 0 && phone.trim().length > 0 : true;
+  // Recomputed every keystroke, so the message under the fee fields and the
+  // «التالي» button are always answering the same question.
+  const feeIssue = validateFees(total, paid);
+
+  const canNext =
+    step === 0 ? name.trim().length > 0 && phone.trim().length > 0
+    : step === 1 ? feeIssue === null
+    : true;
 
   const handleSubmit = async () => {
+    // Backstop, not the path the lawyer takes: step 2 is only reachable through
+    // a clean step 1, so this cannot fire today. It guards the actual write, so
+    // it stays true if the step gating is ever changed. No setError — sending
+    // the lawyer back to step 1 shows the same sentence in place, and printing
+    // it twice in two boxes would read as two different problems.
+    if (feeIssue) {
+      setStep(1);
+      return;
+    }
+
     setError(null);
     setSubmitting(true);
 
@@ -120,6 +183,11 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
         // means zero paid. Kept in step with the branch above on purpose —
         // two branches disagreeing about what a blank fee means would leave a
         // future reader to guess which of them is the honest one.
+        //
+        // The API also separates a blank advance from an unreadable one, which
+        // it answers with null. There is no third case to mirror here: nothing
+        // reaches this line without passing validateFees, so `paidFees` is
+        // either absent or a real non-negative number.
         totalFees: totalFees !== undefined && totalFees > 0 ? totalFees : null,
         paidFees: totalFees !== undefined && totalFees > 0 ? (paidFees ?? 0) : null,
         activeRequests: 0,
@@ -228,10 +296,22 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
                 </div>
                 {/* A blank fee step no longer records a 0, so say what a blank
                     now means — and say plainly that a total of zero shows
-                    nothing either, rather than letting it look like it saved. */}
+                    nothing either, rather than letting it look like it saved.
+                    The last clause is the rule validateFees enforces: it is
+                    stated before the lawyer types, not only after. */}
                 <p className={`text-[10px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                  اترك الحقلين فارغين إن لم يُتّفق على أتعاب بعد. لا تظهر بطاقة الأتعاب في ملف الموكّل إلا إذا كان الإجمالي أكبر من صفر.
+                  اترك الحقلين فارغين إن لم يُتّفق على أتعاب بعد. لا تظهر بطاقة الأتعاب في ملف الموكّل إلا إذا كان الإجمالي أكبر من صفر، ولا يُحفظ المبلغ المقدّم إلا مع إجمالي أكبر من صفر.
                 </p>
+                {/* Why «التالي» is disabled. Without this the lawyer sees a dead
+                    button and no reason for it — which is the silent discard in
+                    a new costume. dark:text-* on gray-100/200 would be invisible
+                    (globals.css turns those into dark surfaces), hence red-400. */}
+                {feeIssue && (
+                  <div className={`p-2.5 rounded-xl flex items-start gap-2 text-[11px] font-semibold leading-relaxed ${isDark ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-red-50 border border-red-200 text-red-700"}`}>
+                    <Warning size={13} weight="fill" className="flex-shrink-0 mt-0.5" />
+                    <span>{feeIssue}</span>
+                  </div>
+                )}
                 <div>
                   <label className={`text-[10px] font-bold uppercase tracking-wider mb-2 block ${isDark ? "text-zinc-500" : "text-slate-400"}`}>التقييم</label>
                   <div className="flex gap-1">

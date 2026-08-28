@@ -345,17 +345,53 @@ export default function LawyerProfilePage() {
               Two different facts, two different sentences. The banner used to
               assert a READ FAILURE for both, which was false for the lawyer who
               simply has no `lawyer_profiles` row yet — a state the account-type
-              route documents as reachable. Neither branch offers «تعديل» as the
-              way out: PATCH /api/v1/profile updates, it does not insert, so a
-              missing row cannot be created from the editor and sending the
-              lawyer there would be a promise this page cannot keep.
+              route documents as reachable.
+
+              «مرتبط بحسابك» rather than "does not exist", deliberately: a row
+              excluded by RLS returns zero rows without raising, so it reaches
+              the client as "no row" with `roleProfileReadFailed` false — the
+              route says so in its own GET docstring. This page can only speak
+              for what this account can see.
+
+              ABOUT THE «تعديل» LINK IN THE HEADER: it is not gated on any of
+              this, and this comment used to claim the opposite — that neither
+              branch offers it as the way out, because sending the lawyer there
+              would be a promise the page could not keep. The link was never
+              gated (it renders unconditionally about ten lines above), so that
+              described a screen that did not exist. The underlying fact still
+              holds — PATCH /api/v1/profile updates and does not insert
+              (src/app/api/v1/profile/route.ts:368-378), so the row cannot be
+              created from the editor either — but the editor now names these
+              same two states and disables Save in both, so the link leads to a
+              page that REPEATS this sentence rather than to a blank form that
+              contradicts it. Gating it would also take the retry button away
+              from the lawyer whose read merely failed. Hence: narrow the
+              comment, keep the link.
+
+              Why creating the row is still deferred, and the single thing to
+              verify against production before anyone builds it, is recorded at
+              src/app/dashboard/lawyer/profile/edit/page.tsx in the branch that
+              sets the "no-row" banner. Read it before assuming an insert here
+              would work.
             */
             <div className={`rounded-xl border p-3 mb-4 flex gap-2.5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
               <Warning size={15} weight="fill" className="flex-shrink-0 mt-0.5 text-amber-500" />
               <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-amber-700/80"}`}>
                 {profileData.roleProfileReadFailed
                   ? "تعذّر قراءة بياناتك المهنية (التخصصات، رقم الترخيص، حالة التوثيق، إعداد الظهور في الدليل). ما يظهر أعلاه هو بيانات حسابك فقط. لم نعرض قيماً بديلة عن الحقول التي لم تُقرأ."
-                  : "لا يوجد سجل مهني مرتبط بحسابك حتى الآن (التخصصات، رقم الترخيص، حالة التوثيق، إعداد الظهور في الدليل). ما يظهر أعلاه هو بيانات حسابك فقط، ولا يمكن إنشاء السجل المهني من هذه الصفحة."}
+                  /*
+                    «من لوحة التحكم», not «من هذه الصفحة». The editor one click
+                    away cannot create the row either, so scoping this to "this
+                    page" would let a lawyer bouncing between the two infer that
+                    some third page can. Both screens now state the same scope
+                    and point at the same next step — support, which in this
+                    project is the owner, the only person who can add the row.
+                    «التواصل مع الدعم» is the phrase already shipped for a state
+                    only the operator can undo (account-type/route.ts:144 uses
+                    it for a missing `profiles` row), and /contact exists as a
+                    route — it is not a channel invented for this sentence.
+                  */
+                  : "لا يوجد سجل مهني مرتبط بحسابك حتى الآن (التخصصات، رقم الترخيص، حالة التوثيق، إعداد الظهور في الدليل). ما يظهر أعلاه هو بيانات حسابك فقط. لا يمكن إنشاء السجل المهني من لوحة التحكم — يرجى التواصل مع الدعم لإنشائه."}
               </p>
             </div>
           ) : (

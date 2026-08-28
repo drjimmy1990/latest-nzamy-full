@@ -24,6 +24,26 @@ const KNOWN_FLAGS = new Set([
 ]);
 
 /**
+ * The one definition of a money figure this route accepts: a finite number that
+ * is not negative.
+ *
+ * Hoisted so the write guard in POST and the read guard below are literally the
+ * same rule. They were two different rules until this pass, and the gap was
+ * writable: POST stored anything satisfying `typeof v === "number"`, so a -100
+ * went into metadata that this reader then refused — a figure sitting in the
+ * database and on no screen, which is the defect this whole pass exists to
+ * close. Whatever passes here is storable AND readable; nothing else is either.
+ */
+function isMoneyFigure(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0;
+}
+
+/** The rating scale the card renders: whole stars, 1 to 5. Same contract as above. */
+function isRatingFigure(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 5;
+}
+
+/**
  * Read back the classification a lawyer typed into AddClientModal.
  *
  * These five keys are written by the POST below into service_requests.metadata
@@ -37,14 +57,7 @@ const KNOWN_FLAGS = new Set([
  * what this client owes» are different statements, and only one of them is true.
  */
 function readClientClassification(meta: Record<string, unknown>) {
-  const rawRating = meta.rating;
-  const rating =
-    typeof rawRating === "number" && Number.isInteger(rawRating) && rawRating >= 1 && rawRating <= 5
-      ? rawRating
-      : null;
-
-  const money = (v: unknown): number | null =>
-    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+  const rating = isRatingFigure(meta.rating) ? meta.rating : null;
 
   /**
    * A fee agreement is a POSITIVE total. A stored 0 is not one.
@@ -70,14 +83,43 @@ function readClientClassification(meta: Record<string, unknown>) {
    * record" too. Representing that honestly needs a per-client fee record with
    * an explicit zero-agreement flag, which does not exist.
    *
-   * `paidFees` falls back to 0 UNDER an agreement only. With a total of 5,000
-   * on record and no advance typed, "nothing has been paid" is the fact, and
-   * the row says so; nulling it would drop the entire fee panel (every reader
-   * requires both keys) for a client whose fees are perfectly well known.
+   * `paidFees` falls back to 0 UNDER an agreement and ONLY when no advance is
+   * on record at all. With a total of 5,000 and no advance typed, "nothing has
+   * been paid" is the fact, and the row says so; nulling it would drop the
+   * entire fee panel (every reader requires both keys) for a client whose fees
+   * are perfectly well known.
+   *
+   * An advance that IS on record but is unreadable — a legacy -100, which the
+   * old modal could write, or any non-number — is a different statement and
+   * gets a different answer: null, not 0. Those two were collapsed until now
+   * (`rawPaid ?? 0`), so such a row rendered «مسدّد ٠ ﷼ / متبقٍ ٥٬٠٠٠ ﷼»: a
+   * claim that this client has paid nothing, assembled out of the one figure
+   * the guard had just refused to read. This function's own header promises the
+   * opposite — null means "not on record" — and a rejection is not a
+   * measurement of zero. A refusal that renders as a number is not a refusal.
+   *
+   * COST, stated plainly: such a row loses its whole fee panel, the real total
+   * included, because all three fee surfaces require both keys
+   * (clients/page.tsx:487, ClientDrawer.tsx:269, clients/[id]/page.tsx:329).
+   * `totalFees` is still returned truthfully for any reader wanting only the
+   * total. Showing a real total beside a blank advance needs a third state —
+   * "agreed, amount paid unknown" — that no screen has. Going forward the case
+   * cannot be created: POST now refuses to store what this guard would refuse
+   * to read, so only rows written before today can reach it.
    */
-  const rawTotal = money(meta.totalFees);
-  const rawPaid = money(meta.paidFees);
+  const rawTotal = isMoneyFigure(meta.totalFees) ? meta.totalFees : null;
   const agreed = rawTotal !== null && rawTotal > 0;
+
+  // undefined/null means the key was never written — POST omits it entirely
+  // when the lawyer typed nothing. Anything else present is a stored value, and
+  // if it is not a money figure then what was paid is unknown, not zero.
+  const storedPaid = meta.paidFees;
+  const paidOnRecord = storedPaid !== undefined && storedPaid !== null;
+  const paidFees =
+    !agreed ? null
+    : !paidOnRecord ? 0
+    : isMoneyFigure(storedPaid) ? storedPaid
+    : null;
 
   const rawFlags = meta.flags;
   const flags = Array.isArray(rawFlags)
@@ -93,7 +135,7 @@ function readClientClassification(meta: Record<string, unknown>) {
     flags,
     rating,
     totalFees: agreed ? rawTotal : null,
-    paidFees: agreed ? (rawPaid ?? 0) : null,
+    paidFees,
   };
 }
 
@@ -304,6 +346,11 @@ export async function GET() {
  * from the server's answer rather than from its own form state — which is how
  * the fee figures used to appear on the new card for one render and then vanish
  * on the next page load.
+ *
+ * The fee figures and the rating are validated against the very predicates the
+ * GET reads them back with, and a figure that fails one is answered with a 400
+ * in Arabic rather than dropped on the floor. Errors from this route are screen
+ * copy: apiMutate throws `body.error` and AddClientModal renders it.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -324,16 +371,56 @@ export async function POST(request: NextRequest) {
     };
 
     if (!name || !name.trim()) {
-      return NextResponse.json({ error: "name required" }, { status: 400 });
+      return NextResponse.json({ error: "اسم الموكّل مطلوب." }, { status: 400 });
+    }
+
+    /**
+     * Refuse the figures this route could not read back, instead of storing
+     * them and letting readClientClassification drop them on the way out.
+     *
+     * Rejecting rather than quietly dropping is the whole point: a number the
+     * caller sent that is silently discarded ends up in the database, on no
+     * screen, with nothing said about it — the exact defect this pass closes.
+     * A 400 says so. AddClientModal validates the same three rules at the point
+     * of entry so the lawyer hears it there first; this is the boundary guard
+     * for every other caller, since a signed-in lawyer can POST here directly.
+     *
+     * `flags` and `clientType` are deliberately NOT rejected: an unrecognised
+     * flag is filtered on read by design (see KNOWN_FLAGS above) as defence
+     * against strings from any source, and dropping one entry from a list is
+     * not the same as a figure vanishing whole.
+     *
+     * These messages reach the lawyer's screen verbatim — apiMutate throws
+     * `body.error`, and AddClientModal renders it in its red banner. Arabic.
+     */
+    const sent = (v: unknown) => v !== undefined && v !== null;
+    if (sent(totalFees) && !isMoneyFigure(totalFees)) {
+      return NextResponse.json({ error: "إجمالي الأتعاب يجب أن يكون رقمًا غير سالب." }, { status: 400 });
+    }
+    if (sent(paidFees) && !isMoneyFigure(paidFees)) {
+      return NextResponse.json({ error: "المبلغ المقدّم يجب أن يكون رقمًا غير سالب." }, { status: 400 });
+    }
+    // An advance is only readable under a positive total (see `agreed` above),
+    // so storing one without a total would put the lawyer's number beyond the
+    // reach of every screen.
+    if (sent(paidFees) && !(isMoneyFigure(totalFees) && totalFees > 0)) {
+      return NextResponse.json(
+        { error: "لا يمكن حفظ مبلغ مقدّم دون إجمالي أتعاب أكبر من صفر." },
+        { status: 400 },
+      );
+    }
+    if (sent(rating) && !isRatingFigure(rating)) {
+      return NextResponse.json({ error: "التقييم يجب أن يكون رقمًا صحيحًا من ١ إلى ٥." }, { status: 400 });
     }
 
     const id = crypto.randomUUID();
     const metadata: Record<string, unknown> = { client: true };
     if (type) metadata.clientType = type;
     if (Array.isArray(flags)) metadata.flags = flags;
-    if (typeof rating === "number") metadata.rating = rating;
-    if (typeof totalFees === "number") metadata.totalFees = totalFees;
-    if (typeof paidFees === "number") metadata.paidFees = paidFees;
+    // Guarded by the same predicates the reader uses, checked just above.
+    if (isRatingFigure(rating)) metadata.rating = rating;
+    if (isMoneyFigure(totalFees)) metadata.totalFees = totalFees;
+    if (isMoneyFigure(paidFees)) metadata.paidFees = paidFees;
 
     const { data, error } = await supabase
       .from("service_requests")
@@ -361,7 +448,12 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error || !data) {
-      return NextResponse.json({ error: error?.message || "Insert failed" }, { status: 500 });
+      // The message goes straight into AddClientModal's error banner, so it
+      // cannot be the raw Postgres string this used to forward: that put English
+      // — and the schema's internals — in front of the lawyer. Detail is logged
+      // where it is useful, the same split the GET above already makes.
+      console.error("[lawyer/clients POST] insert error:", error?.message, error?.details, error?.code);
+      return NextResponse.json({ error: "تعذّر حفظ الموكّل." }, { status: 500 });
     }
 
     const requester = (data.requester as Record<string, unknown> | null) ?? {};
@@ -378,13 +470,18 @@ export async function POST(request: NextRequest) {
       activeCount: ACTIVE_STATUSES.includes(data.status) ? 1 : 0,
       closedCount: CLOSED_STATUSES.includes(data.status) ? 1 : 0,
       lastActivity: data.created_at,
-      // Echo what was actually persisted, not what was sent: a value the
-      // validator rejects must not appear on the new card either.
+      // Echo what was actually persisted, not what was sent. Nothing the write
+      // guard refuses can reach this line any more — it is a 400 above — but a
+      // figure can still be stored and legitimately unreadable: a typed total
+      // of 0 is kept on record and is not a fee agreement, so it must not show
+      // on the new card for one render and vanish on the next page load.
       ...readClientClassification(savedMeta),
     };
     return NextResponse.json({ data: payload });
   } catch (err) {
     console.error("[lawyer/clients POST] Unexpected error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    // Also screen copy — it lands in the modal's banner like every other error
+    // from this route.
+    return NextResponse.json({ error: "تعذّر حفظ الموكّل." }, { status: 500 });
   }
 }

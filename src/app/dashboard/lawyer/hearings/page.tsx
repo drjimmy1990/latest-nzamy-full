@@ -71,11 +71,14 @@ interface CalEvent {
   // reader was the LINKED_TASKS lookup, which is gone — see the note there.
   client?: string; caseName?: string;
   // `date` is the row's own stored "YYYY-MM-DD" — an ABSOLUTE day, and the only
-  // field here that is. `dateSort` is an offset from the moment of the fetch, so
-  // it is one day wrong for anyone whose tab is open across midnight; the card's
-  // date line is formatted from `date` for that reason (formatEventDateAr).
-  // `dateSort` still drives bucketing, filtering and the grid, where being a day
-  // out only misplaces a row rather than misdating it on screen.
+  // one of the two that is actually stored. EVERYTHING the lawyer reads as a
+  // date is derived from it: the card's date line (formatEventDateAr), the
+  // calendar grid, the notice under the grid, and the Google Calendar link.
+  //
+  // `dateSort` is a whole-day offset from TODAY, kept because bucketing,
+  // filtering and the counters read naturally in it. It is no longer frozen at
+  // fetch: the page re-derives it from `date` whenever the local day rolls over
+  // (see `todayKey`), so «اليوم» still means today on a tab left open all night.
   location?: string; date: string; dateSort: number;
   time?: string; urgency: "critical"|"high"|"normal";
   notes?: string; done?: boolean; deadlineDaysLeft?: number;
@@ -88,13 +91,66 @@ interface CalEvent {
 const VALID_EVENT_TYPES: EventType[] = ["hearing","deadline","gov_review","notary","client_meet","court_collect","police","expert","contract","internal"];
 const VALID_URGENCIES: CalEvent["urgency"][] = ["critical","high","normal"];
 
-function daysFromToday(dateStr: string): number | null {
+// ─── Days, absolutely ─────────────────────────────────────────────────────────
+// Every date this page SHOWS is derived from an absolute local day — the row's
+// own stored "YYYY-MM-DD" — and never from an offset captured at fetch time.
+//
+// The offset was the bug. `getEventDate(dateSort)` used to live below: it read
+// `new Date()` at render time and added an offset computed when the diary was
+// fetched, so everything it produced was a day late from the moment the tab
+// crossed local midnight. `load` runs on mount, on `user.userId`, and on
+// «nzamy-workflow-updated»; there is no interval refetch, so nothing corrected
+// it. Reproduced in node before this fix: a fetch at 22:00 on 29 Sept with a
+// sitting on 30 Sept freezes dateSort = 1; after midnight `getEventDate(1)`
+// resolves to 1 October, so the calendar drew the dot on 1 أكتوبر and put a card
+// reading «٣٠ سبتمبر ٢٠٢٦» under a heading reading «١ أكتوبر» — and on the
+// September grid it printed «لا يقع أيّ من المواعيد … في سبتمبر ٢٠٢٦» over a
+// sitting that was happening THAT DAY, on the last day of the month, at the
+// hour the claim costs most.
+//
+// `eventDayDate` is the single parse. It is the expression `formatEventDateAr`
+// already used, so the card, the grid and the notice now read one day from one
+// source and cannot disagree BY CONSTRUCTION — not merely while a clock is
+// fresh.
+
+/** The row's own stored day as a local-midnight Date, or null if unparseable. */
+function eventDayDate(dateStr: string): Date | null {
   if (!dateStr) return null;
-  const parsed = new Date(dateStr + "T00:00:00");
-  if (isNaN(parsed.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((parsed.getTime() - today.getTime()) / 86400000);
+  const d = new Date(dateStr + "T00:00:00");
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** A local day as "YYYY-MM-DD" — the same shape the rows store. */
+function localDayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Whole local days from one stored day to another, or null if either is unreadable.
+ *
+ * Both ends are built at LOCAL midnight and the quotient is rounded, so a 23- or
+ * 25-hour DST day still counts as one day. The Kingdom keeps no DST; a lawyer
+ * reading the diary from abroad does.
+ */
+function daysBetweenDays(fromKey: string, toKey: string): number | null {
+  const from = eventDayDate(fromKey);
+  const to = eventDayDate(toKey);
+  if (!from || !to) return null;
+  return Math.round((to.getTime() - from.getTime()) / 86400000);
+}
+
+/**
+ * Whole days from today to a stored "YYYY-MM-DD", or null when it will not parse.
+ *
+ * Kept under this name, with exactly the arithmetic it always had
+ * (midnight-to-midnight, rounded), because `daysUntilDate` in
+ * /dashboard/lawyer/page.tsx documents itself as «same arithmetic as
+ * daysFromToday() in /dashboard/lawyer/hearings» — the two pages must go on
+ * agreeing about what «غداً» means, and a cross-file note naming a function that
+ * no longer exists is how the next reader stops believing the notes.
+ */
+function daysFromToday(dateStr: string): number | null {
+  return daysBetweenDays(localDayKey(new Date()), dateStr);
 }
 
 /**
@@ -122,6 +178,10 @@ function daysFromToday(dateStr: string): number | null {
 function workflowToHearing(request: WorkflowRequest): CalEvent | null {
   const meta = request.metadata ?? {};
   const dateStr = typeof meta.date === "string" ? meta.date : "";
+  // The gate — a row with no readable day is not a diary entry. The number is
+  // only correct AS OF THIS MOMENT; the page re-derives `dateSort` from `date`
+  // against the current local day, so nothing downstream depends on this one
+  // staying true overnight.
   const dateSort = daysFromToday(dateStr);
   if (dateSort === null) return null;
 
@@ -221,11 +281,12 @@ const MONTH_HORIZON_DAYS = 30;
 const AR_MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
 const AR_DAYS  = ["أحد","إثن","ثلا","أرب","خمي","جمع","سبت"];
 
-function getEventDate(dateSort: number): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + dateSort);
-  return d;
-}
+// `getEventDate(dateSort)` — «today + N days», re-read at render time — stood
+// here and is DELETED rather than repaired: it was the single source of the
+// day-drift described at `eventDayDate`, and a helper that turns an offset back
+// into a date is exactly the shape the next reader would reach for again. Its
+// two callers, `googleCalUrl` and the calendar's `eventsByDay` memo, read
+// `ev.date` now.
 
 /**
  * «١٥ سبتمبر ٢٠٢٦» from the row's own stored "YYYY-MM-DD".
@@ -236,26 +297,24 @@ function getEventDate(dateSort: number): Date {
  * for the reader. This is the shape the rest of the platform already uses for a
  * date in Arabic prose (`formatArabicDate`, src/lib/services/clientDashboardCards.ts).
  *
- * Formatted from `ev.date` and NOT from `getEventDate(ev.dateSort)`, which is
- * the obvious-looking choice and is wrong: `dateSort` is an OFFSET computed once
- * at fetch time, while `getEventDate` re-reads `new Date()` at render time. A
- * lawyer who leaves this tab open overnight — an ordinary thing to do — would
- * be shown every date one day early from midnight onward. `ev.date` is an
- * absolute day and cannot go stale.
+ * Formatted from `ev.date`, the absolute stored day. It was already the one
+ * date on this page that could not go stale; as of 2026-08-28 it is also what
+ * the calendar grid and the grid's notice count from, through the same
+ * `eventDayDate` parse — which is what makes it impossible for the grid to place
+ * a row on a day the card does not name. See the note at `eventDayDate`.
  *
- * Parsed exactly as `daysFromToday` parses it, so a string that reaches here has
- * already been proved parseable: `workflowToHearing` drops any row whose date
- * fails this. The raw string is returned rather than «Invalid Date» in the
- * branch that cannot be reached, because printing English on an Arabic screen is
+ * `workflowToHearing` drops any row whose date fails this same parse, so the
+ * raw-string branch is unreachable in practice. It returns the raw string rather
+ * than «Invalid Date» anyway, because printing English on an Arabic screen is
  * the worse of the two.
  *
  * Latin numerals stay in the calendar GRID — a seven-column day cell is chrome,
  * not prose.
  */
 function formatEventDateAr(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  const month = AR_MONTHS[d.getMonth()];
-  if (isNaN(d.getTime()) || !month) return dateStr;
+  const d = eventDayDate(dateStr);
+  const month = d ? AR_MONTHS[d.getMonth()] : undefined;
+  if (!d || !month) return dateStr;
   return `${toArabicDigits(d.getDate())} ${month} ${toArabicDigits(d.getFullYear())}`;
 }
 
@@ -281,8 +340,21 @@ const pad2 = (n:number) => String(n).padStart(2,"0");
 const gcalDay = (d:Date) => `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`;
 const gcalStamp = (d:Date) => `${gcalDay(d)}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`;
 
-function googleCalUrl(ev: CalEvent): string {
-  const start = getEventDate(Math.max(0, ev.dateSort));
+function googleCalUrl(ev: CalEvent): string | null {
+  // The event's own stored day, not «today + dateSort». The old form handed
+  // Google the WRONG DAY on any tab that had crossed midnight since the fetch —
+  // a sitting on 30 Sept, fetched the evening before, was offered to Google as
+  // 1 October. The `Math.max(0, …)` that wrapped it is gone with it, and it is
+  // worth being exact about why: that clamp never actually bound, because the
+  // callsite already gates on `ev.dateSort>=0`. It was dead reassurance, not
+  // protection. The day is right now because it is the row's own, not because
+  // anything clamped it.
+  //
+  // A day that will not parse yields NO link rather than a link to a guess;
+  // `workflowToHearing` has already proved this string parseable, so that branch
+  // is unreachable in practice.
+  const start = eventDayDate(ev.date);
+  if (!start) return null;
   // `dates` used to carry YYYYMMDD only, so the hour the lawyer typed was
   // dropped and every hearing reached Google as an ALL-DAY event — no reminder
   // at the hour of the sitting. `ev.time` was in hand the whole time; the card
@@ -574,8 +646,15 @@ function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
     const map: Record<number,CalEvent[]> = {};
     let count = 0;
     events.forEach(ev=>{
-      const d = getEventDate(ev.dateSort);
-      if(d.getMonth()===calMonth&&d.getFullYear()===calYear){
+      // `ev.date` — the row's own stored day, the SAME value formatEventDateAr
+      // prints on the card. This was `getEventDate(ev.dateSort)`, which re-read
+      // the clock at memo time and added an offset frozen at fetch: see the
+      // reproduction at `eventDayDate`. That is what let the notice below assert
+      // a September sitting was not in September, and it did it precisely when
+      // the lawyer touched a filter or a month arrow — the action the notice
+      // itself recommends.
+      const d = eventDayDate(ev.date);
+      if(d&&d.getMonth()===calMonth&&d.getFullYear()===calYear){
         const day = d.getDate();
         if(!map[day]) map[day]=[];
         map[day].push(ev);
@@ -655,7 +734,14 @@ function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
             «لا توجد مواعيد مطابقة للفلتر» card already covers a selection that
             is empty outright, and it is exactly the gate that failed to fire
             here, because the archive selection was not empty — it was just
-            somewhere else on the calendar. */}
+            somewhere else on the calendar.
+
+            This sentence ASSERTS something, which the blank grid it replaced did
+            not, so it is only allowed to stand while it cannot be false. It is
+            counted in `eventsByDay` above from the same `ev.date` the card
+            prints, never from a clock-relative offset, so «none of them falls in
+            this month» and a card reading «٣٠ سبتمبر» can no longer occur in one
+            render. Do not reintroduce a now-relative count here. */}
         {events.length>0&&inMonthCount===0&&(
           <p className={`mt-3 pt-3 border-t text-center text-[11px] leading-relaxed ${isDark?"border-white/[0.06] text-zinc-400":"border-slate-100 text-slate-500"}`}>
             لا يقع أيّ من المواعيد المطابقة للفلتر المختار ({toArabicDigits(events.length)}) في {AR_MONTHS[calMonth]} {toArabicDigits(calYear)}.
@@ -689,7 +775,15 @@ function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
 export default function LawyerHearingsPage() {
   const {isDark} = useTheme();
   const user = useUser();
-  const [events, setEvents] = useState<CalEvent[]>([]);
+  // The rows exactly as fetched. `events` below is this list with `dateSort`
+  // re-derived against the current local day — see `todayKey`.
+  const [rawEvents, setRawEvents] = useState<CalEvent[]>([]);
+  // The local day the whole screen reasons about, as "YYYY-MM-DD". It is STATE,
+  // not a `new Date()` read inside a memo, because a memo only recomputes when
+  // its dependencies change: that is how touching a filter after midnight used
+  // to re-date every row by a day, silently, in the very render that told the
+  // lawyer to touch a filter.
+  const [todayKey, setTodayKey] = useState<string>(() => localDayKey(new Date()));
   // Three distinct states, never two. A lawyer reading «لا توجد جلسات» over a
   // query that failed misses a hearing, so a failed read has to say so and offer
   // a retry — it must never land on the empty state.
@@ -739,7 +833,7 @@ export default function LawyerHearingsPage() {
       // is still resolving — that is a loading condition, not a read failure,
       // and blanking the diary over it would be the bug this page already had.
       const uid = user.userId;
-      setEvents(
+      setRawEvents(
         rows
           .filter(r => r.type === "service")
           .filter(r => !uid || r.assignedTo === uid)
@@ -767,6 +861,46 @@ export default function LawyerHearingsPage() {
     window.addEventListener("nzamy-workflow-updated", onUpdated);
     return () => window.removeEventListener("nzamy-workflow-updated", onUpdated);
   }, [load]);
+
+  // Roll the day anchor over at local midnight, and again whenever the tab comes
+  // back — a laptop that slept through 00:00 has its timers throttled or dropped,
+  // and «اليوم» has to be right on the screen the lawyer wakes up to. Setting an
+  // unchanged string is a no-op as far as React is concerned, so the wake
+  // handlers cost nothing. The timeout re-arms itself rather than the effect
+  // depending on `todayKey`: an effect keyed on that value would stop re-arming
+  // on the one tick that did not change it.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = () => {
+      const now = new Date();
+      // Two seconds past midnight, so a tick can never land on 23:59:59.999.
+      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 2).getTime();
+      timer = setTimeout(() => { setTodayKey(localDayKey(new Date())); arm(); }, Math.max(1000, next - now.getTime()));
+    };
+    arm();
+    const sync = () => setTodayKey(localDayKey(new Date()));
+    window.addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, []);
+
+  // `dateSort` re-derived from each row's absolute `date` against today, so the
+  // headings, the period filters and the counters go on meaning what they say
+  // for as long as the tab stays open. A row whose date stops parsing is dropped
+  // rather than parked at offset 0 — the same rule `workflowToHearing` applies,
+  // for the same reason: offset 0 is «اليوم», and «اليوم» is a claim.
+  const events = useMemo(() => {
+    const out: CalEvent[] = [];
+    for (const ev of rawEvents) {
+      const dateSort = daysBetweenDays(todayKey, ev.date);
+      if (dateSort !== null) out.push({ ...ev, dateSort });
+    }
+    return out;
+  }, [rawEvents, todayKey]);
 
   const card = isDark?"rounded-3xl border border-white/[0.06] bg-zinc-900/50":"rounded-3xl border border-slate-100 bg-white shadow-sm";
 
