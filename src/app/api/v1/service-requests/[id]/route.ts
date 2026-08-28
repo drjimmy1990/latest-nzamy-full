@@ -129,6 +129,59 @@ function toWorkflowRequest(row: Record<string, unknown>): Record<string, unknown
 }
 
 /**
+ * PostgREST's code for «the filter matched zero rows» on `.single()`.
+ * This repo already distinguishes it at src/app/api/v1/admin/library/route.ts:178
+ * and src/app/api/v1/lawyer/finance/route.ts:151; same shape here.
+ */
+const PGRST_NO_ROWS = "PGRST116";
+
+/**
+ * A row read that FAILED, told apart from a row that is ABSENT.
+ *
+ * supabase-js does not throw when the database is unreachable, times out or
+ * refuses — it RESOLVES with `{ data: null, error }`. Every `if (error || !row)
+ * → 404` this file used to carry therefore answered «الطلب غير موجود» for a
+ * statement timeout (57014), a gateway 503 and a dropped connection alike.
+ *
+ * The client half of this contract is explicit that it must not:
+ * `getServiceRequestDetail` (src/lib/services/casesService.ts:177-181) maps 404
+ * — and only 404 — to `null`, and throws on everything else, precisely so
+ * /dashboard/lawyer/cases/[id] can keep "does not exist" and "could not be
+ * read" apart in its four-state machine. Collapsing both onto 404 here made
+ * that page print «القضية غير موجودة — قد يكون الرابط غير صحيح أو أن القضية
+ * محذوفة» over a database that was merely busy: a lawyer told a live matter had
+ * been deleted, with the «تعذّرت قراءة بيانات القضية» screen that exists for
+ * exactly this case unreachable for the whole class of failure it was built for.
+ *
+ * `.single()` raises PGRST116 when the filter matched zero rows — that, and
+ * only that, is the genuine absence, so it still falls through to each caller's
+ * own 404. An RLS-denied SELECT arrives the same way and deliberately keeps
+ * that 404: a SELECT policy FILTERS rows rather than raising, so a row the
+ * caller may not see is zero rows too. Answering 500 for «it exists, but not
+ * yours» would turn this endpoint into an existence oracle for any id a
+ * stranger guessed.
+ *
+ * Returns the 500 to send, or null to carry on to the caller's own "not found"
+ * branch. `code` is logged next to `message` because the code is the half that
+ * says which failure it was.
+ */
+function readFailure(
+  where: string,
+  error: { code?: string; message?: string } | null,
+): NextResponse | null {
+  if (!error || error.code === PGRST_NO_ROWS) return null;
+  console.error(
+    `[service-requests ${where}] service_requests read failed:`,
+    error.message,
+    error.code,
+  );
+  return NextResponse.json(
+    { error: "تعذّرت قراءة بيانات الطلب. حاول مرة أخرى.", reason: "read_failed" },
+    { status: 500 },
+  );
+}
+
+/**
  * GET /api/v1/service-requests/[id] — Get request detail with events
  */
 export async function GET(
@@ -153,29 +206,70 @@ export async function GET(
     .eq("id", id)
     .single();
 
-  if (error || !serviceRequest) {
+  // Split, not collapsed — see readFailure() above. This is the read the
+  // lawyer case-detail screen's whole error state depends on.
+  const detailReadFailed = readFailure("GET", error);
+  if (detailReadFailed) return detailReadFailed;
+
+  if (!serviceRequest) {
+    // The literal is load-bearing and stays byte-identical: OrderActions.tsx:69
+    // and RevisionPanel.tsx:114 both document this exact 404 body, and
+    // clientWorkflowRepository.ts:44 lists it among the strings it deliberately
+    // never echoes.
     return NextResponse.json(
       { error: "Service request not found" },
       { status: 404 },
     );
   }
 
-  // Fetch events for this request
-  const { data: events } = await supabase
+  // Fetch events for this request.
+  //
+  // `error` is read and LOGGED rather than dropped, same reasoning as the
+  // duplicate-ticket check in POST below: a failed read here resolves with
+  // `{ data: null, error }`, `events ?? []` turns it into an empty timeline,
+  // and the case page renders «لا يوجد سجل» over a case with ten entries — with
+  // nothing anywhere saying why. Falling through with an empty list is still
+  // the right behaviour and is NOT being changed: `request_events` has its own
+  // RLS policies, so a caller who can read the request but not its timeline
+  // must keep the working page rather than have the whole screen 500. Saying so
+  // on the wire needs an envelope field this response has no room for — see the
+  // DEFERRED note reported with this change.
+  const { data: events, error: eventsError } = await supabase
     .from("request_events")
     .select("*")
     .eq("request_id", id)
     .order("created_at", { ascending: true });
 
+  if (eventsError) {
+    console.error(
+      "[service-requests GET] events read failed:",
+      eventsError.message,
+      eventsError.code,
+    );
+  }
+
   // F7 — fetch attachments for this request.
   // attachments schema: id, request_id, owner_user_id, file_name, storage_path,
   // mime_type, size_bytes, created_at. Map to the camelCase contract the
   // dashboard detail page expects.
-  const { data: attachmentsRows } = await supabase
+  //
+  // `error` read and logged for the same reason as `events` above, and left
+  // non-fatal for the same reason: a failed attachments read currently renders
+  // «لا توجد مستندات» on a case that has them, and the honest fix is a field on
+  // this envelope, not a 500 that takes the whole page down with it.
+  const { data: attachmentsRows, error: attachmentsError } = await supabase
     .from("attachments")
     .select("*")
     .eq("request_id", id)
     .order("created_at", { ascending: false });
+
+  if (attachmentsError) {
+    console.error(
+      "[service-requests GET] attachments read failed:",
+      attachmentsError.message,
+      attachmentsError.code,
+    );
+  }
 
   const attachments = (attachmentsRows ?? []).map((row) => {
     const a = row as Record<string, unknown>;
@@ -267,7 +361,10 @@ export async function PATCH(
       .eq("id", id)
       .single();
 
-    if (existingError || !existing) {
+    const revisionReadFailed = readFailure("PATCH request_revision", existingError);
+    if (revisionReadFailed) return revisionReadFailed;
+
+    if (!existing) {
       return NextResponse.json({ error: "الطلب غير موجود" }, { status: 404 });
     }
 
@@ -521,7 +618,10 @@ export async function PATCH(
       .eq("id", id)
       .single();
 
-    if (existingError || !existing) {
+    const editReadFailed = readFailure("PATCH edit_details", existingError);
+    if (editReadFailed) return editReadFailed;
+
+    if (!existing) {
       return NextResponse.json({ error: "الطلب غير موجود" }, { status: 404 });
     }
 
@@ -572,7 +672,23 @@ export async function PATCH(
       .single();
 
     if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
+      // Was `{ error: updateError.message }` — a raw PostgREST string, in
+      // English, on a branch whose only caller ECHOES the body onto the screen:
+      // OrderEditPanel.tsx:64 renders `body.error` and falls back to Arabic
+      // only when it is absent. Its comment there reasons that «this handler
+      // answers in Arabic on every refusal it owns», which was true of the gate
+      // and of the validator and never of this line. Arabic on screen, the
+      // machine cause in the log — same shape as the revision branch's
+      // write_failed above.
+      console.error(
+        "[service-requests PATCH] edit_details update failed:",
+        updateError.message,
+        updateError.code,
+      );
+      return NextResponse.json(
+        { error: "تعذّر حفظ التعديل. حاول مرة أخرى.", reason: "write_failed" },
+        { status: 500 },
+      );
     }
 
     // Best-effort, exactly like every other side-channel in this file: the
@@ -656,7 +772,16 @@ export async function PATCH(
       .eq("id", id)
       .single();
 
-    if (existingError || !existing) {
+    // The same collapse the GET carried, and the same lie: a PATCH that reports
+    // «لم يعد هذا الطلب موجوداً» over a statement timeout tells a client their
+    // order is gone. OrderActions.tsx keys its Arabic copy off the STATUS CODE
+    // (cancelErrorAr, :93-98), so this split is what moves a cancel-during-an-
+    // outage from «لم يعد هذا الطلب موجوداً» to «تعذّر إلغاء الطلب. حاول مرة
+    // أخرى.» — a retry instead of a false bereavement.
+    const statusGateReadFailed = readFailure("PATCH status", existingError);
+    if (statusGateReadFailed) return statusGateReadFailed;
+
+    if (!existing) {
       return NextResponse.json(
         { error: "Service request not found" },
         { status: 404 },
@@ -929,7 +1054,10 @@ export async function POST(
     .eq("id", id)
     .single();
 
-  if (existingError || !existing) {
+  const ticketReadFailed = readFailure("POST support_ticket", existingError);
+  if (ticketReadFailed) return ticketReadFailed;
+
+  if (!existing) {
     return NextResponse.json({ error: "الطلب غير موجود" }, { status: 404 });
   }
 

@@ -10,6 +10,10 @@ import { createClient } from "@/lib/supabase/server";
 const AR = {
   unauthorized: "يجب تسجيل الدخول للمتابعة.",
   profileNotFound: "لم نعثر على ملفك الشخصي.",
+  // Distinct from `profileNotFound` ON PURPOSE. "We could not read it" and "it
+  // does not exist" are different facts, and only one of them is the user's
+  // problem. See the PGRST116 branch below.
+  readFailed: "حدث خطأ أثناء قراءة بياناتك من الخادم.",
   noFields: "لا توجد حقول صالحة للتحديث.",
   badPhone: "رقم الجوال غير صحيح. أدخل رقم جوال سعودي يبدأ بـ 05 — مثال: 0512345678",
   badOnboardingFlag: "قيمة حالة إكمال الإعداد غير صالحة.",
@@ -65,6 +69,39 @@ function normalizeSaudiMobile(raw: unknown): string | null {
 
 /**
  * GET /api/v1/profile — Get current user's profile
+ *
+ * 200 body: `{ profile, roleProfile, roleProfileReadFailed, subscription }`.
+ *
+ * `roleProfileReadFailed` exists because `roleProfile: null` used to mean two
+ * incompatible things. supabase-js does NOT throw when a read fails — a
+ * transport failure, a timeout or a Postgres error all come back as
+ * `{ data: null, error }` — and this handler discarded that `error`, so "this
+ * lawyer has no lawyer_profiles row" and "we could not read his
+ * lawyer_profiles row" both left here as HTTP 200 + null. The profile page
+ * then rendered «لم تُضَف نبذة مهنية بعد.» — a claim about what the LAWYER did
+ * — over a bio it had simply failed to fetch.
+ *
+ * WHAT THE MARKER DOES NOT COVER: an RLS-filtered SELECT. A policy that
+ * excludes the row does not raise — PostgREST returns zero rows — so it arrives
+ * as `{ data: null, error: null }` and is reported here as "no row", with the
+ * marker false. That is deliberate and not a gap being papered over: from this
+ * caller's authorization view there is no row to see, and "absent" is the only
+ * thing the client could honestly be told. Do not read this marker as a
+ * guarantee that a null roleProfile means the row is truly absent from the
+ * table.
+ *
+ * WHY A MARKER RATHER THAN A 500 for that sub-query. `profile` itself was read
+ * successfully, and two of the three callers want only that:
+ *   • src/app/onboarding/page.tsx:846 types the envelope as `{ profile }` and
+ *     ignores roleProfile entirely; its catch leaves the wizard on step 1. A
+ *     500 here would therefore re-ask an established lawyer «من أنت؟» and drop
+ *     his phone/city prefill because a DIFFERENT table was unreadable.
+ *   • src/app/dashboard/lawyer/profile/edit/page.tsx:102 already treats
+ *     `roleProfile == null` as "cannot read — save disabled", which is what
+ *     stops a blank form from overwriting a real licence number. The marker
+ *     leaves that path byte-identical.
+ * Neither file is in this change's scope, so the fix had to be additive. A new
+ * key is ignored by an old caller; a new status code is not.
  */
 export async function GET() {
   const supabase = await createClient();
@@ -85,35 +122,75 @@ export async function GET() {
     .single();
 
   if (profileError) {
-    return NextResponse.json(
-      { error: AR.profileNotFound },
-      { status: 404 },
+    // Every failure used to answer 404 «لم نعثر على ملفك الشخصي.», and the
+    // profile page renders that string verbatim
+    // (src/app/dashboard/lawyer/profile/page.tsx:253) — so an outage, a timeout
+    // or any other Postgres error told a lawyer his account did not exist.
+    // PGRST116 is `.single()`'s genuine zero-rows code and is the ONLY one for
+    // which "not found" is true. (An RLS-excluded row is NOT a separate case: a
+    // policy filters a SELECT rather than raising, so it also lands on PGRST116
+    // and took — and still takes — the 404 path. That is the right answer for a
+    // row this caller may not see.)
+    // this repo already draws the line there at
+    // src/app/api/v1/admin/library/route.ts:178 and
+    // src/app/api/v1/lawyer/finance/route.ts:151.
+    if (profileError.code === "PGRST116") {
+      return NextResponse.json(
+        { error: AR.profileNotFound },
+        { status: 404 },
+      );
+    }
+    console.error(
+      "[api/v1/profile] profiles read failed:",
+      profileError.message,
+      profileError.code,
     );
+    return NextResponse.json({ error: AR.readFailed }, { status: 500 });
   }
 
-  // Fetch role-specific profile if applicable
+  // Fetch role-specific profile if applicable.
+  //
+  // `.maybeSingle()`, not `.single()`, and the error is now READ. Under
+  // `.single()` an absent row raised PGRST116 into the very `error` this code
+  // discarded, so a missing row and a failed read were the same value. Under
+  // `.maybeSingle()` they separate cleanly and the output for the absent case
+  // is unchanged (`data: null, error: null` → `roleProfile = null`):
+  //   error != null           → the read FAILED  → roleProfileReadFailed
+  //   data  == null, no error → no row, honestly → roleProfile stays null
+  // The three branches stay written out rather than collapsed into one
+  // `from(table)` call: only one ever runs, and a union table name changes what
+  // supabase-js infers for the row type.
   let roleProfile = null;
+  let roleProfileReadFailed = false;
+  const roleReadFailed = (table: string, message: string, code: string) => {
+    console.error(`[api/v1/profile] ${table} read failed:`, message, code);
+    roleProfileReadFailed = true;
+  };
+
   if (profile.user_type === "lawyer") {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("lawyer_profiles")
       .select("*")
       .eq("user_id", user.id)
-      .single();
-    roleProfile = data;
+      .maybeSingle();
+    if (error) roleReadFailed("lawyer_profiles", error.message, error.code);
+    else roleProfile = data;
   } else if (profile.user_type === "provider") {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("provider_profiles")
       .select("*")
       .eq("user_id", user.id)
-      .single();
-    roleProfile = data;
+      .maybeSingle();
+    if (error) roleReadFailed("provider_profiles", error.message, error.code);
+    else roleProfile = data;
   } else if (profile.user_type === "micro") {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("micro_profiles")
       .select("*")
       .eq("user_id", user.id)
-      .single();
-    roleProfile = data;
+      .maybeSingle();
+    if (error) roleReadFailed("micro_profiles", error.message, error.code);
+    else roleProfile = data;
   }
 
   // Fetch subscription
@@ -126,9 +203,13 @@ export async function GET() {
     .limit(1)
     .maybeSingle();
 
+  // Always emitted, including `false`. An absent key would be
+  // indistinguishable from an older deploy, and a client that reads
+  // `res.roleProfileReadFailed === true` must not have to guess which it got.
   return NextResponse.json({
     profile,
     roleProfile,
+    roleProfileReadFailed,
     subscription,
   });
 }
@@ -246,6 +327,15 @@ export async function PATCH(request: Request) {
     .select("user_type")
     .eq("id", user.id)
     .single();
+  // Same split as the GET above: a failed read is not a missing profile. This
+  // message is rendered into the editor's save banner
+  // (src/app/dashboard/lawyer/profile/edit/page.tsx handleSave catch), so
+  // «لم نعثر على ملفك الشخصي.» over a transport error told a lawyer mid-save
+  // that his account was gone.
+  if (baseErr && baseErr.code !== "PGRST116") {
+    console.error("[api/v1/profile] profiles read failed:", baseErr.message, baseErr.code);
+    return NextResponse.json({ error: AR.readFailed }, { status: 500 });
+  }
   if (baseErr || !baseProfile) {
     return NextResponse.json({ error: AR.profileNotFound }, { status: 404 });
   }

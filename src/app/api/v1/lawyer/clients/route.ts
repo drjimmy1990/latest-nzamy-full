@@ -46,6 +46,39 @@ function readClientClassification(meta: Record<string, unknown>) {
   const money = (v: unknown): number | null =>
     typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
 
+  /**
+   * A fee agreement is a POSITIVE total. A stored 0 is not one.
+   *
+   * AddClientModal's fee step is optional, but it used to send
+   * `Number(total) || 0` — so every lawyer who clicked past that step without
+   * typing anything wrote a hard `0` into metadata.totalFees/paidFees. The
+   * guard above accepts it (`0 >= 0`), so it came back as a real figure, both
+   * client screens saw two non-null numbers, and the detail page printed
+   * «إجمالي الأتعاب ٠ ﷼» under the subtitle «مسدّدة بالكامل» — a settled
+   * account, invented out of a skipped form step.
+   *
+   * That 0 is a sentinel, not a measurement, and no marker in the row
+   * separates it from a deliberately-typed 0. So the whole fee agreement is
+   * reported as absent whenever the total is not positive. This is the rule
+   * the render sites already apply one layer up (clients/page.tsx:409,:487 and
+   * ClientDrawer.tsx:286 each re-check `totalFees > 0`); enforcing it at the
+   * source repairs the rows already in the table — tightening only the modal
+   * would leave every client added before today still reading «مسدّدة بالكامل».
+   *
+   * COST, stated plainly: a genuinely pro-bono client — total 0 on purpose —
+   * is indistinguishable from a skipped step and reads as "no fee agreement on
+   * record" too. Representing that honestly needs a per-client fee record with
+   * an explicit zero-agreement flag, which does not exist.
+   *
+   * `paidFees` falls back to 0 UNDER an agreement only. With a total of 5,000
+   * on record and no advance typed, "nothing has been paid" is the fact, and
+   * the row says so; nulling it would drop the entire fee panel (every reader
+   * requires both keys) for a client whose fees are perfectly well known.
+   */
+  const rawTotal = money(meta.totalFees);
+  const rawPaid = money(meta.paidFees);
+  const agreed = rawTotal !== null && rawTotal > 0;
+
   const rawFlags = meta.flags;
   const flags = Array.isArray(rawFlags)
     ? rawFlags.filter((f): f is string => typeof f === "string" && KNOWN_FLAGS.has(f))
@@ -59,8 +92,8 @@ function readClientClassification(meta: Record<string, unknown>) {
     clientType,
     flags,
     rating,
-    totalFees: money(meta.totalFees),
-    paidFees: money(meta.paidFees),
+    totalFees: agreed ? rawTotal : null,
+    paidFees: agreed ? (rawPaid ?? 0) : null,
   };
 }
 

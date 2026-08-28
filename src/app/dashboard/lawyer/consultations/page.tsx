@@ -11,6 +11,7 @@ import {
   Warning, ArrowLeft,
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
@@ -103,6 +104,69 @@ function workflowToConsultation(request: WorkflowRequest): Consultation {
       : null,
     notes: request.description,
   };
+}
+
+/**
+ * The moment a booking is actually scheduled for, or null when it carries none.
+ *
+ * WHY THIS EXISTS: the «الاستشارة القادمة» panel renders exactly ONE row and
+ * calls it the lawyer's next appointment. The array it read was built by a bare
+ * `consults.filter(c => c.status === "upcoming")` with NO sort, so the booking
+ * it named was whichever row the query happened to return first — an arbitrary
+ * consultation, presented under a heading that claims it is the soonest one.
+ *
+ * WHY THE PARSE IS STRICT rather than `new Date(...)`: `metadata` is
+ * unvalidated jsonb, and `new Date` accepts a great deal of nonsense and hands
+ * back a plausible-looking instant for it — which here would mean sorting a
+ * real appointment behind a garbage one. The only writer of the rows this list
+ * reads is BookingModal above: the page queries receiver="lawyer", and the two
+ * other consultation writers in the tree (src/hooks/useConsultationForm.ts and
+ * dashboard/client/consultation/new/page.tsx) both post
+ * receiver="ai_workspace", so neither can appear here. That modal writes `day`
+ * from an <input type="date"> ("YYYY-MM-DD") and `time` from an
+ * <input type="time"> ("HH:MM"). Anything that is not that shape is reported as
+ * "this booking has no date on it" — the same thing the card and the panel
+ * already render as «بانتظار التأكيد» — instead of being guessed at.
+ *
+ * `hasTime` is carried because the two cases cannot be compared the same way: a
+ * booking WITH a time has passed once that time has passed, while a booking
+ * dated today with NO time has not passed until the day is over. Collapsing
+ * them would push every date-only booking made for today into the past at
+ * 00:01.
+ */
+interface Scheduled { at: number; hasTime: boolean }
+
+function scheduledOf(c: Consultation): Scheduled | null {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(c.date.trim());
+  if (!d) return null;
+  const year = Number(d[1]);
+  const month = Number(d[2]);
+  const day = Number(d[3]);
+  // Not anchored at the end: some browsers render <input type="time"> as
+  // "HH:MM:SS". The seconds are ignored, not rejected.
+  const t = /^(\d{1,2}):(\d{2})/.exec(c.time.trim());
+  const hours = t ? Number(t[1]) : 0;
+  const minutes = t ? Number(t[2]) : 0;
+  if (hours > 23 || minutes > 59) return null;
+  const when = new Date(year, month - 1, day, hours, minutes, 0, 0);
+  // Reject a rolled-over date instead of sorting by the wrong day:
+  // new Date(2026, 1, 31) is 3 March, not «31 February».
+  if (when.getFullYear() !== year || when.getMonth() !== month - 1 || when.getDate() !== day) return null;
+  const at = when.getTime();
+  return Number.isFinite(at) ? { at, hasTime: Boolean(t) } : null;
+}
+
+/** Local midnight today — the boundary a date-only booking is measured against. */
+function startOfTodayMs(): number {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+}
+
+/** Has this booking's slot not yet passed? Undated bookings are never "ahead". */
+function isStillAhead(c: Consultation): boolean {
+  const s = scheduledOf(c);
+  if (!s) return false;
+  return s.hasTime ? s.at >= Date.now() : s.at >= startOfTodayMs();
 }
 
 const CONSULT_TYPES = [
@@ -558,9 +622,30 @@ function ConsultCard({ c, isDark, card }: { c: Consultation; isDark: boolean; ca
 export default function ConsultationsPage() {
   const { isDark } = useTheme();
   const user = useUser();
+  const searchParams = useSearchParams();
+  // `?book=1` — the deep link the lawyer dashboard's «استشارة جديدة» quick
+  // action used to carry. It was removed there (see dashboard/lawyer/page.tsx)
+  // because this page read neither `useSearchParams` nor a `searchParams` prop,
+  // so the param was inert and the lawyer landed on a plain list holding a URL
+  // that promised an open booking form. The machinery was always here —
+  // `showBooking` and <BookingModal> below — only the reader was missing.
+  //
+  // Called bare, with no Suspense wrapper, matching the established pattern for
+  // statically-prerendered client pages in this tree:
+  // dashboard/client/my-group/page.tsx:154 and
+  // dashboard/client/requests/new/page.tsx:69 both do exactly this in their
+  // default export with no Suspense in the file, in their layout, or in the
+  // root layout. Optional chaining matches those call sites too.
+  const bookParam = searchParams?.get("book") ?? null;
   const [filter, setFilter] = useState<ConsultStatus | "all">("all");
   const [search, setSearch] = useState("");
-  const [showBooking, setShowBooking] = useState(false);
+  // Seeded from `?book=1` rather than set from an effect: an effect that calls
+  // setState on mount is a cascading render (react-hooks/set-state-in-effect)
+  // and would paint the list once before the modal appeared. As an INITIAL
+  // value it also cannot re-open the form behind the lawyer — an initialiser is
+  // read on the first render only, so closing the modal is final while the URL
+  // still says book=1.
+  const [showBooking, setShowBooking] = useState(bookParam === "1");
   const [consults, setConsults] = useState<Consultation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -621,7 +706,45 @@ export default function ConsultationsPage() {
     return matchStatus && matchSearch;
   });
 
-  const upcoming = consults.filter(c => c.status === "upcoming");
+  // `.filter()` already returns a new array, so the `.sort()` below orders that
+  // copy and never mutates `consults`.
+  //
+  // The ORDER of this array is a factual claim, because the panel below renders
+  // one element of it under «الاستشارة القادمة». Soonest first; bookings with no
+  // usable date sink to the END rather than leading — "no date on it" is not
+  // "the soonest", and floating them to the front is exactly what the unsorted
+  // array did by accident.
+  const upcoming = consults
+    .filter(c => c.status === "upcoming")
+    .sort((a, b) => {
+      const sa = scheduledOf(a);
+      const sb = scheduledOf(b);
+      if (!sa && !sb) return 0;
+      if (!sa) return 1;
+      if (!sb) return -1;
+      return sa.at - sb.at;
+    });
+
+  // What the panel shows, and a heading that is TRUE of it.
+  //
+  // Sorting alone does not finish the job: "upcoming" is a STATUS
+  // (workflowToConsultation maps anything not cancelled/completed to it), not a
+  // statement about the calendar, so the soonest row can easily be a booking
+  // from three weeks ago that was never marked completed. Calling that
+  // «الاستشارة القادمة» is the same false claim in a new form, so the panel
+  // takes the first booking whose slot has NOT passed.
+  //
+  // When there is no such booking but there are undated ones, the panel is kept
+  // and RENAMED instead of hidden: a booking awaiting a date is still real and
+  // still pending, it simply is not "the next one". Only when every upcoming
+  // booking is dated in the past does the panel disappear — there is nothing
+  // coming, and the list below still carries every one of those rows.
+  //
+  // The «قادمة» KPI is deliberately NOT touched by any of this: it counts a
+  // status, so it can honestly read ٣ while this panel shows one or none.
+  const nextAhead = upcoming.find(isStillAhead) ?? null;
+  const nextConsult = nextAhead ?? upcoming.find(c => scheduledOf(c) === null) ?? null;
+  const nextConsultHeading = nextAhead ? "الاستشارة القادمة" : "استشارة بانتظار تحديد الموعد";
 
   return (
     <div className="max-w-3xl mx-auto space-y-5" dir="rtl">
@@ -719,32 +842,34 @@ export default function ConsultationsPage() {
           button had no onClick — a live-session panel for a product with no
           sessions. Removed with the status itself. */}
 
-      {/* Next upcoming */}
-      {!loading && !loadError && upcoming.length > 0 && (
+      {/* Next upcoming. Was `upcoming.length > 0` rendering `upcoming[0]` out of
+          an unsorted array; both the subject and the heading are now chosen
+          above, so this block reads one row and never indexes. */}
+      {!loading && !loadError && nextConsult && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
           className={`${card} p-5 border-royal/20 bg-royal/[0.03]`}>
           <div className="flex items-center gap-2 mb-3">
             <CalendarCheck size={15} weight="duotone" className="text-royal" />
-            <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>الاستشارة القادمة</p>
+            <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{nextConsultHeading}</p>
           </div>
           <div className="flex items-center gap-4">
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-royal/10" : "bg-royal/5"}`}>
-              {upcoming[0].clientType === "company"
+              {nextConsult.clientType === "company"
                 ? <Buildings size={22} weight="duotone" className="text-royal" />
                 : <User size={22} weight="duotone" className="text-royal" />}
             </div>
             <div className="flex-1">
-              <p className={`text-[15px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{upcoming[0].client}</p>
+              <p className={`text-[15px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{nextConsult.client}</p>
               <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                {upcoming[0].topic} · {MODE_LABELS[upcoming[0].mode]}
-                {upcoming[0].duration !== null ? ` · ${upcoming[0].duration}د` : ""}
+                {nextConsult.topic} · {MODE_LABELS[nextConsult.mode]}
+                {nextConsult.duration !== null ? ` · ${nextConsult.duration}د` : ""}
               </p>
             </div>
             <div className="text-left flex-shrink-0">
-              {upcoming[0].time
-                ? <p className="text-[14px] font-bold font-mono text-royal">{upcoming[0].time}</p>
+              {nextConsult.time
+                ? <p className="text-[14px] font-bold font-mono text-royal">{nextConsult.time}</p>
                 : <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>بانتظار التأكيد</p>}
-              {upcoming[0].date && <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{upcoming[0].date}</p>}
+              {nextConsult.date && <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{nextConsult.date}</p>}
             </div>
             {/* No «بدء» button: there is no meeting to start. See ConsultCard. */}
           </div>

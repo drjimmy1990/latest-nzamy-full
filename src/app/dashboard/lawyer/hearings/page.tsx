@@ -49,10 +49,12 @@ function hijriDayOnly(gDate: Date): string | null {
   const parts = hijriPartsOf(gDate);
   return parts ? String(parts.day) : null;
 }
-import Link from "next/link";
+// `import Link from "next/link"` was removed with the linked-tasks UI on
+// 2026-08-28 — its only two uses were the «N مهام» chip and «عرض كل المهام»,
+// both inside a block that could never render. See the note at LINKED_TASKS.
 import { useTheme } from "@/components/ThemeProvider";
 import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
-import { hijriPartsOf } from "@/lib/services/hijri";
+import { hijriPartsOf, toArabicDigits } from "@/lib/services/hijri";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { useUser } from "@/hooks/useUser";
@@ -64,7 +66,16 @@ type ViewMode = "list"|"calendar";
 interface WorkflowStep { label: string; done: boolean; }
 interface CalEvent {
   id: string; type: EventType; title: string;
-  client?: string; caseId?: string; caseName?: string;
+  // `caseId?: string` was removed on 2026-08-28. Round 1 stopped the mapper
+  // setting it (it had been pointing at the hearing's own id), and its only
+  // reader was the LINKED_TASKS lookup, which is gone — see the note there.
+  client?: string; caseName?: string;
+  // `date` is the row's own stored "YYYY-MM-DD" — an ABSOLUTE day, and the only
+  // field here that is. `dateSort` is an offset from the moment of the fetch, so
+  // it is one day wrong for anyone whose tab is open across midnight; the card's
+  // date line is formatted from `date` for that reason (formatEventDateAr).
+  // `dateSort` still drives bucketing, filtering and the grid, where being a day
+  // out only misplaces a row rather than misdating it on screen.
   location?: string; date: string; dateSort: number;
   time?: string; urgency: "critical"|"high"|"normal";
   notes?: string; done?: boolean; deadlineDaysLeft?: number;
@@ -173,10 +184,40 @@ const EVENT_CONFIG: Record<EventType,{icon:React.ElementType;label:string;color:
 // a lawyer who ever exceeds it is told rather than quietly shown a partial week.
 const HEARINGS_FETCH_LIMIT = 200;
 
-// ─── Linked Tasks Mini-DB (empty — will be populated from service) ─────────────
-const LINKED_TASKS: Record<string,{id:string;title:string;done:boolean;priority:string}[]> = {};
+// ─── Linked tasks: REMOVED 2026-08-28 ─────────────────────────────────────────
+// What stood here was `const LINKED_TASKS: Record<string, {...}[]> = {}` with
+// the comment «empty — will be populated from service». Nothing ever populated
+// it: it was written by no code path in the repo, so `LINKED_TASKS[caseId]` was
+// `undefined` for every id that could ever be looked up.
+//
+// It took the whole feature down with it, and all of it is removed rather than
+// left dark: the `linkedTasks`/`setLinkedTasks` state (seeded from this map,
+// therefore always `[]`), `toggleLinkedTask`, `pendingCount`, the «N مهام» Link
+// on the card, the «المهام المرتبطة بهذه القضية» list inside the expander, the
+// «عرض كل المهام» link under it, and `CalEvent.caseId` — the key the lookup
+// used, which round 1 had already stopped the mapper from setting.
+//
+// Dead, not dishonest: none of it ever reached a screen, so no lawyer was told
+// anything untrue by it. Deleting it is therefore a no-op for the six lawyers
+// using this page today and removes ~50 lines that read as a working feature.
+// Reviving it needs a real link between a hearing row and a task row — a schema
+// question (there is no case/task reference on a service_requests hearing row),
+// not a rendering one. Git history keeps the markup.
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
+// ONE definition of «هذا الأسبوع» and «هذا الشهر», used by BOTH the date
+// headings in groupByDate and the period filter in the page below.
+//
+// They had drifted: the heading bucket was `dateSort <= 5` while the `week`
+// filter was `dateSort >= 0 && dateSort <= 7`. So a hearing six or seven days
+// out was selected by «هذا الأسبوع» and then printed under a heading that said
+// «هذا الشهر» — the lawyer filtered to this week and read that the sitting was
+// this month. «هذا الشهر» was already sharing 30 with its filter; the week now
+// does the same, at 7, because a week is seven days and the filter was the half
+// that was right.
+const WEEK_HORIZON_DAYS = 7;
+const MONTH_HORIZON_DAYS = 30;
+
 const AR_MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
 const AR_DAYS  = ["أحد","إثن","ثلا","أرب","خمي","جمع","سبت"];
 
@@ -184,6 +225,38 @@ function getEventDate(dateSort: number): Date {
   const d = new Date();
   d.setDate(d.getDate() + dateSort);
   return d;
+}
+
+/**
+ * «١٥ سبتمبر ٢٠٢٦» from the row's own stored "YYYY-MM-DD".
+ *
+ * The card used to print `ev.date` raw — the "2026-09-15" string straight out
+ * of `<input type="date">` — dropped into an Arabic RTL line, beside a calendar
+ * strip that carries Arabic-Indic Hijri numerals. Wrong script and wrong order
+ * for the reader. This is the shape the rest of the platform already uses for a
+ * date in Arabic prose (`formatArabicDate`, src/lib/services/clientDashboardCards.ts).
+ *
+ * Formatted from `ev.date` and NOT from `getEventDate(ev.dateSort)`, which is
+ * the obvious-looking choice and is wrong: `dateSort` is an OFFSET computed once
+ * at fetch time, while `getEventDate` re-reads `new Date()` at render time. A
+ * lawyer who leaves this tab open overnight — an ordinary thing to do — would
+ * be shown every date one day early from midnight onward. `ev.date` is an
+ * absolute day and cannot go stale.
+ *
+ * Parsed exactly as `daysFromToday` parses it, so a string that reaches here has
+ * already been proved parseable: `workflowToHearing` drops any row whose date
+ * fails this. The raw string is returned rather than «Invalid Date» in the
+ * branch that cannot be reached, because printing English on an Arabic screen is
+ * the worse of the two.
+ *
+ * Latin numerals stay in the calendar GRID — a seven-column day cell is chrome,
+ * not prose.
+ */
+function formatEventDateAr(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  const month = AR_MONTHS[d.getMonth()];
+  if (isNaN(d.getTime()) || !month) return dateStr;
+  return `${toArabicDigits(d.getDate())} ${month} ${toArabicDigits(d.getFullYear())}`;
 }
 
 /**
@@ -250,14 +323,15 @@ function groupByDate(events: CalEvent[]): [string,CalEvent[]][] {
   // `<=5` and was headed «هذا الأسبوع», which is how the الأرشيف view titled
   // last year's sittings. Each row prints its own date, so the heading was the
   // only thing lying, but a heading is what the eye reads first on a diary.
-  // «هذا الشهر» keeps the `<=30` boundary the `month` time-filter already uses,
-  // so the heading and the filter stay one definition.
+  // Both headings now read their boundary from the SAME constant the matching
+  // time-filter reads, so «هذا الأسبوع» cannot again mean 5 days here and 7
+  // days there.
   rest.forEach(e => {
     const key = e.dateSort<0?"سابقة"
       :e.dateSort===0?"اليوم"
       :e.dateSort===1?"غداً"
-      :e.dateSort<=5?"هذا الأسبوع"
-      :e.dateSort<=30?"هذا الشهر"
+      :e.dateSort<=WEEK_HORIZON_DAYS?"هذا الأسبوع"
+      :e.dateSort<=MONTH_HORIZON_DAYS?"هذا الشهر"
       :"لاحقاً";
     if(!groups[key]) groups[key]=[];
     groups[key].push(e);
@@ -320,24 +394,19 @@ function FilterRow<T extends string>({
 // ─── EventCard ─────────────────────────────────────────────────────────────────
 function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
   const [open,setOpen] = useState(false);
-  // ── Mutable local state so steps & linked tasks are interactive ──────────────
+  // ── Mutable local state so the workflow steps are interactive ────────────────
+  // The `linkedTasks`/`setLinkedTasks` state and `toggleLinkedTask` that stood
+  // here were removed on 2026-08-28 with LINKED_TASKS — see the note there.
   const [steps, setSteps] = useState<WorkflowStep[]>(ev.workflow ?? []);
-  const [linkedTasks, setLinkedTasks] = useState(
-    ev.caseId ? (LINKED_TASKS[ev.caseId] ?? []) : []
-  );
 
   const toggleStep = (i: number) =>
     setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, done: !s.done } : s));
-
-  const toggleLinkedTask = (id: string) =>
-    setLinkedTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
 
   const cfg = EVENT_CONFIG[ev.type];
   const Icon = cfg.icon;
   const donePct = steps.length > 0 ? Math.round((steps.filter(s=>s.done).length / steps.length) * 100) : null;
   const isDeadline = ev.type==="deadline";
   const accentColor = ev.urgency==="critical"?"#ef4444":ev.urgency==="high"?"#f59e0b":cfg.color;
-  const pendingCount = linkedTasks.filter(t=>!t.done).length;
   const calUrl = ev.dateSort>=0 ? googleCalUrl(ev) : null;
 
   return (
@@ -363,7 +432,7 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
             <p className={`text-[14px] font-bold leading-snug ${isDark?"text-zinc-100":"text-slate-800"}`}>{ev.title}</p>
             <div className="flex items-center flex-wrap gap-3 mt-1.5">
               <span className={`flex items-center gap-1 text-[11px] font-semibold ${ev.urgency==="critical"?"text-red-500":ev.urgency==="high"?"text-amber-500":isDark?"text-zinc-400":"text-slate-500"}`}>
-                <Clock size={11} />{ev.date}{ev.time?` — ${ev.time}`:""}
+                <Clock size={11} />{formatEventDateAr(ev.date)}{ev.time?` — ${ev.time}`:""}
               </span>
               {ev.location&&<span className={`flex items-center gap-1 text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}><MapPin size={11}/>{ev.location}</span>}
               {ev.client&&<span className={`flex items-center gap-1 text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}><User size={11}/>{ev.client}</span>}
@@ -381,14 +450,9 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
                   <Scales size={9}/>{ev.caseName}
                 </span>
               )}
-              {linkedTasks.length>0&&(
-                <Link href="/dashboard/lawyer/tasks"
-                  className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors ${isDark?"bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20":"bg-emerald-50 text-emerald-600 hover:bg-emerald-100"}`}>
-                  <CheckSquare size={9}/>{linkedTasks.length} مهام
-                  {pendingCount>0&&<span className="bg-amber-500 text-white text-[8px] px-1 rounded-full">{pendingCount}</span>}
-                  <ArrowSquareOut size={8}/>
-                </Link>
-              )}
+              {/* The «N مهام» Link to /dashboard/lawyer/tasks stood here. It was
+                  gated on `linkedTasks.length>0`, and linkedTasks came from
+                  LINKED_TASKS, which nothing populated — removed 2026-08-28. */}
               {calUrl&&(
                 <a href={calUrl} target="_blank" rel="noopener noreferrer"
                   className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors ${isDark?"bg-blue-500/10 text-blue-400 hover:bg-blue-500/20":"bg-blue-50 text-blue-600 hover:bg-blue-100"}`}>
@@ -465,45 +529,13 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
                   </button>
                 ))}
               </div>
-              {linkedTasks.length>0&&(
-                <>
-                  <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark?"text-zinc-600":"text-slate-400"}`}>المهام المرتبطة بهذه القضية</p>
-                  <div className="space-y-1.5">
-                    {linkedTasks.map(task => (
-                      <button key={task.id} onClick={() => toggleLinkedTask(task.id)}
-                        className={`w-full flex items-center gap-2.5 py-1.5 px-2 rounded-xl text-start transition-all group/ltask ${
-                          task.done
-                            ? isDark ? "opacity-50 bg-emerald-500/8 hover:opacity-70" : "opacity-60 bg-emerald-50 hover:opacity-80"
-                            : task.priority==="urgent"
-                              ? isDark ? "bg-red-500/10 hover:bg-red-500/15" : "bg-red-50 hover:bg-red-100"
-                              : isDark ? "bg-white/[0.02] hover:bg-white/[0.05]" : "bg-slate-50 hover:bg-slate-100"
-                        }`}
-                      >
-                        <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-                          task.done
-                            ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]"
-                            : task.priority==="urgent"
-                              ? "border border-red-400 group-hover/ltask:border-red-500"
-                              : task.priority==="high"
-                                ? "border border-amber-400 group-hover/ltask:border-amber-500"
-                                : isDark ? "border border-zinc-600 group-hover/ltask:border-emerald-500/50" : "border border-slate-300 group-hover/ltask:border-emerald-400"
-                        }`}>
-                          {task.done && <CheckCircle size={10} weight="fill" className="text-white"/>}
-                        </div>
-                        <span className={`text-[12px] font-medium flex-1 transition-all ${
-                          task.done
-                            ? isDark ? "text-emerald-400 line-through opacity-60" : "text-emerald-600 line-through opacity-60"
-                            : task.priority==="urgent" ? "text-red-500" : isDark ? "text-zinc-300" : "text-slate-700"
-                        }`}>{task.title}</span>
-                        {!task.done && task.priority==="urgent" && <span className="text-[9px] font-black bg-red-500/15 text-red-500 px-1.5 py-0.5 rounded-full flex-shrink-0">عاجل</span>}
-                      </button>
-                    ))}
-                  </div>
-                  <Link href="/dashboard/lawyer/tasks" className={`mt-2 flex items-center gap-1 text-[11px] font-bold ${isDark?"text-zinc-500 hover:text-zinc-300":"text-slate-400 hover:text-slate-600"}`}>
-                    <ArrowRight size={11}/> عرض كل المهام
-                  </Link>
-                </>
-              )}
+              {/* REMOVED 2026-08-28: the «المهام المرتبطة بهذه القضية» list —
+                  a toggleable task list plus an «عرض كل المهام» link — stood
+                  here, gated on `linkedTasks.length>0`. It was fed by
+                  LINKED_TASKS, an empty Record nothing wrote to, so the gate was
+                  false for every event and no lawyer ever saw it. Restoring it
+                  needs a real hearing→task reference on the row; see the note at
+                  the top of the file. */}
             </motion.div>
           )}
         </AnimatePresence>
@@ -522,19 +554,35 @@ function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
   const firstDayOfMonth = new Date(calYear,calMonth,1).getDay();
   const daysInMonth = new Date(calYear,calMonth+1,0).getDate();
 
-  const eventsByDay = useMemo(()=>{
+  // The `ev.dateSort>=0 && !ev.done` guard that stood here was removed on
+  // 2026-08-28. `events` is already `filtered` — the exact set the lawyer's own
+  // period/type/priority/search selection produced — so a SECOND filter here
+  // could only contradict the first, and it did: with «الأرشيف» selected, every
+  // row is past or done BY DEFINITION, so this guard dropped all of them and
+  // drew an empty month grid. The page-level «لا توجد مواعيد مطابقة للفلتر»
+  // card could not explain it either, because it is gated on `filtered.length
+  // === 0` and `filtered` was full. The calendar now shows exactly what the
+  // filter selected, past and done included, matching the list view beside it.
+  //
+  // `inMonthCount` — how many of the selected events land in the month
+  // currently on screen — is counted in the SAME pass, because removing the
+  // guard is only half the fix: with «الأرشيف» selected and every archived
+  // sitting in a previous month, the grid for THIS month is still legitimately
+  // empty, and an empty grid with nothing said is the reported defect whatever
+  // the reason for it. The notice under the grid uses this to say which it is.
+  const {eventsByDay,inMonthCount} = useMemo(()=>{
     const map: Record<number,CalEvent[]> = {};
+    let count = 0;
     events.forEach(ev=>{
-      if(ev.dateSort>=0&&!ev.done){
-        const d = getEventDate(ev.dateSort);
-        if(d.getMonth()===calMonth&&d.getFullYear()===calYear){
-          const day = d.getDate();
-          if(!map[day]) map[day]=[];
-          map[day].push(ev);
-        }
+      const d = getEventDate(ev.dateSort);
+      if(d.getMonth()===calMonth&&d.getFullYear()===calYear){
+        const day = d.getDate();
+        if(!map[day]) map[day]=[];
+        map[day].push(ev);
+        count += 1;
       }
     });
-    return map;
+    return {eventsByDay:map,inMonthCount:count};
   },[events,calMonth,calYear]);
 
   const isToday = (d:number) => d===now.getDate()&&calMonth===now.getMonth()&&calYear===now.getFullYear();
@@ -566,8 +614,14 @@ function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
           {cells.map((day,i)=>{
             if(!day) return <div key={`e${i}`}/>;
             const dayEvs = eventsByDay[day]||[];
-            const hasCritical = dayEvs.some(e=>e.urgency==="critical");
-            const hasHigh = dayEvs.some(e=>e.urgency==="high");
+            // Urgency colours are read from the OPEN events only. Done rows now
+            // reach this grid (see eventsByDay), and a completed sitting must
+            // not paint the same red alarm dot as a live one — «حرجة» describes
+            // what is still owed, not what has been dealt with. A day whose
+            // events are all done gets the muted dot below.
+            const openEvs = dayEvs.filter(e=>!e.done);
+            const hasCritical = openEvs.some(e=>e.urgency==="critical");
+            const hasHigh = openEvs.some(e=>e.urgency==="high");
             const isSelected = selectedDay===day;
             const gDate = new Date(calYear,calMonth,day);
             const hijri = hijriDayOnly(gDate);
@@ -584,13 +638,31 @@ function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
                   <div className="flex gap-0.5 mt-0.5">
                     {hasCritical&&<span className="w-1.5 h-1.5 rounded-full bg-red-500"/>}
                     {!hasCritical&&hasHigh&&<span className="w-1.5 h-1.5 rounded-full bg-amber-500"/>}
-                    {!hasCritical&&!hasHigh&&<span className="w-1.5 h-1.5 rounded-full bg-indigo-400"/>}
+                    {!hasCritical&&!hasHigh&&openEvs.length>0&&<span className="w-1.5 h-1.5 rounded-full bg-indigo-400"/>}
+                    {openEvs.length===0&&<span className={`w-1.5 h-1.5 rounded-full ${isDark?"bg-zinc-600":"bg-slate-300"}`}/>}
                   </div>
                 )}
               </button>
             );
           })}
         </div>
+
+        {/* The grid shows one month; the filter does not. When the two disagree
+            the grid goes blank, and a blank month with nothing said reads as
+            «you have no appointments» — the whole reason «الأرشيف» in calendar
+            view was reported. This says which of the two it is. It is gated on
+            the IN-MONTH count, not on `events.length===0`: the page-level
+            «لا توجد مواعيد مطابقة للفلتر» card already covers a selection that
+            is empty outright, and it is exactly the gate that failed to fire
+            here, because the archive selection was not empty — it was just
+            somewhere else on the calendar. */}
+        {events.length>0&&inMonthCount===0&&(
+          <p className={`mt-3 pt-3 border-t text-center text-[11px] leading-relaxed ${isDark?"border-white/[0.06] text-zinc-400":"border-slate-100 text-slate-500"}`}>
+            لا يقع أيّ من المواعيد المطابقة للفلتر المختار ({toArabicDigits(events.length)}) في {AR_MONTHS[calMonth]} {toArabicDigits(calYear)}.
+            <br/>
+            استخدم سهمَي الشهر أعلاه للتنقّل، أو اعرضها في القائمة.
+          </p>
+        )}
       </div>
 
       <AnimatePresence>
@@ -701,8 +773,9 @@ export default function LawyerHearingsPage() {
   const filtered = useMemo(()=>{
     let evs = events;
     if(timeFilter==="today")     evs=evs.filter(e=>e.dateSort===0);
-    if(timeFilter==="week")      evs=evs.filter(e=>e.dateSort>=0&&e.dateSort<=7);
-    if(timeFilter==="month")     evs=evs.filter(e=>e.dateSort>=0&&e.dateSort<=30);
+    // Same constants groupByDate's headings use — see the note beside them.
+    if(timeFilter==="week")      evs=evs.filter(e=>e.dateSort>=0&&e.dateSort<=WEEK_HORIZON_DAYS);
+    if(timeFilter==="month")     evs=evs.filter(e=>e.dateSort>=0&&e.dateSort<=MONTH_HORIZON_DAYS);
     if(timeFilter==="deadlines") evs=evs.filter(e=>e.type==="deadline");
     if(timeFilter==="archive")   evs=evs.filter(e=>e.done||e.dateSort<0);
     if(timeFilter==="all")       evs=evs.filter(e=>!e.done&&e.dateSort>=0);

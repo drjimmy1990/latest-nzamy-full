@@ -525,17 +525,43 @@ export default function ActivityLogPage() {
             <Clock size={26} className="text-[#C8A762]" weight="duotone"/>
             سجل النشاط الموحد
           </h1>
-          {/* «استشارات AI» was removed from this line on 2026-08-28, and «كافة»
-              with it. Nothing in this feed is an AI usage record: every row is a
-              `request_events` row on a service_request, and describeRequestEvent
-              (src/lib/events.ts) has no AI badge at all — which is the same
-              reason the «استخدامات AI» stat card was replaced rather than
-              counted (see the note above LIVE_STATS). «كافة» went because the
-              feed is scoped to the requests this user participates in, not to
-              everything they do on the platform. The four that remain map to
-              badges the route really emits: hearing / task / contract / client. */}
+          {/* This line names what the feed can CONTAIN, so every term on it has
+              to have a writer. «استشارات AI» and «كافة» went on 2026-08-28; the
+              same test then failed three of the four terms that were kept, and
+              they went with them on the pass after it.
+              «جلسات» / «عقود» / «موكلين» were the hearing / contract / client
+              badges, and those badges are reachable ONLY from
+              RequestEvent.HEARING_CREATED, CONTRACT_CREATED,
+              CONTRACT_STATUS_CHANGED, CONSULTATION_CREATED and
+              CONSULTATION_STATUS_CHANGED (src/lib/events.ts). Every one of those
+              five constants is written nowhere: they appear in events.ts and in
+              no other file, no raw string literal of their token values exists
+              in src, `namespaceEvent` maps no legacy value onto them (it only
+              ever produces the SERVICE_REQUEST_* tokens), and the one route that
+              could carry an arbitrary token —
+              api/v1/service-requests/[id]/events POST — has no caller, as its
+              own doc-comment says. So the badges exist, the icons exist, the
+              filter chips exist, and no event has ever been able to carry them.
+              Naming them here promised a lawyer three kinds of history this feed
+              cannot hold.
+              What IS reachable, traced through every recordEvent call site:
+                order     — SERVICE_REQUEST_CREATED / _UPDATED / _STATUS_CHANGED,
+                            plus the unknown-token fallback
+                task      — TASK_CREATED, TASK_STATUS_CHANGED (lawyer/tasks
+                            route) and the «بدأ العمل» / «تم توجيه» order events
+                delivery  — SERVICE_REQUEST_COMPLETED
+                cancelled — SERVICE_REQUEST_CANCELLED
+                notice    — notification.* from the n8n callback, and the
+                            admin_audit_events rows the route folds in
+              The line below names those five and nothing else.
+              Not gated on isSupabaseMode even though MOCK_ACTIVITIES does carry
+              hearing/contract/client rows: that constant is module-level, so the
+              demo branch is eliminated from the bundle the six lawyer accounts
+              actually load, and demo mode already carries its own «بيانات
+              تجريبية» banner above. Gating one subtitle on it would add a live
+              branch to say something the banner has said already. */}
           <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>
-            تتبّع حركة طلباتك — جلسات، مهام، عقود، وموكلين
+            تتبّع حركة طلباتك — تحديثات الطلبات، المهام، التسليم، الإلغاء، والإشعارات
           </p>
         </div>
         {/* A «تصدير PDF» button stood here with no onClick and no handler

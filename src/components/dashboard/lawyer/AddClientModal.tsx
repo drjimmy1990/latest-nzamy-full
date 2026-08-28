@@ -11,6 +11,32 @@ import {
 } from "@/components/dashboard/lawyer/ClientDrawer";
 import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 
+/**
+ * A fee input the lawyer left alone must send NOTHING, not 0.
+ *
+ * This used to be `Number(total) || 0`, and the fee step is optional — `canNext`
+ * only asks for a name and a phone on step 0 — so every lawyer who clicked
+ * «التالي» past the fees without typing anything wrote a hard 0 into the row.
+ * The API stored it, read it back as a real figure, and the client's page printed
+ * «إجمالي الأتعاب ٠ ﷼ / مسدّدة بالكامل»: an account settled in full, invented
+ * out of a form step nobody filled in.
+ *
+ * `undefined` is dropped by JSON.stringify, so an untouched field never reaches
+ * the request body and the row simply carries no fee agreement. A typed `0` is
+ * still sent as 0 — that is a thing the lawyer did, and it is kept on record
+ * even though (see the API's readClientClassification) no screen can currently
+ * tell it apart from this blank and so shows neither.
+ *
+ * A negative or non-numeric entry is dropped for the same reason the API's read
+ * guard rejects it: it is not a fee.
+ */
+function parseFee(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const n = Number(trimmed);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
 export default function AddClientModal({ isDark, onClose, onAdd }: {
   isDark: boolean;
   onClose: () => void;
@@ -38,6 +64,9 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
     setError(null);
     setSubmitting(true);
 
+    const totalFees = parseFee(total);
+    const paidFees = parseFee(paid);
+
     if (isSupabaseMode) {
       try {
         const res = await apiMutate<{ data: LawyerClientApiRow }>("/api/v1/lawyer/clients", "POST", {
@@ -47,8 +76,9 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
           type,
           flags: [...flags],
           rating,
-          totalFees: Number(total) || 0,
-          paidFees: Number(paid) || 0,
+          // Both keys are omitted from the body when the lawyer typed nothing.
+          totalFees,
+          paidFees,
         });
         const d = res?.data;
         // A 200 with no `data` used to close the modal as if the client had
@@ -85,8 +115,13 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
         type,
         flags: [...flags],
         rating,
-        totalFees: Number(total) || 0,
-        paidFees: Number(paid) || 0,
+        // Mirrors the rule the API applies on read (readClientClassification):
+        // a fee agreement is a POSITIVE total, and under one a blank advance
+        // means zero paid. Kept in step with the branch above on purpose —
+        // two branches disagreeing about what a blank fee means would leave a
+        // future reader to guess which of them is the honest one.
+        totalFees: totalFees !== undefined && totalFees > 0 ? totalFees : null,
+        paidFees: totalFees !== undefined && totalFees > 0 ? (paidFees ?? 0) : null,
         activeRequests: 0,
         closedRequests: 0,
         lastContact: "",
@@ -180,14 +215,23 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-3">
                 <div>
                   <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${isDark ? "text-zinc-500" : "text-slate-400"}`}>إجمالي الأتعاب (ريال)</label>
-                  <input type="number" value={total} onChange={e => setTotal(e.target.value)} placeholder="0"
+                  {/* Placeholder was "0", which showed a greyed-out zero in an
+                      empty box — the field reading as though it would save 0.
+                      It no longer saves anything at all when left blank. */}
+                  <input type="number" value={total} onChange={e => setTotal(e.target.value)} placeholder="اختياري"
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${isDark ? "border-white/[0.06] bg-zinc-800 text-zinc-200 placeholder:text-zinc-600" : "border-slate-200 bg-slate-50 text-slate-800 placeholder:text-slate-400"}`} />
                 </div>
                 <div>
                   <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${isDark ? "text-zinc-500" : "text-slate-400"}`}>المدفوع مقدمًا (ريال)</label>
-                  <input type="number" value={paid} onChange={e => setPaid(e.target.value)} placeholder="0"
+                  <input type="number" value={paid} onChange={e => setPaid(e.target.value)} placeholder="اختياري"
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${isDark ? "border-white/[0.06] bg-zinc-800 text-zinc-200 placeholder:text-zinc-600" : "border-slate-200 bg-slate-50 text-slate-800 placeholder:text-slate-400"}`} />
                 </div>
+                {/* A blank fee step no longer records a 0, so say what a blank
+                    now means — and say plainly that a total of zero shows
+                    nothing either, rather than letting it look like it saved. */}
+                <p className={`text-[10px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                  اترك الحقلين فارغين إن لم يُتّفق على أتعاب بعد. لا تظهر بطاقة الأتعاب في ملف الموكّل إلا إذا كان الإجمالي أكبر من صفر.
+                </p>
                 <div>
                   <label className={`text-[10px] font-bold uppercase tracking-wider mb-2 block ${isDark ? "text-zinc-500" : "text-slate-400"}`}>التقييم</label>
                   <div className="flex gap-1">
