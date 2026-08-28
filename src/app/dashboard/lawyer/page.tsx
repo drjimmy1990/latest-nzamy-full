@@ -842,16 +842,21 @@ export default function LawyerDashboardPage() {
           <div className={`h-4 w-px mx-1 shrink-0 ${ isDark ? "bg-white/10" : "bg-slate-200"}`} />
 
           {/* ── «Q / C / D» keyboard hints — REMOVED ──────────────────────────
-              Deleted here: a `shortcut` field on three of these six items and
-              the two <kbd> chips that rendered it, so «قضية جديدة» wore a Q,
-              «استشارة جديدة» a C and «صيغ مستند» a D.
+              Deleted here: a `shortcut` field that was on all six of these
+              items — three carried a letter, three an empty string — and the
+              two <kbd> render sites (the button branch and the link branch)
+              that turned it into three chips, so «قضية جديدة» wore a
+              Q, «استشارة جديدة» a C and «صيغ مستند» a D.
 
               Nothing implemented any of them. There is no keydown listener on
-              this page, in its layout, or anywhere else in src/ that tests
-              those keys — not by `e.key`, and not by the layout-independent
-              `e.code` either. The only window-level listeners in the tree are
-              Escape (modals) and Ctrl+K (GlobalSearch). A lawyer who pressed Q
-              got nothing; the chip was the whole feature.
+              this page, in its layout, or anywhere else in src/ that responds
+              to those keys pressed alone — not by `e.key`, and not by the
+              layout-independent `e.code` either. The rule behind that, which
+              outlives any list of files: every global keydown handler in this
+              tree — window-level and document-level alike — either requires
+              Ctrl/⌘ or binds a non-letter key such as Escape. None binds a
+              bare letter. So a lawyer who pressed Q got nothing; the chip was
+              the whole feature.
 
               Deliberately NOT implemented instead. `e.key` is layout-dependent
               — the physical Q on an Arabic keyboard reports «ض», and that is

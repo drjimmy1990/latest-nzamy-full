@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 // ─── Arabic error copy ────────────────────────────────────────────────────────
-// Every message this route can return reaches a user: the lawyer profile editor
-// renders `err.message` straight into the page
-// (src/app/dashboard/lawyer/profile/edit/page.tsx:92), and the onboarding wizard
-// renders the `error` field of the body. So no English and no raw Postgres text
-// leaves this file — those go to the server log instead.
+// Every message this route can return reaches a user: the lawyer profile
+// editor renders `err.message` straight into its save banner (`handleSave`'s
+// catch in LawyerProfileEditPage), and the onboarding wizard renders the
+// `error` field of the body. So no English and no raw Postgres text leaves
+// this file — those go to the server log instead.
 const AR = {
   unauthorized: "يجب تسجيل الدخول للمتابعة.",
   profileNotFound: "لم نعثر على ملفك الشخصي.",
@@ -96,10 +96,10 @@ function normalizeSaudiMobile(raw: unknown): string | null {
  *     ignores roleProfile entirely; its catch leaves the wizard on step 1. A
  *     500 here would therefore re-ask an established lawyer «من أنت؟» and drop
  *     his phone/city prefill because a DIFFERENT table was unreadable.
- *   • src/app/dashboard/lawyer/profile/edit/page.tsx:102 already treats
- *     `roleProfile == null` as "cannot read — save disabled", which is what
- *     stops a blank form from overwriting a real licence number. The marker
- *     leaves that path byte-identical.
+ *   • `load()` in LawyerProfileEditPage (dashboard/lawyer/profile/edit) leaves
+ *     the form unpopulated — and Save disabled — for ANY null `roleProfile`,
+ *     which is what stops a blank form from overwriting a real licence number.
+ *     The marker does not touch that gate; it only picks which banner shows.
  * Neither file is in this change's scope, so the fix had to be additive. A new
  * key is ignored by an old caller; a new status code is not.
  */

@@ -44,6 +44,24 @@ function isRatingFigure(v: unknown): v is number {
 }
 
 /**
+ * The star value AddClientModal sent when the lawyer never touched the widget.
+ *
+ * `useState<1|2|3|4|5>(3)` with `rating` in the request body unconditionally,
+ * and a star widget with no unset state — that is what the modal did from the
+ * initial commit until this pass, and git shows no other default has ever
+ * existed. This POST is also the only writer of `metadata.rating` on a manual
+ * client row (this route has one insert and no update; there is no edit path in
+ * the product).
+ *
+ * Both facts together are what make the read below decidable: a stored 1, 2, 4
+ * or 5 could not have got into the row without the lawyer clicking a star,
+ * while a stored 3 is two different events collapsed onto one byte-identical
+ * value — a deliberate three, and a form step nobody visited. Nothing in the
+ * row separates those two.
+ */
+const LEGACY_UNTOUCHED_RATING = 3;
+
+/**
  * Read back the classification a lawyer typed into AddClientModal.
  *
  * These five keys are written by the POST below into service_requests.metadata
@@ -57,7 +75,45 @@ function isRatingFigure(v: unknown): v is number {
  * what this client owes» are different statements, and only one of them is true.
  */
 function readClientClassification(meta: Record<string, unknown>) {
-  const rating = isRatingFigure(meta.rating) ? meta.rating : null;
+  /**
+   * A rating is reported only when it is provably something the lawyer did.
+   *
+   * The rule here used to be `isRatingFigure(meta.rating) ? meta.rating : null`,
+   * which accepts the modal's old untouched default (see
+   * LEGACY_UNTOUCHED_RATING) as a real figure. So every manually-added client
+   * came back rated, and three gold stars were drawn on four live screens — the
+   * directory card, the detail page header, its «تقييم التعامل» row and the
+   * drawer — for a lawyer who had never rated anyone. The rows are already in
+   * the table, so tightening only the modal repairs nothing: this read is what
+   * repairs them, and it does it without a migration.
+   *
+   * Three cases, one question — is this value an act?
+   *
+   *   • `ratingChosen === true`: the caller stated, alongside the number, that
+   *     it is a choice rather than a widget default — which only a caller with
+   *     a real unset state can say. Trust the value, 3 included.
+   *   • No marker, value ≠ 3: the old modal could not produce it without a
+   *     click, and nothing else writes this key. It is a real rating a real
+   *     lawyer gave, and discarding it because a sibling case is ambiguous
+   *     would destroy true data to fix invented data.
+   *   • No marker, value 3: unknowable. Report nothing.
+   *
+   * COST, stated plainly: a lawyer who deliberately gave three stars before
+   * today loses that rating from every screen, and with no edit path anywhere
+   * in the product cannot restore it except by re-adding the client. That is
+   * the price of the alternative being worse — keeping an invented three on
+   * every client who was never rated at all.
+   *
+   * The marker fails closed. If it is ever lost — a future writer replacing the
+   * whole metadata object rather than merging into it — the rating reads as
+   * absent. It can silence a real rating; it can never manufacture one.
+   */
+  const storedRating = isRatingFigure(meta.rating) ? meta.rating : null;
+  const rating =
+    storedRating === null ? null
+    : meta.ratingChosen === true ? storedRating
+    : storedRating === LEGACY_UNTOUCHED_RATING ? null
+    : storedRating;
 
   /**
    * A fee agreement is a POSITIVE total. A stored 0 is not one.
@@ -359,13 +415,14 @@ export async function POST(request: NextRequest) {
     const { user, supabase } = auth;
 
     const body = await request.json();
-    const { name, phone, email, type, flags, rating, totalFees, paidFees } = body as {
+    const { name, phone, email, type, flags, rating, ratingChosen, totalFees, paidFees } = body as {
       name?: string;
       phone?: string;
       email?: string;
       type?: string;
       flags?: string[];
       rating?: number;
+      ratingChosen?: boolean;
       totalFees?: number;
       paidFees?: number;
     };
@@ -417,8 +474,52 @@ export async function POST(request: NextRequest) {
     const metadata: Record<string, unknown> = { client: true };
     if (type) metadata.clientType = type;
     if (Array.isArray(flags)) metadata.flags = flags;
-    // Guarded by the same predicates the reader uses, checked just above.
-    if (isRatingFigure(rating)) metadata.rating = rating;
+    /**
+     * Guarded by the same predicates the reader uses, checked just above — and
+     * stored only in the forms the reader can actually read back, which is this
+     * route's standing rule (see the fee guard's «POST refuses to store what
+     * this guard would refuse to read»).
+     *
+     * `ratingChosen` is CORROBORATION, not an anti-forgery token: it is a
+     * caller stating that this number is a choice and not a widget default. A
+     * caller that sends it is asserting exactly what the marker means, so there
+     * is nothing to forge — its absence is what carries information, and the
+     * absence is read as "this could be the old default".
+     *
+     * That distinction is not academic, because the marker must survive a
+     * deploy. Six lawyers work these screens live and a tab opened before the
+     * deploy keeps the old chunk — the modal opens from page state, so nothing
+     * forces a fresh one. That stale modal still sends `rating: 3`
+     * unconditionally. Marking every rating this route receives would stamp
+     * "the lawyer chose this" onto those fabricated threes, and unlike the rows
+     * this pass repairs they would be permanently unrepairable, because the
+     * read guard would believe them.
+     *
+     * So the three cases mirror readClientClassification exactly:
+     *   • corroborated → store the rating and the marker.
+     *   • uncorroborated, not 3 → store the rating alone. The old modal could
+     *     not produce it without a click, so the reader honours it on
+     *     provenance and nothing is lost.
+     *   • uncorroborated 3 → store NOTHING. It is the one value this route
+     *     cannot tell apart from a default, so the reader will refuse it; also
+     *     writing it would put a figure in the database that no screen can ever
+     *     show, which is the defect this whole pass exists to close. The caller
+     *     is not left guessing: the response below echoes what was persisted,
+     *     so it comes back with `rating: null` and the saved card renders
+     *     starless — the same thing the next page load will say.
+     *
+     * The marker goes into the same object that is inserted, so the
+     * `.select(...)` below round-trips it and a genuinely rated client shows
+     * their stars on the card's very first render.
+     */
+    if (isRatingFigure(rating)) {
+      if (ratingChosen === true) {
+        metadata.rating = rating;
+        metadata.ratingChosen = true;
+      } else if (rating !== LEGACY_UNTOUCHED_RATING) {
+        metadata.rating = rating;
+      }
+    }
     if (isMoneyFigure(totalFees)) metadata.totalFees = totalFees;
     if (isMoneyFigure(paidFees)) metadata.paidFees = paidFees;
 

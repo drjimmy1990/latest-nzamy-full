@@ -96,7 +96,27 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
   const [total,    setTotal]    = useState("");
   const [paid,     setPaid]     = useState("");
   const [flags,    setFlags]    = useState<Set<ClientFlag>>(new Set());
-  const [rating,   setRating]   = useState<1|2|3|4|5>(3);
+  /**
+   * `null` = this lawyer has not rated this client. It is the state the form
+   * opens in, and «مسح التقييم» gets back to it.
+   *
+   * This was `useState<1|2|3|4|5>(3)` with `rating` sent unconditionally below,
+   * and the star widget had no unset state at all — so every lawyer who moved
+   * past the (optional) fee step without touching the stars wrote
+   * `metadata.rating = 3`. It came back from the API as a real figure and drew
+   * three gold stars on four screens for a client nobody had rated: exactly the
+   * shape of the fee-zeros defect above, an optional step that recorded a value
+   * anyway.
+   *
+   * Unrated now means the key is dropped from the request body entirely, so the
+   * row carries no rating and every screen omits the stars. When a rating IS
+   * chosen this form says so explicitly, in `ratingChosen` beside it, and the
+   * API records that alongside the number — because a deliberate 3 and the old
+   * untouched 3 are the same number in the database, and without that statement
+   * the read guard that repairs the existing rows would swallow honest new
+   * threes too.
+   */
+  const [rating,   setRating]   = useState<1|2|3|4|5|null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error,    setError]    = useState<string | null>(null);
 
@@ -138,7 +158,16 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
           email: email.trim() || undefined,
           type,
           flags: [...flags],
-          rating,
+          // Dropped by JSON.stringify when no star was clicked, exactly like the
+          // two fee keys: an untouched widget must reach the API as silence, not
+          // as a number.
+          rating: rating ?? undefined,
+          // The rating and the STATEMENT that it was chosen travel together.
+          // The API cannot infer the second from the first: a tab still running
+          // the pre-deploy bundle sends `rating: 3` whether or not a star was
+          // touched, and the six live lawyers keep tabs open. This key is what
+          // separates this form's three from that one.
+          ratingChosen: rating !== null ? true : undefined,
           // Both keys are omitted from the body when the lawyer typed nothing.
           totalFees,
           paidFees,
@@ -313,15 +342,44 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
                   </div>
                 )}
                 <div>
-                  <label className={`text-[10px] font-bold uppercase tracking-wider mb-2 block ${isDark ? "text-zinc-500" : "text-slate-400"}`}>التقييم</label>
-                  <div className="flex gap-1">
-                    {([1,2,3,4,5] as const).map(s => (
-                      <button key={s} onClick={() => setRating(s)}>
-                        <Star size={22} weight={s <= rating ? "fill" : "regular"}
-                          className={s <= rating ? "text-amber-400" : isDark ? "text-zinc-700" : "text-slate-300"} />
+                  <label className={`text-[10px] font-bold uppercase tracking-wider mb-2 block ${isDark ? "text-zinc-500" : "text-slate-400"}`}>التقييم (اختياري)</label>
+                  {/* Five stars that SET a rating and one control that clears
+                      it. Clicking the lit star does NOT toggle it off: a lawyer
+                      who wants exactly three would click the third star, see it
+                      unset, and have no idea why. Setting and clearing are two
+                      different gestures, and both are on screen. */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1">
+                      {([1,2,3,4,5] as const).map(s => (
+                        <button key={s} type="button" onClick={() => setRating(s)}
+                          aria-label={`تقييم ${s} من 5`}
+                          aria-pressed={rating !== null && s <= rating}>
+                          {/* Both attributes need the null check, not just one:
+                              `s <= null` is false for every star, which would
+                              render five empty stars — the right picture by
+                              accident, off a comparison that is not asking
+                              anything. */}
+                          <Star size={22} weight={rating !== null && s <= rating ? "fill" : "regular"}
+                            className={rating !== null && s <= rating ? "text-amber-400" : isDark ? "text-zinc-700" : "text-slate-300"} />
+                        </button>
+                      ))}
+                    </div>
+                    {rating === null ? (
+                      <span className={`text-[11px] font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>لم يُقيَّم</span>
+                    ) : (
+                      <button type="button" onClick={() => setRating(null)}
+                        className={`text-[11px] font-bold underline ${isDark ? "text-zinc-400 hover:text-zinc-200" : "text-slate-500 hover:text-slate-700"}`}>
+                        مسح التقييم
                       </button>
-                    ))}
+                    )}
                   </div>
+                  {/* Says what an untouched widget now means, before the lawyer
+                      wonders — the same job the fee hint above does. zinc-*,
+                      never gray-100/200: globals.css redefines those as dark
+                      surfaces and the line would vanish in dark mode. */}
+                  <p className={`text-[10px] leading-relaxed mt-2 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                    اترك التقييم فارغًا إن لم تُقيّم الموكّل بعد. لا تظهر النجوم في بطاقة الموكّل ولا في ملفه إلا إذا اخترت تقييمًا.
+                  </p>
                 </div>
               </motion.div>
             )}

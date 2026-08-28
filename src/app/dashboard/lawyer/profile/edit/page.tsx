@@ -72,7 +72,17 @@ type ProfileApiResponse = {
  */
 type BlockedReason = "read-failed" | "no-row" | "no-server";
 
-const BLOCKED_COPY: Record<BlockedReason, { title: string; body: string }> = {
+/**
+ * `retry` is BOTH the button's label and the condition that renders it: an
+ * entry without one shows no button. That keeps "may this state be re-read?"
+ * next to the sentence that state puts on screen, instead of in a separate
+ * `blocked === …` test in the JSX that drifts away from it — which is exactly
+ * how the no-row lawyer lost his button once already.
+ */
+const BLOCKED_COPY: Record<
+  BlockedReason,
+  { title: string; body: string; retry?: string }
+> = {
   // «قد يمسح», not «سيمسح». A failed read tells us nothing about what is in
   // the row — including whether there is one — so the certain version was
   // itself a small over-claim of exactly the kind this round is closing. The
@@ -80,17 +90,33 @@ const BLOCKED_COPY: Record<BlockedReason, { title: string; body: string }> = {
   "read-failed": {
     title: "لم تُقرأ بياناتك الحالية — الحفظ معطّل",
     body: "الحقول أدناه فارغة لأننا لم نتمكن من قراءة ملفك، لا لأن ملفك فارغ. لا نعرف ما هو محفوظ فيه الآن، والحفظ بحقول فارغة قد يمسح نبذتك وتخصصاتك ورقم ترخيصك. لن يُحفظ شيء مما تكتبه هنا قبل أن تنجح القراءة — أعد المحاولة أولاً.",
+    retry: "إعادة المحاولة",
   },
   "no-row": {
     // The reason Save is off here is NOT the overwrite risk — there is nothing
     // to overwrite. It is that PATCH /api/v1/profile updates an existing row
-    // (src/app/api/v1/profile/route.ts:368-378) and an UPDATE matching zero
-    // rows comes back as PGRST116 → 500. Saying "we could not read you" here
-    // would be the false half of the pair this round was opened to fix.
+    // (the `lawyer_profiles` update in its PATCH handler) and an UPDATE
+    // matching zero rows comes back as PGRST116 → 500. Saying "we could not
+    // read you" here would be the false half of the pair this round opened on.
+    //
+    // The body used to end «يرجى التواصل مع الدعم لإنشائه» — an instruction
+    // whose outcome no feature delivers. Re-verified: no route inserts into
+    // `lawyer_profiles` for an existing account (the tree's only insert is
+    // onboarding/account-type through a dynamic `spec.table`, and it refuses a
+    // caller whose `user_type` is already set), and the admin surface only
+    // selects, updates `verification_status` or `credit_balance`, or deletes.
+    // What replaces it is the MECHANISM rather than a step: the admin console
+    // tells the operator to add the row by hand
+    // (`newSectorRowNotes` in src/app/dashboard/admin/users/[id]/page.tsx —
+    // «أنشئ الصف يدويًا من قاعدة البيانات»). Naming it is also what makes the
+    // retry button below honest: it says what a re-read could ever pick up.
     title: "لا يوجد سجل مهني مرتبط بحسابك — الحفظ معطّل",
-    body: "قرأنا حسابك بنجاح ولم نجد سجلاً مهنياً مرتبطاً به، فالحقول أدناه فارغة لهذا السبب لا لتعذّر القراءة. الحفظ هنا يُحدّث سجلاً قائماً ولا يُنشئ سجلاً جديداً، ولا يمكن إنشاء السجل المهني من لوحة التحكم — يرجى التواصل مع الدعم لإنشائه. لن يُحفظ شيء مما تكتبه هنا.",
+    body: "قرأنا حسابك بنجاح ولم نجد سجلاً مهنياً مرتبطاً به، فالحقول أدناه فارغة لهذا السبب لا لتعذّر القراءة. الحفظ هنا يُحدّث سجلاً قائماً ولا يُنشئ سجلاً جديداً، ولا توجد في المنصة — لا في هذه الصفحة ولا في لوحة المسؤول — أداة تُنشئ هذا السجل؛ إنشاؤه تدخّل يدوي في قاعدة البيانات من مشغّل المنصة. لن يُحفظ شيء مما تكتبه هنا، وإن أُنشئ السجل فاضغط «إعادة القراءة» أدناه ليظهر دون إعادة تحميل الصفحة.",
+    retry: "إعادة القراءة",
   },
   "no-server": {
+    // No `retry`: there is no server in this build, so a re-read is the one
+    // thing that genuinely cannot help here.
     title: "التعديل غير متاح في هذا الوضع",
     body: "هذه الصفحة تقرأ ملفك من الخادم وتحفظ إليه، والخادم غير متصل في هذا الوضع. لم نعرض بيانات بديلة، ولن يُحفظ شيء مما تكتبه هنا.",
   },
@@ -321,12 +347,17 @@ export default function LawyerProfileEditPage() {
         failed to read him, and that saving «كان سيمسح نبذتك ورقم ترخيصك» when
         there was nothing there to erase.
 
-        «إعادة المحاولة» is offered for the read failure ONLY. Re-reading is a
-        real fix for that and for nothing else: it cannot conjure a row, and in
-        a demo build there is no server to re-read from. Offering it in those
-        states would be a button that pretends to be a way out. (The old
-        `isSupabaseMode` guard on it is therefore redundant now — "read-failed"
-        is only ever reached from inside the try, past the demo early-return.)
+        The retry button is driven by `BLOCKED_COPY[blocked].retry`: present for
+        the two states a re-read can actually change, absent for the demo build,
+        where there is no server to re-read from. An earlier pass narrowed it to
+        "read-failed" alone on the ground that re-reading «cannot conjure a
+        row» — true, and beside the point, because the button never claimed to.
+        A re-read is the ONLY in-page way to pick up a row that came into
+        existence outside this dashboard, which is precisely the state the
+        no-row banner describes; without it that lawyer had to reload the whole
+        browser tab, and nothing on screen told him so. (This also restores what
+        the older `isSupabaseMode` guard did in the browser: shown for both
+        server-backed states, hidden in a demo build.)
       */}
       {!loaded && blocked && (
         <div className={`rounded-2xl border p-4 flex gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
@@ -338,10 +369,10 @@ export default function LawyerProfileEditPage() {
             <p className={`text-[11px] mt-1 leading-relaxed ${isDark ? "text-zinc-400" : "text-amber-700/70"}`}>
               {BLOCKED_COPY[blocked].body}
             </p>
-            {blocked === "read-failed" && (
+            {BLOCKED_COPY[blocked].retry && (
               <button onClick={() => { setMsg(null); setLoading(true); load(); }}
                 className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-[11px] font-bold text-[#C8A762] transition-colors hover:bg-[#0a3328]">
-                <ArrowClockwise size={13} weight="bold" /> إعادة المحاولة
+                <ArrowClockwise size={13} weight="bold" /> {BLOCKED_COPY[blocked].retry}
               </button>
             )}
           </div>

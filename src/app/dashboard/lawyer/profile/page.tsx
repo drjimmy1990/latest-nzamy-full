@@ -364,9 +364,9 @@ export default function LawyerProfilePage() {
               created from the editor either — but the editor now names these
               same two states and disables Save in both, so the link leads to a
               page that REPEATS this sentence rather than to a blank form that
-              contradicts it. Gating it would also take the retry button away
-              from the lawyer whose read merely failed. Hence: narrow the
-              comment, keep the link.
+              contradicts it. Gating it would also take the retry button away —
+              from BOTH of these states, since the editor offers a re-read in
+              each. Hence: narrow the comment, keep the link.
 
               Why creating the row is still deferred, and the single thing to
               verify against production before anyone builds it, is recorded at
@@ -380,18 +380,34 @@ export default function LawyerProfilePage() {
                 {profileData.roleProfileReadFailed
                   ? "تعذّر قراءة بياناتك المهنية (التخصصات، رقم الترخيص، حالة التوثيق، إعداد الظهور في الدليل). ما يظهر أعلاه هو بيانات حسابك فقط. لم نعرض قيماً بديلة عن الحقول التي لم تُقرأ."
                   /*
-                    «من لوحة التحكم», not «من هذه الصفحة». The editor one click
-                    away cannot create the row either, so scoping this to "this
-                    page" would let a lawyer bouncing between the two infer that
-                    some third page can. Both screens now state the same scope
-                    and point at the same next step — support, which in this
-                    project is the owner, the only person who can add the row.
-                    «التواصل مع الدعم» is the phrase already shipped for a state
-                    only the operator can undo (account-type/route.ts:144 uses
-                    it for a missing `profiles` row), and /contact exists as a
-                    route — it is not a channel invented for this sentence.
+                    Scope, then mechanism, then stop.
+
+                    «من لوحة التحكم», not «من هذه الصفحة», stays: the editor one
+                    click away cannot create the row either, so scoping this to
+                    "this page" would let a lawyer bouncing between the two
+                    infer that some third page can.
+
+                    What went with it is «يرجى التواصل مع الدعم لإنشائه» — an
+                    instruction whose outcome no feature delivers. Re-verified
+                    for this round: nothing in the tree inserts into
+                    `lawyer_profiles` for an account that already exists. The
+                    single insert is in onboarding/account-type through a
+                    DYNAMIC `spec.table` (invisible to a `from("lawyer_profiles")`
+                    grep), and it refuses any caller whose `user_type` is
+                    already set; across the admin routes the table is only
+                    selected from, updated (`verification_status`,
+                    `credit_balance`), or dropped with the user.
+
+                    The row can still come to exist — but by a hand on the
+                    database, not by a request. The admin console says so to the
+                    only person who can do it (`newSectorRowNotes` in
+                    src/app/dashboard/admin/users/[id]/page.tsx: «أنشئ الصف
+                    يدويًا من قاعدة البيانات»). So the sentence names that
+                    mechanism and offers no step: describing how a row comes
+                    into being is not the same as telling a lawyer to go and ask
+                    for one.
                   */
-                  : "لا يوجد سجل مهني مرتبط بحسابك حتى الآن (التخصصات، رقم الترخيص، حالة التوثيق، إعداد الظهور في الدليل). ما يظهر أعلاه هو بيانات حسابك فقط. لا يمكن إنشاء السجل المهني من لوحة التحكم — يرجى التواصل مع الدعم لإنشائه."}
+                  : "لا يوجد سجل مهني مرتبط بحسابك حتى الآن (التخصصات، رقم الترخيص، حالة التوثيق، إعداد الظهور في الدليل). ما يظهر أعلاه هو بيانات حسابك فقط. ولا يمكن إنشاء هذا السجل من لوحة التحكم؛ إنشاؤه تدخّل يدوي في قاعدة البيانات من مشغّل المنصة."}
               </p>
             </div>
           ) : (
