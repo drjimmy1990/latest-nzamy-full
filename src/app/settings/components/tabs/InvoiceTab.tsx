@@ -1,22 +1,42 @@
 "use client";
 
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { Receipt, Upload, CheckCircle } from "@phosphor-icons/react";
-import { BackendReadyNotice, LocalActionStatus, SectionTitle } from "./_shared";
+import { Receipt, Upload } from "@phosphor-icons/react";
+import { BackendReadyNotice, SectionTitle } from "./_shared";
 
+// ── Tab: Invoices ────────────────────────────────────────────────────
+// REMOVED: handleSave, the `saved` tick with its «تم الحفظ» label, the
+// setTimeout that reset it, and the logo-upload handler — with the useState /
+// motion / CheckCircle / LocalActionStatus imports they were the only users of.
+//
+// The save button reported «تم حفظ إعدادات الفواتير محلياً فقط» and flashed a
+// green check. The five inputs below are uncontrolled — no `name`, no `ref`, no
+// `onChange` — so nothing typed here was ever read, let alone stored: not on the
+// server, not in localStorage, not in React state. The whole handler was
+// `setSaved(true)`. The word «محلياً» made a complete no-op sound like a
+// deliberate local-only save, which is the worst version of this: the user is
+// told their input was kept somewhere, so they close the tab and stop worrying.
+//
+// The logo button was the same lie in a smaller frame: there is no
+// `<input type="file">` anywhere in this file, so «رفع شعار الفاتورة محلي فقط»
+// announced an action that could not have happened even in the browser.
+//
+// Both controls are now disabled with a stated Arabic reason, and the caption
+// under the logo no longer promises «يظهر في أعلى كل فاتورة مُصدَرة» — no
+// invoice is issued from this platform. Do NOT re-enable either control before
+// a real destination exists: a route that stores invoice identity, and a
+// storage path for the logo. Binding these inputs to component state is not
+// that destination — if the button can be pressed, the user is entitled to
+// assume the value survives the page.
+//
+// The fields stay on screen because they state, accurately, what an invoice
+// will need. They are format hints only — see the comment on the input below.
 export function InvoiceTab() {
-  const [saved, setSaved] = useState(false);
-  const [localMessage, setLocalMessage] = useState<string | null>(null);
-  const handleSave = () => {
-    setSaved(true);
-    setLocalMessage("تم حفظ إعدادات الفواتير محلياً فقط؛ إصدار فواتير حقيقي ينتظر Billing API.");
-    setTimeout(() => setSaved(false), 2500);
-  };
-
   return (
     <div className="space-y-8">
-      <BackendReadyNotice />
+      <BackendReadyNotice>
+        لا تُحفظ إعدادات الفواتير من هذه الصفحة، ولا تُصدر هذه الصفحة أي فاتورة. ما تكتبه في الحقول أدناه لا
+        يُرسل ولا يُخزَّن في أي مكان. لتسجيل بيانات فاتورتك أو طلب فاتورة رسمية تواصل مع فريق نظامي.
+      </BackendReadyNotice>
 
       <div>
         <SectionTitle>بيانات الفاتورة</SectionTitle>
@@ -28,13 +48,17 @@ export function InvoiceTab() {
             </div>
             <div>
               <button
-                onClick={() => setLocalMessage("رفع شعار الفاتورة محلي فقط؛ تخزين الملفات ينتظر الباك إند.")}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-royal dark:text-[#C8A762] border border-royal/20 dark:border-[#C8A762]/20 rounded-xl hover:bg-royal/5 transition-colors"
+                type="button"
+                disabled
+                title="رفع شعار الفاتورة غير متاح حالياً"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl border border-zinc-200 text-zinc-400 disabled:cursor-not-allowed dark:border-white/[0.08] dark:text-zinc-500"
               >
                 <Upload size={14} />
-                رفع شعار الفاتورة
+                رفع شعار الفاتورة — قريباً
               </button>
-              <p className="text-[11px] text-zinc-400 mt-1">يظهر في أعلى كل فاتورة مُصدَرة</p>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                لا يوجد مكان يُحفظ فيه الشعار بعد، فلا يمكن رفعه من هنا.
+              </p>
             </div>
           </div>
 
@@ -65,15 +89,20 @@ export function InvoiceTab() {
         </div>
       </div>
 
-      <motion.button
-        whileTap={{ scale: 0.98, y: 1 }}
-        onClick={handleSave}
-        className="flex items-center gap-2 px-8 py-3 bg-royal hover:bg-royal/90 text-white rounded-xl font-semibold text-sm transition-all shadow-[0_4px_14px_-4px_rgba(11,61,46,0.4)]"
-      >
-        {saved && <CheckCircle size={18} weight="fill" />}
-        {saved ? "تم الحفظ" : "حفظ إعدادات الفواتير"}
-      </motion.button>
-      <LocalActionStatus show={Boolean(localMessage)} message={localMessage ?? undefined} />
+      <div>
+        <button
+          type="button"
+          disabled
+          title="حفظ إعدادات الفواتير غير متاح حالياً"
+          className="flex items-center gap-2 px-8 py-3 rounded-xl font-semibold text-sm disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:text-zinc-500 disabled:shadow-none dark:disabled:bg-zinc-700 dark:disabled:text-zinc-400"
+        >
+          حفظ إعدادات الفواتير — قريباً
+        </button>
+        <p className="text-xs leading-6 text-zinc-500 dark:text-zinc-400 mt-2">
+          الحفظ معطّل لأن هذه البيانات لا تُخزَّن في أي مكان؛ لا توجد جهة تستقبلها بعد. لتحديث بيانات
+          فاتورتك تواصل مع فريق نظامي.
+        </p>
+      </div>
     </div>
   );
 }
