@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarCheck, Clock, MapPin, Gavel, Plus, Warning,
   CheckCircle, FileText, Buildings, Receipt,
-  MagnifyingGlass, Star, CheckSquare,
+  MagnifyingGlass, CaretDown, Star, CheckSquare,
   Hourglass, CaretRight, CaretLeft, X,
   User, ArrowRight, List, CalendarBlank,
   ArrowSquareOut, Scales, ArrowClockwise, CircleNotch,
@@ -1107,16 +1107,33 @@ export default function LawyerHearingsPage() {
           </div>
         </div>
 
-        {/* Main Search Bar & Quick Filters */}
+        {/* Search and sort appear only when there is something to search.
+            Finding 157: this bar rendered over a diary of ZERO rows, so a
+            lawyer with nothing scheduled was handed a search box and a sort
+            drawer that could only ever return nothing. `loadState === "ready"`
+            is part of the condition on purpose — while the read is in flight,
+            or after it failed, `events.length` is 0 for a reason that has
+            nothing to do with the diary being empty, and hiding the controls
+            then would be a second wrong answer.
+
+            Finding 194: «الفرز المتقدم» opens a drawer and looked like plain
+            text — no chevron, no chrome. The caret below points down when
+            closed and up when open, so the control says what it does before
+            you click it and says what state it is in after. */}
+        {loadState === "ready" && events.length > 0 && (
         <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border ${isDark?"border-white/[0.06] bg-zinc-800/80":"border-slate-200 bg-slate-50"}`}>
           <MagnifyingGlass size={16} className={isDark?"text-zinc-500":"text-slate-400"}/>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="بحث سريع في المواعيد والجلسات..."
             className={`flex-1 text-[13px] font-medium bg-transparent outline-none ${isDark?"text-zinc-200 placeholder:text-zinc-600":"text-slate-700 placeholder:text-slate-400"}`}/>
           <div className={`w-px h-5 mx-1 ${isDark?"bg-zinc-700":"bg-slate-300"}`}/>
-          <button onClick={()=>setShowFilters(!showFilters)} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[12px] font-bold transition-all ${showFilters?isDark?"bg-zinc-700 text-white":"bg-slate-200 text-[#0B3D2E]":isDark?"text-zinc-400 hover:bg-zinc-700 hover:text-white":"text-slate-500 hover:bg-slate-200 hover:text-slate-800"}`}>
+          <button onClick={()=>setShowFilters(!showFilters)}
+            aria-expanded={showFilters}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[12px] font-bold transition-all ${showFilters?isDark?"border-white/[0.12] bg-zinc-700 text-white":"border-slate-300 bg-slate-200 text-[#0B3D2E]":isDark?"border-white/[0.08] text-zinc-400 hover:bg-zinc-700 hover:text-white":"border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-800"}`}>
             الفرز المتقدم
+            <CaretDown size={12} weight="bold" className={`transition-transform ${showFilters ? "rotate-180" : ""}`}/>
           </button>
         </div>
+        )}
 
         {/* Advanced Filters Drawer */}
         <AnimatePresence>
