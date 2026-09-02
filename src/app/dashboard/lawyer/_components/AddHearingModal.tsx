@@ -267,7 +267,24 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
 
                   {/* Both gates are real: a typeless row renders under the wrong
                       badge, and a dateless row has nowhere to sit on a calendar. */}
-                  <button onClick={() => setStep(2)} disabled={!type || !date} className="w-full rounded-xl bg-[#0B3D2E] text-[#C8A762] py-2.5 text-[13px] font-bold hover:bg-[#092e22] transition mt-2 disabled:opacity-40">
+                  {/* A DISABLED PALETTE, not `disabled:opacity-40`.
+                      Fading the button fades its LABEL with it: dark green at
+                      40% is a washed sage and «#C8A762» on top of it is barely
+                      readable, which is what shot 20 shows. Opacity is the
+                      wrong tool for "off" — it makes the control quieter AND
+                      less legible, when the whole job of a disabled control is
+                      to stay readable while refusing the click.
+                      A flat neutral surface with mid-grey text reads as off and
+                      stays legible. `cursor-not-allowed` says the same thing to
+                      the pointer. */}
+                  <button onClick={() => setStep(2)} disabled={!type || !date}
+                    className={`w-full rounded-xl py-2.5 text-[13px] font-bold transition mt-2 ${
+                      (!type || !date)
+                        ? isDark
+                          ? "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+                          : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                        : "bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22]"
+                    }`}>
                     الخطوة التالية
                   </button>
                 </motion.div>

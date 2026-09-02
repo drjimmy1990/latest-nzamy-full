@@ -745,7 +745,16 @@ export default function CaseDetailPage() {
                 {caseData.requester?.name ?? "—"}
               </span>
               <span className="flex items-center gap-1.5"><MapPin size={13} />{court}</span>
-              <span className="flex items-center gap-1.5"><User size={13} />{assigneeDisplay}</span>
+              {/* `Scales`, not `User`. The field two rows up — the CLIENT — also
+                  drew a person, so the row read as two people with no way to
+                  tell which was which (finding 183). The scales are the lawyer
+                  in this product's own icon vocabulary; they are what the case
+                  tab strip uses.
+                  The missing NAME is the other half of 183 and is not fixable
+                  here: `assigned_to` is a UUID and nothing joins it to a
+                  profile, so the honest line is the fact of assignment. Naming
+                  the lawyer needs the Phase 1 tables. */}
+              <span className="flex items-center gap-1.5"><Scales size={13} />{assigneeDisplay}</span>
               {value && (
                 <span className="flex items-center gap-1.5"><MoneyWavy size={13} />{value}</span>
               )}

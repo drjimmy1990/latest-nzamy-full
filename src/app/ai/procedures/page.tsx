@@ -135,9 +135,22 @@ export default function ProceduresPage() {
                     <Lightning size={10} className="inline me-1 text-amber-500" />{q}
                   </button>
                 ))}
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                {/* Same reasoning as the hearing modal: `disabled:opacity-40`
+                    on a dark-green button washes the label out with the
+                    background, so shot 09 reads it as "desaturated / disabled-
+                    looking" — which it is, except a user cannot tell whether it
+                    is off on purpose or just badly drawn. A neutral disabled
+                    surface with legible grey text answers that. */}
+                <motion.button whileHover={query.trim() && !searching ? { scale: 1.02 } : {}}
+                  whileTap={query.trim() && !searching ? { scale: 0.97 } : {}}
                   onClick={() => doSearch()} disabled={!query.trim() || searching}
-                  className="ms-auto rounded-xl bg-[#0B3D2E] px-5 py-2 text-[12px] font-bold text-white disabled:opacity-40">
+                  className={`ms-auto rounded-xl px-5 py-2 text-[12px] font-bold transition-colors ${
+                    (!query.trim() || searching)
+                      ? isDark
+                        ? "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+                        : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      : "bg-[#0B3D2E] text-white hover:bg-[#092e22]"
+                  }`}>
                   {searching ? (
                     <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                       className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white mx-auto" />
@@ -411,9 +424,22 @@ export default function ProceduresPage() {
                     <Lightning size={10} className="inline me-1 text-amber-500" />{q}
                   </button>
                 ))}
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                {/* Same reasoning as the hearing modal: `disabled:opacity-40`
+                    on a dark-green button washes the label out with the
+                    background, so shot 09 reads it as "desaturated / disabled-
+                    looking" — which it is, except a user cannot tell whether it
+                    is off on purpose or just badly drawn. A neutral disabled
+                    surface with legible grey text answers that. */}
+                <motion.button whileHover={query.trim() && !searching ? { scale: 1.02 } : {}}
+                  whileTap={query.trim() && !searching ? { scale: 0.97 } : {}}
                   onClick={() => doSearch()} disabled={!query.trim() || searching}
-                  className="ms-auto rounded-xl bg-[#0B3D2E] px-5 py-2 text-[12px] font-bold text-white disabled:opacity-40">
+                  className={`ms-auto rounded-xl px-5 py-2 text-[12px] font-bold transition-colors ${
+                    (!query.trim() || searching)
+                      ? isDark
+                        ? "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+                        : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      : "bg-[#0B3D2E] text-white hover:bg-[#092e22]"
+                  }`}>
                   {searching ? (
                     <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                       className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white mx-auto" />
