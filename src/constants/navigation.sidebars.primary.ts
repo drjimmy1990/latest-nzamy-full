@@ -106,9 +106,21 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
     defaultOpen: true,
     gateKey: "celebrity",
     items: [
-      { label: "لوحة الإحصائيات",  labelEn: "Analytics",     href: "/dashboard/client/celebrity/status",    icon: "ChartLine", badge: "جديد" },
-      { label: "إحالاتي وعمولاتي", labelEn: "Referrals",     href: "/dashboard/client/celebrity/referrals", icon: "Gift" },
-      { label: "رمز الإحالة",       labelEn: "Referral Code", href: "/dashboard/client/celebrity/code",      icon: "QrCode" },
+      // ── قريباً, because the PAGE says قريباً ──────────────────────────────
+      // Six nav rows pointed at a page rendering DashboardComingSoon while
+      // promising something else in the badge slot. Two were actively wrong
+      // rather than merely silent:
+      //
+      //   «ربعي»            badged «نشط»  — ACTIVE, over a coming-soon page
+      //   «لوحة الإحصائيات» badged «جديد» — NEW, over a coming-soon page
+      //
+      // …and four carried no badge at all, so the nav read as a working feature
+      // until you clicked it. The matrix already ordered exactly this for two
+      // other unfinished pages (rows 126 and 134); these are the ones that fix
+      // did not reach. A nav entry is a promise about the page under it.
+      { label: "لوحة الإحصائيات",  labelEn: "Analytics",     href: "/dashboard/client/celebrity/status",    icon: "ChartLine", badge: "قريباً" },
+      { label: "إحالاتي وعمولاتي", labelEn: "Referrals",     href: "/dashboard/client/celebrity/referrals", icon: "Gift", badge: "قريباً" },
+      { label: "رمز الإحالة",       labelEn: "Referral Code", href: "/dashboard/client/celebrity/code",      icon: "QrCode", badge: "قريباً" },
     ],
   },
 
@@ -123,7 +135,7 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
       // does not exist behind this link. The plans are public, at /pricing,
       // and the client dashboard links there from its plan card.
       { label: "محفظتي",           labelEn: "My Wallet",       href: "/dashboard/client/wallet",   icon: "Wallet",     divider: true },
-      { label: "ربعي",             labelEn: "My Group",        href: "/dashboard/client/my-group", icon: "UsersThree", badge: "نشط", requiresClientGroup: true },
+      { label: "ربعي",             labelEn: "My Group",        href: "/dashboard/client/my-group", icon: "UsersThree", badge: "قريباً", requiresClientGroup: true },
       { label: "المجتمع القانوني", labelEn: "Legal Community", href: "/community",                 icon: "Users" },
       // «المكتبة القانونية» → /laws stood here (owner item ٥٢). Removed from the
       // INDIVIDUAL sidebar only. The library itself is untouched and stays
@@ -131,8 +143,8 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
       // public site; /laws is not redirected and does not 404. What this
       // removes is the claim that a raw statute browser is part of an
       // individual client’s own workspace.
-      { label: "برنامج الإحالة",   labelEn: "Referral",        href: "/dashboard/client/referral", icon: "Gift" },
-      { label: "ميديا نظامي",      labelEn: "Nzamy Media",     href: "/media",                     icon: "PlayCircle",  badge: "جديد" },
+      { label: "برنامج الإحالة",   labelEn: "Referral",        href: "/dashboard/client/referral", icon: "Gift", badge: "قريباً" },
+      { label: "ميديا نظامي",      labelEn: "Nzamy Media",     href: "/media",                     icon: "PlayCircle",  badge: "قريباً" },
       { label: "الإشعارات",        labelEn: "Notifications",   href: "/notifications",             icon: "Bell" },
       { label: "الإعدادات",        labelEn: "Settings",        href: "/settings",                  icon: "GearSix" },
     ],
