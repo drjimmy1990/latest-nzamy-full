@@ -154,7 +154,17 @@ export default function HijriDateWidget() {
   return (
     <>
       {/* Chip */}
-      <button onClick={()=>setOpen(true)} className={`flex items-center gap-2 px-3 py-2 rounded-2xl text-[12px] font-semibold transition-all cursor-pointer ${chipBase}`}>
+      {/* `min-w-[9.5rem]` reserves the chip's usual footprint.
+          Making `now` null-first removed the stale date but replaced it with a
+          65px reflow on every dashboard load: 40px of bare sun icon on the
+          server, 105px once the browser filled the date in — measured, not
+          estimated. The date pill sits in the sidebar header ABOVE the user
+          card, so that reflow pushed the whole nav on every page. 9.5rem is the
+          common case («الأربعاء ٢٠ ربيع الأول ٢/٩/٢٠٢٦»); the widest possible
+          content («٣٠ جمادى الآخرة») measures 214px and still fits the sidebar's
+          224px inner width, so a long month grows the chip instead of clipping
+          it. */}
+      <button onClick={()=>setOpen(true)} className={`flex min-w-[9.5rem] items-center gap-2 px-3 py-2 rounded-2xl text-[12px] font-semibold transition-all cursor-pointer ${chipBase}`}>
         <SunDim size={14} weight="duotone" className="text-amber-500 flex-shrink-0"/>
         <span className="hidden sm:block">{dayName}</span>
         {/* `hijriToday &&` is load-bearing, not defensive noise: the chip is the
