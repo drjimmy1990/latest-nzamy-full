@@ -198,21 +198,32 @@ export default function CommunityHighlights() {
               </a>
             </div>
 
-            <div className="flex flex-wrap gap-2.5">
+            {/* SPANS, not links, and that is the whole point.
+                These were six <a> tags all pointing at bare `/community`, so
+                six differently-labelled buttons did one identical thing —
+                which is defect 2 («two labels for one action») turned inside
+                out: one action wearing six labels. `/community` keeps its
+                category in `useState` (community/page.tsx:64) and reads no
+                search param, so `?category=labor` would be silently ignored;
+                a chip that discards what you clicked is a false promise on the
+                page this component was just cleaned of false promises.
+                They are a list of what the platform covers. The two real
+                actions — browse, and ask — are the link above and the button
+                below, and both go somewhere. */}
+            <ul className="flex flex-wrap gap-2.5 list-none p-0 m-0">
               {PRACTICE_AREAS.map((area) => (
-                <a
+                <li
                   key={area.en}
-                  href="/community"
-                  className={`rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all ${
+                  className={`rounded-2xl border px-4 py-2.5 text-sm font-semibold ${
                     isDark
-                      ? "border-white/10 bg-white/[0.03] text-gray-300 hover:border-emerald-400/40 hover:text-white"
-                      : "border-slate-200 bg-slate-50/60 text-gray-700 hover:border-[#0B3D2E]/30 hover:bg-white"
+                      ? "border-white/10 bg-white/[0.03] text-gray-300"
+                      : "border-slate-200 bg-slate-50/60 text-gray-700"
                   }`}
                 >
                   {isAr ? area.ar : area.en}
-                </a>
+                </li>
               ))}
-            </div>
+            </ul>
 
             <a
               href="/community"
