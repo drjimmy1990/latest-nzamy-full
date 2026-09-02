@@ -190,6 +190,24 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
                 {error}
               </div>
             )}
+            {/* «الخطوة ١ من ٢».
+                The primary button reads «الخطوة التالية», which promises a
+                multi-step flow, and nothing on screen said how many steps there
+                were or which one you were on (shot 25). The add-client modal in
+                this same product already shows «الخطوة N من ٣»; this one showed
+                nothing, so the two dialogs taught the lawyer two different
+                things about how dialogs behave here. */}
+            <div className="mb-4 flex items-center gap-2">
+              {[1, 2].map(n => (
+                <div key={n} className="flex flex-1 flex-col gap-1.5">
+                  <div className={`h-1 rounded-full ${n <= step ? "bg-[#0B3D2E] dark:bg-emerald-500" : isDark ? "bg-white/[0.08]" : "bg-slate-200"}`} />
+                </div>
+              ))}
+              <span className={`shrink-0 text-[11px] font-semibold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                {`الخطوة ${toArabicDigits(step)} من ٢`}
+              </span>
+            </div>
+
             <AnimatePresence mode="wait">
               {step === 1 && (
                 <motion.div key="step1" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-4">

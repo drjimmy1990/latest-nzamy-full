@@ -812,15 +812,29 @@ export function ClientLetterWorkflow({ isDark, card, onBack }: ClientLetterWorkf
             </motion.div>
           )}
 
+          {/* «إلغاء», not «رجوع». This is step 1 and there IS no previous
+              step — `onBack` leaves the wizard. A button labelled «رجوع» on the
+              first screen tells the user there is something behind them, and
+              then takes them out of the flow instead. The later steps keep
+              «رجوع» because there they really do go back one step. */}
           <div className="flex justify-between pt-4">
             <button onClick={onBack} className={`flex items-center gap-2 rounded-xl border px-5 py-2.5 text-[13px] font-bold transition-all ${isDark ? "border-white/10 text-zinc-400 hover:bg-white/5 hover:text-white" : "border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"}`}>
-              <ArrowRight size={14} weight="bold" /> رجوع
+              <ArrowRight size={14} weight="bold" /> إلغاء
             </button>
-            <motion.button whileHover={letterType ? { scale: 1.02 } : {}} whileTap={letterType ? { scale: 0.98 } : {}}
-              onClick={() => setStep(2)} disabled={!letterType}
-              className={`flex items-center gap-2 rounded-xl px-8 py-3 text-[14px] font-bold transition-all ${letterType ? "bg-blue-600 text-white shadow-md hover:bg-blue-700" : isDark ? "bg-white/5 text-zinc-500 cursor-not-allowed" : "bg-zinc-100 text-zinc-400 cursor-not-allowed"}`}>
-              التالي
-            </motion.button>
+            <div className="flex flex-col items-end gap-1.5">
+              <motion.button whileHover={letterType ? { scale: 1.02 } : {}} whileTap={letterType ? { scale: 0.98 } : {}}
+                onClick={() => setStep(2)} disabled={!letterType}
+                className={`flex items-center gap-2 rounded-xl px-8 py-3 text-[14px] font-bold transition-all ${letterType ? "bg-blue-600 text-white shadow-md hover:bg-blue-700" : isDark ? "bg-white/5 text-zinc-500 cursor-not-allowed" : "bg-zinc-100 text-zinc-400 cursor-not-allowed"}`}>
+                التالي
+              </motion.button>
+              {/* A disabled button with no explanation is a dead end: the user
+                  can see it is off and cannot see what turns it on. */}
+              {!letterType && (
+                <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                  اختر نوع الخطاب أولاً
+                </p>
+              )}
+            </div>
           </div>
         </motion.div>
       )}

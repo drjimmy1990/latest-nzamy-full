@@ -409,13 +409,33 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
               {step === 0 ? "إلغاء" : "السابق"}
             </button>
             {step < 2 ? (
-              <button onClick={() => canNext && setStep(s => s + 1)} disabled={!canNext}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
-                التالي
-              </button>
+              <div className="flex flex-col items-end gap-1.5">
+                <button onClick={() => canNext && setStep(s => s + 1)} disabled={!canNext}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
+                  التالي
+                </button>
+                {/* Step 1 already prints its own message under the fee fields;
+                    step 0 printed nothing, so a washed-out «التالي» was the only
+                    signal and it named neither field. It names them now, and
+                    only the one that is actually missing. */}
+                {step === 0 && !canNext && (
+                  <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                    {!name.trim() && !phone.trim()
+                      ? "أدخل اسم الموكّل ورقم جواله للمتابعة"
+                      : !name.trim()
+                        ? "أدخل اسم الموكّل للمتابعة"
+                        : "أدخل رقم جوال الموكّل للمتابعة"}
+                  </p>
+                )}
+              </div>
             ) : (
+              /* `bg-[#0B3D2E]`, not `bg-emerald-600`. Every other primary control
+                 in this modal — and the «فرد» toggle inside it — is the dark
+                 forest green; the final CTA was a brighter emerald, so one modal
+                 shipped two brand greens and the last button looked like it came
+                 from somewhere else. */
               <button onClick={handleSubmit} disabled={submitting}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-[12px] font-bold bg-emerald-600 text-white disabled:opacity-60 transition-opacity">
+                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-60 transition-opacity">
                 <Check size={13} weight="bold" /> {submitting ? "جارٍ الحفظ..." : "إضافة الموكّل"}
               </button>
             )}
