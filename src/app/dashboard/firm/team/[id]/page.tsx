@@ -8,7 +8,7 @@ import {
   ArrowLeft, Star, Gavel, CalendarBlank, Phone, Envelope,
   SealCheck, Student, Key, CheckCircle, Warning,
   ChartBar, Scales, FileText, Handshake,
-  MagnifyingGlassPlus, ChatCircle, Trophy, Target,
+  MagnifyingGlassPlus, ChatCircle, Trophy,
   BookOpen, Flame, Lightning, Lock,
   FilePdf, ChartLine, Users, PencilSimple,
   FunnelSimple, Briefcase, Scroll, Lightbulb, GitMerge,
@@ -58,7 +58,8 @@ export default function FirmTeamMemberPage() {
   const rc = ROLE_CONFIG[member.role];
   const sc = STATUS_CFG[member.status];
   const pts = calcPoints(member.tasks);
-  const winRate = member.casesTotal > 0 ? Math.round((member.casesWon / member.casesTotal) * 100) : 0;
+  // «نسبة الفوز» أُزيلت — القاعدة ٣٨ من قرار وزير العدل رقم ٦٧٦ (١٩/٤/١٤٤٦هـ)
+  // تمنع الإعلان عن نسب فوز غير موثّقة. لا يوجد جدول نتائج يُحتسب منه معدل موثّق.
 
   const card = isDark
     ? 'rounded-2xl border border-white/[0.06] bg-zinc-900/60'
@@ -150,7 +151,6 @@ export default function FirmTeamMemberPage() {
             <div className="flex gap-6 flex-wrap">
               {[
                 {label:'قضايا مكسوبة', val:`${member.casesWon}/${member.casesTotal}`, icon:Trophy},
-                {label:'نسبة الفوز', val:`${winRate}%`, icon:Target},
                 {label:'التقييم', val:`${member.rating}`, icon:Star},
                 {label:'منذ', val:member.joinDate, icon:CalendarBlank},
               ].map(({label,val,icon:Icon})=>(
@@ -227,7 +227,6 @@ export default function FirmTeamMemberPage() {
                 {[
                   {label:'معدل الاستغلال', val:member.utilizationRate},
                   {label:'الالتزام بالمواعيد', val:member.deadlineAdherence},
-                  {label:'نسبة الفوز', val:winRate},
                 ].map(({label,val})=>(
                   <div key={label} className="mb-4">
                     <div className="flex justify-between text-sm mb-1">

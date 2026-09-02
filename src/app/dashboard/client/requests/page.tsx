@@ -24,6 +24,13 @@ import {
   itemsOf,
   type ListRead,
 } from "@/lib/services/listRead";
+// The short, readable order reference. A client quotes their order number over
+// WhatsApp or on the phone; a 36-character UUID is not quotable, so this screen
+// used to hand them something they could not read back. See
+// src/lib/services/orderReference.ts — the UUID stays the identifier, this is
+// only how it is DISPLAYED, and the full id stays reachable in the `title`
+// tooltip and the copy button in the detail modal.
+import { orderReference } from "@/lib/services/orderReference";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CFG: Record<WorkflowRequestStatus, {
@@ -199,7 +206,21 @@ function RequestCard({
                 {req.payment.amount.toLocaleString("ar-SA")} ر.س
               </span>
             )}
-            <span className="font-mono text-gray-300 dark:text-gray-700 text-[10px]">{req.id}</span>
+            {/* `dark:text-gray-700` was invisible-adjacent on a dark card, which
+                did not matter while this printed an unreadable UUID and does
+                now that it prints the number the client quotes. zinc, not gray:
+                globals.css redefines the low gray steps as dark SURFACES. */}
+            {/* `dir="ltr"` on the reference itself — the same treatment every
+                other font-mono id in the app gets. «ORD-8F14E4» is a Latin run
+                inside an RTL line and the bidi algorithm has to be told which
+                way it reads, or the hyphen can jump. */}
+            <span
+              className="font-mono text-zinc-400 dark:text-zinc-500 text-[10px]"
+              dir="ltr"
+              title={req.id}
+            >
+              {orderReference(req.id) || req.id}
+            </span>
           </div>
 
           {/* Audit trail last event */}
@@ -245,6 +266,7 @@ interface RequestDetailModalProps {
 
 function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps) {
   const [copied, setCopied] = useState(false);
+  const [copiedRef, setCopiedRef] = useState(false);
 
   if (!req) return null;
 
@@ -257,6 +279,18 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
     navigator.clipboard.writeText(req.description || "");
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Copies the SHORT reference, not the UUID — the same choice
+  // /ai/orders/[id] already makes. The reference is what the client reads to
+  // the team and what the admin queue resolves back to this row
+  // (matchesOrderReference), so copying the 36-character id would hand them
+  // the string this change exists to stop showing.
+  const reference = orderReference(req.id) || req.id;
+  const handleCopyRef = () => {
+    navigator.clipboard.writeText(reference);
+    setCopiedRef(true);
+    setTimeout(() => setCopiedRef(false), 2000);
   };
 
   // The 1200 ms `setTimeout` that used to wrap this, and the `downloading`
@@ -277,9 +311,11 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
     // Naming the file after the order title ("المحاكي الشامل — تجاري-….txt")
     // would leave a saved artifact that reads like the delivered document on
     // the very page the client goes to looking for it.
+    // The reference rather than the UUID: this lands in the client's Downloads
+    // folder, which is one more place they read an order number back to us.
     element.download = premium
-      ? `ملخص-الطلب-${req.id}.txt`
-      : `${req.title}-${req.id}.txt`;
+      ? `ملخص-الطلب-${reference}.txt`
+      : `${req.title}-${reference}.txt`;
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
@@ -339,8 +375,21 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">
                   {req.title}
                 </h2>
-                <p className="text-xs font-mono text-gray-400 dark:text-gray-500 mt-1">
-                  الرقم التعريفي: {req.id}
+                {/* The quotable reference, with the full id kept on the
+                    element's title for anyone who genuinely needs it (a support
+                    thread, a URL). */}
+                <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mt-1 flex items-center gap-1.5" title={req.id}>
+                  <span>رقم الطلب: <span dir="ltr">{reference}</span></span>
+                  <button
+                    type="button"
+                    onClick={handleCopyRef}
+                    aria-label="نسخ رقم الطلب"
+                    className="p-1 rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                  >
+                    {copiedRef
+                      ? <Check size={12} weight="bold" className="text-emerald-500" />
+                      : <Copy size={12} weight="bold" />}
+                  </button>
                 </p>
               </div>
             </div>

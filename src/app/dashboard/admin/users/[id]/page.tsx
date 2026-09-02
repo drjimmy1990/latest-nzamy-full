@@ -866,8 +866,18 @@ export default function UserProfilePage() {
   const creditTxns = U?.credit_transactions ?? [];
   const statusInfo = U ? (STATUS_MAP[mapStatus(activeSub?.status, U.verified_at)] ?? STATUS_MAP.inactive) : STATUS_MAP.inactive;
 
+  // The last fallback is reached only when `activeSub` is null — i.e. the
+  // account has no subscription row at all — and it used to print «مجاني».
+  // That is a different fact from being on the free plan, and on this platform
+  // it is most accounts: it claimed someone had been placed on a plan when
+  // nothing had been written for them. The list this page opens from
+  // (src/app/dashboard/admin/users/page.tsx) draws the same distinction as
+  // «بدون اشتراك»; the two screens are one click apart and must not disagree
+  // about the same account. The three steps above it are unchanged and stay in
+  // order: the plan's own name_ar, then the tier map, then the raw tier — never
+  // a default for a tier that exists but is unrecognised.
   const planLabel = activeSub?.subscription_plans?.name_ar
-    ?? TIER_MAP[activeSub?.tier ?? ""] ?? activeSub?.tier ?? "مجاني";
+    ?? TIER_MAP[activeSub?.tier ?? ""] ?? activeSub?.tier ?? "بدون اشتراك";
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"

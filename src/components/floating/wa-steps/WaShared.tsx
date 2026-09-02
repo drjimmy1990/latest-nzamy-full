@@ -2,6 +2,23 @@
 
 import { motion } from "framer-motion";
 
+/**
+ * Shown next to every wa.me link the widget offers — the success/outcome step
+ * in WhatsAppWidget.tsx and StepCustomerService below.
+ *
+ * The widget hands a visitor a one-tap line to a law office. Nothing in that
+ * exchange is an engagement: no conflicts check has run, no scope has been
+ * agreed, no fee letter has been signed, and a message that goes unanswered
+ * over a weekend is not representation. A client who believes otherwise can
+ * let a deadline pass while waiting, which is the harm this sentence exists to
+ * prevent — so it is stated where the link is pressed, not buried in the terms
+ * page.
+ *
+ * Deliberately one sentence: a paragraph here would be scrolled past.
+ */
+export const WA_ENGAGEMENT_DISCLAIMER_AR =
+  "المراسلة عبر واتساب لا تُنشئ علاقة موكِّل بمحامٍ ولا تُعدّ قبولاً للوكالة، ما لم يُوقَّع عقد أتعاب.";
+
 // ─── Shared sub-components used across WA step files ─────────────────────────
 
 export function StepDots({ current, total }: { current: number; total: number }) {

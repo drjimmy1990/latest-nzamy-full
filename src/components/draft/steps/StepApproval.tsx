@@ -6,7 +6,7 @@ import {
   CheckCircle, DownloadSimple, ShareNetwork, Lock,
   WhatsappLogo, EnvelopeSimple,
   Microphone, PencilSimple, Sparkle, X, Stop, Play,
-  Plus, Trash, User, Broom, ArrowRight, Star,
+  Plus, Trash, User, Broom, ArrowRight, Star, Warning,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { NajizOptimizerModal } from "@/components/draft/NajizOptimizerModal";
@@ -67,11 +67,51 @@ function ClientRow({
   const [recording, setRecording]   = useState(false);
   const [recSeconds, setRecSeconds] = useState(0);
   const [recorded, setRecorded]     = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   function startRec() { setRecording(true); setRecSeconds(0); timerRef.current = setInterval(() => setRecSeconds(s => s + 1), 1000); }
   function stopRec()  { setRecording(false); setRecorded(true); if (timerRef.current) clearInterval(timerRef.current); }
   const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+  function copyPasscode() {
+    if (!client.passcode) return;
+    navigator.clipboard.writeText(client.passcode);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  }
+
+  /**
+   * WHY THE PASSCODE IS NOT IN THIS MESSAGE
+   *
+   * The passcode is a SECOND factor, and it is only a second factor while it
+   * travels on a channel separate from the link it protects. Both buttons
+   * below used to send «رابط اعتماد المذكرة» and «الباسكود» in the same body,
+   * which collapses two factors into one for anyone who reads that message.
+   *
+   * The delivery made it worse than an ordinary message leak: a `wa.me` /
+   * `mailto:` href is a URL, so the passcode was handed to the OS share
+   * sheet, written into the address bar and stored in browser history — three
+   * plaintext copies on the LAWYER's own device before the client saw it.
+   *
+   * The message therefore carries the link alone. The passcode is copyable
+   * from the panel above and is delivered by the lawyer on another channel.
+   */
+  const shareMessage = client.link
+    ? `مرفق رابط اعتماد المذكرة:\n${client.link}\n\nلفتح الرابط ستحتاج باسكود من ٦ أرقام يصلك بشكل منفصل.`
+    : "";
+
+  const waHref =
+    `https://wa.me/${client.phone.replace(/\s|\+/g, "")}` +
+    `?text=${encodeURIComponent(shareMessage)}`;
+
+  // The old mailto carried raw Arabic in `subject` and a hand-written `%0A`
+  // in an unencoded `body`. Both are encoded exactly once here, and the break
+  // is a real `\n` inside `shareMessage` so it cannot be double-escaped.
+  const mailHref =
+    `mailto:${client.email.trim()}` +
+    `?subject=${encodeURIComponent("مذكرتك للاعتماد")}` +
+    `&body=${encodeURIComponent(shareMessage)}`;
 
   return (
     <div className={`rounded-2xl border overflow-hidden ${isDark ? "border-white/[0.07] bg-zinc-900/60" : "border-slate-200 bg-white shadow-sm"}`}>
@@ -163,6 +203,19 @@ function ClientRow({
           </motion.button>
         ) : (
           <div className="space-y-2">
+            {/*
+             * Same disclosure as ClientSharePanel, same reason: `generateForClient`
+             * mints link + passcode in React state and persists nothing, and
+             * `document_shares` has no writer anywhere in the repository — so the
+             * client meets «الرابط غير موجود». The passcode-separation guidance
+             * below is correct practice and stays; what must not stand is the
+             * implication that the link works today.
+             */}
+            <div className={`rounded-xl p-2.5 border ${isDark ? "border-amber-700/30 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+              <p className={`text-[10px] leading-relaxed ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+                مشاركة المذكرة غير مفعّلة بعد على الخادم — الرابط لن يفتح لدى العميل.
+              </p>
+            </div>
             <div className={`rounded-xl p-2.5 border flex items-center gap-2 ${isDark ? "border-emerald-700/25 bg-emerald-900/8" : "border-emerald-200 bg-emerald-50"}`}>
               <CheckCircle size={11} weight="fill" className="text-emerald-500 flex-shrink-0" />
               <code className={`flex-1 text-[10px] font-mono truncate ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{client.link}</code>
@@ -171,25 +224,40 @@ function ClientRow({
                 {client.linkCopied ? "✓" : "نسخ"}
               </button>
             </div>
-            <div className={`flex items-center justify-between px-3 py-2 rounded-xl border ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
-              <div className="flex items-center gap-1.5">
-                <Lock size={10} className="text-[#C8A762]" weight="fill" />
-                <span className={`text-[10px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>الباسكود:</span>
+            <div className={`px-3 py-2 rounded-xl border space-y-2 ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Lock size={10} className="text-[#C8A762]" weight="fill" />
+                  <span className={`text-[10px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>الباسكود:</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="text-[15px] font-mono font-bold tracking-[0.25em] text-[#C8A762]">{client.passcode}</code>
+                  <button onClick={copyPasscode}
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${codeCopied ? "border-emerald-500/30 text-emerald-500" : isDark ? "border-white/[0.08] text-zinc-500" : "border-slate-200 text-slate-400"}`}>
+                    {codeCopied ? "✓" : "نسخ"}
+                  </button>
+                </div>
               </div>
-              <code className="text-[15px] font-mono font-bold tracking-[0.25em] text-[#C8A762]">{client.passcode}</code>
+              <div className={`flex items-start gap-1.5 pt-1.5 border-t ${isDark ? "border-[#C8A762]/15" : "border-amber-200/70"}`}>
+                <Warning size={11} weight="fill" className="text-[#C8A762] flex-shrink-0 mt-0.5" />
+                <p className={`text-[10px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                  لا تُرسل الباسكود مع الرابط في نفس الرسالة — فالحماية كلها في فصلهما.
+                  سلّمه بقناة أخرى (اتصال هاتفي أو رسالة نصية).
+                </p>
+              </div>
             </div>
             <div className="flex gap-2">
               {client.phone && (
-                <a href={`https://wa.me/${client.phone.replace(/\s|\+/g, "")}?text=${encodeURIComponent(`مرفق رابط اعتماد المذكرة: ${client.link}\nالباسكود: ${client.passcode}`)}`}
+                <a href={waHref}
                   target="_blank" rel="noopener noreferrer"
                   className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white">
-                  <WhatsappLogo size={11} weight="fill" />واتسآب
+                  <WhatsappLogo size={11} weight="fill" />إرسال الرابط
                 </a>
               )}
               {client.email && (
-                <a href={`mailto:${client.email}?subject=مذكرتك للاعتماد&body=الرابط: ${client.link}%0Aالباسكود: ${client.passcode}`}
+                <a href={mailHref}
                   className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold ${isDark ? "border-white/[0.08] text-zinc-300" : "border-slate-200 text-zinc-600"}`}>
-                  <EnvelopeSimple size={11} />بريد
+                  <EnvelopeSimple size={11} />إرسال الرابط
                 </a>
               )}
             </div>

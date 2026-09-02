@@ -11,10 +11,12 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { X, List, Bell } from "@phosphor-icons/react";
 
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { useAdminSettings } from "@/hooks/useAdminSettings";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
 import { getSidebarByUserType, getRoleLabel } from "@/constants/navigation";
 import { SidebarFeatureRequest } from "@/components/FeatureRequestBanner";
@@ -34,9 +36,22 @@ export default function SharedSidebar() {
   const {
     userType: sessionUserType, subRole, name, credits, creditsMax,
     dashboardMode, active_roles, governmentRole, businessRole,
-    affiliation, isDemoBypass, country
+    affiliation, isDemoBypass, country, loading
   } = useUser();
-  
+
+  // Whether the two inputs `useSubscription().can()` reads have settled.
+  //
+  // Until they have, `can()` answers from a guest session (tier `free`) and an
+  // empty feature store — so a sidebar item would be painted locked, dimmed and
+  // wearing an upgrade badge for a user who in fact owns it, then quietly
+  // unlock a moment later. `loading` covers the session tier; `mounted` covers
+  // the per-entity feature flags, which `can()` skips entirely while false.
+  // Both are existing state; neither reached the sidebar items before, which is
+  // why the flash was there. Threaded down as a prop rather than read again per
+  // item: every SidebarLink already builds its own copy of both hooks.
+  const { mounted: adminSettingsReady } = useAdminSettings();
+  const gateReady = !loading && adminSettingsReady;
+
   const pathname = usePathname() ?? "/";
   const isAr = lang === "ar";
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -137,6 +152,7 @@ export default function SharedSidebar() {
             isAr={isAr}
             groupIndex={i}
             hasClientGroup={hasClientGroup}
+            gateReady={gateReady}
             onLockedClick={(feature) => {
               setFeatureBlocked(feature);
               setUpgradeOpen(true);
@@ -184,15 +200,18 @@ export default function SharedSidebar() {
         `}
         dir="rtl"
       >
-        {/* Logo */}
+        {/* Logo — the real mark from /logo.png, drawn the same way the public
+            navbar draws it (Navbar.tsx:344). This used to be a «ن» glyph in a
+            coloured box: a stand-in for a logo the platform has always had. */}
         <Link href={dashboardRoot} className="flex items-center gap-2.5 group">
-          <div className="w-8 h-8 rounded-xl bg-[#0B3D2E] flex items-center justify-center group-hover:scale-105 transition-transform">
-            <span
-              className="text-[#C8A762] font-bold text-sm leading-none"
-              style={{ fontFamily: "var(--font-brand, serif)" }}
-            >
-              ن
-            </span>
+          <div className="w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center group-hover:scale-105 transition-transform">
+            <Image
+              src="/logo.png"
+              alt="نظامي"
+              width={32}
+              height={32}
+              className="h-8 w-8 object-contain"
+            />
           </div>
           <span className={`font-bold text-sm tracking-tight ${isDark ? "text-white" : "text-slate-800"}`}>
             نظامي

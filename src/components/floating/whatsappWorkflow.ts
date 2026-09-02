@@ -110,16 +110,70 @@ export function buildWhatsAppHref(message: string, phone = NZAMY_WHATSAPP_NUMBER
   return buildHref(message, phone);
 }
 
-/** Who is asking, with no invented values: an unnamed visitor has no «الاسم» row. */
-function actorSummary(user: UserSession, userCategory: UserCategory): WhatsAppActorSummary {
+/**
+ * WHAT A wa.me LINK IS, AND WHY THIS FILE NOW SENDS ALMOST NOTHING
+ *
+ * `https://wa.me/…?text=…` is a plaintext URL. Before WhatsApp ever sees it,
+ * it is handed to the OS share sheet, it lands in the browser's history and
+ * address bar, it can be copied by any app registered for the scheme, and it
+ * finally sits unencrypted in whatever the recipient's device does with a
+ * received link preview. Everything in `?text=` travels that whole path.
+ *
+ * What used to travel it: «موضوع الطلب: فصل تعسفي», «الوصف: <ما كتبه العميل
+ * في المربع>», «التخصص», «المدينة», «الصفة في القضية», «مرحلة القضية», «نوع
+ * الوثيقة», «الاستعجال» — plus «الكيان: <اسم شركته>» and «الدور: <منصبه>».
+ * That is a legal problem, attributed to a named person at a named employer,
+ * in a URL. Nobody logged it as a bug; it was simply the message the widget
+ * had always built.
+ *
+ * The message now carries FOUR things and no fifth is reachable from here:
+ *
+ *   1. the reference number, when a row was actually created (it rides the
+ *      «حالة الطلب» line — see `outcomeStatusLineAr`),
+ *   2. the requester's own name,
+ *   3. the account type («عميل فرد» / «شركة» / …),
+ *   4. the page the request came from.
+ *
+ * The facts of the matter are still collected, and still reach the office —
+ * through `service_requests`, over TLS, behind a session, in the fulfilment
+ * queue. The reference number is the key that opens them. That is the whole
+ * point of a reference number, and it is why nothing was lost by taking the
+ * details out of the link.
+ *
+ * IF YOU ADD A ROW HERE, ADD IT TO THE ROW ABOVE FIRST. `buildWhatsAppMessage`
+ * will happily print anything it is given; the discipline lives at this call
+ * site, because this is the only place in the app that builds a widget
+ * message.
+ */
+
+/**
+ * The service title the MESSAGE carries — deliberately not the real one.
+ *
+ * `content.title` is `whatsAppServiceTitle(flow, category)`: «طلب توثيق»,
+ * «طلب تمثيل قضائي», «طلب مراجعة عقد». For a representation or a notarisation
+ * that is itself a fact about the matter, and it is the first line a share
+ * sheet renders as the link's preview. The office reads the real title off the
+ * row, by reference.
+ */
+const WA_MESSAGE_SERVICE_TITLE = "طلب مُقدَّم عبر منصة نظامي";
+
+/**
+ * Who is asking, as the MESSAGE is allowed to say it: the name and the account
+ * type, and nothing else. No `roleLabel` («مدير الشؤون القانونية»), no
+ * `entityName` (the employer), no `scopeLabel` — none of the three is one of
+ * the four permitted items, and `entityName` in particular turns the link into
+ * «فلان، من شركة كذا» in plaintext.
+ *
+ * `actorSummary` — the full context — is still built for the `service_requests`
+ * row, which is exactly where that detail belongs.
+ *
+ * An unnamed visitor still has no «الاسم» row: nothing is invented to fill it.
+ */
+function messageActorSummary(user: UserSession, userCategory: UserCategory): WhatsAppActorSummary {
   const category = resolveFloatingCategory(user, userCategory);
-  const actor = getFloatingActorContext(user, userCategory);
   return {
     name: (user.name ?? "").trim(),
     categoryLabel: CATEGORY_LABELS[String(category)] ?? String(category),
-    roleLabel: actor.roleLabel,
-    entityName: actor.entityName,
-    scopeLabel: actor.scopeLabel,
   };
 }
 
@@ -202,10 +256,15 @@ export function buildSupportWhatsAppHref(input: {
   userCategory: UserCategory;
   sourcePath: string;
 }) {
-  const actor = actorSummary(input.user, input.userCategory);
+  const actor = messageActorSummary(input.user, input.userCategory);
   // This one opens a conversation; it creates nothing and claims nothing. The
   // row it used to carry — «حالة التنفيذ: واجهة محلية جاهزة للربط بالباك إند»
   // — described the state of an integration to a law office.
+  //
+  // «طلب مساعدة/دعم» stays as the title here, and is the one title that may:
+  // it names the CHANNEL the visitor pressed, not a legal matter. Nothing was
+  // collected on this path — there is no subject, no description, no case —
+  // so there is nothing else that could leak.
   const message = buildWhatsAppMessage({
     intro: "مرحباً فريق نظامي، أحتاج مساعدة من زر واتساب في الموقع.",
     serviceTitle: "طلب مساعدة/دعم",
@@ -233,7 +292,7 @@ export async function createWhatsAppWorkflow(
 ): Promise<WhatsAppWorkflowReceipt> {
   const category = String(resolveFloatingCategory(input.user, input.userCategory));
   const actorContext = getFloatingActorContext(input.user, input.userCategory);
-  const actor = actorSummary(input.user, input.userCategory);
+  const actor = messageActorSummary(input.user, input.userCategory);
   const flow = resolveWhatsAppFlow(input.history);
 
   const content = buildWhatsAppRequestContent({
@@ -294,13 +353,21 @@ export async function createWhatsAppWorkflow(
     auditEvent: "floating_whatsapp_request_created",
   });
 
+  // `content.rows` — «موضوع الطلب», «الوصف», «التخصص», «المدينة», «الصفة في
+  // القضية», «مرحلة القضية», «نوع الوثيقة», «الاستعجال», the estimate — is
+  // NOT passed. It is the visitor's legal problem in their own words, and a
+  // wa.me link is not a place to put it. It is already on the row this
+  // function just created, under the reference the office reads below.
   const message = buildWhatsAppMessage({
     intro: "مرحباً، أرسلت طلباً عبر نظامي:",
-    serviceTitle: content.title,
+    serviceTitle: WA_MESSAGE_SERVICE_TITLE,
     actor,
     sourcePath: input.sourcePath,
     outcome,
-    detailRows: content.rows,
+    outro:
+      outcome.kind === "recorded"
+        ? "التفاصيل كاملة في الطلب داخل المنصة — أرجو فتحه برقم الطلب أعلاه ومتابعتي هنا."
+        : "أرجو التواصل معي لاستكمال تفاصيل الطلب.",
   });
 
   return { outcome, href: buildWhatsAppHref(message), message };
@@ -317,7 +384,7 @@ export async function createQuickWhatsAppWorkflow(input: {
 }): Promise<WhatsAppWorkflowReceipt> {
   const category = String(resolveFloatingCategory(input.user, input.userCategory));
   const actorContext = getFloatingActorContext(input.user, input.userCategory);
-  const actor = actorSummary(input.user, input.userCategory);
+  const actor = messageActorSummary(input.user, input.userCategory);
 
   const outcome = await recordWidgetRequest({
     id: createWorkflowId("WA"),
@@ -369,13 +436,21 @@ export async function createQuickWhatsAppWorkflow(input: {
     auditEvent: "floating_whatsapp_quick_request_created",
   });
 
+  // No «الوصف» row. It is the card's own copy rather than something the
+  // visitor typed, but it still names the service they asked for — «مراجعة
+  // عقد عمل», «تأسيس كيان» — and the rule for this link does not bend for
+  // wording the platform happens to have authored. The card's real title and
+  // description are on the row, under the reference.
   const message = buildWhatsAppMessage({
     intro: "مرحباً، أرسلت طلباً سريعاً عبر زر واتساب في نظامي:",
-    serviceTitle: input.quickRequest.title,
+    serviceTitle: WA_MESSAGE_SERVICE_TITLE,
     actor,
     sourcePath: input.sourcePath,
     outcome,
-    detailRows: [["الوصف", input.quickRequest.description]],
+    outro:
+      outcome.kind === "recorded"
+        ? "التفاصيل كاملة في الطلب داخل المنصة — أرجو فتحه برقم الطلب أعلاه ومتابعتي هنا."
+        : "أرجو التواصل معي لاستكمال تفاصيل الطلب.",
   });
 
   return { outcome, href: buildWhatsAppHref(message), message };

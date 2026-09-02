@@ -23,7 +23,12 @@ import { getFloatingActorContext } from "./roleContext";
 
 // ─── Step components ──────────────────────────────────────────────────────────
 import WaHeader from "./wa-steps/WaHeader";
-import { StepDots, staggerListVariants, staggerItemVariants } from "./wa-steps/WaShared";
+import {
+  StepDots,
+  WA_ENGAGEMENT_DISCLAIMER_AR,
+  staggerListVariants,
+  staggerItemVariants,
+} from "./wa-steps/WaShared";
 import StepUserType from "./wa-steps/StepUserType";
 import StepServiceSelect from "./wa-steps/StepServiceSelect";
 import StepConsult from "./wa-steps/StepConsult";
@@ -48,9 +53,23 @@ import { StepCustomerService } from "./wa-steps/StepSuccessAndService";
  * all of it is inside a file this change does not own; it is replaced here
  * instead, and reported for deletion.
  *
- * Everything this renders comes from `outcomeScreenCopyAr`, which is pure and
- * under test — the four outcomes and their exact Arabic are asserted in
- * src/lib/services/whatsappRequestMessage.test.ts rather than eyeballed.
+ * The header, the headline, the reference, the tone and whether a WhatsApp
+ * link may be offered still come from `outcomeScreenCopyAr` — pure, under
+ * test, and the thing that makes printing a phantom «رقم الطلب» structurally
+ * impossible.
+ *
+ * `copy.lines` DOES NOT, and the three sentences below explain themselves.
+ * That module's body lines all promise the link carries the request's details
+ * — «الزر أدناه يرسل نفس التفاصيل إلى واتساب المكتب», «اضغط الزر أدناه لإرسال
+ * التفاصيل … حتى لا يضيع طلبك». Since the privacy fix in whatsappWorkflow.ts
+ * the wa.me body carries four things and none of them is a detail: the
+ * reference, the sender's name, their account type, and the page. A wa.me URL
+ * is plaintext that crosses the OS share sheet, so the matter itself no longer
+ * travels in it. Those sentences were true when they were written and are
+ * false now, and they live in src/lib/services/whatsappRequestMessage.ts,
+ * which this change does not own — so the body is authored here, as the
+ * reference-printing bug above was. Reconcile by deleting `lines` from
+ * `WhatsAppOutcomeCopy` once that file can be edited.
  *
  * DARK MODE: `text-gray-300` and `zinc-*` only. src/app/globals.css redefines
  * --color-gray-50/100/200 as dark SURFACES, so `dark:text-gray-100` is
@@ -68,6 +87,38 @@ function WaOutcomeStep({
   onClose: () => void;
 }) {
   const copy = outcomeScreenCopyAr(outcome);
+
+  /**
+   * What is actually true of each outcome, now that the link is a channel and
+   * not a carrier.
+   *
+   * The `anonymous` case is the blunt one, and it has to be: a signed-out
+   * visitor gets no row (the POST is a 401) AND no details in the link, so
+   * nothing they typed reaches anyone. Telling them to sign in and resubmit is
+   * the only instruction that ends with the office holding their request. The
+   * alternative — leaving «هذه هي الطريقة الوحيدة التي يصل بها طلبك الآن» over
+   * a link that carries a name and a URL — sends them away believing a request
+   * was made.
+   */
+  const bodyLines: string[] =
+    outcome.kind === "pending"
+      ? ["لحظة واحدة — نسجّل الطلب في حسابك."]
+      : outcome.kind === "recorded"
+      ? [
+          "وصل الطلب بتفاصيله إلى فريق نظامي، وتجده في «طلباتي» لمتابعة حالته.",
+          "زر واتساب أدناه يفتح محادثة بالاسم ورقم الطلب فقط — لا تُرسَل تفاصيل قضيتك في رابط واتساب، والفريق يقرؤها من الطلب نفسه.",
+        ]
+      : outcome.reason === "anonymous"
+      ? [
+          "لم يُسجَّل الطلب في أي حساب لأنك غير مسجّل الدخول، ولا يوجد رقم طلب لمتابعته.",
+          "زر واتساب أدناه يفتح محادثة بالاسم والصفحة فقط، ولا يحمل ما كتبته — حفاظاً على خصوصيتك، إذ إن رابط واتساب نص مكشوف.",
+          "لكي يصل طلبك بتفاصيله: سجّل الدخول وأعد إرساله من هنا، أو اشرح طلبك بنفسك داخل محادثة واتساب.",
+        ]
+      : [
+          "لم يُنشأ للطلب سجل في حسابك ولا يوجد رقم طلب — قد يكون الاتصال انقطع.",
+          "زر واتساب أدناه يفتح محادثة بالاسم والصفحة فقط، ولا يحمل ما كتبته.",
+          "أعد المحاولة من هنا، أو اشرح طلبك داخل المحادثة حتى لا يضيع.",
+        ];
 
   const icon =
     copy.tone === "success" ? <CheckCircle size={36} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400" />
@@ -105,14 +156,18 @@ function WaOutcomeStep({
         variants={staggerItemVariants}
         className={`w-full rounded-[1.25rem] border px-4 py-3.5 text-[12px] space-y-2 text-start font-medium leading-relaxed ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200/70 bg-gray-50/50"}`}
       >
-        {copy.lines.map(line => (
+        {bodyLines.map(line => (
           <p key={line} className={isDark ? "text-gray-300" : "text-gray-700"}>{line}</p>
         ))}
       </motion.div>
 
       {/* An anchor, never a scripted window.open from an async continuation:
           a popup opened after an await is blocked by every browser, and this
-          link is the part of the widget that has always genuinely worked. */}
+          link is the part of the widget that has always genuinely worked.
+
+          The label says what it does. «إرسال التفاصيل عبر واتساب», and the
+          aria-label «إرسال تفاصيل الطلب عبر واتساب» underneath it, described a
+          link that no longer carries any detail. */}
       {copy.showWhatsAppLink && href && (
         <motion.a
           variants={staggerItemVariants}
@@ -120,10 +175,23 @@ function WaOutcomeStep({
           target="_blank"
           rel="noopener noreferrer"
           className="w-full flex items-center justify-center gap-2 py-3.5 rounded-[1.25rem] bg-[#25D366] text-white text-[13px] font-bold hover:bg-[#1ebe5d] active:scale-[0.98] transition-all shadow-lg shadow-[#25D366]/20"
-          aria-label="إرسال تفاصيل الطلب عبر واتساب"
+          aria-label="فتح محادثة واتساب مع مكتب نظامي"
         >
-          <WhatsappLogo size={20} weight="fill" /> إرسال التفاصيل عبر واتساب
+          <WhatsappLogo size={20} weight="fill" /> فتح محادثة واتساب مع المكتب
         </motion.a>
+      )}
+
+      {/* Said wherever a wa.me link is offered — here and in
+          StepCustomerService. A client who describes their case in a WhatsApp
+          thread and hears nothing back must not be able to believe a lawyer
+          took it on. */}
+      {copy.showWhatsAppLink && href && (
+        <motion.p
+          variants={staggerItemVariants}
+          className="text-[11px] leading-relaxed text-start font-medium text-zinc-500 dark:text-zinc-400"
+        >
+          {WA_ENGAGEMENT_DISCLAIMER_AR}
+        </motion.p>
       )}
 
       <motion.button

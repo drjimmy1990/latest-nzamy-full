@@ -147,7 +147,14 @@ export function getNotificationCategories(userType: string | null): NotifCategor
       return [
         { key: "case_assign",    label: "تعيين القضايا",            description: "قضية جديدة مُعيَّنة لك",         defaultOn: true  },
         { key: "hearing",        label: "مواعيد الجلسات",           description: "جلسة مجدولة قادمة",              defaultOn: true  },
-        { key: "nafath_login",   label: "دخول عبر نفاذ",            description: "تنبيه عند أي دخول بهويتك",       defaultOn: true  },
+        // 2026-09-02 — «دخول عبر نفاذ» («تنبيه عند أي دخول بهويتك») was here,
+        // switched on by default. It promised alerts on an event that cannot
+        // occur: there is no Nafath sign-in on this platform and no
+        // integration behind it. The settings tab that staged the same claim
+        // was deleted in the same change. A device-login alert that IS real
+        // in intent lives in SecurityTab; this row asserted a national
+        // identity provider was watching the account, which is a different
+        // and much larger claim.
         { key: "circular",       label: "التعاميم الرسمية",          description: "تعميم جديد من الجهة",            defaultOn: true  },
         ...shared,
       ];

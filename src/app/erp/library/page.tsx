@@ -45,55 +45,55 @@ const TEMPLATES = [
     id: 1, category: "corporate",
     title: { ar: "عقد تأسيس شركة ذات مسؤولية محدودة", en: "LLC Incorporation Agreement" },
     desc:  { ar: "نموذج متكامل لتأسيس شركة ذات مسؤولية محدودة وفق نظام الشركات السعودي 2022", en: "Full template for LLC incorporation under Saudi Companies Law 2022" },
-    pages: 14, downloads: 1247, rating: 4.9, badge: { ar: "الأكثر تحميلاً", en: "Top Download" }, badgeColor: "bg-gold/15 text-gold-dark dark:text-gold",
+    pages: 14, badge: null, badgeColor: "", // أُزيل وسم «الأكثر تحميلاً»: ترتيبٌ مبنيّ على عدّاد تحميلات مُختلَق
   },
   {
     id: 2, category: "hr",
     title: { ar: "عقد عمل لوظيفة تنفيذية", en: "Executive Employment Contract" },
     desc:  { ar: "عقد عمل احترافي للمناصب التنفيذية متوافق مع نظام العمل السعودي ولوائح هيئة الموارد البشرية", en: "Professional employment contract for executive roles, compliant with Saudi Labor Law" },
-    pages: 8, downloads: 983, rating: 4.8, badge: null, badgeColor: "",
+    pages: 8, badge: null, badgeColor: "",
   },
   {
     id: 3, category: "contracts",
     title: { ar: "عقد توريد وخدمات", en: "Supply & Services Agreement" },
     desc:  { ar: "نموذج شامل لعقود التوريد والخدمات مع بنود الضمان وحل النزاعات والتحكيم", en: "Comprehensive supply and services template with warranty clauses, dispute resolution, and arbitration" },
-    pages: 11, downloads: 856, rating: 4.7, badge: null, badgeColor: "",
+    pages: 11, badge: null, badgeColor: "",
   },
   {
     id: 4, category: "compliance",
     title: { ar: "سياسة الامتثال لمكافحة غسل الأموال", en: "AML Compliance Policy" },
     desc:  { ar: "سياسة متكاملة للامتثال لمتطلبات مكافحة غسل الأموال وفق متطلبات SAMA وFATF", en: "Comprehensive AML compliance policy per SAMA and FATF requirements" },
-    pages: 18, downloads: 724, rating: 4.9, badge: { ar: "محدّث 2025", en: "Updated 2025" }, badgeColor: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+    pages: 18, badge: { ar: "محدّث 2025", en: "Updated 2025" }, badgeColor: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
   },
   {
     id: 5, category: "litigation",
     title: { ar: "مذكرة دفاع في قضية تجارية", en: "Commercial Defense Memorandum" },
     desc:  { ar: "هيكل احترافي لمذكرة الدفاع في القضايا التجارية أمام المحكمة التجارية السعودية", en: "Professional defense memorandum structure for commercial cases before Saudi Commercial Court" },
-    pages: 6, downloads: 611, rating: 4.6, badge: null, badgeColor: "",
+    pages: 6, badge: null, badgeColor: "",
   },
   {
     id: 6, category: "finance",
     title: { ar: "فاتورة خدمات قانونية (ZATCA Phase 2)", en: "Legal Services Invoice (ZATCA Phase 2)" },
     desc:  { ar: "قالب فاتورة إلكترونية متوافق مع متطلبات هيئة الزكاة والضريبة والجمارك — المرحلة الثانية", en: "E-invoice template compliant with ZATCA Phase 2 requirements" },
-    pages: 2, downloads: 2103, rating: 5.0, badge: { ar: "متوافق ZATCA", en: "ZATCA Compliant" }, badgeColor: "bg-royal/10 text-royal dark:text-emerald-400",
+    pages: 2, badge: { ar: "متوافق ZATCA", en: "ZATCA Compliant" }, badgeColor: "bg-royal/10 text-royal dark:text-emerald-400",
   },
   {
     id: 7, category: "corporate",
     title: { ar: "نظام حوكمة مجلس الإدارة", en: "Board Governance Charter" },
     desc:  { ar: "لائحة تنظيمية شاملة لمجلس الإدارة تتوافق مع متطلبات هيئة السوق المالية وإرشادات الحوكمة", en: "Comprehensive board regulation compliant with CMA requirements and governance guidelines" },
-    pages: 22, downloads: 445, rating: 4.8, badge: null, badgeColor: "",
+    pages: 22, badge: null, badgeColor: "",
   },
   {
     id: 8, category: "hr",
     title: { ar: "لائحة الموارد البشرية الداخلية", en: "Internal HR Policy" },
     desc:  { ar: "لائحة شاملة للموارد البشرية تغطي التوظيف والأداء والإجازات والانضباط والإنهاء", en: "Comprehensive HR policy covering recruitment, performance, leave, discipline, and termination" },
-    pages: 35, downloads: 788, rating: 4.7, badge: null, badgeColor: "",
+    pages: 35, badge: null, badgeColor: "",
   },
   {
     id: 9, category: "contracts",
     title: { ar: "اتفاقية عدم إفصاح وسرية (NDA)", en: "Non-Disclosure Agreement (NDA)" },
     desc:  { ar: "اتفاقية سرية متبادلة أو أحادية الاتجاه مع بنود حماية المعلومات التجارية السرية", en: "Mutual or one-way NDA with clauses protecting confidential business information" },
-    pages: 5, downloads: 1876, rating: 4.9, badge: { ar: "الأكثر استخداماً", en: "Most Used" }, badgeColor: "bg-gold/15 text-gold-dark dark:text-gold",
+    pages: 5, badge: null, badgeColor: "", // أُزيل وسم «الأكثر استخداماً»: ترتيبٌ مبنيّ على عدّاد تحميلات مُختلَق
   },
 ];
 
@@ -140,13 +140,14 @@ function TemplateCard({ t, isAr, isDark, index }: { t: typeof TEMPLATES[0]; isAr
         {isAr ? t.desc.ar : t.desc.en}
       </p>
 
-      {/* Meta */}
+      {/*
+        أُزيل من هذا السطر عدّاد التحميلات (١٢٤٧، ٩٨٣، ٢١٠٣ …) وتقييم النجوم
+        (٤٫٩، ٤٫٨ …): لا يوجد تتبّع للتحميلات ولا جدول تقييمات في قاعدة البيانات،
+        وكانت القيم مكتوبة يدوياً في مصفوفة TEMPLATES. عدد الصفحات وحده خاصية
+        ثابتة للمستند فبقي.
+      */}
       <div className={`flex items-center gap-3 text-[11px] mb-4 ${isDark ? "text-gray-500" : "text-slate-400"}`}>
         <span className="flex items-center gap-1"><Tag size={11} />{isAr ? `${t.pages} صفحة` : `${t.pages} pages`}</span>
-        <span>·</span>
-        <span className="flex items-center gap-1"><Download size={11} />{t.downloads.toLocaleString()}</span>
-        <span>·</span>
-        <span className="flex items-center gap-1 text-gold"><Star size={11} weight="fill" />{t.rating}</span>
       </div>
 
       {/* Actions */}
@@ -228,10 +229,15 @@ export default function ErpLibraryPage() {
             <h1 className="mt-3 text-4xl font-bold text-white sm:text-5xl">
               {isAr ? "مكتبة القوالب القانونية" : "Legal Template Library"}
             </h1>
+            {/*
+              أُزيلت «مئات القوالب» و«مُحدَّثة باستمرار»: مصفوفة TEMPLATES أعلاه
+              تحتوي على ٩ قوالب مكتوبة في الملف، ولا شيء يحدّثها.
+              لا تُعِد عدداً هنا ما لم يكن محسوباً من مصدر البيانات فعلاً.
+            */}
             <p className="mt-4 max-w-xl text-lg text-white/70">
               {isAr
-                ? "مئات القوالب القانونية الجاهزة، مُحدَّثة باستمرار، ومتوافقة مع الأنظمة السعودية. استخدمها مباشرةً أو خصّصها بالذكاء الاصطناعي."
-                : "Hundreds of ready-made legal templates, continuously updated and compliant with Saudi regulations. Use them directly or customize with AI."}
+                ? "قوالب قانونية جاهزة متوافقة مع الأنظمة السعودية. استخدمها مباشرةً أو خصّصها لحالتك."
+                : "Ready-made legal templates aligned with Saudi regulations. Use them directly or tailor them to your case."}
             </p>
           </motion.div>
 
@@ -242,15 +248,21 @@ export default function ErpLibraryPage() {
             transition={{ delay: 0.2 }}
             className="mt-10 flex flex-wrap gap-6"
           >
+            {/*
+              أُزيلت هنا ثلاث "إحصاءات" مُختلَقة: «٣٠٠+ قالب جاهز» (العدد الحقيقي
+              في مصفوفة TEMPLATES = ٩)، «١٢ تصنيفاً قانونياً» (العدد الحقيقي في
+              CATEGORIES = ٦ عدا «الكل»)، «٩٨٪ توافق مع الأنظمة» (لا قياس لهذا
+              التوافق ولا جهة تدقّقه). استُبدلت بعبارات بلا أرقام.
+              لا تُعِد رقماً هنا ما لم يكن محسوباً من بيانات حقيقية.
+            */}
             {[
-              { value: "٣٠٠+", label: isAr ? "قالب جاهز" : "Ready Templates" },
-              { value: "١٢", label: isAr ? "تصنيفاً قانونياً" : "Legal Categories" },
-              { value: "٩٨٪", label: isAr ? "توافق مع الأنظمة" : "Regulatory Compliance" },
-              { value: "AI", label: isAr ? "تخصيص تلقائي" : "Auto-Customization" },
+              { label: isAr ? "مصاغة وفق الأنظمة واللوائح السعودية" : "Drafted against Saudi laws and regulations" },
+              { label: isAr ? "قابلة للتعديل قبل الاعتماد" : "Editable before you sign off" },
+              { label: isAr ? "مصنّفة حسب المجال القانوني" : "Sorted by legal domain" },
             ].map((s, i) => (
               <div key={i} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 backdrop-blur">
-                <span className="text-2xl font-black text-gold">{s.value}</span>
-                <span className="text-sm text-white/60">{s.label}</span>
+                <BookOpen size={18} weight="duotone" className="shrink-0 text-gold" />
+                <span className="text-sm text-white/70">{s.label}</span>
               </div>
             ))}
           </motion.div>

@@ -31,16 +31,20 @@ type Lang = "ar" | "en";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
+// أُزيلت هنا ثلاث "إحصاءات" مُختلَقة: «١٢٠٠+ عقد منجز»، «٩٨٪ رضا العملاء»
+// (لا يوجد جدول تقييمات في قاعدة البيانات)، «٢٤ ساعة تسليم» (لا التزام تسليم
+// متعاقَد عليه). استُبدلت بعروض قيمة بلا أرقام.
+// لا تُعِد رقماً هنا ما لم يكن محسوباً من بيانات حقيقية.
 const stats = {
   ar: [
-    { label: "عقد منجز", value: "١٢٠٠+" },
-    { label: "رضا العملاء", value: "٩٨٪" },
-    { label: "ساعة تسليم", value: "٢٤" },
+    { label: "تعرف التكلفة قبل الطلب", value: "سعر معروف مسبقاً" },
+    { label: "مراجعة محامٍ قبل التسليم", value: "توقيع بشري" },
+    { label: "الملاحظات والنسخ داخل المنصة", value: "تعديل موثّق" },
   ],
   en: [
-    { label: "Contracts Completed", value: "1,200+" },
-    { label: "Client Satisfaction", value: "98%" },
-    { label: "Hour Delivery", value: "24" },
+    { label: "Know the cost before you order", value: "Price up front" },
+    { label: "A lawyer reviews before delivery", value: "Human sign-off" },
+    { label: "Comments and versions kept in-platform", value: "Tracked revisions" },
   ],
 };
 
@@ -108,13 +112,15 @@ const pricingTiers = {
 const faqs = {
   ar: [
     { q: "ما صيغ الملفات المدعومة؟", a: "تدعم المنصة جميع الصيغ الشائعة — PDF، Word (.docx)، وصور JPEG/PNG. يتولى نظام AI تحويلها وتحليلها تلقائياً." },
-    { q: "كيف يعمل تحليل AI للعقود؟", a: "يقرأ النموذج كل بند ويقيس توازنه وفق قاعدة بيانات من آلاف العقود السعودية، ثم يصنّف كل بند في ثلاثة مستويات خطورة ويشرح السبب." },
+    // أُزيلت «قاعدة بيانات من آلاف العقود السعودية»: لا وجود لهذه القاعدة.
+    // (يبقى وصف الأداة نفسه محلَّ مراجعة — لا نموذج لغوي موصول بأدوات AI بعد.)
+    { q: "كيف يعمل تحليل AI للعقود؟", a: "يقرأ النموذج كل بند ويقيس توازنه، ثم يصنّف كل بند في ثلاثة مستويات خطورة ويشرح السبب." },
     { q: "هل الصياغة متوافقة مع الأنظمة السعودية؟", a: "نعم، جميع العقود المصاغة تمر بمراجعة محامٍ معتمد ومتخصص في نظام الشركات ونظام العمل وأنظمة التجارة السعودية." },
     { q: "ما مدة إنجاز العقود؟", a: "مراجعة العقد تُنجز خلال ٢٤ ساعة. صياغة العقد من الصفر تستغرق ٤٨-٧٢ ساعة حسب التعقيد. خدمات الطوارئ متاحة بسعر إضافي." },
   ],
   en: [
     { q: "What file formats are supported?", a: "The platform supports all common formats — PDF, Word (.docx), and JPEG/PNG images. The AI system converts and analyzes them automatically." },
-    { q: "How does AI contract analysis work?", a: "The model reads each clause and evaluates its balance against a database of thousands of Saudi contracts, then classifies each clause at three risk levels with explanations." },
+    { q: "How does AI contract analysis work?", a: "The model reads each clause and evaluates its balance, then classifies each clause at three risk levels with explanations." },
     { q: "Are drafted contracts compliant with Saudi law?", a: "Yes, all drafted contracts are reviewed by a certified lawyer specializing in Saudi company law, labor law, and commercial regulations." },
     { q: "How long does it take to complete contracts?", a: "Contract review is completed within 24 hours. Drafting from scratch takes 48-72 hours depending on complexity. Rush services are available at an additional fee." },
   ],
@@ -176,8 +182,8 @@ export default function ContractsPage() {
                   transition={{ delay: 0.3 + i * 0.1 }}
                   className="text-center"
                 >
-                  <div className="text-3xl font-black text-royal">{stat.value}</div>
-                  <div className={`text-sm mt-0.5 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{stat.label}</div>
+                  <div className="text-base font-black text-royal">{stat.value}</div>
+                  <div className={`text-sm mt-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{stat.label}</div>
                 </motion.div>
               ))}
             </div>

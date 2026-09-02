@@ -33,7 +33,8 @@ interface MemberLoad {
   tasks: TaskBreakdown;
   utilizationRate: number;
   deadlineAdherence: number;
-  winRate?: number;
+  // ملاحظة تنظيمية: لا يوجد حقل «نسبة فوز» هنا عن قصد — القاعدة ٣٨ من قرار وزير
+  // العدل رقم ٦٧٦ (١٩/٤/١٤٤٦هـ) تمنع عرض نسب فوز غير موثّقة. لا تُعِد إضافته.
   trend: "up" | "down" | "stable";
 }
 
@@ -64,9 +65,9 @@ function getStatus(pts: number): LoadStatus {
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 const TEAM: MemberLoad[] = [
-  { id:"1", name:"سارة المنصور",  role:"partner",   specialization:"التجاري والعقاري", tasks:{ litigation:2, memos:1, contracts_complex:1, contracts_standard:2, due_diligence:0, advisory:2, negotiations:1 }, utilizationRate:72, deadlineAdherence:96, winRate:85, trend:"stable" },
-  { id:"2", name:"تركي العمر",    role:"associate", specialization:"العمالي والمدني",  tasks:{ litigation:3, memos:2, contracts_complex:0, contracts_standard:1, due_diligence:1, advisory:1, negotiations:0 }, utilizationRate:81, deadlineAdherence:88, winRate:78, trend:"up" },
-  { id:"3", name:"نورة الشمري",   role:"associate", specialization:"الأحوال الشخصية", tasks:{ litigation:1, memos:1, contracts_complex:0, contracts_standard:0, due_diligence:0, advisory:3, negotiations:1 }, utilizationRate:65, deadlineAdherence:97, winRate:90, trend:"stable" },
+  { id:"1", name:"سارة المنصور",  role:"partner",   specialization:"التجاري والعقاري", tasks:{ litigation:2, memos:1, contracts_complex:1, contracts_standard:2, due_diligence:0, advisory:2, negotiations:1 }, utilizationRate:72, deadlineAdherence:96, trend:"stable" },
+  { id:"2", name:"تركي العمر",    role:"associate", specialization:"العمالي والمدني",  tasks:{ litigation:3, memos:2, contracts_complex:0, contracts_standard:1, due_diligence:1, advisory:1, negotiations:0 }, utilizationRate:81, deadlineAdherence:88, trend:"up" },
+  { id:"3", name:"نورة الشمري",   role:"associate", specialization:"الأحوال الشخصية", tasks:{ litigation:1, memos:1, contracts_complex:0, contracts_standard:0, due_diligence:0, advisory:3, negotiations:1 }, utilizationRate:65, deadlineAdherence:97, trend:"stable" },
   { id:"4", name:"خالد الحربي",   role:"associate", specialization:"الإداري",          tasks:{ litigation:0, memos:1, contracts_complex:1, contracts_standard:3, due_diligence:0, advisory:1, negotiations:0 }, utilizationRate:55, deadlineAdherence:94, trend:"down" },
   { id:"5", name:"موضي القرشي",   role:"trainee",   specialization:"عام",              tasks:{ litigation:0, memos:1, contracts_complex:0, contracts_standard:2, due_diligence:0, advisory:1, negotiations:0 }, utilizationRate:48, deadlineAdherence:92, trend:"stable" },
   { id:"6", name:"فيصل الدوسري",  role:"trainee",   specialization:"التجاري",          tasks:{ litigation:0, memos:0, contracts_complex:0, contracts_standard:1, due_diligence:0, advisory:2, negotiations:0 }, utilizationRate:40, deadlineAdherence:100, trend:"down" },
@@ -216,7 +217,6 @@ export default function FirmWorkloadPage() {
                 <div className="flex gap-3 flex-shrink-0 text-center">
                   <div><p className={`text-[13px] font-black font-mono ${isDark?"text-white":"text-slate-800"}`}>{m.utilizationRate}%</p><p className={`text-[9px] ${muted}`}>استغلال</p></div>
                   <div><p className={`text-[13px] font-black font-mono ${m.deadlineAdherence>=95?"text-emerald-500":m.deadlineAdherence>=90?isDark?"text-white":"text-slate-800":"text-amber-500"}`}>{m.deadlineAdherence}%</p><p className={`text-[9px] ${muted}`}>التزام</p></div>
-                  {m.winRate && <div><p className={`text-[13px] font-black font-mono ${isDark?"text-[#C8A762]":"text-[#0B3D2E]"}`}>{m.winRate}%</p><p className={`text-[9px] ${muted}`}>فوز</p></div>}
                 </div>
                 {/* vs avg */}
                 <div className="flex-shrink-0 w-16 text-center">

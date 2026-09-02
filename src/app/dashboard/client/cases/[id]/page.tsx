@@ -14,6 +14,12 @@ import {
   getServiceRequestDetail,
   type ServiceRequestDetail,
 } from "@/lib/services/casesService";
+// The same short reference the cards on ../page.tsx already print (they get it
+// from clientDashboardCards, which calls this helper). This screen printed the
+// raw UUID, so «رقم القضية» read differently in the list and in the file it
+// opens — the client could not tell they were the same row. The UUID is still
+// the identifier and is still in the URL; only the display shortens.
+import { orderReference } from "@/lib/services/orderReference";
 
 type CaseStage = "filed" | "pending" | "session" | "judgment" | "closed";
 
@@ -168,7 +174,10 @@ function toCaseData(r: ServiceRequestDetail): CaseData {
   return {
     id: r.id,
     title: r.title || "قضية",
-    caseNo: r.id,
+    // `|| r.id` rather than a bare call: orderReference() returns "" for an
+    // id it cannot shorten, and «رقم القضية: » with nothing after it is worse
+    // than a long number.
+    caseNo: orderReference(r.id) || r.id,
     court: String(meta.court ?? "—"),
     stage: mapStage(r.status),
     progress: 0,
@@ -269,7 +278,10 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
                 </span>
               )}
               <h1 className={`text-lg font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>{data.title}</h1>
-              <p className={`text-[11px] ${sm}`}>{data.court} · رقم القضية: {data.caseNo}</p>
+              {/* `title` keeps the full id one hover away — it is what a
+                  support thread or a URL needs. `dir="ltr"` on the reference:
+                  «ORD-8F14E4» is a Latin run between two Arabic ones. */}
+              <p className={`text-[11px] ${sm}`} title={data.id}>{data.court} · رقم القضية: <span dir="ltr">{data.caseNo}</span></p>
             </div>
             <div className={`flex-shrink-0 rounded-xl border px-3 py-2 text-center ${isDark ? "border-white/[0.06] bg-white/[0.03]" : "border-slate-100 bg-slate-50"}`}>
               <p className={`text-[10px] ${sm} mb-0.5`}>الأتعاب</p>

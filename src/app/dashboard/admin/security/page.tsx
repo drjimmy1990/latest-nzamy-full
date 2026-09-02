@@ -160,14 +160,25 @@ export default function SecurityPage() {
 
             <div className={`${card} p-5`}>
               <p className={`text-[12px] font-bold mb-4 ${isDark?"text-white":"text-slate-800"}`}>حالة الأمان</p>
+              {/* Corrected — the previous rows were literals dressed as live status:
+                    • «شهادات SSL — صالحة حتى مارس ٢٠٢٦»: the third copy of an
+                      invented expiry date that had already passed (today is
+                      2026-09). Nothing here inspects a certificate.
+                    • «2FA للأدمن — مفعّل»: there is no MFA anywhere in this
+                      codebase.
+                    • «Rate Limiting — ٦٠ طلب/دقيقة»: the only rate limiter in
+                      the repo is 5 requests per 10 minutes on
+                      src/app/api/v1/leads/business-assessment/route.ts.
+                    • «آخر فحص أمني — منذ ٣ أيام»: no scan is recorded anywhere.
+                  The WAF row is left as it was: it is unverifiable from this
+                  repo, but nothing here contradicts it either. */}
               {[
-                { label:"شهادات SSL", val:"صالحة حتى مارس ٢٠٢٦", ok:true },
-                { label:"2FA للأدمن", val:"مفعّل", ok:true },
-                { label:"WAF", val:"Cloudflare — نشط", ok:true },
-                { label:"Rate Limiting", val:"٦٠ طلب/دقيقة", ok:true },
-                { label:"آخر فحص أمني", val:"منذ ٣ أيام", ok:true },
-              ].map((r,i)=>(
-                <div key={i} className={`flex items-center justify-between py-2 ${i<4?`border-b ${isDark?"border-white/[0.04]":"border-slate-50"}`:""}`}>
+                { label:"نقل مشفّر (TLS)", val:"مفعّل" },
+                { label:"عزل الصفوف (RLS)", val:"مفعّل" },
+                { label:"WAF", val:"Cloudflare — نشط" },
+                { label:"Rate Limiting", val:"نموذج التقييم فقط — ٥ طلبات/١٠ دقائق" },
+              ].map((r,i,arr)=>(
+                <div key={i} className={`flex items-center justify-between py-2 ${i<arr.length-1?`border-b ${isDark?"border-white/[0.04]":"border-slate-50"}`:""}`}>
                   <span className={`text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}>{r.label}</span>
                   <div className="flex items-center gap-1.5">
                     <CheckCircle size={12} weight="fill" className="text-emerald-400"/>
@@ -175,6 +186,9 @@ export default function SecurityPage() {
                   </div>
                 </div>
               ))}
+              <p className={`mt-3 text-[10px] leading-relaxed ${isDark?"text-zinc-500":"text-slate-400"}`}>
+                وصف للبنية وليس قراءة حيّة — لا تستقصي هذه البطاقة أي خدمة.
+              </p>
             </div>
           </div>
         </motion.div>

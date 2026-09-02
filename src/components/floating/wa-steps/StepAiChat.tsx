@@ -301,9 +301,15 @@ export default function StepAiChat({ isDark, isRTL, userCategory, isLoggedIn, on
               <motion.div key={m.id} initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
 
                 {m.role === "user" || m.role === "ai" ? (
+                  /* `text-gray-200` was here on the DARK branch. src/app/globals.css:103
+                     redefines --color-gray-200 as rgba(255,255,255,0.1) — a surface
+                     tint, not a text colour — so in dark mode this bubble rendered
+                     the visitor's own message at 10% white on a 10% white
+                     background. They could not read what they had just typed.
+                     `zinc-*` is not remapped by that block. */
                   <div className={`max-w-[88%] rounded-[1.25rem] px-4 py-3 text-[12px] font-medium leading-relaxed shadow-sm whitespace-pre-wrap ${
                     m.role === "user"
-                      ? isDark ? "bg-white/10 text-gray-200 rounded-tl-sm" : "bg-gray-100/80 text-gray-800 rounded-tl-sm"
+                      ? isDark ? "bg-white/10 text-zinc-200 rounded-tl-sm" : "bg-gray-100/80 text-gray-800 rounded-tl-sm"
                       : "bg-[#0B3D2E] text-white rounded-tr-sm shadow-[#0B3D2E]/20"
                   }`}>
                     {m.text}
@@ -361,9 +367,12 @@ export default function StepAiChat({ isDark, isRTL, userCategory, isLoggedIn, on
                           >
                             {actions.primaryLabel}
                           </Link>
+                          {/* `text-gray-200` on the dark branch: globals.css:103 makes
+                              that token rgba(255,255,255,0.1), so this button's label
+                              was invisible against its own bg-white/[0.05]. */}
                           <Link href={actions.secondaryHref} onClick={onClose}
                             className={`flex-1 flex justify-center py-2.5 rounded-xl text-[11px] font-bold transition-all active:scale-95 shadow-sm
-                              ${isDark ? "bg-white/[0.05] hover:bg-white/10 text-gray-200" : "bg-white hover:bg-gray-50 text-gray-800 border border-gray-200/70"}`}
+                              ${isDark ? "bg-white/[0.05] hover:bg-white/10 text-zinc-200" : "bg-white hover:bg-gray-50 text-gray-800 border border-gray-200/70"}`}
                           >
                             {actions.secondaryLabel}
                           </Link>

@@ -76,8 +76,27 @@ export default function StepConsult({
 
   // ── consult-timing ──
   if (step === "consult-timing") {
+    // «صوت/فيديو/كتابة في غضون ١٥–٢٠ دقيقة» — the first card every visitor
+    // sees — was a response-time commitment, and there is no staffed path
+    // behind it. Nothing in this platform pages a lawyer, no rota exists, and
+    // the request this wizard files lands in the same fulfilment queue as
+    // every other one, to be picked up when someone opens it.
+    //
+    // Replaced with what the request ACTUALLY records rather than with a
+    // smaller number — any figure here would be a fresh guess.
+    //
+    // «الأسرع الممكن» is quoted, not invented: it is verbatim what
+    // timingLabelAr (buildConsultationIntake.ts:95) writes on the row for this
+    // branch — `resolveConsultTiming` maps every `consult-instant-*` step to
+    // `"instant"`, and «تفضيل: الأسرع الممكن» is the sentence the office
+    // reads. A preference is all it is; nothing here sets an urgency flag
+    // (only the notary branch has an urgency picker, StepNotary.tsx:86), so no
+    // badge on this card may claim a queue position.
+    //
+    // The badge stays «الأسرع», which compares this card with the two below it
+    // — a true statement about the three choices, not about a response time.
     const OPTIONS = [
-      { icon: <Warning size={18} weight="fill" className="text-orange-500" />, label: "استشارة فورية", sub: "صوت/فيديو/كتابة في غضون ١٥–٢٠ دقيقة", next: "consult-instant-modality" as WaStep, badge: "الأسرع", badgeColor: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" },
+      { icon: <Warning size={18} weight="fill" className="text-orange-500" />, label: "استشارة عاجلة", sub: "صوت أو فيديو أو كتابة — يُسجَّل طلبك بتفضيل «الأسرع الممكن» ويتواصل الفريق لترتيب الموعد", next: "consult-instant-modality" as WaStep, badge: "الأسرع", badgeColor: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" },
       { icon: <Lightning size={18} weight="fill" className="text-[#C8A762]" />, label: "أقرب وقت متاح", sub: "نُشعرك فور توفر موعد", next: "consult-next-details" as WaStep, badge: null, badgeColor: "" },
       { icon: <CalendarBlank size={18} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400" />, label: "احجز ميعاد محدد", sub: "اختر يوماً ووقتاً محدداً", next: "consult-specific-details" as WaStep, badge: null, badgeColor: "" },
     ];
@@ -108,7 +127,7 @@ export default function StepConsult({
     return (
       <motion.div variants={staggerListVariants} initial="hidden" animate="show" className="flex flex-col gap-3 relative">
         <motion.p variants={staggerItemVariants} className="text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-xl px-3 py-2">
-          الاستشارة الفورية متاحة صوتاً أو فيديو أو كتابة فقط
+          الاستشارة العاجلة متاحة صوتاً أو فيديو أو كتابة فقط
         </motion.p>
         <div className="flex flex-col gap-2">
           {([
@@ -148,8 +167,11 @@ export default function StepConsult({
         badgeClass: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400", badge: "AI",
       }] : []),
       {
+        // The second copy of the same untrue promise, and the worse one: it
+        // sat directly under «٧٠٠ ر.س», so it read as a response time the
+        // client had paid for. No rota, no paging, no fifteen minutes.
         icon: <Gavel size={20} weight="fill" />, label: "محامي متخصص",
-        price: "٧٠٠ ر.س", sub: "في غضون ١٥–٢٠ دقيقة", val: "lawyer",
+        price: "٧٠٠ ر.س", sub: "تقدير غير مُلزِم — يؤكد الفريق الأتعاب والموعد قبل البدء", val: "lawyer",
         borderClass: "border-[#C8A762] dark:border-[#C8A762]",
         badgeClass: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400", badge: "محامي",
       },

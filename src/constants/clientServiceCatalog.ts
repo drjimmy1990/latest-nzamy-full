@@ -28,6 +28,27 @@ export type ClientServiceCatalogItem = {
   priceNote?: string;
   route: string;
   icon: string;
+  /**
+   * DEAD DATA — READ BY NOBODY, AND NOT THE PLACE TO PROMISE A HUMAN.
+   *
+   * Twenty-four entries below say `receiverType: "lawyer"`, and not one of them
+   * reaches a `service_requests` row. Every client intake path writes the
+   * literal `receiver: "ai_workspace"` instead, unconditionally:
+   * requests/new/page.tsx:135, consultation/new/page.tsx:347,
+   * useConsultationForm.ts:282, whatsappWorkflow.ts:315 and :390. That is
+   * deliberate — the admin fulfilment queue hard-filters
+   * `.eq("receiver","ai_workspace")` (api/v1/admin/service-orders/route.ts:54),
+   * so a row written with any other receiver is invisible to the office.
+   *
+   * The consequence for COPY in this file: a `label` or `description` here
+   * cannot lean on `receiverType` to justify naming a lawyer. Whatever this
+   * field says, the request lands on the نظامي desk. Routing it to an actual
+   * licensed lawyer is a product change (a queue change plus a migration), not
+   * a constant — reported upstream, not papered over in a description.
+   *
+   * `pricingRepository.ts:165` still carries the column through from the DB, so
+   * the field stays rather than being deleted out from under that mapping.
+   */
   receiverType: WorkflowRequest["receiver"];
   requestType: WorkflowRequest["type"];
   betaVisibility: ClientServiceVisibility;
@@ -105,7 +126,22 @@ export const CLIENT_SERVICE_CATEGORIES: ClientServiceCategory[] = [
     categoryId: "special",
     icon: "ShieldStar",
     label: "خدمات خاصة",
-    description: "خدمات إجرائية ومتخصصة تحتاج تنسيقا بشريا",
+    // WHO ACTUALLY HANDLES THESE — and why this line does not say «محامٍ».
+    //
+    // Every service under `categoryId: "special"` routes to
+    // /dashboard/client/requests/new, and that wizard writes
+    // `receiver: "ai_workspace"` as a literal (requests/new/page.tsx:135) — the
+    // نظامي fulfilment desk. The `receiverType: "lawyer"` those seven services
+    // each carry is read by nobody: no intake path in the app passes it to the
+    // row (see the note on `receiverType` above). So no licensed lawyer
+    // is in the loop for any of them, and a category description that says one
+    // is would be a promise the routing cannot keep.
+    //
+    // This line previously read «تحتاج تنسيقا بشريا», which was TRUE, and was
+    // replaced with «تُنسَّق بواسطة محامٍ مرخص ومتمرس», which is not. The point
+    // of that change was to stop the bare word «بشرياً», not to name a
+    // professional who is not on the path. «فريق نظامي» is who receives it.
+    description: "خدمات إجرائية ومتخصصة تُنسَّق بواسطة فريق نظامي",
     color: "from-[#0B3D2E] to-[#125340]",
     bgLight: "bg-white",
     borderColor: "border-slate-200",

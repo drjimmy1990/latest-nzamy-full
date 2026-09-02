@@ -1446,8 +1446,22 @@ export default function AdminServiceOrdersPage() {
                       className="rounded-xl border border-emerald-500/30 px-4 py-2 text-[12px] font-bold text-emerald-500 disabled:opacity-40">
                       تولّي الطلب (نقل لي)
                     </button>
+                    {/* Owner item ٣٢. The two boxes were already separate
+                        fields — this one goes to `metadata.deliverable.notes`
+                        on تسليم and to `metadata.cancelReason` on إلغاء, the
+                        one below to `metadata.internalNotes`, which every
+                        client-facing route and the n8n payload builder strip
+                        (src/lib/services/internalNotes.ts). What was ambiguous
+                        was the LABEL: it named only the delivery path, while
+                        «إلغاء الطلب» below sends this same text to the client
+                        as the cancellation reason. An admin cancelling an order
+                        read a placeholder about a document they were not
+                        delivering, and could reasonably take the box for a
+                        note that goes nowhere. Both destinations are named now,
+                        so the client-facing box cannot be mistaken for the
+                        private one in either path. */}
                     <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
-                      placeholder="ملاحظات تظهر للعميل مع المستند (اختياري)"
+                      placeholder="ملاحظات تظهر للعميل — تُرفق مع المستند عند التسليم، وتُسجَّل كسبب الإلغاء عند الإلغاء (اختياري)"
                       className={`w-full rounded-xl p-2.5 text-[12px] border ${
                         isDark ? "bg-zinc-950 border-white/[0.07] text-zinc-200" : "bg-white border-zinc-200"}`} />
                     <textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2}

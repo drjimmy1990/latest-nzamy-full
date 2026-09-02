@@ -9,6 +9,7 @@ import {
   X, CaretDown, NotePencil, ArrowClockwise,
   HouseSimple, Scales,
   Warning, ArrowLeft,
+  BookOpen, Tray,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -946,19 +947,60 @@ export default function ConsultationsPage() {
         ))}
       </div>
 
-      {/* AI tip. The promise («يمكن للمستشار AI توليد ملخص كامل للجلسة
-          وإرساله للعميل مباشرةً بعد الانتهاء») was false twice over — no
-          summary generator reads a consultation, and no channel sends anything
-          to a client — so it is replaced by what the link actually leads to.
-          The link itself is real navigation to a real tool and is kept. */}
-      <div className={`p-4 rounded-2xl border flex gap-3 items-center ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
-        <Sparkle size={15} weight="fill" className="text-[#C8A762] flex-shrink-0" />
-        <p className={`text-[12px] flex-1 leading-relaxed ${isDark ? "text-zinc-400" : "text-amber-700"}`}>
-          المستشار AI أداة منفصلة لصياغة رأي قانوني. لا يوجد في المنصة توليد تلقائي لملخص الجلسة، ولا إرسال مباشر للعميل.
+      {/* Owner item ١١٢ — this was a yellow apology banner whose whole body was
+          a list of things the platform cannot do. The sentence was true, so it
+          is not deleted; it is demoted to one boundary line under a toolbar of
+          tools that DO exist, which is what a lawyer opening this screen can
+          actually act on.
+
+          Every destination below was checked against the router before it was
+          linked, and each one is already in this lawyer's own sidebar:
+            /laws            → the legal library         (LAWYER_SIDEBAR tail)
+            /precedents      → redirects into that library's principles and
+                               precedents section
+            /ai/collector    → the research collector     (ai:collector)
+            /ai/legal-opinion→ المستشار AI — the one real link the old banner
+                               carried, kept rather than dropped.
+
+          Amber is gone with the apology: nothing here is a warning. */}
+      <div className={`p-4 rounded-2xl border space-y-3 ${isDark ? "border-white/[0.07] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
+        <div className="flex items-center gap-2">
+          <Sparkle size={15} weight="fill" className="text-[#C8A762] flex-shrink-0" />
+          <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+            أدوات تحضير الاستشارة
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {([
+            { href: "/laws",             label: "المكتبة القانونية",           sub: "الأنظمة واللوائح النافذة",        icon: BookOpen },
+            { href: "/precedents",       label: "السوابق والمبادئ القضائية", sub: "قسم المبادئ داخل المكتبة",       icon: Scales },
+            { href: "/ai/collector",     label: "المجمّع البحثي",              sub: "اجمع نصوصك ومسوداتك في مكان واحد", icon: Tray },
+            { href: "/ai/legal-opinion", label: "المستشار AI",                  sub: "أداة منفصلة لصياغة رأي قانوني",   icon: Sparkle },
+          ] as const).map(tool => {
+            const Icon = tool.icon;
+            return (
+              <Link key={tool.href} href={tool.href}
+                className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 transition-colors ${
+                  isDark
+                    ? "border-white/[0.06] hover:border-[#C8A762]/30 hover:bg-white/[0.03]"
+                    : "border-slate-200 hover:border-[#C8A762]/40 hover:bg-amber-50/40"
+                }`}>
+                <Icon size={16} weight="duotone" className="text-[#C8A762] flex-shrink-0" />
+                <span className="flex-1 min-w-0">
+                  <span className={`block text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{tool.label}</span>
+                  <span className={`block text-[10px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{tool.sub}</span>
+                </span>
+                <ArrowRight size={12} className={`flex-shrink-0 ${isDark ? "text-zinc-600" : "text-slate-300"}`} />
+              </Link>
+            );
+          })}
+        </div>
+
+        <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+          <span className={`font-bold ${isDark ? "text-zinc-400" : "text-slate-600"}`}>حدود الأداة:</span>{" "}
+          تحضير الاستشارة وتوثيقها يدويان — لا تولّد المنصة ملخصاً للجلسة تلقائياً ولا ترسله للعميل.
         </p>
-        <Link href="/ai/legal-opinion" className="flex-shrink-0 text-[12px] font-bold text-[#C8A762] hover:underline flex items-center gap-1">
-          المستشار AI <ArrowRight size={12} />
-        </Link>
       </div>
     </div>
   );

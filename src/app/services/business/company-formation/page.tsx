@@ -149,7 +149,20 @@ export default function CompanyFormationPage() {
                     <Briefcase size={16} /> {t.ctaMain} <Arrow size={14} />
                   </motion.div>
                 </Link>
-                <a href="https://wa.me/966500000000?text=أرغب+في+تأسيس+شركة" target="_blank" rel="noopener noreferrer">
+                {/* 966500000000 stood here — a placeholder, on a live CTA, on
+                    a public service page. It is not the office's number and it
+                    is not nobody's either: +966 50 000 0000 is a routable
+                    Saudi mobile format, so every visitor who pressed «تواصل
+                    عبر واتساب» on this page opened a chat with a stranger and
+                    told them they wanted to form a company.
+
+                    966560655552 is the platform's real number — the same one
+                    the floating widget dials (NZAMY_WHATSAPP_NUMBER in
+                    src/components/floating/whatsappWorkflow.ts) and the same
+                    one /contact publishes. Not imported from there: that module
+                    is the widget's client-side workflow and pulling it into a
+                    marketing page would drag the request repository with it. */}
+                <a href="https://wa.me/966560655552?text=أرغب+في+تأسيس+شركة" target="_blank" rel="noopener noreferrer">
                   <motion.div whileHover={{ scale: 1.03, y: -1 }} whileTap={{ scale: 0.98 }}
                     className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold cursor-pointer border ${isDark ? "border-white/[0.1] text-zinc-300 hover:bg-white/[0.03]" : "border-zinc-200 text-zinc-700 hover:bg-zinc-50"}`}>
                     {t.ctaWa}

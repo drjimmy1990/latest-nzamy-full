@@ -145,7 +145,13 @@ export const PROVIDER_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "الطلبات المتاحة", labelEn: "Browse Market",  href: "/dashboard/provider/requests", icon: "Storefront", badge: "جديد" },
       { label: "عروضي الجارية",  labelEn: "My Offers",      href: "/dashboard/provider/requests?tab=active", icon: "Package" },
-      { label: "روابطي الترويجية", labelEn: "My Promos",    href: "/dashboard/provider/promotions", icon: "Tag",       badge: "جديد" },
+      // «روابطي الترويجية» is gone for good (owner items ١٣٤ + ١٣٥ — the second
+      // copy of the same screen). القاعدة ٣٨ forbids advertising a discount on
+      // legal work, so this is a regulatory deletion with nothing to restore.
+      // The page was worse than the lawyer’s «قريباً» template: it generated
+      // live discount links off a mock promo row and reported invented click
+      // and conversion figures for them. /dashboard/provider/promotions now
+      // redirects permanently to «الملف المهني» above (next.config.ts).
       { label: "المواعيد",        labelEn: "Calendar",       href: "/dashboard/provider/calendar", icon: "CalendarCheck" },
     ],
   },
@@ -165,7 +171,6 @@ export const PROVIDER_SIDEBAR: SidebarGroup[] = [
       { label: "صياغة تقرير",  labelEn: "Draft Report",  href: "/ai/draft?mode=report",   icon: "FileArrowUp" },
       { label: "صياغة محضر",   labelEn: "Draft Minutes", href: "/ai/draft?mode=minutes",  icon: "Note" },
       { label: "رد احترافي",    labelEn: "Smart Reply",   href: "/ai/draft?mode=reply",    icon: "ChatDots" },
-      { label: "طلباتي الذكية", labelEn: "My AI Orders",  href: "/ai/orders",              icon: "Tray",  divider: true },
     ],
   },
   {
@@ -270,7 +275,6 @@ export const NGO_SIDEBAR: SidebarGroup[] = [
       { label: "مُعد التقارير",       labelEn: "Report Generator",    href: "/ai/ngo/report-generator",    icon: "FileText", gateKey: "ngo-ai" },
       { label: "المستشار الذكي",      labelEn: "AI Consult",          href: "/ai/consult",                 icon: "Robot", gateKey: "ngo-ai" },
       { label: "مراجع العقود",         labelEn: "Contract Review",     href: "/ai/contracts",               icon: "Files", gateKey: "ngo-ai" },
-      { label: "طلباتي الذكية",        labelEn: "My AI Orders",        href: "/ai/orders",                  icon: "Tray", gateKey: "ngo-ai", divider: true },
     ],
   },
   {

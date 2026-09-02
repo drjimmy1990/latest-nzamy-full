@@ -586,12 +586,27 @@ export default function AdminDashboard() {
               </div>
               <p className="text-[15px] font-bold text-white tracking-tight">بروتوكولات الأمان</p>
             </div>
+            {/* Every value in this panel used to be a literal presented as live
+                status, and every one of them was invented:
+                  • SSL «تنتهي في مارس ٢٠٢٦» — no certificate is read here, and
+                    the date had already passed (today is 2026-09).
+                  • 2FA «مفعلة إجبارياً» — there is no MFA in this codebase at
+                    all; grep for mfa/enroll returns nothing.
+                  • IDS «لم يتم رصد هجمات» — there is no intrusion detection
+                    system, so "no attacks detected" is an absence of a sensor,
+                    not an absence of attacks.
+                  • Backup «آخر نسخة: منذ ٣ ساعات» — nothing queries backup
+                    state. An admin who reads this and skips a restore check is
+                    the concrete harm.
+                What remains is architecture that is actually true and does not
+                pretend to be a live reading. Backup/2FA/IDS rows are deleted
+                rather than shown as "unknown", because the renderer stamps an
+                emerald check on every row it is given. */}
             <div className="space-y-3">
               {[
-                {label:"شهادات تشفير (SSL/TLS)",     val:"صالحة ومفعلة",  desc:"تنتهي في مارس ٢٠٢٦", ok:true},
-                {label:"المصادقة الثنائية (2FA)",      val:"مفعلة إجبارياً",  desc:"لجميع حسابات الإدارة", ok:true},
-                {label:"نظام كشف التطفل (IDS)",      val:"يعمل ونشط",     desc:"لم يتم رصد هجمات", ok:true},
-                {label:"النسخ الاحتياطي السحابي",    val:"مكتمل",          desc:"آخر نسخة: منذ ٣ ساعات", ok:true},
+                {label:"نقل مشفّر (TLS/HTTPS)",       val:"مفعّل",  desc:"على جميع طلبات المنصة"},
+                {label:"التشفير عند التخزين",          val:"مُدار",  desc:"على مستوى الأقراص لدى مزوّد قاعدة البيانات"},
+                {label:"عزل الصفوف (RLS)",            val:"مفعّل",  desc:"سياسات على مستوى الصف تفصل بيانات الحسابات"},
               ].map((r,i)=>(
                 <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-white/10 transition-colors">
                   <div>
@@ -605,8 +620,13 @@ export default function AdminDashboard() {
                 </div>
               ))}
             </div>
+            <p className="mt-4 text-[10px] leading-relaxed text-zinc-500">
+              ما سبق وصف لبنية المنصة وليس قراءة حيّة — هذه اللوحة لا تستقصي أي
+              خدمة لمعرفة الحالة الفعلية. للتحقق من صلاحية الشهادات أو من آخر
+              نسخة احتياطية، راجع لوحة مزوّد الاستضافة وقاعدة البيانات مباشرة.
+            </p>
           </div>
-          
+
           <div className={`${card} p-6`}>
              <div className="flex items-center gap-3 mb-6">
               <div className="h-10 w-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
@@ -614,23 +634,22 @@ export default function AdminDashboard() {
               </div>
               <p className="text-[15px] font-bold text-white tracking-tight">سجل العمليات الآلية</p>
             </div>
-            <div className="relative pl-4 border-r-2 border-white/10 space-y-6">
-              {[
-                {op:"نسخ احتياطي لقاعدة البيانات",      time:"منذ ٣ ساعات",   user:"System_Cron", status:"success"},
-                {op:"تجديد شهادات SSL التلقائي",         time:"منذ ٣ أيام",    user:"Cloudflare", status:"success"},
-                {op:"تحديث خوارزميات الذكاء الاصطناعي",  time:"منذ أسبوع",     user:"Admin (U-01)", status:"success"},
-                {op:"مسح ذاكرة التخزين المؤقت (Redis)",  time:"منذ أسبوعين",    user:"System_Auto", status:"success"},
-              ].map((r,i)=>(
-                <div key={i} className="relative pr-6">
-                  <div className="absolute top-1 right-[-29px] h-4 w-4 rounded-full border-4 border-[#111418] bg-emerald-400"/>
-                  <p className="text-[12px] font-bold text-zinc-200 mb-1">{r.op}</p>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-mono text-zinc-500">{r.user}</span>
-                    <span className="h-1 w-1 rounded-full bg-zinc-700"/>
-                    <span className="text-[10px] text-zinc-400 flex items-center gap-1"><Clock size={10}/> {r.time}</span>
-                  </div>
-                </div>
-              ))}
+            {/* The four timeline entries that stood here were literals, not a
+                log: a database backup «منذ ٣ ساعات», an SSL auto-renewal by
+                Cloudflare, an "AI algorithm update", and a Redis cache flush.
+                No ops-log table or job runner exists to produce any of them,
+                and no LLM is wired for the third one to have updated. Shown in
+                an admin console with green success dots, they read as a
+                verified maintenance history — which is exactly what makes them
+                dangerous. Replaced with the honest state rather than a
+                plausible-looking one. */}
+            <div className="rounded-2xl bg-white/5 border border-white/5 p-5 text-center">
+              <p className="text-[12px] font-bold text-zinc-300 mb-1">غير متاح حالياً</p>
+              <p className="text-[10px] leading-relaxed text-zinc-500">
+                لا يوجد سجل عمليات آلية متصل بهذه اللوحة بعد. سجلات النسخ
+                الاحتياطي وتجديد الشهادات والمهام المجدولة متاحة في لوحات
+                المزوّدين المعنيين.
+              </p>
             </div>
           </div>
         </div>

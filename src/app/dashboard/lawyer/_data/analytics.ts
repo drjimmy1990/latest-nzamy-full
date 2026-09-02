@@ -46,8 +46,10 @@ export const WORK_DIST = [
 ];
 
 // ─── Win Rate ────────────────────────────────────────────────────────────────
+// `WIN_RATE_PCT` حُذف نهائياً: القاعدة ٣٨ من قرار وزير العدل رقم ٦٧٦
+// (١٩/٤/١٤٤٦هـ) تمنع الإعلان عن نسب فوز غير موثّقة، ولا يوجد جدول نتائج
+// (outcomes) تُحتسب منه نسبة حقيقية. لا تُعِد تصدير أي معدّل فوز من هنا.
 
-export const WIN_RATE_PCT = 74;
 export const WIN = { won: 106, settled: 22, lost: 15, pending: 8 };
 export const WIN_TOTAL = WIN.won + WIN.settled + WIN.lost + WIN.pending;
 

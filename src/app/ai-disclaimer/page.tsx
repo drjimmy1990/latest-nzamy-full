@@ -75,7 +75,7 @@ const sections = {
       icon: Lock,
       title: "خصوصية محادثاتك",
       color: "bg-emerald-50 text-emerald-700",
-      body: "جميع المحادثات مع نظامي AI مشفّرة ولا تُشارَك مع أطراف خارجية دون موافقتك. لا يُحتفظ بسجل محادثاتك بعد انتهاء الجلسة إلا إذا اخترت تفعيل حفظ السجل في إعداداتك.",
+      body: "الاتصال بالمنصة مؤمَّن عبر TLS، والبيانات مخزَّنة لدى مزوّد البنية التحتية مع تشفير على مستوى القرص، وعزل صفوف (RLS) يمنع حساباً آخر من قراءة محادثاتك. ولا توجد طبقة تشفير طرف-لطرف. ومعالجة طلباتك في نظامي AI تمر عبر خدمات معالجة خارجية، لذلك لا نستطيع أن نعدك بأن محتوى محادثتك لا يغادر المنصة. أما التحكم في حفظ سجل المحادثات فهو غير متاح حالياً.",
     },
     {
       icon: Warning,
@@ -113,7 +113,7 @@ const sections = {
       icon: Lock,
       title: "Privacy of Your Conversations",
       color: "bg-emerald-50 text-emerald-700",
-      body: "All conversations with Nezamy AI are encrypted and not shared with external parties without your consent. Your chat history is not retained after the session ends unless you enable chat history saving in your settings.",
+      body: "Traffic is secured with TLS, data is stored at our infrastructure provider with disk-level encryption at rest, and row-level security (RLS) prevents another account from reading your conversations. There is no end-to-end encryption. Nezamy AI requests are handled through external processing services, so we cannot promise your conversation content never leaves the platform. Control over chat-history retention is not available yet.",
     },
     {
       icon: Warning,

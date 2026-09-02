@@ -1,7 +1,6 @@
 "use client";
 
-import { motion, useInView } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import {
   ShieldCheck,
   Medal,
@@ -21,11 +20,17 @@ import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
+// أُزيلت هنا ثلاث "إحصاءات" مُختلَقة: «٣٠٠+ محامٍ ومستشار» (عدد المحامين
+// المنشورين في الدليل صفر)، «١٥ ألف+ طلب استشارة»، «١٣ منطقة مغطاة».
+// ما بقي محسوبٌ فعلاً: سنة الإطلاق كما ترويها فقرة «كيف بدأت قصتنا» أدناه،
+// وأعداد المكتبة القانونية — وهي أرضيات معدودة من جداول library ومطابقة لما
+// يعرضه src/components/LegalLibraryBanner.tsx.
+// لا تُعِد رقماً هنا ما لم يكن محسوباً من بيانات حقيقية.
 const counterStats = [
   { valueAr: "٢٠٢٥", valueEn: "2025", labelAr: "الإطلاق الرسمي", labelEn: "Official Launch" },
-  { valueAr: "٣٠٠+", valueEn: "300+", labelAr: "محامٍ ومستشار", labelEn: "Lawyers & Consultants" },
-  { valueAr: "١٥ ألف+", valueEn: "15K+", labelAr: "طلب استشارة", labelEn: "Consultation Requests" },
-  { valueAr: "١٣", valueEn: "13", labelAr: "منطقة مغطاة", labelEn: "Covered Regions" },
+  { valueAr: "٣٨٦", valueEn: "386", labelAr: "نظاماً ولائحة في المكتبة", labelEn: "Laws in the Library" },
+  { valueAr: "١٣٬٠٠٠+", valueEn: "13,000+", labelAr: "مادة نظامية", labelEn: "Legal Articles" },
+  { valueAr: "١٧٬٠٠٠+", valueEn: "17,000+", labelAr: "مبدأ قضائي", labelEn: "Judicial Principles" },
 ];
 
 const values = [
@@ -101,19 +106,13 @@ const timeline = [
 
 // ─── Animated Counter ─────────────────────────────────────────────────────────
 
-function AnimatedCounter({ end, isRTL }: { end: string; isRTL: boolean }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const inView = useInView(ref, { once: true });
-  const [displayed, setDisplayed] = useState("0");
-
-  useEffect(() => {
-    if (!inView) return;
-    // Just animate the raw value by showing it after a delay
-    const timeout = setTimeout(() => setDisplayed(end), 400);
-    return () => clearTimeout(timeout);
-  }, [inView, end]);
-
-  return <span ref={ref}>{displayed}</span>;
+// كان هذا المكوّن يبدأ بالمحرف «0» ثم يستبدله بالقيمة بعد ٤٠٠ مللي ثانية —
+// وهو لا يَعُدّ تصاعدياً أصلاً، بل يؤخّر نصاً ثابتاً. وبعد أن صارت الأرقام أعلاه
+// أرقاماً حقيقية من المكتبة، صار ذلك التأخير يعرض «0» غربيّ الشكل في شبكة
+// أرقامها عربية-هندية، ويُظهر صفراً في المكان الوحيد الذي أصبح صادقاً.
+// فصار يُعرض النص كما هو من أول رسم.
+function AnimatedCounter({ end }: { end: string }) {
+  return <span>{end}</span>;
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -179,7 +178,7 @@ export default function AboutPage() {
                 }`}
               >
                 <div className={`font-brand mb-1 text-3xl font-bold md:text-4xl ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-                  <AnimatedCounter end={isRTL ? stat.valueAr : stat.valueEn} isRTL={isRTL} />
+                  <AnimatedCounter end={isRTL ? stat.valueAr : stat.valueEn} />
                 </div>
                 <div className={`text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
                   {isRTL ? stat.labelAr : stat.labelEn}
@@ -239,21 +238,12 @@ export default function AboutPage() {
                   <p className="text-lg font-bold text-white">{isRTL ? "نظامي" : "Nezamy"}</p>
                   <p className="mt-2 text-sm text-white/70">{isRTL ? "العدالة في متناول الجميع" : "Justice for Everyone"}</p>
                 </div>
-                {/* Floating chips */}
-                <motion.div
-                  animate={{ y: [0, -8, 0] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                  className="absolute top-4 end-4 rounded-xl bg-white/15 px-3 py-2 backdrop-blur-sm"
-                >
-                  <span className="text-xs font-semibold text-white">{isRTL ? "٣٠٠+ محامٍ وخبير" : "300+ Lawyers"}</span>
-                </motion.div>
-                <motion.div
-                  animate={{ y: [0, 8, 0] }}
-                  transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-                  className="absolute bottom-4 start-4 rounded-xl bg-[#C8A762]/20 px-3 py-2 backdrop-blur-sm border border-[#C8A762]/30"
-                >
-                  <span className="text-xs font-semibold text-[#C8A762]">{isRTL ? "١٥ ألف+ استشارة" : "15K+ Consults"}</span>
-                </motion.div>
+                {/*
+                  حُذفت هنا شارتان عائمتان كانتا تكرران الأرقام المُختلَقة نفسها
+                  التي أُزيلت من counterStats أعلاه: «٣٠٠+ محامٍ وخبير» و«١٥ ألف+
+                  استشارة». حُذفتا ولم تُستبدلا برقم آخر — لا يوجد رقم حقيقي
+                  يقولانه. لا تُعِد شارةً برقم هنا.
+                */}
               </div>
             </motion.div>
           </div>

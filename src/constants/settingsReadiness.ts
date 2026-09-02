@@ -30,22 +30,27 @@ export interface SettingsRolePolicy {
   canUseProfession: boolean;
   canUseSignature: boolean;
   canUseDelegation: boolean;
-  canUseNafath: boolean;
   canUseReferral: boolean;
   showPayments: boolean;
   showSubscription: boolean;
   visibleTabs: SettingsTabId[];
   /**
-   * 2026-08-27 — NEVER POPULATED. Four literals lived here, one per account
-   * type: «مقاعد المكتب ٧/١٠», «مقاعد الشركة ١٢/٢٥», «مستخدمي الجهة ٢٨/٥٠»,
-   * «أعضاء ومتطوعون ٥/١٠». Every corporate account in the country was shown
-   * the same "12 of 25 seats used" progress bar as its own live figure.
+   * NEVER POPULATED. Five literals lived here, one per account type:
+   * «مقاعد المكتب ٧/١٠», «مقاعد الشركة ١٢/٢٥», «مستخدمي الجهة ٢٨/٥٠»,
+   * «أعضاء ومتطوعون ٥/١٠» (all four removed 2026-08-27) and «مقاعد المساعدين
+   * ٢/٣» (removed 2026-09-02, the lawyer branch below). Every corporate
+   * account in the country was shown the same "12 of 25 seats used" progress
+   * bar as its own live figure.
    *
    * Nothing counts seats. There is no seat table, no plan quota anywhere in
    * the schema, and no query behind any of those numbers. The type is kept —
    * both consumers already branch on its absence (RoleScopeTab, and
    * TeamManagementTab which falls back to the length of its own list) — so
    * that the day a real count exists it has somewhere to go.
+   *
+   * Do not "restore" one of these as a placeholder, and do not zero-fill it:
+   * a rendered «٠ / ٠ مقعد» is not an empty state, it is a quota of zero, and
+   * TeamManagementTab would read it as seats-full and refuse every invite.
    */
   seatPolicy?: SettingsSeatPolicy;
   inviteRoles: SettingsRoleOption[];
@@ -139,7 +144,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
       canUseProfession: false,
       canUseSignature: false,
       canUseDelegation: false,
-      canUseNafath: false,
       canUseReferral: false,
       showPayments: false,
       showSubscription: false,
@@ -160,7 +164,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
       canUseProfession: false,
       canUseSignature: false,
       canUseDelegation: false,
-      canUseNafath: false,
       canUseReferral: true,
       showPayments: true,
       showSubscription: false,
@@ -181,7 +184,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
       canUseProfession: true,
       canUseSignature: true,
       canUseDelegation: true,
-      canUseNafath: false,
       canUseReferral: true,
       showPayments: true,
       showSubscription: true,
@@ -190,9 +192,17 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
         ...(canInviteTeam ? ["team" as const] : []),
         "security", "notifications", "privacy", "payments", "subscription", "referral", "help",
       ]),
-      seatPolicy: canInviteTeam
-        ? { label: "مقاعد المساعدين", used: 2, included: 3, unit: "مقعد", overLimitMessage: "مقاعد المساعدين ممتلئة؛ تحتاج مقعداً إضافياً أو ترقية خطة." }
-        : undefined,
+      // 2026-09-02 — the fifth and last seat literal is gone with the other
+      // four. It read «مقاعد المساعدين: ٢ / ٣ مقعد» under a progress bar two
+      // thirds full, and every lawyer on a plan that can invite a team saw
+      // that same «٢ من ٣» as their own count — including one who had never
+      // invited anyone. It also *blocked*: `seatsFull` in TeamManagementTab
+      // compared against the invented `included`, so a third invitation was
+      // refused with «مقاعد المساعدين ممتلئة؛ تحتاج مقعداً إضافياً أو ترقية
+      // خطة» — an upsell driven by a number nothing had counted.
+      //
+      // Nothing counts seats. Both consumers branch on absence, so the field
+      // is simply left unset; see the note on `seatPolicy` above.
       inviteRoles: canInviteTeam ? LAWYER_INVITE_ROLES : [],
     };
   }
@@ -209,7 +219,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
       canUseProfession: true,
       canUseSignature,
       canUseDelegation: true,
-      canUseNafath: false,
       canUseReferral: true,
       showPayments: true,
       showSubscription: true,
@@ -236,7 +245,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
       canUseProfession: false,
       canUseSignature: true,
       canUseDelegation: true,
-      canUseNafath: false,
       canUseReferral: false,
       showPayments: canManageBilling,
       showSubscription: canManageBilling,
@@ -266,7 +274,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
       canUseProfession: false,
       canUseSignature: false,
       canUseDelegation: canManageEntity || businessRole === "legal_manager",
-      canUseNafath: false,
       canUseReferral: false,
       showPayments: canManageBilling,
       showSubscription: canManageBilling,
@@ -294,7 +301,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
       canUseProfession: false,
       canUseSignature: false,
       canUseDelegation: false,
-      canUseNafath: false,
       canUseReferral: false,
       showPayments: true,
       showSubscription: true,
@@ -316,14 +322,20 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
       canUseProfession: false,
       canUseSignature: false,
       canUseDelegation: canManageEntity,
-      canUseNafath: true,
       canUseReferral: false,
       showPayments: false,
       showSubscription: false,
       visibleTabs: uniqueTabs([
         "profile", "role-scope",
         ...(canManageEntity ? ["entity" as const, "team" as const, "delegation" as const, "compliance" as const] : []),
-        "nafath", "security", "notifications", "privacy", "help",
+        // 2026-09-02 — «نفاذ / الهوية» was here. The tab it named ran a
+        // setTimeout: type any national ID, watch a hard-coded «74» appear as
+        // the Nafath challenge code, and four seconds later the header read
+        // «نفاذ مربوط بنجاح» over four invented identity rows. No Nafath/SSO
+        // integration exists and the platform has no authority to claim one,
+        // least of all to the government accounts this tab was mandatory for.
+        // Identity is verified by hand — see the note in ProfileTab.
+        "security", "notifications", "privacy", "help",
       ]),
       inviteRoles: canManageEntity ? GOVERNMENT_INVITE_ROLES : [],
     };
@@ -341,7 +353,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
       canUseProfession: false,
       canUseSignature: false,
       canUseDelegation: true,
-      canUseNafath: false,
       canUseReferral: false,
       showPayments: false,
       showSubscription: true,
@@ -360,7 +371,6 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
     canUseProfession: false,
     canUseSignature: false,
     canUseDelegation: false,
-    canUseNafath: false,
     canUseReferral: false,
     showPayments: false,
     showSubscription: false,

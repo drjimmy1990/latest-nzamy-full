@@ -17,7 +17,6 @@ import {
   PenNib,
   Handshake,
   Receipt,
-  Fingerprint,
   ClockCounterClockwise,
   SignOut,
   Calendar,
@@ -46,7 +45,6 @@ import { TeamManagementTab }  from "./components/tabs/TeamManagementTab";
 import { DelegationTab }      from "./components/tabs/DelegationTab";
 import { ProfessionTab }      from "./components/tabs/ProfessionTab";
 import { SignatureTab }       from "./components/tabs/SignatureTab";
-import { NafathTab }          from "./components/tabs/NafathTab";
 import { InvoiceTab }         from "./components/tabs/InvoiceTab";
 import { ComplianceTab }      from "./components/tabs/ComplianceTab";
 import { RoleScopeTab }       from "./components/tabs/RoleScopeTab";
@@ -68,7 +66,6 @@ const ICON_MAP: Record<TabIconKey, React.ElementType> = {
   "receipt":               Receipt,
   "identification-badge":  IdentificationBadge,
   "pen-nib":               PenNib,
-  "fingerprint":           Fingerprint,
   "clock-counter-clockwise": ClockCounterClockwise,
   "scales":                Scales,
   "file-text":             FileText,
@@ -91,7 +88,6 @@ function TabContent({ tabId }: { tabId: string }) {
     case "delegation":    return <DelegationTab />;
     case "profession":    return <ProfessionTab />;
     case "signature":     return <SignatureTab />;
-    case "nafath":        return <NafathTab />;
     case "invoice":       return <InvoiceTab />;
     case "compliance":    return <ComplianceTab />;
     default:              return null;

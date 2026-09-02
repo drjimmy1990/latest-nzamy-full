@@ -14,7 +14,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     title: "الجلسات والقضايا", titleEn: "Hearings & Cases",
     collapsible: false,
     items: [
-      { label: "الجلسات القادمة",    labelEn: "Hearings",       href: "/dashboard/lawyer/hearings",  icon: "CalendarCheck" },
+      { label: "الجلسات والمواعيد",    labelEn: "Hearings & Appointments",       href: "/dashboard/lawyer/hearings",  icon: "CalendarCheck" },
       { label: "جميع القضايا",       labelEn: "All Cases",      href: "/dashboard/lawyer/cases",     icon: "Gavel" },
       { label: "مهامي",              labelEn: "My Tasks",       href: "/dashboard/lawyer/tasks",     icon: "CheckSquare" },
       { label: "سجل النشاط",        labelEn: "Activity Log",   href: "/dashboard/lawyer/activity",  icon: "ClockCounterClockwise" },
@@ -38,7 +38,6 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       { label: "المحاكي الشامل",   labelEn: "Litigation Studio",        href: "/ai/wargaming",     icon: "Scales",       divider: true, badge: "مُدمَج" },
       { label: "عصارة المرفقات",    labelEn: "Attachment Analyzer",      href: "/ai/analyze",       icon: "MagnifyingGlass", badge: "PRO" },
       { label: "الرأي الفصل",       labelEn: "Al-Ra'y Al-Fasl",          href: "/ai/legal-opinion", icon: "Lightbulb",    badge: "PRO" },
-      { label: "طلباتي الذكية",     labelEn: "My AI Orders",             href: "/ai/orders",        icon: "Tray",          divider: true },
       // ٤: المساعدة والمتابعة
       { label: "السكرتير الذكي",    labelEn: "AI Secretary",             href: "/ai/secretary",     icon: "Robot",        divider: true },
       { label: "راصد التشريعات",    labelEn: "Law Monitor",              href: "/ai/monitor",       icon: "Bell" },
@@ -64,12 +63,13 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "مدير العقود",    labelEn: "Contracts",       href: "/dashboard/lawyer/contracts", icon: "FileText" },
       { label: "المستندات",      labelEn: "Documents",        href: "/dashboard/lawyer/documents", icon: "FolderOpen" },
-      // badge: "جديد" → "قريباً". /dashboard/lawyer/archive renders
-      // DashboardComingSoon («…غير متاح حالياً…») because no shared archive store
-      // exists yet, so a «جديد» pill was selling an unavailable route as a newly
-      // shipped feature. The destination page is correct and must not change;
-      // only the badge lied. Restore «جديد» when the archive store is wired.
-      { label: "الأرشيف الموحّد", labelEn: "Unified Archive", href: "/dashboard/lawyer/archive",   icon: "Archive",   badge: "قريباً" },
+      // «الأرشيف الموحّد» stood here. An earlier round downgraded its badge
+      // from «جديد» to «قريباً» — honest about the pill, but the entry still
+      // spent a line of the sidebar on a 12-line DashboardComingSoon template.
+      // Owner items ١١٨ + ١١٩: the page is deleted, and
+      // /dashboard/lawyer/archive now redirects permanently to «المستندات»
+      // above (next.config.ts) — the real store of the material the archive
+      // was going to show. Re-add this link when an archive store exists.
     ],
   },
 
@@ -101,15 +101,17 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     ],
   },
 
-  // ── ⑧ شبكة التعاون (Solo+ & Secondment & Referral) — S59 ────────────────────
-  {
-    title: "شبكة التعاون", titleEn: "My Network",
-    collapsible: true,
-    defaultOpen: false,
-    items: [
-      { label: "مركز التعاون (Solo+)", labelEn: "Collaboration Hub", href: "/dashboard/lawyer/network",      icon: "UsersThree",      badge: "جديد" },
-    ],
-  },
+  // ── ⑧ شبكة التعاون — حُذفت بالكامل (البنود ١٢٦ + ١٤٨) ────────────────────
+  // The group held exactly one item, «مركز التعاون (Solo+)» ->
+  // /dashboard/lawyer/network, and that page was a 12-line «قريباً» template
+  // wearing a «جديد» badge. With the page deleted the group had no member
+  // left, so the heading goes too rather than rendering an empty section.
+  // The route redirects permanently to the professional profile
+  // (next.config.ts).
+  //
+  // Deliberately NOT replaced with a «سوق الإسناد» group: that unified
+  // destination does not exist, and inventing a sidebar item for it would
+  // put back the promise this deletion removes.
 
   // ── ⑨ التطوير والسوق ─────────────────────────────────────────────────────
   {
@@ -118,7 +120,12 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     defaultOpen: false,
     items: [
       { label: "الملف المهني",       labelEn: "My Profile",   href: "/dashboard/lawyer/profile",     icon: "UserCircle" },
-      { label: "عروضي الترويجية",   labelEn: "My Promos",    href: "/dashboard/lawyer/promotions",  icon: "Tag",             badge: "جديد" },
+      // «عروضي الترويجية» is gone for good (owner items ١٣٤ + ١٣٥). Not a
+      // deferral: القاعدة ٣٨ forbids a lawyer advertising discounts, so there
+      // is nothing here to restore later — which is why no «قريباً» entry
+      // replaces it. The page behind it was a «قريباً» template carrying a
+      // false «جديد» badge; /dashboard/lawyer/promotions now redirects
+      // permanently to «الملف المهني» above.
       { label: "طلباتي في السوق",   labelEn: "My Requests",  href: "/dashboard/lawyer/marketplace", icon: "Storefront",      badge: "جديد" },
       { label: "تصفح السوق",         labelEn: "Browse",       href: "/marketplace",                   icon: "MagnifyingGlass" },
       { label: "تعاون مباشر",        labelEn: "Collaborate",  href: "/marketplace/collaborate",       icon: "Handshake",       badge: "جديد" },
@@ -131,14 +138,27 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      { label: "الخزنة القانونية",  labelEn: "Legal Vault",  href: "/services/lawyers/vault",       icon: "Vault",           badge: "جديد" },
+      // badge «جديد» → «قريباً» (owner ١٣٦). The vault WORKSPACE is deferred;
+      // the page behind this link presents the service, it does not open a
+      // vault. A «جديد» pill sold the deferred half as already shipped. The
+      // entry stays — the page it reaches is real — only the pill was untrue.
+      { label: "الخزنة القانونية",  labelEn: "Legal Vault",  href: "/services/lawyers/vault",       icon: "Vault",           badge: "قريباً" },
     ],
   },
 
   // ── ⑪ الذيل الثابت ───────────────────────────────────────────────────────
   {
     items: [
-      { label: "المجتمع القانوني",  labelEn: "Community",    href: "/community/lawyers", icon: "ChatCircle",   badge: "للمحامين", divider: true },
+      // /community/lawyers → /community (owner ١٤٦). The lawyers-only page
+      // renders a hard-coded POSTS array (community/lawyers/page.tsx:78) — a
+      // forum of invented threads. /community is the real one: it reads
+      // communityService and keeps loading, empty and failed apart.
+      //
+      // The «للمحامين» badge goes with the link that earned it: /community is
+      // open to every account. Selecting its lawyers TAB by role is the other
+      // half of this item and lives in src/app/community/page.tsx, which this
+      // file cannot reach.
+      { label: "المجتمع القانوني",  labelEn: "Community",    href: "/community", icon: "ChatCircle", divider: true },
       { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws",              icon: "BookOpen" },
       { label: "أكاديمية نظامي",   labelEn: "Academy",       href: "/academy",           icon: "GraduationCap", badge: "جديد" },
       { label: "الإشعارات",         labelEn: "Notifications", href: "/notifications",     icon: "Bell" },
@@ -157,7 +177,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
   {
     title: "الجلسات والقضايا", titleEn: "Hearings & Cases",
     items: [
-      { label: "الجلسات القادمة", labelEn: "Hearings",  href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
+      { label: "الجلسات والمواعيد", labelEn: "Hearings & Appointments",  href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
       { label: "جميع القضايا",   labelEn: "All Cases", href: "/dashboard/lawyer/cases",    icon: "Gavel" },
       { label: "مهامي",          labelEn: "My Tasks",  href: "/dashboard/lawyer/tasks",    icon: "CheckSquare" },
     ],
@@ -172,7 +192,6 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
       { label: "الصائغ القانوني",   labelEn: "Legal Drafter",   href: "/ai/draft",         icon: "PencilSimple", divider: true },
       { label: "محترف العقود",      labelEn: "Contract Pro",    href: "/ai/contracts",     icon: "FileText" },
       { label: "الرأي الفصل",       labelEn: "Legal Opinion",   href: "/ai/legal-opinion", icon: "Lightbulb" },
-      { label: "طلباتي الذكية",     labelEn: "My AI Orders",    href: "/ai/orders",        icon: "Tray",         divider: true },
       { label: "عصارة المرفقات",    labelEn: "Doc Analyzer",    href: "/ai/analyze",       icon: "MagnifyingGlass" },
     ],
   },
@@ -285,7 +304,6 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "منقح ناجز",             labelEn: "Najiz Optimizer",  href: "/ai/najiz-optimizer",  icon: "Broom",        badge: "جديد" },
       // ③ التحليل والاستراتيجية
       { label: "المحاكي الشامل للقضايا",labelEn: "Litigation Studio", href: "/ai/wargaming",        icon: "Scales",       divider: true, badge: "مُدمَج" },
-      { label: "طلباتي الذكية",         labelEn: "My AI Orders",     href: "/ai/orders",           icon: "Tray",         divider: true },
       { label: "فاحص المستندات",        labelEn: "Doc Analyzer",     href: "/ai/analyze?source=firm", icon: "MagnifyingGlass", gateKey: "firm-ai" },
       // ④ البحث والمراقبة
       { label: "المرشد القضائي",        labelEn: "Court Guide",      href: "/ai/procedures",       icon: "MapTrifold",   divider: true },
@@ -348,13 +366,15 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      { label: "الخزنة القانونية", labelEn: "Legal Vault",    href: "/services/lawyers/vault",  icon: "Vault", badge: "جديد" },
+      // badge «جديد» → «قريباً» — same reason as the lawyer sidebar (owner ١٣٦).
+      { label: "الخزنة القانونية", labelEn: "Legal Vault",    href: "/services/lawyers/vault",  icon: "Vault", badge: "قريباً" },
       { label: "الملف المهني للمكتب", labelEn: "Firm Profile",   href: "/dashboard/firm/profile",  icon: "UserCircle" },
     ],
   },
   {
     items: [
-      { label: "المجتمع القانوني",  labelEn: "Legal Community", href: "/community/lawyers",   icon: "ChatCircle", divider: true },
+      // /community/lawyers → /community — same reason as the lawyer sidebar (owner ١٤٦).
+      { label: "المجتمع القانوني",  labelEn: "Legal Community", href: "/community",   icon: "ChatCircle", divider: true },
       { label: "المدونة القانونية", labelEn: "Legal Blog",      href: "/blog",                icon: "Article" },
       { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws",          icon: "BookOpen" },
       { label: "أكاديمية نظامي",   labelEn: "Nezamy Academy",  href: "/academy",       icon: "GraduationCap", badge: "جديد" },
@@ -403,7 +423,6 @@ export const FIRM_SIDEBAR_LITE: SidebarGroup[] = [
       { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A", href: "/ai/quick-answer", icon: "ChatCircle", badge: "جديد" },
       { label: "الصائغ القانوني", labelEn: "Legal Drafter", href: "/ai/draft", icon: "PencilSimple", divider: true },
       { label: "محترف العقود", labelEn: "Contract Pro", href: "/ai/contracts", icon: "FileText" },
-      { label: "طلباتي الذكية", labelEn: "My AI Orders", href: "/ai/orders", icon: "Tray", divider: true },
       { label: "مراجع العقود", labelEn: "Contract Reviewer", href: "/ai/contract-reviewer", icon: "MagnifyingGlass", badge: "جديد" },
       { label: "فاحص المستندات", labelEn: "Doc Analyzer", href: "/ai/analyze?source=firm", icon: "MagnifyingGlass", gateKey: "firm-ai" },
     ],

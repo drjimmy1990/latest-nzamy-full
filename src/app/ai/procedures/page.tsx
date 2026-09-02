@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Gavel, BookOpen, MagnifyingGlass, ArrowRight, CaretRight,
+  Gavel, BookOpen, ArrowRight, CaretRight,
   Clock, CheckCircle, Buildings, Scales, FileText, Warning,
   Info, Shield, Globe, MapPin, Envelope, Phone, ArrowSquareOut,
   ChatCircleDots, ThumbsUp, ThumbsDown, Users, Star, CaretDown,
@@ -265,6 +265,104 @@ export default function ProceduresPage() {
               )}
             </AnimatePresence>
 
+            {/* Owner item ٣٥ — the circuits directory used to live in a SECOND
+                `{mode === "circuits"}` block further down, carrying the same
+                `key="circuits"` as this one. Two children with one key under
+                `<AnimatePresence mode="wait">` is what produced the tall empty
+                gap in the owner's screenshot: the presence tracker treats them
+                as one node, keeps the first, and reserves the space of the
+                second while it waits for an exit that never comes. Merged here
+                so the tab is a single keyed child.
+
+                The second block also opened with a «ابحث: دائرة تجارية…» input
+                that had no `value`, no `onChange` and no filter behind it — it
+                accepted typing and did nothing. It is deleted rather than left
+                in the merged tab: the working ask-box at the top of this same
+                tab is the real search, and a control that only pretends to
+                filter is the kind of promise this pass exists to remove. */}
+            {CIRCUITS.map((group, gi) => {
+              const Icon = group.icon;
+              return (
+                <div key={gi} className={`${card} overflow-hidden`}>
+                  <button onClick={() => setExpandedCircuit(expandedCircuit === gi ? null : gi)}
+                    className={`w-full flex items-center gap-3 p-4`}>
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${group.bg}`}>
+                      <Icon size={17} weight="duotone" className={group.color} />
+                    </div>
+                    <p className={`flex-1 text-[13px] font-bold text-start ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{group.court}</p>
+                    <span className={`text-[10px] rounded-full px-2 py-0.5 ${isDark ? "bg-zinc-800 text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
+                      {group.circuits.length} دوائر
+                    </span>
+                    <CaretDown size={13} className={`transition-transform flex-shrink-0 ${expandedCircuit === gi ? "rotate-180" : ""} ${isDark ? "text-zinc-600" : "text-slate-400"}`} />
+                  </button>
+
+                  <AnimatePresence>
+                    {expandedCircuit === gi && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                        className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+                        {group.circuits.map((circuit, ci2) => (
+                          <div key={ci2} className={`p-4 ${ci2 < group.circuits.length - 1 ? (isDark ? "border-b border-white/[0.04]" : "border-b border-slate-50") : ""}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-black rounded-full px-2 py-0.5 ${group.bg} ${group.color}`}>
+                                  الدائرة {circuit.num}
+                                </span>
+                                <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{circuit.spec}</p>
+                              </div>
+                              {circuit.avgDays && (
+                                <span className={`text-[10px] flex items-center gap-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                                  <Clock size={9} />{circuit.avgDays}
+                                </span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              {circuit.email && (
+                                <a href={`mailto:${circuit.email}`}
+                                  className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border transition-colors ${isDark ? "border-white/[0.06] hover:border-blue-500/30 text-zinc-500 hover:text-blue-400" : "border-slate-100 hover:border-blue-200 text-slate-500 hover:text-blue-600"}`}>
+                                  <Envelope size={11} className="text-blue-500 flex-shrink-0" />
+                                  <span className="truncate">{circuit.email.split("@")[0]}</span>
+                                </a>
+                              )}
+                              {circuit.phone && (
+                                <a href={`tel:${circuit.phone}`}
+                                  className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
+                                  <Phone size={11} className="text-emerald-500 flex-shrink-0" />
+                                  {circuit.phone}
+                                </a>
+                              )}
+                              {circuit.floor && (
+                                <div className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
+                                  <MapPin size={11} className="text-amber-500 flex-shrink-0" />
+                                  {circuit.floor}
+                                </div>
+                              )}
+                              {circuit.najizCode && (
+                                <div className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border font-mono ${isDark ? "border-white/[0.06] text-zinc-600" : "border-slate-100 text-slate-400"}`}>
+                                  <Globe size={11} className="text-purple-500 flex-shrink-0" />
+                                  {circuit.najizCode}
+                                </div>
+                              )}
+                            </div>
+                            {circuit.notes && (
+                              <p className={`mt-2 text-[10px] flex items-start gap-1.5 ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
+                                <Info size={10} className="flex-shrink-0 mt-0.5" />{circuit.notes}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+
+            <div className={`text-center py-3`}>
+              <p className={`text-[11px] ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
+                البيانات تُحدَّث دورياً · للتأكيد الرسمي تواصل مباشرة مع المحكمة
+              </p>
+            </div>
+
             {/* Disclaimer */}
             <div className={`rounded-xl flex items-start gap-2.5 p-3.5 border ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
               <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
@@ -504,100 +602,6 @@ export default function ProceduresPage() {
                 </BetaReviewGate>
               </motion.div>
             )}
-          </motion.div>
-        )}
-
-        {/* ── MODE: CIRCUITS ── */}
-        {mode === "circuits" && (
-          <motion.div key="circuits" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-            <div className={`${card} p-3 flex items-center gap-2`}>
-              <MagnifyingGlass size={16} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-              <input placeholder="ابحث: دائرة تجارية، استئناف عمالي، أسرة..."
-                className={`flex-1 bg-transparent text-[13px] outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
-            </div>
-
-            {CIRCUITS.map((group, gi) => {
-              const Icon = group.icon;
-              return (
-                <div key={gi} className={`${card} overflow-hidden`}>
-                  <button onClick={() => setExpandedCircuit(expandedCircuit === gi ? null : gi)}
-                    className={`w-full flex items-center gap-3 p-4`}>
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${group.bg}`}>
-                      <Icon size={17} weight="duotone" className={group.color} />
-                    </div>
-                    <p className={`flex-1 text-[13px] font-bold text-start ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{group.court}</p>
-                    <span className={`text-[10px] rounded-full px-2 py-0.5 ${isDark ? "bg-zinc-800 text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
-                      {group.circuits.length} دوائر
-                    </span>
-                    <CaretDown size={13} className={`transition-transform flex-shrink-0 ${expandedCircuit === gi ? "rotate-180" : ""} ${isDark ? "text-zinc-600" : "text-slate-400"}`} />
-                  </button>
-
-                  <AnimatePresence>
-                    {expandedCircuit === gi && (
-                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                        className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-                        {group.circuits.map((circuit, ci2) => (
-                          <div key={ci2} className={`p-4 ${ci2 < group.circuits.length - 1 ? (isDark ? "border-b border-white/[0.04]" : "border-b border-slate-50") : ""}`}>
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[10px] font-black rounded-full px-2 py-0.5 ${group.bg} ${group.color}`}>
-                                  الدائرة {circuit.num}
-                                </span>
-                                <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{circuit.spec}</p>
-                              </div>
-                              {circuit.avgDays && (
-                                <span className={`text-[10px] flex items-center gap-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                                  <Clock size={9} />{circuit.avgDays}
-                                </span>
-                              )}
-                            </div>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                              {circuit.email && (
-                                <a href={`mailto:${circuit.email}`}
-                                  className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border transition-colors ${isDark ? "border-white/[0.06] hover:border-blue-500/30 text-zinc-500 hover:text-blue-400" : "border-slate-100 hover:border-blue-200 text-slate-500 hover:text-blue-600"}`}>
-                                  <Envelope size={11} className="text-blue-500 flex-shrink-0" />
-                                  <span className="truncate">{circuit.email.split("@")[0]}</span>
-                                </a>
-                              )}
-                              {circuit.phone && (
-                                <a href={`tel:${circuit.phone}`}
-                                  className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
-                                  <Phone size={11} className="text-emerald-500 flex-shrink-0" />
-                                  {circuit.phone}
-                                </a>
-                              )}
-                              {circuit.floor && (
-                                <div className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
-                                  <MapPin size={11} className="text-amber-500 flex-shrink-0" />
-                                  {circuit.floor}
-                                </div>
-                              )}
-                              {circuit.najizCode && (
-                                <div className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border font-mono ${isDark ? "border-white/[0.06] text-zinc-600" : "border-slate-100 text-slate-400"}`}>
-                                  <Globe size={11} className="text-purple-500 flex-shrink-0" />
-                                  {circuit.najizCode}
-                                </div>
-                              )}
-                            </div>
-                            {circuit.notes && (
-                              <p className={`mt-2 text-[10px] flex items-start gap-1.5 ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
-                                <Info size={10} className="flex-shrink-0 mt-0.5" />{circuit.notes}
-                              </p>
-                            )}
-                          </div>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
-
-            <div className={`text-center py-3`}>
-              <p className={`text-[11px] ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
-                البيانات تُحدَّث دورياً · للتأكيد الرسمي تواصل مباشرة مع المحكمة
-              </p>
-            </div>
           </motion.div>
         )}
 

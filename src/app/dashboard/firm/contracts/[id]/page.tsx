@@ -151,7 +151,6 @@ export default function FirmContractDetailPage({ params }: { params: Promise<{ i
   const [activeTab, setActiveTab] = useState<"content" | "ai" | "audit">("content");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [chineseWallState, setChineseWallState] = useState<boolean>(false);
-  const [signingStep, setSigningStep] = useState<"idle" | "sending" | "sent">("idle");
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   useEffect(() => {
@@ -187,23 +186,15 @@ export default function FirmContractDetailPage({ params }: { params: Promise<{ i
     }));
   };
 
-  const triggerNafathSignature = () => {
-    setSigningStep("sending");
-    setTimeout(() => {
-      setSigningStep("sent");
-      const newLog: AuditLog = {
-        time: "الآن",
-        user: "نظام نفاذ الموحد",
-        role: "توثيق حكومي",
-        action: "تم إرسال طلب التوقيع الرقمي لجوال العميل المرتبط بنفاذ",
-        type: "system"
-      };
-      setContract(prev => ({
-        ...prev,
-        auditLogs: [newLog, ...prev.auditLogs]
-      }));
-    }, 1500);
-  };
+  // 2026-09-02 — `triggerNafathSignature` was removed from here. It set a
+  // "sending" step, waited 1500ms, then declared the request sent and pushed an
+  // audit row attributed to `user: "نظام نفاذ الموحد"`, `role: "توثيق حكومي"` —
+  // an invented *government* actor writing into a contract's audit trail, on a
+  // screen whose whole purpose is to be the trustworthy record of who did what.
+  // Nothing was sent to anyone. There is no نفاذ integration on this platform,
+  // no e-signature provider, and no authority to claim either. Do not restore a
+  // simulated signing flow, and do not write audit entries in the name of a
+  // party that did not act.
 
   const hasUpgradePermission = (user.tier as string) === "enterprise" || (user.tier as string) === "professional";
 
@@ -518,48 +509,23 @@ export default function FirmContractDetailPage({ params }: { params: Promise<{ i
             </div>
           </div>
 
-          {/* Electronic Signature Center */}
+          {/* Electronic signature — a statement of absence, not a feature.
+              The card used to claim «متكامل مع بوابة نفاذ الوطنية الموحدة» over
+              a button that ran a 1500ms timer and then reported «تم إرسال
+              الإشعار بنجاح! بانتظار العميل» for a message no one ever received.
+              It offers no button now and makes no promise about timing, because
+              nothing has been built to promise. */}
           <div className={`p-6 border ${themeClasses.card} space-y-4`}>
             <div className="flex items-center gap-2">
               <Signature size={20} className="text-royal" weight="fill" />
-              <h3 className={`text-md font-black ${themeClasses.textHeading}`}>اعتماد التوقيع الرقمي</h3>
+              <h3 className={`text-md font-black ${themeClasses.textHeading}`}>التوقيع الإلكتروني</h3>
             </div>
 
             <p className={`text-xs leading-relaxed ${themeClasses.textBody}`}>
-              أرسل طلب توقيع آمن وموثّق متكامل مع بوابة نفاذ الوطنية الموحدة مباشرة إلى ممثلي الأطراف لتسهيل عملية الإغلاق.
+              التوقيع الإلكتروني غير متاح في نظامي حالياً: لا يوجد ربط مع بوابة
+              نفاذ ولا مع أي مزوّد توقيع رقمي معتمد، ولا تستطيع المنصة إرسال طلب
+              توقيع إلى أي طرف.
             </p>
-
-            {signingStep === "idle" && (
-              <button
-                onClick={triggerNafathSignature}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#0B3D2E] text-white text-xs font-black hover:bg-[#0a3328] transition-all shadow-md active:scale-[0.98]"
-              >
-                توقيع رقمي نفاذ الموحد
-              </button>
-            )}
-
-            {signingStep === "sending" && (
-              <div className="space-y-2 py-2">
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span className={themeClasses.textMuted}>جاري إرسال الطلب عبر نفاذ...</span>
-                </div>
-                <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-zinc-800" : "bg-slate-200"}`}>
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: "100%" }}
-                    transition={{ duration: 1.5, ease: "easeInOut" }}
-                    className="h-full rounded-full bg-[#C8A762]"
-                  />
-                </div>
-              </div>
-            )}
-
-            {signingStep === "sent" && (
-              <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-500 flex items-center gap-2 text-xs font-bold">
-                <SealCheck size={16} weight="fill" />
-                <span>تم إرسال الإشعار بنجاح! بانتظار العميل.</span>
-              </div>
-            )}
           </div>
 
         </div>

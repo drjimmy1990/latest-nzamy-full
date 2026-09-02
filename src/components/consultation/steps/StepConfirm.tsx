@@ -139,7 +139,14 @@ export function StepConfirm({
         )}
 
         <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Link href="/ai/orders" className="rounded-2xl bg-royal px-6 py-3 text-sm font-semibold text-white">
+          {/* «متابعة طلباتي» pointed at /ai/orders, the duplicate list page
+              that was deleted this session. It only avoided a 404 because
+              next.config.ts:97 redirects /ai/orders permanently to
+              /dashboard/client/requests — so the link was one config line away
+              from being dead. It now names the surviving destination directly:
+              «طلباتي», the page that actually lists the service_requests row
+              this screen just created. */}
+          <Link href="/dashboard/client/requests" className="rounded-2xl bg-royal px-6 py-3 text-sm font-semibold text-white">
             {isAr ? "متابعة طلباتي" : "Track my requests"}
           </Link>
           <Link href="/dashboard" className="rounded-2xl border border-slate-200 px-6 py-3 text-sm text-ink-muted dark:border-white/10 dark:text-gray-400">

@@ -142,8 +142,8 @@ export default function SecondedCounselPage() {
               </h1>
 
               <p className={`text-lg leading-relaxed mb-8 max-w-2xl mx-auto ${textSecondary}`}>
-                محامٍ معتمد يعمل لصالح شركتك بدوام جزئي أو كامل — بتكلفة أقل بكثير من موظف штатный،
-                وبخبرة أعلى من أي مكتب محاماة تقليدي.
+                محامٍ معتمد يعمل لصالح شركتك بدوام جزئي أو كامل — دون تكاليف توظيف
+                موظف بدوام كامل في إدارة قانونية داخلية.
               </p>
 
               <div className="flex flex-wrap items-center justify-center gap-4">
@@ -157,18 +157,24 @@ export default function SecondedCounselPage() {
               </div>
             </motion.div>
 
-            {/* Stats */}
+            {/*
+              أُزيلت هنا أربع "إحصاءات" مُختلَقة: «٤٠٪+ وفر في التكاليف القانونية»،
+              «١٥+ قطاع مدعوم»، «٢٤/٧ وصول للطوارئ (بريميوم)»، «٩٨٪ نسبة رضا
+              العملاء». لا يوجد جدول تقييمات في قاعدة البيانات ولا قياس للوفورات،
+              ولا التزام إتاحة متعاقَد عليه. استُبدلت بعروض قيمة بلا أرقام.
+              لا تُعِد رقماً هنا ما لم يكن محسوباً من بيانات حقيقية.
+            */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-14 max-w-3xl mx-auto">
               {[
-                { value: "٤٠٪+", label: "وفر في التكاليف القانونية" },
-                { value: "١٥+", label: "قطاع مدعوم" },
-                { value: "٢٤/٧", label: "وصول للطوارئ (بريميوم)" },
-                { value: "٩٨٪", label: "نسبة رضا العملاء" },
+                { title: "محامٍ مخصص لك", desc: "يعمل على ملفاتك وحدها لا في طابور مشترك" },
+                { title: "بدوام جزئي أو كامل", desc: "تختار نطاق الالتزام وتغيّره" },
+                { title: "بلا تكاليف توظيف", desc: "لا رواتب ولا تأمينات ولا مكتب" },
+                { title: "كل شيء داخل المنصة", desc: "الطلبات والعقود والمراسلات موثّقة" },
               ].map((s, i) => (
                 <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.1 }}
                   className={`rounded-2xl border p-5 text-center ${border} ${cardBg}`}>
-                  <p className="text-2xl font-extrabold text-royal">{s.value}</p>
-                  <p className={`text-[11px] mt-1 ${textSecondary}`}>{s.label}</p>
+                  <p className="text-sm font-extrabold leading-snug text-royal">{s.title}</p>
+                  <p className={`text-[11px] mt-1.5 leading-relaxed ${textSecondary}`}>{s.desc}</p>
                 </motion.div>
               ))}
             </div>

@@ -171,14 +171,22 @@ export function TeamManagementTab() {
           )}
         </div>
 
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-          <div
-            className={`h-full rounded-full ${seatsFull ? "bg-amber-500" : "bg-royal"}`}
-            style={{
-              width: policy.seatPolicy ? `${Math.min(100, Math.round((usedSeats / policy.seatPolicy.included) * 100))}%` : "0%",
-            }}
-          />
-        </div>
+        {/* Gated on seatPolicy, like the label above it. Without the guard this
+            track still rendered when no policy existed — an empty bar with a
+            `width: "0%"` fill, which reads as "0% of your seats used" and is a
+            claim about a quota nothing counts. The last seatPolicy literal was
+            removed on 2026-09-02, so that was every account with a team. An
+            absent quota has to draw nothing at all. */}
+        {policy.seatPolicy && (
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+            <div
+              className={`h-full rounded-full ${seatsFull ? "bg-amber-500" : "bg-royal"}`}
+              style={{
+                width: `${Math.min(100, Math.round((usedSeats / policy.seatPolicy.included) * 100))}%`,
+              }}
+            />
+          </div>
+        )}
       </div>
 
       <AnimatePresence>

@@ -16,7 +16,42 @@ import { DB_USER_TYPES, isDbUserType, type DbUserType } from "@/lib/auth/userTyp
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 
 type UserStatus = "active" | "suspended" | "pending" | "trial";
-type Plan = "free" | "pro" | "max" | "enterprise";
+
+/**
+ * The five values `subscriptions.tier` can actually hold.
+ *
+ * From the CHECK constraint —
+ * supabase/migrations/20260603_phase1_003_subscriptions_billing.sql:10 —
+ * `check (tier in ('free', 'ai', 'pro', 'corp', 'max'))`, and the same five
+ * are the only tiers the `subscription_plans` seed writes.
+ *
+ * What stood here was `"free" | "pro" | "max" | "enterprise"`, wrong in both
+ * directions at once and in exactly the way `ROLE_CFG` below documents for
+ * `user_type`:
+ *
+ *   - `ai` and `corp` had no entry. `mapPlan` ended in `?? "free"`, so a
+ *     lawyer paying 99 ﷼/month on the الذكية plan and a firm paying 999 ﷼ on
+ *     المؤسسية both rendered as «مجاني» — the two mid-tiers of the price list,
+ *     shown to the admin as non-paying accounts.
+ *
+ *   - `enterprise` is not a subscription tier at all. It is a `UserTier` in
+ *     the auth metadata (src/hooks/useUser.ts) and is absent from the CHECK
+ *     constraint, so no subscription row can carry it and its «Enterprise»
+ *     badge could never render.
+ *
+ * The labels are the plans' own `name_ar` from that seed, not re-worded, so
+ * the badge an admin reads matches the plan name on the invoice.
+ */
+const PLAN_TIERS = ["free", "ai", "pro", "corp", "max"] as const;
+type PlanTier = (typeof PLAN_TIERS)[number];
+
+function isPlanTier(value: unknown): value is PlanTier {
+  return typeof value === "string" && (PLAN_TIERS as readonly string[]).includes(value);
+}
+
+/** The filter value for a profile with no `subscriptions` row at all. */
+const NO_PLAN = "none" as const;
+type PlanFilter = "all" | PlanTier | typeof NO_PLAN;
 
 interface PlatformUser {
   id: string;
@@ -66,9 +101,24 @@ function formatArabicDate(iso: string): string {
   }
 }
 
-function mapPlan(tier?: string): Plan {
-  const map: Record<string, Plan> = { free: "free", pro: "pro", max: "max", enterprise: "enterprise" };
-  return map[tier ?? "free"] ?? "free";
+/**
+ * Which plan bucket a row belongs to, for both the badge and the filter.
+ *
+ * `NO_PLAN` — no `subscriptions` row — is deliberately its own value and NOT
+ * folded into «المجانية». The two are different facts: one account was put on
+ * the free plan, the other has never had a subscription row written for it,
+ * and on this platform that is most accounts. The old `?? "free"` printed the
+ * first sentence about the second case.
+ *
+ * `null` is a tier the CHECK constraint says cannot exist. It matches no
+ * filter but «الكل», so a row carrying one can only ever be found by looking
+ * at the whole list — which is correct: it is unclassifiable, and hiding it
+ * under a plan chip would be a guess.
+ */
+function planKeyOf(user: PlatformUser): PlanTier | typeof NO_PLAN | null {
+  const tier = user.subscription?.tier;
+  if (tier === undefined || tier === null) return NO_PLAN;
+  return isPlanTier(tier) ? tier : null;
 }
 
 function mapStatus(subStatus?: string, verifiedAt?: string | null): UserStatus {
@@ -158,12 +208,43 @@ const STATUS_CFG: Record<UserStatus, { label: string; color: string; bg: string 
   trial:     { label: "تجربة مجانية", color: "text-blue-500",   bg: "bg-blue-500/10 border-blue-500/20" },
 };
 
-const PLAN_CFG: Record<Plan, { label: string; color: string }> = {
-  free:       { label: "مجاني",      color: "text-slate-400" },
-  pro:        { label: "Pro",        color: "text-blue-500" },
-  max:        { label: "Max",        color: "text-violet-500" },
-  enterprise: { label: "Enterprise", color: "text-amber-500" },
+/** Badge label and colour per real tier — `name_ar` from the plan seed. */
+const PLAN_CFG: Record<PlanTier, { label: string; color: string }> = {
+  free: { label: "المجانية",    color: "text-slate-400" },
+  ai:   { label: "الذكية",      color: "text-sky-500" },
+  pro:  { label: "الاحترافية",  color: "text-blue-500" },
+  corp: { label: "المؤسسية",    color: "text-indigo-500" },
+  max:  { label: "الحد الأقصى", color: "text-violet-500" },
 };
+
+/** Every value the plan control can hold, in the order it lists them. */
+const PLAN_FILTERS: { value: PlanFilter; label: string }[] = [
+  { value: "all", label: "الخطة: الكل" },
+  ...PLAN_TIERS.map((t) => ({ value: t as PlanFilter, label: PLAN_CFG[t].label })),
+  { value: NO_PLAN, label: "بدون اشتراك" },
+];
+
+/**
+ * The plan badge on a row. Never a default, for the reason spelled out on
+ * `UNKNOWN_ROLE_CFG` above: a bucket an account was silently swept into reads
+ * exactly like a bucket it was put in, and only the admin looking at the row
+ * can act on the difference. Zinc, not a gray-* token — globals.css redefines
+ * gray-50/100/200 as dark SURFACES.
+ */
+function planBadgeFor(user: PlatformUser): { label: string; color: string; title?: string } {
+  const key = planKeyOf(user);
+  if (key === NO_PLAN) {
+    return { label: "بدون اشتراك", color: "text-zinc-400", title: "لا يوجد سجل اشتراك لهذا الحساب" };
+  }
+  if (key === null) {
+    return {
+      label: "خطة غير معروفة",
+      color: "text-zinc-400",
+      title: `قيمة tier غير معروفة: ${String(user.subscription?.tier)}`,
+    };
+  }
+  return PLAN_CFG[key];
+}
 
 // ─── User Row ─────────────────────────────────────────────────────────────────
 
@@ -183,10 +264,9 @@ function UserRow({
   const [actionLoading, setActionLoading] = useState(false);
 
   const uStatus = mapStatus(user.subscription?.status, user.verified_at);
-  const uPlan   = mapPlan(user.subscription?.tier);
   const role    = roleCfgFor(user.user_type);
   const status  = STATUS_CFG[uStatus];
-  const plan    = PLAN_CFG[uPlan];
+  const plan    = planBadgeFor(user);
   const RoleIcon = role.icon;
   const roleKnown = isDbUserType(user.user_type);
 
@@ -267,7 +347,7 @@ function UserRow({
           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${status.bg} ${status.color}`}>
             {status.label}
           </span>
-          <span className={`text-[9px] font-bold ${plan.color}`}>{plan.label}</span>
+          <span title={plan.title} className={`text-[9px] font-bold ${plan.color}`}>{plan.label}</span>
         </div>
         <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{user.email}</p>
         <div className={`flex items-center gap-3 mt-1 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
@@ -344,7 +424,7 @@ export default function AdminUsersPage() {
   const [search, setSearch]         = useState("");
   const [roleFilter, setRoleFilter] = useState<DbUserType | "all">("all");
   const [statusFilter, setStatusFilter] = useState<UserStatus | "all">("all");
-  const [planFilter, setPlanFilter] = useState<Plan | "all">("all");
+  const [planFilter, setPlanFilter] = useState<PlanFilter>("all");
 
   const [users, setUsers]           = useState<PlatformUser[]>([]);
   /**
@@ -375,8 +455,30 @@ export default function AdminUsersPage() {
       params.set("limit", String(LIMIT));
       if (search) params.set("search", search);
       if (roleFilter !== "all") params.set("role", roleFilter);
-      if (statusFilter !== "all") params.set("status", statusFilter);
-      if (planFilter !== "all") params.set("tier", planFilter);
+      // `status` and `tier` are deliberately NOT sent, and both used to be.
+      //
+      // The list route embeds the subscription as `subscriptions!left(...)`,
+      // so its `.eq("subscriptions.tier", …)` / `.eq("subscriptions.status", …)`
+      // filter the EMBEDDED rows, never the parent profiles — the route says so
+      // itself, at length, under «NOT LOAD-BEARING». Sending either one did not
+      // narrow the list by a single account. It did worse: a profile whose
+      // subscription failed the predicate still came back, with an empty
+      // `subscriptions` array, so every non-matching row lost its plan and
+      // status and re-rendered as an unsubscribed account. Picking «الاحترافية»
+      // would have returned the whole platform relabelled «بدون اشتراك».
+      //
+      // On top of that the status vocabulary never lined up: this screen's
+      // «نشط»/«بانتظار التحقق» are `profiles.verified_at` predicates, while
+      // `subscriptions.status` is CHECK-constrained to
+      // ('active','past_due','cancelled','expired','trialing') — "pending",
+      // "trial" and "suspended" are not values it can hold.
+      //
+      // Both are applied client-side below instead, off `mapStatus`/`planKeyOf`
+      // — the same two functions that draw the badges, so a chip and a badge
+      // cannot disagree. That narrows only the rows already loaded, which is
+      // stated on screen rather than left to be discovered. Making either one
+      // narrow server-side is a change to
+      // src/app/api/v1/admin/users/route.ts, which this pass does not own.
       // Counts are for the chip bar, which is not paginated — asking for them
       // again on "load more" would be nine redundant COUNT(*)s for numbers that
       // have not moved.
@@ -396,7 +498,11 @@ export default function AdminUsersPage() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [search, roleFilter, statusFilter, planFilter]);
+    // `statusFilter` and `planFilter` are NOT dependencies: neither is sent to
+    // the server any more (see the note at the params above), so re-fetching on
+    // them would throw away every «تحميل المزيد» page the admin had loaded and
+    // then filter the smaller set — the control would appear to lose rows.
+  }, [search, roleFilter]);
 
   // Fetch on filter/search change — reset to page 1
   useEffect(() => {
@@ -431,6 +537,45 @@ export default function AdminUsersPage() {
     : null;
 
   const hasMore = users.length < total;
+
+  /**
+   * The rows the plan and status controls leave on screen.
+   *
+   * Both narrow `users` — the pages already fetched — and nothing else. The
+   * server cannot narrow on either (see the note at the request params), so
+   * this is the only place the two filters can do real work, and it is real:
+   * `mapStatus` and `planKeyOf` are the same functions that print the badges,
+   * so a row is hidden by exactly the value shown on it.
+   *
+   * What it is not is a search of the platform. With rows still unloaded, a
+   * plan chip that finds nothing means "none among the loaded accounts", not
+   * "none exist" — which is why `scopeNotice` below is rendered rather than
+   * left for an admin to infer, and why the empty state says which of the two
+   * it is.
+   */
+  const visibleUsers = users.filter((u) => {
+    if (statusFilter !== "all" && mapStatus(u.subscription?.status, u.verified_at) !== statusFilter) {
+      return false;
+    }
+    if (planFilter !== "all" && planKeyOf(u) !== planFilter) return false;
+    return true;
+  });
+
+  /**
+   * Whether anything on this screen is computed from a partial list.
+   *
+   * `hasMore` alone, not "a filter is on": the two client-side filters are not
+   * the only things scoped to the loaded rows. `stats.active`, `stats.pending`
+   * and `stats.suspended` are counted over `users` too, so with 20 of 45 loaded
+   * the header reads «45 مستخدم · 12 نشط» — a platform total beside a count of
+   * one page, in the same sentence, with nothing to tell them apart. Only
+   * «إجمالي» comes from the server's `count`, which is why it is the one number
+   * the notice does not disclaim.
+   *
+   * Once everything is loaded all of it IS the whole matching set, so the
+   * sentence would be false and is not rendered.
+   */
+  const scopeNotice = hasMore;
 
   return (
     <div className="max-w-5xl mx-auto space-y-5" dir="rtl">
@@ -474,10 +619,10 @@ export default function AdminUsersPage() {
         })}
       </div>
 
-      {/* Filters — search + status on one line, the account-type chips on their
-          own. Ten chips share a row with the search box far worse than four
-          did; giving them a line stops the status control being shoved off the
-          edge on a narrow screen. */}
+      {/* Filters — search + status + plan on one line, the account-type chips
+          on their own. Ten chips share a row with the search box far worse than
+          four did; giving them a line stops the status control being shoved off
+          the edge on a narrow screen. */}
       <div className="space-y-2.5">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
@@ -492,6 +637,19 @@ export default function AdminUsersPage() {
             <option value="pending">انتظار تحقق</option>
             <option value="trial">تجربة</option>
             <option value="suspended">موقوف</option>
+          </select>
+          {/* Owner item ٣٤ — the plan filter. The screen had a `planFilter`
+              state and shipped it to the server as `?tier=`; what it never had
+              was a control, so the value was permanently "all" and no admin
+              could answer «مين المشتركين في الاحترافية؟» from this list at all.
+              The options are the five tiers the CHECK constraint allows plus
+              «بدون اشتراك» — no «Enterprise», which the old badge map offered
+              and no subscription row can hold. */}
+          <select value={planFilter} onChange={e => setPlanFilter(e.target.value as PlanFilter)}
+            className={`px-3 py-2 rounded-xl border text-[11px] font-bold outline-none cursor-pointer ${isDark ? "bg-zinc-900 border-white/[0.06] text-zinc-400" : "bg-white border-slate-100 text-slate-500"}`}>
+            {PLAN_FILTERS.map(p => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
           </select>
         </div>
 
@@ -539,6 +697,55 @@ export default function AdminUsersPage() {
             );
           })}
         </div>
+
+        {/* What this screen actually measured.
+            The plan and status controls cannot be pushed to the server (see the
+            request params), so they narrow the pages already loaded — and the
+            three status counters above are summed over the same partial list.
+            Saying so is the difference between a filter and a false negative:
+            without this line, «الاحترافية» over 20 of 45 loaded accounts
+            returns four rows that read as the platform's entire Pro cohort.
+            Amber, not zinc: this qualifies numbers an admin is about to act
+            on, so it has to be noticed rather than blend into the chrome. */}
+        {scopeNotice && (
+          <p className={`text-[11px] leading-6 ${isDark ? "text-amber-400/80" : "text-amber-700"}`}>
+            تصفية الخطة والحالة — وعدادات «نشط» و«انتظار تحقق» و«موقوف» أعلاه —
+            تُحتسب على الحسابات المحمّلة فقط ({users.length} من {total}).
+            اضغط «تحميل المزيد» لتشمل بقية الحسابات.
+          </p>
+        )}
+
+        {/* «موقوف» is a state this platform cannot hold, and until the status
+            control actually filtered, nothing revealed that: the chip returned
+            the unfiltered list, so it never looked empty. Now that it really
+            narrows, selecting it returns nothing — and an empty result reads as
+            «no account is suspended», which is a stronger and false claim.
+            The chain, end to end:
+              • `profiles` has no status column at all — only `verified_at`
+                (20260603_phase1_001_profiles.sql:30-53).
+              • `subscriptions.status` is CHECK-constrained to
+                ('active','past_due','cancelled','expired','trialing') — no
+                'suspended' (…003_subscriptions_billing.sql:38), and no later
+                migration adds one.
+              • PATCH /api/v1/admin/users/[id] never persists `body.status`. Its
+                suspension branch (:210-226) cancels active subscriptions and
+                downgrades the auth-metadata tier to free, and writes no mark
+                anywhere. `mapStatus('cancelled', verified_at)` then returns
+                "active", so a just-«إيقاف»ed account re-renders as نشط.
+              • Nothing in src/ gates sign-in on any of this.
+            So the button is not a no-op — it really does cancel the
+            subscription — but «إيقاف» promises more than it does, and the
+            «موقوف» counter can only ever read 0. Stated here rather than left
+            for an admin to conclude from an empty list. Making suspension real
+            needs a column and a route this pass does not own. */}
+        {statusFilter === "suspended" && (
+          <p className={`text-[11px] leading-6 ${isDark ? "text-amber-400/80" : "text-amber-700"}`}>
+            لا تُسجَّل حالة «موقوف» في المنصة: زر «إيقاف» يُلغي الاشتراك النشط
+            ويُنزل الباقة إلى المجانية، ولا يكتب أي وسم إيقاف على الحساب ولا يمنع
+            الدخول. لذلك لا يمكن لهذه التصفية — ولا لعدّاد «موقوف» أعلاه — أن
+            تُظهر أي حساب، مهما كان عدد الحسابات الموقوفة فعلياً.
+          </p>
+        )}
       </div>
 
       {/* Pending alerts */}
@@ -584,7 +791,13 @@ export default function AdminUsersPage() {
           ))
         )}
 
-        {/* Empty state */}
+        {/* Empty state — two different facts, never the same sentence.
+            «لا توجد نتائج مطابقة» is a statement about the platform and is only
+            true when the SERVER returned nothing for this search and account
+            type. When the server returned rows and the plan/status controls hid
+            them all, the honest sentence is about the loaded page, and it says
+            what to do about it. Printing the first for the second case is how
+            an admin concludes nobody is on a plan that has subscribers. */}
         {!loading && !error && users.length === 0 && (
           <div className={`${card} p-8 text-center`}>
             <Users size={28} weight="duotone" className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
@@ -592,7 +805,23 @@ export default function AdminUsersPage() {
           </div>
         )}
 
-        {!loading && !error && users.map((u, i) => (
+        {!loading && !error && users.length > 0 && visibleUsers.length === 0 && (
+          <div className={`${card} p-8 text-center`}>
+            <Users size={28} weight="duotone" className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+            <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+              لا يطابق هذه التصفية أي حساب من الحسابات المحمّلة
+              ({users.length} من {total})
+            </p>
+            {hasMore && (
+              <button onClick={() => fetchUsers(page + 1, true)} disabled={loadingMore}
+                className="mt-3 px-4 py-2 rounded-xl bg-royal/10 text-royal text-[12px] font-bold border border-royal/20 hover:bg-royal/20 disabled:opacity-40">
+                {loadingMore ? "جاري التحميل..." : "تحميل المزيد والبحث فيه"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {!loading && !error && visibleUsers.map((u, i) => (
           <motion.div key={u.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
             <UserRow user={u} isDark={isDark} card={card} onUpdate={() => fetchUsers(1, false)} />
           </motion.div>

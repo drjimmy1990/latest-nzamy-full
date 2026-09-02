@@ -11,6 +11,10 @@ import Link from "next/link";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { useUser } from "@/hooks/useUser";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
+// The office's one grouping of letters by intent (owner item ١٧). Imported,
+// never re-declared — see CLIENT_LETTER_TYPES below for why the taxonomy is
+// shared while the tiles are not.
+import { LETTER_FAMILIES } from "@/app/ai/legal-opinion/_constants";
 import {
   buildLetterPrintDocument,
   buildLetterWordDocument,
@@ -61,13 +65,36 @@ import {
  */
 
 // ─── Client-specific letter types (consumer language, no legal jargon) ──────────
-const CLIENT_LETTER_TYPES = [
+/**
+ * `family` is a LETTER_FAMILIES id — owner item ١٧'s taxonomy, imported above
+ * from the AI letter drafter's constants rather than restated here. The office
+ * has ONE grouping of letters by intent; a second list living in this file
+ * would drift from it the first time a family was renamed, and the client and
+ * the lawyer would then be shown two different maps of the same catalogue.
+ *
+ * WHY A FIELD AND NOT `letterFamilyOf()`. The families' `members` arrays hold
+ * LETTER_TYPES ids («warning», «demand», …) and these six ids are not those:
+ * this picker speaks the client's language («أطالب بأموال»), the drafter
+ * speaks the document's («مطالبة مالية وسداد مستحقات»), and the two lists are
+ * deliberately different lengths. What is shared is the classification, so
+ * that is what is imported — the family LABELS and their ORDER — while each
+ * client tile declares which family it sits in.
+ *
+ * The ids are untouched and stay untouched. `letterType` selects the template
+ * and resolves `selectedType.label`, which is what travels to the office in
+ * `metadata.intake.letterType` when a review is requested; renaming one to
+ * tidy a family would re-label the historic orders that carry it.
+ */
+const CLIENT_LETTER_TYPES: {
+  id: string; icon: string; label: string; sublabel: string; hint: string; family: string;
+}[] = [
   {
     id: "demand_money",
     icon: "💸",
     label: "أطالب بأموال",
     sublabel: "مستحقات · إيجار · تعويض · دَيْن",
     hint: "مثال: إيجار متأخر، راتب لم يُدفع، ضمان لم يُعد",
+    family: "claim",
   },
   {
     id: "stop_harm",
@@ -75,6 +102,9 @@ const CLIENT_LETTER_TYPES = [
     label: "أطلب وقف ضرر",
     sublabel: "ضوضاء · بناء مخالف · تعدٍّ على ملكي",
     hint: "مثال: جار يبني على حدود ملكي، ضجيج ليلي متكرر",
+    // «اقتضاء حق» — the drafter's counterpart is «إنذار قانوني» (`warning`),
+    // which sits in this same family.
+    family: "claim",
   },
   {
     id: "cancel_contract",
@@ -82,6 +112,7 @@ const CLIENT_LETTER_TYPES = [
     label: "أفسخ عقداً",
     sublabel: "عقد إيجار · خدمة · اشتراك",
     hint: "مثال: منشأة لم تُسلِّم الخدمة، متجر لم يُرجع المنتج",
+    family: "terminate",
   },
   {
     id: "get_document",
@@ -89,6 +120,7 @@ const CLIENT_LETTER_TYPES = [
     label: "أطلب مستنداً",
     sublabel: "صحة وعافية · عمل · تعليم · عقار",
     hint: "مثال: شهادة راتب، خطاب بنك، وثيقة ملكية",
+    family: "official",
   },
   {
     id: "complain_entity",
@@ -96,6 +128,7 @@ const CLIENT_LETTER_TYPES = [
     label: "أشكو جهة أو شركة",
     sublabel: "بنك · شركة · خدمة · موظف",
     hint: "مثال: بنك أخطأ في حسابي، شركة اتصالات فصلت خطي",
+    family: "official",
   },
   {
     id: "object_decision",
@@ -103,8 +136,46 @@ const CLIENT_LETTER_TYPES = [
     label: "أعترض على قرار",
     sublabel: "غرامة · مخالفة · رفض طلب",
     hint: "مثال: مخالفة بلدية غير مستحقة، رفض مطالبة تأمينية",
+    // The drafter's «تظلم / اعتراض إداري» (`objection`) is in `official` too,
+    // so a client and their lawyer classify this the same way.
+    family: "official",
   },
 ];
+
+/**
+ * The six tiles laid out under the shared family headings — owner item ١٧
+ * applied to the client's copy of the picker, which was still one flat grid.
+ *
+ * Two rules, both of which exist so grouping cannot lose a tile (the one real
+ * risk of grouping, and what _constants.test.ts guards on the drafter's side):
+ *
+ *  1. A family with no client tile is dropped rather than rendered as an empty
+ *     heading. «تسوية ودية» and «توكيلات وإقرارات وإفراجات» have no consumer
+ *     equivalent today; a heading over nothing reads as a section that failed
+ *     to load.
+ *  2. A tile whose `family` matches no family — the state a typo or a renamed
+ *     family id would produce — is not dropped. It lands in a trailing
+ *     «أنواع أخرى» group, so a mistake shows up as a mislabelled tile instead
+ *     of a letter type the client can no longer reach.
+ *
+ * Computed at module scope: LETTER_FAMILIES and CLIENT_LETTER_TYPES are both
+ * constants, so this is the same array on every render.
+ */
+const CLIENT_LETTER_GROUPS: { id: string; label: string; tiles: typeof CLIENT_LETTER_TYPES }[] = (() => {
+  const groups = LETTER_FAMILIES
+    .map((family) => ({
+      id: family.id,
+      label: family.label,
+      tiles: CLIENT_LETTER_TYPES.filter((lt) => lt.family === family.id),
+    }))
+    .filter((group) => group.tiles.length > 0);
+
+  const placed = new Set(groups.flatMap((g) => g.tiles.map((lt) => lt.id)));
+  const orphans = CLIENT_LETTER_TYPES.filter((lt) => !placed.has(lt.id));
+  return orphans.length > 0
+    ? [...groups, { id: "unfiled", label: "أنواع أخرى", tiles: orphans }]
+    : groups;
+})();
 
 // ─── Recipient presets (consumer-friendly labels) ────────────────────────────────
 const RECIPIENT_PRESETS = [
@@ -701,21 +772,34 @@ export function ClientLetterWorkflow({ isDark, card, onBack }: ClientLetterWorkf
             <p className={`text-[15px] font-medium ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>اختر الأقرب لوضعك ليُختار القالب المناسب</p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {CLIENT_LETTER_TYPES.map(lt => (
-              <motion.button key={lt.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                onClick={() => setLetterType(lt.id)}
-                className={`flex items-start gap-4 rounded-[1.5rem] border p-5 text-right transition-all duration-300 ${
-                  letterType === lt.id
-                    ? isDark ? "border-blue-500/50 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.1)]" : "border-blue-400 bg-blue-50 shadow-sm"
-                    : isDark ? "border-white/10 hover:border-white/20 hover:bg-white/5" : "border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50"
-                }`}>
-                <span className="text-3xl flex-shrink-0 mt-1 filter drop-shadow-sm">{lt.icon}</span>
-                <div>
-                  <p className={`text-[15px] font-black mb-1 transition-colors ${letterType === lt.id ? isDark ? "text-blue-400" : "text-blue-700" : tp}`}>{lt.label}</p>
-                  <p className={`text-[12px] font-medium leading-relaxed ${isDark ? (letterType === lt.id ? "text-blue-400/70" : "text-zinc-500") : (letterType === lt.id ? "text-blue-600/70" : "text-zinc-500")}`}>{lt.sublabel}</p>
+          {/* Owner item ١٧, applied to the client picker. The six tiles used to
+              sit in one undifferentiated grid: a client who knew what they
+              wanted but not which tile carried it had to read all six. They are
+              now under the same intent headings the لوحة المحامي drafter uses,
+              so the two screens classify letters identically. Every tile still
+              renders and no id changed — the grouping is purely layout. */}
+          <div className="space-y-7">
+            {CLIENT_LETTER_GROUPS.map(group => (
+              <div key={group.id} className="space-y-3">
+                <p className={`text-[11px] font-black tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{group.label}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {group.tiles.map(lt => (
+                    <motion.button key={lt.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                      onClick={() => setLetterType(lt.id)}
+                      className={`flex items-start gap-4 rounded-[1.5rem] border p-5 text-right transition-all duration-300 ${
+                        letterType === lt.id
+                          ? isDark ? "border-blue-500/50 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.1)]" : "border-blue-400 bg-blue-50 shadow-sm"
+                          : isDark ? "border-white/10 hover:border-white/20 hover:bg-white/5" : "border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50"
+                      }`}>
+                      <span className="text-3xl flex-shrink-0 mt-1 filter drop-shadow-sm">{lt.icon}</span>
+                      <div>
+                        <p className={`text-[15px] font-black mb-1 transition-colors ${letterType === lt.id ? isDark ? "text-blue-400" : "text-blue-700" : tp}`}>{lt.label}</p>
+                        <p className={`text-[12px] font-medium leading-relaxed ${isDark ? (letterType === lt.id ? "text-blue-400/70" : "text-zinc-500") : (letterType === lt.id ? "text-blue-600/70" : "text-zinc-500")}`}>{lt.sublabel}</p>
+                      </div>
+                    </motion.button>
+                  ))}
                 </div>
-              </motion.button>
+              </div>
             ))}
           </div>
 
