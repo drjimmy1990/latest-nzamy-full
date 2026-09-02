@@ -792,7 +792,7 @@ export default function CasesPage() {
                           outside this drawer already did this; these did not. */}
                       {countsKnown && (
                         <span className={`text-[9px] px-1.5 rounded-full ${statusFilter === s ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                          {s === "all" ? counts.all : counts[s]}
+                          {toArabicDigits(s === "all" ? counts.all : counts[s])}
                         </span>
                       )}
                     </button>
@@ -891,7 +891,7 @@ export default function CasesPage() {
               {s !== "all" && <span className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[s]?.dot}`} />}
               {s === "all" ? "الكل" : STATUS_CONFIG[s].label}
               <span className={`text-[9px] rounded-full px-1.5 ${statusFilter === s ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                {s === "all" ? counts.all : counts[s]}
+                {toArabicDigits(s === "all" ? counts.all : counts[s])}
               </span>
             </button>
           ))}
