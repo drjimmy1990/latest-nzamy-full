@@ -772,7 +772,12 @@ export default function AdminUsersPage() {
         <div className={`${card} p-4 flex items-center gap-3 border-amber-500/20 bg-amber-500/[0.03]`}>
           <Clock size={16} weight="duotone" className="text-amber-500 flex-shrink-0" />
           <p className={`flex-1 text-[12px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
-            يوجد <strong>{stats.pending} مستخدم</strong> ينتظر التحقق من هويته الوظيفية
+            {/* Batch 2 routed the header and the KPI tiles of this very page
+                through the Arabic count helper and did not touch this banner,
+                so one screen kept printing «10 مستخدم» in Western digits with
+                the singular noun while the line above it read «١٠ مستخدمين».
+                A half-fix of our own, in the file the fix was made in. */}
+            يوجد <strong>{countPhraseAr(stats.pending, USERS_COUNT)}</strong> {stats.pending === 1 ? "ينتظر" : "ينتظرون"} التحقق من الهوية الوظيفية
           </p>
           <button onClick={() => setStatusFilter("pending")}
             className="flex-shrink-0 px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-500 text-[11px] font-bold border border-amber-500/20 hover:bg-amber-500/20">

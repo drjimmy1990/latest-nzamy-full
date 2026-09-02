@@ -574,9 +574,15 @@ export default function ClientDashboard() {
                 account supposedly has, and the case half appears only when
                 ACTIVE_PHRASE proves there is a case to talk about. */}
             <p className="text-emerald-100/60 text-sm mb-5 max-w-md leading-relaxed">
+              {/* This line must not repeat the buttons under it. Finding 144
+                  counts «احجز استشارة» THREE times on this screen, and the
+                  greeting copy written in an earlier batch was one of the
+                  three — a quick-action button by that exact name sits a few
+                  rows below. The sentence now says what the dashboard is for
+                  and lets the buttons name the actions. */}
               {ACTIVE_PHRASE
-                ? "تابع مراحل طلباتك، واطلب خدمة قانونية جديدة، واحجز استشارة بنقرة واحدة."
-                : "اطلب خدمة قانونية أو احجز استشارة، وتابع كل طلباتك من هنا."}
+                ? "كل طلباتك ومراحلها في مكان واحد."
+                : "ابدأ من الإجراءات أدناه، وتابع كل ما تطلبه من هنا."}
             </p>
 
             <div className="flex flex-wrap gap-3">
