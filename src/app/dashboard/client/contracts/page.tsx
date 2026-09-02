@@ -334,7 +334,7 @@ export default function ClientContractsPage() {
           className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white rounded-xl text-sm font-bold shadow-md hover:bg-[#0a3328] transition-colors self-start md:self-auto"
         >
           <PlusCircle size={18} weight="bold" />
-          محترف العقود لايت
+          محترف العقود المختصر
         </Link>
       </div>
 

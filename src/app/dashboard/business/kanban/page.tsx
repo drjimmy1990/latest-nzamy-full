@@ -313,7 +313,7 @@ export default function BusinessKanbanPage() {
                   <Kanban size={14} /> الكانبان
                 </button>
                 <button onClick={() => setViewMode("graph")} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${viewMode === "graph" ? "bg-[#0B3D2E] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-700" }`}>
-                  <CirclesFour size={14} /> اللوحة البصرية (الجراف)
+                  <CirclesFour size={14} /> خريطة القضية
                 </button>
                 <button onClick={() => setViewMode("list")} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${viewMode === "list" ? (isDark ? "bg-zinc-800 text-white shadow-sm" : "bg-white text-zinc-900 shadow-sm") : "text-zinc-500 hover:text-zinc-700" }`}>
                   <ListDashes size={14} /> القائمة

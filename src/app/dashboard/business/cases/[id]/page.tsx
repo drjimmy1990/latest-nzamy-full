@@ -43,7 +43,7 @@ function ShareGraphModal({ onClose, isDark }: { onClose: () => void; isDark: boo
         <div className="flex items-center justify-between mb-5 relative z-10">
           <h3 className={`text-lg font-bold flex items-center gap-2 ${isDark ? "text-white" : "text-zinc-900"}`}>
             <ShareNetwork size={20} className="text-blue-500" />
-            مشاركة الجراف الخارجي
+            مشاركة خريطة القضية الخارجية
           </h3>
           <button onClick={onClose} className={`rounded-xl p-1.5 transition-colors ${isDark ? "bg-white/[0.05] hover:bg-white/[0.1] text-zinc-400" : "bg-zinc-100 hover:bg-zinc-200 text-zinc-600"}`}>
             <X size={16} />

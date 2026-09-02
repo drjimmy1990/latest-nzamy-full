@@ -493,7 +493,7 @@ export default function FirmCasesPage() {
                         </Link>
                         <Link href={`/dashboard/firm/cases/${c.id}?tab=graph`}
                           className={`text-[10px] font-semibold px-3 py-1.5 rounded-xl transition-colors ${isDark ? "bg-royal/10 text-royal/80 hover:bg-royal/20" : "bg-royal/8 text-royal hover:bg-royal/15"}`}>
-                          الجراف
+                          خريطة القضية
                         </Link>
                       </div>
                     </div>

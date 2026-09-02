@@ -70,7 +70,7 @@ const DOCUMENTS_COUNT: ArabicCountForms = {
 
 const CaseGraphView = dynamic(
   () => import("@/app/dashboard/business/kanban/CaseGraphView"),
-  { ssr: false, loading: () => <div className="h-96 flex items-center justify-center text-sm text-slate-400">جاري تحميل الجراف...</div> }
+  { ssr: false, loading: () => <div className="h-96 flex items-center justify-center text-sm text-slate-400">جارٍ تحميل خريطة القضية...</div> }
 );
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ const TABS = [
   { id: "hearings",  label: "الجلسات",     icon: CalendarCheck },
   { id: "documents", label: "المستندات",   icon: FolderOpen },
   { id: "team",      label: "الفريق",      icon: UsersThree },
-  { id: "graph",     label: "الجراف",      icon: Graph },
+  { id: "graph",     label: "خريطة القضية", icon: Graph },
   { id: "notes",     label: "الملاحظات",   icon: ChatDots },
 ];
 
@@ -1273,7 +1273,7 @@ export default function CaseDetailPage() {
               <div className={`p-3 border-b flex items-center gap-2 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
                 <Graph size={14} weight="duotone" className="text-royal" />
                 <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
-                  الجراف البصري للقضية — {caseData.title}
+                  خريطة القضية البصرية — {caseData.title}
                 </p>
                 {/* A «نظامي AI» pill sat here, in the same header as the real case
                     title. The platform contributes nothing to this board: the
@@ -1301,7 +1301,7 @@ export default function CaseDetailPage() {
                   <div className={`flex items-center gap-3 p-3 border-b ${isDark ? "border-white/[0.06] bg-zinc-900" : "border-slate-200 bg-white"}`}>
                     <Graph size={15} weight="duotone" className="text-royal" />
                     <p className={`text-[13px] font-semibold flex-1 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
-                      {caseData.title} — الجراف البصري
+                      {caseData.title} — خريطة القضية البصرية
                     </p>
                     <button onClick={() => setGraphFullscreen(false)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors ${
