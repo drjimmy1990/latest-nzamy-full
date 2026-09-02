@@ -125,7 +125,12 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
       { label: "محفظتي",           labelEn: "My Wallet",       href: "/dashboard/client/wallet",   icon: "Wallet",     divider: true },
       { label: "ربعي",             labelEn: "My Group",        href: "/dashboard/client/my-group", icon: "UsersThree", badge: "نشط", requiresClientGroup: true },
       { label: "المجتمع القانوني", labelEn: "Legal Community", href: "/community",                 icon: "Users" },
-      { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws",                     icon: "BookOpen" },
+      // «المكتبة القانونية» → /laws stood here (owner item ٥٢). Removed from the
+      // INDIVIDUAL sidebar only. The library itself is untouched and stays
+      // linked for lawyers and firms (navigation.sidebars.legal.ts) and on the
+      // public site; /laws is not redirected and does not 404. What this
+      // removes is the claim that a raw statute browser is part of an
+      // individual client’s own workspace.
       { label: "برنامج الإحالة",   labelEn: "Referral",        href: "/dashboard/client/referral", icon: "Gift" },
       { label: "ميديا نظامي",      labelEn: "Nzamy Media",     href: "/media",                     icon: "PlayCircle",  badge: "جديد" },
       { label: "الإشعارات",        labelEn: "Notifications",   href: "/notifications",             icon: "Bell" },

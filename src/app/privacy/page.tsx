@@ -81,7 +81,8 @@ const sections = {
       id: "security",
       title: "٧. أمان البيانات",
       content: [
-        "تُشفَّر جميع البيانات أثناء النقل باستخدام TLS 1.3 وفي حالة التخزين باستخدام AES-256.",
+        "تُنقَل جميع البيانات عبر اتصال مشفّر باستخدام TLS 1.3، وتُخزَّن على بنية تحتية سحابية يوفّر مزوّدها تشفيراً على مستوى الأقراص.",
+        "تعزل سياسات الأمان على مستوى الصف (RLS) داخل قاعدة البيانات سجلات كل حساب عن غيره، فلا يقرأ حساب بيانات حساب آخر.",
         "نُجري اختبارات اختراق دورية ونراجع سياسات الأمان بشكل ربعي.",
         "في حال حدوث اختراق يؤثر على بياناتك، سنُخطرك خلال ٧٢ ساعة وفق متطلبات نظام PDPL.",
         "الوصول للبيانات محدود بمبدأ الحد الأدنى من الصلاحيات — لا يصل أي موظف للبيانات إلا بالقدر اللازم لعمله.",
@@ -176,7 +177,8 @@ const sections = {
       id: "security",
       title: "7. Data Security",
       content: [
-        "All data is encrypted in transit using TLS 1.3 and at rest using AES-256.",
+        "All data is transmitted over an encrypted TLS 1.3 connection and stored on cloud infrastructure whose provider encrypts the underlying disks.",
+        "Row-level security (RLS) policies inside the database isolate each account's records, so no account can read another account's data.",
         "We conduct regular penetration tests and review security policies quarterly.",
         "In case of a breach affecting your data, we will notify you within 72 hours per PDPL requirements.",
         "Data access is limited by the principle of least privilege — no employee accesses data beyond what's needed for their role.",
@@ -212,7 +214,7 @@ export default function PrivacyPage() {
   const highlights = [
     { icon: UserCircle, title: isRTL ? "نجمع بإذنك فقط" : "We Collect With Consent Only", color: "bg-royal/10 text-royal" },
     { icon: Lock, title: isRTL ? "لا نبيع بياناتك أبداً" : "We Never Sell Your Data", color: "bg-red-500/10 text-red-500" },
-    { icon: ShieldCheck, title: isRTL ? "تشفير كامل AES-256" : "Full AES-256 Encryption", color: "bg-emerald-500/10 text-emerald-500" },
+    { icon: ShieldCheck, title: isRTL ? "اتصال مشفّر TLS 1.3" : "TLS 1.3 Encrypted Connection", color: "bg-emerald-500/10 text-emerald-500" },
     { icon: Trash, title: isRTL ? "حق الحذف محمي" : "Right to Delete Protected", color: "bg-amber-500/10 text-amber-500" },
   ];
 

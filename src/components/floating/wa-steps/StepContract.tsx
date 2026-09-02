@@ -135,8 +135,18 @@ export default function StepContract({ step, isDark, selections, contractNotes, 
           aria-label="ملاحظات إضافية على العقد"
           className={`w-full rounded-[1.25rem] border px-4 py-3 text-[13px] font-medium outline-none transition-all focus:border-[#0B3D2E] focus:ring-4 focus:ring-[#0B3D2E]/10 ${isDark ? "bg-white/[0.02] border-white/10 text-white placeholder:text-gray-600" : "bg-white border-gray-200/70 text-gray-800 placeholder:text-gray-400"}`}
         />
+        {/* THE THIRD COPY OF A SENTENCE THIS REPO HAS ALREADY RULED FALSE.
+            «ستصلك نتيجة المراجعة + تقرير PDF على واتساب» stood here. Its twin
+            on the payment screen — «بعد الاستشارة ستصلك نسخة PDF على واتساب
+            بملخص الجلسة» — was deleted with the finding recorded in
+            StepPayment.tsx:71-77: nothing in this platform generates a review
+            report PDF, and nothing sends a file over WhatsApp. The office
+            replies in the conversation, by hand.
+            Not zero-filled and not softened into «قريباً»: what the flow
+            actually does is file an order and open a chat, so that is what it
+            says. */}
         <motion.p variants={staggerItemVariants} className="text-[11px] font-bold text-[#0B3D2E] dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/40 rounded-xl px-3 py-2 text-center">
-          ستصلك نتيجة المراجعة + تقرير PDF على واتساب
+          يصل طلب المراجعة إلى الفريق، ويوافيك بالنتيجة في المحادثة أو في «طلباتي»
         </motion.p>
         <motion.button
           variants={staggerItemVariants}

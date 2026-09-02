@@ -25,10 +25,13 @@ const ROLES = [
     bg: "bg-royal/8 dark:bg-royal/15",
     border: "border-royal/25",
     badgeAr: "الأكثر استخداماً",
+    // أُزيلت أرقام مُختلَقة: «٥+ ساعات توفير يومي»، «٩٤٪ رضا عن دقة المسودات»،
+    // «٠٪ مواعيد أو جلسات فائتة». لا يوجد جدول تقييمات ولا قياس لوقت المستخدمين.
+    // لا تُعِد رقماً هنا ما لم يكن محسوباً من بيانات حقيقية.
     stats: [
-      { val: "٥+ ساعات", label: "توفير يومي في المهام" },
-      { val: "٩٤٪", label: "رضا عن دقة المسودات" },
-      { val: "٠٪", label: "مواعيد أو جلسات فائتة" },
+      { val: "مسودات جاهزة", label: "ابدأ من نموذج مبني على الأنظمة السعودية لا من صفحة بيضاء" },
+      { val: "مهل محفوظة", label: "مواعيد الجلسات والمهل داخل المنصة أمامك" },
+      { val: "ملف واحد", label: "القضية ومستنداتها ومراسلاتها في مكان واحد" },
     ],
     tools: [
       {
@@ -97,10 +100,12 @@ const ROLES = [
     bg: "bg-blue-500/8 dark:bg-blue-500/12",
     border: "border-blue-400/30",
     badgeAr: "مؤسسي",
+    // أُزيل رقم مُختلَق: «+٤٠٪ ارتفاع في القدرة الاستيعابية» — لا قياس له.
+    // وأُزيل ادعاء «٢٤/٧» لتحديث العملاء لأنه وعدُ إتاحة غير مُتعاقَد عليه.
     stats: [
-      { val: "١ شاشة", label: "للتحكم بكامل أعمال المكتب" },
-      { val: "+٤٠٪", label: "ارتفاع في القدرة الاستيعابية" },
-      { val: "٢٤/٧", label: "تحديث للعملاء عبر بوابتهم" },
+      { val: "شاشة واحدة", label: "قضايا المكتب ومهامه وفواتيره في لوحة واحدة" },
+      { val: "توزيع المهام", label: "أسنِد القضية لعضو الفريق وتابع ما أُنجز" },
+      { val: "بوابة العميل", label: "يتابع موكّلك حالة قضيته دون اتصال هاتفي" },
     ],
     tools: [
       {
@@ -169,10 +174,12 @@ const ROLES = [
     bg: "bg-amber-500/8",
     border: "border-amber-400/30",
     badgeAr: "توثيق",
+    // أُزيلت أرقام مُختلَقة: «٩٩٪ دقة الصياغة النظامية» (لا قياس للدقة ولا نموذج
+    // لغوي موصول أصلاً)، «دقيقتان لإنجاز الوكالات»، «+١٢ نموذج توثيق جاهز».
     stats: [
-      { val: "٩٩٪", label: "دقة الصياغة النظامية" },
-      { val: "دقيقتان", label: "لإنجاز الوكالات المخصصة" },
-      { val: "+١٢", label: "نموذج توثيق جاهز" },
+      { val: "صياغة موحّدة", label: "قوالب الإفراغ والوكالات وعقود التأسيس جاهزة" },
+      { val: "بلا إعادة كتابة", label: "بيانات الأطراف تُدخَل مرة واحدة في المستند" },
+      { val: "تذكير المراجعين", label: "إشعار بالمستندات الناقصة قبل الموعد" },
     ],
     tools: [
       {
@@ -209,15 +216,17 @@ const ROLES = [
     id: "courts",
     icon: IdentificationCard,
     labelAr: "معقّب / مراجع دوائر",
-    descAr: "تتبع المعاملات وحافظ على المواعيد الحرجة للعملاء بدون أخطاء بشرية مكلفة.",
+    descAr: "تتبع المعاملات وحافظ على المواعيد الحرجة للعملاء بدون أخطاء مكلفة.",
     color: "text-emerald-600",
     bg: "bg-emerald-500/8",
     border: "border-emerald-400/30",
     badgeAr: "مراجعة",
+    // أُزيلت أرقام مُختلَقة: «٠ مهل استئناف مفقودة» (وعدُ نتيجة لا يمكن ضمانه)،
+    // «+٣٥٪ سرعة في تجهيز متطلبات الرد»، وادعاء الإتاحة «٢٤/٧».
     stats: [
-      { val: "٠", label: "مهل الاستئناف المفقودة" },
-      { val: "٢٤/٧", label: "تتبع للمواعيد الحرجة" },
-      { val: "+٣٥٪", label: "سرعة في تجهيز متطلبات الرد" },
+      { val: "عدّاد المهل", label: "مدد الاعتراض والاستئناف محسوبة أمامك" },
+      { val: "إنذار مبكر", label: "تنبيه قبل انتهاء المهلة لا بعدها" },
+      { val: "سجل المعاملات", label: "حالة كل معاملة ومن يتابعها" },
     ],
     tools: [
       {
@@ -461,7 +470,7 @@ export default function LawyersPage() {
                         <ArrowLeft size={15} weight="bold" />
                       </a>
                     </div>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                       {activeRole.stats.map((stat, i) => (
                         <motion.div
                           key={i}
@@ -470,8 +479,8 @@ export default function LawyersPage() {
                           transition={{ delay: i * 0.1 }}
                           className="rounded-2xl border border-slate-100 dark:border-white/10 bg-surface dark:bg-dark-bg p-4 text-center"
                         >
-                          <div className="font-brand text-2xl font-extrabold text-royal dark:text-gold">{stat.val}</div>
-                          <div className="mt-1 text-xs text-ink-muted dark:text-gray-400">{stat.label}</div>
+                          <div className="font-brand text-base font-extrabold leading-snug text-royal dark:text-gold">{stat.val}</div>
+                          <div className="mt-1.5 text-xs leading-relaxed text-ink-muted dark:text-gray-400">{stat.label}</div>
                         </motion.div>
                       ))}
                     </div>
@@ -605,16 +614,23 @@ export default function LawyersPage() {
                     })}
                   </div>
                 </div>
+                {/*
+                  أُزيلت هنا أربع "إحصاءات" مُختلَقة: «٢,٠٠٠+ محامٍ على المنصة»،
+                  «٩٤٪ رضا المحامين»، «٥٠٠+ شركة محاماة»، «٤٧٪ توفير في الوقت».
+                  عدد المحامين المنشورين في دليل المنصة صفر، ولا يوجد جدول تقييمات
+                  ولا قياس لوقت المستخدمين. استُبدلت بعروض قيمة بلا أرقام.
+                  لا تُعِد رقماً هنا ما لم يكن محسوباً من بيانات حقيقية.
+                */}
                 <div className="grid grid-cols-2 gap-4">
                   {[
-                    { value: "٢,٠٠٠+", label: "محامٍ على المنصة" },
-                    { value: "٩٤٪", label: "رضا المحامين" },
-                    { value: "٥٠٠+", label: "شركة محاماة" },
-                    { value: "٤٧٪", label: "توفير في الوقت" },
+                    { title: "أدوات في مكان العمل", desc: "الصياغة والبحث وإدارة القضايا داخل لوحة واحدة" },
+                    { title: "مبنية على الأنظمة السعودية", desc: "قوالب ومراجع تتبع الأنظمة واللوائح السارية" },
+                    { title: "للمستقل وللمكتب", desc: "من المحامي الفرد إلى فريق كامل بصلاحيات مستقلة" },
+                    { title: "بياناتك ملكك", desc: "ملفات موكّليك ومراسلاتهم داخل حسابك وحده" },
                   ].map((stat, i) => (
                     <div key={i} className="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
-                      <div className="font-brand text-2xl font-extrabold text-gold">{stat.value}</div>
-                      <div className="mt-1 text-xs text-white/60">{stat.label}</div>
+                      <div className="font-brand text-sm font-extrabold leading-snug text-gold">{stat.title}</div>
+                      <div className="mt-1.5 text-xs leading-relaxed text-white/60">{stat.desc}</div>
                     </div>
                   ))}
                 </div>
@@ -635,7 +651,8 @@ export default function LawyersPage() {
                 جاهز لرفع مستوى ممارستك القانونية؟
               </h2>
               <p className="mx-auto mt-4 max-w-[45ch] text-sm text-ink-muted dark:text-gray-400">
-                انضم لآلاف المحامين الذين يثقون بنظامي لمضاعفة إنتاجيتهم.
+                {/* لا تكتب هنا عدداً ولا «آلاف المحامين»: عدد المحامين المنشورين في الدليل صفر. */}
+                أنشئ حسابك وابدأ بإدارة قضاياك ومسوداتك ومواعيدك من مكان واحد.
               </p>
               <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
                 <motion.a

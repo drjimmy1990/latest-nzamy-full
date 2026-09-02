@@ -25,6 +25,38 @@ import {
 } from "./direction-support.data";
 import type { LegalText, Precedent, ResultTab, SearchModes, Stage } from "./direction-support.types";
 
+/**
+ * Owner item ٤١ — the reference-source picker, in the two rows he approved.
+ *
+ * His layout is two visual bands: a prominent first row for الأنظمة والمبادئ,
+ * and a second, quieter row for the supporting material. That hierarchy is
+ * what is built below.
+ *
+ * What is NOT built below is a sixth source. His sketch's second row names
+ * التعاميم, الفقهين and الويب; the code has, and has only ever had, these five
+ * — and no web search, no circulars index and no second فقه source exists
+ * behind the screen to point a checkbox at. Adding a «الويب» toggle, or
+ * re-badging `appeal` (أحكام محاكم الاستئناف — appellate rulings) as
+ * «التعاميم» (circulars) because the slot is empty, would be inventing a
+ * capability, which is the exact thing this pass is removing. Every label and
+ * sub-label here is the one the code already carried.
+ */
+type RefSourceKey = "laws" | "principles" | "appeal" | "fiqh" | "fatwa";
+interface RefSourceOption { key: RefSourceKey; label: string; sub: string }
+
+/** Row ١ — prominent. */
+const PRIMARY_SOURCES: readonly RefSourceOption[] = [
+  { key: "laws",       label: "الأنظمة واللوائح",  sub: "هيئة الخبراء + نظامي" },
+  { key: "principles", label: "مبادئ قضائية عليا", sub: "المحكمة العليا + مجلس القضاء" },
+];
+
+/** Row ٢ — supporting. */
+const SUPPORTING_SOURCES: readonly RefSourceOption[] = [
+  { key: "appeal", label: "أحكام محاكم الاستئناف", sub: "سوابق قضائية منشورة" },
+  { key: "fiqh",   label: "الفقه القانوني",        sub: "آراء فقهية ودراسات" },
+  { key: "fatwa",  label: "الفتاوى الشرعية",       sub: "هيئة كبار العلماء" },
+];
+
 const SEARCH_MODE_OPTIONS: { id: keyof SearchModes; label: string; sub: string; icon: typeof BookOpen; color: string; active: string }[] = [
   { id:"texts",      label:"نصوص ومبادئ",     sub:"أنظمة · لوائح · مبادئ قضائية",       icon:BookOpen,  color:"text-teal-400",   active:"from-teal-700 to-teal-500"   },
   { id:"precedents", label:"سوابق قضائية",  sub:"أحكام مشابهة ١٠%+ مع تسبيبها",     icon:Gavel,     color:"text-amber-400",  active:"from-amber-600 to-amber-400" },
@@ -46,10 +78,10 @@ export default function DirectionSupportPage() {
   const [basketCount,  setBasketCount] = useState(0);
   const [progress,     setProgress]    = useState(0);
   const [exampleIdx,   setExampleIdx]  = useState(0);
-  const [refSources,   setRefSources]  = useState({
+  const [refSources,   setRefSources]  = useState<Record<RefSourceKey, boolean>>({
     laws: true, principles: true, appeal: true, fiqh: false, fatwa: false,
   });
-  const toggleSrc = (k: keyof typeof refSources) => setRefSources(p => ({ ...p, [k]: !p[k] }));
+  const toggleSrc = (k: RefSourceKey) => setRefSources(p => ({ ...p, [k]: !p[k] }));
   const toggleMode = (k: keyof SearchModes) => setSearchModes(p => ({ ...p, [k]: !p[k] }));
   const anySrc  = Object.values(refSources).some(Boolean);
   const anyMode = Object.values(searchModes).some(Boolean);
@@ -66,6 +98,34 @@ export default function DirectionSupportPage() {
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/70"
     : "rounded-2xl border border-slate-200 bg-white shadow-sm";
+
+  /** One source toggle. `prominent` is the only difference between the two
+   *  rows of item ٤١ — same control, same wording, more weight in row ١. */
+  const renderSource = (s: RefSourceOption, prominent: boolean) => {
+    const on = refSources[s.key];
+    return (
+      <button key={s.key} onClick={() => toggleSrc(s.key)}
+        className={`flex items-center gap-2 rounded-lg border text-start transition-all ${
+          prominent ? "px-3 py-2.5" : "px-2.5 py-1.5"
+        } ${
+          on
+            ? isDark ? "border-teal-600/40 bg-teal-900/15" : "border-teal-400/40 bg-teal-50"
+            : isDark ? "border-white/[0.06] hover:border-white/10" : "border-slate-200 hover:border-slate-300"
+        }`}>
+        <div className={`rounded flex items-center justify-center flex-shrink-0 border-2 transition-all ${
+          prominent ? "w-4 h-4" : "w-3.5 h-3.5"
+        } ${on ? "border-teal-500" : isDark ? "border-zinc-700" : "border-zinc-300"}`}>
+          {on && <div className={`rounded-sm bg-teal-500 ${prominent ? "w-2 h-2" : "w-1.5 h-1.5"}`} />}
+        </div>
+        <div className="min-w-0">
+          <p className={`font-bold leading-none mb-0.5 ${prominent ? "text-[11px]" : "text-[10px]"} ${
+            on ? isDark ? "text-teal-300" : "text-teal-700" : isDark ? "text-zinc-400" : "text-zinc-600"
+          }`}>{s.label}</p>
+          <p className={`text-[9px] truncate ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{s.sub}</p>
+        </div>
+      </button>
+    );
+  };
 
   // Processing steps adapt to mode
   const processingSteps = [
@@ -192,34 +252,27 @@ export default function DirectionSupportPage() {
                 })}
               </div>
               {!anyMode && <p className="text-[10px] text-red-400 font-semibold">اختر نوعاً واحداً على الأقل</p>}
-              {/* Sources — sub-section */}
-              <div className={`rounded-xl border p-3 space-y-2 ${isDark ? "border-white/[0.05] bg-white/[0.02]" : "border-slate-100 bg-slate-50"}`}>
+              {/* Sources — sub-section. Owner item ٤١: two visual rows, row ١
+                  prominent. The five keys are the five the tool has; see the
+                  note above PRIMARY_SOURCES for the ones his sketch names that
+                  have nothing behind them. */}
+              <div className={`rounded-xl border p-3 space-y-3 ${isDark ? "border-white/[0.05] bg-white/[0.02]" : "border-slate-100 bg-slate-50"}`}>
                 <p className={`text-[9px] font-black uppercase tracking-widest ${isDark ? "text-zinc-600" : "text-slate-400"}`}>مصادر البحث</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                  {([
-                    { key:"laws",       label:"الأنظمة واللوائح",         sub:"هيئة الخبراء + نظامي" },
-                    { key:"principles", label:"مبادئ قضائية عليا",        sub:"المحكمة العليا + مجلس القضاء" },
-                    { key:"appeal",     label:"أحكام محاكم الاستئناف",    sub:"سوابق قضائية منشورة" },
-                    { key:"fiqh",       label:"الفقه القانوني",            sub:"آراء فقهية ودراسات" },
-                    { key:"fatwa",      label:"الفتاوى الشرعية",           sub:"هيئة كبار العلماء" },
-                  ] as const).map(s => (
-                    <button key={s.key} onClick={() => toggleSrc(s.key)}
-                      className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-start transition-all ${
-                        refSources[s.key]
-                          ? isDark ? "border-teal-600/40 bg-teal-900/15" : "border-teal-400/40 bg-teal-50"
-                          : isDark ? "border-white/[0.06] hover:border-white/10" : "border-slate-200 hover:border-slate-300"
-                      }`}>
-                      <div className={`w-3.5 h-3.5 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all ${
-                        refSources[s.key] ? "border-teal-500" : isDark ? "border-zinc-700" : "border-zinc-300"
-                      }`}>
-                        {refSources[s.key] && <div className="w-1.5 h-1.5 rounded-sm bg-teal-500" />}
-                      </div>
-                      <div>
-                        <p className={`text-[10px] font-bold leading-none mb-0.5 ${refSources[s.key] ? isDark ? "text-teal-300" : "text-teal-700" : isDark ? "text-zinc-400" : "text-zinc-600"}`}>{s.label}</p>
-                        <p className={`text-[9px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{s.sub}</p>
-                      </div>
-                    </button>
-                  ))}
+
+                {/* ── Row ١ — أساسية (prominent) ── */}
+                <div className="space-y-1.5">
+                  <p className={`text-[9px] font-bold ${isDark ? "text-teal-500" : "text-teal-700"}`}>المصادر الأساسية</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {PRIMARY_SOURCES.map(s => renderSource(s, true))}
+                  </div>
+                </div>
+
+                {/* ── Row ٢ — مساندة ── */}
+                <div className="space-y-1.5">
+                  <p className={`text-[9px] font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>مصادر مساندة</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                    {SUPPORTING_SOURCES.map(s => renderSource(s, false))}
+                  </div>
                 </div>
               </div>
             </div>

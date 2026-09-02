@@ -70,7 +70,7 @@ const INITIAL_FLAGS: AdminFeatureFlag[] = [
   },
   {
     id: "F004",
-    name: "بوابة المراجعة البشرية",
+    name: "بوابة مراجعة المخرجات",
     key: "BETA_REVIEW_MODE",
     category: "Beta",
     description: "تغطية المخرجات القانونية الحساسة حتى اعتماد RAG/QA.",

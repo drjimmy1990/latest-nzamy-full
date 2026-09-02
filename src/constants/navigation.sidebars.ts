@@ -71,7 +71,6 @@ export const GOV_REVIEWER_SIDEBAR: SidebarGroup[] = [
       { label: "دليل الإجراءات",     labelEn: "Procedure Guide",        href: "/ai/procedures",                icon: "MapTrifold" },
       { label: "مراجع الاشتراطات",  labelEn: "Requirements Checker",   href: "/ai/analyze",                   icon: "ShieldCheck" },
       { label: "صياغة تقرير",       labelEn: "Draft Report",           href: "/ai/draft?mode=report",         icon: "FileArrowUp" },
-      { label: "طلباتي الذكية",     labelEn: "My AI Orders",           href: "/ai/orders",                    icon: "Tray",  divider: true },
     ],
   },
   {
@@ -119,7 +118,6 @@ export const ARBITRATOR_SIDEBAR: SidebarGroup[] = [
     defaultOpen: true,
     items: [
       { label: "صائغ حكم التحكيم",  labelEn: "Award Drafter",      href: "/ai/draft?mode=arbitration",  icon: "Robot",          badge: "AI" },
-      { label: "طلباتي الذكية",     labelEn: "My AI Orders",       href: "/ai/orders",                  icon: "Tray",           divider: true },
       { label: "ملخّص المذكرات",     labelEn: "Memo Summarizer",    href: "/ai/analyze?mode=memo",       icon: "Scan" },
       { label: "باحث المبادئ",       labelEn: "Principle Search",   href: "/ai/gov/judicial-search",     icon: "MagnifyingGlass" },
       { label: "مدقق الاختصاص",     labelEn: "Jurisdiction Check", href: "/ai/gov/jurisdiction-analyzer",icon: "TreeStructure" },
@@ -464,7 +462,14 @@ export function getSidebarByUserType(
       "/dashboard/business/marketplace",
       "/dashboard/provider/requests",
       "/services/lawyers",
-      "/community/lawyers",
+      // "/community/lawyers" was listed here. Owner item ١٤٦ repointed both
+      // legal sidebars at /community, so this string now matches no item and
+      // keeping it would hide nothing. It is deliberately NOT rewritten to
+      // "/community": the individual client has linked «المجتمع القانوني» →
+      // /community all along (navigation.sidebars.primary.ts), so putting that
+      // href in this list would take the community away from the one account
+      // type that already had it — a regression dressed up as a rename.
+      // Lawyers and firms now reach the same real forum on the same terms.
     ];
 
     base = base.map(group => ({

@@ -2,7 +2,11 @@
 
 import { motion } from "framer-motion";
 import { WhatsappLogo, Headset } from "@phosphor-icons/react";
-import { staggerListVariants, staggerItemVariants } from "./WaShared";
+import {
+  WA_ENGAGEMENT_DISCLAIMER_AR,
+  staggerListVariants,
+  staggerItemVariants,
+} from "./WaShared";
 
 // ─── StepSuccess lived here and is DELETED ───────────────────────────────────
 //
@@ -58,6 +62,16 @@ export function StepCustomerService({ isDark, onReset, whatsappHref }: CustomerS
       >
         <Headset size={20} weight="fill" /> اتصل بنا
       </motion.a>
+
+      {/* The same sentence the outcome step carries, for the same reason: this
+          is the other place the widget hands someone a direct line to a law
+          office. */}
+      <motion.p
+        variants={staggerItemVariants}
+        className="text-[11px] leading-relaxed text-start font-medium text-zinc-500 dark:text-zinc-400"
+      >
+        {WA_ENGAGEMENT_DISCLAIMER_AR}
+      </motion.p>
 
       <motion.button
         variants={staggerItemVariants}

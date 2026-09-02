@@ -8,7 +8,6 @@ import {
   Brain,
   ArrowLeft,
   ArrowRight,
-  Star,
   CaretDown,
   Check,
   Clock,
@@ -39,7 +38,11 @@ const consultationTypes = {
       price: "٩٩",
       currency: "ر.س",
       desc: "احصل على إجابات قانونية فورية من نموذج AI متخصص في الأنظمة واللوائح السعودية — مع خيار تصعيد للمحامي في أي وقت",
-      features: ["غير محدود خلال الجلسة", "لحظي ٢٤/٧", "يستشهد بالمادة القانونية", "تصعيد للمحامي بضغطة"],
+      // Dropped «لحظي ٢٤/٧»: no model is wired to the AI tools, so nothing can
+      // be instantly available round the clock — and the FAQ on this same page
+      // now says the roster is still being onboarded and no wait time can be
+      // quoted. The remaining bullets describe the tier, not its uptime.
+      features: ["غير محدود خلال الجلسة", "يستشهد بالمادة القانونية", "تصعيد للمحامي بضغطة"],
       badge: "الأوفر",
       color: "from-emerald-500/10 to-emerald-500/5",
       border: "border-emerald-500/20",
@@ -80,7 +83,7 @@ const consultationTypes = {
       price: "99",
       currency: "SAR",
       desc: "Get instant legal answers from an AI model specialized in Saudi regulations — with the option to escalate to a lawyer at any time",
-      features: ["Unlimited within session", "Instant 24/7", "Cites legal articles", "One-tap lawyer escalation"],
+      features: ["Unlimited within session", "Cites legal articles", "One-tap lawyer escalation"],
       badge: "Best Value",
       color: "from-emerald-500/10 to-emerald-500/5",
       border: "border-emerald-500/20",
@@ -130,27 +133,29 @@ const steps = {
   ],
 };
 
-const lawyers = [
-  { name: { ar: "أ. محمد الغامدي", en: "Atty. Mohammad Al-Ghamdi" }, specialty: { ar: "قانون العمل", en: "Labor Law" }, rating: 4.9, sessions: 312 },
-  { name: { ar: "أ. سارة الحربي", en: "Atty. Sarah Al-Harbi" }, specialty: { ar: "قانون الأسرة", en: "Family Law" }, rating: 4.8, sessions: 247 },
-  { name: { ar: "أ. خالد العتيبي", en: "Atty. Khaled Al-Otaibi" }, specialty: { ar: "القانون التجاري", en: "Commercial Law" }, rating: 4.9, sessions: 189 },
-  { name: { ar: "أ. نورة السبيعي", en: "Atty. Noura Al-Subaie" }, specialty: { ar: "العقود والملكية", en: "Contracts & Property" }, rating: 4.7, sessions: 156 },
-];
+// The «محامون معتمدون» showcase that used to live here listed four named
+// lawyers with star ratings (4.7–4.9) and session counts (156–312). None of it
+// existed: the directory has no published lawyers, and there is no ratings or
+// sessions table anywhere to derive those numbers from. Publishing invented
+// performance figures for named advocates also runs against القاعدة ٣٨ of the
+// professional conduct rules (قرار وزير العدل ٦٧٦، ١٩/٤/١٤٤٦هـ). The array and
+// the section that rendered it are gone; when real lawyers are onboarded this
+// should read from the directory rather than from a literal.
 
 const faqs = {
   ar: [
-    { q: "كيف تتم الاستشارة الفورية؟", a: "بعد الدفع مباشرةً يتم تحويلك لغرفة دردشة/صوت/فيديو مع أول محامٍ متاح من التخصص المطلوب. متوسط وقت الانتظار أقل من ٥ دقائق." },
-    { q: "هل الاستشارة سرية؟", a: "نعم، جميع المحادثات مشفرة ومحمية ولا يطّلع عليها أي طرف ثالث. تلتزم المنصة بسرية المعلومات القانونية بموجب النظام السعودي." },
+    { q: "كيف تتم الاستشارة الفورية؟", a: "بعد الدفع مباشرةً يتم تحويلك لغرفة دردشة/صوت/فيديو مع أول محامٍ متاح من التخصص المطلوب. ولأن قائمة المحامين لا تزال قيد التجهيز، لا يمكننا حالياً تحديد وقت انتظار متوقع." },
+    { q: "هل الاستشارة سرية؟", a: "نعم، تلتزم المنصة بسرية المعلومات القانونية بموجب النظام السعودي. وتقنياً: الاتصال مؤمَّن عبر TLS، والبيانات مخزَّنة لدى مزوّد البنية التحتية مع تشفير على مستوى القرص، وعزل صفوف (RLS) يمنع حساباً آخر من قراءة محادثاتك. ولا توجد طبقة تشفير طرف-لطرف (E2E)." },
     { q: "ما الفرق بين الاستشارة الفورية والمجدولة؟", a: "الفورية تربطك بأول محامٍ متاح خلال دقائق لمدة ٣٠ دقيقة. المجدولة تتيح لك اختيار محامٍ بعينه وتحديد وقت يناسبك لمدة ٦٠ دقيقة." },
     { q: "هل يمكن استرداد المبلغ إذا لم أكن راضيًا؟", a: "نعم، نضمن الرضا الكامل. إذا لم تكن راضيًا عن الاستشارة يمكنك طلب استرداد كامل خلال ٢٤ ساعة من انتهاء الجلسة." },
-    { q: "هل نظامي AI يغني عن المحامي البشري؟", a: "نظامي AI أداة مساعدة ممتازة للاستفسارات العامة والمعلوماتية، لكن للقضايا المعقدة والتمثيل القضائي لا بديل عن محامٍ بشري معتمد." },
+    { q: "هل نظامي AI يغني عن المحامي؟", a: "نظامي AI أداة مساعدة ممتازة للاستفسارات العامة والمعلوماتية، لكن للقضايا المعقدة والتمثيل القضائي لا بديل عن المتابعة بواسطة محامٍ مرخص ومتمرس." },
   ],
   en: [
-    { q: "How does an instant consultation work?", a: "After payment you are immediately connected to a voice/video/chat room with the first available lawyer in the requested specialty. Average wait time is under 5 minutes." },
-    { q: "Is the consultation confidential?", a: "Yes, all conversations are encrypted and protected. No third party can access them. The platform complies with Saudi legal confidentiality requirements." },
+    { q: "How does an instant consultation work?", a: "After payment you are immediately connected to a voice/video/chat room with the first available lawyer in the requested specialty. Because the lawyer roster is still being onboarded, we cannot quote an expected wait time yet." },
+    { q: "Is the consultation confidential?", a: "Yes — the platform complies with Saudi legal confidentiality requirements. Technically: traffic is secured with TLS, data is stored at our infrastructure provider with disk-level encryption at rest, and row-level security (RLS) prevents another account from reading your conversations. There is no end-to-end (E2E) encryption." },
     { q: "What is the difference between instant and scheduled?", a: "Instant connects you with the first available lawyer in minutes for 30 minutes. Scheduled lets you choose a specific lawyer and a time that suits you for 60 minutes." },
     { q: "Can I get a refund if I am not satisfied?", a: "Yes, we guarantee full satisfaction. If you are not satisfied with the consultation you can request a full refund within 24 hours of session completion." },
-    { q: "Does Nezamy AI replace a human lawyer?", a: "Nezamy AI is an excellent aid for general and informational queries, but for complex cases and court representation there is no substitute for a certified human lawyer." },
+    { q: "Does Nezamy AI replace a lawyer?", a: "Nezamy AI is an excellent aid for general and informational queries, but for complex cases and court representation there is no substitute for follow-up by a licensed, experienced lawyer." },
   ],
 };
 
@@ -348,58 +353,10 @@ export default function ConsultationsPage() {
         </div>
       </section>
 
-      {/* ── Lawyer Profiles ───────────────────────────────────────────────── */}
-      <section className={`py-20 ${isDark ? "bg-[#0e1217]" : "bg-white"}`}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-12"
-          >
-            <h2 className={`text-3xl font-bold mb-3 ${isDark ? "text-white" : "text-gray-900"}`}>
-              {isRTL ? "محامون معتمدون" : "Certified Lawyers"}
-            </h2>
-            <p className={`text-base ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-              {isRTL ? "فريق من أبرز المحامين المعتمدين من وزارة العدل" : "A team of top lawyers certified by the Ministry of Justice"}
-            </p>
-          </motion.div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {lawyers.map((lawyer, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, scale: 0.95 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                whileHover={{ y: -4 }}
-                className={`rounded-2xl border p-6 text-center cursor-pointer transition-all duration-300 ${
-                  isDark
-                    ? "bg-[#161b22] border-white/10 hover:border-royal/40"
-                    : "bg-white border-gray-100 hover:border-royal/30 hover:shadow-md"
-                }`}
-              >
-                {/* Avatar placeholder */}
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-royal/20 to-royal/10 border-2 border-royal/20 mx-auto mb-4 flex items-center justify-center">
-                  <User size={28} className="text-royal" weight="duotone" />
-                </div>
-                <h4 className={`font-bold mb-1 text-sm ${isDark ? "text-white" : "text-gray-900"}`}>{lawyer.name[L]}</h4>
-                <p className={`text-xs mb-3 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{lawyer.specialty[L]}</p>
-                <div className="flex items-center justify-center gap-1 mb-2">
-                  {[...Array(5)].map((_, s) => (
-                    <Star key={s} size={12} weight={s < Math.floor(lawyer.rating) ? "fill" : "regular"} className="text-gold" />
-                  ))}
-                  <span className="text-xs text-gold font-semibold ms-1">{lawyer.rating}</span>
-                </div>
-                <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                  {isRTL ? `${lawyer.sessions} جلسة` : `${lawyer.sessions} sessions`}
-                </p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* The «محامون معتمدون» grid stood here — see the note beside the deleted
+          `lawyers` array above. Nothing replaces it: rendering an empty grid or
+          a zero count would be its own claim. The section returns when the
+          lawyer directory has published profiles to read from. */}
 
       {/* ── Pricing ───────────────────────────────────────────────────────── */}
       <section className={`py-20 ${isDark ? "bg-[#0e1217]" : "bg-white"}`}>

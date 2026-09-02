@@ -85,7 +85,10 @@ export default function AIVaultPage() {
         </div>
         <div className={`hidden sm:flex items-center gap-1.5 rounded-xl px-3 py-2 border ${isDark ? "border-white/[0.06] bg-zinc-800" : "border-zinc-200 bg-zinc-50"}`}>
           <Lock size={12} className={isDark ? "text-zinc-500" : "text-zinc-400"} />
-          <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>مشفّر E2E</span>
+          {/* Was «مشفّر E2E». There is no end-to-end encryption anywhere in this
+              codebase — no client-side key, no cipher call. TLS on the wire is
+              the claim that is actually true. */}
+          <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>نقل مشفّر TLS</span>
         </div>
       </div>
 

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import {
   Buildings, Scales, ShieldCheck, ArrowLeft,
-  Check, Clock, Brain, Lock,
+  Check, Clock, Brain, Lock, Money,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -98,24 +98,34 @@ export default function BusinessPage() {
                     </div>
                     <div>
                       <div className="text-sm font-semibold text-ink">{isAr ? "لوحة الشركة" : "Company Dashboard"}</div>
-                      <div className="text-xs text-ink-muted dark:text-gray-400">{isAr ? "عرض حي للمنصة" : "Live platform preview"}</div>
+                      <div className="text-xs text-ink-muted dark:text-gray-400">{isAr ? "ما تديره من داخل اللوحة" : "What you manage from the dashboard"}</div>
                     </div>
                   </div>
-                  {/* Mock metrics */}
+                  {/*
+                    كانت هنا ثلاثة "مؤشرات" مكتوبة يدوياً تحت عنوان فرعي يقول إنها
+                    «عرض حي للمنصة»: «١٢٤ عقداً نشطاً»، «٩٨٪ امتثال»، «٣ مخاطر
+                    مكتشفة» — بأشرطة تقدّم تُرسِّخ النِّسَب نفسها (٧٨٪ و٩٨٪ و١٥٪).
+                    لم تكن حيّة ولا مأخوذة من أي حساب. حُذفت الأرقام والأشرطة معاً،
+                    وحُذف ادعاء «العرض الحي» من العنوان الفرعي.
+                    (نُظّف الجدول في الأسفل في مراجعة سابقة وبقيت هذه البطاقة.)
+
+                    وحُذفت معها أسماء الأقسام الثلاثة نفسها: لا توجد في المنتج لوحةُ
+                    «عقود نشطة» ولا «امتثال» ولا «مخاطر مكتشفة» لحساب منشأة. راجع
+                    التعليق الطويل في src/app/dashboard/business/page.tsx — ستة عشر
+                    قسماً من /dashboard/business (ومنها /contracts و/governance)
+                    أُلغي ربطها في ٢٦ أغسطس لأنها كانت تعرض بيانات مُختلَقة.
+                    ما بقي أدناه هو ما تقرأه تلك الصفحة فعلاً من قاعدة البيانات.
+                    لا تُعِد هنا رقماً ولا قسماً لا وجود له في اللوحة.
+                  */}
                   {[
-                    { label: isAr ? "العقود النشطة" : "Active Contracts", value: "١٢٤", valueEn: "124", color: "bg-royal/5 text-royal", width: "78%" },
-                    { label: isAr ? "الامتثال" : "Compliance", value: "٩٨٪", valueEn: "98%", color: "bg-emerald-50 text-emerald-600", width: "98%" },
-                    { label: isAr ? "المخاطر المكتشفة" : "Risks Detected", value: "٣", valueEn: "3", color: "bg-orange-50 text-orange-600", width: "15%" },
+                    { label: isAr ? "طلبات الخدمة" : "Service Requests", desc: isAr ? "كل طلب قدّمته الشركة وحالته" : "Every request your company filed, and its status" },
+                    { label: isAr ? "خزانة المستندات" : "Document Vault", desc: isAr ? "مستندات الشركة ومرفقات طلباتها" : "Your company's documents and request attachments" },
+                    { label: isAr ? "ملف المنشأة" : "Company Profile", desc: isAr ? "بيانات الشركة وما ينقصها لاكتمالها" : "Your company's details and what is still missing" },
                   ].map((metric, i) => (
-                    <motion.div key={i} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 + i * 0.15 }} className="mb-4">
-                      <div className="mb-1.5 flex items-center justify-between text-xs">
-                        <span className="text-ink-muted dark:text-gray-400">{metric.label}</span>
-                        <span className={`font-bold rounded-full px-2 py-0.5 text-[10px] ${metric.color}`}>{isAr ? metric.value : metric.valueEn}</span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
-                        <motion.div initial={{ width: 0 }} animate={{ width: metric.width }} transition={{ delay: 0.6 + i * 0.15, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                          className="h-full rounded-full bg-gradient-to-l from-royal to-gold" />
-                      </div>
+                    <motion.div key={i} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 + i * 0.15 }}
+                      className="mb-3 rounded-xl border border-slate-100 px-3 py-2.5 dark:border-white/10">
+                      <div className="text-xs font-semibold text-ink dark:text-white">{metric.label}</div>
+                      <div className="mt-0.5 text-[11px] leading-relaxed text-ink-muted dark:text-gray-400">{metric.desc}</div>
                     </motion.div>
                   ))}
                   <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
@@ -239,18 +249,46 @@ export default function BusinessPage() {
                     })}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                {/*
+                  أُزيلت هنا أربع "إحصاءات" مُختلَقة: «٥٠٠+ شركة تثق بنا»،
+                  «٩٨٪ رضا المؤسسات»، «٤٠٪ توفير في التكاليف»، «٢٤ س متوسط وقت
+                  الاستجابة». لا يوجد مصدر لأيٍّ منها. استُبدلت بعروض قيمة بلا
+                  أرقام. لا تُعِد رقماً هنا ما لم يكن محسوباً من بيانات حقيقية.
+                */}
+                <div className="grid grid-cols-1 gap-4">
                   {[
-                    { value: "٥٠٠+", valueEn: "500+", label: isAr ? "شركة تثق بنا" : "Companies Trust Us" },
-                    { value: "٩٨٪", valueEn: "98%", label: isAr ? "رضا المؤسسات" : "Business Satisfaction" },
-                    { value: "٤٠٪", valueEn: "40%", label: isAr ? "توفير في التكاليف" : "Cost Savings" },
-                    { value: "٢٤ س", valueEn: "24h", label: isAr ? "متوسط وقت الاستجابة" : "Average Response Time" },
-                  ].map((stat, i) => (
-                    <div key={i} className="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
-                      <div className="font-brand text-2xl font-extrabold text-gold">{isAr ? stat.value : stat.valueEn}</div>
-                      <div className="mt-1 text-xs text-white/60">{stat.label}</div>
-                    </div>
-                  ))}
+                    {
+                      icon: ShieldCheck,
+                      titleAr: "الامتثال الشامل", titleEn: "End-to-End Compliance",
+                      descAr: "مراجعة عقودك وسياساتك ومستنداتك على ضوء الأنظمة واللوائح السعودية السارية.",
+                      descEn: "Your contracts, policies and filings reviewed against current Saudi laws and regulations.",
+                    },
+                    {
+                      icon: Clock,
+                      titleAr: "الاستجابة السريعة", titleEn: "Fast Response",
+                      descAr: "قناة مباشرة مع فريقك القانوني، ومتابعة الطلب من فتحه حتى إغلاقه داخل المنصة.",
+                      descEn: "A direct line to your legal team, with every request tracked in-platform from open to close.",
+                    },
+                    {
+                      icon: Money,
+                      titleAr: "الوفورات الاقتصادية", titleEn: "Cost Efficiency",
+                      descAr: "بديل عن الإدارة القانونية الداخلية كاملة الدوام — تدفع مقابل ما تحتاجه فعلاً.",
+                      descEn: "An alternative to a full-time in-house department — you pay for what you actually use.",
+                    },
+                  ].map((prop, i) => {
+                    const Icon = prop.icon;
+                    return (
+                      <div key={i} className="flex items-start gap-4 rounded-2xl border border-white/10 bg-white/5 p-5">
+                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gold/15 text-gold">
+                          <Icon size={20} weight="duotone" />
+                        </span>
+                        <div>
+                          <div className="font-brand text-base font-bold text-gold">{isAr ? prop.titleAr : prop.titleEn}</div>
+                          <div className="mt-1 text-xs leading-relaxed text-white/60">{isAr ? prop.descAr : prop.descEn}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>

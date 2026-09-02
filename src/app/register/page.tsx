@@ -35,7 +35,8 @@ const t = {
     seekerCta: "سجّل كطالب خدمة",
     seekerBadge: "الأكثر شيوعاً",
     providerTitle: "مقدّم خدمة",
-    providerDesc: "انضم إلى شبكة المحترفين القانونيين وقدّم خدماتك لآلاف العملاء",
+    // لا تكتب هنا «آلاف العملاء»: عدد الحسابات في الإنتاج ١٨.
+    providerDesc: "انضم إلى شبكة المحترفين القانونيين واعرض خدماتك على طالبي الخدمة داخل المنصة",
     providerCta: "سجّل كمقدم خدمة",
     providerBadge: "للمحترفين",
     seekerSubTypes: ["فرد", "شركة", "مؤسسة / منشأة", "جهة حكومية", "جمعية"],
@@ -52,9 +53,8 @@ const t = {
     ],
     alreadyHave: "لديك حساب بالفعل؟",
     signIn: "سجّل دخولك",
-    trustedBy: "موثوق من قِبَل",
-    trustedCount: "+٥٠,٠٠٠",
-    trustedLabel: "مستخدم نشط",
+    // حُذفت trustedBy / trustedCount / trustedLabel مع الشريط الذي كان يعرضها
+    // في أسفل هذه الصفحة. لا تُعِدها.
     partnerTitle: "شريك نظامي",
     partnerTypes: [
       { label: "شريك / منشئ محتوى", href: "/register/client?role=partner" },
@@ -73,7 +73,7 @@ const t = {
     seekerCta: "Register as Service Seeker",
     seekerBadge: "Most Popular",
     providerTitle: "Service Provider",
-    providerDesc: "Join our network of legal professionals and offer services to thousands of clients",
+    providerDesc: "Join our network of legal professionals and offer your services to clients on the platform",
     providerCta: "Register as Service Provider",
     providerBadge: "For Professionals",
     seekerSubTypes: ["Individual", "Company", "Small Business", "Government Entity", "Association"],
@@ -90,9 +90,6 @@ const t = {
     ],
     alreadyHave: "Already have an account?",
     signIn: "Sign in",
-    trustedBy: "Trusted by",
-    trustedCount: "50,000+",
-    trustedLabel: "active users",
     partnerTitle: "Nzamy Partner",
     partnerTypes: [
       { label: "Partner / Content Creator", href: "/register/client?role=partner" },
@@ -416,41 +413,15 @@ export default function RegisterPage() {
           </div>
         </motion.div>
 
-        {/* Social proof bar */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
-          className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-8"
-        >
-          {/* Avatar stack */}
-          <div className="flex -space-x-2 rtl:space-x-reverse">
-            {[
-              "bg-royal",
-              "bg-gold-dark",
-              "bg-emerald-600",
-              "bg-sky-500",
-              "bg-purple-500",
-            ].map((color, i) => (
-              <div
-                key={i}
-                className={`flex h-8 w-8 items-center justify-center rounded-full ${color} text-white text-xs font-bold border-2 border-white dark:border-dark-bg`}
-              >
-                {["أ", "م", "س", "ف", "ع"][i]}
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center gap-1.5 text-sm text-ink-muted dark:text-gray-400">
-            <span className="font-bold text-ink">{txt.trustedCount}</span>
-            <span>{txt.trustedBy}</span>
-            <span>{txt.trustedLabel}</span>
-          </div>
-          <div className="flex items-center gap-0.5">
-            {[...Array(5)].map((_, i) => (
-              <Star key={i} weight="fill" size={13} className="text-gold" />
-            ))}
-          </div>
-        </motion.div>
+        {/*
+          حُذف من هنا شريط "الدليل الاجتماعي" بكامله: كان يقول «+٥٠,٠٠٠ موثوق من
+          قِبَل مستخدم نشط» بينما عدد الحسابات الحقيقي في الإنتاج ١٨ حساباً —
+          أي مبالغةٌ بنحو ٢٨٠٠ ضعف، وهي أكبر مبالغة مفردة كانت على الموقع.
+          وحُذف معه صفّ النجوم الخمس وكومة الصور الرمزية: لا يوجد جدول تقييمات
+          في قاعدة البيانات، والأحرف «أ م س ف ع» لم تكن مستخدمين.
+          حُذف الشريط ولم يُستبدل برقم أصغر: لا يوجد رقم صادق يقوله هنا.
+          لا تُعِد شريطاً كهذا حتى يصير هناك عدّاد حقيقي.
+        */}
 
         {/* Sign in link */}
         <motion.div

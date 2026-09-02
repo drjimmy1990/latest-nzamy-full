@@ -68,14 +68,23 @@ const chatDemo = [
 
 const techPillars = [
   { icon: Brain, titleAr: "النماذج اللغوية المتقدمة", titleEn: "Advanced Language Models", descAr: "نماذج AI مدرّبة خصيصاً على النصوص القانونية السعودية والعربية لتحقيق أعلى دقة ممكنة.", descEn: "AI models specifically trained on Saudi and Arabic legal texts for maximum accuracy." },
-  { icon: Database, titleAr: "قاعدة الأنظمة السعودية", titleEn: "Saudi Law Database", descAr: "أكثر من ٥٠٠٠ نظام ولائحة وقرار وزاري سعودي محدّث بشكل دوري وآني.", descEn: "Over 5,000 Saudi regulations, bylaws, and ministerial decrees updated periodically in real time." },
+  // «أكثر من ٥٠٠٠ نظام … محدّث بشكل دوري وآني» كان خطأً في شقّيه: العدد الحقيقي
+  // ٣٨٦ نظاماً ولائحة (انظر التعليق في src/components/LegalLibraryBanner.tsx)،
+  // ولا شيء يراقب صدور التشريعات — المكتبة تُحمَّل ببرنامج تعبئة.
+  // الأرقام أدناه أرضياتٌ محسوبة من جداول library، فلا تستبدلها بتقدير.
+  { icon: Database, titleAr: "قاعدة الأنظمة السعودية", titleEn: "Saudi Law Database", descAr: "٣٨٦ نظاماً ولائحة و١٣٬٠٠٠+ مادة و١٧٬٠٠٠+ مبدأ قضائي، بحثٌ بالنص الكامل فيها جميعاً.", descEn: "386 Saudi laws and regulations, 13,000+ articles and 17,000+ judicial principles, all full-text searchable." },
   { icon: UserCheck, titleAr: "مراجعة المحامين المرخّصين", titleEn: "Licensed Lawyer Review", descAr: "كل مخرجات AI تمر بمرحلة تحقق إضافية من محامين سعوديين مرخّصين لضمان الدقة والموثوقية.", descEn: "All AI outputs pass through an additional verification stage by licensed Saudi lawyers to ensure accuracy and reliability." },
 ];
 
+// أُزيلت هنا ثلاث "إحصاءات" مُختلَقة: «١٢ مليون سؤال أُجيب»، «٩٨٫٤٪ دقة
+// الإجابات»، «٣٠ ثانية متوسط وقت الرد». لا يوجد عدّاد للأسئلة ولا قياس للدقة
+// ولا قياس لزمن الرد — ولا نموذج لغوي موصول بهذه الأدوات أصلاً، فنسبةُ دقةٍ
+// لمحرّكٍ غير موجود أسوأ ما في هذه المجموعة.
+// استُبدلت بعبارات بلا أرقام. لا تُعِد رقماً هنا ما لم يكن محسوباً من بيانات حقيقية.
 const stats = [
-  { valueAr: "١٢ مليون", valueEn: "12 Million", labelAr: "سؤال أُجيب", labelEn: "Questions Answered" },
-  { valueAr: "٩٨.٤٪", valueEn: "98.4%", labelAr: "دقة الإجابات", labelEn: "Answer Accuracy" },
-  { valueAr: "٣٠ ثانية", valueEn: "30 Seconds", labelAr: "متوسط وقت الرد", labelEn: "Average Response Time" },
+  { valueAr: "بالعربية أولاً", valueEn: "Arabic First", labelAr: "أسئلة وإجابات بالعربية الفصحى دون ترجمة وسيطة", labelEn: "Ask and read in Arabic, with no translation layer in between" },
+  { valueAr: "مربوطة بالمكتبة", valueEn: "Linked to the Library", labelAr: "الإحالة إلى الأنظمة واللوائح المنشورة في مكتبة نظامي", labelEn: "References the laws and regulations published in the Nezamy library" },
+  { valueAr: "لا تُغني عن محامٍ", valueEn: "Not a Substitute for Counsel", labelAr: "المخرجات نقطة بداية للمراجعة القانونية لا رأياً نهائياً", labelEn: "Output is a starting point for legal review, not a final opinion" },
 ];
 
 // ─── Typing Animation Hook ────────────────────────────────────────────────────
@@ -432,10 +441,10 @@ export function AiLandingPage() {
                 transition={{ delay: i * 0.1 }}
                 className="text-center"
               >
-                <div className="font-brand mb-2 text-3xl md:text-5xl font-bold text-[#C8A762]">
+                <div className="font-brand mb-2 text-xl md:text-2xl font-bold leading-snug text-[#C8A762]">
                   {isRTL ? stat.valueAr : stat.valueEn}
                 </div>
-                <div className="text-base font-medium text-white/80">
+                <div className="text-sm font-medium leading-relaxed text-white/80">
                   {isRTL ? stat.labelAr : stat.labelEn}
                 </div>
               </motion.div>

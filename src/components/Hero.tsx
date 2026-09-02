@@ -249,7 +249,7 @@ export default function Hero() {
               </div>
               <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-2.5 py-1 sm:px-3 sm:py-1.5">
                 <LockKey size={16} className="text-royal dark:text-emerald-400" />
-                {isAr ? "تشفير 256-bit SSL" : "256-bit SSL Security"}
+                {isAr ? "اتصال مشفّر TLS" : "TLS Encrypted Connection"}
               </div>
               <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-2.5 py-1 sm:px-3 sm:py-1.5">
                 <CheckCircle size={16} className="text-gold-dark" />

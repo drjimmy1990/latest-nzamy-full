@@ -19,7 +19,6 @@ import {
   ChartLineUp,
   CaretDown,
   LinkSimple,
-  Lock,
   Headset,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
@@ -56,7 +55,10 @@ const faqs = [
   { q: { ar: "كم من الوقت يستغرق التطبيق؟", en: "How long does implementation take?" }, a: { ar: "يعتمد على حجم المؤسسة، لكن نوفر فريق تطبيق متخصص يُنجز الإعداد الأساسي خلال ٢–٤ أسابيع.", en: "Depends on firm size, but we provide a dedicated implementation team completing the core setup in 2-4 weeks." } },
   { q: { ar: "هل يمكن الاستضافة داخل المؤسسة (On-Premise)؟", en: "Is on-premise hosting available?" }, a: { ar: "نعم، نوفر خيار الاستضافة الخاصة أو السحابة أو النموذج الهجين حسب متطلبات حوكمة بياناتكم.", en: "Yes, we offer private hosting, cloud, or hybrid model depending on your data governance requirements." } },
   { q: { ar: "هل يلتزم نظامي ERP بأنظمة هيئة الزكاة والضريبة؟", en: "Is Nezamy ERP compliant with ZATCA regulations?" }, a: { ar: "نعم، النظام المالي يلتزم كاملاً بمتطلبات الفاتورة الإلكترونية (ZATCA Phase 2).", en: "Yes, the financial module is fully compliant with e-invoicing requirements (ZATCA Phase 2)." } },
-  { q: { ar: "هل يوجد دعم فني مخصص؟", en: "Is there dedicated technical support?" }, a: { ar: "نعم، يحصل كل عميل ERP على مدير حساب مخصص ودعم ٢٤/٧ بـ SLA مضمون.", en: "Yes, every ERP client gets a dedicated account manager and 24/7 support with guaranteed SLA." } },
+  // Same 24/7 claim as the removed hero badge — and a «SLA مضمون» on top of it.
+  // Support hours are أحد–خميس ٨ص–١٠م / الجمعة–السبت ٩ص–٥م (contact page), and
+  // no service-level agreement is published anywhere to be guaranteed.
+  { q: { ar: "هل يوجد دعم فني مخصص؟", en: "Is there dedicated technical support?" }, a: { ar: "نعم، يحصل كل عميل ERP على مدير حساب مخصص. أوقات الدعم: أحد – خميس ٨ص – ١٠م، والجمعة والسبت ٩ص – ٥م.", en: "Yes, every ERP client gets a dedicated account manager. Support hours are Sun – Thu 8am – 10pm, and Fri – Sat 9am – 5pm." } },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -101,11 +103,17 @@ export default function ErpPage() {
 
           {/* Trust badges */}
           <div className="mt-14 flex flex-wrap justify-center gap-6">
+            {/* Removed: «ISO 27001 معتمد / ISO 27001 Certified» — the company
+                holds no such certification, and asserting an accreditation body
+                has certified you is not an exaggeration but a fabricated
+                credential. Also removed: «دعم ٢٤/٧ / 24/7 Support» — contact
+                page (src/app/contact/page.tsx:152) states the real hours as
+                أحد–خميس ٨ص–١٠م and الجمعة–السبت ٩ص–٥م, which is not 24/7. The
+                support badge now states those hours instead. */}
             {[
-              { icon: Lock, label: isRTL ? "ISO 27001 معتمد" : "ISO 27001 Certified" },
               { icon: ShieldCheck, label: isRTL ? "متوافق مع PDPL" : "PDPL Compliant" },
               { icon: Globe, label: isRTL ? "متكامل مع ناجز" : "Najiz Integrated" },
-              { icon: Headset, label: isRTL ? "دعم ٢٤/٧" : "24/7 Support" },
+              { icon: Headset, label: isRTL ? "دعم أحد–خميس ٨ص–١٠م" : "Support Sun–Thu 8am–10pm" },
             ].map((badge, i) => (
               <div key={i} className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70 backdrop-blur">
                 <badge.icon size={16} className="text-gold" />

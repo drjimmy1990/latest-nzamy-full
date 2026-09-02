@@ -11,6 +11,8 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { createWorkflowId, saveWorkflowRequest } from "@/lib/workflowStore";
+import { useOrderAttachments } from "@/hooks/useOrderAttachments";
+import { MAX_UPLOAD_BYTES } from "@/lib/services/fileValidation";
 
 import {
   type FormData,
@@ -25,6 +27,31 @@ import {
   SuccessScreen
 } from "./ServiceRequestWizardComponents";
 
+/**
+ * THE SECOND INTAKE PATH, AND WHAT IT USED TO DO WITH ATTACHMENTS.
+ *
+ * /dashboard/client/requests/new was fixed to upload files for real: it uses
+ * `useOrderAttachments`, every picked file goes to Supabase storage before the
+ * order is sent, the submit button is disabled while an upload is in flight,
+ * and a failure is named on screen. This wizard — reached from the public
+ * /services catalogue — is the OTHER way a client files a request, and it had
+ * none of that. `handleFileAdd` pushed `File` objects into component state,
+ * `handleSubmit` recorded `fileCount: form.files.length` in metadata, and the
+ * bytes were never sent anywhere. The client then saw «تم إرسال الطلب» and a
+ * summary reading «3 ملف» over three files that existed only in a browser tab
+ * they were about to close. That is the defect: not a lost upload, a REPORTED
+ * upload that never happened.
+ *
+ * `attachments` from the hook is now the only list this file trusts. It
+ * contains an entry only after `uploadDocumentFile` has returned a real
+ * `documentId`, so the file count in the summary, the count in metadata and
+ * the list of names all describe files that are actually on the server.
+ * Nothing here can say a file arrived when it did not.
+ *
+ * `form.files` still exists because `FormData` (ServiceRequestWizardData.ts,
+ * outside this pass's file list) still declares it. It is initialised empty and
+ * never written to; every read moved to `attachments`.
+ */
 export default function ServiceRequestWizard({
   serviceTitle, serviceTitleEn, serviceId, onClose, userRole,
 }: ServiceRequestWizardProps) {
@@ -37,6 +64,26 @@ export default function ServiceRequestWizard({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Real uploads — the same hook /dashboard/client/requests/new and the four
+  // lawyer wizards use. `attachments` holds OrderAttachment[] (a documentId
+  // that exists server-side), never File objects that never left the browser.
+  const { attachments, uploading, attachError, attachFiles, removeAttachment } = useOrderAttachments();
+
+  // Uploading needs a session: uploadDocumentFile() resolves the Supabase user
+  // and throws "Unauthorized" without one. /services is a PUBLIC page whose
+  // «دورك» selector is self-declared, not authentication, so a signed-out
+  // visitor can reach this step. Told up front, they know their documents are
+  // not going with the request; left to find out, they would meet «انتهت
+  // جلستك» — a session-expiry message for a session they never had.
+  //
+  // `loading` is its own state, not folded into either answer. useUser starts
+  // every mount at GUEST_SESSION while it resolves the real one, so treating
+  // "not yet known" as "signed out" would flash «يتطلب تسجيل الدخول» at a
+  // client who is signed in, and treating it as "signed in" would open a
+  // picker that fails.
+  const authKnown = !user.loading;
+  const canUpload = authKnown && user.isLoggedIn;
+
   const [form, setForm] = useState<FormData>({
     description: "",
     region: "",
@@ -44,6 +91,7 @@ export default function ServiceRequestWizard({
     budgetMax: 3000,
     deadline: "",
     confidential: false,
+    // Inert — see the file header. The uploaded list is `attachments`.
     files: [],
     assignmentMethod: "open_bids",
     barNumber: "",
@@ -56,6 +104,11 @@ export default function ServiceRequestWizard({
 
   // ── Validation per step
   const canProceed = () => {
+    // Leaving the documents step mid-upload would submit an `attachments` array
+    // missing the file still in flight — a silently short list, which is the
+    // same defect as losing the file outright. Blocks every step, not just
+    // step 2, so no navigation can outrun an upload.
+    if (uploading) return false;
     if (step === 1) return form.description.trim().length >= 30 && form.region !== "";
     if (step === 2) return true; // optional
     if (step === 3) return form.deadline !== "";
@@ -65,30 +118,47 @@ export default function ServiceRequestWizard({
   const next = () => { if (canProceed() && step < 4) setStep(s => s + 1); };
   const prev = () => { if (step > 1) setStep(s => s - 1); };
 
+  // `uploading` joins `submitting` in holding the modal open. Both dismissals —
+  // Escape and the backdrop — used to be able to fire mid-upload, which tore
+  // down the component while bytes were still moving and lost the whole form
+  // with it. `uploading` is always cleared in a `finally`, so this can only ever
+  // hold for the length of an upload.
+  const dismissBlocked = submitting || uploading;
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !submitting) onClose();
+      if (event.key === "Escape" && !dismissBlocked) onClose();
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, submitting]);
+  }, [onClose, dismissBlocked]);
 
-  const handleFileAdd = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      setForm(f => ({ ...f, files: [...f.files, ...Array.from(e.target.files!)] }));
-    }
-  };
-
-  const removeFile = (idx: number) => {
-    setForm(f => ({ ...f, files: f.files.filter((_, i) => i !== idx) }));
+  /**
+   * Uploads happen HERE, when the file is picked — not at submit. One batch
+   * call rather than a loop of single attachFile() calls: attachFiles()
+   * validates the whole selection up front, reports each failure as it
+   * happens, and returns only what actually reached the server.
+   *
+   * Array.from() BEFORE the reset: `e.target.files` is a live FileList and the
+   * `value = ""` that lets the same filename be re-picked empties it in place,
+   * so reading it afterwards yields nothing at all.
+   */
+  const handleFileAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (picked.length > 0) await attachFiles(picked);
   };
 
   const handleSubmit = async () => {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      await new Promise(r => setTimeout(r, 1800));
+      // The 1800 ms sleep that used to sit here is gone. Nothing was being
+      // awaited: saveWorkflowRequest() is a synchronous local write, and the
+      // delay existed only to make the spinner look like a round trip to a
+      // server nobody was calling. The real network work — the uploads — has
+      // already happened by this point, and it showed its own progress.
       const firmServiceIds = new Set(["srv-1", "srv-2", "srv-3"]);
       const request = saveWorkflowRequest({
         id: createWorkflowId("SRV"),
@@ -117,12 +187,25 @@ export default function ServiceRequestWizard({
           deadline: form.deadline,
           confidential: form.confidential,
           assignmentMethod: form.assignmentMethod,
-          fileCount: form.files.length,
+          // Counts the UPLOADED files, not the picked ones. A file the client
+          // selected and whose upload failed is not in `attachments`, so it is
+          // not counted here either — the number the fulfiller reads is the
+          // number of documents they can actually open.
+          fileCount: attachments.length,
           barNumber: form.barNumber || null,
           courtName: form.courtName || null,
           caseNumber: form.caseNumber || null,
           serviceType: form.serviceType || null,
-        },
+          // Verbatim, no remapping: every consumer of an order's attachments
+          // reads `.documentId` off each entry, and rebuilding the shape here
+          // would silently detach the files. Same cast, and same reason, as
+          // /dashboard/client/requests/new: `WorkflowRequest.metadata` is
+          // still declared `Record<string, string | number | boolean | null>`,
+          // but that declaration is stale rather than load-bearing — nested
+          // objects are already stored and read there today. Widening it in
+          // src/lib/workflowStore.ts is the real fix and is outside this file.
+          attachments,
+        } as unknown as Record<string, string | number | boolean | null>,
         auditEvent: "service_marketplace_request_sent",
       });
       setSubmittedId(request.id);
@@ -159,7 +242,7 @@ export default function ServiceRequestWizard({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-          onClick={onClose}
+          onClick={() => { if (!dismissBlocked) onClose(); }}
         />
 
         {/* Modal */}
@@ -374,49 +457,117 @@ export default function ServiceRequestWizard({
                         <p className={`text-sm font-bold mb-1 ${heading}`}>{isRTL ? "المستندات الداعمة" : "Supporting Documents"}</p>
                         <p className={`text-xs mb-4 ${muted}`}>{isRTL ? "ارفع أي مستندات تساعد المحامي على فهم قضيتك (اختياري)" : "Upload documents that help the lawyer understand your case (optional)"}</p>
 
-                        {/* Upload Zone */}
-                        <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className={`w-full border-2 border-dashed rounded-2xl p-8 flex flex-col items-center gap-3 transition hover:border-[#C8A762]/50 ${
-                            isDark ? "border-[#2d3748] hover:bg-white/3" : "border-gray-200 hover:bg-gray-50"
-                          }`}
-                        >
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDark ? "bg-white/5" : "bg-[#0B3D2E]/5"}`}>
-                            <UploadSimple size={24} className="text-[#0B3D2E] dark:text-[#C8A762]" />
+                        {/* Signed out: say so instead of offering a picker that
+                            can only fail. This is a public page, so this is a
+                            reachable state, not a defensive branch. While the
+                            session is still resolving, neither claim is made. */}
+                        {!authKnown ? (
+                          <div className={`w-full border-2 border-dashed rounded-2xl p-8 flex items-center justify-center gap-3 ${isDark ? "border-[#2d3748]" : "border-gray-200"}`}>
+                            <Spinner size={18} className="animate-spin text-[#C8A762]" />
+                            <p className={`text-xs font-bold ${muted}`}>{isRTL ? "جارٍ التحقق من الحساب..." : "Checking your account…"}</p>
                           </div>
-                          <div>
-                            <p className={`text-sm font-bold ${heading}`}>{isRTL ? "اسحب الملفات أو انقر للرفع" : "Drag files or click to upload"}</p>
-                            <p className={`text-[11px] mt-0.5 ${muted}`}>PDF, JPG, PNG {isRTL ? "— حتى 10 ميغابايت للملف" : "— up to 10MB per file"}</p>
+                        ) : !canUpload ? (
+                          <div className="flex items-start gap-3 p-4 rounded-2xl border border-amber-200 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/5">
+                            <Lock size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-xs font-bold text-amber-700 dark:text-amber-300">
+                                {isRTL ? "رفع المستندات يتطلب تسجيل الدخول" : "Uploading documents requires signing in"}
+                              </p>
+                              <p className="text-[11px] mt-1 leading-relaxed text-amber-600 dark:text-amber-400/80">
+                                {isRTL
+                                  ? "يمكنك إرسال الطلب الآن بدون مرفقات، ثم إرفاق المستندات بعد تسجيل الدخول. لن نحتفظ بأي ملف تختاره في هذه الصفحة قبل تسجيل الدخول."
+                                  : "You can send the request now without attachments and add your documents after signing in. No file picked on this page before signing in is kept."}
+                              </p>
+                            </div>
                           </div>
-                        </button>
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          multiple
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          className="hidden"
-                          onChange={handleFileAdd}
-                        />
+                        ) : (
+                          <>
+                            {/* Upload Zone */}
+                            <button
+                              onClick={() => fileInputRef.current?.click()}
+                              disabled={uploading}
+                              className={`w-full border-2 border-dashed rounded-2xl p-8 flex flex-col items-center gap-3 transition ${
+                                uploading
+                                  ? "opacity-60 cursor-wait"
+                                  : "hover:border-[#C8A762]/50"
+                              } ${isDark ? "border-[#2d3748] hover:bg-white/3" : "border-gray-200 hover:bg-gray-50"}`}
+                            >
+                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDark ? "bg-white/5" : "bg-[#0B3D2E]/5"}`}>
+                                {uploading
+                                  ? <Spinner size={24} className="animate-spin text-[#0B3D2E] dark:text-[#C8A762]" />
+                                  : <UploadSimple size={24} className="text-[#0B3D2E] dark:text-[#C8A762]" />}
+                              </div>
+                              <div>
+                                <p className={`text-sm font-bold ${heading}`}>
+                                  {uploading
+                                    ? (isRTL ? "جارٍ رفع الملفات..." : "Uploading…")
+                                    : (isRTL ? "اسحب الملفات أو انقر للرفع" : "Drag files or click to upload")}
+                                </p>
+                                {/* The limit and the formats now name what
+                                    validateUploadFile actually enforces
+                                    (fileValidation.ts), and the ceiling is read
+                                    from MAX_UPLOAD_BYTES so the two cannot
+                                    drift. The old line said «10 ميغابايت» over a
+                                    20 MB rule and omitted Word, which the rule
+                                    accepts — a client with a .docx was told to
+                                    convert it for no reason. */}
+                                <p className={`text-[11px] mt-0.5 ${muted}`}>
+                                  PDF, Word, JPG, PNG {isRTL
+                                    ? `— حتى ${(MAX_UPLOAD_BYTES / (1024 * 1024)).toLocaleString("ar-EG")} ميغابايت للملف`
+                                    : `— up to ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB per file`}
+                                </p>
+                              </div>
+                            </button>
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              multiple
+                              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                              disabled={uploading}
+                              className="hidden"
+                              onChange={handleFileAdd}
+                            />
+                          </>
+                        )}
                       </div>
 
-                      {/* File List */}
-                      {form.files.length > 0 && (
+                      {/* Every failure named, and kept on screen. An upload
+                          that failed must never be quietly absent from the list
+                          below — that is exactly how a client comes to believe
+                          a document was sent. */}
+                      {attachError && (
+                        <div className="flex items-start gap-2 p-3 rounded-xl border border-red-200 bg-red-50 dark:border-red-500/25 dark:bg-red-500/10">
+                          <Warning size={16} weight="duotone" className="text-red-500 shrink-0 mt-0.5" />
+                          <p className="text-[11px] leading-relaxed text-red-700 dark:text-red-300">{attachError}</p>
+                        </div>
+                      )}
+
+                      {/* Uploaded list. Only files with a real documentId reach
+                          it, so «تم الرفع» beside a name is a fact. */}
+                      {attachments.length > 0 && (
                         <div className="space-y-2">
-                          {form.files.map((file, idx) => (
+                          {attachments.map((attachment) => (
                             <motion.div
-                              key={idx}
+                              key={attachment.documentId}
                               initial={{ opacity: 0, y: -8 }}
                               animate={{ opacity: 1, y: 0 }}
                               className={`flex items-center justify-between p-3 rounded-xl border ${isDark ? "bg-white/3 border-[#2d3748]" : "bg-gray-50 border-gray-100"}`}
                             >
-                              <div className="flex items-center gap-3">
-                                <FileText size={18} className="text-[#C8A762]" />
-                                <div>
-                                  <p className={`text-xs font-bold truncate max-w-48 ${heading}`}>{file.name}</p>
-                                  <p className={`text-[10px] ${muted}`}>{(file.size / 1024).toFixed(0)} KB</p>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <FileText size={18} className="text-[#C8A762] shrink-0" />
+                                <div className="min-w-0">
+                                  <p className={`text-xs font-bold truncate max-w-48 ${heading}`}>{attachment.name}</p>
+                                  <p className={`text-[10px] flex items-center gap-1 ${muted}`}>
+                                    <CheckCircle size={11} weight="fill" className="text-emerald-500" />
+                                    {Math.max(1, Math.round(attachment.size / 1024)).toLocaleString(isRTL ? "ar-EG" : "en-US")} {isRTL ? "ك.ب · تم الرفع" : "KB · uploaded"}
+                                  </p>
                                 </div>
                               </div>
-                              <button onClick={() => removeFile(idx)} className="text-red-400 hover:text-red-500 transition">
+                              <button
+                                onClick={() => removeAttachment(attachment.documentId)}
+                                aria-label={isRTL ? `إزالة ${attachment.name}` : `Remove ${attachment.name}`}
+                                className="text-red-400 hover:text-red-500 transition shrink-0"
+                              >
                                 <X size={16} weight="bold" />
                               </button>
                             </motion.div>
@@ -424,7 +575,7 @@ export default function ServiceRequestWizard({
                         </div>
                       )}
 
-                      {form.files.length === 0 && (
+                      {attachments.length === 0 && canUpload && !uploading && (
                         <div className="flex items-center gap-2 p-3 rounded-xl border border-yellow-200 bg-yellow-50 dark:border-yellow-500/20 dark:bg-yellow-500/5">
                           <Warning size={16} className="text-yellow-500 shrink-0" />
                           <p className="text-[11px] text-yellow-600 dark:text-yellow-400">
@@ -585,7 +736,17 @@ export default function ServiceRequestWizard({
                         <SummaryRow label={isRTL ? "المنطقة" : "Region"} value={REGIONS.find(r => r.value === form.region)?.[isRTL ? "label" : "labelEn"] || "—"} isDark={isDark} />
                         <SummaryRow label={isRTL ? "الميزانية" : "Budget"} value={`${form.budgetMin.toLocaleString()} — ${form.budgetMax.toLocaleString()} ر.س`} isDark={isDark} />
                         <SummaryRow label={isRTL ? "المهلة" : "Deadline"} value={form.deadline || "—"} isDark={isDark} />
-                        <SummaryRow label={isRTL ? "المستندات" : "Docs"} value={`${form.files.length} ${isRTL ? "ملف" : "file(s)"}`} isDark={isDark} />
+                        {/* «تم رفعها» is the whole point of this row: it counts
+                            files the server has, not files a picker touched. */}
+                        <SummaryRow
+                          label={isRTL ? "المستندات" : "Docs"}
+                          value={
+                            attachments.length === 0
+                              ? (isRTL ? "لا توجد مرفقات" : "No attachments")
+                              : `${attachments.length.toLocaleString(isRTL ? "ar-EG" : "en-US")} ${isRTL ? "ملف تم رفعها" : "file(s) uploaded"}`
+                          }
+                          isDark={isDark}
+                        />
                         <SummaryRow label={isRTL ? "السرية" : "Confidential"} value={form.confidential ? (isRTL ? "نعم (NDA مُفعّل)" : "Yes (NDA active)") : (isRTL ? "لا" : "No")} isDark={isDark} />
                       </div>
                     </div>
@@ -594,6 +755,32 @@ export default function ServiceRequestWizard({
               </AnimatePresence>
             )}
           </div>
+
+          {/* Deliberately OUTSIDE the step body: an upload failure raised on
+              step 2 must still be on screen on step 4, where «إرسال الطلب» is
+              pressed. Rendered only inside step 2 it would vanish on «التالي»,
+              and a client whose 2-of-5 files failed would submit believing all
+              five went — the same silently-short attachment list this rewrite
+              exists to remove. */}
+          {!submitted && attachError && (
+            <div className={`mx-6 mb-4 rounded-2xl border p-3 flex items-start gap-3 text-sm ${
+              isDark ? "border-red-500/25 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700"
+            }`}>
+              <Warning size={18} weight="duotone" className="mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="font-bold">{isRTL ? "لم تُرفع بعض الملفات" : "Some files were not uploaded"}</p>
+                <p className="text-xs mt-0.5 opacity-80 leading-relaxed">{attachError}</p>
+              </div>
+            </div>
+          )}
+
+          {!submitted && uploading && (
+            <p className={`mx-6 mb-4 text-xs font-bold ${muted}`}>
+              {isRTL
+                ? "انتظر انتهاء رفع الملفات قبل المتابعة حتى لا يُرسَل الطلب ناقص المرفقات."
+                : "Wait for the uploads to finish so the request is not sent with files missing."}
+            </p>
+          )}
 
           {!submitted && submitError && (
             <div className={`mx-6 mb-4 rounded-2xl border p-3 flex items-start gap-3 text-sm ${
@@ -642,11 +829,16 @@ export default function ServiceRequestWizard({
               ) : (
                 <button
                   onClick={handleSubmit}
-                  disabled={submitting}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-[#C8A762] hover:bg-[#b8965a] text-[#0B3D2E] transition"
+                  // `uploading` blocks the submit, not only the spinner: a
+                  // click while bytes are still moving would ship an
+                  // `attachments` array missing that file.
+                  disabled={submitting || uploading}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-[#C8A762] hover:bg-[#b8965a] text-[#0B3D2E] transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? (
                     <><Spinner size={16} className="animate-spin" /> {isRTL ? "جارٍ إرسال الطلب..." : "Sending request..."}</>
+                  ) : uploading ? (
+                    <><Spinner size={16} className="animate-spin" /> {isRTL ? "جارٍ رفع المرفقات..." : "Uploading attachments…"}</>
                   ) : (
                     <><PaperPlaneRight size={16} weight="fill" /> {isRTL ? "إرسال الطلب" : "Submit Request"}</>
                   )}

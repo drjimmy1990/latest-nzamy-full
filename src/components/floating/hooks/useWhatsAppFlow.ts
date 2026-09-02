@@ -62,7 +62,13 @@ const STEP_HEADERS: Partial<Record<WaStep, string>> = {
   "user-type":                "من أنت؟",
   "service-select":           "ماذا تحتاج؟",
   "consult-timing":           "متى تريد الاستشارة؟",
-  "consult-instant-modality": "طريقة الاستشارة الفورية",
+  // «الفورية» went with the «في غضون ١٥–٢٠ دقيقة» sub-line on the card that
+  // leads here (StepConsult.tsx): the word is itself a response-time claim,
+  // and nothing pages a lawyer. The step id keeps its `consult-instant-*`
+  // prefix — resolveConsultTiming (whatsappRequestMessage.ts:253) matches on
+  // it, and `timingLabelAr` already renders that mode honestly as «تفضيل:
+  // الأسرع الممكن».
+  "consult-instant-modality": "طريقة الاستشارة العاجلة",
   "consult-instant-provider": "من يقدم الاستشارة؟",
   "consult-details":          "تفاصيل طلبك",
   "consult-next-details":     "تفاصيل طلبك",

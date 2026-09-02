@@ -114,19 +114,46 @@ export default function LegalRepresentationPage() {
               </div>
             </motion.div>
 
-            {/* Stats panel */}
+            {/*
+              أُزيلت من هنا أربع "إحصاءات" مُختلَقة لا مصدر لأيٍّ منها:
+              «٨,٤٠٠+ قضية منجزة منذ ٢٠٢١»، «٧٤٪ نسبة الكسب — متوسط المنصة»،
+              «٥٠٠+ محامٍ متخصص في ١٢ مدينة»، «٩٧٪ رضا الموكلين بناءً على التقييمات».
+              لا يوجد في قاعدة البيانات جدول نتائج أحكام ولا جدول تقييمات، وعدد
+              المحامين المنشورين في الدليل صفر.
+              وتحديداً: نشر «نسبة كسب» غير موثّقة في إعلان عن خدمة محاماة مخالفٌ
+              للقاعدة ٣٨ من قواعد السلوك المهني (قرار وزير العدل ٦٧٦ في
+              ١٩/٤/١٤٤٦هـ) — فلا تُعِد هذا الرقم ولا أي بديل عنه.
+              استُبدلت الأرقام بعروض قيمة بلا أرقام. لا تُعِد رقماً هنا ما لم يكن
+              محسوباً من بيانات حقيقية.
+            */}
             <motion.div initial={{ opacity: 0, x: isRTL ? -24 : 24 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}>
               <div className={`grid grid-cols-2 gap-4 rounded-3xl border p-6 ${isDark ? "border-white/10 bg-dark-card" : "border-slate-200 bg-slate-50"}`}>
                 {[
-                  { label: isRTL ? "قضية منجزة" : "Resolved Cases", value: "٨,٤٠٠+", sub: isRTL ? "منذ ٢٠٢١" : "Since 2021" },
-                  { label: isRTL ? "نسبة الكسب" : "Win Rate", value: "٧٤٪", sub: isRTL ? "متوسط المنصة" : "Platform average" },
-                  { label: isRTL ? "محامٍ متخصص" : "Specialized Lawyers", value: "٥٠٠+", sub: isRTL ? "في ١٢ مدينة" : "In 12 cities" },
-                  { label: isRTL ? "رضا الموكلين" : "Client Satisfaction", value: "٩٧٪", sub: isRTL ? "بناءً على التقييمات" : "Based on ratings" },
+                  {
+                    icon: Scales,
+                    label: isRTL ? "كل درجات التقاضي" : "Every Court Level",
+                    sub: isRTL ? "من الابتدائية إلى الاستئناف والعليا" : "From first instance to appeal and supreme",
+                  },
+                  {
+                    icon: CurrencyDollar,
+                    label: isRTL ? "أتعاب عند الإنجاز" : "Fees on Delivery",
+                    sub: isRTL ? "لا تُصرف إلا بعد إتمام المرحلة المتفق عليها" : "Released only after the agreed stage is delivered",
+                  },
+                  {
+                    icon: FileText,
+                    label: isRTL ? "تقارير دورية" : "Periodic Reports",
+                    sub: isRTL ? "متابعة مكتوبة لكل جلسة وإجراء" : "A written update for each hearing and filing",
+                  },
+                  {
+                    icon: Lock,
+                    label: isRTL ? "ملف مغلق" : "Closed File",
+                    sub: isRTL ? "مستنداتك ومراسلاتك داخل ملف القضية وحده" : "Your documents and messages stay in the case file",
+                  },
                 ].map((s, i) => (
                   <div key={i} className={`rounded-2xl p-5 ${isDark ? "bg-[#1c2128]" : "bg-white"} border ${isDark ? "border-white/5" : "border-slate-100"}`}>
-                    <p className={`text-3xl font-black ${isDark ? "text-white" : "text-slate-900"}`}>{s.value}</p>
-                    <p className={`mt-1 text-sm font-medium ${isDark ? "text-gray-300" : "text-slate-700"}`}>{s.label}</p>
-                    <p className={`text-xs ${isDark ? "text-gray-500" : "text-slate-400"}`}>{s.sub}</p>
+                    <s.icon size={24} weight="duotone" className={isDark ? "text-green-300" : "text-royal"} />
+                    <p className={`mt-3 text-sm font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{s.label}</p>
+                    <p className={`mt-1 text-xs leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{s.sub}</p>
                   </div>
                 ))}
               </div>

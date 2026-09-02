@@ -176,9 +176,9 @@ const faqData: FAQItem[] = [
     questionAr: "كيف تُحمى بياناتي الشخصية؟",
     questionEn: "How is my personal data protected?",
     answerAr:
-      "نطبّق معايير التشفير العالية AES-256 لحفظ البيانات وTLS لنقلها. نلتزم بنظام حماية البيانات الشخصية السعودي (PDPL) ولا نشارك بياناتك مع أطراف ثالثة دون إذنك.",
+      "تُنقَل بياناتك عبر اتصال مشفّر (TLS)، وتُخزَّن على بنية تحتية سحابية يوفّر مزوّدها تشفيراً على مستوى الأقراص، مع عزل سجلات كل حساب عن غيره عبر سياسات RLS. نلتزم بنظام حماية البيانات الشخصية السعودي (PDPL) ولا نشارك بياناتك مع أطراف ثالثة دون إذنك.",
     answerEn:
-      "We apply high encryption standards AES-256 for data storage and TLS for transmission. We comply with the Saudi Personal Data Protection Law (PDPL) and do not share your data with third parties without your consent.",
+      "Your data travels over an encrypted TLS connection and is stored on cloud infrastructure whose provider encrypts the underlying disks, with each account's records isolated by row-level security (RLS) policies. We comply with the Saudi Personal Data Protection Law (PDPL) and do not share your data with third parties without your consent.",
   },
   {
     id: 19,
@@ -186,9 +186,9 @@ const faqData: FAQItem[] = [
     questionAr: "هل يُستخدم الذكاء الاصطناعي في اتخاذ القرارات القانونية؟",
     questionEn: "Is AI used in legal decision-making?",
     answerAr:
-      "الذكاء الاصطناعي في نظامي أداة مساعدة فقط لمزودي الخدمة في إدارة المهام وتلخيص الوثائق. القرارات القانونية النهائية دائماً تعود للمحترف القانوني البشري المختص.",
+      "الذكاء الاصطناعي في نظامي أداة مساعدة فقط لإدارة المهام وتلخيص الوثائق، ومخرجاته ليست رأياً قانونياً ولا قراراً نهائياً. القرار القانوني النهائي يبقى لمحامٍ مرخص يراجع ملفك — سواء عبر المنصة أو خارجها.",
     answerEn:
-      "AI in Nezamy is only a supporting tool for service providers in task management and document summarization. Final legal decisions always rest with the competent human legal professional.",
+      "AI in Nezamy is only a supporting tool for task management and document summarization. Its output is not a legal opinion or a final decision. A final legal decision remains with a licensed lawyer who reviews your file — whether through the platform or outside it.",
   },
   {
     id: 20,
@@ -380,13 +380,17 @@ export default function FAQPage() {
               {isRTL ? "لا تزال لديك أسئلة؟" : "Still have questions?"}
             </h3>
             <p className={`text-sm mb-6 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+              {/* Was «متاح على مدار الساعة» / "available 24/7". Nothing supports
+                  round-the-clock staffing; the contact page states the real
+                  hours (src/app/contact/page.tsx:152). Those hours are used
+                  here instead. */}
               {isRTL
-                ? "فريق الدعم متاح على مدار الساعة للإجابة على استفساراتك"
-                : "Our support team is available 24/7 to answer your inquiries"}
+                ? "فريق الدعم متاح أحد – خميس ٨ص – ١٠م، والجمعة والسبت ٩ص – ٥م"
+                : "Our support team is available Sun – Thu 8am – 10pm, and Fri – Sat 9am – 5pm"}
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <a
-                href="tel:+966920000000"
+                href="tel:+966555979607"
                 className="inline-flex items-center justify-center gap-2 bg-royal text-white px-6 py-3 rounded-xl font-medium text-sm hover:bg-[#0a3328] transition-colors"
               >
                 <Phone size={18} />

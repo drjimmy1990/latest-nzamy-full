@@ -295,6 +295,26 @@ export function ProfileTab() {
               );
             })}
           </div>
+
+          {/* How identity is actually verified on this platform.
+              2026-09-02 — this replaces the «نفاذ / الهوية» settings tab,
+              which simulated the whole integration: it accepted any national
+              ID, showed a hard-coded «74» as the Nafath challenge code, and
+              four seconds later declared «نفاذ مربوط بنجاح» over four invented
+              rows (a name, a link date, a certificate expiry). None of it
+              existed. There is no Nafath/SSO integration, no certificate, and
+              nothing on this page is checked against a government register.
+              What is true is stated instead: a human on the نظامي team reads
+              the documents and marks the account verified — the same
+              «بانتظار التحقق» → «نشط» step the admin console runs. It is
+              deliberately worded as a description of a manual process and NOT
+              as a feature to come; it makes no promise about timing and offers
+              no button, because no upload flow has been built. */}
+          <p className="mt-6 border-t border-slate-200/60 pt-5 text-xs leading-6 text-zinc-500 dark:border-white/[0.06] dark:text-zinc-400">
+            التحقق من الهوية في نظامي يتم يدوياً: يراجع فريق المنصة رقم الهوية
+            والوثائق الرسمية التي ترسلها، ثم يعتمد الحساب. لا يوجد ربط آلي مع
+            نفاذ أو أي جهة تحقق خارجية، وما تكتبه هنا لا يُطابَق مع أي سجل رسمي.
+          </p>
         </div>
       </div>
 

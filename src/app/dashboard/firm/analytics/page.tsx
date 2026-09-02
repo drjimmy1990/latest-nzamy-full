@@ -4,25 +4,28 @@ import { memo, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChartLine, ChartBar, ArrowUpRight, ArrowDown,
-  Gavel, Money, Users, CalendarCheck, TrendUp, Download,
+  Money, Users, CalendarCheck, TrendUp, Download,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Mock Data ─────────────────────────────────────────────────────────────────
 
+// ملاحظة تنظيمية: أُزيل مؤشر «معدل الفوز» (ونِسَب الفوز لكل نوع قضية، وعمود
+// «معدل الإنجاز» المحتسب من القضايا الرابحة) — القاعدة ٣٨ من قرار وزير العدل
+// رقم ٦٧٦ (١٩/٤/١٤٤٦هـ) تمنع الإعلان عن نسب فوز غير موثّقة، ولا يوجد جدول
+// نتائج تُحتسب منه نسبة موثّقة. لا تُعِد إضافة هذا المؤشر.
 const KPIS = [
-  { label: "معدل الفوز",         value: "٧٢%",        trend: "+٤%",  up: true,  color: "text-emerald-500", bg: "bg-emerald-500/10", icon: Gavel,       sub: "من إجمالي القضايا المغلقة" },
   { label: "متوسط وقت الحل",    value: "٤.٢ شهر",    trend: "-٠.٨", up: true,  color: "text-blue-500",    bg: "bg-blue-500/10",    icon: CalendarCheck,sub: "من تقديم إلى حكم" },
   { label: "رضا الموكلين",       value: "٤.٧/٥",      trend: "+٠.٢", up: true,  color: "text-amber-500",   bg: "bg-amber-500/10",   icon: Users,       sub: "استناداً لـ ٨٦ تقييم" },
   { label: "الإيراد لكل قضية",  value: "٣٢,٠٠٠ ﷼",  trend: "+١٢%", up: true,  color: "text-purple-500",  bg: "bg-purple-500/10",  icon: Money,       sub: "متوسط أتعاب قضية واحدة" },
 ];
 
 const CASE_TYPES = [
-  { label: "تجاري",           pct: 38, count: 15, color: "bg-royal",        win: 80 },
-  { label: "عمالي",           pct: 22, count: 9,  color: "bg-emerald-500",  win: 78 },
-  { label: "مدني",            pct: 17, count: 7,  color: "bg-amber-500",    win: 65 },
-  { label: "أحوال شخصية",    pct: 12, count: 5,  color: "bg-purple-500",   win: 70 },
-  { label: "إداري",           pct: 11, count: 4,  color: "bg-blue-500",     win: 60 },
+  { label: "تجاري",           pct: 38, count: 15, color: "bg-royal" },
+  { label: "عمالي",           pct: 22, count: 9,  color: "bg-emerald-500" },
+  { label: "مدني",            pct: 17, count: 7,  color: "bg-amber-500" },
+  { label: "أحوال شخصية",    pct: 12, count: 5,  color: "bg-purple-500" },
+  { label: "إداري",           pct: 11, count: 4,  color: "bg-blue-500" },
 ];
 
 const MONTHLY_TREND = [
@@ -136,7 +139,7 @@ export default function FirmAnalyticsPage() {
         {KPIS.map((kpi, i) => {
           const Icon = kpi.icon;
           return (
-            <LiquidCard key={i} delay={i * 0.1} className="md:col-span-6 xl:col-span-3 flex flex-col justify-between group">
+            <LiquidCard key={i} delay={i * 0.1} className="md:col-span-6 xl:col-span-4 flex flex-col justify-between group">
               <div className="flex justify-between items-start mb-8">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${kpi.bg}`}>
                   <Icon size={28} weight="duotone" className={kpi.color} />
@@ -209,9 +212,6 @@ export default function FirmAnalyticsPage() {
                 <div className="flex items-center justify-between text-base mb-3">
                   <span className={`font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{t.label}</span>
                   <div className="flex items-center gap-4">
-                    <span className="text-xs font-bold text-emerald-500 bg-emerald-500/10 px-2.5 py-1 rounded-full">
-                      فوز <span className="font-mono">{t.win}%</span>
-                    </span>
                     <span className={`font-mono font-bold text-lg ${isDark ? "text-white" : "text-slate-900"}`}>{t.count}</span>
                   </div>
                 </div>
@@ -249,14 +249,12 @@ export default function FirmAnalyticsPage() {
                   <th className="px-6 py-5 border-b border-slate-200/20 dark:border-white/5">المحامي</th>
                   <th className="px-6 py-5 border-b border-slate-200/20 dark:border-white/5">إجمالي القضايا</th>
                   <th className="px-6 py-5 border-b border-slate-200/20 dark:border-white/5">القضايا الرابحة</th>
-                  <th className="px-6 py-5 border-b border-slate-200/20 dark:border-white/5 hidden sm:table-cell">معدل الإنجاز</th>
                   <th className="px-6 py-5 border-b border-slate-200/20 dark:border-white/5 hidden md:table-cell">الإيراد المحقق</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-dashed divide-slate-200/20 dark:divide-white/5">
                 <AnimatePresence>
                   {TEAM_PERF.map((m, i) => {
-                    const winRate = Math.round((m.won / m.cases) * 100);
                     return (
                       <motion.tr 
                         key={m.id}
@@ -276,19 +274,6 @@ export default function FirmAnalyticsPage() {
                         </td>
                         <td className={`px-6 py-6 font-mono font-semibold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{m.cases}</td>
                         <td className={`px-6 py-6 font-mono text-emerald-500 font-bold`}>{m.won}</td>
-                        <td className="px-6 py-6 hidden sm:table-cell">
-                          <div className="flex items-center gap-4">
-                            <div className={`h-2.5 w-32 rounded-full overflow-hidden ${isDark ? "bg-white/5" : "bg-slate-100"}`}>
-                              <motion.div 
-                                className="h-full rounded-full bg-gradient-to-l from-emerald-400 to-emerald-600"
-                                initial={{ width: 0 }} 
-                                animate={{ width: `${winRate}%` }}
-                                transition={{ duration: 1.2, delay: 0.8 + i * 0.1, type: "spring" }} 
-                              />
-                            </div>
-                            <span className={`text-sm font-mono font-bold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{winRate}%</span>
-                          </div>
-                        </td>
                         <td className={`px-6 py-6 hidden md:table-cell font-mono font-bold text-lg ${isDark ? "text-zinc-200" : "text-slate-900"}`}>
                           {m.revenue} <span className={`text-xs font-sans font-normal ${isDark ? "text-zinc-500" : "text-slate-400"}`}>ر.س</span>
                         </td>

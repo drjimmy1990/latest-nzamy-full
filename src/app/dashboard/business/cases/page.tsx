@@ -77,9 +77,23 @@ export default function CasesPage() {
     return Array.from(s);
   }, []);
 
-  // Filtered cases
-  const activeCases = cases.filter(c => c.status !== "archived");
-  const archivedCases = cases.filter(c => c.status === "archived");
+  // Filtered cases.
+  //
+  // Owner item ١ — the same stale-memo bug already fixed on the lawyer board,
+  // fixed here the same way. `filtered` reads three things its dependency array
+  // did not list:
+  //
+  //   • `courtFilter` — the المحكمة buttons below set it, and the list simply
+  //     did not move.
+  //   • `cases` — via `activeCases` / `archivedCases`. The kanban drop handler
+  //     calls `setCases` to move a card between columns, and the memo held on
+  //     to the pre-drop array.
+  //
+  // The two derived arrays are memoised over `[cases]` so that listing them as
+  // dependencies is meaningful; as bare `.filter()` calls they were a fresh
+  // identity on every render and would have defeated the memo entirely.
+  const activeCases = useMemo(() => cases.filter(c => c.status !== "archived"), [cases]);
+  const archivedCases = useMemo(() => cases.filter(c => c.status === "archived"), [cases]);
 
   const filtered = useMemo(() => {
     const base = viewMode === "archive" ? archivedCases : activeCases;
@@ -104,7 +118,7 @@ export default function CasesPage() {
       const pOrder = { critical: 0, high: 1, normal: 2, low: 3 };
       return (pOrder[a.priority] ?? 3) - (pOrder[b.priority] ?? 3);
     });
-  }, [statusFilter, typeFilter, degreeFilter, teamFilter, timeFilter, priorityFilter, search, viewMode]);
+  }, [activeCases, archivedCases, statusFilter, typeFilter, degreeFilter, courtFilter, teamFilter, timeFilter, priorityFilter, search, viewMode]);
 
   const counts = {
     all: activeCases.length,

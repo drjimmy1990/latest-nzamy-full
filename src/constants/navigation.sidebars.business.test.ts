@@ -143,7 +143,20 @@ test('a re-added section, and only it, becomes reachable again', () => {
 // account. It used to ask isVisibleBusinessRoute, got `false` for /ai/orders/x
 // — a route that is not a business section at all — and painted the
 // «هذا القسم قيد الإعداد» notice over a company's own order.
-
+//
+// Owner items ٩٩ + ١٠٠ narrowed what /ai/orders means, and the three paths
+// below are kept for two different reasons rather than one:
+//
+//   /ai/orders/<id>  — STILL A LIVE PAGE, and the reason this test exists. It
+//     is the only screen that shows a company the attachments it uploaded and
+//     the file the team delivered, so the layout must render it. This is the
+//     assertion that would catch the original bug coming back.
+//   /ai/orders       — the duplicate list page is deleted and the bare path now
+//     redirects permanently to /dashboard/client/requests (next.config.ts), so
+//     the layout should never be asked about it at all. The row stays because
+//     "should never be asked" is a claim about routing, and this guard is the
+//     backstop for when routing is wrong: answering `true` here would put the
+//     «قيد الإعداد» notice back on the redirect's way through.
 test('a route outside /dashboard/business is never a hidden business section', () => {
   for (const outside of [
     '/ai/orders',

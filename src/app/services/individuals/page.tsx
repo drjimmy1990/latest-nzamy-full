@@ -106,12 +106,18 @@ export default function IndividualsPage() {
                     : "6 comprehensive legal services — from instant consultation to court representation — with transparent pricing and full financial guarantee."}
                 </p>
 
-                {/* Quick stats */}
-                <div className="mt-8 grid grid-cols-3 gap-4">
+                {/*
+                  أُزيلت هنا ثلاث "إحصاءات" مُختلَقة: «٣٧٠+ خدمة» (الصفحة نفسها
+                  تعرض ٦ خدمات)، «٢٤/٧ دعم» (لا التزام إتاحة متعاقَد عليه)،
+                  «٩٨٪ رضا العملاء» (لا يوجد جدول تقييمات في قاعدة البيانات).
+                  استُبدلت بعروض قيمة بلا أرقام. لا تُعِد رقماً هنا ما لم يكن
+                  محسوباً من بيانات حقيقية.
+                */}
+                <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
                   {[
-                    { value: "٣٧٠+", valueEn: "370+", label: isAr ? "خدمة" : "Services" },
-                    { value: "٢٤/٧", valueEn: "24/7", label: isAr ? "دعم" : "Support" },
-                    { value: "٩٨٪", valueEn: "98%", label: isAr ? "رضا العملاء" : "Satisfaction" },
+                    { titleAr: "سعر معروف مسبقاً", titleEn: "Price Up Front", subAr: "تعرف التكلفة قبل الطلب", subEn: "Know the cost before you order" },
+                    { titleAr: "متابعة داخل المنصة", titleEn: "Tracked In-Platform", subAr: "حالة طلبك ومستنداتك في مكان واحد", subEn: "Your request and files in one place" },
+                    { titleAr: "أتعاب عند الإنجاز", titleEn: "Fees on Delivery", subAr: "لا تُصرف إلا بعد تسليم الخدمة", subEn: "Released only after the service is delivered" },
                   ].map((stat, i) => (
                     <motion.div
                       key={i}
@@ -120,10 +126,12 @@ export default function IndividualsPage() {
                       transition={{ delay: 0.3 + i * 0.1 }}
                       className="rounded-2xl border border-slate-200/50 bg-white p-4 text-center dark:border-white/10 dark:bg-dark-card"
                     >
-                      <div className="font-brand text-xl font-bold text-royal dark:text-gold">
-                        {isAr ? stat.value : stat.valueEn}
+                      <div className="font-brand text-sm font-bold leading-snug text-royal dark:text-gold">
+                        {isAr ? stat.titleAr : stat.titleEn}
                       </div>
-                      <div className="mt-1 text-xs text-ink-muted dark:text-gray-400">{stat.label}</div>
+                      <div className="mt-1.5 text-xs leading-relaxed text-ink-muted dark:text-gray-400">
+                        {isAr ? stat.subAr : stat.subEn}
+                      </div>
                     </motion.div>
                   ))}
                 </div>
