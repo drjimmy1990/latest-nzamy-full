@@ -201,24 +201,40 @@ function mapStatus(s: string | undefined): CaseStatus {
 }
 
 // Arabic labels for namespaced + legacy event strings.
+//
+// «القضية», not «الطلب» — finding 176. Both case files render this map under a
+// heading that reads «مسار القضية», and the map then called the same object
+// «الطلب», so one screen used two words for one thing. The row underneath IS a
+// `service_request`, which is where «الطلب» came from — but that is the data
+// model's word, not the lawyer's, and the audit's whole complaint is that the
+// screen speaks two vocabularies at once.
+//
+// The keys keep their `service_request.*` namespace: they are what the backend
+// emits, and renaming them would break the lookup for every row already stored.
+// Only what the USER reads changes.
+//
+// The same map exists, independently, in the OTHER case file
+// (client/cases/[id] and lawyer/cases/[id] each hold their own copy). Both were
+// changed in one pass — fixing one and leaving the other is the shape this wave
+// keeps finding.
 const EVENT_LABELS: Record<string, string> = {
-  "service_request.created":       "إنشاء الطلب",
+  "service_request.created":       "إنشاء القضية",
   "service_request.status_changed":"تغيير الحالة",
-  "service_request.updated":       "تحديث الطلب",
+  "service_request.updated":       "تحديث القضية",
   "service_request.assigned":      "تعيين المحامي",
-  "service_request.completed":     "إتمام الطلب",
-  "service_request.cancelled":     "إلغاء الطلب",
+  "service_request.completed":     "إتمام القضية",
+  "service_request.cancelled":     "إلغاء القضية",
   "service_request.note_added":    "إضافة ملاحظة",
   "service_request.hearing_added": "إضافة جلسة",
   "case.note_added":               "إضافة ملاحظة",
   "case.hearing_added":            "إضافة جلسة",
   // legacy free-text
-  "created":        "إنشاء الطلب",
+  "created":        "إنشاء القضية",
   "status_change":  "تغيير الحالة",
-  "updated":        "تحديث الطلب",
+  "updated":        "تحديث القضية",
   "assigned":       "تعيين المحامي",
-  "completed":      "إتمام الطلب",
-  "cancelled":      "إلغاء الطلب",
+  "completed":      "إتمام القضية",
+  "cancelled":      "إلغاء القضية",
   "note_added":     "إضافة ملاحظة",
   "hearing_added":  "إضافة جلسة",
 };
