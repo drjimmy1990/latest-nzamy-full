@@ -236,7 +236,17 @@ export default function BusinessPage() {
                     {[
                       { icon: Lock, labelAr: "سرية تامة", labelEn: "Full Confidentiality" },
                       { icon: Clock, labelAr: "استجابة ٢٤/٧", labelEn: "24/7 Response" },
-                      { icon: Scales, labelAr: "امتثال مضمون", labelEn: "Guaranteed Compliance" },
+                      // «امتثال مضمون» / "Guaranteed Compliance" — removed.
+                      // The other three chips on this card describe how the firm
+                      // works; this one GUARANTEED an outcome, with no scope, no
+                      // standard named, and no disclaimer. Compliance depends on
+                      // a regulator's reading of a company's own facts, so it is
+                      // not a thing any law firm can guarantee to a visitor who
+                      // has not even signed up — and promising it in writing on a
+                      // public page is the kind of claim the rest of this audit
+                      // exists to remove. Replaced with what the firm actually
+                      // does: review against the regulations.
+                      { icon: Scales, labelAr: "مراجعة الامتثال النظامي", labelEn: "Regulatory Compliance Review" },
                       { icon: Brain, labelAr: "AI قانوني متقدم", labelEn: "Advanced Legal AI" },
                     ].map((item, i) => {
                       const Icon = item.icon;

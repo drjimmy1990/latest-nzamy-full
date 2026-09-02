@@ -67,7 +67,14 @@ export default function ProceduresPage() {
           <div>
             <h1 className={`text-lg font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>المرشد القضائي</h1>
             <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-              إجراءات · دوائر قضائية · ذكاء مجتمعي من المحامين
+              {/* «ذكاء مجتمعي من المحامين» was the third item here and nothing
+                  on this page evidences it: there is no lawyer contribution on
+                  the screen, no count, and no path by which a lawyer adds to
+                  these procedures. The «الدوائر القضائية» tab beside it carries
+                  no count either. A subtitle is a promise about the page under
+                  it; this one named a source of knowledge the page does not
+                  have. */}
+              إجراءات · دوائر قضائية
             </p>
           </div>
           <div className="ms-auto hidden sm:flex gap-1.5">
