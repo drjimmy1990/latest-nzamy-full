@@ -225,8 +225,12 @@ export default function CommunityHighlights() {
               ))}
             </ul>
 
+            {/* /community/ask, not /community. The two links on this card had
+                different labels and one destination, which is the same shape
+                the chips above just lost. The ask route is real — the community
+                page's own CTA points at it (community/page.tsx:206). */}
             <a
-              href="/community"
+              href="/community/ask"
               className={`mt-7 inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold transition-colors ${
                 isDark ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15" : "bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328]"
               }`}
