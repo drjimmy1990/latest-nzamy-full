@@ -424,7 +424,10 @@ export default function CasesPage() {
                   icon={<Gavel />}
                   title="لا توجد قضايا بعد"
                   description="القضايا التي تضيفها أو تُسند إليك ستظهر هنا."
-                  action={{ label: "إضافة قضية", onClick: () => setShowAddCase(true) }}
+                  // Same label as the header button at :711. They opened the
+                  // same modal under two names — «إضافة قضية» here and «قضية
+                  // جديدة» there — on one screen, in one screenshot (shot 01).
+                  action={{ label: "قضية جديدة", onClick: () => setShowAddCase(true) }}
                 />
               )
               : (

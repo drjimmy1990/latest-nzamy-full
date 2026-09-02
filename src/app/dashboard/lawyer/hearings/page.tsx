@@ -53,6 +53,30 @@ function hijriDayOnly(gDate: Date): string | null {
 // 2026-08-28 — its only two uses were the «N مهام» chip and «عرض كل المهام»,
 // both inside a block that could never render. See the note at LINKED_TASKS.
 import { useTheme } from "@/components/ThemeProvider";
+import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
+
+/**
+ * «٠ مجدولة» in shots 19 and 24 — a Western zero in an Arabic heading, with
+ * the plural adjective attached to it. Both halves of this line now agree with
+ * their number, and neither writes a digit where Arabic writes none.
+ */
+const SCHEDULED_COUNT: ArabicCountForms = {
+  zero: "لا مواعيد مجدولة",
+  one: "موعد واحد مجدول",
+  two: "موعدان مجدولان",
+  few: "مواعيد مجدولة",
+  many: "موعداً مجدولاً",
+};
+
+const TODAY_COUNT: ArabicCountForms = {
+  // Never rendered — the caller guards on `todayCount > 0` — but a form table
+  // with a hole in it is an invitation to render the hole.
+  zero: "لا مواعيد اليوم",
+  one: "موعد واحد اليوم",
+  two: "موعدان اليوم",
+  few: "مواعيد اليوم",
+  many: "موعداً اليوم",
+};
 import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
 import { hijriPartsOf, toArabicDigits } from "@/lib/services/hijri";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
@@ -1063,8 +1087,8 @@ export default function LawyerHearingsPage() {
                 : loadState==="error"
                   ? <span className="text-red-500 font-bold">تعذّرت قراءة المواعيد — العدد غير معروف</span>
                   : <>
-                      {todayCount>0&&<span className="text-red-500 font-bold">{todayCount} موعد اليوم · </span>}
-                      {scheduledCount} مجدولة
+                      {todayCount>0&&<span className="text-red-500 font-bold">{countPhraseAr(todayCount, TODAY_COUNT)} · </span>}
+                      {countPhraseAr(scheduledCount, SCHEDULED_COUNT)}
                     </>}
             </p>
           </div>
@@ -1150,10 +1174,23 @@ export default function LawyerHearingsPage() {
           </motion.div>
         ):(
           <motion.div key="list" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-6">
+            {/* The calendar branch above already learned to tell «the filter
+                excluded everything» apart from «the diary is empty»; its own
+                list sibling, twenty lines below it, did not — so shot 24 caught
+                «لا توجد مواعيد مطابقة للفلتر المختار» on a diary with zero rows
+                and no filter set, sending a lawyer hunting for a filter that
+                was never applied. Same branch, same words, both views. */}
             {groups.length===0&&(
               <div className={`${card} p-12 text-center`}>
                 <CalendarCheck size={36} weight="duotone" className={`mx-auto mb-3 ${isDark?"text-zinc-700":"text-slate-300"}`}/>
-                <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>لا توجد مواعيد مطابقة للفلتر المختار</p>
+                {events.length>0 ? (
+                  <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>لا توجد مواعيد مطابقة للفلتر المختار</p>
+                ) : (
+                  <>
+                    <p className={`text-sm font-bold ${isDark?"text-zinc-400":"text-slate-500"}`}>لا توجد مواعيد مسجّلة</p>
+                    <p className={`text-[12px] mt-1 ${isDark?"text-zinc-600":"text-slate-400"}`}>ابدأ بزر «موعد جديد» في أعلى الصفحة.</p>
+                  </>
+                )}
               </div>
             )}
             {groups.map(([groupLabel,events])=>{

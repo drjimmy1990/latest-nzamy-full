@@ -167,10 +167,16 @@ export function GlobalSearch() {
 
   return (
     <>
-      {/* ── Trigger Button (in sidebar) ─────────────────────────────────────── */}
+      {/* ── Trigger Button (in sidebar) ─────────────────────────────────────
+          `border-t` + `pt-3` on the wrapper: this block is pinned BELOW the
+          nav's scroll region and the two shared an invisible seam, so a
+          half-scrolled last nav row looked like it was being covered by the
+          search box rather than simply scrolled past. Naming the seam with a
+          rule turns an apparent overlap into an ordinary divider. */}
+      <div className={`pt-3 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
       <button
         onClick={() => setOpen(true)}
-        className={`mx-3 mb-3 flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all ${triggerBase}`}
+        className={`mx-3 mb-3 flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all w-[calc(100%-1.5rem)] ${triggerBase}`}
         dir="rtl"
       >
         <MagnifyingGlass size={15} weight="bold"/>
@@ -181,6 +187,7 @@ export function GlobalSearch() {
           <span>⌘</span><span>K</span>
         </kbd>
       </button>
+      </div>
 
       {/* ── Overlay ──────────────────────────────────────────────────────────── */}
       <AnimatePresence>

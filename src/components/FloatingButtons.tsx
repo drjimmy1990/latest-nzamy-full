@@ -463,6 +463,36 @@ function isLegalItemDetailPage(pathname: string | null): boolean {
   return false;
 }
 
+/**
+ * The one surface the support FAB must not render on.
+ *
+ * The first draft of this fix suppressed it across `/dashboard`, `/settings`
+ * and `/ai` — every authenticated screen. That was wrong, and the call graph
+ * is what said so: `FloatingButtons → CreateClient` is a real execution flow.
+ * The widget is not a marketing badge on a signed-in screen; `WhatsAppWidget`
+ * takes `isLoggedIn`, skips the account-type step for a known user, greets them
+ * by name, and can open a service request. Hiding it product-wide would have
+ * deleted an ordering path to fix a stacking bug.
+ *
+ * So the suppression is one route subtree — the ADMIN console — and it is there
+ * for a reason positioning cannot fix: `/dashboard/admin` is staff-facing, a
+ * "request a legal service" CTA has no audience on it, and shot 07 shows the
+ * button physically covering a user row's «تحقق» button and its overflow menu.
+ *
+ * The other complaints in the owner's screenshots are about STACKING, not
+ * presence, and are fixed by the z-index below rather than by deletion.
+ */
+const FAB_SUPPRESSED_PREFIXES = ["/dashboard/admin"] as const;
+
+export function isFabSuppressedPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return FAB_SUPPRESSED_PREFIXES.some(
+    // `=== p` covers the bare route, `p + "/"` covers its subtree. The pair is
+    // why a future `/ai` entry here would not also swallow `/ai-disclaimer`.
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
+
 // ─── Floating Buttons ────────────────────────────────────────────────────────
 // Single WhatsApp FAB + optional Report mini-FAB stacked above it.
 // Pass reportConfig to show the orange Report button (library pages only).
@@ -564,6 +594,11 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
   const reportTooltip = isRTL ? "أبلغ عن مشكلة" : "Report an issue";
 
+  // Every hook above has already run, so this early return does not change the
+  // hook order on any route.
+  if (isFabSuppressedPath(pathname)) return null;
+
+
   return (
     <div ref={rootRef} data-nzamy-floating-root="true" className={`${isPrimaryInstance && !aiModeActive ? "" : "hidden"} print:hidden`}>
       {/* WhatsApp Panel */}
@@ -585,7 +620,16 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
       )}
 
       {/* Speed-Dial container — stacks Report above WhatsApp */}
-      <div className={`fixed bottom-20 md:bottom-6 ${waBtnSide} z-[9999] flex flex-col items-center gap-2.5 print:hidden`}>
+      {/* z-40, not z-9999.
+          At 9999 this FAB sat above EVERY dialog in the product: the lowest
+          modal here is AddHearingModal at z-[60], AddClientModal is z-[200],
+          the report drawer above is z-[10000]. Shot 25 caught the consequence —
+          the green button at full opacity on top of the add-hearing modal's own
+          backdrop, having escaped the modal's stacking context entirely, which
+          is matrix row 168's complaint in its most severe form.
+          40 is above page content and below every overlay, which is the only
+          band a persistent FAB belongs in. */}
+      <div className={`fixed bottom-20 md:bottom-6 ${waBtnSide} z-40 flex flex-col items-center gap-2.5 print:hidden`}>
 
         {/* ── Orange Report mini-FAB (only on library pages) ── */}
         {reportConfig && (
@@ -658,7 +702,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
       {/* ── Floating Draft Cart FAB (Restricted to legal item detail pages) ── */}
       {showDraftFab && (
-        <div className={`fixed bottom-20 md:bottom-6 ${isRTL ? "left-[88px]" : "right-[88px]"} z-[9999] print:hidden`}>
+        <div className={`fixed bottom-20 md:bottom-6 ${isRTL ? "left-[88px]" : "right-[88px]"} z-40 print:hidden`}>
           <div className="relative group">
             {/* Tooltip */}
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold shadow-lg border border-white/10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">

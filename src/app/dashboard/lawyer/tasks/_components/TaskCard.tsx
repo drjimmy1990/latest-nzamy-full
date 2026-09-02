@@ -5,14 +5,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle, Clock, Circle, Archive,
   CaretRight, Scales, Trash,
-  ChartLine, Briefcase, Timer, ArrowLeft, TrendUp, TrendDown, Target,
   PencilSimple, Plus, X, Note,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { PRIORITY_CONFIG, CATEGORY_CONFIG } from "../_data";
 import type { Task, TaskStatus } from "../_types";
-import type { BenchmarkItem, PerformanceContext, PerformanceSnapshot } from "../../_data/performance";
-import { getBenchmarkSummary, getPerformanceContextLabel } from "../../_data/performance";
 
 // ─── TaskCard ──────────────────────────────────────────────────────────────────
 
@@ -363,137 +360,31 @@ export function TaskCard({
     </>
   );
 }
-
-// ─── TaskGamification ─────────────────────────────────────────────────────────
-
-const formatDelta = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}س`;
-
-export function TaskGamification({
-  snapshot, benchmarks, context, isDark,
-}: {
-  snapshot: PerformanceSnapshot;
-  benchmarks: BenchmarkItem[];
-  context: PerformanceContext;
-  isDark: boolean;
-}) {
-  const surface = isDark
-    ? "bg-zinc-900/60 border border-white/[0.06]"
-    : "bg-white border border-slate-200/70 shadow-[0_20px_40px_-18px_rgba(15,23,42,0.10)]";
-  const subtleBorder = isDark ? "border-white/[0.06]" : "border-slate-100";
-  const muted = isDark ? "text-zinc-500" : "text-slate-400";
-  const text = isDark ? "text-zinc-100" : "text-slate-800";
-  const maxHours = Math.max(snapshot.hours, ...benchmarks.map(item => item.avgHours), 1);
-  const hourDelta = snapshot.hours - snapshot.previousHours;
-  const trendUp = hourDelta >= 0;
-  const summary = getBenchmarkSummary(snapshot, benchmarks);
-
-  const kpis = [
-    { label: "ساعات العمل",    value: snapshot.hours.toFixed(1), unit: "س",     icon: Clock,        color: "#0B3D2E" },
-    { label: "المهام المنجزة", value: String(snapshot.tasks),    unit: "مهمة",  icon: CheckCircle,  color: "#10b981" },
-    { label: "القضايا النشطة", value: String(snapshot.cases),    unit: "قضية",  icon: Briefcase,    color: "#C8A762" },
-    { label: "جلسات بومودورو", value: String(snapshot.pomodoros),unit: "جلسة",  icon: Timer,        color: "#6366f1" },
-  ];
-
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 100, damping: 20, delay: 0.03 }}
-      className={`${surface} rounded-[1.75rem] p-5`}
-    >
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-stretch">
-        <div className={`xl:w-[250px] xl:border-l xl:pl-5 ${subtleBorder}`}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className={`text-[11px] font-black uppercase tracking-widest ${muted}`}>سجل الأداء</p>
-              <h3 className={`mt-1 text-[17px] font-bold ${text}`}>ملخص الإنتاجية</h3>
-              <p className={`mt-1 text-[11px] ${muted}`}>{getPerformanceContextLabel(context)}</p>
-            </div>
-            <div className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold ${trendUp ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}`}>
-              {trendUp ? <TrendUp size={11} weight="bold" /> : <TrendDown size={11} weight="bold" />}
-              <span className="font-mono">{formatDelta(hourDelta)}</span>
-            </div>
-          </div>
-          <div className="mt-4">
-            <div className="flex items-end gap-2">
-              <span className={`font-mono text-[38px] font-black leading-none ${text}`}>{snapshot.productivity}</span>
-              <span className={`pb-1 text-[13px] font-bold ${muted}`}>%</span>
-            </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-zinc-800">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${snapshot.productivity}%` }}
-                transition={{ type: "spring", stiffness: 80, damping: 18 }}
-                className="h-full rounded-full"
-                style={{ backgroundColor: snapshot.level.color }}
-              />
-            </div>
-            <div className="mt-3 flex items-center gap-2">
-              <Target size={14} weight="duotone" style={{ color: snapshot.level.color }} />
-              <div>
-                <p className="text-[12px] font-bold" style={{ color: snapshot.level.color }}>{snapshot.level.label}</p>
-                <p className={`text-[10px] ${muted}`}>{snapshot.level.description}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className={`grid flex-1 grid-cols-2 overflow-hidden rounded-2xl border md:grid-cols-4 ${subtleBorder}`}>
-          {kpis.map(({ label, value, unit, icon: Icon, color }, index) => (
-            <div key={label} className={`p-4 ${index !== 0 ? `border-r ${subtleBorder}` : ""} ${index > 1 ? `border-t md:border-t-0 ${subtleBorder}` : ""}`}>
-              <div className="mb-2 flex items-center gap-1.5">
-                <Icon size={14} weight="duotone" style={{ color }} />
-                <span className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>{label}</span>
-              </div>
-              <div className="flex items-end gap-1">
-                <span className={`font-mono text-[24px] font-black leading-none ${text}`}>{value}</span>
-                <span className={`pb-0.5 text-[11px] font-bold ${muted}`}>{unit}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className={`xl:w-[320px] xl:border-r xl:pr-5 ${subtleBorder}`}>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>مقارنة سياقية</p>
-              <p className={`mt-0.5 text-[12px] font-bold ${text}`}>{summary}</p>
-            </div>
-            <ChartLine size={18} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-          </div>
-          <Link href="/dashboard/lawyer/profile?tab=performance"
-            className={`mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-bold transition-colors ${isDark ? "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.09]" : "bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328]"}`}>
-            عرض التحليل الكامل
-            <ArrowLeft size={13} weight="bold" />
-          </Link>
-          <div className="space-y-2.5">
-            {benchmarks.map(item => {
-              const userPct = Math.min((snapshot.hours / maxHours) * 100, 100);
-              const avgPct  = Math.min((item.avgHours / maxHours) * 100, 100);
-              const ahead   = snapshot.hours >= item.avgHours;
-              return (
-                <div key={item.id}>
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className={`text-[11px] font-semibold ${text}`}>{item.label}</span>
-                    <span className={`font-mono text-[10px] font-bold ${ahead ? "text-emerald-500" : "text-red-500"}`}>
-                      {formatDelta(snapshot.hours - item.avgHours)}
-                    </span>
-                  </div>
-                  <div className={`relative h-2 overflow-hidden rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${avgPct}%` }}
-                      transition={{ type: "spring", stiffness: 70, damping: 18 }}
-                      className={`absolute inset-y-0 right-0 rounded-full ${isDark ? "bg-zinc-700" : "bg-slate-300"}`} />
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${userPct}%` }}
-                      transition={{ type: "spring", stiffness: 70, damping: 18, delay: 0.08 }}
-                      className="absolute inset-y-0 right-0 rounded-full"
-                      style={{ backgroundColor: ahead ? "#0B3D2E" : "#ef4444" }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    </motion.section>
-  );
-}
+// ─── TaskGamification — DELETED, and the data module went with it ───────────
+//
+// Wave 1 removed this panel's MOUNT from ../page.tsx but left the component
+// behind, exported and complete. That is not "removed": every number in it was
+// still written, still rendered correctly, and one `import` away from being
+// live again. The owner's screenshots 03 and 06 are what it looked like on a
+// real lawyer's board:
+//
+//   «أنت في أعلى ٤٤% ضمن محامو المملكة»   a national percentile, on a platform
+//                                          whose whole lawyer directory is empty
+//   «محامو الرياض» / «محامو المملكة»       benchmark bars against invented
+//                                          averages (5.1س / 4.8س), with الرياض
+//                                          hardcoded whoever the lawyer was
+//   «75 %» + «متقدم»                       a productivity dial with no hours
+//                                          source anywhere in the product
+//   «المهام المنجزة 3»                     printed above this page's own real
+//                                          count, contradicting it on screen
+//
+// The percentile was `((hours - 4.8) / 4.8) * 45 + 55` — arithmetic on a made-up
+// constant, presented to a professional as where he stands among his peers.
+//
+// Deleted, not zero-filled: a rendered «أنت في أعلى ٠%» would be the same claim
+// with a worse number. `getBenchmarks` and `getBenchmarkSummary` are gone from
+// ../../_data/performance.ts for the same reason — a dead function that
+// fabricates national statistics is a loaded gun, not documentation.
+//
+// The Pomodoro timer on ../page.tsx is untouched; it counts real sessions and
+// no longer feeds anything that compares the lawyer to strangers.
