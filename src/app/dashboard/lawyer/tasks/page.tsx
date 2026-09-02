@@ -27,6 +27,7 @@ import { KANBAN_COLS, CATEGORY_CONFIG, PRIORITY_CONFIG, today, playSuccessBeep }
 import { TaskCard } from "./_components/TaskCard";
 import PomodoroPanel from "./_components/PomodoroPanel";
 import AddTaskModal from "../_components/AddTaskModal";
+import { toArabicDigits } from "@/lib/services/arabicCount";
 
 // ─── Status mapping: UI TaskStatus ↔ DB service_requests.status enum ─────────
 // todo → pending_assignment, in_progress → assigned, done → completed, archived → cancelled
@@ -515,8 +516,8 @@ export default function LawyerTasksPage() {
               : loadState === "error"
                 ? <span className="text-red-500 font-semibold">تعذّر قراءة المهام</span>
                 : <>
-                    {counts.todo} معلقة · {counts.in_progress} قيد التنفيذ · {counts.done} مكتملة
-                    {counts.archived > 0 && ` · ${counts.archived} مؤرشفة`}
+                    {toArabicDigits(counts.todo)} معلقة · {toArabicDigits(counts.in_progress)} قيد التنفيذ · {toArabicDigits(counts.done)} مكتملة
+                    {counts.archived > 0 && ` · ${toArabicDigits(counts.archived)} مؤرشفة`}
                   </>}
           </p>
         </div>
@@ -649,7 +650,7 @@ export default function LawyerTasksPage() {
           }`}>
           <Archive size={12}/>
           {/* Label always, number only when there is a read behind it. */}
-          الأرشيف {countsKnown&&counts.archived>0&&`(${counts.archived})`}
+          الأرشيف {countsKnown&&counts.archived>0&&`(${toArabicDigits(counts.archived)})`}
         </button>
       </motion.div>
 

@@ -29,6 +29,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useSubscription } from "@/hooks/useSubscription";
 import { type SidebarGroup, type SidebarItem } from "@/constants/navigation";
 import { type UserType } from "@/hooks/useUser";
+import { toArabicDigits } from "@/lib/services/arabicCount";
 
 // ─── Icon resolver ─────────────────────────────────────────────────────────────
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -445,7 +446,13 @@ export function SidebarSection({
                   </motion.span>
                   {showAll
                     ? (isAr ? "عرض أقل" : "Show less")
-                    : (isAr ? `المزيد (${membershipVisibleItems.length - AI_SECTION_DEFAULT_VISIBLE})` : `More (${membershipVisibleItems.length - AI_SECTION_DEFAULT_VISIBLE})`)}
+                    : (isAr
+                        // «المزيد (3)» sat on the same rail as a date pill written
+                        // in ٠-٩, so one sidebar used both numeral systems at once
+                        // (shot 09). The English label keeps Latin digits, which
+                        // is correct for English.
+                        ? `المزيد (${toArabicDigits(membershipVisibleItems.length - AI_SECTION_DEFAULT_VISIBLE)})`
+                        : `More (${membershipVisibleItems.length - AI_SECTION_DEFAULT_VISIBLE})`)}
                 </button>
               )}
             </div>
