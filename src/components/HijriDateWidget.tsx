@@ -63,8 +63,30 @@ export default function HijriDateWidget() {
   const { isDark, calendarType } = useTheme();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"calendar"|"converter">("calendar");
-  const [now, setNow] = useState(new Date());
-  const [viewDate, setViewDate] = useState(new Date());
+  // ── `now` STARTS null, AND THAT IS THE FIX ──────────────────────────
+  //
+  // It used to be `useState(new Date())`, which is evaluated during server
+  // render. The HTML therefore carried the SERVER's clock, and Nginx caches
+  // that HTML — so the date pill in the sidebar of every account showed
+  // whenever the page was last cached, not today. The owner's screenshots
+  // prove it, and prove it is a cache and not arithmetic, because DIFFERENT
+  // FIELDS are wrong on different days while other days are perfect:
+  //
+  //   shown ٢٦/٨ الأربعاء ١٢ ربيع   weekday right, Hijri day should be ١٣
+  //   shown ٢٧/٨ الأربعاء ١٤ ربيع   Hijri day right, weekday should be الخميس
+  //   shown ٣٠/٨ الأحد   ١٧ ربيع   correct
+  //   shown ٣١/٨ الاثنين ١٨ ربيع   correct
+  //
+  // `dayName` and the Gregorian half both read the same `now`, so they can
+  // never disagree with each other in one render — the only way the pair can
+  // be internally consistent yet wrong is if the render itself is old. The
+  // 60-second interval below then refreshed some of it, which is why the two
+  // bad shots are each wrong in one field rather than both.
+  //
+  // With null, the server emits no date at all, so there is nothing to cache
+  // wrong; the browser fills it in on mount from the browser's own clock.
+  const [now, setNow] = useState<Date | null>(null);
+  const [viewDate, setViewDate] = useState<Date | null>(null);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
   // Converter state
@@ -73,29 +95,35 @@ export default function HijriDateWidget() {
   const [hD,setHD]=useState(""); const [hM,setHM]=useState(""); const [hY,setHY]=useState("");
   const [result,setResult]=useState<string|null>(null);
 
-  useEffect(()=>{const t=setInterval(()=>setNow(new Date()),60_000);return()=>clearInterval(t);},[]);
+  useEffect(()=>{
+    setNow(new Date());
+    setViewDate(new Date());
+    const t=setInterval(()=>setNow(new Date()),60_000);
+    return()=>clearInterval(t);
+  },[]);
 
-  const hijriToday = hijriPartsOf(now);
-  const dayName = DAYS_FULL[now.getDay()];
-  const gStr = `${ar(now.getDate())} ${GM_AR[now.getMonth()]} ${ar(now.getFullYear())} م`;
+  const hijriToday = now ? hijriPartsOf(now) : null;
+  const dayName = now ? DAYS_FULL[now.getDay()] : "";
+  const gStr = now ? `${ar(now.getDate())} ${GM_AR[now.getMonth()]} ${ar(now.getFullYear())} م` : "";
   // null on a runtime without Umm al-Qura data. Callers below render the
   // Gregorian half alone rather than a Hijri date nobody can stand behind.
   const hStr = hijriToday
     ? `${ar(hijriToday.day)} ${hijriToday.monthName} ${ar(hijriToday.year)} هـ`
     : null;
 
-  // Calendar grid
-  const firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
-  const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth()+1, 0).getDate();
-  const startDow = firstDay.getDay(); // 0=Sun
-  const cells: (Date|null)[] = [
+  // Calendar grid. `viewDate` is null until mount for the same reason `now` is,
+  // so the grid is empty on the server — the modal cannot be open there anyway.
+  const firstDay = viewDate ? new Date(viewDate.getFullYear(), viewDate.getMonth(), 1) : null;
+  const daysInMonth = viewDate ? new Date(viewDate.getFullYear(), viewDate.getMonth()+1, 0).getDate() : 0;
+  const startDow = firstDay ? firstDay.getDay() : 0; // 0=Sun
+  const cells: (Date|null)[] = viewDate ? [
     ...Array(startDow).fill(null),
     ...Array.from({length:daysInMonth},(_,i)=>new Date(viewDate.getFullYear(),viewDate.getMonth(),i+1)),
-  ];
+  ] : [];
   while(cells.length%7!==0) cells.push(null);
 
-  const prevMonth=()=>setViewDate(d=>new Date(d.getFullYear(),d.getMonth()-1,1));
-  const nextMonth=()=>setViewDate(d=>new Date(d.getFullYear(),d.getMonth()+1,1));
+  const prevMonth=()=>setViewDate(d=>d?new Date(d.getFullYear(),d.getMonth()-1,1):d);
+  const nextMonth=()=>setViewDate(d=>d?new Date(d.getFullYear(),d.getMonth()+1,1):d);
 
   const convert=useCallback(()=>{
     setResult(null);
@@ -135,12 +163,19 @@ export default function HijriDateWidget() {
             next to the date on every screen in the app. */}
         {(calendarType==="hijri"||calendarType==="both") && hijriToday && (
           <span className={`px-1.5 py-0.5 rounded-lg text-[10px] font-bold ${isDark?"bg-emerald-500/15 text-emerald-400":"bg-emerald-50 text-emerald-700"}`}>
-            {ar(hijriToday.day)} {hijriToday.monthName.split(" ")[0]}
+            {/* THE WHOLE MONTH NAME. This used to be `.split(" ")[0]`, which
+                turned «ربيع الأول» and «ربيع الثاني» — and «جمادى الأولى» and
+                «جمادى الثانية» — into the same two words. Four of the twelve
+                Hijri months are only told apart by the word this dropped, so
+                the pill was ambiguous by a whole month for a third of the year,
+                on a screen lawyers count filing deadlines from. It showed up in
+                ten of the owner's thirty-four screenshots. */}
+            {ar(hijriToday.day)} {hijriToday.monthName}
           </span>
         )}
-        {(calendarType==="miladi"||calendarType==="both") && (
+        {(calendarType==="miladi"||calendarType==="both") && now && (
           <span className={`text-[10px] ${isDark?"text-[#C8A762]":"text-amber-700"}`}>
-            {ar(now.getDate())}/{ar(now.getMonth()+1)}
+            {ar(now.getDate())}/{ar(now.getMonth()+1)}/{ar(now.getFullYear())}
           </span>
         )}
       </button>
@@ -210,13 +245,13 @@ export default function HijriDateWidget() {
                       {/* Hijri month = primary */}
                       <p className={`text-[14px] font-bold ${isDark?"text-white":"text-slate-800"}`}>
                         {(() => {
-                          const h = hijriPartsOf(firstDay);
+                          const h = firstDay ? hijriPartsOf(firstDay) : null;
                           return h ? `${h.monthName} ${ar(h.year)} هـ` : "";
                         })()}
                       </p>
                       {/* Miladi month = secondary */}
                       <p className={`text-[10px] font-semibold ${isDark?"text-[#C8A762]":"text-amber-600"}`}>
-                        {GM_AR[viewDate.getMonth()]} {viewDate.getFullYear()}
+                        {viewDate ? `${GM_AR[viewDate.getMonth()]} ${viewDate.getFullYear()}` : ""}
                       </p>
                     </div>
                     <button onClick={nextMonth} className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark?"hover:bg-white/[0.06] text-zinc-400":"hover:bg-slate-100 text-slate-500"}`}>
@@ -235,7 +270,7 @@ export default function HijriDateWidget() {
                   <div className="grid grid-cols-7 gap-0.5">
                     {cells.map((cell,i)=>{
                       if(!cell) return <div key={i}/>;
-                      const isToday = cell.toDateString()===now.toDateString();
+                      const isToday = now !== null && cell.toDateString()===now.toDateString();
                       const isSelected = selectedDay?.toDateString()===cell.toDateString();
                       const hijriDay = hijriPartsOf(cell)?.day ?? null;
                       return (

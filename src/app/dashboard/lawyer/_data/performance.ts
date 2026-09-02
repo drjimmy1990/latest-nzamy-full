@@ -206,38 +206,14 @@ export function getPerformanceContextLabel(context: PerformanceContext): string 
   return "محامي فرد";
 }
 
-export function getBenchmarks(
-  context: PerformanceContext,
-  opts?: { city?: string; firmName?: string }
-): BenchmarkItem[] {
-  const city = opts?.city ?? "الرياض";
-  const firmName = opts?.firmName ?? "المكتب";
-
-  if (context === "firm") {
-    return [
-      { id: "team", label: "متوسط الفريق", scope: "firm_peers", avgHours: 5.9, avgTasks: 4, description: "داخل المكتب" },
-      { id: "similar", label: "مكاتب مشابهة", scope: "similar_firms", avgHours: 5.4, avgTasks: 3, description: "نفس الحجم والمدينة" },
-    ];
-  }
-
-  if (context === "firm_lawyer") {
-    return [
-      { id: "firm", label: `زملاء ${firmName}`, scope: "firm_peers", avgHours: 6.2, avgTasks: 4, description: "محامون بنفس المكتب" },
-      { id: "city", label: `محامو ${city}`, scope: "city", avgHours: 5.1, avgTasks: 3, description: "نفس المدينة" },
-      { id: "country", label: "محامو المملكة", scope: "country", avgHours: 4.8, avgTasks: 3, description: "على مستوى المملكة" },
-    ];
-  }
-
-  return [
-    { id: "city", label: `محامو ${city}`, scope: "city", avgHours: 5.1, avgTasks: 3, description: "نفس المدينة" },
-    { id: "country", label: "محامو المملكة", scope: "country", avgHours: 4.8, avgTasks: 3, description: "على مستوى المملكة" },
-  ];
-}
-
-export function getBenchmarkSummary(snapshot: PerformanceSnapshot, benchmarks: BenchmarkItem[]): string {
-  if (!snapshot.isLive || snapshot.tasks === 0) return "أضف مهام لعرض المقارنة";
-  const country = benchmarks.find(item => item.scope === "country") ?? benchmarks[benchmarks.length - 1];
-  if (!country) return "لا توجد مقارنة كافية حالياً";
-  const percentile = Math.max(1, Math.min(99, Math.round(((snapshot.tasksDone - country.avgTasks) / country.avgTasks) * 45 + 55)));
-  return `أنجزت ${snapshot.tasksDone} مهمة من أصل ${snapshot.tasks} — أنت في شريحة المنتجين`;
-}
+// ─── getBenchmarks / getBenchmarkSummary — DELETED ──────────────────────────
+//
+// They returned hardcoded national and city averages (5.1س / 4.8س / 4 مهام) and
+// turned them into «أنت في أعلى N% ضمن محامو المملكة» via
+// `((hours - 4.8) / 4.8) * 45 + 55`. There is no hours-worked table, no peer
+// population and no published lawyer directory behind any of it — the platform
+// cannot compare a lawyer to anyone, so it must not print a rank.
+//
+// Their only caller was TaskGamification in ../tasks/_components/TaskCard.tsx,
+// deleted in the same pass. `BenchmarkItem` and `BenchmarkScope` stay: they are
+// the shape a REAL benchmark would take once there is a source to fill it.

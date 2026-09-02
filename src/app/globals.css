@@ -72,6 +72,45 @@
 }
 
 /*
+  .scrollbar-thin — the class the dashboard sidebar has ALWAYS carried and that
+  has never existed.
+
+  `SharedSidebar.tsx:143` renders `overflow-y-auto py-3 px-2 scrollbar-thin` on
+  the nav's scroll region. Tailwind does not ship `scrollbar-thin`, and neither
+  did this stylesheet, so the class matched nothing at all and the region got
+  the platform default. The owner's shots 06, 09, 21 and 26 are what that looks
+  like on a lawyer's sidebar: a heavy opaque thumb sitting on top of the nav
+  labels. Four screenshots of a rule that was never written.
+
+  `scrollbar-width`/`scrollbar-color` are the standard properties — the
+  `::-webkit-` block above is a Chrome-only shorthand and does not cover
+  Firefox — and `scrollbar-gutter: stable` reserves the track's width whether or
+  not the list currently overflows, so the nav labels stop shifting sideways the
+  moment a group is expanded.
+
+  OUTSIDE @layer base, so a Tailwind utility on the same element cannot win by
+  layer order.
+*/
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(11, 61, 46, 0.25) transparent;
+  scrollbar-gutter: stable;
+}
+.dark .scrollbar-thin {
+  scrollbar-color: rgba(200, 167, 98, 0.25) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(11, 61, 46, 0.25);
+  border-radius: 3px;
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(200, 167, 98, 0.25);
+}
+
+/*
   Dark Mode Overrides — OUTSIDE @layer so they beat Tailwind utilities.
   Redefine Tailwind's internal CSS variables when .dark is active.
 */

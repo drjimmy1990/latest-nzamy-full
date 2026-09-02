@@ -11,6 +11,16 @@ import {
   Scales, Storefront, Bank, Handshake, Stamp
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { countPhraseAr, countTileAr, type ArabicCountForms } from "@/lib/services/arabicCount";
+
+/** «مستخدم» — shot 07 printed «10 مستخدم», the singular for a count of ten. */
+const USERS_COUNT: ArabicCountForms = {
+  zero: "لا مستخدمين",
+  one: "مستخدم واحد",
+  two: "مستخدمان",
+  few: "مستخدمين",
+  many: "مستخدماً",
+};
 import { DB_USER_TYPES, isDbUserType, type DbUserType } from "@/lib/auth/userTypes";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
@@ -587,7 +597,10 @@ export default function AdminUsersPage() {
             إدارة المستخدمين
           </h1>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {stats.total} مستخدم · {stats.active} نشط · {stats.pending} بانتظار التحقق
+            {/* Was `{stats.total} مستخدم · …` — «10 مستخدم» in Western digits
+                beside Arabic-Indic join dates on the same rows (shot 07).
+                Arabic takes the plural at 10, and this console writes ٠-٩. */}
+            {countPhraseAr(stats.total, USERS_COUNT)} · {countTileAr(stats.active)} نشط · {countTileAr(stats.pending)} بانتظار التحقق
           </p>
         </div>
         <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
@@ -598,7 +611,13 @@ export default function AdminUsersPage() {
       {/* KPI Strip */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: "إجمالي",       value: stats.total,     color: "text-royal",       bg: "bg-royal/8",        icon: Users },
+          // «إجمالي» was the wrong word for this number and the screen said so
+          // out loud: the «الكل» chip read 17 while this tile, labelled
+          // «إجمالي», read 10 (shot 07). Both are correct — the chip is the sum
+          // across roles, this is the count for the request that was actually
+          // made — but only one of them can be called the total. This one is
+          // the result set, so it is named that.
+          { label: "إجمالي النتائج", value: stats.total,     color: "text-royal",       bg: "bg-royal/8",        icon: Users },
           { label: "نشط",          value: stats.active,    color: "text-emerald-500", bg: "bg-emerald-500/8",  icon: CheckCircle },
           { label: "انتظار تحقق", value: stats.pending,   color: "text-amber-500",   bg: "bg-amber-500/8",    icon: Clock },
           { label: "موقوف",        value: stats.suspended, color: "text-red-500",     bg: "bg-red-500/8",      icon: Warning },

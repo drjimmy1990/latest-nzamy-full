@@ -13,6 +13,7 @@ import {
   ArrowsOut, ArrowsIn, Spinner, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
 import dynamic from "next/dynamic";
 import {
   itemsOf,
@@ -41,6 +42,31 @@ import {
   type LawyerTask,
   type LawyerSubtask,
 } from "@/lib/services/lawyerTasksService";
+
+/**
+ * Arabic counted-noun tables for this page's two tab counters.
+ *
+ * Both used to be `{n} جلسات` / `{n} مستندات` — a Western digit beside this
+ * page's Arabic-Indic dates, and the plural noun for every count including
+ * zero and one. The owner's shots 22 and 23 caught «0 جلسات مسجّلة» and
+ * «1 مستندات» on one case file.
+ */
+const HEARINGS_COUNT: ArabicCountForms = {
+  zero: "لا جلسات مسجّلة",
+  one: "جلسة واحدة مسجّلة",
+  two: "جلستان مسجّلتان",
+  few: "جلسات مسجّلة",
+  many: "جلسة مسجّلة",
+};
+
+const DOCUMENTS_COUNT: ArabicCountForms = {
+  zero: "لا مستندات",
+  one: "مستند واحد",
+  two: "مستندان",
+  few: "مستندات",
+  many: "مستنداً",
+};
+
 
 const CaseGraphView = dynamic(
   () => import("@/app/dashboard/business/kanban/CaseGraphView"),
@@ -1083,7 +1109,12 @@ export default function CaseDetailPage() {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                  {hearings.length} جلسات مسجّلة
+                  {/* Was `{hearings.length} جلسات مسجّلة`, which printed a
+                      Western digit beside this page's Arabic-Indic dates and
+                      used the plural for every count — «0 جلسات» and
+                      «1 جلسات» both. Arabic agreement has five branches, and
+                      they live in one place now. */}
+                  {countPhraseAr(hearings.length, HEARINGS_COUNT)}
                 </p>
                 <button disabled title="قريباً"
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all opacity-60 cursor-not-allowed ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
@@ -1094,7 +1125,13 @@ export default function CaseDetailPage() {
                 <div className={`${card} p-10 flex flex-col items-center justify-center`}>
                   <CalendarCheck size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
                   <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد جلسات مسجّلة</p>
-                  <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>ستظهر الجلسات هنا عند إضافتها.</p>
+                  {/* It used to say «ستظهر الجلسات هنا عند إضافتها» — an
+                      instruction to add a hearing, directly above an add
+                      button this same block renders DISABLED with «قريباً».
+                      The screen told the lawyer to do a thing it would not let
+                      him do (shot 22). Until the hearings table exists, the
+                      honest sentence is the one that names the blocker. */}
+                  <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>إضافة الجلسات من ملف القضية غير مفعّلة بعد — تُسجَّل حالياً من صفحة «المواعيد والجلسات».</p>
                 </div>
               ) : (
                 hearings.map((h, i) => (
@@ -1126,7 +1163,7 @@ export default function CaseDetailPage() {
           {activeTab === "documents" && (
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{documents.length} مستندات</p>
+                <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{countPhraseAr(documents.length, DOCUMENTS_COUNT)}</p>
                 <label className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer transition-all ${uploading ? "opacity-60 pointer-events-none" : ""} ${isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"}`}>
                   <UploadSimple size={12} />{uploading ? "جاري الرفع..." : "رفع مستند"}
                   <input

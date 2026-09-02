@@ -143,7 +143,14 @@ export default function SharedSidebar() {
       )}
 
       {/* Nav groups */}
-      <div className="flex-1 overflow-y-auto py-3 px-2 scrollbar-thin">
+      {/* `pb-8` is not decoration. This scroll region's bottom edge is flush
+          against the pinned <GlobalSearch /> below it, which sits OUTSIDE the
+          scroller — so the last nav row always came to rest sliced in half at
+          that seam, and the owner read it as a search box overlapping the menu
+          (shots 16, 18, 19, 21, 26). The padding lets the final item scroll
+          clear of the boundary; the seam itself is drawn as a border on the
+          search block so it reads as a divider rather than a cut. */}
+      <div className="flex-1 overflow-y-auto py-3 pb-8 px-2 scrollbar-thin">
         {groups.map((group, i) => (
           <SidebarSection
             key={i}
