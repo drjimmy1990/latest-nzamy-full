@@ -48,74 +48,88 @@ const AnimatedCounter = memo(function AnimatedCounter({
   return <span ref={ref}>{prefix}0{suffix}</span>;
 });
 
-const LogoMarquee = memo(function LogoMarquee({ isAr }: { isAr: boolean }) {
-  const logos = [
-    { icon: Buildings, name: isAr ? "مجموعة الرائد" : "Al-Raed Group" },
-    { icon: Bank, name: isAr ? "بنك التنمية" : "Development Bank" },
-    { icon: Briefcase, name: isAr ? "مكتب السعيد" : "Al-Saeed Office" },
-    { icon: Cube, name: isAr ? "شركة ابتكار" : "Ebtikar Tech" },
-    { icon: Hexagon, name: isAr ? "أكاديمية طويق" : "Tuwaiq Academy" },
-    { icon: Globe, name: isAr ? "الشبكة العالمية" : "Global Network" }
-  ];
+// ─── LogoMarquee — DELETED, with the «٣٢,٠٠٠» line above it ──────────────────
+//
+// It scrolled six client logos past the visitor: «مجموعة الرائد» · «بنك التنمية»
+// · «مكتب السعيد» · «شركة ابتكار» · «أكاديمية طويق» · «الشبكة العالمية» — none
+// of which is a customer, none of which is a logo. They were generic Phosphor
+// glyphs (Buildings, Bank, Briefcase, Cube, Hexagon, Globe) with invented names
+// beside them, and two of the six drew the same building icon.
+//
+// Above them sat «يثق بنا أكثر من ٣٢,٠٠٠ عميل وشركة», which contradicted the
+// «+٣٢,٦٠٠» counter forty pixels higher — two different totals for one claim,
+// on one screen, in one screenshot (shot 27). Both are gone; the real counts
+// are in `stats`.
+//
+// Owner decision, matrix row 75. Nothing replaces it: a strip of real customer
+// logos needs real customers who have agreed to be named, and that is a
+// business conversation, not a component.
 
-  return (
-    <div className="mt-16 border-t border-slate-100 pt-10 dark:border-white/10 overflow-hidden relative">
-      <div className="absolute left-0 top-0 z-10 w-8 sm:w-16 md:w-24 h-full bg-gradient-to-r from-surface dark:from-dark-bg to-transparent" />
-      <div className="absolute right-0 top-0 z-10 w-8 sm:w-16 md:w-24 h-full bg-gradient-to-l from-surface dark:from-dark-bg to-transparent" />
-      
-      <p className="mb-6 text-center text-sm font-semibold text-ink-muted uppercase tracking-wider">{isAr ? "يثق بنا أكثر من ٣٢,٠٠٠ عميل وشركة" : "Trusted by over 32,000 clients & companies"}</p>
-      
-      <motion.div
-        animate={{ x: isAr ? ["0%", "50%"] : ["0%", "-50%"] }}
-        transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-        className="flex items-center gap-16 whitespace-nowrap opacity-60 dark:opacity-40"
-      >
-        {[...logos, ...logos, ...logos].map((logo, i) => (
-          <div key={i} className="flex items-center gap-2 text-ink dark:text-gray-300 pointer-events-none">
-            <logo.icon size={28} weight="duotone" className="text-royal dark:text-emerald-500" />
-            <span className="font-brand text-xl font-bold">{logo.name}</span>
-          </div>
-        ))}
-      </motion.div>
-    </div>
-  );
-});
+// ─── The three testimonials — DELETED, on both surfaces ──────────────────────
+//
+// «فيصل الدوسري — مدير شؤون قانونية، مجموعة الرائد» · «نورة القحطاني — محامية
+// مستقلة، الرياض» · «خالد العمري — رائد أعمال، جدة». Three named people, with
+// job titles, employers, cities, quoted paragraphs and five gold stars each.
+//
+// None of them exists. Production holds 18 accounts, ZERO consultations, zero
+// published lawyers, and no reviews table for a review to have come from — so
+// there is no customer who could have said any of it. This is not an
+// exaggerated number like the counters above; it is invented testimony
+// attributed to named individuals, which is the most serious thing in this
+// entire audit.
+//
+// The same three personas were rendered TWICE — here and on /pricing, where
+// «فيصل الدوسري» also claimed «نظامي AI وفّر علينا ٤٠٪ من وقت مراجعة العقود»
+// about a language model that is not connected to anything. Deleting one and
+// leaving the other is the exact failure mode Wave 1's rule exists to stop, so
+// both went in the same commit.
+//
+// Nothing replaces them. A testimonial needs a customer who said it and agreed
+// to be named; `reviews` is a real table waiting for `/api/v1/reviews`
+// (matrix row 192), and that is where real ones will come from.
 
 export default function SocialProof() {
   const { lang, theme } = useTheme();
   const isAr = lang === "ar";
   const isDark = theme === "dark";
 
+  /**
+   * FOUR REAL COUNTS, replacing four invented ones. Owner decision, matrix
+   * row 75: «حذف أرقام الـ32 ألف وشعارات الشركات الوهمية واستبدالها بعدادات
+   * الأصول الحقيقية».
+   *
+   * What was here, against what production actually holds:
+   *
+   *   «+٣٢٬٦٠٠ مستخدم مسجّل»        18 accounts exist
+   *   «+٩٬٢٠٠ عقد تم تحليله بالـ AI»  no language model is wired to anything
+   *   «+٨٥٠ محامي معتمد»             0 published lawyers; the directory is empty
+   *   «٩٩٪ رضا العملاء»              0 consultations, and no reviews table
+   *
+   * These are the first numbers a visitor reads, and every one of them was
+   * false by three orders of magnitude. The library, by contrast, is real and
+   * took months: the figures below are the same ones LegalLibraryBanner.tsx
+   * publishes, each re-checkable with one query, and each written as a FLOOR so
+   * it stays true as the library grows instead of going stale the first time
+   * anyone seeds a row.
+   *
+   *   select count(*) from library.laws;              -- 386
+   *   select count(*) from library.articles;          -- 13,436
+   *   select count(*) from library.principles;        -- 17,940
+   *   select count(*) from library.decrees_circulars; --  2,078
+   *
+   * `exact` turns the animated count-up off for the floors: a counter that
+   * spins up to «١٣٬٠٠٠» and stops reads as a precise total, and these are not
+   * totals. 386 keeps the animation because it IS exact.
+   */
   const stats = [
-    { value: 32600, suffix: "+", label: isAr ? "مستخدم مسجّل" : "Registered Users" },
-    { value: 9200, suffix: "+", label: isAr ? "عقد تم تحليله بالـ AI" : "AI Analyzed Contracts" },
-    { value: 850, suffix: "+", label: isAr ? "محامي معتمد" : "Certified Lawyers" },
-    { value: 99, suffix: "%", label: isAr ? "رضا العملاء" : "Client Satisfaction" },
-  ];
-
-  const testimonials = [
-    {
-      name: "فيصل الدوسري",
-      role: isAr ? "مدير شؤون قانونية — مجموعة الرائد" : "Legal Affairs Manager — Al-Raed Group",
-      text: "نظامي وفر علينا وقت هائل في مراجعة العقود. الذكاء الاصطناعي يكتشف البنود المجحفة والثغرات الإجرائية بسرعة مذهلة وبدقة متناهية.",
-      rating: 5,
-    },
-    {
-      name: "نورة القحطاني",
-      role: isAr ? "محامية مستقلة — الرياض" : "Independent Lawyer — Riyadh",
-      text: "باقة المحامين غيرت طريقة إدارتي لمكتبي. من صياغة اللوائح الاعتراضية بالـ AI إلى إدارة تقويم الجلسات، كل شيء في مكان واحد.",
-      rating: 5,
-    },
-    {
-      name: "خالد بن سعيد العمري",
-      role: isAr ? "رائد أعمال — جدة" : "Entrepreneur — Jeddah",
-      text: "الاستشارة الفورية عبر الواتساب أنقذتني من توقيع عقد شراكة كان بيكلفني الكثير. تم مراجعة العقد ونصحوني برده فوراً.",
-      rating: 5,
-    },
+    { value: 386, suffix: "", exact: true, label: isAr ? "نظاماً ولائحة" : "Laws & Regulations" },
+    { value: 13000, suffix: "+", exact: false, label: isAr ? "مادة نظامية" : "Statute Articles" },
+    { value: 17000, suffix: "+", exact: false, label: isAr ? "مبدأ قضائي" : "Judicial Principles" },
+    { value: 2000, suffix: "+", exact: false, label: isAr ? "قرار وتعميم" : "Decrees & Circulars" },
   ];
 
   return (
-    <section id="testimonials" className="relative py-24 md:py-32 bg-surface dark:bg-dark-bg">
+    <section id="platform-numbers" className="relative py-24 md:py-32 bg-surface dark:bg-dark-bg">
       <div className="mx-auto max-w-[1400px] px-4">
         {/* Stats */}
         <motion.div
@@ -138,7 +152,9 @@ export default function SocialProof() {
                 className="text-center"
               >
                 <div className={`font-brand text-2xl sm:text-3xl md:text-5xl font-extrabold ${isDark ? "text-emerald-400" : "text-royal"}`}>
-                  <AnimatedCounter target={stat.value} suffix={stat.suffix} locale={isAr ? "ar-SA" : "en-US"} />
+                  {stat.exact
+                    ? <AnimatedCounter target={stat.value} suffix={stat.suffix} locale={isAr ? "ar-SA" : "en-US"} />
+                    : `${stat.value.toLocaleString(isAr ? "ar-SA" : "en-US")}${stat.suffix}`}
                 </div>
                 <div className={`mt-3 text-sm font-semibold ${isDark ? "text-gray-400" : "text-ink-muted"}`}>{stat.label}</div>
               </motion.div>
@@ -146,59 +162,6 @@ export default function SocialProof() {
           </div>
         </motion.div>
 
-        {/* Corporate Trust Logos */}
-        <LogoMarquee isAr={isAr} />
-
-        {/* Testimonials */}
-        <div className="mt-20">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="mb-12 text-center md:text-start"
-          >
-            <span className="text-sm font-bold text-gold-dark">{isAr ? "آراء العملاء" : "Client Reviews"}</span>
-            <h2 className={`font-brand mt-2 text-3xl font-extrabold tracking-tight md:text-5xl ${isDark ? "text-white" : "text-royal"}`}>
-              {isAr ? "نجاحات تصنع الثقة" : "Success Creating Trust"}
-            </h2>
-          </motion.div>
-
-          <div className="grid gap-6 md:grid-cols-3">
-            {testimonials.map((t, i) => (
-              <motion.div
-                key={t.name}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1, type: "spring", stiffness: 100, damping: 20 }}
-                className={`group relative rounded-[2rem] border p-5 transition-shadow hover:shadow-xl dark:shadow-none sm:p-8 ${
-                  isDark ? "border-white/10 bg-white/5 hover:bg-white/10" : "border-slate-200/50 bg-white hover:border-royal/20"
-                }`}
-              >
-                <Quotes size={36} weight="fill" className="mb-6 text-gold opacity-40 group-hover:opacity-100 transition-opacity" />
-                <p className={`text-sm leading-relaxed ${isDark ? "text-gray-300" : "text-ink-muted"}`}>{t.text}</p>
-
-                <div className="mt-6 flex items-center gap-1.5">
-                  {Array.from({ length: t.rating }).map((_, j) => (
-                    <Star key={j} size={16} weight="fill" className="text-gold" />
-                  ))}
-                </div>
-
-                <div className="mt-6 border-t pt-6 dark:border-white/10">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-royal/10 dark:bg-emerald-500/10 font-brand text-lg font-bold text-royal dark:text-emerald-400">
-                      {t.name[0]}
-                    </div>
-                    <div>
-                      <div className={`text-base font-bold ${isDark ? "text-white" : "text-ink"}`}>{t.name}</div>
-                      <div className={`text-xs mt-0.5 ${isDark ? "text-gray-400" : "text-ink-faint"}`}>{t.role}</div>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
       </div>
     </section>
   );

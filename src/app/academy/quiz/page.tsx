@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import confetti from "canvas-confetti";
+import { toArabicDigits } from "@/lib/services/arabicCount";
 
 // ─── Data & Types ────────────────────────────────────────────────────────────
 
@@ -545,15 +546,33 @@ export default function QuizPage() {
                   <Trophy size={28} weight="duotone" className="flex-shrink-0" />
                   <div>
                     <p className="font-bold">
+                      {/* The four branches used to end in «أنت تتفوق على ٩٨٪ /
+                          ٨٥٪ / ٦٠٪ من زملائك» — a percentile against other
+                          test-takers, keyed off nothing but this attempt's own
+                          score. There is no cohort: the percentages were fixed
+                          literals chosen per band, so a perfect score always
+                          "beat 98%" whether one person or nobody else had ever
+                          taken the quiz. Same fabrication as the lawyer
+                          dashboard's «أنت في أعلى ٤٤٪ ضمن محامو المملكة», which
+                          was deleted in this same wave; leaving it standing here
+                          would be fixing one screen and calling the shape
+                          closed.
+                          The score itself is real, so the copy now reports the
+                          score. */}
                       {(() => {
                         const pct = score / currentQuestions.length;
-                        if (pct === 1) return "أداء استثنائي! أنت تتفوق على ٩٨٪ من زملائك.";
-                        if (pct >= 0.8) return "أداء ممتاز! أنت تتفوق على ٨٥٪ من زملائك.";
-                        if (pct >= 0.6) return "أداء جيد! أنت تتفوق على ٦٠٪ من زملائك.";
-                        return "تحتاج لمزيد من التدريب لتجاوز المتوسط في هذا القسم.";
+                        if (pct === 1) return "أداء استثنائي — إجابة صحيحة في كل سؤال.";
+                        if (pct >= 0.8) return "أداء ممتاز — أتقنت معظم أسئلة هذا القسم.";
+                        if (pct >= 0.6) return "أداء جيد — راجع الأسئلة التي أخطأت فيها أدناه.";
+                        return "تحتاج لمزيد من التدريب في هذا القسم.";
                       })()}
                     </p>
-                    <p className="text-xs opacity-80 mt-1">مقارنةً بمتوسط نتائج مختبري هذا القسم</p>
+                    {/* Was «مقارنةً بمتوسط نتائج مختبري هذا القسم» — a comparison to an
+                        average that is not computed anywhere. The line now says what
+                        the number above it actually is. */}
+                    <p className="text-xs opacity-80 mt-1">
+                      {`نتيجتك في هذه المحاولة: ${toArabicDigits(score)} من ${toArabicDigits(currentQuestions.length)}`}
+                    </p>
                   </div>
                 </div>
 
