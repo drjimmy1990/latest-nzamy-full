@@ -37,6 +37,17 @@ import {
   PRIORITY_CONFIG,
   TYPE_LABELS,
 } from "@/constants/lawyerCasesData";
+import { toArabicDigits } from "@/lib/services/arabicCount";
+
+/*
+ * NUMERALS. Every count on this screen goes through `toArabicDigits`.
+ *
+ * The owner's screenshots caught this screen writing both numeral systems at
+ * once — «انتظار ٧» in one widget and «انتظار: 7» in another, for the same
+ * number, forty pixels apart. It is not a style preference: ٠-٩ and 0-9 in one
+ * line reads as two different sources of truth, which on a case list is exactly
+ * the doubt the number exists to remove.
+ */
 
 /**
  * Which `receiver: "lawyer"` rows on this endpoint are actually CASES.
@@ -518,7 +529,7 @@ export default function CasesPage() {
               >
                 <div className={`flex items-center gap-2 px-4 py-3.5 border-b ${isDark?"border-white/[0.06]":"border-slate-200/80"} border-dashed`}>
                   <span className={`text-[11px] font-black uppercase tracking-wider flex-1 ${col.color}`}>{col.label}</span>
-                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${isDark?"bg-white/[0.06] text-zinc-500":"bg-white text-slate-500 shadow-sm"}`}>{col.cases.length}</span>
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${isDark?"bg-white/[0.06] text-zinc-500":"bg-white text-slate-500 shadow-sm"}`}>{toArabicDigits(col.cases.length)}</span>
                 </div>
                 <div className="p-3 space-y-2.5 min-h-[160px]">
                   {col.cases.map(c=>(
@@ -699,7 +710,7 @@ export default function CasesPage() {
               : loadError && cases.length === 0
                 ? <span className="text-red-500 font-semibold">تعذّر تحميل القضايا</span>
                 : <>
-                    {counts.all} قضية · <span className="text-emerald-500 font-semibold">{counts.active} نشطة</span>
+                    {toArabicDigits(counts.all)} قضية · <span className="text-emerald-500 font-semibold">{toArabicDigits(counts.active)} نشطة</span>
                     {criticalCount > 0 && <> · <span className="text-red-500 font-semibold">{criticalCount} طعون</span></>}
                   </>}
           </p>
@@ -953,11 +964,11 @@ export default function CasesPage() {
           <>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>نشطة: <strong className="text-emerald-500">{counts.active}</strong></span>
+              <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>نشطة: <strong className="text-emerald-500">{toArabicDigits(counts.active)}</strong></span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-amber-400" />
-              <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>انتظار: <strong className="text-amber-500">{counts.pending}</strong></span>
+              <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>انتظار: <strong className="text-amber-500">{toArabicDigits(counts.pending)}</strong></span>
             </div>
           </>
         )}
