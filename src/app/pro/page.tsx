@@ -149,7 +149,15 @@ export default function ProPage() {
                 { label: isRTL ? "القضايا الفعالة" : "Active Cases", value: "٢٣", trend: "+٣" },
                 { label: isRTL ? "موعد هذا الأسبوع" : "This Week's Hearings", value: "٥", trend: "غداً" },
                 { label: isRTL ? "الأتعاب المعلقة" : "Pending Fees", value: "١٢,٥٠٠", trend: "ر.س" },
-                { label: isRTL ? "رضا الموكلين" : "Client Satisfaction", value: "٩٨٪", trend: "↑٢٪" },
+                // «رضا الموكلين ٩٨٪ ↑٢٪» removed. The other three tiles are a
+                // labelled product mock-up of a lawyer's own dashboard and read
+                // as sample figures; a satisfaction RATE does not — it is a
+                // claim about the platform's customers, and there are no
+                // reviews, no ratings table and zero consultations behind it.
+                // It is the same «٩٨٪ رضا العملاء» already deleted from four
+                // /services pages (matrix row 77); this tile and the two below
+                // are where that fix did not reach.
+                { label: isRTL ? "المستندات" : "Documents", value: "١٤", trend: isRTL ? "هذا الشهر" : "This month" },
               ].map((stat, i) => (
                 <div key={i} className="rounded-xl border border-white/5 bg-white/5 p-4">
                   <p className="text-xs text-white/40">{stat.label}</p>

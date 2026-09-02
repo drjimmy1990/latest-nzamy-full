@@ -22,6 +22,7 @@ import {
   hijriLabelAr,
   gregorianFromHijri,
   toArabicDigits,
+  describeDateAr,
 } from './hijri.ts';
 
 /** Local midnight, the way every caller in the app builds its dates. */
@@ -153,4 +154,61 @@ test('toArabicDigits converts every digit and leaves the rest alone', () => {
   assert.equal(toArabicDigits(1448), '١٤٤٨');
   assert.equal(toArabicDigits('12/3'), '١٢/٣');
   assert.equal(toArabicDigits('رمضان ١٤٤٥'), 'رمضان ١٤٤٥');
+});
+
+// ─── describeDateAr — the date read-back on the hearing form ──────────────────
+
+test("describeDateAr writes the date in words, in both calendars", () => {
+  // 2 September 2026 is a Wednesday, 20 Rabiʿ al-Awwal 1448.
+  assert.equal(
+    describeDateAr("2026-09-02"),
+    "الأربعاء ٢ سبتمبر ٢٠٢٦ م · ٢٠ ربيع الأول ١٤٤٨ هـ",
+  );
+});
+
+test("a transposed day and month produce a DIFFERENT weekday", () => {
+  // The whole point. `mm/dd/yyyy` in an Arabic RTL form invites ٩/٢ for ٢/٩,
+  // and on a court date that is a missed hearing. Whatever else two transposed
+  // readings share, they cannot share a weekday — so the weekday is what makes
+  // the mistake visible before the lawyer saves it.
+  const asWritten = describeDateAr("2026-09-02");
+  const asMisread = describeDateAr("2026-02-09");
+  assert.ok(asWritten && asMisread);
+  assert.notEqual(asWritten, asMisread);
+  assert.ok(asWritten.startsWith("الأربعاء"));
+  assert.ok(asMisread.startsWith("الاثنين"));
+});
+
+test("the full Hijri month name is carried, never truncated", () => {
+  // «ربيع الأول» and «ربيع الثاني» differ only in the second word; a read-back
+  // that dropped it would be ambiguous by a month on a filing deadline.
+  const rabiAwwal = describeDateAr("2026-09-02");
+  assert.ok(rabiAwwal?.includes("ربيع الأول"));
+  // 1448-04-20 ≈ 2 October 2026 — the NEXT month, and it must say so.
+  const next = describeDateAr("2026-10-02");
+  assert.ok(next?.includes("ربيع الثاني"), `expected ربيع الثاني, got «${next}»`);
+});
+
+test("a date that does not exist returns null, not a rolled-over one", () => {
+  // `new Date(2026, 1, 31)` silently becomes 3 March. A form that accepted it
+  // would schedule a hearing on a day the lawyer never chose.
+  assert.equal(describeDateAr("2026-02-31"), null);
+  assert.equal(describeDateAr("2026-13-01"), null);
+  assert.equal(describeDateAr("2026-04-31"), null);
+  // …but a real leap day is fine.
+  assert.ok(describeDateAr("2028-02-29"));
+});
+
+test("anything that is not a complete ISO date renders nothing", () => {
+  for (const bad of ["", "2026", "2026-09", "02/09/2026", "2026-9-2", "not a date"]) {
+    assert.equal(describeDateAr(bad), null, `«${bad}» should not describe`);
+  }
+});
+
+test("the read-back never contains Western digits", () => {
+  // It sits beside a native date input that is already showing Latin numerals;
+  // if the read-back did too, it would not read as a correction.
+  const out = describeDateAr("2026-09-02");
+  assert.ok(out);
+  assert.doesNotMatch(out, /[0-9]/);
 });

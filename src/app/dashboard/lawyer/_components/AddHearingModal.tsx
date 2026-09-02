@@ -7,6 +7,7 @@ import { createWorkflowRequest } from "@/lib/services/workflowService";
 import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createWorkflowId } from "@/lib/workflowStore";
 import type { UserType, UserTier } from "@/hooks/useUser";
+import { describeDateAr, toArabicDigits } from "@/lib/services/hijri";
 
 interface Props {
   onClose: () => void;
@@ -195,7 +196,9 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
                   <div>
                     <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>نوع الموعد</label>
                     <select value={type} onChange={e => setType(e.target.value)} className={inputCls}>
-                      <option value="" disabled>اختر التصنيف...</option>
+                      {/* Was «اختر التصنيف...» under a label reading «نوع الموعد» —
+                          two different words for one field, in one control. */}
+                      <option value="" disabled>اختر نوع الموعد...</option>
                       {TYPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
                   </div>
@@ -209,20 +212,46 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
                       <input type="date" value={date} onChange={e => setDate(e.target.value)} className={inputCls} />
                     </div>
                     <div>
-                      <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الوقت</label>
+                      {/* «(اختياري)» because it IS optional and was not saying so.
+                          A hearing saved with a date and no time is a real state
+                          this form allows; the read-back below names it rather
+                          than letting the lawyer find out on the calendar. */}
+                      <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الوقت <span className={isDark ? "text-zinc-500" : "text-slate-400"}>(اختياري)</span></label>
                       <input type="time" value={time} onChange={e => setTime(e.target.value)} className={inputCls} />
                     </div>
                   </div>
+
+                  {/* The date read back in words, directly under the field that
+                      produced it — see describeDateAr for why this is a safety
+                      control and not a nicety. */}
+                  {date && describeDateAr(date) && (
+                    <div className={`rounded-xl px-3 py-2 border ${isDark ? "border-emerald-700/30 bg-emerald-900/10" : "border-emerald-200 bg-emerald-50"}`}>
+                      <p className={`text-[11px] font-semibold leading-relaxed ${isDark ? "text-emerald-300" : "text-emerald-800"}`}>
+                        {describeDateAr(date)}
+                        {time ? ` — الساعة ${toArabicDigits(time)}` : " — بدون وقت محدد"}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* The required-field message used to sit BELOW the submit
+                      button, so a disabled button gave no clue which field was
+                      blocking it (shot 25). It sits under its own fields now and
+                      names the one that is missing instead of assuming the date. */}
+                  {(!type || !date) && (
+                    <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                      {!type && !date
+                        ? "اختر نوع الموعد وحدّد التاريخ للمتابعة."
+                        : !type
+                          ? "اختر نوع الموعد للمتابعة."
+                          : "التاريخ مطلوب — بدونه لن يظهر الموعد في جدول أعمالك."}
+                    </p>
+                  )}
+
                   {/* Both gates are real: a typeless row renders under the wrong
                       badge, and a dateless row has nowhere to sit on a calendar. */}
                   <button onClick={() => setStep(2)} disabled={!type || !date} className="w-full rounded-xl bg-[#0B3D2E] text-[#C8A762] py-2.5 text-[13px] font-bold hover:bg-[#092e22] transition mt-2 disabled:opacity-40">
                     الخطوة التالية
                   </button>
-                  {!date && (
-                    <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-                      التاريخ مطلوب — بدونه لن يظهر الموعد في جدول أعمالك.
-                    </p>
-                  )}
                 </motion.div>
               )}
               {step === 2 && (

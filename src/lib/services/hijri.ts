@@ -170,3 +170,69 @@ export function gregorianFromHijri(day: number, month: number, year: number): Da
   }
   return null;
 }
+
+
+/** Gregorian weekday names, index 0 = Sunday, matching `Date.prototype.getDay`. */
+const AR_WEEKDAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"] as const;
+
+/** Gregorian month names as Saudi users write them, index 0 = January. */
+const AR_GREGORIAN_MONTHS = [
+  "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+  "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
+] as const;
+
+/**
+ * An ISO `yyyy-mm-dd` written back in words, in both calendars.
+ * «الأربعاء ٢ سبتمبر ٢٠٢٦ م · ٢٠ ربيع الأول ١٤٤٨ هـ»
+ *
+ * ── THIS IS A SAFETY CONTROL ────────────────────────────────────────────────
+ *
+ * `<input type="date">` renders in the BROWSER's locale, never the page's. On a
+ * machine set to en-US an Arabic RTL form shows `mm/dd/yyyy`, left to right,
+ * with the calendar icon on the wrong side — which is what the owner
+ * photographed in shots 20 and 25 of the hearing form. No markup changes that:
+ * `lang` is advisory and Chrome ignores it for date fields, and replacing the
+ * native picker with a custom one loses the mobile keyboard and the a11y.
+ *
+ * What can be fixed is the CONSEQUENCE. ٩/٢ and ٢/٩ are the same characters in
+ * a different order, and on a court date a transposition is a missed hearing —
+ * the most expensive mistake this product can help a lawyer make. So the form
+ * echoes back what it understood, spelled out, carrying two things a
+ * transposition cannot survive:
+ *
+ *   - the WEEKDAY, which changes when day and month swap;
+ *   - the HIJRI date, which is what Saudi courts file against.
+ *
+ * «الأربعاء ٢ سبتمبر ٢٠٢٦» cannot be misread as the ninth of February.
+ *
+ * Returns null — never a partial string — for anything that is not a real
+ * calendar day, so the caller renders nothing rather than «Invalid Date». That
+ * includes 2026-02-31, which `new Date(2026, 1, 31)` would silently roll
+ * forward into March: a date input can produce it, and a form that accepted it
+ * would schedule a hearing on a day the lawyer never chose.
+ *
+ * The Hijri half is omitted, not faked, when the runtime has no Umm al-Qura
+ * data — for the reason at the top of this file.
+ */
+export function describeDateAr(iso: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  const gregorian =
+    `${AR_WEEKDAYS[date.getDay()]} ${toArabicDigits(day)} ` +
+    `${AR_GREGORIAN_MONTHS[month - 1]} ${toArabicDigits(year)} م`;
+  const hijri = hijriPartsOf(date);
+  return hijri
+    ? `${gregorian} · ${toArabicDigits(hijri.day)} ${hijri.monthName} ${toArabicDigits(hijri.year)} هـ`
+    : gregorian;
+}

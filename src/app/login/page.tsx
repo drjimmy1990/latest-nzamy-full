@@ -57,8 +57,13 @@ const t = {
     feat1: "ذكاء اصطناعي قانوني متقدم",
     feat2: "حماية وأمان تام لبياناتك",
     feat3: "محامون معتمدون ومختارون بعناية",
-    stat1Label: "خدمة قانونية",
-    stat1Value: "٣٧٠+",
+    // «٣٧٠+ خدمة قانونية» was deleted from /services/individuals in an
+    // earlier wave for being unsupported by the catalog it counted; the login
+    // screen kept its own copy. Replaced with the legal library's real size —
+    // the same floor LegalLibraryBanner.tsx publishes, checkable with
+    // `select count(*) from library.laws`.
+    stat1Label: "نظاماً ولائحة",
+    stat1Value: "٣٨٦",
     stat2Label: "دعم متواصل",
     stat2Value: "٢٤/٧",
     stat3Label: "آمن ومشفّر",
