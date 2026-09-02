@@ -153,8 +153,8 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
       { label: "إضافة مستخدم",      labelEn: "Add User",        href: "/dashboard/admin/users/new",              icon: "UserCirclePlus" },
       { label: "الأدوار والصلاحيات",labelEn: "Roles & Perms",   href: "/dashboard/admin/users/roles",            icon: "Key" },
       { label: "تحقق المزودين",     labelEn: "Provider KYC",    href: "/dashboard/admin/provider-verification",  icon: "SealCheck",          badge: "جديد" },
-      { label: "شركات المحاماة",     labelEn: "Law Firm Providers", href: "/dashboard/admin/provider-verification/firms", icon: "Scales", badge: "Beta" },
-      { label: "بروفيلات القطاعات",  labelEn: "Sector Profiles", href: "/dashboard/admin/sector-profiles",        icon: "Globe", badge: "Beta" },
+      { label: "شركات المحاماة",     labelEn: "Law Firm Providers", href: "/dashboard/admin/provider-verification/firms", icon: "Scales", badge: "تجريبي" },
+      { label: "بروفيلات القطاعات",  labelEn: "Sector Profiles", href: "/dashboard/admin/sector-profiles",        icon: "Globe", badge: "تجريبي" },
     ],
   },
   {
@@ -200,7 +200,7 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
   {
     title: "النظام والأمان", titleEn: "System & Security",
     items: [
-      { label: "مركز تحكم المنصة",      labelEn: "Platform Control", href: "/dashboard/admin/platform",             icon: "Globe",                 badge: "S101" },
+      { label: "مركز تحكم المنصة",      labelEn: "Platform Control", href: "/dashboard/admin/platform",             icon: "Globe" },
       { label: "إعدادات المنصة",        labelEn: "Platform Settings", href: "/dashboard/admin/settings",            icon: "Gear",                   badge: "جديد" },
       { label: "سجل التدقيق",          labelEn: "Audit Log",       href: "/dashboard/admin/audit-log",             icon: "ClockCounterClockwise", badge: "مُطوَّر" },
       { label: "الأمان والحماية",      labelEn: "Security",        href: "/dashboard/admin/security",              icon: "ShieldCheck",            badge: "مُطوَّر" },
@@ -222,15 +222,15 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
   {
     title: "المحتوى", titleEn: "Content",
     items: [
-      { label: "المكتبة القانونية",  labelEn: "Library",         href: "/dashboard/admin/content/laws",            icon: "BookOpen", badge: "Phase 2" },
-      { label: "المقالات",           labelEn: "Articles",        href: "/dashboard/admin/content/articles",        icon: "Article",  badge: "Phase 2" },
+      { label: "المكتبة القانونية",  labelEn: "Library",         href: "/dashboard/admin/content/laws",            icon: "BookOpen" },
+      { label: "المقالات",           labelEn: "Articles",        href: "/dashboard/admin/content/articles",        icon: "Article" },
     ],
   },
   {
     title: "فريق نظامي", titleEn: "Nzamy Team",
     items: [
-      { label: "إدارة الفريق",       labelEn: "Team",            href: "/dashboard/admin/team",                    icon: "UsersFour", badge: "Phase 2" },
-      { label: "الميزات (Flags)",    labelEn: "Feature Flags",   href: "/dashboard/admin/features",                icon: "ToggleRight", badge: "Phase 2" },
+      { label: "إدارة الفريق",       labelEn: "Team",            href: "/dashboard/admin/team",                    icon: "UsersFour" },
+      { label: "الميزات (Flags)",    labelEn: "Feature Flags",   href: "/dashboard/admin/features",                icon: "ToggleRight" },
     ],
   },
   {

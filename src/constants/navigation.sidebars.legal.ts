@@ -28,7 +28,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     defaultOpen: true,
     items: [
       // ١: الخطوة صفر — فهم الملف أولاً
-      { label: "ParaLegal",           labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",     icon: "Scan",         badge: "جديد" },
+      { label: "الموجز القضائي",           labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",     icon: "Scan",         badge: "جديد" },
       { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/assistant",  icon: "ChatCircle",   badge: "جديد" },
       // ٢: الصياغة — العمل اليومي الأكثر تكراراً
       { label: "الصائغ القانوني",  labelEn: "Legal Drafter",            href: "/ai/draft",         icon: "PencilSimple", divider: true },
@@ -36,8 +36,8 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       { label: "محترف العقود",      labelEn: "Contract Pro",             href: "/ai/contracts",     icon: "FileText" },
       // ٣: الاستراتيجية — للقضايا الكبيرة
       { label: "المحاكي الشامل",   labelEn: "Litigation Studio",        href: "/ai/wargaming",     icon: "Scales",       divider: true, badge: "مُدمَج" },
-      { label: "عصارة المرفقات",    labelEn: "Attachment Analyzer",      href: "/ai/analyze",       icon: "MagnifyingGlass", badge: "PRO" },
-      { label: "الرأي الفصل",       labelEn: "Al-Ra'y Al-Fasl",          href: "/ai/legal-opinion", icon: "Lightbulb",    badge: "PRO" },
+      { label: "عصارة المرفقات",    labelEn: "Attachment Analyzer",      href: "/ai/analyze",       icon: "MagnifyingGlass" },
+      { label: "الرأي الفصل",       labelEn: "Al-Ra'y Al-Fasl",          href: "/ai/legal-opinion", icon: "Lightbulb" },
       // ٤: المساعدة والمتابعة
       { label: "السكرتير الذكي",    labelEn: "AI Secretary",             href: "/ai/secretary",     icon: "Robot",        divider: true },
       { label: "راصد التشريعات",    labelEn: "Law Monitor",              href: "/ai/monitor",       icon: "Bell" },
@@ -187,7 +187,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: true,
     items: [
-      { label: "ParaLegal",           labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",     icon: "Scan",         badge: "جديد" },
+      { label: "الموجز القضائي",           labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",     icon: "Scan",         badge: "جديد" },
       { label: "سؤال قانوني سريع",  labelEn: "Quick Q&A",       href: "/ai/assistant",  icon: "ChatCircle",   badge: "جديد" },
       { label: "الصائغ القانوني",   labelEn: "Legal Drafter",   href: "/ai/draft",         icon: "PencilSimple", divider: true },
       { label: "محترف العقود",      labelEn: "Contract Pro",    href: "/ai/contracts",     icon: "FileText" },
@@ -242,7 +242,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "دليل العملاء",   labelEn: "Clients",       href: "/dashboard/firm/clients",       icon: "AddressBook" },
       { label: "الاستشارات",     labelEn: "Consultations", href: "/dashboard/firm/consultations", icon: "ChatDots" },
       { label: "بوابة العميل",   labelEn: "Client Portal", href: "/dashboard/firm/client-portal", icon: "Globe", gateKey: "firm-client-portal" },
-      { label: "تخصيص البوابة",  labelEn: "Branding",      href: "/dashboard/firm/branding",      icon: "Palette", badge: "PRO", gateKey: "firm-branding" },
+      { label: "تخصيص البوابة",  labelEn: "Branding",      href: "/dashboard/firm/branding",      icon: "Palette", gateKey: "firm-branding" },
     ],
   },
   {
@@ -271,7 +271,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "فحص تعارض المصالح", labelEn: "Conflict Check", href: "/dashboard/firm/compliance/conflict",   icon: "WarningCircle", badge: "حرج" },
       { label: "اعتماد العملاء (KYC)",labelEn: "Client KYC",     href: "/dashboard/firm/compliance/kyc",        icon: "ShieldCheck" },
-      { label: "الجدران الصينية",    labelEn: "Chinese Walls",  href: "/dashboard/firm/compliance/walls",      icon: "Wall",          badge: "Enterprise", gateKey: "firm-chinese-walls" },
+      { label: "الجدران الصينية",    labelEn: "Chinese Walls",  href: "/dashboard/firm/compliance/walls",      icon: "Wall", gateKey: "firm-chinese-walls" },
       { label: "الفحص الشامل ٣٦٠°", labelEn: "Health Check 360°",  href: "/dashboard/firm/health-check",     icon: "MagnifyingGlass", badge: "جديد", gateKey: "firm-health-check" },
       { label: "الحوكمة المؤسسية",   labelEn: "Governance",         href: "/dashboard/firm/governance",            icon: "ShieldCheck", badge: "جديد", gateKey: "firm-governance" },
       { label: "مصفوفة الحوكمة",     labelEn: "Governance Matrix",  href: "/dashboard/firm/governance?tab=matrix",  icon: "ListChecks", gateKey: "firm-governance" },
@@ -292,7 +292,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     defaultOpen: true,
     items: [
       // ① الخطوة صفر — فهم الملف أولاً (مضاف S59)
-      { label: "ParaLegal",              labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",        icon: "Scan",         badge: "جديد" },
+      { label: "الموجز القضائي",              labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",        icon: "Scan",         badge: "جديد" },
       { label: "سؤال قانوني سريع",     labelEn: "Quick Legal Q&A",   href: "/ai/quick-answer",      icon: "ChatCircle",   badge: "جديد" },
       // ② الصياغة والتحرير
       { label: "الصائغ القانوني",       labelEn: "Legal Drafter",    href: "/ai/draft",            icon: "PencilSimple", divider: true },
@@ -300,7 +300,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "محترف العقود",           labelEn: "Contract Pro",     href: "/ai/contracts",        icon: "FileText" },
       { label: "مفاوض العقود",           labelEn: "Contract Negotiator", href: "/ai/contract-negotiator",  icon: "Handshake", badge: "جديد" },
       { label: "مراجع العقود",           labelEn: "Contract Reviewer",   href: "/ai/contract-reviewer",    icon: "MagnifyingGlass", badge: "جديد" },
-      { label: "الرأي الفصل",           labelEn: "Al-Ra'y Al-Fasl", href: "/ai/legal-opinion",    icon: "Lightbulb",    badge: "PRO" },
+      { label: "الرأي الفصل",           labelEn: "Al-Ra'y Al-Fasl", href: "/ai/legal-opinion",    icon: "Lightbulb" },
       { label: "منقح ناجز",             labelEn: "Najiz Optimizer",  href: "/ai/najiz-optimizer",  icon: "Broom",        badge: "جديد" },
       // ③ التحليل والاستراتيجية
       { label: "المحاكي الشامل للقضايا",labelEn: "Litigation Studio", href: "/ai/wargaming",        icon: "Scales",       divider: true, badge: "مُدمَج" },
@@ -419,7 +419,7 @@ export const FIRM_SIDEBAR_LITE: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: true,
     items: [
-      { label: "ParaLegal", labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief", icon: "Scan", badge: "جديد" },
+      { label: "الموجز القضائي", labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief", icon: "Scan", badge: "جديد" },
       { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A", href: "/ai/quick-answer", icon: "ChatCircle", badge: "جديد" },
       { label: "الصائغ القانوني", labelEn: "Legal Drafter", href: "/ai/draft", icon: "PencilSimple", divider: true },
       { label: "محترف العقود", labelEn: "Contract Pro", href: "/ai/contracts", icon: "FileText" },

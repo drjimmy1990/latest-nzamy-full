@@ -15,7 +15,7 @@ import { useTheme } from "@/components/ThemeProvider";
 
 const CaseGraphView = dynamic(
   () => import("@/app/dashboard/business/kanban/CaseGraphView"),
-  { ssr: false, loading: () => <div className="h-96 flex items-center justify-center text-sm opacity-40">جاري تحميل الجراف...</div> }
+  { ssr: false, loading: () => <div className="h-96 flex items-center justify-center text-sm opacity-40">جارٍ تحميل خريطة القضية...</div> }
 );
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ const TABS = [
   { id: "tasks",    label: "المهام",     icon: CheckSquare },
   { id: "docs",     label: "المستندات",  icon: FolderOpen  },
   { id: "notes",    label: "الملاحظات",  icon: ChatDots    },
-  { id: "graph",    label: "الجراف",     icon: Graph       },
+  { id: "graph",    label: "خريطة القضية",     icon: Graph       },
   { id: "chat",     label: "المراسلة",   icon: PaperPlaneTilt },
 ];
 

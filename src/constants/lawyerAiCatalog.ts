@@ -61,7 +61,7 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
   {
     permission: "ai:case-brief",
     href: "/ai/case-brief",
-    titleAr: "ParaLegal",
+    titleAr: "الموجز القضائي",
     titleEn: "ParaLegal Briefing",
     pointCost: 20,
     betaStatus: "priced",

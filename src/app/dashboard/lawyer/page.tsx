@@ -660,8 +660,8 @@ export default function LawyerDashboardPage() {
               <Graph size={16} weight="duotone" /> جراف القضايا 🕸️
             </Link>
           ) : (
-            <span className="inline-flex" title="لا توجد قضايا بعد لعرض الجراف">
-              <button type="button" disabled aria-label="لا توجد قضايا بعد لعرض الجراف"
+            <span className="inline-flex" title="لا توجد قضايا بعد لعرض خريطة القضية">
+              <button type="button" disabled aria-label="لا توجد قضايا بعد لعرض خريطة القضية"
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border opacity-50 cursor-not-allowed ${
                   isDark ? "border-white/[0.08] text-zinc-500" : "border-slate-200 text-slate-400"
                 }`}
