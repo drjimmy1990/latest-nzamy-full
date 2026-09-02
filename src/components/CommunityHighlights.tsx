@@ -5,143 +5,109 @@ import { memo, useState, useEffect } from "react";
 import {
   ChatTeardropDots,
   BookOpen,
-  ThumbsUp,
-  Eye,
+  Books,
   Gavel,
-  FileText,
   ArrowLeft,
   ArrowRight,
   UsersThree,
   TrendUp,
-  Star,
-  Clock,
 } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
 
-// ─── Types / Interfaces (جاهزة للـ API) ───────────────────────────────────────
+// ─── MOCK_QUESTIONS · MOCK_ARTICLES · MOCK_LAWYERS — ALL THREE DELETED ───────
+//
+// Owner decision, matrix row 76. This component sits on the PUBLIC landing page
+// (src/app/page.tsx:47), so it was the first evidence a visitor had that the
+// platform is used by anyone. None of it was true.
+//
+//   MOCK_LAWYERS    «أ. خالد المالكي — نظام العمل — ٤٫٩ — ٣١٢ استشارة» and two
+//                   more: three named lawyers with star ratings and
+//                   consultation counts, under a heading «أكثر المحامين
+//                   تفاعلاً», on a platform with ZERO published lawyers and
+//                   ZERO consultations. Row 76 says replace them with
+//                   SPECIALTIES, which is what the card below now shows —
+//                   practice areas are a real taxonomy; the people were not.
+//
+//   MOCK_QUESTIONS  three questions carrying «١٤٧ صوت · ٢٣ إجابة · ٣٬٨٤٠
+//                   مشاهدة», and hardcoded relative timestamps («منذ ساعتين»,
+//                   «منذ 5 ساعات») that never aged — so the community looked
+//                   equally busy at 3am on any day of any year, forever.
+//
+//   MOCK_ARTICLES   three articles with invented authors and job titles («أ.
+//                   فهد العتيبي — محامٍ متخصص في شؤون العمل»), invented read
+//                   counts (١٤٬٣٢٠) and all three dated مارس ٢٠٢٦ — presented
+//                   as the latest writing while being months stale on their own
+//                   face.
+//
+// The «المجتمع بالأرقام» tile went with them: «٤٬٨٢٠ سؤال» · «١٬٢٤٠ إجابة
+// موثوقة» · «٨٧ محامٍ نشط» · and «+٣٢٬٦٠٠ مستخدم» — that last one being the SAME
+// fabricated figure this wave already deleted from SocialProof.tsx, on the SAME
+// page, in a different component. Fixing one and leaving the other is exactly
+// the failure the shape rule exists to prevent, so both went in one pass.
+//
+// WHAT REPLACED THEM. The legal library is real and took months to build, so
+// the counters below are its size — the same floors LegalLibraryBanner.tsx
+// publishes, each re-checkable with one query, each written as a floor so it
+// stays true as the library grows rather than going stale the first time anyone
+// seeds a row:
+//
+//   select count(*) from library.laws;               -- 386
+//   select count(*) from library.articles;           -- 13,436
+//   select count(*) from library.principles;         -- 17,940
+//   select count(*) from library.decrees_circulars;  --  2,078
+//
+// The blog is ALSO real and has a CMS behind it, but pointing this rail at
+// published posts is a data fetch with an owner and a contract, not a hole to
+// plug with a literal — so the rail links to /blog and claims nothing about
+// what is in it. That wiring is the remaining half of row 76.
 
-export interface CommunityQuestion {
-  id: string;
-  title: string;
-  category: string;
-  categoryColor: string;
-  votes: number;
-  answers: number;
-  views: number;
-  timeAgo: string;
-}
+/** Practice areas, from the community taxonomy in src/constants/communityData.ts.
+ *  Labels only. The `count` field on those rows is invented and is NOT read here. */
+const PRACTICE_AREAS = [
+  { ar: "عمالي", en: "Labor" },
+  { ar: "تجاري", en: "Commercial" },
+  { ar: "مدني", en: "Civil" },
+  { ar: "جنائي", en: "Criminal" },
+  { ar: "أحوال شخصية", en: "Family" },
+  { ar: "عقاري", en: "Real Estate" },
+] as const;
 
-export interface BlogArticle {
-  id: string;
-  title: string;
-  author: string;
-  authorRole: string;
-  reads: number;
-  minutesRead: number;
-  category: string;
-  publishedAt: string;
-}
+/** The library's real size. See the note above for the query behind each. */
+const LIBRARY_STATS = [
+  { value: 386, suffix: "", ar: "نظاماً ولائحة", en: "Laws & Regulations" },
+  { value: 13000, suffix: "+", ar: "مادة نظامية", en: "Statute Articles" },
+  { value: 17000, suffix: "+", ar: "مبدأ قضائي", en: "Judicial Principles" },
+  { value: 2000, suffix: "+", ar: "قرار وتعميم", en: "Decrees & Circulars" },
+] as const;
 
-export interface TopLawyer {
-  id: string;
-  name: string;
-  specialty: string;
-  rating: number;
-  consultations: number;
-  avatarInitials: string;
-  avatarColor: string;
-}
+// ─── Stat Counter ─────────────────────────────────────────────────────────────
 
-// ─── Mock Data (يُستبدل بـ API لاحقاً) ────────────────────────────────────────
-
-const MOCK_QUESTIONS: CommunityQuestion[] = [
-  {
-    id: "q1",
-    title: "هل يحق لصاحب العمل خصم الإجازة السنوية من مكافأة نهاية الخدمة؟",
-    category: "عمالي",
-    categoryColor: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-    votes: 147,
-    answers: 23,
-    views: 3840,
-    timeAgo: "منذ ساعتين",
-  },
-  {
-    id: "q2",
-    title: "ما هي شروط فسخ العقد التجاري قبل انتهاء مدته وهل يُشترط التعويض؟",
-    category: "تجاري",
-    categoryColor: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-    votes: 98,
-    answers: 17,
-    views: 2210,
-    timeAgo: "منذ 5 ساعات",
-  },
-  {
-    id: "q3",
-    title: "كيف أتقدم بشكوى ضد محامٍ أخل بالتزاماته في قضيتي؟",
-    category: "إداري",
-    categoryColor: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-    votes: 76,
-    answers: 11,
-    views: 1590,
-    timeAgo: "منذ يوم",
-  },
-];
-
-const MOCK_ARTICLES: BlogArticle[] = [
-  {
-    id: "a1",
-    title: "دليل شامل: حقوقك القانونية عند الفصل التعسفي في ظل نظام العمل السعودي",
-    author: "أ. فهد العتيبي",
-    authorRole: "محامٍ متخصص في شؤون العمل",
-    reads: 14320,
-    minutesRead: 8,
-    category: "نظام العمل",
-    publishedAt: "28 مارس 2026",
-  },
-  {
-    id: "a2",
-    title: "عيوب العقود التجارية الأكثر شيوعاً وكيف تحمي نفسك منها؟",
-    author: "أ. منيرة القحطاني",
-    authorRole: "مستشارة قانونية للشركات",
-    reads: 9870,
-    minutesRead: 6,
-    category: "العقود التجارية",
-    publishedAt: "25 مارس 2026",
-  },
-  {
-    id: "a3",
-    title: "أبرز التعديلات على نظام الملكية الفكرية في المملكة لعام 2025",
-    author: "أ. سلطان الزهراني",
-    authorRole: "محامٍ ملكية فكرية",
-    reads: 7440,
-    minutesRead: 5,
-    category: "الملكية الفكرية",
-    publishedAt: "20 مارس 2026",
-  },
-];
-
-const MOCK_LAWYERS: TopLawyer[] = [
-  { id: "l1", name: "أ. خالد المالكي", specialty: "نظام العمل", rating: 4.9, consultations: 312, avatarInitials: "خم", avatarColor: "bg-[#0B3D2E]" },
-  { id: "l2", name: "أ. ريم الحربي", specialty: "العقود التجارية", rating: 4.8, consultations: 287, avatarInitials: "رح", avatarColor: "bg-[#1a5c44]" },
-  { id: "l3", name: "أ. نواف العنزي", specialty: "الأحوال الشخصية", rating: 4.8, consultations: 241, avatarInitials: "نع", avatarColor: "bg-[#C8A762]" },
-];
-
-// ─── Stat Counter (مرئية بشكل تدريجي) ────────────────────────────────────────
-
-const StatCounter = memo(function StatCounter({ value, suffix, label, isDark }: {
-  value: number; suffix: string; label: string; isDark: boolean;
+const StatCounter = memo(function StatCounter({
+  value, suffix, label, isDark, animate,
+}: {
+  value: number;
+  suffix: string;
+  label: string;
+  isDark: boolean;
+  /** Floors do not animate. A counter that spins up to «١٣٬٠٠٠» and stops reads
+   *  as a precise total, and a floor is not a total. Only the exact figure
+   *  (386) counts up. */
+  animate: boolean;
 }) {
-  const [count, setCount] = useState(0);
+  const [count, setCount] = useState(animate ? 0 : value);
+
   useEffect(() => {
+    if (!animate) return;
     let start = 0;
-    const step = Math.ceil(value / 60);
+    const step = Math.max(1, Math.ceil(value / 60));
     const timer = setInterval(() => {
       start += step;
       if (start >= value) { setCount(value); clearInterval(timer); }
       else setCount(start);
     }, 16);
     return () => clearInterval(timer);
-  }, [value]);
+  }, [value, animate]);
+
   return (
     <div className="text-center">
       <p className={`text-2xl font-extrabold font-mono ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
@@ -152,7 +118,7 @@ const StatCounter = memo(function StatCounter({ value, suffix, label, isDark }: 
   );
 });
 
-// ─── Main Component ────────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CommunityHighlights() {
   const { lang, theme } = useTheme();
@@ -160,6 +126,10 @@ export default function CommunityHighlights() {
   const isDark = theme === "dark";
 
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
+
+  const card = isDark
+    ? "border-white/10 bg-dark-card"
+    : "border-slate-200/60 bg-white shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)]";
 
   return (
     <section id="community" className="relative overflow-hidden py-24 md:py-32">
@@ -180,28 +150,30 @@ export default function CommunityHighlights() {
               {isAr ? "مجتمع نظامي" : "Nezamy Community"}
             </span>
           </div>
+          {/* The heading used to read «الأكثر تفاعلاً في المجتمع» over invented
+              engagement, and the sub-line promised questions «مرتبة حسب التفاعل
+              الحقيقي» — a claim of authenticity printed directly above the mock
+              array. Both now describe what is actually on the page. */}
           <h2 className={`font-brand text-3xl font-extrabold tracking-tight md:text-5xl ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-            {isAr ? "الأكثر تفاعلاً في المجتمع" : "Most Engaging in Community"}
+            {isAr ? "المجتمع والمكتبة القانونية" : "Community & Legal Library"}
           </h2>
           <p className={`mt-4 max-w-[55ch] text-base ${isDark ? "text-gray-400" : "text-gray-500"}`}>
             {isAr
-              ? "أبرز الأسئلة والمدونات القانونية مرتبة حسب التفاعل الحقيقي من مجتمع نظامي"
-              : "Top legal questions and articles ranked by real community engagement"}
+              ? "اسأل مجتمع نظامي في تخصصك، وابحث في الأنظمة واللوائح ومَوادّها بالنص الكامل."
+              : "Ask the Nezamy community in your practice area, and search Saudi laws, regulations and their articles in full text."}
           </p>
         </motion.div>
 
         {/* Bento Grid */}
-        <div className="grid gap-5 lg:grid-cols-3 lg:grid-rows-2">
+        <div className="grid gap-5 lg:grid-cols-3">
 
-          {/* ── أبرز الأسئلة (يأخذ عمودين وصفين) ── */}
+          {/* ── اسأل المجتمع ── */}
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ type: "spring", stiffness: 80, damping: 20, delay: 0.05 }}
-            className={`lg:col-span-2 lg:row-span-2 rounded-[2.5rem] border p-5 sm:p-8 md:p-10 ${
-              isDark ? "border-white/10 bg-dark-card" : "border-slate-200/60 bg-white shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)]"
-            }`}
+            className={`lg:col-span-2 rounded-[2.5rem] border p-5 sm:p-8 md:p-10 ${card}`}
           >
             <div className="flex items-center justify-between mb-7">
               <div className="flex items-center gap-3">
@@ -210,10 +182,10 @@ export default function CommunityHighlights() {
                 </span>
                 <div>
                   <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-                    {isAr ? "أبرز أسئلة المجتمع" : "Top Community Questions"}
+                    {isAr ? "اسأل المجتمع القانوني" : "Ask the Legal Community"}
                   </h3>
                   <p className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                    {isAr ? "مرتبة بالأعلى تفاعلاً" : "Ranked by engagement"}
+                    {isAr ? "سؤالك يبقى منشوراً ليستفيد منه غيرك" : "Your question stays public so others benefit"}
                   </p>
                 </div>
               </div>
@@ -221,215 +193,133 @@ export default function CommunityHighlights() {
                 href="/community"
                 className={`flex items-center gap-1.5 text-xs font-semibold transition-all hover:gap-2.5 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}
               >
-                {isAr ? "كل الأسئلة" : "All Questions"}
+                {isAr ? "تصفّح المجتمع" : "Browse Community"}
                 <ArrowIcon size={14} weight="bold" />
               </a>
             </div>
 
-            <div className="flex flex-col gap-4">
-              {MOCK_QUESTIONS.map((q, i) => (
-                <motion.a
-                  key={q.id}
-                  href={`/community/q/${q.id}`}
-                  initial={{ opacity: 0, x: isAr ? -16 : 16 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.1 + i * 0.1, type: "spring", stiffness: 100, damping: 20 }}
-                  whileHover={{ x: isAr ? -4 : 4 }}
-                  className={`group flex items-start gap-3 rounded-2xl border p-5 transition-all ${
+            <div className="flex flex-wrap gap-2.5">
+              {PRACTICE_AREAS.map((area) => (
+                <a
+                  key={area.en}
+                  href="/community"
+                  className={`rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all ${
                     isDark
-                      ? "border-white/10 bg-white/5 hover:bg-white/10"
-                      : "border-slate-100 bg-slate-50/60 hover:bg-white hover:shadow-sm hover:border-[#0B3D2E]/20"
+                      ? "border-white/10 bg-white/[0.03] text-gray-300 hover:border-emerald-400/40 hover:text-white"
+                      : "border-slate-200 bg-slate-50/60 text-gray-700 hover:border-[#0B3D2E]/30 hover:bg-white"
                   }`}
                 >
-                  {/* Rank */}
-                  <span className={`shrink-0 mt-0.5 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold font-mono ${
-                    i === 0
-                      ? "bg-[#C8A762] text-white"
-                      : isDark ? "bg-white/10 text-gray-300" : "bg-slate-200 text-gray-600"
-                  }`}>
-                    {i + 1}
-                  </span>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-semibold leading-snug ${isDark ? "text-gray-200 group-hover:text-white" : "text-gray-800 group-hover:text-[#0B3D2E]"} transition-colors`}>
-                      {q.title}
-                    </p>
-                    <div className="flex items-center gap-2 sm:gap-3 mt-2 flex-wrap">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${q.categoryColor}`}>
-                        {q.category}
-                      </span>
-                      <span className={`flex items-center gap-1 text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                        <ThumbsUp size={12} /> {q.votes.toLocaleString("ar-EG")}
-                      </span>
-                      <span className={`flex items-center gap-1 text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                        <ChatTeardropDots size={12} /> {q.answers}
-                      </span>
-                      <span className={`flex items-center gap-1 text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                        <Eye size={12} /> {q.views.toLocaleString("ar-EG")}
-                      </span>
-                      <span className={`flex items-center gap-1 text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                        <Clock size={12} /> {q.timeAgo}
-                      </span>
-                    </div>
-                  </div>
-                </motion.a>
+                  {isAr ? area.ar : area.en}
+                </a>
               ))}
             </div>
 
-            {/* CTA */}
-            <motion.a
-              href="/community/ask"
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-              className="mt-6 flex items-center justify-center gap-2 w-full py-3.5 min-h-[44px] rounded-2xl border-2 border-dashed border-[#0B3D2E]/20 text-sm font-semibold text-[#0B3D2E] dark:text-emerald-400 dark:border-emerald-500/20 hover:border-[#0B3D2E]/40 dark:hover:border-emerald-500/40 transition-all"
+            <a
+              href="/community"
+              className={`mt-7 inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold transition-colors ${
+                isDark ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15" : "bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328]"
+              }`}
             >
-              <ChatTeardropDots size={16} weight="fill" />
-              {isAr ? "اطرح سؤالك على المجتمع" : "Ask the Community"}
-            </motion.a>
+              {isAr ? "اطرح سؤالك" : "Ask a Question"}
+              <ArrowIcon size={14} weight="bold" />
+            </a>
           </motion.div>
 
-          {/* ── إحصائيات سريعة ── */}
+          {/* ── المكتبة بالأرقام ── */}
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ type: "spring", stiffness: 80, damping: 20, delay: 0.1 }}
-            className={`rounded-[2.5rem] border p-5 sm:p-8 md:p-10 ${
-              isDark ? "border-white/10 bg-dark-card" : "border-slate-200/60 bg-white shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)]"
-            }`}
+            className={`rounded-[2.5rem] border p-5 sm:p-8 md:p-10 ${card}`}
           >
             <div className="flex items-center gap-2 mb-6">
               <TrendUp size={18} weight="fill" className="text-[#C8A762]" />
               <h3 className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-700"}`}>
-                {isAr ? "المجتمع بالأرقام" : "Community in Numbers"}
+                {isAr ? "المكتبة بالأرقام" : "The Library in Numbers"}
               </h3>
             </div>
             <div className="grid grid-cols-2 gap-4 sm:gap-6">
-              <StatCounter value={4820} suffix="+" label={isAr ? "سؤال في المجتمع" : "Community Questions"} isDark={isDark} />
-              <StatCounter value={1240} suffix="+" label={isAr ? "إجابة موثوقة" : "Verified Answers"} isDark={isDark} />
-              <StatCounter value={87} suffix="" label={isAr ? "محامٍ نشط" : "Active Lawyers"} isDark={isDark} />
-              <StatCounter value={32600} suffix="+" label={isAr ? "مستخدم" : "Users"} isDark={isDark} />
+              {LIBRARY_STATS.map((s) => (
+                <StatCounter
+                  key={s.en}
+                  value={s.value}
+                  suffix={s.suffix}
+                  label={isAr ? s.ar : s.en}
+                  isDark={isDark}
+                  animate={s.suffix === ""}
+                />
+              ))}
             </div>
+            <a
+              href="/laws"
+              className={`mt-6 inline-flex items-center gap-1.5 text-xs font-semibold transition-all hover:gap-2.5 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}
+            >
+              {isAr ? "تصفّح المكتبة" : "Browse the Library"}
+              <ArrowIcon size={14} weight="bold" />
+            </a>
           </motion.div>
 
-          {/* ── أكثر المحامين تفاعلاً ── */}
+          {/* ── التخصصات ── */}
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ type: "spring", stiffness: 80, damping: 20, delay: 0.15 }}
-            className={`rounded-[2.5rem] border p-5 sm:p-8 md:p-10 ${
-              isDark ? "border-white/10 bg-dark-card" : "border-slate-200/60 bg-white shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)]"
-            }`}
+            className={`lg:col-span-2 rounded-[2.5rem] border p-5 sm:p-8 md:p-10 ${card}`}
           >
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-2">
-                <Gavel size={18} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400" />
-                <h3 className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-700"}`}>
-                  {isAr ? "أكثر المحامين تفاعلاً" : "Top Lawyers"}
-                </h3>
-              </div>
-              <a href="/lawyers" className={`text-xs font-semibold ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>
-                {isAr ? "الكل" : "All"}
-              </a>
-            </div>
-            <div className="flex flex-col gap-4">
-              {MOCK_LAWYERS.map((l, i) => (
-                <div key={l.id} className="flex items-center gap-3">
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${l.avatarColor}`}>
-                    {l.avatarInitials}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-semibold truncate ${isDark ? "text-gray-200" : "text-gray-800"}`}>{l.name}</p>
-                    <p className={`text-xs truncate ${isDark ? "text-gray-500" : "text-gray-400"}`}>{l.specialty}</p>
-                  </div>
-                  <div className="text-end shrink-0">
-                    <p className="text-xs font-bold text-[#C8A762] flex items-center gap-0.5 justify-end">
-                      <Star size={11} weight="fill" /> {l.rating}
-                    </p>
-                    <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                      {l.consultations} {isAr ? "استشارة" : "consults"}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        </div>
-
-        {/* ── أبرز المدونات (Row منفصلة) ── */}
-        <div className="mt-5 grid gap-5 md:grid-cols-3">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="md:col-span-3 flex items-center justify-between mb-1"
-          >
-            <div className="flex items-center gap-2">
-              <BookOpen size={20} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400" />
-              <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-                {isAr ? "أبرز المدونات القانونية" : "Top Legal Articles"}
+            <div className="flex items-center gap-2 mb-5">
+              <Gavel size={18} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400" />
+              <h3 className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-700"}`}>
+                {isAr ? "مجالات الممارسة" : "Practice Areas"}
               </h3>
             </div>
+            <p className={`text-sm leading-relaxed ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+              {isAr
+                ? "نظامي يغطي هذه المجالات في الاستشارات وصياغة العقود والمذكرات. سجّل واطلب في المجال الذي يخصّك."
+                : "Nezamy covers these areas across consultations, contract drafting and legal memoranda. Sign up and request in the area you need."}
+            </p>
             <a
-              href="/blog"
-              className={`flex items-center gap-1.5 text-xs font-semibold transition-all hover:gap-2.5 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}
+              href="/services"
+              className={`mt-6 inline-flex items-center gap-1.5 text-xs font-semibold transition-all hover:gap-2.5 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}
             >
-              {isAr ? "كل المقالات" : "All Articles"}
+              {isAr ? "كل الخدمات" : "All Services"}
               <ArrowIcon size={14} weight="bold" />
             </a>
           </motion.div>
 
-          {MOCK_ARTICLES.map((article, i) => (
-            <motion.a
-              key={article.id}
-              href={`/blog/${article.id}`}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ type: "spring", stiffness: 100, damping: 20, delay: i * 0.1 }}
-              whileHover={{ y: -4 }}
-              className={`group rounded-[2rem] border p-5 sm:p-8 md:p-10 flex flex-col gap-4 transition-all ${
-                isDark
-                  ? "border-white/10 bg-dark-card hover:bg-white/5"
-                  : "border-slate-200/60 bg-white hover:shadow-lg hover:border-[#0B3D2E]/20"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
-                  isDark ? "bg-[#0B3D2E]/30 text-emerald-400" : "bg-[#0B3D2E]/8 text-[#0B3D2E]"
-                }`}>
-                  {article.category}
-                </span>
-                <span className={`flex items-center gap-1 text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                  <Clock size={11} /> {article.minutesRead} {isAr ? "د" : "min"}
-                </span>
+          {/* ── المدونة ── */}
+          <motion.a
+            href="/blog"
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ type: "spring", stiffness: 80, damping: 20, delay: 0.2 }}
+            whileHover={{ y: -4 }}
+            className={`group rounded-[2.5rem] border p-5 sm:p-8 md:p-10 flex flex-col justify-between transition-all ${card} ${
+              isDark ? "hover:bg-white/5" : "hover:border-[#0B3D2E]/20 hover:shadow-lg"
+            }`}
+          >
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <BookOpen size={20} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400" />
+                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
+                  {isAr ? "المدونة القانونية" : "Legal Blog"}
+                </h3>
               </div>
+              <p className={`text-sm leading-relaxed ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                {isAr
+                  ? "مقالات يحرّرها فريق نظامي القانوني في الأنظمة السعودية وتطبيقاتها العملية."
+                  : "Articles written by the Nezamy legal team on Saudi law and how it applies in practice."}
+              </p>
+            </div>
+            <span className={`mt-6 inline-flex items-center gap-1.5 text-xs font-semibold transition-all group-hover:gap-2.5 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>
+              <Books size={14} weight="fill" />
+              {isAr ? "اقرأ المقالات" : "Read the Articles"}
+              <ArrowIcon size={14} weight="bold" />
+            </span>
+          </motion.a>
 
-              <h4 className={`text-sm font-bold leading-snug ${
-                isDark ? "text-gray-200 group-hover:text-white" : "text-gray-800 group-hover:text-[#0B3D2E]"
-              } transition-colors`}>
-                {article.title}
-              </h4>
-
-              <div className="mt-auto flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold text-white bg-[#0B3D2E]`}>
-                    {article.author.slice(3, 5)}
-                  </span>
-                  <div>
-                    <p className={`text-xs font-semibold ${isDark ? "text-gray-300" : "text-gray-700"}`}>{article.author}</p>
-                    <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-400"}`}>{article.publishedAt}</p>
-                  </div>
-                </div>
-                <span className={`flex items-center gap-1 text-xs font-mono ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                  <Eye size={12} /> {article.reads.toLocaleString("ar-EG")}
-                </span>
-              </div>
-            </motion.a>
-          ))}
         </div>
       </div>
     </section>
