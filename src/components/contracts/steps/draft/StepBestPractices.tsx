@@ -72,7 +72,7 @@ export function StepBestPractices({
             </motion.button>
             <button onClick={() => setSkipBP(true)}
               className={`text-[12px] px-4 py-2.5 rounded-xl border ${isDark ? "border-white/[0.07] text-zinc-500 hover:text-zinc-300" : "border-zinc-200 text-zinc-400 hover:text-zinc-600"}`}>
-              تخطى
+              تخطَّ
             </button>
           </div>
         </div>

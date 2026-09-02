@@ -123,8 +123,15 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: serviceWorkerRegisterScript }} />
       </head>
       <body className="antialiased" suppressHydrationWarning>
+        {/* «تخطَّ», not «تخطى».
+            This is an imperative addressed to the reader, and the imperative of
+            «تخطّى» drops the final alif: «تخطَّ». «تخطى» is the past tense — the
+            link was telling the user that somebody skipped, in the one string
+            a screen-reader announces first on every page in the product.
+            It is also the string the owner's FOUC screenshot (shot 17) rendered
+            unstyled and therefore visible, which is how it got read at all. */}
         <a href="#main-content" className="skip-to-content">
-          تخطى إلى المحتوى الرئيسي
+          تخطَّ إلى المحتوى الرئيسي
         </a>
         <ThemeProvider>
           <main id="main-content">{children}</main>

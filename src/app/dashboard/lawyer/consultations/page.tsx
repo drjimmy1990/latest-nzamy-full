@@ -939,7 +939,14 @@ export default function ConsultationsPage() {
           <div className={`${card} p-8 text-center`}>
             <CalendarCheck size={28} weight="duotone" className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
             <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-              {consults.length === 0 ? "لم تصلك استشارات بعد" : "لا توجد استشارات مطابقة"}
+              {/* «لم تصلك استشارات بعد» described only INBOUND consultations,
+                  under a page whose primary button is «+ جدولة استشارة» — the
+                  lawyer scheduling one himself. Two directions on one screen,
+                  and the empty state acknowledged only one of them, so a lawyer
+                  who had scheduled nothing was told nothing had arrived.
+                  Which direction this page is FOR is a product question and is
+                  not answered here; the copy simply stops asserting an answer. */}
+              {consults.length === 0 ? "لا توجد استشارات بعد" : "لا توجد استشارات مطابقة"}
             </p>
           </div>
         ) : filtered.map(c => (

@@ -612,7 +612,12 @@ export default function LawyerDashboardPage() {
             className={`text-2xl font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`}
             style={{ fontFamily: "var(--font-brand)" }}
           >
-            مرحباً، {name}
+            {/* The comma belongs to the name, not to the greeting.
+                With `name` empty this printed «مرحباً،» — a salutation with a
+                trailing comma and nothing after it, which is what shot 08
+                caught beside a blank avatar. Both are the same un-hydrated
+                moment; neither is a state worth punctuating. */}
+            {name?.trim() ? `مرحباً، ${name.trim()}` : "مرحباً"}
           </motion.h1>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
             نظرة سريعة على أعمالك وقضاياك اليوم

@@ -342,6 +342,14 @@ export default function ClientDashboard() {
   // is worse than silence.
   const ACTIVE_PHRASE = activeCasesPhraseAr(ACTIVE_TOTAL);
 
+  /**
+   * The account's first name, or empty — never a substitute.
+   *
+   * `.trim()` before the split so a name that is only whitespace does not
+   * produce an empty first token that still reads as truthy downstream.
+   */
+  const firstName = (user.name ?? "").trim().split(/\s+/)[0] ?? "";
+
   // Three real files at most. itemsOf() answers [] on every branch but
   // 'ready', so the card cannot list rows it did not read.
   const docsView = listViewState(docsLoading, docsRead);
@@ -525,7 +533,14 @@ export default function ClientDashboard() {
             <div className="flex items-start gap-3 mb-4">
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-2">
-                  أهلاً، {user.name?.split(" ")[0] || "خالد"}
+                  {/* «خالد» used to be the fallback here — a literal, so every
+                      client whose name had not loaded was greeted by SOMEBODY
+                      ELSE'S first name. That is what shot 18 caught: the auditor
+                      read «خالد» as the account's name and noted that the
+                      sidebar disagreed with it. The sidebar was right; the
+                      greeting was inventing a person.
+                      A name we do not have is not a name to guess. */}
+                  {firstName ? `أهلاً، ${firstName}` : "أهلاً بك"}
                   <Sparkle size={26} weight="fill" className="text-[#C8A762]" />
                 </h1>
                 {/* Derived, and absent when there is nothing to say. This line
@@ -547,8 +562,21 @@ export default function ClientDashboard() {
                   invented. Removed rather than left permanently dark. */}
             </div>
 
+            {/* HALF-FIX REPAIRED. Ten lines above, the note on ACTIVE_PHRASE
+                explains that «يتابعهما محاموك» was deleted because
+                `service_requests.assigned_to` is routinely null, so nothing in
+                the row supports a claim that a lawyer is acting on it — and
+                then this paragraph went on saying «التواصل مع محاميك» anyway,
+                plus «قضيتك في أيدٍ أمينة», which assumes a case exists at all.
+                Printed to every client, including one who has just registered
+                and ordered nothing.
+                It now describes what the dashboard offers rather than what the
+                account supposedly has, and the case half appears only when
+                ACTIVE_PHRASE proves there is a case to talk about. */}
             <p className="text-emerald-100/60 text-sm mb-5 max-w-md leading-relaxed">
-              قضيتك في أيدٍ أمينة — يمكنك متابعة مراحل القضية، التواصل مع محاميك، وحجز استشارة جديدة بنقرة واحدة.
+              {ACTIVE_PHRASE
+                ? "تابع مراحل طلباتك، واطلب خدمة قانونية جديدة، واحجز استشارة بنقرة واحدة."
+                : "اطلب خدمة قانونية أو احجز استشارة، وتابع كل طلباتك من هنا."}
             </p>
 
             <div className="flex flex-wrap gap-3">
