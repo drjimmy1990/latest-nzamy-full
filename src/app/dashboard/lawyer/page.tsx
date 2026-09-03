@@ -1087,9 +1087,10 @@ export default function LawyerDashboardPage() {
             <h2 className={`text-sm font-bold flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
               <Flag size={15} className="text-red-500" weight="fill" /> مواعيد حرجة
             </h2>
+            <Link href="/dashboard/lawyer/deadlines" className="text-xs text-royal hover:underline">رادار المهل</Link>
           </div>
           <div className="space-y-2">
-            {sectionFailed("hearings") ? readFailedBlock() : criticalDeadlines.length === 0 ? (
+            {sectionFailed("hearings") || sectionFailed("deadlines") ? readFailedBlock() : criticalDeadlines.length === 0 ? (
               <div className={`text-center py-6 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                 <p className="text-xs">لا توجد مواعيد حرجة</p>
               </div>

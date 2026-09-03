@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { kindToType, urgencyFromDb } from "@/lib/services/hearingVocabulary";
+import { addDays, isoDate, parseIsoDate } from "@/lib/services/deadlineEngine";
 
 /**
  * GET /api/v1/lawyer/dashboard/summary
@@ -156,13 +157,20 @@ export async function GET() {
 
     const uid = user.id;
     const today = saudiToday();
+    // `today` is always a well-formed "YYYY-MM-DD" — saudiToday() builds it
+    // from Intl.DateTimeFormat, never from user input — so this parse cannot
+    // fail.
+    const todayDate = parseIsoDate(today)!;
+    // Window for the deadlines read below: "the next 14 days", with no lower
+    // bound so an already-overdue deadline (due_date < today) is fetched too.
+    const deadlineWindowEnd = isoDate(addDays(todayDate, 14));
 
     // Sections that could not be read. Empty = everything below is a real
     // statement about this lawyer's practice.
     const degraded: string[] = [];
 
-    // ── Round 1: the five independent reads ──────────────────────────────────
-    const [workspace, pendingConsultations, recentActivity, hearingRows, taskRows] = await Promise.all([
+    // ── Round 1: the six independent reads ───────────────────────────────────
+    const [workspace, pendingConsultations, recentActivity, hearingRows, taskRows, deadlineRows] = await Promise.all([
       // 1. The lawyer's whole workspace, unfiltered by status: one read that
       //    feeds cases only now (hearings and tasks both moved to their own
       //    tables — queries 4 and 5, below). `assigned_to` is the predicate
@@ -343,6 +351,37 @@ export async function GET() {
           console.error("[lawyer/dashboard/summary] tasks read threw:", err);
           return null;
         }),
+
+      // 6. Critical deadlines — public.deadlines (Phase 5, 2026-09-04),
+      //    folded into the same «مواعيد حرجة» widget the hearings-derived
+      //    rows below already populate. `.lte("due_date", …)` with NO lower
+      //    bound so an already-overdue deadline is fetched too, not just the
+      //    ones still ahead. Own read, independent of `hearingRows`: a
+      //    failure here must not blank the hearings-derived critical
+      //    deadlines already computed, and vice versa.
+      Promise.resolve(
+        supabase
+          .from("deadlines")
+          .select("id, title, due_date, case_request_id")
+          .eq("owner_user_id", uid)
+          .eq("status", "open")
+          .lte("due_date", deadlineWindowEnd)
+          .order("due_date", { ascending: true })
+          .limit(10),
+      )
+        .then(({ data, error }) => {
+          if (error) {
+            console.error("[lawyer/dashboard/summary] deadlines read failed:", error.message);
+            return null;
+          }
+          return (data ?? []) as {
+            id: string; title: string; due_date: string; case_request_id: string | null;
+          }[];
+        })
+        .catch((err) => {
+          console.error("[lawyer/dashboard/summary] deadlines read threw:", err);
+          return null;
+        }),
     ]);
 
     if (pendingConsultations === null) degraded.push("pendingConsultations");
@@ -380,6 +419,54 @@ export async function GET() {
       const critical = hearings.filter((h) => h.type === "deadline" || h.urgency === "critical");
       criticalDeadlinesCount = critical.length;
       criticalDeadlines = critical.slice(0, 4);
+    }
+
+    // ── Deadlines: public.deadlines rows folded into the same widget ────────
+    // Independent of the hearings read above — branches on `deadlineRows` on
+    // its own, so one failing never zeroes what the other already found.
+    if (deadlineRows === null) {
+      degraded.push("deadlines");
+    } else if (deadlineRows.length > 0) {
+      const caseIds = Array.from(
+        new Set(deadlineRows.map((r) => r.case_request_id).filter((id): id is string => !!id)),
+      );
+      const caseTitles = new Map<string, string>();
+      if (caseIds.length > 0) {
+        const { data: caseRows, error: caseError } = await supabase
+          .from("service_requests")
+          .select("id, title")
+          .in("id", caseIds);
+        if (caseError) {
+          // A title-lookup failure degrades to "no case name" for these
+          // rows, not to dropping the deadlines themselves — the due date is
+          // the useful fact here, and it is still known.
+          console.error("[lawyer/dashboard/summary] deadline case-title lookup failed:", caseError.message);
+        } else {
+          for (const c of caseRows ?? []) {
+            if (c.title) caseTitles.set(c.id, c.title);
+          }
+        }
+      }
+
+      // Critical = overdue, or due within 3 days. The read above fetches a
+      // wider 14-day window only so nothing near the edge is missed by a
+      // day-boundary race — it does not relax what counts as critical here.
+      const cutoff3 = isoDate(addDays(todayDate, 3));
+      const deadlineItems: UpcomingHearingRow[] = deadlineRows.map((row) => ({
+        id: row.id,
+        title: row.title || "موعد بدون عنوان",
+        date: row.due_date,
+        time: null,
+        type: "deadline",
+        urgency: row.due_date <= cutoff3 ? "critical" : "normal",
+        location: null,
+        caseName: row.case_request_id ? caseTitles.get(row.case_request_id) ?? null : null,
+      }));
+
+      criticalDeadlinesCount = (criticalDeadlinesCount ?? 0) + deadlineItems.length;
+      criticalDeadlines = [...(criticalDeadlines ?? []), ...deadlineItems]
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(0, 4);
     }
 
     // ── Tasks: also its own read now, independent of the workspace query ────
