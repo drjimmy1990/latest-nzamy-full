@@ -23,6 +23,17 @@ export interface LawyerSubtask {
   done: boolean;
 }
 
+/**
+ * The four values `public.tasks.status` accepts (CHECK constraint, migration
+ * 20260903_phase1_case_tables.sql) — and exactly what PATCH /api/v1/lawyer/
+ * tasks validates against. A union, not `string`, on purpose: the standalone
+ * tasks page kept a leftover mapper to the OLD service_requests enum
+ * (pending_assignment/assigned/completed/cancelled) after the Phase 1 rewrite,
+ * and with a `string` parameter tsc had no way to notice that every status
+ * change on that page was being refused with a 400. Now it does.
+ */
+export type LawyerTaskStatus = "todo" | "in_progress" | "done" | "archived";
+
 export interface LawyerTask {
   id: string;
   title: string;
@@ -123,7 +134,7 @@ export async function createLawyerTask(input: CreateLawyerTaskInput): Promise<La
   return res.data;
 }
 
-export async function updateLawyerTaskStatus(taskId: string, status: string): Promise<boolean> {
+export async function updateLawyerTaskStatus(taskId: string, status: LawyerTaskStatus): Promise<boolean> {
   if (!isSupabaseMode) return false;
 
   try {

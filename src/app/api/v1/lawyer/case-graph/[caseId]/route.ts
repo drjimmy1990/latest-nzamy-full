@@ -38,7 +38,13 @@ export async function GET(
   context: { params: Promise<{ caseId: string }> },
 ) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    // "corporate" is the ONLY user_type routeAccess.ts lets into
+    // /dashboard/business, and that dashboard's case file mounts this same
+    // graph. Without it here every corporate user got a 403 on load and the
+    // canvas sat at «تعذّرت القراءة — الحفظ متوقّف» for its one intended
+    // audience. RLS is unchanged: the owner arm of can_access_case_row already
+    // admits a corporate user to rows they wrote themselves.
+    const auth = await assertRole(["lawyer", "firm", "corporate"]);
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { caseId } = await context.params;
@@ -95,7 +101,13 @@ export async function PUT(
   context: { params: Promise<{ caseId: string }> },
 ) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    // "corporate" is the ONLY user_type routeAccess.ts lets into
+    // /dashboard/business, and that dashboard's case file mounts this same
+    // graph. Without it here every corporate user got a 403 on load and the
+    // canvas sat at «تعذّرت القراءة — الحفظ متوقّف» for its one intended
+    // audience. RLS is unchanged: the owner arm of can_access_case_row already
+    // admits a corporate user to rows they wrote themselves.
+    const auth = await assertRole(["lawyer", "firm", "corporate"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { caseId } = await context.params;

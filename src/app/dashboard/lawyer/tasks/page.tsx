@@ -29,14 +29,16 @@ import PomodoroPanel from "./_components/PomodoroPanel";
 import AddTaskModal from "../_components/AddTaskModal";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
-// ─── Status mapping: UI TaskStatus ↔ DB service_requests.status enum ─────────
-// todo → pending_assignment, in_progress → assigned, done → completed, archived → cancelled
-const taskStatusToDb = (s: TaskStatus): string =>
-  s === "todo" ? "pending_assignment"
-  : s === "in_progress" ? "assigned"
-  : s === "done" ? "completed"
-  : s === "archived" ? "cancelled"
-  : "pending_assignment";
+// No status translation here any more. Until 2026-09-03 this file carried a
+// `taskStatusToDb` mapper to the OLD service_requests enum (todo →
+// pending_assignment, done → completed, …). The Phase 1 tasks rewrite made
+// `public.tasks.status` the UI vocabulary itself and deleted the shared mapper
+// — but this page-local copy survived, so every status change on this page
+// (mark done, archive, restore, the dropdown, drag between columns) was sent
+// as the old word and refused by the route with a 400, rolled back, and shown
+// as «تعذّر تحديث حالة المهمة». Caught by an independent re-verification the
+// same day, before deploy. `updateLawyerTaskStatus` now takes the union type,
+// so a wrong word here is a type error, not a runtime 400.
 
 // How many of the lawyer's tasks to read for the board. The route defaults to
 // the same 200 server-side; passed explicitly so a change to one default
@@ -251,7 +253,7 @@ export default function LawyerTasksPage() {
       return prev.map(t => (t.id === id ? { ...t, status: newStatus } : t));
     });
     // Persist the toggle (optimistic; rollback on failure). Map to DB enum.
-    updateLawyerTaskStatus(id, taskStatusToDb(newStatus)).then(ok => {
+    updateLawyerTaskStatus(id, newStatus).then(ok => {
       if (ok || !previous) return;
       const revertTo: TaskStatus = previous;
       setTasks(prev => prev.map(t => (t.id === id ? { ...t, status: revertTo } : t)));
@@ -277,7 +279,7 @@ export default function LawyerTasksPage() {
       removed = removedAt >= 0 ? prev[removedAt] : undefined;
       return prev.filter(t => t.id !== id);
     });
-    updateLawyerTaskStatus(id, taskStatusToDb("archived")).then(ok => {
+    updateLawyerTaskStatus(id, "archived").then(ok => {
       if (ok || !removed) return;
       const restored: Task = removed;
       const at = removedAt;
@@ -298,7 +300,7 @@ export default function LawyerTasksPage() {
       previous = prev.find(t => t.id === id)?.status;
       return prev.map(t => t.id === id ? { ...t, status: "archived" } : t);
     });
-    updateLawyerTaskStatus(id, taskStatusToDb("archived")).then(ok => {
+    updateLawyerTaskStatus(id, "archived").then(ok => {
       if (ok || !previous) return;
       const revertTo: TaskStatus = previous;
       setTasks(prev => prev.map(t => t.id === id ? { ...t, status: revertTo } : t));
@@ -311,7 +313,7 @@ export default function LawyerTasksPage() {
       previous = prev.find(t => t.id === id)?.status;
       return prev.map(t => t.id === id ? { ...t, status: "todo" } : t);
     });
-    updateLawyerTaskStatus(id, taskStatusToDb("todo")).then(ok => {
+    updateLawyerTaskStatus(id, "todo").then(ok => {
       if (ok || !previous) return;
       const revertTo: TaskStatus = previous;
       setTasks(prev => prev.map(t => t.id === id ? { ...t, status: revertTo } : t));
@@ -325,7 +327,7 @@ export default function LawyerTasksPage() {
       return prev.map(t => t.id === id ? { ...t, status: s } : t);
     });
     // Persist status change to backend (mapped to DB enum)
-    updateLawyerTaskStatus(id, taskStatusToDb(s)).then(ok => {
+    updateLawyerTaskStatus(id, s).then(ok => {
       if (ok || !previous) return;
       // Revert to the status the task actually had before this click.
       const revertTo: TaskStatus = previous;
@@ -424,7 +426,7 @@ export default function LawyerTasksPage() {
     // «مكتملة» against a failing PATCH stayed there, the header count moved, and
     // the task was still «معلقة» after a reload. Check the resolved boolean, the
     // way the other seven handlers in this file already do.
-    updateLawyerTaskStatus(dragIdRef, taskStatusToDb(targetStatus)).then(ok => {
+    updateLawyerTaskStatus(dragIdRef, targetStatus).then(ok => {
       if (ok || !original) return;
       const revertStatus: TaskStatus = original;
       setTasks(prev => prev.map(t => t.id === dragIdRef ? { ...t, status: revertStatus } : t));

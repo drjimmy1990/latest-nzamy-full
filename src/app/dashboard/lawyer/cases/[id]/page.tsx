@@ -45,6 +45,7 @@ import {
   updateLawyerTaskSubtasks,
   type LawyerTask,
   type LawyerSubtask,
+  type LawyerTaskStatus,
 } from "@/lib/services/lawyerTasksService";
 
 /**
@@ -146,7 +147,7 @@ function toPageTaskStatus(apiStatus: string): TaskStatus {
   if (apiStatus === "done") return "done";
   return "todo";
 }
-const PAGE_TO_API_STATUS: Record<TaskStatus, string> = {
+const PAGE_TO_API_STATUS: Record<TaskStatus, LawyerTaskStatus> = {
   todo: "todo",
   inprogress: "in_progress",
   done: "done",
@@ -257,6 +258,11 @@ const EVENT_LABELS: Record<string, string> = {
   "hearing.created":               "إضافة جلسة",
   "task.created":                  "إضافة مهمة",
   "task.status_changed":           "تحديث حالة مهمة",
+  // Same reasoning, same day, one surface later: the stages tab writes these
+  // two through recordActivity and this timeline merges them — added the day
+  // they were found printing raw «case_stage.added» in an all-Arabic list.
+  "case_stage.added":              "إضافة درجة تقاضٍ",
+  "case_stage.outcome_recorded":   "تسجيل نتيجة درجة تقاضٍ",
   // legacy free-text
   "created":        "إنشاء القضية",
   "status_change":  "تغيير الحالة",
