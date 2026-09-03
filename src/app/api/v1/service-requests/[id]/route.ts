@@ -248,6 +248,43 @@ export async function GET(
     );
   }
 
+  // Phase 1 (2026-09-03): a hearing or task linked to this case
+  // (activity_events.case_request_id = id) no longer writes a request_events
+  // row — hearings and tasks stopped being service_requests rows in this same
+  // wave, so recordActivity() (src/lib/events.ts) is what records them now.
+  // Merged into the SAME `events` array below rather than returned as a
+  // separate field: both the lawyer and client case-file pages read
+  // `caseData.events` as one timeline, and giving them a second array to
+  // remember to merge themselves is how a screen quietly stops showing half
+  // of it. Mapped onto the same shape request_events rows have (`event`, not
+  // `kind`) so the client's existing EVENT_LABELS lookup needs no branching
+  // on which table a row came from.
+  const { data: activityRows, error: activityError } = await supabase
+    .from("activity_events")
+    .select("id, kind, actor_user_id, actor_name, created_at")
+    .eq("case_request_id", id)
+    .order("created_at", { ascending: true });
+
+  if (activityError) {
+    console.error(
+      "[service-requests GET] activity_events read failed:",
+      activityError.message,
+      activityError.code,
+    );
+  }
+
+  const mergedEvents = [
+    ...(events ?? []),
+    ...(activityRows ?? []).map((row) => ({
+      id: `activity-${row.id}`,
+      request_id: id,
+      event: row.kind,
+      actor_user_id: row.actor_user_id,
+      actor_name: row.actor_name,
+      created_at: row.created_at,
+    })),
+  ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
   // F7 — fetch attachments for this request.
   // attachments schema: id, request_id, owner_user_id, file_name, storage_path,
   // mime_type, size_bytes, created_at. Map to the camelCase contract the
@@ -314,7 +351,7 @@ export async function GET(
   return NextResponse.json({
     data: {
       ...toWorkflowRequest(sanitizedRequest),
-      events: events ?? [],
+      events: mergedEvents,
       attachments,
     },
   });

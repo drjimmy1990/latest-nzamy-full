@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
-import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
+import { describeActivityEvent, describeRequestEvent, type ActivityBadge } from "@/lib/events";
 
 const PAGE_SIZE = 30;
 
@@ -38,6 +38,14 @@ interface AuditRow {
   target_type: string | null;
   target_id: string | null;
   created_at: string;
+}
+
+interface ActivityEventRow {
+  id: number;
+  kind: string;
+  created_at: string;
+  case_request_id: string | null;
+  payload: Record<string, unknown> | null;
 }
 
 /**
@@ -114,6 +122,21 @@ export async function GET(request: NextRequest) {
       .limit(PAGE_SIZE)
       .returns<AuditRow[]>();
 
+    // Phase 1 (2026-09-03): hearings and tasks stopped being service_requests
+    // rows, so their events stopped being request_events rows too — they are
+    // recorded to activity_events instead (recordActivity, src/lib/events.ts).
+    // `owner_user_id`, not `actor_user_id`: this feed is "my practice", and
+    // the owner IS the participant predicate's job here — matches how
+    // /api/v1/lawyer/hearings and /lawyer/tasks scope their own GETs.
+    const activityFilter = supabase
+      .from("activity_events")
+      .select("id, kind, created_at, case_request_id, payload")
+      .eq("owner_user_id", uid);
+    const activityQuery = (before ? activityFilter.lt("created_at", before) : activityFilter)
+      .order("created_at", { ascending: false })
+      .limit(PAGE_SIZE)
+      .returns<ActivityEventRow[]>();
+
     // Four exact head-counts for the stat cards — nothing derived, nothing
     // estimated. Scoped with the same participant predicate as the feed, so a
     // lawyer who receives work rather than raising it still sees real numbers.
@@ -125,9 +148,10 @@ export async function GET(request: NextRequest) {
         .select("id", { count: "exact", head: true })
         .or(participant);
 
-    const [eventRes, auditRes, monthRes, activeRes, completedRes, totalRes] = await Promise.all([
+    const [eventRes, auditRes, activityRes, monthRes, activeRes, completedRes, totalRes] = await Promise.all([
       eventQuery,
       auditQuery,
+      activityQuery,
       myRequests().gte("created_at", monthStart),
       myRequests().in("status", ["pending_assignment", "assigned", "in_review"]),
       myRequests().eq("status", "completed"),
@@ -144,6 +168,9 @@ export async function GET(request: NextRequest) {
     }
     if (auditRes.error) {
       console.error("[lawyer/activity GET] audit query failed:", auditRes.error.message);
+    }
+    if (activityRes.error) {
+      console.error("[lawyer/activity GET] activity_events query failed:", activityRes.error.message);
     }
     // The same treatment for the four head-counts. `count` comes back NULL on a
     // failed count query, and `?? 0` turned that into a printed «٠» on a card
@@ -169,10 +196,13 @@ export async function GET(request: NextRequest) {
     }
     // Purely additive, and named the same as the `degraded` flag
     // GET /api/v1/service-requests already returns for the same situation
-    // (route.ts:84), so the client convention is one convention. Only the
-    // EVENTS stream counts: the audit stream is empty under RLS for a lawyer by
-    // design, so its failure cannot hide anything the feed would have shown.
-    const degraded = !!eventRes.error;
+    // (route.ts:84), so the client convention is one convention. The audit
+    // stream is empty under RLS for a lawyer by design, so its failure cannot
+    // hide anything the feed would have shown — but activity_events is a real
+    // content source now (every hearing and task event lives there since
+    // Phase 1), so its failure degrades the feed exactly like request_events'
+    // does.
+    const degraded = !!eventRes.error || !!activityRes.error;
 
     const items: ActivityItem[] = [];
 
@@ -223,6 +253,23 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    for (const row of activityRes.data ?? []) {
+      const described = describeActivityEvent({ kind: row.kind, payload: row.payload });
+      items.push({
+        id: `activity:${row.id}`,
+        badge: described.badge,
+        title: described.title,
+        ...(described.description ? { description: described.description } : {}),
+        requestId: row.case_request_id,
+        // A hearing/task's case, when it has one — the case file, not an
+        // ai_workspace order page.
+        requestHref: row.case_request_id ? `/dashboard/lawyer/cases/${row.case_request_id}` : null,
+        requestTitle: null,
+        serviceTitleAr: null,
+        createdAt: row.created_at,
+      });
+    }
+
     items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     const page = items.slice(0, PAGE_SIZE);
 
@@ -247,10 +294,16 @@ export async function GET(request: NextRequest) {
             ordersCompleted: completedRes.count ?? 0,
             ordersTotal: totalRes.count ?? 0,
           },
-      // Only the events stream can actually page (the audit stream is empty
-      // under RLS); stop once it stops returning a full page.
+      // A stream that returned a full PAGE_SIZE batch might hold more beyond
+      // it — stop only once EVERY stream that can actually page (events and
+      // activity; the audit stream is empty under RLS) came back short. Was
+      // gated on the events stream alone, which was safe only because the
+      // audit stream never had anything in it to miss; activity_events is a
+      // real, populated stream now, so the same one-stream gate would have
+      // silently stopped paging while it still had rows left.
       nextCursor:
-        (eventRes.data?.length ?? 0) === PAGE_SIZE && page.length > 0
+        ((eventRes.data?.length ?? 0) === PAGE_SIZE || (activityRes.data?.length ?? 0) === PAGE_SIZE)
+        && page.length > 0
           ? page[page.length - 1].createdAt
           : null,
     });
