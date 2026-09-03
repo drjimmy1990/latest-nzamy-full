@@ -122,6 +122,48 @@ alter table public.contracts enable row level security;
 create policy "participants read contracts" on public.contracts for select
   using (client_user_id = auth.uid() or assigned_user_id = auth.uid());
 
+
+-- 20260903_phase1 helper (repeated so stub policies can reference it)
+create or replace function public.can_access_case_row(p_owner uuid, p_firm uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select (p_owner is not null and p_owner = auth.uid())
+      or (p_firm is not null and exists (
+            select 1 from public.firm_members fm
+             where fm.firm_id = p_firm and fm.user_id = auth.uid() and fm.status = 'active'));
+$$;
+
+-- Phase 1 tables the Phase 5 migration references (minimal shapes; RLS as in
+-- 20260903_phase1: owner-or-firm read, owner insert).
+create table public.case_stages (
+  id uuid primary key default gen_random_uuid(),
+  case_request_id text not null references public.service_requests(id) on delete cascade,
+  firm_id uuid references public.firm_profiles(id) on delete set null,
+  owner_user_id uuid references auth.users(id) on delete set null,
+  degree text not null default 'first_instance',
+  closed_on date,
+  outcome text
+);
+alter table public.case_stages enable row level security;
+create policy "case stages readable by owner or firm" on public.case_stages for select
+  using (public.can_access_case_row(owner_user_id, firm_id) or public.is_admin());
+create policy "case stages insertable by owner" on public.case_stages for insert
+  with check (owner_user_id = auth.uid());
+
+create table public.hearings (
+  id uuid primary key default gen_random_uuid(),
+  case_request_id text references public.service_requests(id) on delete cascade,
+  firm_id uuid references public.firm_profiles(id) on delete set null,
+  owner_user_id uuid not null references auth.users(id) on delete cascade,
+  kind text not null default 'appointment',
+  title text not null,
+  hearing_date date not null
+);
+alter table public.hearings enable row level security;
+create policy "hearings readable by owner or firm" on public.hearings for select
+  using (public.can_access_case_row(owner_user_id, firm_id) or public.is_admin());
+create policy "hearings insertable by owner" on public.hearings for insert
+  with check (owner_user_id = auth.uid());
+
 -- A non-superuser role: RLS does NOT apply to superusers, so every test
 -- below would silently pass as postgres.
 create role app_user login;
