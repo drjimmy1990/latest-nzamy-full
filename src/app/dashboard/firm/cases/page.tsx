@@ -19,16 +19,16 @@
  * same endpoint — then mapped through `workflowToCase` from
  * `@/constants/lawyerCasesData`, the same mapper the lawyer list uses.
  *
- * ── WHY THERE IS NO FIRM-WIDE VIEW ──────────────────────────────────────────
- * "قضايا المكتب" reads as "every case anyone at the firm is handling", but no
- * code path in this repo ever inserts a `firm_members` row, and
- * `service_requests` RLS admits only `requester_user_id = auth.uid()` or
- * `assigned_to = auth.uid()`. There is no membership model yet, so a firm
- * account today sees exactly the rows IT filed or IT was assigned — its own
- * activity under its own login, not a roster of colleagues' cases. That is the
- * honest behaviour of the data as it exists now; building a real firm-wide
- * view needs a `firm_members` table plus an RLS policy that joins through it,
- * which is Phase 2, not this page.
+ * ── FIRM-WIDE VIEW (since migration 20260903_phase2, run 2026-09-04) ───────
+ * "قضايا المكتب" = the firm account's own rows (requester or assignee) PLUS
+ * every `service_requests` row carrying the firm's `firm_id`, which the
+ * "firm members read firm service requests" policy admits to active members.
+ * `firm_id` is stamped server-side at creation from the creator's active
+ * `firm_members` row (POST /api/v1/service-requests), so only cases created
+ * AFTER a lawyer joined the firm carry it — older rows stay personal. The firm
+ * owner is an automatic managing_partner member; colleagues are added from
+ * /dashboard/firm/team. Nothing on this page changed for that: RLS returns
+ * the wider set through the same fetch.
  *
  * ── WHAT WAS REMOVED ─────────────────────────────────────────────────────────
  * The previous 580-line version rendered `ACTIVE_CASES`/`ARCHIVE_CASES`, two

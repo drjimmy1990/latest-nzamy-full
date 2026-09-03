@@ -23,12 +23,13 @@
  * exists for a case. They are removed, not re-skinned, and nothing stands in
  * their place.
  *
- * FIRM-WIDE VISIBILITY WAITS FOR PHASE 2. `firm_members` exists as a table
- * (migration 20260603) but no code path ever inserts a row into it, and
- * service_requests RLS admits only the requester or the assigned lawyer. So this page shows the same single case
- * a lawyer or client would see at this id; it does not aggregate "every case
- * this firm's lawyers are handling". That is honest today, not a bug to
- * route around here.
+ * FIRM-WIDE VISIBILITY: since migration 20260903_phase2 (run 2026-09-04) a
+ * case created by an active firm member carries `service_requests.firm_id`,
+ * and the firm's other active members — the owner is one automatically —
+ * can read it under the "firm members read firm service requests" policy.
+ * This page needs no code for that: getServiceRequestDetail goes through
+ * RLS, so a firm account opening a member's case gets the row. Rows created
+ * before the lawyer joined the firm have no firm_id and stay personal.
  */
 
 import { useState, useEffect, useMemo, useCallback } from "react";
