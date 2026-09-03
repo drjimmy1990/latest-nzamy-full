@@ -172,13 +172,16 @@ export async function POST(request: NextRequest) {
     // can_access_case_row's owner arm is for. A lawyer with more than one
     // active membership gets the first; nothing in this product distinguishes
     // between two firms for one lawyer today.
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await supabase
       .from("firm_members")
       .select("firm_id")
       .eq("user_id", user.id)
       .eq("status", "active")
       .limit(1)
       .maybeSingle();
+    if (membershipError) {
+      console.error("[lawyer/hearings] firm_members lookup failed:", membershipError.message, membershipError.code);
+    }
 
     const metadata: Record<string, unknown> = {};
     if (caseName && caseName.trim()) metadata.caseName = caseName.trim();

@@ -196,13 +196,16 @@ export async function POST(request: NextRequest) {
     // Solo lawyer → no firm row → firm_id stays null, matching hearings'
     // POST — the owner arm of can_access_case_row is what keeps a solo
     // lawyer's own tasks visible to them.
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await supabase
       .from("firm_members")
       .select("firm_id")
       .eq("user_id", user.id)
       .eq("status", "active")
       .limit(1)
       .maybeSingle();
+    if (membershipError) {
+      console.error("[lawyer/tasks] firm_members lookup failed:", membershipError.message, membershipError.code);
+    }
 
     const metadata: Record<string, unknown> = {};
     if (caseRef && caseRef.trim()) metadata.caseRef = caseRef.trim();

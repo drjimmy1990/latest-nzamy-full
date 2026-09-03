@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle, XCircle } from "@phosphor-icons/react";
 import { createWorkflowRequest } from "@/lib/services/workflowService";
 import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createWorkflowId } from "@/lib/workflowStore";
+import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
 import type { UserType, UserTier } from "@/hooks/useUser";
 
 interface Props {
@@ -42,6 +43,38 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
   const [assignee, setAssignee] = useState("أنا فقط");
   const [priority, setPriority] = useState<Priority>("normal");
   const [description, setDescription] = useState("");
+
+  // Optional client picker (Phase 2 — public.lawyer_clients). Only cards
+  // ("source: 'card'") are offered: a "profile" row has no id in
+  // lawyer_clients yet, so it cannot be linked via lawyerClientId. The
+  // free-text name field above stays the fallback path when nothing is
+  // picked, or while the list is loading/unreadable.
+  const [clientCards, setClientCards] = useState<LawyerClient[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
+  const [clientsUnreadable, setClientsUnreadable] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const read = await getLawyerClients();
+      if (cancelled) return;
+      if (!read.ok) {
+        setClientsUnreadable(true);
+        setClientsLoading(false);
+        return;
+      }
+      setClientCards(read.items.filter((c) => c.source === "card"));
+      setClientsLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  function handleClientPick(id: string) {
+    setSelectedClientId(id);
+    const picked = clientCards.find((c) => c.id === id);
+    if (picked) setClientName(picked.name);
+  }
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${
     isDark
@@ -87,6 +120,7 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
         sourcePath: "",
         metadata: { court, priority, assignee },
         assignedTo: user.userId,
+        ...(selectedClientId ? { lawyerClientId: selectedClientId } : {}),
       };
 
       // Same reason as AddHearingModal: createWorkflowRequest() swallows a
@@ -152,9 +186,33 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
             )}
             {step === 1 && (
               <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
+                {!clientsUnreadable && (clientsLoading || clientCards.length > 0) && (
+                  <div>
+                    <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>اختيار من قائمة الموكّلين (اختياري)</label>
+                    <select
+                      value={selectedClientId}
+                      onChange={e => handleClientPick(e.target.value)}
+                      disabled={clientsLoading}
+                      className={inputCls}
+                    >
+                      <option value="">
+                        {clientsLoading ? "جارٍ تحميل الموكّلين..." : "— بدون اختيار (اكتب الاسم يدوياً) —"}
+                      </option>
+                      {clientCards.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>اسم الموكل</label>
-                  <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="اختر الموكل أو أضف موكلاً جديداً..." className={inputCls} />
+                  <input
+                    type="text"
+                    value={clientName}
+                    onChange={e => { setClientName(e.target.value); if (selectedClientId) setSelectedClientId(""); }}
+                    placeholder="اختر الموكل أو أضف موكلاً جديداً..."
+                    className={inputCls}
+                  />
                 </div>
                 <div>
                   <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>عنوان القضية</label>

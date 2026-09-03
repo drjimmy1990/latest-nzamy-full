@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, ArrowRight, ShieldCheck, UserCircle, Briefcase,
-  WarningOctagon, MagnifyingGlass, FileText, CheckCircle,
-  CurrencyCircleDollar, Scales, Sparkle, Robot, UserSwitch,
-  FolderOpen
+  ArrowLeft, ArrowRight, ShieldCheck, UserCircle, Briefcase, Buildings,
+  FileText, CheckCircle,
+  CurrencyCircleDollar, Scales, Sparkle, UserSwitch,
+  FolderOpen, Info,
 } from "@phosphor-icons/react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -19,21 +19,15 @@ interface MatterData {
   clientName: string;
   opponentName: string;
   matterType: string;
-  leadAttorney: string;
   feeStructure: "hourly" | "flat" | "retainer";
   playbook: string;
 }
 
 const PLAYBOOKS = [
-  { id: "litigation_com", title: "ترافع تجاري شامل", desc: "يولد 12 مهمة أساسية وهيكل بليحة الدعوى والمذكرات.", icon: Scales, color: "text-blue-500" },
-  { id: "corporate_ma", title: "اندماج واستحواذ (M&A)", desc: "يبني مسار فحص نافي للجهالة (Due Diligence) وهيكل بائعي العقود.", icon: BuildingsIcon, color: "text-[#C8A762]" },
-  { id: "labor_dispute", title: "نزاع عمالي", desc: "أتمتة تسويات مكتب العمل وجدولة الجلسات العمالية الأولى.", icon: Briefcase, color: "text-purple-500" },
+  { id: "litigation_com", title: "ترافع تجاري شامل", desc: "سيناريو لقضايا الترافع التجاري القياسية.", icon: Scales, color: "text-blue-500" },
+  { id: "corporate_ma", title: "اندماج واستحواذ (M&A)", desc: "سيناريو لعمليات الدمج والاستحواذ بين الشركات.", icon: Buildings, color: "text-[#C8A762]" },
+  { id: "labor_dispute", title: "نزاع عمالي", desc: "سيناريو للمنازعات مع مكتب العمل والجهات العمالية.", icon: Briefcase, color: "text-purple-500" },
 ];
-
-function BuildingsIcon(props: any) {
-  // Mapping Phosphor Buildings icon inside the array
-  return <Briefcase {...props} />; // Fallback just in case
-}
 
 // ── Page Component ─────────────────────────────────────────────────────────────
 import { RoleGuard } from "@/components/dashboard/RoleGuard";
@@ -47,31 +41,21 @@ export default function NewMatterIntake() {
     clientName: "",
     opponentName: "",
     matterType: "commercial",
-    leadAttorney: "شريك - نورة الزهراني",
     feeStructure: "retainer",
     playbook: ""
   });
 
-  const [isCheckingConflict, setIsCheckingConflict] = useState(false);
-  const [conflictResult, setConflictResult] = useState<null | "safe" | "warning">(null);
-
-  const handleConflictCheck = () => {
-    if (!data.clientName || !data.opponentName) return;
-    setIsCheckingConflict(true);
-    // Mock simulation
-    setTimeout(() => {
-      setIsCheckingConflict(false);
-      setConflictResult(data.opponentName.includes("خطر") ? "warning" : "safe");
-    }, 2000);
-  };
-
   const nextStep = () => setStep(s => Math.min(s + 1, 3) as Step);
   const prevStep = () => setStep(s => Math.max(s - 1, 1) as Step);
 
+  // Nothing this wizard collects (client name, opponent, matter type, fee
+  // structure, playbook) is saved anywhere — there is no case-intake endpoint
+  // behind this screen yet. Sending the visitor to a fabricated case ID that
+  // 404s is worse than being honest about that, so this hands off to the
+  // real intake path «قضايا الشركة» itself links to (`../page.tsx`,
+  // «اطلب خدمة قانونية» → /dashboard/client/services) instead of inventing one.
   const handleFinish = () => {
-    // Generate a mock case ID until backend integration
-    const caseId = `CASE-${Date.now().toString().slice(-6)}`;
-    router.push(`/dashboard/business/cases/${caseId}`);
+    router.push("/dashboard/client/services");
   };
 
   const cardStyle = isDark ? "bg-zinc-900/80 border-white/[0.06] shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]" : "bg-white border-zinc-200/70 shadow-[inset_0_1px_0_rgba(255,255,255,1)]";
@@ -140,56 +124,28 @@ export default function NewMatterIntake() {
                     </div>
                   </div>
                 </div>
-
-                <div className="flex justify-end pt-2">
-                  <button 
-                    onClick={handleConflictCheck}
-                    disabled={!data.clientName || !data.opponentName || isCheckingConflict}
-                    className={`flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition-opacity disabled:opacity-50`}
-                  >
-                    {isCheckingConflict ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Robot size={18} /></motion.div> : <MagnifyingGlass size={18} />}
-                    {isCheckingConflict ? "جاري الفحص المتقاطع في قاعدة المكتب..." : "تشغيل نظام فحص التعارض"}
-                  </button>
-                </div>
               </div>
 
-              {/* Conflict Results Area */}
-              <AnimatePresence>
-                {conflictResult === "safe" && (
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`rounded-xl border p-4 flex items-start gap-4 ${isDark ? "border-emerald-500/20 bg-emerald-500/10" : "border-emerald-200 bg-emerald-50"}`}>
-                    <div className="rounded-full bg-emerald-500 p-1.5 text-white shadow-sm mt-0.5">
-                      <CheckCircle size={20} weight="fill" />
-                    </div>
-                    <div>
-                      <h3 className="text-[14px] font-bold text-emerald-600 dark:text-emerald-400 mb-1">النتيجة آمنة - لا يوجد تعارض</h3>
-                      <p className={`text-[12px] leading-relaxed ${isDark ? "text-emerald-500/80" : "text-emerald-700/80"}`}>
-                        تم فحص سجلات المكتب (1,240 قضية، 3,500 عميل وجهة اتصال) ولم يتم العثور على أي تشابه مع الطرف المقابل أو الموكل يمنع استلام القضية.
-                      </p>
-                    </div>
-                  </motion.div>
-                )}
-                
-                {conflictResult === "warning" && (
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`rounded-xl border p-4 flex items-start gap-4 ${isDark ? "border-red-500/20 bg-red-500/10" : "border-red-200 bg-red-50"}`}>
-                     <div className="rounded-full bg-red-500 p-1.5 text-white shadow-sm mt-0.5">
-                      <WarningOctagon size={20} weight="fill" />
-                    </div>
-                    <div>
-                      <h3 className="text-[14px] font-bold text-red-600 dark:text-red-400 mb-1">تحذير تعارض محتمل!</h3>
-                      <p className={`text-[12px] leading-relaxed ${isDark ? "text-red-500/80" : "text-red-700/80"}`}>
-                        تم العثور على الخصم المدخل كطرف في القضية السابقة (رقم 149 - تصفية تركة). يرجى تحويل الأمر للشريك الموكل قبل تأكيد قبول هذه القضية لمنع المساءلة التأديبية.
-                      </p>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {/* Honest scope statement, always visible — not conditional on
+                  who is viewing. The automated conflict check
+                  (runConflictCheck → GET /api/v1/lawyer/conflict-check) only
+                  ever runs against the caller's own `lawyer_clients` and
+                  `service_requests` rows in the lawyer/firm workspace; it
+                  does not read a company account's records at all, so it
+                  cannot be offered here — not "usually empty", not
+                  available. Removed rather than shown failing forever. */}
+              <div className={`flex items-start gap-2.5 px-4 py-3 rounded-xl border text-[12px] leading-relaxed ${
+                isDark ? "bg-amber-500/[0.06] border-amber-500/20 text-amber-200/80" : "bg-amber-50 border-amber-200 text-amber-800"
+              }`}>
+                <Info size={16} weight="fill" className="text-amber-500 shrink-0 mt-0.5" />
+                <span>الفحص الآلي لتعارض المصالح يعمل حاليًا في مساحة عمل المحامي/المكتب على سجلات موكّليه وقضاياه الخاصة، ولا يقرأ سجلات حساب الشركة — فلا يمكن تقديمه هنا بعد. راجعا هذه النقطة مع المحامي المسؤول قبل قبول القضية.</span>
+              </div>
 
               {/* Navigation */}
               <div className="flex justify-start pt-6 border-t border-zinc-200 dark:border-white/[0.05]">
-                <button 
+                <button
                   onClick={nextStep}
-                  disabled={!conflictResult}
-                  className="rounded-xl flex items-center gap-2 bg-[#0B3D2E] px-6 py-2.5 text-sm font-bold text-white transition-opacity disabled:opacity-50"
+                  className="rounded-xl flex items-center gap-2 bg-[#0B3D2E] px-6 py-2.5 text-sm font-bold text-white transition-opacity"
                 >
                   <span className="mb-px border-b border-transparent">التالي: تأسيس تفاصيل القضية</span>
                   <ArrowLeft size={16} />
@@ -214,25 +170,19 @@ export default function NewMatterIntake() {
               <div className={`${cardStyle} rounded-2xl p-6 space-y-6`}>
                 
                 {/* Basic Details */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className={`block text-[12px] font-bold mb-1.5 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>تصنيف القضية والتخصص</label>
-                    <select value={data.matterType} onChange={e => setData({...data, matterType: e.target.value})} className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none ${inputStyle}`}>
-                      <option value="commercial">قضية تجارية (تقاضي)</option>
-                      <option value="labor">قضية عمالية</option>
-                      <option value="corporate">تأسيس وهيكلة شركات</option>
-                      <option value="real_estate">نزاع عقاري</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className={`block text-[12px] font-bold mb-1.5 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>المحامي المسؤول (Lead Attorney)</label>
-                    <select value={data.leadAttorney} onChange={e => setData({...data, leadAttorney: e.target.value})} className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none ${inputStyle}`}>
-                      <option>شريك - نورة الزهراني</option>
-                      <option>أخصائي - فهد السبيعي</option>
-                      <option>مستشار - سلمى الدوسري</option>
-                    </select>
-                  </div>
+                <div>
+                  <label className={`block text-[12px] font-bold mb-1.5 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>تصنيف القضية والتخصص</label>
+                  <select value={data.matterType} onChange={e => setData({...data, matterType: e.target.value})} className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none ${inputStyle}`}>
+                    <option value="commercial">قضية تجارية (تقاضي)</option>
+                    <option value="labor">قضية عمالية</option>
+                    <option value="corporate">تأسيس وهيكلة شركات</option>
+                    <option value="real_estate">نزاع عقاري</option>
+                  </select>
                 </div>
+                {/* The "lead attorney" field that used to sit beside this one
+                    offered three invented staff names — no real roster backs
+                    it, and this wizard saves nothing anyway, so it was
+                    removed rather than left implying a real assignment. */}
 
                 {/* Billing */}
                 <div>
@@ -315,14 +265,25 @@ export default function NewMatterIntake() {
                 })}
               </div>
 
+              {/* Nothing this wizard collected — الموكّل، الخصم، تصنيف القضية،
+                  نظام الأتعاب، السيناريو — is saved anywhere yet; there is no
+                  case-intake endpoint behind this screen. Said once, plainly,
+                  rather than letting the button below imply otherwise. */}
+              <div className={`flex items-start gap-2.5 px-4 py-3 rounded-xl border text-[12px] leading-relaxed ${
+                isDark ? "bg-amber-500/[0.06] border-amber-500/20 text-amber-200/80" : "bg-amber-50 border-amber-200 text-amber-800"
+              }`}>
+                <Info size={16} weight="fill" className="text-amber-500 shrink-0 mt-0.5" />
+                <span>بيانات هذا المعالج (الموكّل والخصم والتصنيف ونظام الأتعاب والسيناريو المختار) لا تُحفظ بعد — الزر أدناه ينقلك لتقديم طلب الخدمة الفعلي.</span>
+              </div>
+
               {/* Navigation */}
               <div className="flex justify-between pt-8 border-t border-zinc-200 dark:border-white/[0.05]">
                 <button onClick={prevStep} className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${isDark ? "text-zinc-400 hover:text-white" : "text-zinc-500 hover:text-zinc-900"}`}>
                   العودة للبيانات
                 </button>
-                <button onClick={handleFinish} disabled={!data.playbook} className="rounded-xl flex items-center justify-center gap-2 bg-[#C8A762] hover:bg-[#b59554] shadow-lg shadow-[#C8A762]/30 px-8 py-3 text-sm font-bold text-white transition-all disabled:opacity-50">
+                <button onClick={handleFinish} className="rounded-xl flex items-center justify-center gap-2 bg-[#C8A762] hover:bg-[#b59554] shadow-lg shadow-[#C8A762]/30 px-8 py-3 text-sm font-bold text-white transition-all">
                   <FileText size={18} />
-                  <span>توليد وتأكيد فتح ملف القضية</span>
+                  <span>المتابعة إلى طلب الخدمة الفعلي</span>
                 </button>
               </div>
             </motion.div>
