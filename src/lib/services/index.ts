@@ -124,7 +124,6 @@ export {
   updateLawyerTaskStatus,
   updateLawyerTask,
   updateLawyerTaskSubtasks,
-  taskStatusToDbStatus,
 } from "./lawyerTasksService";
 export type { LawyerTask, LawyerSubtask, CreateLawyerTaskInput, UpdateLawyerTaskInput } from "./lawyerTasksService";
 

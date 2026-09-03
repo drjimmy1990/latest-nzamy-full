@@ -1,22 +1,22 @@
 /**
  * taskMetadata.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * A lawyer task is a `service_requests` row: there is no tasks table, so every
- * task-only field (task, priority, category, dueDate, caseId, caseRef, notes,
- * subtasks) lives in the row's single `metadata` jsonb column.
+ * Field-level validation for a lawyer task and its checklist.
  *
- * That makes every partial update of a task a read-modify-write on one blob.
- * `.update({ metadata: { subtasks } })` REPLACES the column — the task silently
- * loses its case link and its due date and nothing errors. So the write path
- * must go through `mergeTaskMetadata`, and the patch it merges must be built by
- * `buildTaskMetadataPatch`, which is a fixed whitelist rather than a spread of
- * the request body: a caller must not be able to reach `metadata.internalNotes`
- * (an admin-private note — see internalNotes.ts), flip `metadata.task`, or
- * clobber `caseId` / `caseRef` through the task edit endpoint.
+ * Phase 1 (2026-09-03) moved tasks off `service_requests.metadata` onto real
+ * columns in `public.tasks`, and subtasks off a jsonb array onto real rows in
+ * `public.task_steps`. Before that, every field (priority / category / dueDate
+ * / notes / subtasks) lived in one jsonb blob, and a partial update meant a
+ * read-modify-write merge to avoid clobbering the other keys — that merge
+ * machinery (`buildTaskMetadataPatch`, `mergeTaskMetadata`, the PATCHABLE_KEYS
+ * whitelist) is gone, because `.update({ priority })` on a real column cannot
+ * clobber `dueDate` sitting in a column of its own.
  *
- * Deliberately import-free and framework-free so the API route (server) and the
- * unit test (`node --test`) can both load it — lawyerTasksService.ts is
- * "use client" and cannot be imported from a route handler.
+ * What is still needed is exactly what a real column does not give you for
+ * free: rejecting a priority the CHECK constraint would also reject, but with
+ * a message the caller can show, before the round-trip. Deliberately
+ * import-free and framework-free so the API route (server) and the unit test
+ * (`node --test`) can both load it.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -30,8 +30,9 @@ export interface TaskSubtask {
 export type TaskValidation<T> = { ok: true; value: T } | { ok: false; error: string };
 
 // ─── Limits ───────────────────────────────────────────────────────────────────
-// jsonb has no length limit of its own, so the caps live here: without them a
-// client can write an unbounded blob into the column.
+// jsonb had no length limit of its own; the columns underneath these now do
+// (text is unbounded in Postgres too), so the caps still earn their keep —
+// without them a client can still send an unbounded checklist or title.
 
 export const MAX_SUBTASKS = 50;
 export const MAX_SUBTASK_ID = 100;
@@ -39,11 +40,10 @@ export const MAX_SUBTASK_TITLE = 300;
 export const MAX_TASK_TITLE = 300;
 export const MAX_TASK_NOTES = 4000;
 
-const PRIORITIES = ["urgent", "high", "normal", "low"];
-const CATEGORIES = ["case", "document", "admin", "deadline", "client"];
-
-/** The only metadata keys a task update may touch. */
-const PATCHABLE_KEYS = ["subtasks", "priority", "category", "dueDate", "notes"];
+/** `tasks.priority` CHECK constraint (migration 20260903), restated here so a bad value is a 400 with a message, not a raw Postgres error. */
+export const PRIORITIES = ["urgent", "high", "normal", "low"];
+/** UI category — not a DB constraint (the column is a free `text`), but a fixed vocabulary the Kanban filters on. */
+export const CATEGORIES = ["case", "document", "admin", "deadline", "client"];
 
 // ─── Subtasks ─────────────────────────────────────────────────────────────────
 
@@ -54,8 +54,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * Strict validation for the WRITE direction. Anything that is not an array of
  * `{ id: string, title: string, done: boolean }` is rejected so the caller can
- * answer 400 instead of storing junk in jsonb that every later read has to
- * defend against.
+ * answer 400 instead of the insert failing halfway through a delete-and-
+ * reinsert of `task_steps`.
  */
 export function validateSubtasks(input: unknown): TaskValidation<TaskSubtask[]> {
   if (!Array.isArray(input)) {
@@ -96,7 +96,7 @@ export function validateSubtasks(input: unknown): TaskValidation<TaskSubtask[]> 
       return { ok: false, error: `subtasks[${i}].id is duplicated` };
     }
     seen.add(id);
-    // Rebuild rather than spread: unknown keys never reach the column.
+    // Rebuild rather than spread: unknown keys never reach the insert.
     value.push({ id, title, done: raw.done });
   }
 
@@ -121,107 +121,46 @@ export function readSubtasks(input: unknown): TaskSubtask[] {
   return out;
 }
 
-// ─── Patch building ───────────────────────────────────────────────────────────
+// ─── Single-field validators ───────────────────────────────────────────────────
+// Each mirrors one column's own constraint, so a caller gets a message before
+// the round-trip instead of a raw Postgres CHECK-violation error.
 
-/**
- * Picks the patchable metadata keys out of a request body and validates each.
- * Presence is tested with `!== undefined`, never truthiness: `subtasks: []`
- * (the lawyer deleted the last step) and `notes: ""` (cleared the note) are
- * legitimate updates, and dropping them is the same "it reverted on reload"
- * bug this module exists to fix.
- *
- * `null` means "remove this key" for the optional keys that can be absent
- * (dueDate, category). An empty object result means the body carried no
- * metadata edit at all.
- */
-export function buildTaskMetadataPatch(
-  body: Record<string, unknown>,
-): TaskValidation<Record<string, unknown>> {
-  const patch: Record<string, unknown> = {};
-
-  for (const key of PATCHABLE_KEYS) {
-    const raw = body[key];
-    if (raw === undefined) continue;
-
-    if (key === "subtasks") {
-      const parsed = validateSubtasks(raw);
-      if (!parsed.ok) return parsed;
-      patch.subtasks = parsed.value;
-      continue;
-    }
-
-    if (key === "priority") {
-      if (typeof raw !== "string" || !PRIORITIES.includes(raw)) {
-        return { ok: false, error: `priority must be one of: ${PRIORITIES.join(", ")}` };
-      }
-      patch.priority = raw;
-      continue;
-    }
-
-    if (key === "category") {
-      if (raw === null) { patch.category = null; continue; }
-      if (typeof raw !== "string" || !CATEGORIES.includes(raw)) {
-        return { ok: false, error: `category must be one of: ${CATEGORIES.join(", ")}` };
-      }
-      patch.category = raw;
-      continue;
-    }
-
-    if (key === "dueDate") {
-      if (raw === null || raw === "") { patch.dueDate = null; continue; }
-      if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-        return { ok: false, error: "dueDate must be an ISO date (YYYY-MM-DD) or null" };
-      }
-      patch.dueDate = raw;
-      continue;
-    }
-
-    // notes
-    if (typeof raw !== "string") {
-      return { ok: false, error: "notes must be a string" };
-    }
-    if (raw.length > MAX_TASK_NOTES) {
-      return { ok: false, error: `notes may not exceed ${MAX_TASK_NOTES} characters` };
-    }
-    patch.notes = raw;
+export function validatePriority(input: unknown): TaskValidation<string> {
+  if (typeof input !== "string" || !PRIORITIES.includes(input)) {
+    return { ok: false, error: `priority must be one of: ${PRIORITIES.join(", ")}` };
   }
-
-  return { ok: true, value: patch };
+  return { ok: true, value: input };
 }
 
-// ─── Merge ────────────────────────────────────────────────────────────────────
-
-/**
- * Shallow-merges a validated patch over the metadata read back from the row.
- * `undefined` in the patch leaves the existing key alone; `null` removes it.
- * Never mutates `existing`.
- *
- * Shallow is correct here: every task key is a leaf (or, for subtasks, an array
- * the client owns whole). It is also last-write-wins — two concurrent updates to
- * two DIFFERENT metadata keys can lose one another, because each read its own
- * snapshot of the blob. At one lawyer per task that is acceptable; it is the
- * price of not adding a migration for a jsonb-concatenating RPC.
- */
-export function mergeTaskMetadata(
-  existing: unknown,
-  patch: Record<string, unknown>,
-): Record<string, unknown> {
-  const base: Record<string, unknown> = isPlainObject(existing) ? { ...existing } : {};
-
-  for (const key of Object.keys(patch)) {
-    const value = patch[key];
-    if (value === undefined) continue;
-    if (value === null) {
-      delete base[key];
-      continue;
-    }
-    base[key] = value;
+/** `null` clears the category (the column is nullable free text). */
+export function validateCategory(input: unknown): TaskValidation<string | null> {
+  if (input === null || input === undefined) return { ok: true, value: null };
+  if (typeof input !== "string" || !CATEGORIES.includes(input)) {
+    return { ok: false, error: `category must be one of: ${CATEGORIES.join(", ")}` };
   }
-
-  return base;
+  return { ok: true, value: input };
 }
 
-/** Validates a task title for the `service_requests.title` column (not metadata). */
+/** `""` and `null` both mean "clear the due date". */
+export function validateDueDate(input: unknown): TaskValidation<string | null> {
+  if (input === null || input === undefined || input === "") return { ok: true, value: null };
+  if (typeof input !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    return { ok: false, error: "dueDate must be an ISO date (YYYY-MM-DD) or null" };
+  }
+  return { ok: true, value: input };
+}
+
+export function validateNotes(input: unknown): TaskValidation<string> {
+  if (typeof input !== "string") {
+    return { ok: false, error: "notes must be a string" };
+  }
+  if (input.length > MAX_TASK_NOTES) {
+    return { ok: false, error: `notes may not exceed ${MAX_TASK_NOTES} characters` };
+  }
+  return { ok: true, value: input };
+}
+
+/** Validates a task title for the `tasks.title` column. */
 export function validateTaskTitle(input: unknown): TaskValidation<string> {
   if (typeof input !== "string" || input.trim() === "") {
     return { ok: false, error: "title must be a non-empty string" };

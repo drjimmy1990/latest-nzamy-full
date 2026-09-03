@@ -2,64 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   MAX_SUBTASKS,
-  buildTaskMetadataPatch,
-  mergeTaskMetadata,
   readSubtasks,
+  validateCategory,
+  validateDueDate,
+  validateNotes,
+  validatePriority,
   validateSubtasks,
   validateTaskTitle,
 } from "./taskMetadata.ts";
-
-// ─── mergeTaskMetadata — the whole reason this module exists ──────────────────
-
-test("merge keeps every metadata key a subtasks-only update does not mention", () => {
-  const existing = {
-    task: true,
-    priority: "high",
-    category: "case",
-    dueDate: "2026-09-01",
-    caseId: "c-1",
-    caseRef: "قضية تجارية",
-    notes: "ملاحظة",
-  };
-  const out = mergeTaskMetadata(existing, { subtasks: [{ id: "s1", title: "خطوة", done: true }] });
-
-  assert.equal(out.task, true);
-  assert.equal(out.caseId, "c-1");
-  assert.equal(out.caseRef, "قضية تجارية");
-  assert.equal(out.dueDate, "2026-09-01");
-  assert.equal(out.priority, "high");
-  assert.equal(out.notes, "ملاحظة");
-  assert.deepEqual(out.subtasks, [{ id: "s1", title: "خطوة", done: true }]);
-});
-
-test("merge overwrites only the patched keys", () => {
-  const out = mergeTaskMetadata({ priority: "low", caseId: "c-1" }, { priority: "urgent" });
-  assert.deepEqual(out, { priority: "urgent", caseId: "c-1" });
-});
-
-test("merge treats null as a key removal and undefined as leave-alone", () => {
-  const out = mergeTaskMetadata(
-    { dueDate: "2026-09-01", caseId: "c-1", priority: "high" },
-    { dueDate: null, caseId: undefined },
-  );
-  assert.ok(!("dueDate" in out));
-  assert.equal(out.caseId, "c-1");
-  assert.equal(out.priority, "high");
-});
-
-test("merge does not mutate the row it read", () => {
-  const existing = { priority: "low", subtasks: [{ id: "s1", title: "أ", done: false }] };
-  const out = mergeTaskMetadata(existing, { priority: "urgent" });
-  assert.equal(existing.priority, "low");
-  assert.notEqual(out, existing);
-});
-
-test("merge survives a row whose metadata is null or a non-object", () => {
-  assert.deepEqual(mergeTaskMetadata(null, { priority: "high" }), { priority: "high" });
-  assert.deepEqual(mergeTaskMetadata(undefined, { priority: "high" }), { priority: "high" });
-  assert.deepEqual(mergeTaskMetadata("junk", { priority: "high" }), { priority: "high" });
-  assert.deepEqual(mergeTaskMetadata([1, 2], { priority: "high" }), { priority: "high" });
-});
 
 // ─── validateSubtasks ─────────────────────────────────────────────────────────
 
@@ -94,7 +44,7 @@ test("validateSubtasks rejects duplicate ids — a toggle must be unambiguous", 
   assert.equal(res.ok, false);
 });
 
-test("validateSubtasks caps the array so a client cannot write an unbounded blob", () => {
+test("validateSubtasks caps the array so a client cannot write an unbounded checklist", () => {
   const many = Array.from({ length: MAX_SUBTASKS + 1 }, (_, i) => ({
     id: `s${i}`, title: "خطوة", done: false,
   }));
@@ -122,62 +72,33 @@ test("readSubtasks coerces a missing done to false", () => {
   assert.deepEqual(readSubtasks([{ id: "s1", title: "أ" }]), [{ id: "s1", title: "أ", done: false }]);
 });
 
-// ─── buildTaskMetadataPatch — the whitelist ───────────────────────────────────
+// ─── validatePriority / validateCategory / validateDueDate / validateNotes ────
 
-test("patch ignores keys outside the whitelist", () => {
-  const res = buildTaskMetadataPatch({
-    task: false,
-    caseId: "hijacked",
-    caseRef: "hijacked",
-    internalNotes: "سري",
-    priority: "urgent",
-  });
-  assert.ok(res.ok);
-  assert.deepEqual(res.value, { priority: "urgent" });
+test("validatePriority rejects anything outside the DB's CHECK constraint", () => {
+  assert.equal(validatePriority("urgent").ok, true);
+  assert.equal(validatePriority("asap").ok, false);
+  assert.equal(validatePriority(3).ok, false);
+  assert.equal(validatePriority(undefined).ok, false);
 });
 
-test("patch is empty when the body carries no metadata edit", () => {
-  const res = buildTaskMetadataPatch({ taskId: "t-1", status: "completed" });
-  assert.ok(res.ok);
-  assert.deepEqual(res.value, {});
+test("validateCategory: null/undefined clear it, an unknown value is rejected", () => {
+  assert.deepEqual(validateCategory(null), { ok: true, value: null });
+  assert.deepEqual(validateCategory(undefined), { ok: true, value: null });
+  assert.deepEqual(validateCategory("case"), { ok: true, value: "case" });
+  assert.equal(validateCategory("whatever").ok, false);
 });
 
-test("patch keeps an empty notes string — clearing a note is an edit", () => {
-  const res = buildTaskMetadataPatch({ notes: "" });
-  assert.ok(res.ok);
-  assert.deepEqual(res.value, { notes: "" });
+test("validateDueDate: empty string and null both clear it; a malformed date is rejected", () => {
+  assert.deepEqual(validateDueDate(""), { ok: true, value: null });
+  assert.deepEqual(validateDueDate(null), { ok: true, value: null });
+  assert.deepEqual(validateDueDate("2026-09-01"), { ok: true, value: "2026-09-01" });
+  assert.equal(validateDueDate("01/09/2026").ok, false);
 });
 
-test("patch keeps an empty subtasks array", () => {
-  const res = buildTaskMetadataPatch({ subtasks: [] });
-  assert.ok(res.ok);
-  assert.deepEqual(res.value, { subtasks: [] });
-});
-
-test("patch rejects an unknown priority or category", () => {
-  assert.equal(buildTaskMetadataPatch({ priority: "asap" }).ok, false);
-  assert.equal(buildTaskMetadataPatch({ category: "whatever" }).ok, false);
-  assert.equal(buildTaskMetadataPatch({ priority: 3 }).ok, false);
-});
-
-test("patch turns an empty dueDate into a removal and rejects a malformed one", () => {
-  const cleared = buildTaskMetadataPatch({ dueDate: "" });
-  assert.ok(cleared.ok);
-  assert.deepEqual(cleared.value, { dueDate: null });
-  assert.equal(buildTaskMetadataPatch({ dueDate: "01/09/2026" }).ok, false);
-  assert.equal(buildTaskMetadataPatch({ dueDate: "2026-09-01" }).ok, true);
-});
-
-test("patch propagates a subtasks validation error", () => {
-  const res = buildTaskMetadataPatch({ subtasks: [{ id: "s1" }] });
-  assert.equal(res.ok, false);
-});
-
-test("a cleared dueDate patch actually removes the key on merge", () => {
-  const res = buildTaskMetadataPatch({ dueDate: "" });
-  assert.ok(res.ok);
-  const merged = mergeTaskMetadata({ task: true, dueDate: "2026-09-01" }, res.value);
-  assert.deepEqual(merged, { task: true });
+test("validateNotes keeps an empty string — clearing a note is a real edit — and caps length", () => {
+  assert.deepEqual(validateNotes(""), { ok: true, value: "" });
+  assert.equal(validateNotes("x".repeat(5000)).ok, false);
+  assert.equal(validateNotes(42).ok, false);
 });
 
 // ─── validateTaskTitle ────────────────────────────────────────────────────────

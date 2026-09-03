@@ -41,7 +41,6 @@ import {
   createLawyerTask,
   updateLawyerTaskStatus,
   updateLawyerTaskSubtasks,
-  taskStatusToDbStatus,
   type LawyerTask,
   type LawyerSubtask,
 } from "@/lib/services/lawyerTasksService";
@@ -126,8 +125,10 @@ const TASK_STATUS: Record<TaskStatus, { label: string; color: string; dot: strin
 };
 
 // The tasks API speaks the Kanban's status vocabulary (todo/in_progress/done/
-// archived); this page's TASK_STATUS keys are todo/inprogress/done. Normalise
-// on the way in, and use taskStatusToDbStatus() on the way out.
+// archived) directly — public.tasks.status IS that vocabulary now, so there
+// is no further DB-enum translation on the way out. This page's TASK_STATUS
+// keys are todo/inprogress/done (no "archived" tab here); normalise on the
+// way in with toPageTaskStatus, and back out with PAGE_TO_API_STATUS.
 function toPageTaskStatus(apiStatus: string): TaskStatus {
   if (apiStatus === "in_progress") return "inprogress";
   if (apiStatus === "done") return "done";
@@ -594,7 +595,7 @@ export default function CaseDetailPage() {
     const next = NEXT_TASK_STATUS[task.status];
     const previous = task.status;
     patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: next } : t)));
-    const ok = await updateLawyerTaskStatus(task.id, taskStatusToDbStatus(PAGE_TO_API_STATUS[next]));
+    const ok = await updateLawyerTaskStatus(task.id, PAGE_TO_API_STATUS[next]);
     if (!ok) {
       patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: previous } : t)));
       setTaskError("تعذّر تحديث حالة المهمة.");
