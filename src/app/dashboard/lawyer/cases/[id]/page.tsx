@@ -17,6 +17,7 @@ import { useUser } from "@/hooks/useUser";
 import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
 import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearingsService";
 import { getCaseStages, type CaseStage } from "@/lib/services/caseStagesService";
+import { caseEventLabel } from "@/lib/services/caseEventLabels";
 import AddHearingModal from "../../_components/AddHearingModal";
 import AddCaseStageModal from "../../_components/AddCaseStageModal";
 import dynamic from "next/dynamic";
@@ -221,62 +222,10 @@ function mapStatus(s: string | undefined): CaseStatus {
   }
 }
 
-// Arabic labels for namespaced + legacy event strings.
-//
-// «القضية», not «الطلب» — finding 176. Both case files render this map under a
-// heading that reads «مسار القضية», and the map then called the same object
-// «الطلب», so one screen used two words for one thing. The row underneath IS a
-// `service_request`, which is where «الطلب» came from — but that is the data
-// model's word, not the lawyer's, and the audit's whole complaint is that the
-// screen speaks two vocabularies at once.
-//
-// The keys keep their `service_request.*` namespace: they are what the backend
-// emits, and renaming them would break the lookup for every row already stored.
-// Only what the USER reads changes.
-//
-// The same map exists, independently, in the OTHER case file
-// (client/cases/[id] and lawyer/cases/[id] each hold their own copy). Both were
-// changed in one pass — fixing one and leaving the other is the shape this wave
-// keeps finding.
-const EVENT_LABELS: Record<string, string> = {
-  "service_request.created":       "إنشاء القضية",
-  "service_request.status_changed":"تغيير الحالة",
-  "service_request.updated":       "تحديث القضية",
-  "service_request.assigned":      "تعيين المحامي",
-  "service_request.completed":     "إتمام القضية",
-  "service_request.cancelled":     "إلغاء القضية",
-  "service_request.note_added":    "إضافة ملاحظة",
-  "service_request.hearing_added": "إضافة جلسة",
-  "case.note_added":               "إضافة ملاحظة",
-  "case.hearing_added":            "إضافة جلسة",
-  // Phase 1 (2026-09-03): activity_events rows, merged into this same
-  // timeline server-side (GET /api/v1/service-requests/[id]) — hearings and
-  // tasks stopped writing request_events when they stopped being
-  // service_requests rows, so without these three this file's own fallback
-  // (`EVENT_LABELS[ev] ?? ev`) would print the raw token "hearing.created" to
-  // a lawyer or client reading the case timeline.
-  "hearing.created":               "إضافة جلسة",
-  "task.created":                  "إضافة مهمة",
-  "task.status_changed":           "تحديث حالة مهمة",
-  // Same reasoning, same day, one surface later: the stages tab writes these
-  // two through recordActivity and this timeline merges them — added the day
-  // they were found printing raw «case_stage.added» in an all-Arabic list.
-  "case_stage.added":              "إضافة درجة تقاضٍ",
-  "case_stage.outcome_recorded":   "تسجيل نتيجة درجة تقاضٍ",
-  // legacy free-text
-  "created":        "إنشاء القضية",
-  "status_change":  "تغيير الحالة",
-  "updated":        "تحديث القضية",
-  "assigned":       "تعيين المحامي",
-  "completed":      "إتمام القضية",
-  "cancelled":      "إلغاء القضية",
-  "note_added":     "إضافة ملاحظة",
-  "hearing_added":  "إضافة جلسة",
-};
-
-function eventLabel(ev: string): string {
-  return EVENT_LABELS[ev] ?? ev;
-}
+// Arabic labels for namespaced + legacy event strings now live in
+// @/lib/services/caseEventLabels (caseEventLabel) — this file and
+// client/cases/[id] each held their own copy, and the stages kinds
+// (case_stage.added / case_stage.outcome_recorded) got added to only one.
 
 function eventIcon(ev: string): React.ElementType {
   const e = ev.toLowerCase();
@@ -461,7 +410,7 @@ export default function CaseDetailPage() {
     return [...caseData.events]
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
       .map((e) => ({
-        event: eventLabel(e.event),
+        event: caseEventLabel(e.event),
         date: formatDate(e.created_at),
         icon: eventIcon(e.event),
         color: eventColor(e.event),
@@ -479,7 +428,7 @@ export default function CaseDetailPage() {
       })
       .map((e) => ({
         author: e.actor_name || "—",
-        text: String((e.metadata as any)?.text ?? eventLabel(e.event)),
+        text: String((e.metadata as any)?.text ?? caseEventLabel(e.event)),
         date: formatDate(e.created_at),
       }))
       .reverse();

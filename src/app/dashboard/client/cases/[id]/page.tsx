@@ -20,6 +20,7 @@ import {
 // opens — the client could not tell they were the same row. The UUID is still
 // the identifier and is still in the URL; only the display shortens.
 import { orderReference } from "@/lib/services/orderReference";
+import { caseEventLabel } from "@/lib/services/caseEventLabels";
 
 type CaseStage = "filed" | "pending" | "session" | "judgment" | "closed";
 
@@ -60,38 +61,10 @@ const EVENT_COLOR: Record<TimelineEvent["type"], string> = {
   milestone: "text-[#C8A762]", message: "text-emerald-500",
 };
 
-const EVENT_LABELS: Record<string, string> = {
-  "service_request.created":       "إنشاء القضية",
-  "service_request.status_changed":"تغيير الحالة",
-  "service_request.updated":       "تحديث القضية",
-  "service_request.assigned":      "تعيين المحامي",
-  "service_request.completed":     "إتمام القضية",
-  "service_request.cancelled":     "إلغاء القضية",
-  "service_request.note_added":    "إضافة ملاحظة",
-  "service_request.hearing_added": "إضافة جلسة",
-  "case.note_added":               "إضافة ملاحظة",
-  "case.hearing_added":            "إضافة جلسة",
-  // Phase 1 (2026-09-03): activity_events rows, merged into this same
-  // timeline server-side (GET /api/v1/service-requests/[id]). See the lawyer
-  // case file's copy of this map for why these three exist.
-  "hearing.created":               "إضافة جلسة",
-  "task.created":                  "إضافة مهمة",
-  "task.status_changed":           "تحديث حالة مهمة",
-  "case_stage.added":              "إضافة درجة تقاضٍ",
-  "case_stage.outcome_recorded":   "تسجيل نتيجة درجة تقاضٍ",
-  "created":        "إنشاء القضية",
-  "status_change":  "تغيير الحالة",
-  "updated":        "تحديث القضية",
-  "assigned":       "تعيين المحامي",
-  "completed":      "إتمام القضية",
-  "cancelled":      "إلغاء القضية",
-  "note_added":     "إضافة ملاحظة",
-  "hearing_added":  "إضافة جلسة",
-};
-
-function eventLabel(ev: string): string {
-  return EVENT_LABELS[ev] ?? ev;
-}
+// Arabic labels for namespaced + legacy event strings now live in
+// @/lib/services/caseEventLabels (caseEventLabel) — this file and
+// lawyer/cases/[id] each held their own copy, and the stages kinds
+// (case_stage.added / case_stage.outcome_recorded) got added to only one.
 
 function eventTimelineType(ev: string): TimelineEvent["type"] {
   const e = ev.toLowerCase();
@@ -157,7 +130,7 @@ function toCaseData(r: ServiceRequestDetail): CaseData {
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
     .map((e) => ({
       date: formatDate(e.created_at),
-      title: eventLabel(e.event),
+      title: caseEventLabel(e.event),
       type: eventTimelineType(e.event),
       done: true,
     }));
