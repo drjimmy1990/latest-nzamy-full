@@ -1,9 +1,16 @@
 import { NextResponse, NextRequest } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import {
   type UiDegree, VALID_UI_DEGREES, degreeToDb, degreeFromDb,
 } from "@/lib/services/caseStageVocabulary";
+import {
+  type HolidayKind, type HolidayRule,
+  computeDueDate, resolveHolidayDates, parseIsoDate, addDays, isoDate,
+} from "@/lib/services/deadlineEngine";
+
+const RIYADH_06 = "T06:00:00+03:00";
 
 /**
  * /api/v1/lawyer/case-stages/[caseId] — Phase 1 (خطة_البناء_الكاملة §5), the
@@ -27,6 +34,24 @@ import {
  * caseId in the path is `case_request_id` (service_requests.id, text) — the
  * same anchor hearings/tasks/activity_events/case_graphs already use, because
  * `public.cases` has zero writers (verified this wave).
+ *
+ * ── PHASE 5 HOOK — رادار المهل (خطة_البناء_الكاملة §9) ──────────────────────
+ * PATCH also auto-creates the next statutory deadline whenever a stage closes
+ * with an outcome recorded: `first_instance` → the `appeal_general` platform
+ * rule, `appeal` → `cassation` (`cassation`/`execution` have no next filing
+ * window here, so nothing is created). It fires whenever the row ends this
+ * PATCH with BOTH an outcome and a `closed_on` — whether `closed_on` was set
+ * in this same request or was already stored from an earlier one — so
+ * setting the outcome first and the date later still gets a deadline. It is
+ * skipped silently when no matching platform rule exists, or a `deadlines`
+ * row for this `(stage_id, rule_id)` pair already does (idempotent — a PATCH
+ * that repeats the same outcome does not double-create). The due date is
+ * computed the same way the deadlines POST route will (`deadlineEngine.ts`
+ * against `court_holidays`), and the same {7,3,1}+due reminder rows are
+ * queued into `notification_outbox` for the cron scheduler
+ * (`/api/v1/cron/deadlines`) to deliver. This whole hook is best-effort: any
+ * failure in it is logged and swallowed — it must never fail the PATCH that
+ * recorded the outcome.
  */
 
 interface StageRow {
@@ -202,6 +227,154 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ca
   }
 }
 
+// Degree that just closed → the platform deadline_rules.code for the next
+// filing window. cassation/execution intentionally map to nothing.
+const DEGREE_TO_AUTO_RULE_CODE: Record<string, string | undefined> = {
+  first_instance: "appeal_general",
+  appeal: "cassation",
+};
+
+/** "<due_date - offsetDays>T06:00:00+03:00" — Riyadh 06:00, per the reminder contract. offsetDays 0 = the due date itself. Date math goes through deadlineEngine's addDays/isoDate — the ONE place a date is computed (see deadlines/route.ts line 371, the identical pattern). */
+function reminderScheduledForIso(dueDateIso: string, offsetDays: number): string | null {
+  const due = parseIsoDate(dueDateIso);
+  if (!due) return null;
+  return `${isoDate(addDays(due, -offsetDays))}${RIYADH_06}`;
+}
+
+/**
+ * Auto-creates the statutory deadline for the filing window that opens when
+ * a stage closes (see the header comment's Phase 5 hook section). Runs on
+ * the caller's own RLS client — every table it touches (deadline_rules,
+ * court_holidays, deadlines, notification_outbox) is readable/writable by an
+ * authenticated lawyer for their own rows per the Phase 5 migration's RLS,
+ * so no service-role escalation is needed. Never throws.
+ */
+async function autoCreateStatutoryDeadline(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  firmId: string | null;
+  caseId: string;
+  stageId: string;
+  degree: string;
+  closedOn: string;
+}): Promise<void> {
+  const { supabase, userId, firmId, caseId, stageId, degree, closedOn } = params;
+  try {
+    const ruleCode = DEGREE_TO_AUTO_RULE_CODE[degree];
+    if (!ruleCode) return;
+
+    const { data: rule, error: ruleError } = await supabase
+      .from("deadline_rules")
+      .select("id, title_ar, period_days, count_from_next_day, roll_forward_if_holiday")
+      .eq("code", ruleCode)
+      .is("owner_user_id", null)
+      .eq("active", true)
+      .maybeSingle();
+    if (ruleError) {
+      console.error("[case-stages PATCH] auto-deadline rule lookup failed:", ruleError.message, ruleError.code);
+      return;
+    }
+    if (!rule) return; // no platform rule for this code — nothing to auto-create
+
+    const { data: existing, error: existingError } = await supabase
+      .from("deadlines")
+      .select("id")
+      .eq("stage_id", stageId)
+      .eq("rule_id", rule.id)
+      .maybeSingle();
+    if (existingError) {
+      console.error("[case-stages PATCH] auto-deadline existing lookup failed:", existingError.message, existingError.code);
+      return;
+    }
+    if (existing) return; // already created for this stage+rule — idempotent
+
+    const { data: holidayRows, error: holidayError } = await supabase
+      .from("court_holidays")
+      .select("id, title_ar, kind, greg_month, greg_day, hijri_month, hijri_day, length_days, start_date, end_date, approximate, active")
+      .eq("active", true);
+    if (holidayError) {
+      console.error("[case-stages PATCH] auto-deadline holidays lookup failed:", holidayError.message, holidayError.code);
+      return;
+    }
+    const holidayRules: HolidayRule[] = (holidayRows ?? []).map((h) => ({
+      id: h.id as string,
+      titleAr: h.title_ar as string,
+      kind: h.kind as HolidayKind,
+      gregMonth: h.greg_month as number | null,
+      gregDay: h.greg_day as number | null,
+      hijriMonth: h.hijri_month as number | null,
+      hijriDay: h.hijri_day as number | null,
+      lengthDays: h.length_days as number,
+      startDate: h.start_date as string | null,
+      endDate: h.end_date as string | null,
+      approximate: h.approximate as boolean,
+      active: h.active as boolean,
+    }));
+
+    const triggerYear = parseIsoDate(closedOn)?.getFullYear();
+    if (!triggerYear) return;
+    const resolved = resolveHolidayDates(holidayRules, triggerYear, triggerYear + 1);
+
+    const computation = computeDueDate({
+      triggerDate: closedOn,
+      periodDays: rule.period_days as number,
+      countFromNextDay: rule.count_from_next_day as boolean,
+      rollForwardIfHoliday: rule.roll_forward_if_holiday as boolean,
+      holidays: resolved,
+    });
+    if (!computation) return;
+
+    const { data: caseRow } = await supabase
+      .from("service_requests")
+      .select("title")
+      .eq("id", caseId)
+      .maybeSingle();
+    const caseTitle = (caseRow?.title as string | undefined) || null;
+
+    const { data: deadline, error: insertError } = await supabase
+      .from("deadlines")
+      .insert({
+        owner_user_id: userId,
+        firm_id: firmId,
+        case_request_id: caseId,
+        stage_id: stageId,
+        rule_id: rule.id,
+        title: `${rule.title_ar as string} — ${caseTitle || "قضية"}`,
+        kind: "statutory",
+        trigger_date: closedOn,
+        due_date: computation.dueDate,
+        due_date_hijri: computation.dueDateHijri,
+        days_count: computation.daysCount,
+        computed_by_rule: true,
+        rolled_from_holiday: computation.rolledFromHoliday,
+        priority: "urgent",
+      })
+      .select("id, due_date")
+      .single();
+    if (insertError || !deadline) {
+      console.error("[case-stages PATCH] auto-deadline insert failed:", insertError?.message, insertError?.code);
+      return;
+    }
+
+    const outboxRows = [7, 3, 1, 0].map((offsetDays) => ({
+      deadline_id: deadline.id as string,
+      recipient_user_id: userId,
+      channel: "in_app" as const,
+      kind: offsetDays === 0 ? "deadline_due" : `deadline_reminder_${offsetDays}d`,
+      scheduled_for: reminderScheduledForIso(deadline.due_date as string, offsetDays),
+    })).filter((row): row is typeof row & { scheduled_for: string } => row.scheduled_for !== null);
+
+    if (outboxRows.length > 0) {
+      const { error: outboxError } = await supabase.from("notification_outbox").insert(outboxRows);
+      if (outboxError && outboxError.code !== "23505") {
+        console.error("[case-stages PATCH] auto-deadline outbox insert failed:", outboxError.message, outboxError.code);
+      }
+    }
+  } catch (err) {
+    console.error("[case-stages PATCH] auto-deadline unexpected error:", err);
+  }
+}
+
 /**
  * PATCH /api/v1/lawyer/case-stages/[caseId]
  * Body: { id, outcome?, closedOn?, notes? } — recording how a degree ended.
@@ -277,6 +450,19 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
         subjectId: id,
         payload: { outcome },
       });
+
+      const stageRow = data as StageRow;
+      if (stageRow.closed_on) {
+        await autoCreateStatutoryDeadline({
+          supabase,
+          userId: user.id,
+          firmId: membership?.firm_id ?? null,
+          caseId,
+          stageId: stageRow.id,
+          degree: stageRow.degree,
+          closedOn: stageRow.closed_on,
+        });
+      }
     }
 
     return NextResponse.json({ data: toDto(data as StageRow) });

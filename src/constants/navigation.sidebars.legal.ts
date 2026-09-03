@@ -15,6 +15,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     collapsible: false,
     items: [
       { label: "الجلسات والمواعيد",    labelEn: "Hearings & Appointments",       href: "/dashboard/lawyer/hearings",  icon: "CalendarCheck" },
+      { label: "رادار المهل",         labelEn: "Deadline Radar", href: "/dashboard/lawyer/deadlines", icon: "Timer" },
       { label: "جميع القضايا",       labelEn: "All Cases",      href: "/dashboard/lawyer/cases",     icon: "Gavel" },
       { label: "مهامي",              labelEn: "My Tasks",       href: "/dashboard/lawyer/tasks",     icon: "CheckSquare" },
       { label: "سجل النشاط",        labelEn: "Activity Log",   href: "/dashboard/lawyer/activity",  icon: "ClockCounterClockwise" },
@@ -178,6 +179,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
     title: "الجلسات والقضايا", titleEn: "Hearings & Cases",
     items: [
       { label: "الجلسات والمواعيد", labelEn: "Hearings & Appointments",  href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
+      { label: "رادار المهل",       labelEn: "Deadline Radar", href: "/dashboard/lawyer/deadlines", icon: "Timer" },
       { label: "جميع القضايا",   labelEn: "All Cases", href: "/dashboard/lawyer/cases",    icon: "Gavel" },
       { label: "مهامي",          labelEn: "My Tasks",  href: "/dashboard/lawyer/tasks",    icon: "CheckSquare" },
     ],
