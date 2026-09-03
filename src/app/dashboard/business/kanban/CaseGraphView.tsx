@@ -1,8 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
-import { Crosshair, Info, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle, CircleNotch, Crosshair, Info, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil, Warning } from "@phosphor-icons/react";
 import {
   EDGE_CONFIG,
   TYPE_CONFIG,
@@ -14,17 +14,28 @@ import {
 } from "./_graph-model";
 import { useCaseGraphState } from "./_use-case-graph-state";
 import { SidebarLauncher, AiAnalysisPanel, OverlaysBundle } from "./CaseGraphOverlays";
+import { getCaseGraph, saveCaseGraph } from "@/lib/services/caseGraphService";
 
 export default function CaseGraphView({
   isDark,
   isGlobal,
   initialNodes: seedNodes,
   initialEdges: seedEdges,
+  caseId,
 }: {
   isDark: boolean;
   isGlobal?: boolean;
   initialNodes?: GraphNode[];
   initialEdges?: GraphEdge[];
+  /**
+   * `service_requests.id` of the case this board belongs to. When given, the
+   * board loads its saved graph from `case_graphs` on mount and autosaves
+   * every change back to it (Phase 1, 2026-09-03) — this is what the toolbar
+   * chip below used to say could never happen. Omitted on the global
+   * multi-case workspace (`isGlobal`) and anywhere else with no single case
+   * to key a save on; those keep the honest "not saved" chip.
+   */
+  caseId?: string;
 }) {
   const {
     nodes, setNodes, edges, setEdges,
@@ -42,6 +53,66 @@ export default function CaseGraphView({
   } = useCaseGraphState({ initialNodes: seedNodes, initialEdges: seedEdges });
 
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+
+  // ── Persistence (Phase 1: public.case_graphs) ───────────────────────────
+  // "loading"  — reading the saved graph, nothing on screen is trustworthy yet
+  // "ready"    — read succeeded (found a graph, or confirmed there is none) —
+  //              autosave is safe from here on
+  // "readError"— the read failed. Autosave STAYS OFF: saving now could
+  //              silently overwrite a real saved graph we simply could not
+  //              read, with whatever empty/seed state the board opened with.
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "readError">(caseId ? "loading" : "ready");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "saveError">("idle");
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Guards the autosave effect from firing on the very first render after a
+  // load — without this, seeding `nodes`/`edges` from the fetched graph would
+  // immediately re-save the same data it just read, and a case with no saved
+  // graph would autosave an empty board the instant the read confirmed that.
+  const skipNextAutosave = useRef(false);
+
+  useEffect(() => {
+    if (!caseId) return;
+    let cancelled = false;
+    setLoadState("loading");
+    getCaseGraph(caseId)
+      .then((saved) => {
+        if (cancelled) return;
+        if (saved) {
+          skipNextAutosave.current = true;
+          setNodes(saved.nodes as GraphNode[]);
+          setEdges(saved.edges as GraphEdge[]);
+          const vp = saved.viewport as { pan?: { x: number; y: number }; scale?: number } | null;
+          if (vp?.pan) setPan(vp.pan);
+          if (typeof vp?.scale === "number") setScale(vp.scale);
+        }
+        setLoadState("ready");
+      })
+      .catch((err) => {
+        console.error("[CaseGraphView] failed to load saved graph:", err);
+        if (!cancelled) setLoadState("readError");
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setNodes/setEdges/setPan/setScale are stable setters from useState/useCaseGraphState
+  }, [caseId]);
+
+  useEffect(() => {
+    if (!caseId || loadState !== "ready") return;
+    if (skipNextAutosave.current) {
+      skipNextAutosave.current = false;
+      return;
+    }
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      setSaveState("saving");
+      saveCaseGraph(caseId, { nodes, edges, viewport: { pan, scale } })
+        .then(() => setSaveState("saved"))
+        .catch((err) => {
+          console.error("[CaseGraphView] autosave failed:", err);
+          setSaveState("saveError");
+        });
+    }, 1500);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [caseId, loadState, nodes, edges, pan, scale]);
 
   // `isWorkspaceEmpty` gates the LAUNCHER, and the launcher is a global-workspace
   // affordance only — keep it off the case-file mounts. Since the seed fallback
@@ -106,16 +177,41 @@ export default function CaseGraphView({
             
             {/* Top Toolbar */}
             <div className={`absolute top-4 start-4 z-10 flex flex-wrap items-center gap-2 rounded-2xl border p-1.5 shadow-sm max-w-[calc(100%-2rem)] ${isDark ? "bg-zinc-900/90 border-white/[0.08]" : "bg-white/90 border-zinc-200"}`}>
-              {/* This chip read «مساحة محفوظة» over a green dot. Nothing on this
-                  canvas is persisted — no localStorage, no request, the nodes live
-                  in useState — and on the case file the panel is unmounted by the
-                  tab switcher, so the board is gone the moment the lawyer clicks
-                  another tab. The label now says that, because a lawyer who maps a
-                  case for twenty minutes needs to know it before they start. */}
-              <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"}`}
-                title="لا يتم حفظ هذه اللوحة على الخادم — أي تعديل يزول عند مغادرة الصفحة أو الانتقال لتبويب آخر">
-                <span className="w-2 h-2 rounded-full bg-amber-500" /> غير محفوظة
-              </div>
+              {/* Was a static chip reading «غير محفوظة» always — true for
+                  every mount before Phase 1 (2026-09-03: public.case_graphs).
+                  Now it reflects the real save state when `caseId` is given
+                  (autosaves for real), and keeps the honest amber "not saved"
+                  label everywhere else — the global multi-case workspace has
+                  no single case to key a save on, so nothing there is a lie
+                  either. */}
+              {!caseId ? (
+                <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"}`}
+                  title="لا يتم حفظ هذه اللوحة على الخادم — أي تعديل يزول عند مغادرة الصفحة أو الانتقال لتبويب آخر">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" /> غير محفوظة
+                </div>
+              ) : loadState === "loading" ? (
+                <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
+                  <CircleNotch size={12} className="animate-spin" /> جارٍ تحميل اللوحة المحفوظة...
+                </div>
+              ) : loadState === "readError" ? (
+                <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}
+                  title="تعذّرت قراءة اللوحة المحفوظة — الحفظ التلقائي متوقّف مؤقتاً حتى لا يُكتَب فوق نسخة حقيقية لم نتمكّن من قراءتها">
+                  <Warning size={12} weight="fill" /> تعذّرت القراءة — الحفظ متوقّف
+                </div>
+              ) : saveState === "saving" ? (
+                <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
+                  <CircleNotch size={12} className="animate-spin" /> جارٍ الحفظ...
+                </div>
+              ) : saveState === "saveError" ? (
+                <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}
+                  title="آخر تعديل لم يُحفَظ — سيُعاد المحاولة مع أي تعديل جديد">
+                  <Warning size={12} weight="fill" /> تعذّر الحفظ
+                </div>
+              ) : (
+                <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
+                  <CheckCircle size={12} weight="fill" /> محفوظة
+                </div>
+              )}
               <div className={`w-px mx-1 my-1 self-stretch ${isDark ? "bg-white/10" : "bg-zinc-200"}`} />
               {/* Was a gold «تحليل AI» primary button that spun «جاري التحليل...»
                   for two seconds and then opened this panel. Nothing analysed

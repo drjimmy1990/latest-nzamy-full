@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Briefcase, UserCircle, PencilSimpleLine, Scales,
@@ -69,6 +70,13 @@ const AI_SUGGESTION = {
 export default function FirmCaseDetailsPage() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
+  // This page's own content below (CASE_INFO, TEAM_MEMBERS, TASKS...) is a
+  // static mock and does not read this id for anything else today — a
+  // separate, larger finding. The graph tab is real now regardless: `id` is
+  // still the actual per-URL case identity, so a saved graph correctly
+  // belongs to the case whose URL it was drawn on.
+  const params = useParams();
+  const caseId = Array.isArray(params?.id) ? params.id[0] : (params?.id as string | undefined);
   const [caseTab, setCaseTab] = useState<CaseTab>("tasks");
   const [showAiAssign, setShowAiAssign] = useState(false);
 
@@ -254,7 +262,7 @@ export default function FirmCaseDetailsPage() {
         
         {caseTab === "canvas" && (
           <motion.div key="canvas" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            <LegalCanvas />
+            <LegalCanvas caseId={caseId} />
           </motion.div>
         )}
       </AnimatePresence>

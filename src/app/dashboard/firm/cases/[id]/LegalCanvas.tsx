@@ -40,20 +40,24 @@ import { useTheme } from "@/components/ThemeProvider";
  * Loaded with `ssr: false` for the same reason the lawyer page does: the canvas
  * measures the DOM.
  *
- * The persisted graph itself (`case_graphs`) is Phase 1 of the build plan, so
- * what a firm draws here still does not survive a reload — that is a missing
- * table, not a licence to seed the board with a fake case in the meantime.
+ * The persisted graph itself (`case_graphs`) shipped 2026-09-03 — `caseId`
+ * below is what makes this board load and autosave for real now, the same
+ * as the lawyer case file. This component took no props before; the id has
+ * to come from its own caller, `firm/cases/[id]/page.tsx`, which itself does
+ * not read `[id]` from the URL for anything else on that page today — a
+ * separate, larger finding (that whole page is a static mock regardless of
+ * which case is opened), flagged but out of scope for this table.
  */
 const CaseGraphView = dynamic(
   () => import("@/app/dashboard/business/kanban/CaseGraphView"),
   { ssr: false },
 );
 
-export default function LegalCanvas() {
+export default function LegalCanvas({ caseId }: { caseId?: string }) {
   const { isDark } = useTheme();
   return (
     <div className="overflow-hidden rounded-2xl" style={{ height: "580px" }}>
-      <CaseGraphView isDark={isDark} isGlobal={false} />
+      <CaseGraphView isDark={isDark} isGlobal={false} caseId={caseId} />
     </div>
   );
 }

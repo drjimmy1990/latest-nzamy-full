@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, ArrowRight, ShieldCheck, UserCircle, Briefcase,
@@ -120,6 +121,13 @@ function ShareGraphModal({ onClose, isDark }: { onClose: () => void; isDark: boo
 export default function MatterDashboard() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
+  // This page's own content below is a static mock and does not read this id
+  // for anything else today — a separate, larger finding, out of scope here.
+  // The graph tab is real regardless: `id` is still the actual per-URL case
+  // identity, so a saved graph correctly belongs to the case whose URL it
+  // was drawn on.
+  const params = useParams();
+  const caseId = Array.isArray(params?.id) ? params.id[0] : (params?.id as string | undefined);
   const [activeTab, setActiveTab] = useState<TabPane>("overview");
   const [showShareModal, setShowShareModal] = useState(false);
 
@@ -270,7 +278,7 @@ export default function MatterDashboard() {
                  </button>
               </div>
               <div className={`flex-1 rounded-3xl overflow-hidden border relative ${isDark ? "border-white/[0.08]" : "border-zinc-200"}`}>
-                <CaseGraphView isDark={isDark} />
+                <CaseGraphView isDark={isDark} isGlobal={false} caseId={caseId} />
               </div>
             </motion.div>
           )}
