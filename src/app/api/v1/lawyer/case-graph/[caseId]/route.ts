@@ -129,13 +129,16 @@ export async function PUT(
 
     // Solo lawyer → no firm row → firm_id stays null, same reasoning as
     // hearings/tasks POST.
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await supabase
       .from("firm_members")
       .select("firm_id")
       .eq("user_id", user.id)
       .eq("status", "active")
       .limit(1)
       .maybeSingle();
+    if (membershipError) {
+      console.error("[lawyer/case-graph POST] firm_members lookup failed:", membershipError.message, membershipError.code);
+    }
 
     const { error } = await supabase
       .from("case_graphs")

@@ -50,6 +50,9 @@ export async function GET(request: NextRequest) {
     const receiver = searchParams.get("receiver");
     const requesterUserId = searchParams.get("requester_user_id");
     const status = searchParams.get("status");
+    // Phase 2 (20260903_phase2_clients_and_firm_membership.sql) — «قضايا هذا
+    // الموكّل» on the client file: every case linked to one lawyer_clients card.
+    const lawyerClientId = searchParams.get("lawyer_client_id");
 
     let query = supabase
       .from("service_requests")
@@ -67,6 +70,10 @@ export async function GET(request: NextRequest) {
 
     if (status) {
       query = query.eq("status", status);
+    }
+
+    if (lawyerClientId) {
+      query = query.eq("lawyer_client_id", lawyerClientId);
     }
 
     const { data, count, error } = await query;
@@ -223,10 +230,70 @@ export async function POST(request: NextRequest) {
         ? requestedStatus
         : "pending_assignment";
 
+    // Phase 2 (20260903_phase2_clients_and_firm_membership.sql) — firm_id is
+    // ALWAYS resolved server-side from the creator's own active firm_members
+    // row, never trusted from the body: a client-supplied firm_id would let a
+    // requester plant their case inside a firm they don't belong to, which the
+    // new "firm members read firm service requests" SELECT policy would then
+    // hand straight to every one of that firm's colleagues. Solo lawyers (and
+    // anyone else with no active membership) keep firm_id = null, exactly the
+    // pre-Phase-2 behaviour.
+    const { data: membership, error: membershipError } = await supabase
+      .from("firm_members")
+      .select("firm_id")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+    if (membershipError) {
+      console.error(
+        "[service-requests POST] firm_members lookup failed:",
+        membershipError.message,
+        membershipError.code,
+      );
+    }
+    const firmId = membership?.firm_id ?? null;
+
+    // Optional link to a lawyer_clients card (رقم الموكّل). Only ever written
+    // when the RLS client can itself read that row — this is the ownership
+    // check, not a courtesy: `lawyer_clients` SELECT is
+    // owner-or-active-firm-member, so a read that fails here means the caller
+    // has no right to attach a case to that card, whether it exists at all or
+    // belongs to someone else.
+    let lawyerClientId: string | null = null;
+    const requestedLawyerClientId =
+      typeof requestData.lawyerClientId === "string" && requestData.lawyerClientId.trim()
+        ? requestData.lawyerClientId.trim()
+        : null;
+    if (requestedLawyerClientId) {
+      const { data: clientRow, error: clientLookupError } = await supabase
+        .from("lawyer_clients")
+        .select("id")
+        .eq("id", requestedLawyerClientId)
+        .maybeSingle();
+      if (clientLookupError) {
+        console.error(
+          "[service-requests POST] lawyer_clients lookup failed:",
+          clientLookupError.message,
+          clientLookupError.code,
+        );
+      }
+      if (!clientRow) {
+        return NextResponse.json(
+          { error: "الموكّل المحدَّد غير موجود أو لا تملك صلاحيته." },
+          { status: 400 },
+        );
+      }
+      lawyerClientId = clientRow.id as string;
+    }
+
     // Create the service request
     // Only include columns that exist in the service_requests table:
     // id, requester_user_id, type, title, description, requester, receiver,
-    // assigned_to, status, payment, source_path, metadata, created_at, updated_at
+    // assigned_to, status, payment, source_path, metadata, created_at,
+    // updated_at, firm_id (Phase 2 — creator's active firm_members row, never
+    // from the body), lawyer_client_id (Phase 2 — optional, only after the
+    // read-permission check above)
     // B1 — service_requests.id is text PK with NO default; always supply one.
     const { data: serviceRequest, error: reqError } = await supabase
       .from("service_requests")
@@ -243,6 +310,16 @@ export async function POST(request: NextRequest) {
         requester: requestData.requester ?? {},
         payment: requestData.payment ?? { amount: 0, status: "not_required" },
         metadata: requestData.metadata ?? {},
+        // Phase 2 columns, sent ONLY when they carry a value. Both exist on
+        // production only after migration 20260903_phase2 has been run; a solo
+        // lawyer or a request with no picked client inserts exactly the column
+        // set it inserted before, so deploying this code ahead of that
+        // migration cannot break the eleven intake paths that end here. A
+        // firm member (firmId set) or a picked card (lawyerClientId set) can
+        // only exist once the migration is in, so the extra columns are only
+        // ever sent to a database that has them.
+        ...(firmId ? { firm_id: firmId } : {}),
+        ...(lawyerClientId ? { lawyer_client_id: lawyerClientId } : {}),
       })
       .select()
       .single();

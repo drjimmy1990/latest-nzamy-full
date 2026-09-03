@@ -8,16 +8,13 @@ import {
   XCircle, SortAscending, ArrowRight,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import EmptyState from "@/components/ui/EmptyState";
+import { itemsOf, listViewState } from "@/lib/services/listRead";
 
 import { type ClientFlag, type SortKey, FLAG_CONFIG } from "@/constants/lawyerClientsData";
+import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
 import AddClientModal from "@/components/dashboard/lawyer/AddClientModal";
-import ClientDrawer, {
-  type LawyerClientView,
-  type LawyerClientApiRow,
-  toLawyerClientView,
-} from "@/components/dashboard/lawyer/ClientDrawer";
+import ClientDrawer from "@/components/dashboard/lawyer/ClientDrawer";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -26,35 +23,25 @@ export default function ClientsPage() {
   const { isDark } = useTheme();
 
   const [search,     setSearch]     = useState("");
-  const [clients,    setClients]    = useState<LawyerClientView[]>([]);
+  const [read,       setRead]       = useState<Awaited<ReturnType<typeof getLawyerClients>> | null>(null);
   const [loading,    setLoading]    = useState(true);
-  const [loadError,  setLoadError]  = useState<string | null>(null);
   const [activeFlags, setActiveFlags] = useState<Set<ClientFlag>>(new Set());
   const [sortKey,    setSortKey]    = useState<SortKey>("lastContact");
   const [showModal,  setShowModal]  = useState(false);
-  const [drawerClient, setDrawerClient] = useState<LawyerClientView | null>(null);
+  const [drawerClient, setDrawerClient] = useState<LawyerClient | null>(null);
   const [clientView,   setClientView]   = useState<"active" | "archive">("active"); // S82
   const [archiveSearch, setArchiveSearch] = useState(""); // S82
 
-  /**
-   * client id → the raw `lastActivity` ISO the endpoint sent for that client.
-   *
-   * The default sort («آخر نشاط») used to fall through the comparator's
-   * `return 0`, so picking it reordered nothing — and since GET
-   * /api/v1/lawyer/clients has no `.order()`, the order it preserved was
-   * "whatever the profiles query returned, then the manual clients", which is
-   * not an activity order at all.
-   *
-   * The value the sort needs is on the wire already (`LawyerClientApiRow
-   * .lastActivity`, api/v1/lawyer/clients/route.ts:181) but `toLawyerClientView`
-   * keeps only the formatted Arabic date — and that string is an ar-SA
-   * (Hijri, Arabic-Indic) rendering, which cannot be compared. So the raw ISO
-   * is kept beside the views. Sort input only: never rendered.
-   */
-  const [lastActivityById, setLastActivityById] = useState<Record<string, string>>({});
+  const viewState = listViewState(loading, read);
+  const clients = itemsOf(read);
+  const loadError = viewState === "unreadable" ? "تعذّر تحميل دليل الموكّلين." : null;
 
-  // S82: auto-inactive = no in-flight requests, OR the lawyer ticked «غير نشط».
-  const isArchived = (c: LawyerClientView) => c.activeRequests === 0 || c.flags.includes("inactive");
+  // S82: archived = the status recorded on the card, not a guess derived from
+  // whether the client currently has an in-flight request. `status` is a real
+  // column on public.lawyer_clients (migration 20260903_phase2) — the old
+  // heuristic (`activeRequests === 0 || flags.includes("inactive")`) existed
+  // only because there was no such column to read.
+  const isArchived = (c: LawyerClient) => c.status !== "active";
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -69,14 +56,14 @@ export default function ClientsPage() {
       : clients.filter(c => !isArchived(c));
     const q = archiveSearch.trim().toLowerCase();
     return base.filter(c => {
-      const matchSearch = !search || c.name.includes(search) || c.phone.includes(search);
+      const matchSearch = !search || c.name.includes(search) || (c.phone ?? "").includes(search);
       const matchFlags  = activeFlags.size === 0 || [...activeFlags].every(f => c.flags.includes(f));
       const matchArchiveQ = clientView !== "archive" || !q ||
-        c.name.toLowerCase().includes(q) || c.phone.includes(q);
+        c.name.toLowerCase().includes(q) || (c.phone ?? "").includes(q);
       return matchSearch && matchFlags && matchArchiveQ;
     }).sort((a, b) => {
       if (sortKey === "name")        return a.name.localeCompare(b.name);
-      if (sortKey === "activeCases") return b.activeRequests - a.activeRequests;
+      if (sortKey === "activeCases") return b.activeCount - a.activeCount;
       // Clients with no fee agreement and clients with no rating sort last
       // rather than being treated as 0 / 3 — they are unknown, not lowest.
       if (sortKey === "unpaid")      return outstandingOf(b) - outstandingOf(a);
@@ -84,75 +71,35 @@ export default function ClientsPage() {
       // «آخر نشاط», newest first. ISO-8601 is lexicographically ordered by
       // construction, so a plain string compare is the correct one here.
       // A client with no activity on record sorts last rather than first.
-      const la = lastActivityById[a.id] ?? "";
-      const lb = lastActivityById[b.id] ?? "";
+      const la = a.lastActivity ?? "";
+      const lb = b.lastActivity ?? "";
       if (la === lb) return 0;
       return lb > la ? 1 : -1;
     });
-  }, [clients, search, activeFlags, sortKey, clientView, archiveSearch, lastActivityById]);
+  }, [clients, search, activeFlags, sortKey, clientView, archiveSearch]);
 
   /**
    * True only when the directory on screen is the directory the server holds.
    *
    * `clients` is `[]` in three different situations — before the first fetch
    * resolves, after one fails, and when the lawyer genuinely has no clients —
-   * and only the third one licenses a number. The subtitle and the
-   * active/archive tabs used to print «٠ موكّل» and «الموكلون النشطون ٠» in
-   * all three, the failure case included: those zeros sat directly under the
-   * red «تعذّر تحميل دليل الموكّلين» banner on the same screen.
-   *
-   * Withheld, not zeroed. Same flag, same reasoning as
-   * dashboard/client/requests/page.tsx:606.
+   * and only the third one licenses a number.
    */
-  const countsKnown = !loading && !loadError;
+  const countsKnown = viewState !== "loading" && viewState !== "unreadable";
 
-  // Only clients with a fee agreement on record contribute; a client with no
-  // figures is absent from the total, not a zero in it.
-  const withFees = clients.filter(c => c.totalFees !== null && c.paidFees !== null);
-  const totalUnpaid = withFees.reduce((acc, c) => acc + outstandingOf(c), 0);
-  const badClients  = clients.filter(c => c.flags.includes("bad") || c.flags.includes("late_pay")).length;
-
-  const onAdd = (c: LawyerClientView) => {
-    setClients(prev => [c, ...prev]);
-    // A manually-added client's `lastActivity` IS its `created_at`
-    // (route.ts:181), and that row was just written — so this instant is the
-    // value, not a guess standing in for one. Without it the client the lawyer
-    // just typed would sort to the bottom of «آخر نشاط» until the next reload.
-    // Sort input only; the card still renders `lastContact` from the server.
-    setLastActivityById(prev => ({ ...prev, [c.id]: new Date().toISOString() }));
+  const onCreated = (c: LawyerClient) => {
+    setRead(prev => prev && prev.ok
+      ? { ...prev, items: [c, ...prev.items], total: prev.total === null ? null : prev.total + 1 }
+      : prev);
   };
 
   // ─── Fetch clients ───────────────────────────────────────────────────────────
-  // Deliberately calls the endpoint directly instead of getLawyerClients():
-  // that service wrapper ends in `catch { return []; }`, so a 500 reaches this
-  // page as an empty array and a failed read is displayed as «لا توجد موكلون
-  // بعد». A lawyer must be able to tell a broken query from an empty directory.
   const loadClients = useCallback(() => {
-    if (!isSupabaseMode) {
-      // Demo build has no API routes; module-level constant, so this branch is
-      // eliminated from the production bundle.
-      setLoading(false);
-      return;
-    }
     setLoading(true);
-    setLoadError(null);
-    apiGet<LawyerClientApiRow[]>("/api/v1/lawyer/clients")
-      .then((data) => {
-        const rows = Array.isArray(data) ? data : [];
-        setClients(rows.map(toLawyerClientView));
-        // Keep the raw ISO the view model drops — see `lastActivityById`.
-        const activity: Record<string, string> = {};
-        for (const r of rows) {
-          if (typeof r.lastActivity === "string" && r.lastActivity) activity[r.id] = r.lastActivity;
-        }
-        setLastActivityById(activity);
-        setLoading(false);
-      })
-      .catch((e) => {
-        console.error("[lawyer clients] fetch failed:", e);
-        setLoadError("تعذّر تحميل دليل الموكّلين.");
-        setLoading(false);
-      });
+    getLawyerClients().then((res) => {
+      setRead(res);
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => { loadClients(); }, [loadClients]);
@@ -184,7 +131,7 @@ export default function ClientsPage() {
       )}
 
       {/* Genuinely empty directory — no clients yet, and the read succeeded. */}
-      {!loading && !loadError && clients.length === 0 && (
+      {viewState === "empty" && (
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
           className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
           <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
@@ -198,22 +145,7 @@ export default function ClientsPage() {
       )}
 
       {/* Add Client Modal */}
-      {showModal && <AddClientModal isDark={isDark} onClose={() => setShowModal(false)} onAdd={onAdd} />}
-
-      {/* Warning banner */}
-      {badClients > 0 && totalUnpaid > 0 && (
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-          className={`p-3.5 rounded-2xl border flex items-center gap-3 ${isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50"}`}>
-          <Warning size={16} className="text-red-500 flex-shrink-0" />
-          <p className="text-[12px] text-red-600 dark:text-red-400 flex-1 font-medium">
-            <strong>{totalUnpaid.toLocaleString()} ﷼</strong> أتعاب غير مسددة · {badClients} عملاء يحتاجون متابعة عاجلة
-          </p>
-          <button onClick={() => { setActiveFlags(new Set(["late_pay"])); setSortKey("unpaid"); }}
-            className="text-[11px] font-bold text-red-500 hover:underline flex-shrink-0">
-            عرض فقط
-          </button>
-        </motion.div>
-      )}
+      {showModal && <AddClientModal isDark={isDark} onClose={() => setShowModal(false)} onCreated={onCreated} />}
 
       {/* S82: Active / Archive toggle */}
       <div className={`flex items-center gap-1 p-1 rounded-2xl w-fit ${
@@ -265,22 +197,15 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* Archive context note.
-          «تستطيع استعادتهم في أي وقت» was removed: there is no restore control
-          on this page and none anywhere in the lawyer workspace, and there
-          cannot be one — /api/v1/lawyer/clients exports GET and POST only, so
-          the `inactive` flag AddClientModal writes at creation time can never
-          be un-ticked. The note now names the two causes separately, because
-          only one of them reverses itself: `isArchived` is
-          `activeRequests === 0 || flags.includes("inactive")`, so a client
-          archived for having no in-flight requests leaves the archive on their
-          next request, while a client the lawyer ticked «غير نشط» never does. */}
+      {/* Archive context note. States what `status` actually means — a real
+          column on public.lawyer_clients, not the old heuristic — and does not
+          promise a restore control that does not exist on this screen. */}
       {clientView === "archive" && (
         <div className={`flex items-start gap-2 px-3 py-2 rounded-xl text-[11px] leading-relaxed ${
           isDark ? "bg-amber-500/5 border border-amber-500/15 text-amber-400" : "bg-amber-50 border border-amber-200 text-amber-700"
         }`}>
           <span className="flex-shrink-0">⚠️</span>
-          <span>يظهر هنا الموكّلون بلا طلبات نشطة، والموكّلون الذين صُنِّفوا «غير نشط» عند إضافتهم. لم يُحذف أي منهم. من كان هنا لعدم وجود طلبات نشطة يعود إلى القائمة النشطة تلقائياً مع أول طلب جديد يُوجَّه إليك، أمّا تصنيف «غير نشط» فلا توجد حالياً طريقة لإزالته بعد الحفظ.</span>
+          <span>يظهر هنا الموكّلون الذين حالتهم المسجّلة في النظام «غير نشط» أو «مؤرشف». لا توجد أداة على هذه الشاشة لتعديل حالة الموكّل بعد حفظه.</span>
         </div>
       )}
 
@@ -292,16 +217,12 @@ export default function ClientsPage() {
             style={{ fontFamily: "var(--font-brand)" }}>
             {clientView === "archive" ? "أرشيف الموكلين" : "الموكلّون"}
           </h1>
-          {/* The failure case was missing from this ternary, so a directory
-              that could not be read printed «٠ موكّل · ٠ لديهم طلبات نشطة» —
-              two confident figures on a screen already admitting the read did
-              not succeed. */}
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {loading
+            {viewState === "loading"
               ? "جارٍ التحميل…"
               : loadError
                 ? <span className="text-red-500 font-semibold">تعذّرت قراءة الدليل — العدد غير معروف</span>
-                : `${filtered.length} موكّل · ${clientView === "active" ? `${clients.filter(c => !isArchived(c) && c.activeRequests > 0).length} لديهم طلبات نشطة` : "تاريخ سابق — سجل دائم"}`}
+                : `${filtered.length} موكّل · ${clientView === "active" ? `${clients.filter(c => !isArchived(c) && c.activeCount > 0).length} لديهم طلبات نشطة` : "تاريخ سابق — سجل دائم"}`}
           </p>
         </div>
         {clientView === "active" && (
@@ -353,15 +274,9 @@ export default function ClientsPage() {
           <SortAscending size={14} />
           <select value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)}
             className="bg-transparent outline-none text-[12px] cursor-pointer">
-            {/* «آخر تواصل» renamed. The value behind it is the `created_at` of
-                the client's newest service request — activity on the platform,
-                not a call or a message: there is no contact log in this
-                product. /dashboard/lawyer/clients/[id]:431 already labels the
-                same field «آخر نشاط». The option value stays "lastContact"
-                because `SortKey` lives in src/constants/lawyerClientsData.ts. */}
             <option value="lastContact">آخر نشاط</option>
             <option value="activeCases">الطلبات النشطة</option>
-            <option value="unpaid">الأتعاب المتأخرة</option>
+            <option value="unpaid">الأتعاب المتبقية</option>
             <option value="rating">التقييم</option>
             <option value="name">الاسم</option>
           </select>
@@ -370,7 +285,7 @@ export default function ClientsPage() {
 
       {/* Client Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {loading ? (
+        {viewState === "loading" ? (
           <div className="col-span-2 flex flex-col items-center justify-center gap-3 py-14">
             <div className="inline-block w-7 h-7 rounded-full border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] animate-spin" />
             <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل دليل الموكّلين…</p>
@@ -398,58 +313,50 @@ export default function ClientsPage() {
             />
           </div>
         ) : filtered.map((client, i) => {
-          // A fee agreement is on record only when a POSITIVE total is.
-          // `!== null` alone is defeated by a persisted literal 0, and 0 is
-          // exactly what a skipped fee step writes: AddClientModal's fee inputs
-          // are optional and it submits `Number(total) || 0` (:50-51), which
-          // the route stores and `money()` reads back as 0 rather than null
-          // (`v >= 0`, route.ts:46). So «متبقي: مسدَّدة» in green used to
-          // appear for a client whose fees were never entered at all.
-          // Same condition the fee progress bar below already uses.
-          const outstanding = client.totalFees !== null && client.totalFees > 0 && client.paidFees !== null
-            ? client.totalFees - client.paidFees
-            : null;
-          const payPct = client.totalFees && client.paidFees !== null
-            ? Math.round((client.paidFees / client.totalFees) * 100)
+          // A fee agreement is on record only when a POSITIVE total is, and the
+          // paid figure is independently nullable — an agreed total with no
+          // advance recorded yet is a real state, not an error.
+          const hasTotal = client.feeTotalSar !== null && client.feeTotalSar > 0;
+          const hasPaid = client.feePaidSar !== null;
+          const outstanding = hasTotal && hasPaid ? (client.feeTotalSar as number) - (client.feePaidSar as number) : null;
+          const payPct = hasTotal && hasPaid
+            ? Math.round(((client.feePaidSar as number) / (client.feeTotalSar as number)) * 100)
             : 0;
-          const hasBad   = client.flags.includes("bad");
-          const hasLatePay = client.flags.includes("late_pay");
 
-          // The «متبقي» cell exists only when a fee agreement is on record.
-          // It used to be unconditional, with totalFees/paidFees hardcoded to 0,
-          // so every client on the page showed a green «✓» — the platform
-          // telling six practising lawyers that every client was settled up.
+          // The «متبقٍّ» cell exists only when a fee agreement AND an advance
+          // are both on record. It used to be unconditional, with both figures
+          // hardcoded to 0, so every client on the page showed a green «✓».
           const cells: { v: string | number; label: string; c: string }[] = [
-            { v: client.activeRequests, label: "طلبات نشطة", c: client.activeRequests > 0 ? "text-royal" : isDark ? "text-zinc-500" : "text-slate-400" },
-            { v: client.closedRequests, label: "مغلقة", c: isDark ? "text-zinc-500" : "text-slate-400" },
+            { v: client.activeCount, label: "طلبات نشطة", c: client.activeCount > 0 ? "text-royal" : isDark ? "text-zinc-500" : "text-slate-400" },
+            { v: client.closedCount, label: "مغلقة", c: isDark ? "text-zinc-500" : "text-slate-400" },
           ];
           if (outstanding !== null) {
             cells.push({
               v: outstanding > 0 ? outstanding.toLocaleString() + " ﷼" : "مسدَّدة",
-              label: "متبقي",
+              label: "متبقٍّ",
               c: outstanding > 0 ? "text-red-500" : "text-emerald-500",
             });
           }
+
+          const lastContact = formatContactDate(client.lastActivity);
 
           return (
             <motion.div key={client.id}
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04 }}>
               <div onClick={() => setDrawerClient(client)}
-                className={`block group cursor-pointer ${card} overflow-hidden transition-all hover:border-royal/30 hover:shadow-lg hover:-translate-y-0.5 ${hasBad ? isDark ? "border-orange-500/20" : "border-orange-200" : ""}`}>
+                className={`block group cursor-pointer ${card} overflow-hidden transition-all hover:border-royal/30 hover:shadow-lg hover:-translate-y-0.5`}>
                 {/* Header area */}
                 <div className="p-4 pb-3">
                   <div className="flex items-start gap-3">
                     {/* Avatar */}
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-sm ${client.type === "company" ? "bg-indigo-500/10 text-indigo-500" : hasBad ? "bg-orange-500/10 text-orange-500" : "bg-royal/10 text-royal"}`}>
-                      {client.type === "company" ? <Buildings size={20} weight="duotone" /> : client.name.charAt(0)}
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-sm ${client.clientType === "company" ? "bg-indigo-500/10 text-indigo-500" : "bg-royal/10 text-royal"}`}>
+                      {client.clientType === "company" ? <Buildings size={20} weight="duotone" /> : client.name.charAt(0)}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start gap-2 mb-1">
                         <p className={`text-[14px] font-bold truncate flex-1 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{client.name}</p>
-                        {/* Stars only for a client the lawyer actually rated.
-                            There is no rating system on the platform — the only
-                            source is AddClientModal step 2. */}
+                        {/* Stars only for a client the lawyer actually rated. */}
                         {client.rating !== null && (
                           <div className="flex flex-shrink-0">
                             {Array.from({ length: 5 }).map((_, si) => (
@@ -459,11 +366,17 @@ export default function ClientsPage() {
                           </div>
                         )}
                       </div>
+                      {/* Source chip — a real platform account vs. a card typed
+                          into AddClientModal are not the same kind of record. */}
+                      <p className={`text-[9px] font-bold mb-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                        {client.source === "profile" ? "حساب على المنصّة" : "بطاقة"}
+                      </p>
                       {/* Flags */}
                       {client.flags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mb-1">
                           {client.flags.map(f => {
                             const fc = FLAG_CONFIG[f];
+                            if (!fc) return null;
                             return (
                               <span key={f} className={`text-[9px] font-bold px-1.5 rounded-full ${fc.bg} ${fc.color}`}>
                                 {fc.emoji} {fc.label}
@@ -473,7 +386,7 @@ export default function ClientsPage() {
                         </div>
                       )}
                       <div className={`flex items-center gap-3 text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                        {client.lastContact && <span className="flex items-center gap-0.5"><Clock size={9} />{client.lastContact}</span>}
+                        {lastContact && <span className="flex items-center gap-0.5"><Clock size={9} />{lastContact}</span>}
                         {client.phone && <span className="flex items-center gap-0.5"><Phone size={9} /><span dir="ltr">{client.phone}</span></span>}
                       </div>
                     </div>
@@ -484,12 +397,12 @@ export default function ClientsPage() {
                 </div>
 
                 {/* Fee progress */}
-                {client.totalFees !== null && client.totalFees > 0 && client.paidFees !== null && (
+                {hasTotal && hasPaid && (
                   <div className="px-4 pb-3">
                     <div className={`flex items-center justify-between text-[10px] mb-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                       <span>الأتعاب المسددة</span>
-                      <span className={hasLatePay && (outstanding ?? 0) > 0 ? "text-red-500 font-bold" : ""}>
-                        {client.paidFees.toLocaleString()} / {client.totalFees.toLocaleString()} ﷼
+                      <span>
+                        {(client.feePaidSar as number).toLocaleString()} / {(client.feeTotalSar as number).toLocaleString()} ﷼
                       </span>
                     </div>
                     <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
@@ -520,10 +433,22 @@ export default function ClientsPage() {
   );
 }
 
-/** Outstanding fees, or 0 when the client has no fee agreement on record.
- *  Used only for totals and sorting — never for display, where an unknown
- *  balance must be omitted rather than shown as a settled account. */
-function outstandingOf(c: LawyerClientView): number {
-  if (c.totalFees === null || c.paidFees === null) return 0;
-  return c.totalFees - c.paidFees;
+/** ISO timestamp → a readable Arabic date, or "" when there is nothing to show. */
+function formatContactDate(iso: string | null): string {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("ar-SA", { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
+/** Outstanding fees, or 0 when the client has no fee agreement (or no advance)
+ *  on record. Used only for totals and sorting — never for display, where an
+ *  unknown balance must be omitted rather than shown as a settled account. */
+function outstandingOf(c: LawyerClient): number {
+  if (c.feeTotalSar === null || c.feePaidSar === null) return 0;
+  return c.feeTotalSar - c.feePaidSar;
 }

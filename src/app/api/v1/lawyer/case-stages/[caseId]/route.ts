@@ -141,13 +141,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ca
       return NextResponse.json({ error: "case not found" }, { status: 404 });
     }
 
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await supabase
       .from("firm_members")
       .select("firm_id")
       .eq("user_id", user.id)
       .eq("status", "active")
       .limit(1)
       .maybeSingle();
+    if (membershipError) {
+      console.error("[lawyer/case-stages POST] firm_members lookup failed:", membershipError.message, membershipError.code);
+    }
 
     const { data: maxPos } = await supabase
       .from("case_stages")
@@ -252,13 +255,16 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
     }
 
     if (outcome !== undefined) {
-      const { data: membership } = await supabase
+      const { data: membership, error: membershipError } = await supabase
         .from("firm_members")
         .select("firm_id")
         .eq("user_id", user.id)
         .eq("status", "active")
         .limit(1)
         .maybeSingle();
+      if (membershipError) {
+        console.error("[lawyer/case-stages PATCH] firm_members lookup failed:", membershipError.message, membershipError.code);
+      }
 
       await recordActivity({
         supabase,

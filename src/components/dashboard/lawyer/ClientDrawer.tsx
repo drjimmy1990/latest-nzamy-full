@@ -6,102 +6,11 @@ import {
   Buildings, Gavel, ArrowRight, ListChecks, X, Warning, Star,
 } from "@phosphor-icons/react";
 import Link from "next/link";
-import { type ClientFlag, FLAG_CONFIG } from "@/constants/lawyerClientsData";
+import { FLAG_CONFIG } from "@/constants/lawyerClientsData";
 import { apiGet } from "@/lib/services/api";
+import type { LawyerClient } from "@/lib/services/lawyerClientsService";
 
-/**
- * The client shape both the directory page and this drawer render.
- *
- * It is NOT `Client` from src/constants/lawyerClientsData.ts. That interface
- * declares `totalFees`, `paidFees` and `rating` as non-optional numbers, which
- * is exactly what forced the page to invent `totalFees: 0` / `rating: 3` for
- * every row the API returned. Here each of those is nullable, and `null` means
- * "the platform has no such figure" — which the UI must render by omitting the
- * label, never by printing a 0.
- *
- * It lives in this file rather than in the constants module because that module
- * is the mock-data file (MOCK_CLIENTS) and is outside this change; keeping the
- * honest view-model next to the component that consumes it avoids editing it.
- */
-export interface LawyerClientView {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  avatar: string;
-  /** "profile" = a real platform account; "manual" = a card typed into AddClientModal. */
-  source: "profile" | "manual";
-  type: "individual" | "company" | null;
-  flags: ClientFlag[];
-  rating: number | null;
-  totalFees: number | null;
-  paidFees: number | null;
-  /** Service requests in flight — NOT a case count. */
-  activeRequests: number;
-  closedRequests: number;
-  lastContact: string;
-}
-
-/**
- * Exactly what GET (and POST) /api/v1/lawyer/clients return. Every
- * classification field is `null` when the platform holds no such value.
- */
-export interface LawyerClientApiRow {
-  id: string;
-  name: string | null;
-  email: string | null;
-  phone: string | null;
-  avatar: string | null;
-  userType: string | null;
-  source: "profile" | "manual";
-  requestCount: number;
-  activeCount: number;
-  closedCount: number;
-  lastActivity: string | null;
-  clientType: "individual" | "company" | null;
-  flags: string[] | null;
-  rating: number | null;
-  totalFees: number | null;
-  paidFees: number | null;
-}
-
-const isKnownFlag = (f: string): f is ClientFlag => f in FLAG_CONFIG;
-
-/**
- * API row → the shape the directory card and this drawer render.
- *
- * Lives here, next to `LawyerClientView`, because both the clients page and
- * AddClientModal need it and this component imports neither — putting it in
- * the page would make the modal import the page it is rendered by.
- *
- * Note what this function does NOT do: it never substitutes a value. The old
- * mapper wrote `rating: (d.rating || 3)`, `totalFees: 0`, `paidFees: 0` and
- * `flags: []` for every row, which is where the fabricated 3-star rating and
- * the green «✓» under «متبقي» came from.
- */
-export function toLawyerClientView(d: LawyerClientApiRow): LawyerClientView {
-  return {
-    id: d.id,
-    name: d.name || "عميل نظامي",
-    email: d.email || "",
-    phone: d.phone || "",
-    avatar: d.avatar || "",
-    source: d.source,
-    // Only a manually-added client has an entity type on record. For a platform
-    // account the endpoint sends null and the card falls back to the neutral
-    // initial avatar rather than guessing "individual".
-    type: d.clientType,
-    flags: (d.flags ?? []).filter(isKnownFlag),
-    rating: d.rating,
-    totalFees: d.totalFees,
-    paidFees: d.paidFees,
-    activeRequests: d.activeCount ?? 0,
-    closedRequests: d.closedCount ?? 0,
-    lastContact: formatContactDate(d.lastActivity),
-  };
-}
-
-/** One real service_requests row belonging to this client. */
+/** One real service_requests row linked to this client. */
 interface LinkedRequest {
   id: string;
   title: string;
@@ -136,7 +45,7 @@ const STATUS_DOT: Record<string, string> = {
 
 /** ISO timestamp → a readable Arabic date, or "" when there is nothing to show
  *  (callers omit the line entirely rather than printing a placeholder). */
-export function formatContactDate(iso: string | null): string {
+function formatContactDate(iso: string | null): string {
   if (!iso) return "";
   try {
     const d = new Date(iso);
@@ -147,37 +56,38 @@ export function formatContactDate(iso: string | null): string {
   }
 }
 
-export default function ClientDrawer({ client, isDark, onClose }: { client: LawyerClientView; isDark: boolean; onClose: () => void }) {
-  const unpaid = client.totalFees !== null && client.paidFees !== null
-    ? client.totalFees - client.paidFees
-    : null;
+export default function ClientDrawer({ client, isDark, onClose }: { client: LawyerClient; isDark: boolean; onClose: () => void }) {
+  const hasTotal = client.feeTotalSar !== null;
+  const hasPaid = client.feePaidSar !== null;
+  const outstanding = hasTotal && hasPaid ? (client.feeTotalSar as number) - (client.feePaidSar as number) : null;
 
   // ── Linked requests ────────────────────────────────────────────────────────
-  // This panel used to read CLIENT_CASES / CLIENT_TASKS — two literal objects
-  // keyed by seven hardcoded Arabic client names, complete with invented court
-  // names and invented next-hearing dates. For every real client it rendered
-  // «لا توجد قضايا مرتبطة» while the card behind it showed a live count, and for
-  // any real client whose name happened to collide with one of the seven it
-  // would have presented a fabricated case file for an actual person.
-  //
-  // The tasks half is gone rather than rewired: lawyer tasks are
-  // receiver="lawyer" service_requests with no client key on them, so there is
-  // no link in the schema to read. A section with no possible source is a
-  // promise, not an empty state.
+  // A "card" client is a public.lawyer_clients row — service-requests are
+  // linked to it via lawyer_client_id (migration 20260903_phase2). A "profile"
+  // client has no card yet; its `id` IS the platform account's user id, so its
+  // requests are found by requester_user_id instead. A card linked to a real
+  // account (clientUserId set) sends both, so a request filed before the card
+  // existed is still found.
   const [linked, setLinked] = useState<LinkedRequest[] | null>(null);
   const [linkedError, setLinkedError] = useState<string | null>(null);
 
   const loadLinked = useCallback(() => {
-    // A manual client's id is a service_requests row id, not a user id, and
-    // nothing in the schema points at it. Querying would be a guaranteed empty
-    // result dressed up as a fact about the client, so we do not query at all.
-    if (client.source !== "profile") return;
+    const params: Record<string, string | number> = { limit: 100 };
+    if (client.source === "card") params.lawyer_client_id = client.id;
+    if (client.clientUserId) params.requester_user_id = client.clientUserId;
+
+    // Neither key set is not a real state today (every card or profile row
+    // carries at least one), but if it ever happens there is nothing to ask
+    // the endpoint — querying with no filter would return every request the
+    // lawyer can see, attributed to this one client.
+    if (!params.lawyer_client_id && !params.requester_user_id) {
+      setLinked([]);
+      return;
+    }
+
     setLinkedError(null);
     setLinked(null);
-    apiGet<{ data: LinkedRequest[]; degraded?: boolean }>("/api/v1/service-requests", {
-      requester_user_id: client.id,
-      limit: 100,
-    })
+    apiGet<{ data: LinkedRequest[]; degraded?: boolean }>("/api/v1/service-requests", params)
       .then((res) => {
         // /api/v1/service-requests answers a failed query with HTTP 200 and
         // { data: [], degraded: true }. Without this check a database fault
@@ -192,7 +102,7 @@ export default function ClientDrawer({ client, isDark, onClose }: { client: Lawy
         console.error("[ClientDrawer] linked requests fetch failed:", e);
         setLinkedError("تعذّر تحميل الطلبات المرتبطة.");
       });
-  }, [client.id, client.source]);
+  }, [client.id, client.source, client.clientUserId]);
 
   useEffect(() => { loadLinked(); }, [loadLinked]);
 
@@ -216,11 +126,14 @@ export default function ClientDrawer({ client, isDark, onClose }: { client: Lawy
         {/* Header */}
         <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${client.type === "company" ? "bg-indigo-500/10 text-indigo-500" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"}`}>
-              {client.type === "company" ? <Buildings size={18} weight="duotone" /> : client.name.charAt(0)}
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${client.clientType === "company" ? "bg-indigo-500/10 text-indigo-500" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"}`}>
+              {client.clientType === "company" ? <Buildings size={18} weight="duotone" /> : client.name.charAt(0)}
             </div>
             <div>
               <p className={`text-[14px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{client.name}</p>
+              <p className={`text-[10px] font-bold ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                {client.source === "profile" ? "حساب على المنصّة" : "بطاقة"}
+              </p>
               {/* No phone on record → no line. An em dash under a name reads as
                   a value; an absent line reads as an absence. */}
               {client.phone && (
@@ -264,34 +177,35 @@ export default function ClientDrawer({ client, isDark, onClose }: { client: Lawy
           )}
 
           {/* Fee summary — rendered only when a fee agreement is on record.
-              `totalFees === null` means nobody ever entered one; printing 0 ﷼
-              (or a settled «✓») would be a claim about this client's account. */}
-          {client.totalFees !== null && client.paidFees !== null && (
+              `feeTotalSar === null` means nobody ever entered one; printing 0 ﷼
+              would be a claim about this client's account. `feePaidSar` is
+              independently nullable — an agreed total with no advance on
+              record yet is a real, different state from a settled one. */}
+          {hasTotal && (
             <div className={`p-4 rounded-2xl border ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-slate-100 bg-slate-50"}`}>
               <p className={`text-[11px] font-black uppercase tracking-wider mb-3 ${panelTitle}`}>الأتعاب المتفق عليها</p>
               <div className="flex items-center justify-between mb-2">
                 <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>إجمالي الأتعاب</span>
-                <span className={`font-bold text-[13px] ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{client.totalFees.toLocaleString()} ﷼</span>
+                <span className={`font-bold text-[13px] ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{(client.feeTotalSar as number).toLocaleString()} ﷼</span>
               </div>
-              <div className="flex items-center justify-between mb-2">
-                <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المسدَّد</span>
-                <span className="font-bold text-[13px] text-emerald-500">{client.paidFees.toLocaleString()} ﷼</span>
-              </div>
-              {unpaid !== null && unpaid > 0 && (
+              {hasPaid && (
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المسدَّد</span>
+                  <span className="font-bold text-[13px] text-emerald-500">{(client.feePaidSar as number).toLocaleString()} ﷼</span>
+                </div>
+              )}
+              {outstanding !== null && outstanding > 0 && (
                 <div className="flex items-center justify-between">
-                  <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المتبقي</span>
-                  <span className="font-bold text-[13px] text-red-500">{unpaid.toLocaleString()} ﷼</span>
+                  <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المتبقٍّ</span>
+                  <span className="font-bold text-[13px] text-red-500">{outstanding.toLocaleString()} ﷼</span>
                 </div>
               )}
-              {client.totalFees > 0 && (
+              {hasPaid && (client.feeTotalSar as number) > 0 && (
                 <div className={`mt-3 h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`}>
-                  <div className={`h-full rounded-full ${unpaid === 0 ? "bg-emerald-500" : (unpaid ?? 0) > client.totalFees * 0.5 ? "bg-red-500" : "bg-amber-500"}`}
-                    style={{ width: `${Math.round((client.paidFees / client.totalFees) * 100)}%` }} />
+                  <div className={`h-full rounded-full ${outstanding === 0 ? "bg-emerald-500" : (outstanding ?? 0) > (client.feeTotalSar as number) * 0.5 ? "bg-red-500" : "bg-amber-500"}`}
+                    style={{ width: `${Math.round(((client.feePaidSar as number) / (client.feeTotalSar as number)) * 100)}%` }} />
                 </div>
               )}
-              <p className={`text-[10px] mt-2 ${muted}`}>
-                أرقام مُدخَلة يدوياً عند إضافة الموكّل — لا يوجد سجل مدفوعات في النظام.
-              </p>
             </div>
           )}
 
@@ -302,11 +216,7 @@ export default function ClientDrawer({ client, isDark, onClose }: { client: Lawy
               الطلبات المرتبطة{linked ? ` (${linked.length})` : ""}
             </p>
 
-            {client.source !== "profile" ? (
-              <p className={`text-[12px] leading-relaxed ${muted}`}>
-                هذا الموكّل مُضاف يدوياً ولا يملك حساباً على المنصة، فلا توجد طلبات مرتبطة به في النظام.
-              </p>
-            ) : linkedError ? (
+            {linkedError ? (
               <div className={`flex items-center gap-2 p-3 rounded-xl border ${isDark ? "border-red-500/20 bg-red-500/5 text-red-400" : "border-red-200 bg-red-50 text-red-600"}`}>
                 <Warning size={14} weight="fill" className="flex-shrink-0" />
                 <span className="text-[11px] font-semibold flex-1">{linkedError}</span>
