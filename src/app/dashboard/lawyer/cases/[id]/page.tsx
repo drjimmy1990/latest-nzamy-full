@@ -13,7 +13,10 @@ import {
   ArrowsOut, ArrowsIn, Spinner, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { useUser } from "@/hooks/useUser";
 import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
+import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearingsService";
+import AddHearingModal from "../../_components/AddHearingModal";
 import dynamic from "next/dynamic";
 import {
   itemsOf,
@@ -275,6 +278,25 @@ function formatDate(iso: string | null | undefined): string {
   }
 }
 
+/**
+ * `formatDate` above parses through `new Date(iso)`, which is correct for a
+ * timestamptz instant but WRONG for a wall-clock "YYYY-MM-DD" hearing date:
+ * `new Date("2026-09-10")` is UTC midnight, so a browser west of Riyadh
+ * renders 9 September. Explicit local midnight, same fix as
+ * /dashboard/lawyer/hearings's `eventDayDate`.
+ */
+function formatHearingDate(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+}
+
+/** Today as "YYYY-MM-DD" in the viewer's local zone — for comparing against `hearings.hearing_date`, itself a wall-clock string. */
+function todayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function formatFileSize(bytes: number | null | undefined): string {
   if (bytes == null) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -337,6 +359,17 @@ export default function CaseDetailPage() {
   const [addingTask, setAddingTask] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
 
+  // ── Hearings linked to this case (Phase 1, public.hearings) ──
+  const [hearingsRead, setHearingsRead] = useState<ListRead<HearingDto> | null>(null);
+  const [hearingsLoading, setHearingsLoading] = useState(true);
+  const [showAddHearing, setShowAddHearing] = useState(false);
+  const user = useUser();
+  // Declared here (not beside loadCaseHearings further down) because the
+  // `hearings` useMemo below reads it, and hooks below its own declaration
+  // in the same component are a TDZ error, not just a style choice.
+  const hearingsView = listViewState(hearingsLoading, hearingsRead);
+  const caseHearings = itemsOf(hearingsRead);
+
   useEffect(() => {
     let cancelled = false;
     setDetailState("loading");
@@ -367,35 +400,25 @@ export default function CaseDetailPage() {
     status === "pending" ? 0 :
     status === "closed" ? 3 : 1;
 
-  // ── Derived: hearings from metadata.hearings or hearing.* events ──
+  // ── Derived: hearings, from the real table now (Phase 1) ──
+  // Was `caseData.metadata.hearings` (an array nothing wrote) with a fallback
+  // to scanning `hearing.*` events. Both are gone: `caseHearings` above is the
+  // one real source, GET /api/v1/lawyer/hearings?caseId=<this case>.
   const hearings: HearingRow[] = useMemo(() => {
-    if (!caseData) return [];
-    const meta = caseData.metadata ?? {};
-    const rawHearings = Array.isArray(meta.hearings) ? meta.hearings : null;
-    if (rawHearings && rawHearings.length > 0) {
-      const now = Date.now();
-      return rawHearings.map((h: any): HearingRow => {
-        const dateStr = h.date ? formatDate(h.date) : "—";
-        const upcoming = h.date ? new Date(h.date).getTime() >= now : false;
-        return {
-          date: dateStr,
-          court: String(h.location ?? h.court ?? meta.court ?? "—"),
-          result: String(h.type ?? h.notes ?? h.caseName ?? "جلسة"),
-          status: upcoming ? "upcoming" : "done",
-        };
-      });
-    }
-    // Fall back to hearing.* events
-    return (caseData.events ?? [])
-      .filter((e) => /hearing|session/i.test(e.event))
-      .map((e): HearingRow => ({
-        date: formatDate(e.created_at),
-        court: String((e.metadata as any)?.location ?? caseData.metadata?.court ?? "—"),
-        result: eventLabel(e.event),
-        status: "done",
-      }));
-  }, [caseData]);
+    return caseHearings.map((h): HearingRow => ({
+      // `h.date` is a wall-clock "YYYY-MM-DD", not an instant — parsed with an
+      // explicit local midnight so a reader west of Riyadh does not see it
+      // roll back a day (the exact bug documented at length in
+      // /dashboard/lawyer/hearings's `eventDayDate`).
+      date: formatHearingDate(h.date),
+      court: h.location || "—",
+      result: h.title,
+      status: h.status === "scheduled" && h.date >= todayIso() ? "upcoming" : "done",
+    }));
+  }, [caseHearings]);
 
+  // caseHearings is ordered by the API (date asc, time asc), so the first
+  // "upcoming" row is genuinely the soonest.
   const nextHearing = hearings.find((h) => h.status === "upcoming");
 
   // ── Derived: timeline from events ──
@@ -486,6 +509,32 @@ export default function CaseDetailPage() {
   }, [id]);
 
   useEffect(() => { loadCaseTasks(); }, [loadCaseTasks]);
+
+  // ── Hearings linked to this case ──
+  // GET /api/v1/lawyer/hearings?caseId=<this case>. Until Phase 1
+  // (2026-09-03) there was no hearings table at all — this tab read
+  // `caseData.metadata.hearings`, an array nothing ever wrote, and rendered
+  // the disabled «إضافة جلسة · قريباً» button underneath the honest empty
+  // state saying so.
+  const loadCaseHearings = useCallback(() => {
+    if (!id) return;
+    setHearingsLoading(true);
+    getLawyerHearings({ caseId: id })
+      .then(({ hearings: rows }) => setHearingsRead(listOk(rows)))
+      .catch(() => setHearingsRead(listFailed<HearingDto>()))
+      .finally(() => setHearingsLoading(false));
+  }, [id]);
+
+  useEffect(() => { loadCaseHearings(); }, [loadCaseHearings]);
+
+  // AddHearingModal dispatches this on a confirmed save (same signal the
+  // standalone diary listens for) — without it, a hearing added from this
+  // very case file would not appear until the page was reloaded.
+  useEffect(() => {
+    const onUpdated = () => loadCaseHearings();
+    window.addEventListener("nzamy-workflow-updated", onUpdated);
+    return () => window.removeEventListener("nzamy-workflow-updated", onUpdated);
+  }, [loadCaseHearings]);
 
   const tasksView = listViewState(tasksLoading, tasksRead);
   const tasks = itemsOf(tasksRead);
@@ -1154,22 +1203,38 @@ export default function CaseDetailPage() {
                       they live in one place now. */}
                   {countPhraseAr(hearings.length, HEARINGS_COUNT)}
                 </p>
-                <button disabled title="قريباً"
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all opacity-60 cursor-not-allowed ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
-                  <Plus size={12} weight="bold" />إضافة جلسة · قريباً
+                {/* Was `disabled title="قريباً"` — the hearings table did not
+                    exist. Phase 1 (2026-09-03) built it; this button opens the
+                    same AddHearingModal the standalone diary uses, with the
+                    case pre-filled via `caseRequestId` so it cannot be typed
+                    wrong or left unlinked. */}
+                <button onClick={() => setShowAddHearing(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22] transition-colors">
+                  <Plus size={12} weight="bold" />إضافة جلسة
                 </button>
               </div>
-              {hearings.length === 0 ? (
+              {hearingsView === "loading" ? (
+                <div className={`${card} p-10 flex items-center justify-center gap-2`}>
+                  <Spinner size={20} className="text-royal animate-spin" />
+                  <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل الجلسات...</span>
+                </div>
+              ) : hearingsView === "unreadable" ? (
+                <div className={`${card} p-10 flex flex-col items-center justify-center`}>
+                  <Warning size={32} weight="duotone" className="mb-3 text-red-500" />
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّرت قراءة الجلسات</p>
+                  <p className={`text-[11px] mt-1 text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                    هذه ليست لوحة فارغة — قد تكون لهذه القضية جلسات لم تُقرأ.
+                  </p>
+                  <button onClick={loadCaseHearings}
+                    className="mt-3 flex items-center gap-1.5 text-[12px] font-bold text-royal hover:underline">
+                    <ArrowClockwise size={13} /> إعادة المحاولة
+                  </button>
+                </div>
+              ) : hearings.length === 0 ? (
                 <div className={`${card} p-10 flex flex-col items-center justify-center`}>
                   <CalendarCheck size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
                   <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد جلسات مسجّلة</p>
-                  {/* It used to say «ستظهر الجلسات هنا عند إضافتها» — an
-                      instruction to add a hearing, directly above an add
-                      button this same block renders DISABLED with «قريباً».
-                      The screen told the lawyer to do a thing it would not let
-                      him do (shot 22). Until the hearings table exists, the
-                      honest sentence is the one that names the blocker. */}
-                  <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>إضافة الجلسات من ملف القضية غير مفعّلة بعد — تُسجَّل حالياً من صفحة «المواعيد والجلسات».</p>
+                  <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>أضِف أول جلسة لهذه القضية بالزر أعلاه.</p>
                 </div>
               ) : (
                 hearings.map((h, i) => (
@@ -1422,6 +1487,21 @@ export default function CaseDetailPage() {
           )}
         </motion.div>
       </AnimatePresence>
+
+      {showAddHearing && (
+        <AddHearingModal
+          onClose={() => setShowAddHearing(false)}
+          isDark={isDark}
+          user={{ userId: user.userId, name: user.name, userType: user.userType, tier: user.tier }}
+          caseRequestId={id}
+          // The case-name field is hidden inside the modal when caseRequestId
+          // is set, but its value still travels in the save — this fills it
+          // with the real case title so the same hearing, read back on the
+          // standalone diary (which is not scoped to one case), shows a
+          // meaningful «القضية» chip instead of an empty one.
+          defaultCaseName={caseData?.title}
+        />
+      )}
     </div>
   );
 }
