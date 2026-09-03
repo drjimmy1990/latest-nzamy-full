@@ -235,6 +235,15 @@ const EVENT_LABELS: Record<string, string> = {
   "service_request.hearing_added": "إضافة جلسة",
   "case.note_added":               "إضافة ملاحظة",
   "case.hearing_added":            "إضافة جلسة",
+  // Phase 1 (2026-09-03): activity_events rows, merged into this same
+  // timeline server-side (GET /api/v1/service-requests/[id]) — hearings and
+  // tasks stopped writing request_events when they stopped being
+  // service_requests rows, so without these three this file's own fallback
+  // (`EVENT_LABELS[ev] ?? ev`) would print the raw token "hearing.created" to
+  // a lawyer or client reading the case timeline.
+  "hearing.created":               "إضافة جلسة",
+  "task.created":                  "إضافة مهمة",
+  "task.status_changed":           "تحديث حالة مهمة",
   // legacy free-text
   "created":        "إنشاء القضية",
   "status_change":  "تغيير الحالة",

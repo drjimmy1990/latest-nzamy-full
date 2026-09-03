@@ -71,6 +71,12 @@ const EVENT_LABELS: Record<string, string> = {
   "service_request.hearing_added": "إضافة جلسة",
   "case.note_added":               "إضافة ملاحظة",
   "case.hearing_added":            "إضافة جلسة",
+  // Phase 1 (2026-09-03): activity_events rows, merged into this same
+  // timeline server-side (GET /api/v1/service-requests/[id]). See the lawyer
+  // case file's copy of this map for why these three exist.
+  "hearing.created":               "إضافة جلسة",
+  "task.created":                  "إضافة مهمة",
+  "task.status_changed":           "تحديث حالة مهمة",
   "created":        "إنشاء القضية",
   "status_change":  "تغيير الحالة",
   "updated":        "تحديث القضية",

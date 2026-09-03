@@ -70,6 +70,61 @@ export async function recordEvent(opts: {
 }
 
 /**
+ * F7's sibling for Phase 1 tables: `public.activity_events`
+ * (migration 20260903_phase1_case_tables.sql).
+ *
+ * `recordEvent`/`request_events` needs a `request_id` FK into
+ * `service_requests` — every row is an intake/order event on a request that
+ * exists. Hearings and tasks stopped being service_requests rows in this same
+ * wave, and a standalone hearing or task (no case attached) has no request to
+ * hang an event off at all. `activity_events` has no such requirement:
+ * `case_request_id` is nullable, and `owner_user_id` alone is enough to scope
+ * a feed.
+ *
+ * Same failure contract as `recordEvent`: never throws, logs and swallows, so
+ * a failed activity write can never break the create/update it is describing.
+ */
+export async function recordActivity(opts: {
+  supabase: SupabaseClient;
+  kind: string;
+  ownerUserId?: string;
+  firmId?: string | null;
+  actorUserId?: string;
+  actorName?: string;
+  caseRequestId?: string | null;
+  subjectTable?: string;
+  subjectId?: string;
+  payload?: Record<string, unknown>;
+}): Promise<void> {
+  const { supabase, kind, ownerUserId, firmId, actorUserId, actorName, caseRequestId, subjectTable, subjectId, payload } = opts;
+
+  const row: Record<string, unknown> = { kind };
+  if (ownerUserId) row.owner_user_id = ownerUserId;
+  if (firmId) row.firm_id = firmId;
+  if (actorUserId) row.actor_user_id = actorUserId;
+  if (actorName) row.actor_name = actorName;
+  if (caseRequestId) row.case_request_id = caseRequestId;
+  if (subjectTable) row.subject_table = subjectTable;
+  if (subjectId) row.subject_id = subjectId;
+  if (payload) row.payload = payload;
+
+  const { error } = await supabase.from("activity_events").insert(row);
+
+  if (error) {
+    console.error(
+      "[recordActivity] failed to insert activity_events row:",
+      "kind=", kind,
+      "owner_user_id=", ownerUserId ?? "(none)",
+      "case_request_id=", caseRequestId ?? "(none)",
+      "error=", error.message,
+      error.details,
+      error.hint,
+      error.code,
+    );
+  }
+}
+
+/**
  * Canonical, namespaced event names. Use these at every insert site so n8n can
  * route on a stable vocabulary later.
  */
@@ -254,6 +309,45 @@ export function describeRequestEvent(opts: {
   }
 
   return { title: `تحديث على طلبكم: ${service}`, badge: "order" };
+}
+
+/**
+ * Render one `activity_events` row as Arabic. Reuses the SAME `RequestEvent`
+ * vocabulary and `ActivityBadge` type as `describeRequestEvent` — one set of
+ * event names for both tables — but the context is different: there is no
+ * `service_requests` join here, so whatever the writer needs to name (a
+ * hearing's title, a task's title, the new/old status) travels in `payload`.
+ *
+ * Unknown kinds fall back to a neutral line, same reasoning as
+ * `describeRequestEvent`: an event name added elsewhere must never leak a raw
+ * token into the UI.
+ */
+export function describeActivityEvent(opts: {
+  kind: string;
+  payload?: Record<string, unknown> | null;
+}): DescribedEvent {
+  const payload = opts.payload ?? {};
+  const title = typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : "";
+
+  switch (opts.kind) {
+    case RequestEvent.HEARING_CREATED:
+      return { title: title ? `تمت إضافة جلسة: ${title}` : "تمت إضافة جلسة", badge: "hearing" };
+    case RequestEvent.TASK_CREATED:
+      return { title: title ? `تمت إضافة مهمة: ${title}` : "تمت إضافة مهمة", badge: "task" };
+    case RequestEvent.TASK_STATUS_CHANGED: {
+      const status = typeof payload.status === "string" ? payload.status : "";
+      const statusAr =
+        status === "done" ? "مكتملة"
+        : status === "in_progress" ? "قيد التنفيذ"
+        : status === "archived" ? "مؤرشفة"
+        : status === "todo" ? "لم تبدأ"
+        : "";
+      const suffix = statusAr ? ` — ${statusAr}` : "";
+      return { title: title ? `تحديث حالة مهمة: ${title}${suffix}` : `تحديث حالة مهمة${suffix}`, badge: "task" };
+    }
+    default:
+      return { title: "نشاط جديد مسجَّل", badge: "notice" };
+  }
 }
 
 /**

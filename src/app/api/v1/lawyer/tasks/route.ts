@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { recordActivity, RequestEvent } from "@/lib/events";
 import {
   readSubtasks,
   validateCategory,
@@ -241,6 +242,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    await recordActivity({
+      supabase,
+      kind: RequestEvent.TASK_CREATED,
+      ownerUserId: user.id,
+      firmId: membership?.firm_id ?? null,
+      actorUserId: user.id,
+      caseRequestId: caseId || null,
+      subjectTable: "tasks",
+      subjectId: data.id,
+      payload: { title: parsedTitle.value },
+    });
+
     return NextResponse.json({ data: toDto(data as TaskRow, steps) });
   } catch (err) {
     console.error("[lawyer/tasks POST] Unexpected error:", err);
@@ -345,14 +358,33 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (hasFieldUpdate) {
-      const { error } = await supabase
+      // `.select()` after `.update()` returns the row in the same round trip
+      // — needed for the activity event below (title, case link), not just
+      // for its own sake.
+      const { data: updated, error } = await supabase
         .from("tasks")
         .update(update)
         .eq("id", taskId)
-        .eq("owner_user_id", user.id);
+        .eq("owner_user_id", user.id)
+        .select("id, title, case_request_id, firm_id")
+        .maybeSingle();
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      if (status !== undefined && updated) {
+        await recordActivity({
+          supabase,
+          kind: RequestEvent.TASK_STATUS_CHANGED,
+          ownerUserId: user.id,
+          firmId: updated.firm_id,
+          actorUserId: user.id,
+          caseRequestId: updated.case_request_id,
+          subjectTable: "tasks",
+          subjectId: updated.id,
+          payload: { title: updated.title, status },
+        });
       }
     }
 

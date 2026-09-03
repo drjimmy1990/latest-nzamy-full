@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { recordActivity, RequestEvent } from "@/lib/events";
 import {
   type UiHearingType, type UiUrgency,
   VALID_UI_TYPES, VALID_UI_URGENCIES,
@@ -203,6 +204,19 @@ export async function POST(request: NextRequest) {
     if (error || !data) {
       return NextResponse.json({ error: error?.message || "Insert failed" }, { status: 500 });
     }
+
+    // Never blocks the response and never fails the create — see recordActivity's own contract.
+    await recordActivity({
+      supabase,
+      kind: RequestEvent.HEARING_CREATED,
+      ownerUserId: user.id,
+      firmId: membership?.firm_id ?? null,
+      actorUserId: user.id,
+      caseRequestId: caseRequestId || null,
+      subjectTable: "hearings",
+      subjectId: data.id,
+      payload: { title: title.trim() },
+    });
 
     return NextResponse.json({ data: toDto(data as HearingRow) });
   } catch (err) {

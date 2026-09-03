@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeRequestEvent, RequestEvent } from "./events.ts";
+import { describeActivityEvent, describeRequestEvent, RequestEvent } from "./events.ts";
 import { orderReference } from "./services/orderReference.ts";
 
 test("names the Arabic service and the order reference on creation", () => {
@@ -102,4 +102,49 @@ test("routing does not fall through to the generic update line", () => {
   const routed = describeRequestEvent({ event: RequestEvent.SERVICE_REQUEST_REASSIGNED });
   assert.notEqual(routed.title, "تحديث على طلبكم: طلب خدمة");
   assert.ok(!/[A-Za-z]/.test(routed.title));
+});
+
+// ─── describeActivityEvent — Phase 1's activity_events reader ────────────────
+
+test("names the hearing's own title when one is given", () => {
+  const out = describeActivityEvent({
+    kind: RequestEvent.HEARING_CREATED,
+    payload: { title: "جلسة قضائية — قضية الأفق" },
+  });
+  assert.equal(out.title, "تمت إضافة جلسة: جلسة قضائية — قضية الأفق");
+  assert.equal(out.badge, "hearing");
+});
+
+test("a hearing/task event with no title still names the badge, never a blank suffix", () => {
+  assert.equal(describeActivityEvent({ kind: RequestEvent.HEARING_CREATED }).title, "تمت إضافة جلسة");
+  assert.equal(describeActivityEvent({ kind: RequestEvent.TASK_CREATED, payload: {} }).title, "تمت إضافة مهمة");
+});
+
+test("task status change names both the task and the Arabic status", () => {
+  const out = describeActivityEvent({
+    kind: RequestEvent.TASK_STATUS_CHANGED,
+    payload: { title: "مراجعة العقد", status: "done" },
+  });
+  assert.equal(out.title, "تحديث حالة مهمة: مراجعة العقد — مكتملة");
+  assert.equal(out.badge, "task");
+});
+
+test("an unrecognised status on a task status change is dropped, not printed raw", () => {
+  const out = describeActivityEvent({
+    kind: RequestEvent.TASK_STATUS_CHANGED,
+    payload: { title: "مراجعة العقد", status: "some-future-status" },
+  });
+  assert.equal(out.title, "تحديث حالة مهمة: مراجعة العقد");
+  assert.ok(!/[A-Za-z]/.test(out.title));
+});
+
+test("an unrecognised kind falls back to a neutral line, never the raw token", () => {
+  const out = describeActivityEvent({ kind: "case_graph.updated", payload: { title: "whatever" } });
+  assert.equal(out.title, "نشاط جديد مسجَّل");
+  assert.ok(!/[A-Za-z]/.test(out.title));
+});
+
+test("a whitespace-only title is treated as no title", () => {
+  const out = describeActivityEvent({ kind: RequestEvent.HEARING_CREATED, payload: { title: "   " } });
+  assert.equal(out.title, "تمت إضافة جلسة");
 });
