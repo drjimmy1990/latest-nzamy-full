@@ -8,6 +8,7 @@ import type { Metadata } from "next";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { ArticleJsonLd } from "@/components/ArticleJsonLd";
 import ArticleView from "./ArticleView";
+import { BLOG_FALLBACK_AUTHOR } from "@/constants/platformContent";
 import type { PlatformBlogArticle } from "@/constants/platformContent";
 
 const BASE_URL = "https://nezamy.sa";
@@ -62,7 +63,7 @@ function formatReadTime(value: string | null | undefined, en: boolean): string {
 }
 
 function rowToDetail(row: BlogRow): PlatformBlogArticle {
-  const authorName = row.author_name || "فريق المحتوى";
+  const authorName = row.author_name || BLOG_FALLBACK_AUTHOR;
   const tag = row.category || "أخبار قانونية";
   return {
     id: row.id || row.slug,
@@ -81,8 +82,11 @@ function rowToDetail(row: BlogRow): PlatformBlogArticle {
       slug: "",
       specialty: "قانوني",
       specialtyEn: "Legal",
-      rating: 5,
-      reviewCount: 0,
+      // No rating and no review count. This used to be a hardcoded
+      // `rating: 5, reviewCount: 0` — every article's author card rendered
+      // «★ 5 (0)»: a perfect score from zero reviews, on the public blog,
+      // for an author the platform has never rated. There is no author
+      // review system, so the card now shows nothing rather than a five.
       url: row.author_url || null,
       credentials: row.author_credentials || null,
     },
@@ -194,7 +198,7 @@ export async function generateMetadata({
       images: [{ url: cover, width: 1200, height: 630, alt: title }],
       publishedTime: row.published_at || undefined,
       modifiedTime: row.date_modified || undefined,
-      authors: row.author_name ? [row.author_name] : undefined,
+      authors: [row.author_name || BLOG_FALLBACK_AUTHOR],
     },
     twitter: {
       card: "summary_large_image",

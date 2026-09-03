@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Buildings, Star, Check, X, Warning
@@ -119,6 +119,13 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
   const [rating,   setRating]   = useState<1|2|3|4|5|null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error,    setError]    = useState<string | null>(null);
+  const errorRef = useRef<HTMLDivElement | null>(null);
+
+  // A save that fails after a three-step wizard has to arrive. If the modal
+  // body happens to be scrolled, the banner can still mount out of frame.
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [error]);
 
   const toggleFlag = (f: ClientFlag) => setFlags(prev => {
     const s = new Set(prev); s.has(f) ? s.delete(f) : s.add(f); return s;
@@ -132,6 +139,15 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
     step === 0 ? name.trim().length > 0 && phone.trim().length > 0
     : step === 1 ? feeIssue === null
     : true;
+
+  // One answer for one question: the step-0 toggle is the only place the
+  // lawyer says whether the client is a company, and the tag follows it.
+  const submittedFlags = (): ClientFlag[] => {
+    const out = new Set<ClientFlag>(flags);
+    if (type === "company") out.add("corporate");
+    else out.delete("corporate");
+    return [...out];
+  };
 
   const handleSubmit = async () => {
     // Backstop, not the path the lawyer takes: step 2 is only reachable through
@@ -157,7 +173,7 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
           phone: phone.trim(),
           email: email.trim() || undefined,
           type,
-          flags: [...flags],
+          flags: submittedFlags(),
           // Dropped by JSON.stringify when no star was clicked, exactly like the
           // two fee keys: an untouched widget must reach the API as silence, not
           // as a number.
@@ -205,7 +221,7 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
         avatar: "",
         source: "manual",
         type,
-        flags: [...flags],
+        flags: submittedFlags(),
         rating,
         // Mirrors the rule the API applies on read (readClientClassification):
         // a fee agreement is a POSITIVE total, and under one a blank advance
@@ -387,8 +403,19 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
             {step === 2 && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-3">
                 <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>اختر التصنيفات المناسبة للموكّل:</p>
+                {/* `corporate` is NOT offered here. Its label is «شركة» — the
+                    same word as the «فرد / شركة» toggle in step 0, so the same
+                    fact was captured twice, three steps apart, with nothing
+                    coupling the two. A lawyer could set the type to «فرد» and
+                    then tag the client «🏢 شركة», and the record would carry
+                    both. It is derived from the toggle on submit instead, so
+                    there is one answer and it is the one the lawyer gave.
+                    It stays in FLAG_CONFIG: existing clients carry the flag and
+                    their cards must keep rendering it. */}
                 <div className="flex flex-wrap gap-2">
-                  {(Object.entries(FLAG_CONFIG) as [ClientFlag, typeof FLAG_CONFIG[ClientFlag]][]).map(([flag, conf]) => (
+                  {(Object.entries(FLAG_CONFIG) as [ClientFlag, typeof FLAG_CONFIG[ClientFlag]][])
+                    .filter(([flag]) => flag !== "corporate")
+                    .map(([flag, conf]) => (
                     <button key={flag} onClick={() => toggleFlag(flag)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
                         flags.has(flag) ? conf.bg + " " + conf.color + " border-current/30" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500"
@@ -401,6 +428,26 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
               </motion.div>
             )}
           </div>
+
+          {/* The failure notice sits ABOVE the action row, not under it.
+              It used to render as the LAST child of the modal, below the
+              buttons — so on the tallest step the lawyer pressed «إضافة
+              الموكّل», the modal stayed open, and the reason was off the
+              bottom edge. Shot 32 is that exact frame: a save that failed and
+              a screen that says nothing. Nothing was wrong with the message;
+              it was in a place the eye never goes.
+              `role="alert"` + `aria-live="assertive"` announce it, and the ref
+              scrolls it into view for the case where the body is scrolled. */}
+          {error && (
+            <div
+              ref={errorRef}
+              role="alert"
+              aria-live="assertive"
+              className={`mx-5 mb-3 p-3 rounded-xl flex items-center gap-2 text-[11px] font-semibold ${isDark ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-red-50 border border-red-200 text-red-700"}`}>
+              <Warning size={14} weight="fill" className="flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
           {/* Footer */}
           <div className={`flex items-center justify-between px-5 py-4 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
@@ -435,19 +482,18 @@ export default function AddClientModal({ isDark, onClose, onAdd }: {
                  shipped two brand greens and the last button looked like it came
                  from somewhere else. */
               <button onClick={handleSubmit} disabled={submitting}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-60 transition-opacity">
+                className={`flex items-center gap-1.5 px-5 py-2 rounded-xl text-[12px] font-bold transition-colors ${
+                  submitting
+                    ? isDark
+                      ? "bg-zinc-800 text-zinc-500 cursor-wait"
+                      : "bg-slate-100 text-slate-400 cursor-wait"
+                    : "bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22]"
+                }`}>
                 <Check size={13} weight="bold" /> {submitting ? "جارٍ الحفظ..." : "إضافة الموكّل"}
               </button>
             )}
           </div>
 
-          {/* Error banner */}
-          {error && (
-            <div className={`mx-5 mb-4 p-3 rounded-xl flex items-center gap-2 text-[11px] font-semibold ${isDark ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-red-50 border border-red-200 text-red-700"}`}>
-              <Warning size={14} weight="fill" className="flex-shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
         </motion.div>
       </motion.div>
     </AnimatePresence>

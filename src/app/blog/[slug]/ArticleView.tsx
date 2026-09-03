@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   Clock, Eye, Share, BookmarkSimple, ArrowRight,
-  Newspaper, ChatCircle, Star, SealCheck, Scales, ThumbsUp,
+  Newspaper, ChatCircle, SealCheck, Scales, ThumbsUp,
   FacebookLogo, TwitterLogo, WhatsappLogo, ArrowLeft,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
@@ -304,15 +304,13 @@ export default function ArticleView({
                   <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{(isRTL ? article.author.name : article.author.nameEn).charAt(2)}</div>
                   <div>
                     <p className={`text-sm font-bold group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition flex items-center gap-1.5 ${isDark ? "text-gray-200" : "text-gray-800"}`}>
-                      {isRTL ? article.author.name : article.author.nameEn} <SealCheck size={14} color="#C8A762" weight="fill" />
+                      {isRTL ? article.author.name : article.author.nameEn} {article.author.credentials ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
                     </p>
                     {article.author.credentials ? (
                       <p className={`text-xs ${muted}`}>{article.author.credentials}</p>
                     ) : (
                       <p className={`text-xs ${muted} flex items-center gap-1.5`}>
                         <span>{isRTL ? article.author.specialty : article.author.specialtyEn}</span>
-                        <span>·</span>
-                        <span className="inline-flex items-center gap-1"><Star size={11} color="#C8A762" weight="fill" />{article.author.rating} ({article.author.reviewCount})</span>
                       </p>
                     )}
                   </div>
@@ -322,12 +320,10 @@ export default function ArticleView({
                   <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{(isRTL ? article.author.name : article.author.nameEn).charAt(2)}</div>
                   <div>
                     <p className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-gray-200" : "text-gray-800"}`}>
-                      {isRTL ? article.author.name : article.author.nameEn} <SealCheck size={14} color="#C8A762" weight="fill" />
+                      {isRTL ? article.author.name : article.author.nameEn} {article.author.credentials ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
                     </p>
                     <p className={`text-xs ${muted} flex items-center gap-1.5`}>
                       <span>{isRTL ? article.author.specialty : article.author.specialtyEn}</span>
-                      <span>·</span>
-                      <span className="inline-flex items-center gap-1"><Star size={11} color="#C8A762" weight="fill" />{article.author.rating} ({article.author.reviewCount})</span>
                     </p>
                   </div>
                 </div>

@@ -105,6 +105,9 @@ interface TimelineRow {
 
 // ─── Config ────────────────────────────────────────────────────────────────────
 
+/** The four stages of the file, in order. `stageIdx` indexes into this. */
+const CASE_STAGES = ["تقديم", "قيد التداول", "مراجعة", "إغلاق"] as const;
+
 const STATUS_CONFIG: Record<CaseStatus, { label: string; color: string; dot: string }> = {
   active:    { label: "نشطة",   color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20", dot: "bg-emerald-400 animate-pulse" },
   pending:   { label: "انتظار", color: "text-amber-500 bg-amber-500/10 border-amber-500/20",       dot: "bg-amber-400" },
@@ -357,6 +360,12 @@ export default function CaseDetailPage() {
 
   const status: CaseStatus = useMemo(() => mapStatus(caseData?.status), [caseData?.status]);
   const statusConf = STATUS_CONFIG[status];
+  // One list, one index — read by the caption and by the bar. They used to be
+  // an inline literal and a ternary recomputed on every stage of the map.
+  const stageIdx =
+    status === "active" ? 1 :
+    status === "pending" ? 0 :
+    status === "closed" ? 3 : 1;
 
   // ── Derived: hearings from metadata.hearings or hearing.* events ──
   const hearings: HearingRow[] = useMemo(() => {
@@ -799,9 +808,17 @@ export default function CaseDetailPage() {
 
         {/* Stage bar — derived from status (no mock stage string) */}
         <div className={`mt-4 pt-4 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+          {/* Was «الحالة الحالية» + `statusConf.label` — so the caption said
+              «انتظار» while the four stages drawn directly beneath it are
+              «تقديم / قيد التداول / مراجعة / إغلاق». Two vocabularies for one
+              position, one above the other, and «انتظار» is not among the four
+              — a lawyer reading the card cannot tell which stage the case is
+              in. The status itself is already a chip in the header of this same
+              card (line ~743), so this row was also saying it twice.
+              It now names the STAGE — the same word that lights up below it. */}
           <div className="flex items-center justify-between text-[12px] mb-1.5">
-            <span className={isDark ? "text-zinc-500" : "text-slate-400"}>الحالة الحالية</span>
-            <span className={`font-medium ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{statusConf.label}</span>
+            <span className={isDark ? "text-zinc-500" : "text-slate-400"}>المرحلة الحالية</span>
+            <span className={`font-medium ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{CASE_STAGES[stageIdx]}</span>
           </div>
           {/* القضية الملغاة لا تُعرض على شريط المراحل: الشريط يقول «كم قطعت هذه
               القضية من طريقها»، وطيّ `cancelled` في "closed" كان يملؤه حتى «إغلاق»
@@ -813,11 +830,7 @@ export default function CaseDetailPage() {
             </p>
           ) : (
           <div className="flex items-center gap-1">
-            {["تقديم", "قيد التداول", "مراجعة", "إغلاق"].map((s, i) => {
-              const stageIdx =
-                status === "active" ? 1 :
-                status === "pending" ? 0 :
-                status === "closed" ? 3 : 1;
+            {CASE_STAGES.map((s, i) => {
               return (
                 <div key={s} className="flex-1 flex flex-col items-center">
                   <div className={`h-1.5 w-full rounded-full ${i <= stageIdx ? "bg-royal" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`} />
