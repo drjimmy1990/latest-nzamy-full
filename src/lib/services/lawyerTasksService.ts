@@ -1,22 +1,22 @@
 /**
  * lawyerTasksService.ts
  * ─────────────────────────────────────────────────────────
- * Dual-mode lawyer tasks service.
+ * Typed client for /api/v1/lawyer/tasks (Phase 1, public.tasks + task_steps).
  *
- * There is no `tasks` table: a task is a `service_requests` row assigned to
- * the lawyer, with its task-only fields (priority / dueDate / caseId) living
- * in `metadata`. /api/v1/lawyer/tasks owns that mapping — this module is only
- * the typed client for it.
+ * `status` is the UI vocabulary directly now (todo/in_progress/done/
+ * archived) — `public.tasks.status` stores exactly that, so the
+ * DB_TO_TASK_STATUS / taskStatusToDbStatus translation this module used to
+ * export is gone. There is nothing left to translate.
  */
 
 "use client";
 
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
-import { listOk, listFailed, type ListRead } from "@/lib/services/listRead";
+import { listOk, listFailed, listFromApi, type ListRead } from "@/lib/services/listRead";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** One checklist step, stored in the task row's metadata.subtasks array. */
+/** One checklist step, stored as its own row in task_steps. */
 export interface LawyerSubtask {
   id: string;
   title: string;
@@ -26,21 +26,19 @@ export interface LawyerSubtask {
 export interface LawyerTask {
   id: string;
   title: string;
+  /** todo / in_progress / done / archived */
   status: string;
-  type: string;
   priority: string;
   createdAt: string;
   updatedAt: string;
-  eventsCount: number;
-  lastEvent: unknown | null;
-  /** UI category (case/document/admin/deadline/client) — from metadata.category */
+  /** UI category (case/document/admin/deadline/client) */
   category?: string;
   dueDate?: string | null;
-  /** service_requests.id of the case this task hangs off — from metadata.caseId */
+  /** tasks.case_request_id — the case this task hangs off, if any. */
   caseId?: string;
+  /** Free-text case label (tasks.metadata.caseRef) for when no real case is linked. */
   caseRef?: string;
   notes?: string;
-  /** Checklist — from metadata.subtasks. GET always returns an array. */
   subtasks?: LawyerSubtask[];
 }
 
@@ -71,34 +69,19 @@ export interface UpdateLawyerTaskInput {
   subtasks?: LawyerSubtask[];
 }
 
-// ─── Status mapping: UI TaskStatus → DB service_requests.status enum ─────────
-// The route maps the read direction (DB → UI); this is the write direction and
-// must stay its exact inverse. PATCH rejects anything outside the DB enum.
-const UI_TO_DB_STATUS: Record<string, string> = {
-  todo: "pending_assignment",
-  in_progress: "assigned",
-  done: "completed",
-  archived: "cancelled",
-};
-
-/** UI task status → the DB enum value PATCH expects. Unknown → pending_assignment. */
-export function taskStatusToDbStatus(status: string): string {
-  return UI_TO_DB_STATUS[status] ?? "pending_assignment";
-}
-
 // ─── Service functions ────────────────────────────────────────────────────────
 
 /**
  * The lawyer's task list.
  *
- * This used to be `try { … } catch { return [] }`, and the tasks page
- * (src/app/dashboard/lawyer/tasks/page.tsx:79) says in a comment that it calls
- * the endpoint directly *because of* that swallow. A failed read arriving as
- * «لا توجد مهام» is a deadline the lawyer is told they do not have — so it now
- * returns `ListRead<LawyerTask>` and the "no answer" case is unmissable.
+ * Returns `ListRead<LawyerTask>` so a failed read is unmissable — the tasks
+ * page (src/app/dashboard/lawyer/tasks/page.tsx) calls `apiGet` directly
+ * instead of this wrapper for that same reason, kept even now that the route
+ * no longer swallows failures: two independent code paths reaching a 500 the
+ * same way is a cheap redundancy, not a risk.
  */
 export async function getLawyerTasks(
-  opts?: { caseId?: string },
+  opts?: { caseId?: string; limit?: number },
 ): Promise<ListRead<LawyerTask>> {
   // Demo mode: no task store exists behind this endpoint. Hardcoded, not read.
   if (!isSupabaseMode) {
@@ -106,17 +89,11 @@ export async function getLawyerTasks(
   }
 
   try {
-    // The route returns a bare array and 500s on failure (its own comment at
-    // /api/v1/lawyer/tasks/route.ts:149 records dropping an empty-200), so
-    // there is no `{ data, degraded }` envelope for `listFromApi` to read.
-    const rows = await apiGet<LawyerTask[]>("/api/v1/lawyer/tasks", {
+    const body = await apiGet<{ data: LawyerTask[]; total?: number }>("/api/v1/lawyer/tasks", {
       caseId: opts?.caseId,
+      limit: opts?.limit,
     });
-    if (!Array.isArray(rows)) return listFailed<LawyerTask>();
-    // No `total`: the route sends no count, and passing `rows.length` would
-    // manufacture one — `listOk` would then compute `truncated: false` from a
-    // number nobody reported. An unknown total stays unknown.
-    return listOk(rows);
+    return listFromApi(body);
   } catch (error) {
     console.error("[lawyerTasksService] getLawyerTasks failed:", error);
     return listFailed<LawyerTask>();
@@ -160,12 +137,6 @@ export async function updateLawyerTaskStatus(taskId: string, status: string): Pr
 export interface UpdateLawyerTaskResult {
   /** false = nothing was written; the caller must roll its optimistic edit back. */
   ok: boolean;
-  /**
-   * Everything except the title was written: the row is a client's own request,
-   * whose title the client sees in their dashboard, so the server refuses to
-   * rename it. Revert only the title and tell the lawyer why.
-   */
-  titleSkipped?: boolean;
 }
 
 /**
@@ -173,9 +144,10 @@ export interface UpdateLawyerTaskResult {
  * subtasks). Never throws, like updateLawyerTaskStatus — the callers are
  * optimistic UI handlers that roll back and show an Arabic message.
  *
- * The server merges the metadata keys it is given over the ones already stored;
- * it never replaces the blob, so omitting a field here leaves it untouched
- * rather than deleting it.
+ * Every field is its own column server-side, so — unlike the old jsonb
+ * version — there is no merge to reason about here either: omitting a field
+ * leaves that column untouched because the route only updates what the body
+ * names.
  */
 export async function updateLawyerTask(
   taskId: string,
@@ -197,12 +169,8 @@ export async function updateLawyerTask(
   if (!isSupabaseMode) return { ok: false };
 
   try {
-    const res = await apiMutate<{ success?: boolean; titleSkipped?: boolean }>(
-      "/api/v1/lawyer/tasks",
-      "PATCH",
-      body,
-    );
-    return res?.titleSkipped ? { ok: true, titleSkipped: true } : { ok: true };
+    await apiMutate<{ success?: boolean }>("/api/v1/lawyer/tasks", "PATCH", body);
+    return { ok: true };
   } catch (e) {
     console.error("[lawyerTasksService] updateLawyerTask failed:", e);
     return { ok: false };
@@ -210,9 +178,10 @@ export async function updateLawyerTask(
 }
 
 /**
- * Persist the whole checklist. The array is replaced wholesale (that is how it
- * is stored), so ticking one step is last-write-wins against another edit of a
- * different step on the same task.
+ * Persist the whole checklist. The array is replaced wholesale (that is how
+ * the route treats it — upsert-by-id then prune whatever is not in the list),
+ * so ticking one step is last-write-wins against another edit of a different
+ * step on the same task.
  */
 export async function updateLawyerTaskSubtasks(
   taskId: string,

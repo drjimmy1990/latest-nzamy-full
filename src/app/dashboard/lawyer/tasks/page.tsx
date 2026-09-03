@@ -38,6 +38,11 @@ const taskStatusToDb = (s: TaskStatus): string =>
   : s === "archived" ? "cancelled"
   : "pending_assignment";
 
+// How many of the lawyer's tasks to read for the board. The route defaults to
+// the same 200 server-side; passed explicitly so a change to one default
+// cannot silently disagree with the other.
+const TASKS_FETCH_LIMIT = 200;
+
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function LawyerTasksPage() {
@@ -55,6 +60,11 @@ export default function LawyerTasksPage() {
   // A write that the server refused must say so — every handler below is
   // optimistic, so a silent failure looks exactly like a save.
   const [saveError, setSaveError] = useState<string | null>(null);
+  // True when the server holds more tasks than TASKS_FETCH_LIMIT returned.
+  // Phase 1's own acceptance test for this route was "a lawyer adds 60 tasks
+  // and sees 60" — raising the old silent 50-row cap is only half of that;
+  // the other half is telling the lawyer when a limit was ever hit at all.
+  const [truncated, setTruncated] = useState(false);
 
   const [filter, setFilter] = useState<TaskStatus | "all" | "archived">("all");
   const [categoryFilter, setCategoryFilter] = useState<TaskCategory | "all">("all");
@@ -77,20 +87,22 @@ export default function LawyerTasksPage() {
   }, []);
 
   // ─── Fetch tasks ────────────────────────────────────────────────────────────
-  // NOT getLawyerTasks(): that wrapper is `try { … } catch { return []; }`
-  // (lawyerTasksService.ts:99-101), so a 401 after a session expiry, a 500 or an
-  // RLS refusal all arrive here as "you have no tasks" and get rendered as one.
-  // apiGet throws on any non-2xx, which is the whole point. The route no longer
-  // answers 200-with-[] on a failed select either, so the throw actually
-  // happens. src/components/ui/CasePicker.tsx:81-95 uses the same shape on the
-  // same grounds.
+  // NOT getLawyerTasks(): that wrapper existed to survive a route that used to
+  // swallow failures into `[]`; the route no longer does that, but calling
+  // apiGet directly here still means the throw always reaches this page even
+  // if the wrapper's own error handling ever regresses. apiGet throws on any
+  // non-2xx, which is the whole point.
   // No setState before the first await — the retry button sets "loading" itself,
   // and a refetch after a save keeps the current board on screen.
   const loadTasks = useCallback(async () => {
     if (!isSupabaseMode) return;
     try {
-      const data = await apiGet<LawyerTask[]>("/api/v1/lawyer/tasks");
-      setTasks((data ?? []).map((d): Task => ({
+      const res = await apiGet<{ data: LawyerTask[]; total?: number }>("/api/v1/lawyer/tasks", {
+        limit: TASKS_FETCH_LIMIT,
+      });
+      const data = res.data ?? [];
+      setTruncated((res.total ?? data.length) > data.length);
+      setTasks(data.map((d): Task => ({
         id: d.id,
         title: d.title || "",
         // `d.category`, not `d.type`. The route derives `category` from
@@ -367,16 +379,10 @@ export default function LawyerTasksPage() {
       if (!previous) return;
       const before: Task = previous;
 
-      // Saved, except the title: the row is a client's own request and its
-      // title is what the client sees. Revert that one field only — the
-      // priority/notes/checklist edit did land.
-      if (res.ok) {
-        if (res.titleSkipped) {
-          setTasks(prev => prev.map(t => t.id === taskId ? { ...t, title: before.title } : t));
-          setSaveError("تم حفظ التعديلات، لكن عنوان طلب العميل لا يمكن تغييره من لوحة المهام.");
-        }
-        return;
-      }
+      // Phase 1: a task row is never secretly a client's own request any
+      // more (that was the old service_requests sharing), so a title edit
+      // here always lands — no titleSkipped case left to handle.
+      if (res.ok) return;
 
       const revert: Partial<Task> = {};
       if (patch.title !== undefined) revert.title = before.title;
@@ -451,6 +457,17 @@ export default function LawyerTasksPage() {
             className="flex items-center gap-1.5 flex-shrink-0 rounded-xl px-3 py-2 text-[12px] font-bold bg-red-500 text-white hover:bg-red-600 transition">
             <ArrowClockwise size={13} weight="bold" />إعادة المحاولة
           </button>
+        </motion.div>
+      )}
+      {truncated && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
+            <Warning size={18} weight="fill" className="text-amber-500" />
+          </div>
+          <p className={`text-[12px] font-semibold ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+            {`لديك أكثر من ${toArabicDigits(TASKS_FETCH_LIMIT)} مهمة — يُعرض أحدثها فقط. استخدم الفلاتر أو الأرشفة لتقليل العدد الظاهر.`}
+          </p>
         </motion.div>
       )}
       {loadState === "ready" && tasks.length === 0 && (

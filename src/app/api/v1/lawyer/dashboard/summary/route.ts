@@ -37,24 +37,24 @@ import { kindToType, urgencyFromDb } from "@/lib/services/hearingVocabulary";
  *    way /api/v1/lawyer/finance already scopes it: resolve the request ids
  *    assigned to this lawyer, then filter payments by those ids.
  *
- * ── The one query, and why the filtering happens in JS ────────────────────────
+ * ── The workspace query, and why the filtering happens in JS ──────────────────
  *
- * `service_requests` is this lawyer's whole workspace: cases, hearings, tasks,
- * manually-added clients and finance invoices all live in it as
- * `receiver: "lawyer"` rows, told apart ONLY by marker keys inside `metadata`
- * (`task`, `client`, `invoice`, `date`). Postgres/PostgREST can express those
- * as positive filters but NOT as safe negative ones: `metadata->>'task' <> 'true'`
- * evaluates to NULL — and so drops the row — for every row that has no `task`
- * key at all, i.e. for every real case. That single trap would empty
- * «القضايا النشطة» for all six lawyers with no error anywhere. So the rows are
- * fetched once and classified in JS, where "key absent" means what it looks
- * like it means.
+ * `service_requests` used to be this lawyer's WHOLE workspace — cases,
+ * hearings, tasks, manually-added clients and finance invoices all in it as
+ * `receiver: "lawyer"` rows, told apart ONLY by marker keys inside `metadata`.
+ * Phase 1 (2026-09-03) moved hearings and tasks to tables of their own
+ * (queries 4 and 5, below); what is left sharing this one is cases, the
+ * manually-added clients and the finance invoices. Postgres/PostgREST can
+ * express `meta.client === true` as a positive filter but NOT as a safe
+ * negative one: `metadata->>'client' <> 'true'` evaluates to NULL — and so
+ * DROPS the row — for every row that has no `client` key at all, i.e. for
+ * every real case. That single trap would empty «القضايا النشطة» for every
+ * lawyer with no error anywhere. So the rows are fetched once and classified
+ * in JS, where "key absent" means what it looks like it means.
  *
  * The window is bounded (WORKSPACE_WINDOW). If it fills, the counts computed
  * from it would be understated, so they are reported as `null` (unreadable)
- * rather than as a number that is quietly too small. Production holds 29
- * `service_requests` rows in total, so this cannot fire today; it exists so
- * that it degrades honestly rather than silently when it one day can.
+ * rather than as a number that is quietly too small.
  */
 
 // Chosen to stay under the ~380-element ceiling PostgREST puts on an `in`
@@ -62,9 +62,6 @@ import { kindToType, urgencyFromDb } from "@/lib/services/hearingVocabulary";
 // window produced: cap the window and the `.in("request_id", …)` list is
 // capped with it.
 const WORKSPACE_WINDOW = 300;
-
-/** Statuses that mean "this row is finished"; used by hearings and tasks. */
-const CLOSED_STATUSES = new Set(["completed", "cancelled"]);
 
 /**
  * Every status in the `service_requests` CHECK constraint (migration 20260616)
@@ -102,9 +99,9 @@ interface UpcomingHearingRow {
 interface UrgentTaskRow {
   id: string;
   title: string;
-  /** `YYYY-MM-DD` the lawyer chose, or null when they chose none. */
+  /** `tasks.due_date`, "YYYY-MM-DD", or null when the lawyer set none. */
   dueDate: string | null;
-  /** Raw `metadata.priority` token (urgent / high / normal / low). */
+  /** `tasks.priority` (urgent / high / normal / low). */
   priority: string | null;
   category: string | null;
 }
@@ -164,16 +161,15 @@ export async function GET() {
     // statement about this lawyer's practice.
     const degraded: string[] = [];
 
-    // ── Round 1: the four independent reads ─────────────────────────────────
-    const [workspace, pendingConsultations, recentActivity, hearingRows] = await Promise.all([
+    // ── Round 1: the five independent reads ──────────────────────────────────
+    const [workspace, pendingConsultations, recentActivity, hearingRows, taskRows] = await Promise.all([
       // 1. The lawyer's whole workspace, unfiltered by status: one read that
-      //    feeds cases and tasks (hearings moved to their own table — query 4,
-      //    below). `assigned_to` is the predicate the modals write
-      //    (AddCaseModal / POST lawyer/tasks set assignedTo = the lawyer) and
-      //    it is also what keeps marketplace rows out: the SELECT policy lets
-      //    a verified lawyer browse OTHER people's unassigned requests, so a
-      //    query without an owner predicate would count strangers' work as
-      //    this lawyer's.
+      //    feeds cases only now (hearings and tasks both moved to their own
+      //    tables — queries 4 and 5, below). `assigned_to` is the predicate
+      //    AddCaseModal writes, and it is also what keeps marketplace rows
+      //    out: the SELECT policy lets a verified lawyer browse OTHER
+      //    people's unassigned requests, so a query without an owner
+      //    predicate would count strangers' work as this lawyer's.
       Promise.resolve(
         supabase
           .from("service_requests")
@@ -320,6 +316,33 @@ export async function GET() {
           console.error("[lawyer/dashboard/summary] hearings read threw:", err);
           return null;
         }),
+
+      // 5. Open tasks — public.tasks (Phase 1, 2026-09-03), not
+      //    service_requests. Same `owner_user_id = uid` scoping as hearings:
+      //    this widget is the lawyer's own list, not a firm-wide one.
+      //    "Open" = not done and not archived — the DB status column IS the
+      //    UI vocabulary now, so this is a plain `.not()`, no enum to map.
+      Promise.resolve(
+        supabase
+          .from("tasks")
+          .select("id, title, priority, category, due_date")
+          .eq("owner_user_id", uid)
+          .not("status", "in", "(done,archived)")
+          .limit(200),
+      )
+        .then(({ data, error }) => {
+          if (error) {
+            console.error("[lawyer/dashboard/summary] tasks read failed:", error.message);
+            return null;
+          }
+          return (data ?? []) as {
+            id: string; title: string; priority: string; category: string | null; due_date: string | null;
+          }[];
+        })
+        .catch((err) => {
+          console.error("[lawyer/dashboard/summary] tasks read threw:", err);
+          return null;
+        }),
     ]);
 
     if (pendingConsultations === null) degraded.push("pendingConsultations");
@@ -359,14 +382,36 @@ export async function GET() {
       criticalDeadlines = critical.slice(0, 4);
     }
 
-    // ── Classify the workspace (cases + tasks only now) ─────────────────────
+    // ── Tasks: also its own read now, independent of the workspace query ────
+    let urgentTasks: UrgentTaskRow[] | null = null;
+    if (taskRows === null) {
+      degraded.push("tasks");
+    } else {
+      const tasks: UrgentTaskRow[] = taskRows.map((row) => ({
+        id: row.id,
+        title: row.title || "مهمة بدون عنوان",
+        dueDate: row.due_date,
+        priority: row.priority,
+        category: row.category,
+      }));
+      // Soonest due first; a task with no due date has nothing to sort by and
+      // goes last rather than being given an invented date.
+      tasks.sort((a, b) => {
+        if (a.dueDate === b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return a.dueDate.localeCompare(b.dueDate);
+      });
+      urgentTasks = tasks.slice(0, 4);
+    }
+
+    // ── Classify the workspace (cases only now) ──────────────────────────────
     let activeCases: number | null = null;
     let recentCases: RecentCaseRow[] | null = null;
-    let urgentTasks: UrgentTaskRow[] | null = null;
     let revenueThisMonth: number | null = null;
 
     if (workspace === null) {
-      degraded.push("cases", "tasks", "revenue");
+      degraded.push("cases", "revenue");
     } else if (workspace.length >= WORKSPACE_WINDOW) {
       // The window filled, so anything counted from it is a floor, not a total.
       // Reporting the floor as the answer is the exact class of lie this route
@@ -374,36 +419,20 @@ export async function GET() {
       console.error(
         `[lawyer/dashboard/summary] workspace window (${WORKSPACE_WINDOW}) filled for ${uid}; counts suppressed`,
       );
-      degraded.push("cases", "tasks", "revenue");
+      degraded.push("cases", "revenue");
     } else {
       const cases: WorkspaceRow[] = [];
-      const tasks: UrgentTaskRow[] = [];
 
       for (const row of workspace) {
         const meta = (row.metadata ?? {}) as Record<string, unknown>;
-        const isTask = meta.task === true;
         // A manually-added client (POST /api/v1/lawyer/clients) and a finance
         // invoice (POST /api/v1/lawyer/finance) are both `type: "service"`
         // rows assigned to this lawyer, so without these two markers the
-        // «القضايا النشطة» table listed «موكّل: فلان» and «فاتورة: فلان» as
-        // if they were litigation.
+        // dashboard's cases table listed a client name or an invoice as if
+        // it were litigation. Tasks no longer pass through here at all
+        // (query 5, above), so the old `meta.task` branch is gone with them.
         const isClient = meta.client === true;
         const isInvoice = meta.invoice === true;
-        const closed = CLOSED_STATUSES.has(row.status);
-
-        if (isTask) {
-          if (!closed) {
-            tasks.push({
-              id: row.id,
-              title: row.title || "مهمة بدون عنوان",
-              dueDate: readString(meta, "dueDate"),
-              priority: readString(meta, "priority"),
-              category: readString(meta, "category"),
-            });
-          }
-          continue;
-        }
-
         if (isClient || isInvoice) continue;
 
         cases.push(row);
@@ -430,16 +459,6 @@ export async function GET() {
           updated_at: c.updated_at,
           type: c.type,
         }));
-
-      // Soonest due first; a task with no due date has nothing to sort by and
-      // goes last rather than being given an invented date.
-      tasks.sort((a, b) => {
-        if (a.dueDate === b.dueDate) return 0;
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return a.dueDate.localeCompare(b.dueDate);
-      });
-      urgentTasks = tasks.slice(0, 4);
 
       // ── Round 2: revenue, scoped through the ids we just read ─────────────
       // Same scoping as /api/v1/lawyer/finance. No ids ⇒ no payments can
