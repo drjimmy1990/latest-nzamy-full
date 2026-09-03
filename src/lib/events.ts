@@ -169,6 +169,8 @@ export const RequestEvent = {
   CONTRACT_CREATED: "contract.created",
   CONTRACT_STATUS_CHANGED: "contract.status_changed",
   HEARING_CREATED: "hearing.created",
+  CASE_STAGE_ADDED: "case_stage.added",
+  CASE_STAGE_OUTCOME_RECORDED: "case_stage.outcome_recorded",
   PAYMENT_CREATED: "payment.created",
 } as const;
 
@@ -187,6 +189,7 @@ export type ActivityBadge =
   | "task"
   | "contract"
   | "hearing"
+  | "stage"
   | "client";
 
 export interface DescribedEvent {
@@ -344,6 +347,18 @@ export function describeActivityEvent(opts: {
         : "";
       const suffix = statusAr ? ` — ${statusAr}` : "";
       return { title: title ? `تحديث حالة مهمة: ${title}${suffix}` : `تحديث حالة مهمة${suffix}`, badge: "task" };
+    }
+    case RequestEvent.CASE_STAGE_ADDED: {
+      const degree = typeof payload.degree === "string" ? payload.degree : "";
+      return { title: degree ? `تمت إضافة درجة تقاضٍ: ${degree}` : "تمت إضافة درجة تقاضٍ", badge: "stage" };
+    }
+    case RequestEvent.CASE_STAGE_OUTCOME_RECORDED: {
+      const outcomeAr: Record<string, string> = {
+        won: "كسب القضية", lost: "خسارة", partial: "حكم جزئي",
+        settled: "تسوية", withdrawn: "تنازل", pending: "قيد النظر",
+      };
+      const outcome = typeof payload.outcome === "string" ? outcomeAr[payload.outcome] ?? "" : "";
+      return { title: outcome ? `تم تسجيل نتيجة درجة تقاضٍ: ${outcome}` : "تم تسجيل نتيجة درجة تقاضٍ", badge: "stage" };
     }
     default:
       return { title: "نشاط جديد مسجَّل", badge: "notice" };
