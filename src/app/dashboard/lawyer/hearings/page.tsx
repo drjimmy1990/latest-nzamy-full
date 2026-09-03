@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 import {
   CalendarCheck, Clock, MapPin, Gavel, Plus, Warning,
   CheckCircle, FileText, Buildings, Receipt,
@@ -49,9 +50,9 @@ function hijriDayOnly(gDate: Date): string | null {
   const parts = hijriPartsOf(gDate);
   return parts ? String(parts.day) : null;
 }
-// `import Link from "next/link"` was removed with the linked-tasks UI on
-// 2026-08-28 — its only two uses were the «N مهام» chip and «عرض كل المهام»,
-// both inside a block that could never render. See the note at LINKED_TASKS.
+// `Link` was removed with the linked-tasks UI on 2026-08-28 (its only two
+// uses were dead code — see the note at LINKED_TASKS below) and re-added on
+// 2026-09-03 for the real case-link chip Phase 1 makes possible.
 import { useTheme } from "@/components/ThemeProvider";
 import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
 
@@ -79,7 +80,8 @@ const TODAY_COUNT: ArabicCountForms = {
 };
 import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
 import { hijriPartsOf, toArabicDigits } from "@/lib/services/hijri";
-import { apiGet, isSupabaseMode } from "@/lib/services/api";
+import { isSupabaseMode } from "@/lib/services/api";
+import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearingsService";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { useUser } from "@/hooks/useUser";
 import AddHearingModal from "../_components/AddHearingModal";
@@ -90,10 +92,12 @@ type ViewMode = "list"|"calendar";
 interface WorkflowStep { label: string; done: boolean; }
 interface CalEvent {
   id: string; type: EventType; title: string;
-  // `caseId?: string` was removed on 2026-08-28. Round 1 stopped the mapper
-  // setting it (it had been pointing at the hearing's own id), and its only
-  // reader was the LINKED_TASKS lookup, which is gone — see the note there.
-  client?: string; caseName?: string;
+  // `caseId` was removed on 2026-08-28 — it had been pointing at the
+  // hearing's OWN id, which is not a case, so the chip it fed opened a page
+  // that could never resolve. Phase 1 (2026-09-03) brings it back for real:
+  // `hearings.case_request_id` is an actual foreign key to the case now, not
+  // a guess, so the chip can be a link again — see EventCard below.
+  client?: string; caseName?: string; caseId?: string;
   // `date` is the row's own stored "YYYY-MM-DD" — an ABSOLUTE day, and the only
   // one of the two that is actually stored. EVERYTHING the lawyer reads as a
   // date is derived from it: the card's date line (formatEventDateAr), the
@@ -178,66 +182,78 @@ function daysFromToday(dateStr: string): number | null {
 }
 
 /**
- * A service_requests row → a calendar event, or null when the row is not one.
+ * A hearing row from /api/v1/lawyer/hearings → a calendar event, or null when
+ * the date will not parse.
  *
- * `null` is the whole fix for this page. `service_requests` is where FOUR
- * different lawyer-owned shapes live, all with type="service" and
- * receiver="lawyer", told apart only by metadata: hearings (this modal),
- * tasks (`metadata.task`, /api/v1/lawyer/tasks), manually-added clients
- * (`metadata.client`, /api/v1/lawyer/clients) and cases (AddCaseModal). This
- * mapper used to accept all four and paper over the differences with defaults:
- * a missing `metadata.type` became `"hearing"` and a missing `metadata.date`
- * became `dateSort = 0`. Together those two defaults rendered every task, every
- * added client and every case as «جلسة قضائية» happening TODAY, counted in the
- * red «X موعد اليوم» header — a lawyer with five open tasks read five court
- * hearings on today's diary.
+ * Phase 1 replacement for `workflowToHearing`, which read `service_requests`
+ * — a table FOUR different lawyer-owned shapes shared (hearings, tasks,
+ * manually-added clients, cases), told apart only by a metadata flag, and
+ * whose defaults once rendered every task and client as a court hearing
+ * happening today. That whole class of bug cannot recur here: this endpoint
+ * returns hearings and only hearings, `type` is a real column constrained by
+ * the DB, and there is no default to fall into.
  *
- * The gate is the DATE, not a metadata marker, because that is what a calendar
- * actually requires and it does not depend on which writer happens to stamp
- * which key: a row with no parseable event date has no place on a diary at all.
- * Undated rows are dropped rather than parked in a bucket — AddHearingModal now
- * requires a date, so the only rows this can drop are the ones that were never
- * hearings.
+ * The date gate stays, though, for the same reason it always did: `dateSort`
+ * is only correct AS OF THIS MOMENT, so the page re-derives it from `date`
+ * whenever the local day rolls over (see `todayKey`) rather than trusting a
+ * number computed at fetch time.
  */
-function workflowToHearing(request: WorkflowRequest): CalEvent | null {
+function hearingDtoToCalEvent(row: HearingDto): CalEvent | null {
+  const dateSort = daysFromToday(row.date);
+  if (dateSort === null) return null;
+
+  const type: EventType = (VALID_EVENT_TYPES as string[]).includes(row.type) ? (row.type as EventType) : "internal";
+  const urgency: CalEvent["urgency"] = (VALID_URGENCIES as string[]).includes(row.urgency) ? (row.urgency as CalEvent["urgency"]) : "normal";
+  const isDone = row.status === "cancelled";
+
+  return {
+    id: row.id,
+    type,
+    title: row.title,
+    caseName: row.caseName,
+    // Real now: hearings.case_request_id is an actual foreign key, not a
+    // guess. The «القضية» chip in EventCard links here when it is set.
+    caseId: row.caseRequestId ?? undefined,
+    location: row.location || undefined,
+    date: row.date,
+    dateSort,
+    time: row.time || undefined,
+    urgency,
+    notes: row.notes || undefined,
+    done: isDone,
+    workflow: undefined,
+  };
+}
+
+/**
+ * Demo mode only. `isSupabaseMode` is a module-level constant, so this is
+ * dead-code-eliminated from the production bundle — it never runs for the six
+ * live lawyer accounts, which all read hearingDtoToCalEvent above instead.
+ *
+ * Demo mode's local store still holds the OLD shape (AddHearingModal's demo
+ * branch writes `metadata.hearing = true` service_requests-style rows,
+ * unchanged by Phase 1 — see the note at that branch), so it needs its own
+ * mapper rather than being forced through a DTO shape nothing produces here.
+ */
+function demoWorkflowToHearing(request: WorkflowRequest): CalEvent | null {
   const meta = request.metadata ?? {};
   const dateStr = typeof meta.date === "string" ? meta.date : "";
-  // The gate — a row with no readable day is not a diary entry. The number is
-  // only correct AS OF THIS MOMENT; the page re-derives `dateSort` from `date`
-  // against the current local day, so nothing downstream depends on this one
-  // staying true overnight.
   const dateSort = daysFromToday(dateStr);
   if (dateSort === null) return null;
 
   const rawType = typeof meta.type === "string" ? meta.type : "";
-  // No default to "hearing". An unrecognised type is «مهمة داخلية» — the modal's
-  // own «أخرى» option — because putting a court-hearing badge on a row whose
-  // type we could not read is the same fabrication as inventing the row.
   const type: EventType = (VALID_EVENT_TYPES as string[]).includes(rawType) ? (rawType as EventType) : "internal";
   const rawUrgency = typeof meta.urgency === "string" ? meta.urgency : "";
   const urgency: CalEvent["urgency"] = (VALID_URGENCIES as string[]).includes(rawUrgency) ? (rawUrgency as CalEvent["urgency"]) : "normal";
   const isDone = request.status === "completed" || request.status === "cancelled";
-  const caseName = typeof meta.caseName === "string" ? meta.caseName : undefined;
+
   return {
     id: request.id,
     type,
     title: request.title,
     client: request.requester.name || undefined,
-    // `caseId` is no longer set from this row, and the «القضية» chip is no
-    // longer a link (2026-08-28). It used to be `caseName ? request.id : …`,
-    // which pointed the chip at /dashboard/lawyer/cases/<this HEARING's own id>
-    // — an id that is not a case, so the chip opened a case page that could
-    // never resolve. A previous pass knowingly shipped it rather than lose the
-    // chip; the chip did not have to go. `caseName` here is free text the lawyer
-    // typed into AddHearingModal («القضية / الموكل (اختياري)») and is not linked
-    // to any case record, so there is nothing to navigate TO: it is now rendered
-    // as a plain label. Giving it a real destination needs a case reference on
-    // the row, which is a schema question, not a rendering one.
-    caseName,
+    caseName: typeof meta.caseName === "string" ? meta.caseName : undefined,
     location: typeof meta.location === "string" && meta.location ? meta.location : undefined,
-    // Always the event's own date now. It used to fall back to the row's
-    // CREATION date, rendered under a clock icon in the slot labelled as the
-    // appointment time.
     date: dateStr,
     dateSort,
     time: typeof meta.time === "string" && meta.time ? meta.time : undefined,
@@ -262,10 +278,10 @@ const EVENT_CONFIG: Record<EventType,{icon:React.ElementType;label:string;color:
   internal:      {icon:CheckSquare, label:"مهمة داخلية",  color:"#94a3b8"},
 };
 
-// How many of the lawyer's service_requests rows to read for the diary. The
-// shared endpoint defaults to 20; production holds 29 rows across ALL accounts,
-// so this is headroom, not a guess. `total` is checked against what came back so
-// a lawyer who ever exceeds it is told rather than quietly shown a partial week.
+// /api/v1/lawyer/hearings defaults to the same 200 server-side; passed
+// explicitly so a change to one default cannot silently disagree with the
+// other. `total` (below) is checked against what came back so a lawyer who
+// ever exceeds it is told rather than quietly shown a partial week.
 const HEARINGS_FETCH_LIMIT = 200;
 
 // ─── Linked tasks: REMOVED 2026-08-28 ─────────────────────────────────────────
@@ -535,17 +551,24 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
             </div>
             {/* Links Row */}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
-              {/* A label, not a link. This was an <a> to
-                  /dashboard/lawyer/cases/<the hearing's own id> — see the note
-                  in workflowToHearing. The name the lawyer typed still shows;
-                  only the navigation that could not work is gone, and with it
-                  the ArrowSquareOut that promised it opened somewhere. */}
-              {ev.caseName&&(
+              {/* A real link when ev.caseId is set — Phase 1 gives a hearing an
+                  actual case foreign key (hearings.case_request_id), unlike
+                  the old service_requests row where this pointed at the
+                  HEARING's own id and could never resolve. A hearing typed
+                  from the general diary with only free-text `caseName` (no
+                  case chosen) still renders as a plain label — there is
+                  nothing to navigate to. */}
+              {ev.caseName && (ev.caseId ? (
+                <Link href={`/dashboard/lawyer/cases/${ev.caseId}`}
+                  className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors ${isDark?"bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20":"bg-indigo-50 text-indigo-600 hover:bg-indigo-100"}`}>
+                  <Scales size={9}/>{ev.caseName}<ArrowSquareOut size={9}/>
+                </Link>
+              ) : (
                 <span
                   className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg ${isDark?"bg-indigo-500/10 text-indigo-400":"bg-indigo-50 text-indigo-600"}`}>
                   <Scales size={9}/>{ev.caseName}
                 </span>
-              )}
+              ))}
               {/* The «N مهام» Link to /dashboard/lawyer/tasks stood here. It was
                   gated on `linkedTasks.length>0`, and linkedTasks came from
                   LINKED_TASKS, which nothing populated — removed 2026-08-28. */}
@@ -825,45 +848,31 @@ export default function LawyerHearingsPage() {
   const [showFilters, setShowFilters] = useState(false); // To toggle advanced filters
 
   // ─── Fetch hearings ─────────────────────────────────────────────────────────
-  // NOT getWorkflowRequestsByReceiver(): that helper sends no `limit`, and
-  // GET /api/v1/service-requests defaults to 20 rows ordered by created_at DESC
-  // while discarding `total`. A lawyer whose 20 newest rows are tasks, clients
-  // and cases would see an EMPTY hearing calendar with nothing saying rows were
-  // dropped. src/components/ui/CasePicker.tsx:84 already overrides the same
-  // default on the same endpoint for the same reason. It also swallows the
-  // route's `degraded` flag — its "this empty list is a failure, not an
-  // absence" signal (src/app/api/v1/service-requests/route.ts:84).
+  // /api/v1/lawyer/hearings, not /api/v1/service-requests: Phase 1 moved
+  // hearings to their own table (public.hearings), scoped to THIS lawyer by
+  // the route itself (owner_user_id = uid), so there is no marketplace-browse
+  // leak to filter out here the way the old `receiver: "lawyer"` read had.
   // No setState before the first await: the retry button sets "loading" itself,
   // and a refetch triggered by a save deliberately leaves the current list on
   // screen rather than flashing a spinner over a diary the lawyer is reading.
   const load = useCallback(async () => {
     try {
-      let rows: WorkflowRequest[];
+      let events: CalEvent[];
       let cut = false;
       if (isSupabaseMode) {
-        const res = await apiGet<{ data: WorkflowRequest[]; total?: number; degraded?: boolean }>(
-          "/api/v1/service-requests",
-          { receiver: "lawyer", limit: HEARINGS_FETCH_LIMIT },
-        );
-        if (res.degraded) throw new Error("the service-requests query failed server-side (degraded)");
-        rows = res.data ?? [];
-        cut = (res.total ?? rows.length) > rows.length;
+        const { hearings: rows, truncated: cutFlag } = await getLawyerHearings({ limit: HEARINGS_FETCH_LIMIT });
+        cut = cutFlag;
+        events = rows.map(hearingDtoToCalEvent).filter((e): e is CalEvent => e !== null);
       } else {
-        rows = await getWorkflowRequestsByReceiver("lawyer");
-      }
-      // `receiver: "lawyer"` is not "mine": the marketplace browse policy lets
-      // any verified lawyer read unassigned rows with that receiver, so filter
-      // to this lawyer's own once the session id is known. Skipped while the id
-      // is still resolving — that is a loading condition, not a read failure,
-      // and blanking the diary over it would be the bug this page already had.
-      const uid = user.userId;
-      setRawEvents(
-        rows
+        const rows = await getWorkflowRequestsByReceiver("lawyer");
+        const uid = user.userId;
+        events = rows
           .filter(r => r.type === "service")
           .filter(r => !uid || r.assignedTo === uid)
-          .map(workflowToHearing)
-          .filter((e): e is CalEvent => e !== null),
-      );
+          .map(demoWorkflowToHearing)
+          .filter((e): e is CalEvent => e !== null);
+      }
+      setRawEvents(events);
       setTruncated(cut);
       setLoadState("ready");
     } catch (err) {

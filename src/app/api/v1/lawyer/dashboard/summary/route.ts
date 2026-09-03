@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { kindToType, urgencyFromDb } from "@/lib/services/hearingVocabulary";
 
 /**
  * GET /api/v1/lawyer/dashboard/summary
@@ -9,10 +10,17 @@ import { assertRole } from "@/lib/auth/assertRole";
  *
  * 1. It read the WRONG TABLE for hearings and consultations. `consultations`
  *    has zero rows in production and nothing in the repo writes it; the real
- *    hearings a lawyer adds live in `service_requests` rows with
+ *    hearings a lawyer adds lived in `service_requests` rows with
  *    `receiver = "lawyer"` and `metadata.date` (AddHearingModal), which is what
- *    /dashboard/lawyer/hearings reads back. So the overview printed «لا توجد
+ *    /dashboard/lawyer/hearings read back. So the overview printed «لا توجد
  *    جلسات قادمة» over hearings the hearings page was listing.
+ *
+ *    (2026-09-03 — Phase 1) Hearings moved AGAIN, this time onto a real
+ *    `public.hearings` table (migration 20260903_phase1_case_tables.sql), so
+ *    they are read from there now — see Round 1 query 4, below. Left the
+ *    history above rather than deleting it: it is the same class of bug
+ *    fixed twice in a row, once by finding the wrong table and once by the
+ *    table not existing yet.
  *
  * 2. Every query swallowed its failure into `0` / `[]` and the route always
  *    answered 200. A DB error, an RLS change or an expired session therefore
@@ -81,10 +89,10 @@ interface RecentCaseRow {
 interface UpcomingHearingRow {
   id: string;
   title: string;
-  /** `YYYY-MM-DD`, exactly as AddHearingModal stored it. */
+  /** `hearings.hearing_date`, "YYYY-MM-DD". */
   date: string;
   time: string | null;
-  /** Raw `metadata.type` token (hearing / deadline / gov_review / …). */
+  /** UI vocabulary (hearing / deadline / gov_review / …) — translated from `hearings.kind` by kindToType(). */
   type: string | null;
   urgency: string | null;
   location: string | null;
@@ -156,15 +164,16 @@ export async function GET() {
     // statement about this lawyer's practice.
     const degraded: string[] = [];
 
-    // ── Round 1: the three independent reads ────────────────────────────────
-    const [workspace, pendingConsultations, recentActivity] = await Promise.all([
+    // ── Round 1: the four independent reads ─────────────────────────────────
+    const [workspace, pendingConsultations, recentActivity, hearingRows] = await Promise.all([
       // 1. The lawyer's whole workspace, unfiltered by status: one read that
-      //    feeds cases, hearings and tasks. `assigned_to` is the predicate the
-      //    modals write (AddCaseModal / AddHearingModal / POST lawyer/tasks all
-      //    set assignedTo = the lawyer) and it is also what keeps marketplace
-      //    rows out: the SELECT policy lets a verified lawyer browse OTHER
-      //    people's unassigned requests, so a query without an owner predicate
-      //    would count strangers' work as this lawyer's.
+      //    feeds cases and tasks (hearings moved to their own table — query 4,
+      //    below). `assigned_to` is the predicate the modals write
+      //    (AddCaseModal / POST lawyer/tasks set assignedTo = the lawyer) and
+      //    it is also what keeps marketplace rows out: the SELECT policy lets
+      //    a verified lawyer browse OTHER people's unassigned requests, so a
+      //    query without an owner predicate would count strangers' work as
+      //    this lawyer's.
       Promise.resolve(
         supabase
           .from("service_requests")
@@ -276,23 +285,88 @@ export async function GET() {
           console.error("[lawyer/dashboard/summary] activity read threw:", err);
           return null;
         }),
+
+      // 4. Upcoming hearings — public.hearings (Phase 1, 2026-09-03), not
+      //    service_requests. `.eq("owner_user_id", uid)` on top of RLS for the
+      //    same reason /api/v1/lawyer/hearings does: this widget is the
+      //    lawyer's OWN diary, not a firm-wide one, and RLS alone would also
+      //    admit an active colleague's hearings through can_access_case_row.
+      //    `>= today` and `status = "scheduled"` together are "upcoming and
+      //    not yet resolved" — a held/adjourned/cancelled hearing is not
+      //    upcoming even if its date has not passed.
+      Promise.resolve(
+        supabase
+          .from("hearings")
+          .select("id, title, kind, hearing_date, hearing_time, urgency, location, metadata")
+          .eq("owner_user_id", uid)
+          .eq("status", "scheduled")
+          .gte("hearing_date", today)
+          .order("hearing_date", { ascending: true })
+          .order("hearing_time", { ascending: true, nullsFirst: false })
+          .limit(50),
+      )
+        .then(({ data, error }) => {
+          if (error) {
+            console.error("[lawyer/dashboard/summary] hearings read failed:", error.message);
+            return null;
+          }
+          return (data ?? []) as {
+            id: string; title: string; kind: string; hearing_date: string;
+            hearing_time: string | null; urgency: string; location: string | null;
+            metadata: Record<string, unknown> | null;
+          }[];
+        })
+        .catch((err) => {
+          console.error("[lawyer/dashboard/summary] hearings read threw:", err);
+          return null;
+        }),
     ]);
 
     if (pendingConsultations === null) degraded.push("pendingConsultations");
     if (recentActivity === null) degraded.push("recentActivity");
 
-    // ── Classify the workspace ──────────────────────────────────────────────
-    let activeCases: number | null = null;
-    let recentCases: RecentCaseRow[] | null = null;
+    // ── Hearings: now their own read, independent of the workspace query ────
+    // Phase 1 moved hearings off service_requests, so a workspace failure no
+    // longer takes hearings down with it — and a hearings failure no longer
+    // takes cases/tasks down either. Each degrades on its own now.
     let upcomingHearings: UpcomingHearingRow[] | null = null;
     let upcomingHearingsCount: number | null = null;
     let criticalDeadlines: UpcomingHearingRow[] | null = null;
     let criticalDeadlinesCount: number | null = null;
+
+    if (hearingRows === null) {
+      degraded.push("hearings");
+    } else {
+      const hearings: UpcomingHearingRow[] = hearingRows.map((row) => ({
+        id: row.id,
+        title: row.title || "موعد بدون عنوان",
+        date: row.hearing_date,
+        time: row.hearing_time,
+        type: kindToType(row.kind),
+        urgency: urgencyFromDb(row.urgency),
+        location: row.location,
+        caseName: readString((row.metadata ?? {}) as Record<string, unknown>, "caseName"),
+      }));
+      // Already ordered by the query (date asc, time asc), so slicing keeps
+      // the soonest first.
+      upcomingHearingsCount = hearings.length;
+      upcomingHearings = hearings.slice(0, 3);
+      // «مواعيد حرجة» is a real subset of the same rows, not a second source:
+      // an appeal/final deadline (the modal's «موعد طعن / نهائي») or anything
+      // the lawyer marked critical when saving it.
+      const critical = hearings.filter((h) => h.type === "deadline" || h.urgency === "critical");
+      criticalDeadlinesCount = critical.length;
+      criticalDeadlines = critical.slice(0, 4);
+    }
+
+    // ── Classify the workspace (cases + tasks only now) ─────────────────────
+    let activeCases: number | null = null;
+    let recentCases: RecentCaseRow[] | null = null;
     let urgentTasks: UrgentTaskRow[] | null = null;
     let revenueThisMonth: number | null = null;
 
     if (workspace === null) {
-      degraded.push("cases", "hearings", "tasks", "revenue");
+      degraded.push("cases", "tasks", "revenue");
     } else if (workspace.length >= WORKSPACE_WINDOW) {
       // The window filled, so anything counted from it is a floor, not a total.
       // Reporting the floor as the answer is the exact class of lie this route
@@ -300,15 +374,13 @@ export async function GET() {
       console.error(
         `[lawyer/dashboard/summary] workspace window (${WORKSPACE_WINDOW}) filled for ${uid}; counts suppressed`,
       );
-      degraded.push("cases", "hearings", "tasks", "revenue");
+      degraded.push("cases", "tasks", "revenue");
     } else {
       const cases: WorkspaceRow[] = [];
-      const hearings: UpcomingHearingRow[] = [];
       const tasks: UrgentTaskRow[] = [];
 
       for (const row of workspace) {
         const meta = (row.metadata ?? {}) as Record<string, unknown>;
-        const hearingDate = readString(meta, "date");
         const isTask = meta.task === true;
         // A manually-added client (POST /api/v1/lawyer/clients) and a finance
         // invoice (POST /api/v1/lawyer/finance) are both `type: "service"`
@@ -327,30 +399,6 @@ export async function GET() {
               dueDate: readString(meta, "dueDate"),
               priority: readString(meta, "priority"),
               category: readString(meta, "category"),
-            });
-          }
-          continue;
-        }
-
-        // `metadata.date` is the only marker that identifies a schedule row, so
-        // a row saved without one falls through to `cases` below rather than
-        // being dropped. That is deliberate: an unclassifiable row should stay
-        // visible under a truthful title, not vanish from the dashboard
-        // entirely. (AddHearingModal now refuses to save without a date, so
-        // this is a legacy-row path, not a live one.)
-        if (hearingDate) {
-          // Past and finished hearings are not "upcoming". `>= today` keeps a
-          // hearing visible for the whole of its own day.
-          if (!closed && hearingDate >= today) {
-            hearings.push({
-              id: row.id,
-              title: row.title || "موعد بدون عنوان",
-              date: hearingDate,
-              time: readString(meta, "time"),
-              type: readString(meta, "type"),
-              urgency: readString(meta, "urgency"),
-              location: readString(meta, "location"),
-              caseName: readString(meta, "caseName"),
             });
           }
           continue;
@@ -382,18 +430,6 @@ export async function GET() {
           updated_at: c.updated_at,
           type: c.type,
         }));
-
-      hearings.sort((a, b) => (a.date === b.date ? (a.time ?? "").localeCompare(b.time ?? "") : a.date.localeCompare(b.date)));
-      upcomingHearingsCount = hearings.length;
-      upcomingHearings = hearings.slice(0, 3);
-      // «مواعيد حرجة» is a real subset of the same rows, not a second source:
-      // an appeal/final deadline (the modal's «موعد طعن / نهائي») or anything
-      // the lawyer marked critical when saving it. The count travels with the
-      // list: this card, unlike the hearings card, has no KPI tile beside it,
-      // so without it a fifth critical deadline would be silently invisible.
-      const critical = hearings.filter((h) => h.type === "deadline" || h.urgency === "critical");
-      criticalDeadlinesCount = critical.length;
-      criticalDeadlines = critical.slice(0, 4);
 
       // Soonest due first; a task with no due date has nothing to sort by and
       // goes last rather than being given an invented date.

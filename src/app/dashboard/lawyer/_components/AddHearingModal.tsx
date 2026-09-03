@@ -4,7 +4,8 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, XCircle } from "@phosphor-icons/react";
 import { createWorkflowRequest } from "@/lib/services/workflowService";
-import { apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { isSupabaseMode } from "@/lib/services/api";
+import { createLawyerHearing } from "@/lib/services/lawyerHearingsService";
 import { createWorkflowId } from "@/lib/workflowStore";
 import type { UserType, UserTier } from "@/hooks/useUser";
 import { describeDateAr, toArabicDigits } from "@/lib/services/hijri";
@@ -13,14 +14,20 @@ interface Props {
   onClose: () => void;
   isDark: boolean;
   /**
-   * Current user context from the parent page (useUser()). REQUIRED, and
-   * `userId` is checked again at save time: a hearing row written with
-   * `assigned_to = null` is not merely orphaned, it matches the marketplace
-   * browse policy (`assigned_to IS NULL AND status IN ('pending',
-   * 'pending_assignment') AND receiver <> 'ai_workspace'`) and becomes readable
-   * by every other verified lawyer on the platform.
+   * Current user context from the parent page (useUser()). REQUIRED — the
+   * Phase 1 write path (POST /api/v1/lawyer/hearings) resolves the owner from
+   * the session itself, but `user.userId` still gates the save client-side so
+   * a not-yet-resolved session cannot submit a request that would 401.
    */
   user: { userId?: string; name: string; userType: UserType; tier: UserTier };
+  /**
+   * When opened from a case file, the case this hearing belongs to. Passed
+   * straight through as `caseRequestId` — the case-name text field is hidden
+   * in that mode since the case is already known, not asked for twice.
+   */
+  caseRequestId?: string;
+  /** Prefills the case-name field for the general diary (unlinked) flow. */
+  defaultCaseName?: string;
 }
 
 type Urgency = "critical" | "high" | "normal";
@@ -33,7 +40,7 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "internal",     label: "أخرى" },
 ];
 
-export default function AddHearingModal({ onClose, isDark, user }: Props) {
+export default function AddHearingModal({ onClose, isDark, user, caseRequestId, defaultCaseName }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
   const [done, setDone] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -41,7 +48,7 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
 
   // Controlled inputs
   const [type, setType] = useState("");
-  const [caseName, setCaseName] = useState("");
+  const [caseName, setCaseName] = useState(defaultCaseName ?? "");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [notes, setNotes] = useState("");
@@ -84,57 +91,47 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const id = createWorkflowId();
       const typeLabel = TYPE_OPTIONS.find(t => t.value === type)?.label ?? "جلسة";
-      const payload = {
-        id,
-        type: "service" as const,
-        // The case-name branch used to hardcode «جلسة» — `جلسة — ${caseName}` —
-        // no matter which type was picked, so «موعد طعن / نهائي» was saved with
-        // the title «جلسة — قضية الأفق» and read as a court sitting everywhere a
-        // title is shown, while `metadata.type` beneath it still said deadline:
-        // the badge and the title disagreed on the same row. `typeLabel` is the
-        // label the lawyer actually chose and was already in hand one line up.
-        // This applies to rows saved from here on; titles already written stay
-        // as they are, since correcting them would take SQL.
-        title: caseName.trim() ? `${typeLabel} — ${caseName.trim()}` : typeLabel,
-        description: notes.trim(),
-        receiver: "lawyer" as const,
-        status: "pending_assignment" as const,
-        requester: {
-          userId: user.userId,
-          name: user.name || "محامي نظامي",
-          role: user.userType ?? "lawyer",
-          tier: user.tier ?? "free",
-        },
-        payment: { amount: 0, status: "not_required" as const },
-        sourcePath: "",
-        // `hearing: true` is the same discriminator convention the task rows
-        // (`metadata.task`) and the manually-added clients (`metadata.client`)
-        // already use: these three shapes all live in service_requests as
-        // type="service", receiver="lawyer", and are told apart only by
-        // metadata. The lawyer cases/contracts boards need it to stop listing
-        // hearings as cases.
-        metadata: { hearing: true, date, time, type, urgency, location, notes, caseName },
-        assignedTo: user.userId,
-      };
+      // The case-name branch used to hardcode a title regardless of which type
+      // was picked, so «موعد طعن / نهائي» was saved with a title reading
+      // «جلسة — قضية الأفق» and read as a court sitting everywhere a title is
+      // shown, while the type beneath it still said deadline. typeLabel is
+      // the label the lawyer actually chose, already in hand one line up.
+      const title = caseName.trim() ? typeLabel + " — " + caseName.trim() : typeLabel;
 
-      // NOT createWorkflowRequest() in supabase mode. That helper catches a
-      // failed POST and writes the row to localStorage instead
-      // (workflowService.ts:54-57), so it resolves successfully on a 401/500/RLS
-      // refusal — the catch below could never run, and the lawyer read
-      // «تم إضافة الموعد بنجاح» over a hearing that existed only in this
-      // browser and never appeared in any list again. A missed hearing is the
-      // worst thing this dashboard can produce, so the save goes straight to the
-      // API: apiMutate throws on any non-2xx and the error reaches the lawyer.
+      // Phase 1: hearings live in their own table now (public.hearings), not
+      // a metadata-flagged service_requests row. NOT createWorkflowRequest()
+      // in supabase mode — that helper catches a failed POST and writes to
+      // localStorage instead, so it resolves successfully on a 401/500/RLS
+      // refusal and the lawyer reads «تم إضافة الموعد بنجاح» over a hearing
+      // that existed only in this browser and never appeared in any list
+      // again. apiMutate throws on any non-2xx and the error reaches the
+      // lawyer instead.
       //
-      // Demo mode still uses the helper, because there the local store is the
-      // real backend and genuinely round-trips (readWorkflowRequestsByReceiver
-      // reads it back). The lie was supabase-only.
+      // Demo mode still uses the old local-store path below: there it is the
+      // real backend and genuinely round-trips. The lie was supabase-only.
       if (isSupabaseMode) {
-        await apiMutate("/api/v1/service-requests", "POST", payload);
+        await createLawyerHearing({ type, date, time, caseName, caseRequestId, urgency, location, notes, title });
       } else {
-        await createWorkflowRequest(payload);
+        const id = createWorkflowId();
+        await createWorkflowRequest({
+          id,
+          type: "service" as const,
+          title,
+          description: notes.trim(),
+          receiver: "lawyer" as const,
+          status: "pending_assignment" as const,
+          requester: {
+            userId: user.userId,
+            name: user.name || "محامي نظامي",
+            role: user.userType ?? "lawyer",
+            tier: user.tier ?? "free",
+          },
+          payment: { amount: 0, status: "not_required" as const },
+          sourcePath: "",
+          metadata: { hearing: true, date, time, type, urgency, location, notes, caseName },
+          assignedTo: user.userId,
+        });
       }
       setDone(true);
       window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
@@ -220,10 +217,17 @@ export default function AddHearingModal({ onClose, isDark, user }: Props) {
                       {TYPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>القضية / الموكل (اختياري)</label>
-                    <input type="text" value={caseName} onChange={e => setCaseName(e.target.value)} placeholder="مثال: قضية الأفق" className={inputCls} />
-                  </div>
+                  {/* Hidden when opened from a case file: `caseRequestId` already
+                      names the case, so asking for its name again in free text
+                      would let the two disagree. The general diary (no case in
+                      context) keeps the free-text field — an appointment can
+                      exist before it belongs to a case. */}
+                  {!caseRequestId && (
+                    <div>
+                      <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>القضية / الموكل (اختياري)</label>
+                      <input type="text" value={caseName} onChange={e => setCaseName(e.target.value)} placeholder="مثال: قضية الأفق" className={inputCls} />
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>التاريخ <span className="text-red-500">*</span></label>
