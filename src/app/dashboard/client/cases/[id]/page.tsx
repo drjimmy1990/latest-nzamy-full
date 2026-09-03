@@ -77,6 +77,8 @@ const EVENT_LABELS: Record<string, string> = {
   "hearing.created":               "إضافة جلسة",
   "task.created":                  "إضافة مهمة",
   "task.status_changed":           "تحديث حالة مهمة",
+  "case_stage.added":              "إضافة درجة تقاضٍ",
+  "case_stage.outcome_recorded":   "تسجيل نتيجة درجة تقاضٍ",
   "created":        "إنشاء القضية",
   "status_change":  "تغيير الحالة",
   "updated":        "تحديث القضية",
