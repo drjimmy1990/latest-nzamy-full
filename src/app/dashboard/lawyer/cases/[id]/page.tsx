@@ -16,7 +16,9 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
 import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearingsService";
+import { getCaseStages, type CaseStage } from "@/lib/services/caseStagesService";
 import AddHearingModal from "../../_components/AddHearingModal";
+import AddCaseStageModal from "../../_components/AddCaseStageModal";
 import dynamic from "next/dynamic";
 import {
   itemsOf,
@@ -118,6 +120,16 @@ const STATUS_CONFIG: Record<CaseStatus, { label: string; color: string; dot: str
   cancelled: { label: "ملغاة",  color: "text-rose-500 bg-rose-500/10 border-rose-500/20",          dot: "bg-rose-400" },
 };
 
+/** درجات التقاضي outcomes — `public.case_stages.outcome`, read-only in v1 (no PATCH UI yet, so a stage sits here as "pending" until a later wave adds one). */
+const OUTCOME_CONFIG: Record<string, { label: string; color: string }> = {
+  pending:   { label: "قيد النظر", color: "text-amber-500 bg-amber-500/10 border-amber-500/20" },
+  won:       { label: "كسب القضية", color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" },
+  lost:      { label: "خسارة",     color: "text-rose-500 bg-rose-500/10 border-rose-500/20" },
+  partial:   { label: "حكم جزئي",  color: "text-blue-500 bg-blue-500/10 border-blue-500/20" },
+  settled:   { label: "تسوية",     color: "text-royal bg-royal/10 border-royal/20" },
+  withdrawn: { label: "تنازل",     color: "text-slate-400 bg-slate-100 border-slate-200" },
+};
+
 const TASK_STATUS: Record<TaskStatus, { label: string; color: string; dot: string }> = {
   todo:       { label: "لم تبدأ",    color: "text-slate-500 bg-slate-100",         dot: "bg-slate-300" },
   inprogress: { label: "قيد التنفيذ", color: "text-blue-600 bg-blue-500/10",       dot: "bg-blue-400 animate-pulse" },
@@ -177,6 +189,7 @@ const TABS = [
   { id: "overview",  label: "نظرة عامة",  icon: Gavel },
   { id: "tasks",     label: "المهام",      icon: CheckSquare },
   { id: "hearings",  label: "الجلسات",     icon: CalendarCheck },
+  { id: "stages",    label: "درجات التقاضي", icon: Scales },
   { id: "documents", label: "المستندات",   icon: FolderOpen },
   { id: "team",      label: "الفريق",      icon: UsersThree },
   { id: "graph",     label: "خريطة القضية", icon: Graph },
@@ -373,6 +386,11 @@ export default function CaseDetailPage() {
   const [hearingsRead, setHearingsRead] = useState<ListRead<HearingDto> | null>(null);
   const [hearingsLoading, setHearingsLoading] = useState(true);
   const [showAddHearing, setShowAddHearing] = useState(false);
+
+  // ── درجات التقاضي linked to this case (Phase 1, public.case_stages) ──
+  const [stagesRead, setStagesRead] = useState<ListRead<CaseStage> | null>(null);
+  const [stagesLoading, setStagesLoading] = useState(true);
+  const [showAddStage, setShowAddStage] = useState(false);
   const user = useUser();
   // Declared here (not beside loadCaseHearings further down) because the
   // `hearings` useMemo below reads it, and hooks below its own declaration
@@ -537,6 +555,20 @@ export default function CaseDetailPage() {
 
   useEffect(() => { loadCaseHearings(); }, [loadCaseHearings]);
 
+  // ── درجات التقاضي linked to this case ──
+  // GET /api/v1/lawyer/case-stages/[caseId] (Phase 1, public.case_stages,
+  // last of the five surfaces). Ordered server-side (position, opened_on).
+  const loadCaseStages = useCallback(() => {
+    if (!id) return;
+    setStagesLoading(true);
+    getCaseStages(id)
+      .then(({ items }) => setStagesRead(listOk(items)))
+      .catch(() => setStagesRead(listFailed<CaseStage>()))
+      .finally(() => setStagesLoading(false));
+  }, [id]);
+
+  useEffect(() => { loadCaseStages(); }, [loadCaseStages]);
+
   // AddHearingModal dispatches this on a confirmed save (same signal the
   // standalone diary listens for) — without it, a hearing added from this
   // very case file would not appear until the page was reloaded.
@@ -545,6 +577,9 @@ export default function CaseDetailPage() {
     window.addEventListener("nzamy-workflow-updated", onUpdated);
     return () => window.removeEventListener("nzamy-workflow-updated", onUpdated);
   }, [loadCaseHearings]);
+
+  const stagesView = listViewState(stagesLoading, stagesRead);
+  const caseStages = itemsOf(stagesRead);
 
   const tasksView = listViewState(tasksLoading, tasksRead);
   const tasks = itemsOf(tasksRead);
@@ -1272,6 +1307,86 @@ export default function CaseDetailPage() {
             </div>
           )}
 
+          {/* ── درجات التقاضي ── */}
+          {activeTab === "stages" && (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                  {caseStages.length === 0 ? "لا درجات تقاضٍ مسجّلة" : `${toArabicDigits(caseStages.length)} درجة تقاضٍ`}
+                </p>
+                <button onClick={() => setShowAddStage(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22] transition-colors">
+                  <Plus size={12} weight="bold" />إضافة درجة تقاضٍ
+                </button>
+              </div>
+              {stagesView === "loading" ? (
+                <div className={`${card} p-10 flex items-center justify-center gap-2`}>
+                  <Spinner size={20} className="text-royal animate-spin" />
+                  <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل درجات التقاضي...</span>
+                </div>
+              ) : stagesView === "unreadable" ? (
+                <div className={`${card} p-10 flex flex-col items-center justify-center`}>
+                  <Warning size={32} weight="duotone" className="mb-3 text-red-500" />
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّرت قراءة درجات التقاضي</p>
+                  <p className={`text-[11px] mt-1 text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                    هذه ليست لوحة فارغة — قد تكون لهذه القضية درجات تقاضٍ لم تُقرأ.
+                  </p>
+                  <button onClick={loadCaseStages}
+                    className="mt-3 flex items-center gap-1.5 text-[12px] font-bold text-royal hover:underline">
+                    <ArrowClockwise size={13} /> إعادة المحاولة
+                  </button>
+                </div>
+              ) : caseStages.length === 0 ? (
+                <div className={`${card} p-10 flex flex-col items-center justify-center`}>
+                  <Scales size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد درجات تقاضٍ مسجّلة</p>
+                  <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>سجِّل الدرجة الحالية للقضية (ابتدائي، استئناف...) بالزر أعلاه.</p>
+                </div>
+              ) : (
+                caseStages.map((s, i) => {
+                  const outcome = OUTCOME_CONFIG[s.outcome ?? "pending"] ?? OUTCOME_CONFIG.pending;
+                  return (
+                    <motion.div key={s.id}
+                      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                      className={`${card} p-4`}>
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
+                            <Scales size={16} weight="duotone" className="text-royal" />
+                          </div>
+                          <div>
+                            <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{s.degree}</p>
+                            {s.courtName && (
+                              <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{s.courtName}</p>
+                            )}
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border whitespace-nowrap ${outcome.color}`}>{outcome.label}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px]">
+                        {s.courtCaseNo && (
+                          <span className={isDark ? "text-zinc-500" : "text-slate-400"}>رقم القضية: {s.courtCaseNo}</span>
+                        )}
+                        {s.circuit && (
+                          <span className={isDark ? "text-zinc-500" : "text-slate-400"}>الدائرة: {s.circuit}</span>
+                        )}
+                        {s.judgeName && (
+                          <span className={isDark ? "text-zinc-500" : "text-slate-400"}>القاضي: {s.judgeName}</span>
+                        )}
+                        {s.openedOn && (
+                          <span className={isDark ? "text-zinc-500" : "text-slate-400"}>فُتحت في {formatHearingDate(s.openedOn)}</span>
+                        )}
+                      </div>
+                      {s.notes && (
+                        <p className={`text-[12px] mt-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{s.notes}</p>
+                      )}
+                    </motion.div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
           {/* ── Documents ── */}
           {activeTab === "documents" && (
             <div className="space-y-3">
@@ -1510,6 +1625,17 @@ export default function CaseDetailPage() {
           // standalone diary (which is not scoped to one case), shows a
           // meaningful «القضية» chip instead of an empty one.
           defaultCaseName={caseData?.title}
+        />
+      )}
+
+      {showAddStage && (
+        <AddCaseStageModal
+          onClose={() => setShowAddStage(false)}
+          isDark={isDark}
+          caseRequestId={id}
+          onCreated={(created) => {
+            if (stagesRead?.ok) setStagesRead(listOk([...stagesRead.items, created]));
+          }}
         />
       )}
     </div>

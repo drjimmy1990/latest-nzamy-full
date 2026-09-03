@@ -148,3 +148,21 @@ test("a whitespace-only title is treated as no title", () => {
   const out = describeActivityEvent({ kind: RequestEvent.HEARING_CREATED, payload: { title: "   " } });
   assert.equal(out.title, "تمت إضافة جلسة");
 });
+
+test("names the degree when a case stage is added", () => {
+  const out = describeActivityEvent({ kind: RequestEvent.CASE_STAGE_ADDED, payload: { degree: "استئناف" } });
+  assert.equal(out.title, "تمت إضافة درجة تقاضٍ: استئناف");
+  assert.equal(out.badge, "stage");
+});
+
+test("a case stage outcome translates the DB token to Arabic, never printing it raw", () => {
+  const out = describeActivityEvent({ kind: RequestEvent.CASE_STAGE_OUTCOME_RECORDED, payload: { outcome: "won" } });
+  assert.equal(out.title, "تم تسجيل نتيجة درجة تقاضٍ: كسب القضية");
+  assert.ok(!/[A-Za-z]/.test(out.title));
+});
+
+test("an unrecognised outcome token still names the badge, never a blank suffix", () => {
+  const out = describeActivityEvent({ kind: RequestEvent.CASE_STAGE_OUTCOME_RECORDED, payload: {} });
+  assert.equal(out.title, "تم تسجيل نتيجة درجة تقاضٍ");
+  assert.equal(out.badge, "stage");
+});
