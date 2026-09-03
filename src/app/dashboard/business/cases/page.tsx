@@ -1,569 +1,543 @@
-"use client";
+'use client';
 
-import { useState, useMemo, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Gavel, MagnifyingGlass, Plus, CalendarCheck, CaretLeft,
-  Clock, ArrowUpRight, Kanban, List, ChartBar,
-  Archive, FunnelSimple, Users, CalendarBlank,
-  SquaresFour, Dot, Warning, CheckCircle, Hourglass,
-  TrendUp, Star,
-} from "@phosphor-icons/react";
-import Link from "next/link";
-import { useTheme } from "@/components/ThemeProvider";
+/**
+ * قضايا الشركة — /dashboard/business/cases.
+ *
+ * ── WHAT THIS PAGE READS, AND WHY ───────────────────────────────────────────
+ * A corporate account is a REQUESTER, exactly like an individual client — it
+ * files a case through the same catalogue (owner ruling س٢, 26 August, see
+ * `../page.tsx`'s file-top comment) and never appears as `assigned_to` on a
+ * `service_requests` row; that column is written for lawyers/admins only. So
+ * this page reads the SAME table through the SAME client-scoped helper
+ * «قضاياي» uses — `listClientWorkflowRequestsPage` from
+ * `@/lib/clientWorkflowRepository` — rather than the firm list's pattern
+ * (`../../firm/cases/page.tsx`), which additionally reads rows where the
+ * account is the *assignee*. A firm can be handed a case; a company cannot.
+ *
+ * ── WHY THIS IS "ITS OWN ROWS ONLY", AND WHY THAT IS CORRECT ────────────────
+ * "قضايا الشركة" reads as "every case anyone at the company filed", but no
+ * code path in this repo ever inserts a `firm_members`-style row for a
+ * corporate account, and `service_requests` RLS admits only
+ * `requester_user_id = auth.uid()` (`OR assigned_to = auth.uid()`, which never
+ * matches a company). There is no company-wide membership model yet, so this
+ * page shows exactly the rows filed under THIS LOGIN — one signed-in user's
+ * own activity, not a roster of colleagues' filings. That is the honest
+ * behaviour of the data as it exists today; a real company-wide view needs a
+ * membership table plus an RLS policy that joins through it, which is not
+ * this page's work to fake with a client-side merge.
+ *
+ * ── WHAT WAS HERE, AND WHAT DID NOT SURVIVE ─────────────────────────────────
+ * The previous 569-line version rendered `MOCK_CASES`, seven fabricated cases
+ * (named clients, court dates, SAR values) from `@/constants/businessCasesData`,
+ * behind a list/kanban/archive switch. Every derived screen built on that mock
+ * has no equivalent here because nothing on `service_requests` backs it:
+ *   • court / degree / stage / team / value / nextDate — no such columns exist
+ *     on the row; a case file here can name a status and a service, nothing
+ *     else (see `toClientCase`, `@/lib/services/clientDashboardCards`).
+ *   • the red "N قضية لديها مواعيد طعون قادمة" banner and `criticalCount` —
+ *     computed from `hasDeadline`, an invented field.
+ *   • the Kanban board (`KANBAN_COLS`, drag-and-drop) — its columns encoded a
+ *     workflow stage no table stores, and dropping a card into one PATCHed
+ *     nothing anywhere.
+ *   • the team filter (`allTeam`) — built from `MOCK_CASES[].team`, a roster
+ *     that was never real.
+ *   • `AddCaseModal` (`@/components/dashboard/business/AddCaseModal`) — a
+ *     two-step form whose only handler was `onClose`; nothing it collected
+ *     was ever sent anywhere. The «قضية جديدة» action now points at the same
+ *     three-step intake `../page.tsx`'s «اطلب خدمة قانونية» and «قضاياي»'s
+ *     «اطلب خدمة قانونية» both use — a link, not a modal, per the same owner
+ *     ruling cited above.
+ *
+ * `@/constants/businessCasesData.ts` and
+ * `@/components/dashboard/business/AddCaseModal.tsx` are deleted in this same
+ * change — this page was their only importer.
+ *
+ * ── WHAT WAS NOT FIXED HERE ──────────────────────────────────────────────────
+ * `./[id]/page.tsx` — the case-file destination these cards link to — is still
+ * a fabricated screen (a `ShareGraphModal` that claims to encrypt and send an
+ * external share, a graph view over data no table holds). Its cards will now
+ * point real companies at a fake case file; that page is not this change's
+ * file, and the fix is reported as a follow-up rather than attempted here.
+ * Also unchanged: the layout's hidden-section gate, which today keeps this
+ * whole route unreachable for `corporate` accounts — that gate is the
+ * layout's business, not this file's.
+ */
 
-import { AddCaseModal } from "@/components/dashboard/business/AddCaseModal";
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence, useInView } from 'framer-motion';
+import Link from 'next/link';
 import {
-  type CaseStatus,
-  type CaseType,
-  type CourtDegree,
-  type Priority,
-  type KanbanCol,
-  type Case,
-  MOCK_CASES,
-  COURTS_LIST,
-  DEGREE_LABELS,
-  STATUS_CONFIG,
-  PRIORITY_CONFIG,
-  TYPE_LABELS,
-  KANBAN_COLS,
-  TIME_FILTERS,
-} from "@/constants/businessCasesData";
+  Scales, CalendarBlank, ArrowUpRight, ArrowClockwise, Clock, Warning,
+  CheckCircle, Hourglass, XCircle, MagnifyingGlass, FileText,
+} from '@phosphor-icons/react';
+import { useUser } from '@/hooks/useUser';
+import { listClientWorkflowRequestsPage } from '@/lib/clientWorkflowRepository';
+import type { WorkflowRequest, WorkflowRequestStatus } from '@/lib/workflowStore';
+import { toClientCase, type ClientCase } from '@/lib/services/clientDashboardCards';
+import {
+  listOk,
+  listFailed,
+  listViewState,
+  itemsOf,
+  type ListRead,
+} from '@/lib/services/listRead';
+import { matchesOrderReference } from '@/lib/services/orderReference';
+import { SkeletonList } from '@/app/dashboard/client/_components/DashboardSkeleton';
+import { normalizeDigits } from '@/utils/normalizeDigits';
+import { useTheme } from '@/components/ThemeProvider';
+import { RoleGuard } from '@/components/dashboard/RoleGuard';
+import { SubscriptionGuard } from '@/components/dashboard/SubscriptionGuard';
+
+// ─── Status wording ───────────────────────────────────────────────────────────
+
+/**
+ * All SEVEN statuses the `service_requests_type_check` lifecycle allows, with
+ * the labels copied VERBATIM from «قضاياي» (`../../client/cases/page.tsx`'s
+ * `STATUS_CFG`, itself copied from «طلباتي») so no two case lists in this app
+ * can ever disagree about the same status. See that file's own comment for
+ * why `draft`/`pending_payment` are named rather than folded into "unknown".
+ */
+type StatusTone = { label: string; lightBadge: string; darkBadge: string; icon: typeof CheckCircle };
+
+const STATUS_CFG: Record<WorkflowRequestStatus, StatusTone> = {
+  draft:              { label: 'مسودة',           lightBadge: 'bg-slate-100 text-slate-600 border-slate-200',    darkBadge: 'bg-white/5 text-zinc-400 border-white/10',            icon: Hourglass },
+  pending_payment:    { label: 'بانتظار الدفع',   lightBadge: 'bg-amber-50 text-amber-700 border-amber-200',     darkBadge: 'bg-amber-900/30 text-amber-400 border-amber-700/50',  icon: Hourglass },
+  pending_assignment: { label: 'بانتظار التعيين', lightBadge: 'bg-amber-50 text-amber-700 border-amber-200',     darkBadge: 'bg-amber-900/30 text-amber-400 border-amber-700/50',  icon: Hourglass },
+  assigned:           { label: 'مُعيَّن',          lightBadge: 'bg-blue-50 text-blue-700 border-blue-200',        darkBadge: 'bg-blue-900/30 text-blue-400 border-blue-700/50',     icon: Clock },
+  in_review:          { label: 'جارٍ التنفيذ',    lightBadge: 'bg-blue-50 text-blue-700 border-blue-200',        darkBadge: 'bg-blue-900/30 text-blue-400 border-blue-700/50',     icon: Clock },
+  completed:          { label: 'مكتمل',           lightBadge: 'bg-emerald-50 text-emerald-700 border-emerald-200', darkBadge: 'bg-emerald-900/30 text-emerald-400 border-emerald-700/50', icon: CheckCircle },
+  cancelled:          { label: 'ملغي',            lightBadge: 'bg-red-50 text-red-700 border-red-200',           darkBadge: 'bg-red-900/20 text-red-400 border-red-700/40',        icon: XCircle },
+};
+
+/**
+ * Same belt «قضاياي» wears: a status added to the database before this build
+ * ships would otherwise index to `undefined` and take the whole list down on
+ * `cfg.label`. Stating "we cannot read this" beats white-screening.
+ */
+const UNKNOWN_STATUS_CFG: StatusTone = {
+  label: 'حالة غير معروفة',
+  lightBadge: 'bg-slate-100 text-slate-600 border-slate-200',
+  darkBadge: 'bg-white/5 text-zinc-300 border-white/10',
+  icon: Hourglass,
+};
+
+function statusCfg(status: WorkflowRequestStatus): StatusTone {
+  return STATUS_CFG[status] ?? UNKNOWN_STATUS_CFG;
+}
+
+type FilterKey = 'all' | 'pending' | 'active' | 'completed' | 'cancelled';
+
+/**
+ * One status → one chip, as a total Record so TypeScript refuses to compile if
+ * a status is ever added without being placed. Copied from «قضاياي» for the
+ * same reason as the labels above — see that file for the full reasoning.
+ */
+const STATUS_GROUP: Record<WorkflowRequestStatus, Exclude<FilterKey, 'all'>> = {
+  draft:              'pending',
+  pending_payment:    'pending',
+  pending_assignment: 'pending',
+  assigned:           'active',
+  in_review:          'active',
+  completed:          'completed',
+  cancelled:          'cancelled',
+};
+
+/** A row plus the card it maps to. Paired per row, never by index — see below. */
+type CaseRow = { raw: WorkflowRequest; card: ClientCase };
+
+// ─── Card ─────────────────────────────────────────────────────────────────────
+
+function CaseCard({ row, index, isDark }: { row: CaseRow; index: number; isDark: boolean }) {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true });
+  const cfg = statusCfg(row.raw.status);
+  const Icon = cfg.icon;
+  const { card } = row;
+
+  return (
+    <motion.div
+      ref={ref}
+      layoutId={`business-case-card-${card.id}`}
+      initial={{ opacity: 0, y: 16 }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ type: 'spring', stiffness: 100, damping: 20, delay: index * 0.05 }}
+      className={`group flex flex-col p-6 rounded-[2rem] border transition-all duration-300 h-full ${
+        isDark
+          ? 'bg-zinc-900/50 border-white/10 hover:bg-zinc-800/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
+          : 'bg-white border-zinc-200 hover:border-[#0B3D2E]/20 hover:shadow-lg hover:shadow-[#0B3D2E]/5'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div className="flex-1 min-w-0">
+          <p className={`font-bold text-[15px] leading-snug mb-1.5 truncate ${isDark ? 'text-white' : 'text-zinc-900'}`}>{card.title}</p>
+          {/* The short, readable reference — never the raw UUID. See
+              src/lib/services/orderReference.ts for why six hex characters. */}
+          <p className={`text-xs font-mono ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>{card.caseNo}</p>
+        </div>
+        <span className={`flex-shrink-0 inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border font-bold ${isDark ? cfg.darkBadge : cfg.lightBadge}`}>
+          <Icon size={12} weight="fill" />
+          {cfg.label}
+        </span>
+      </div>
+
+      {/* The service the company actually ordered, when the row carries one.
+          Omitted entirely — not replaced with «عام» — when it does not. */}
+      {card.serviceLabel && (
+        <div className="mb-5">
+          <span className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border ${
+            isDark ? 'border-white/10 text-zinc-400' : 'border-zinc-200 text-zinc-500'
+          }`}>
+            <Scales size={12} />
+            {card.serviceLabel}
+          </span>
+        </div>
+      )}
+
+      <div className="mt-auto">
+        {/* Submission date — dropped when `created_at` is missing or unreadable
+            rather than printed as a dash or an invented day. */}
+        {card.createdAtLabel && (
+          <div className={`flex items-center gap-2 p-3 rounded-xl mb-4 ${
+            isDark ? 'bg-white/[0.03] border border-white/10' : 'bg-zinc-50 border border-zinc-100'
+          }`}>
+            <CalendarBlank size={15} className="text-[#C8A762] flex-shrink-0" />
+            <p className={`text-[12px] font-bold ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>قُدّمت في {card.createdAtLabel}</p>
+          </div>
+        )}
+
+        <div className="flex items-center justify-end pt-4 border-t border-dashed border-zinc-200 dark:border-white/10">
+          <Link href={`/dashboard/business/cases/${card.id}`} className={`flex items-center gap-1.5 text-[11px] font-bold transition-colors px-3 py-2 rounded-xl ${
+            isDark ? 'bg-[#0B3D2E]/20 text-emerald-400 hover:bg-[#0B3D2E]/40' : 'bg-[#0B3D2E]/10 text-[#0B3D2E] hover:bg-[#0B3D2E]/20'
+          }`}>
+            <FileText size={14} weight="fill" />
+            ملف القضية
+          </Link>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type ViewMode = "list" | "kanban" | "archive";
-type KanbanGroupBy = "status" | "degree" | "priority" | "team";
-
-import { RoleGuard } from "@/components/dashboard/RoleGuard";
-import { SubscriptionGuard } from "@/components/dashboard/SubscriptionGuard";
-
-export default function CasesPage() {
+function BusinessCasesPage() {
   const { isDark } = useTheme();
-  const [search,      setSearch]      = useState("");
-  const [statusFilter, setStatusFilter] = useState<CaseStatus | "all">("all");
-  const [typeFilter,  setTypeFilter]  = useState<CaseType | "all">("all");
-  const [teamFilter,  setTeamFilter]  = useState<string>("all");
-  const [timeFilter,  setTimeFilter]  = useState("all");
-  const [viewMode,    setViewMode]    = useState<ViewMode>("list");
-  const [kanbanGroup, setKanbanGroup] = useState<KanbanGroupBy>("status");
-  const [showFilters, setShowFilters] = useState(false);
-  const [degreeFilter, setDegreeFilter] = useState<CourtDegree | "all">("all");
-  const [priorityFilter, setPriorityFilter] = useState<Priority | "all">("all");
-  const [courtFilter, setCourtFilter] = useState<string>("all");
-  const [cases, setCases] = useState(MOCK_CASES);
-  const [showAddCase, setShowAddCase] = useState(false);
+  const user = useUser();
+  const [filter, setFilter] = useState<FilterKey>('all');
+  const [search, setSearch] = useState('');
+  /**
+   * The three states that must never be confused with one another — nothing
+   * has been fetched yet, the fetch failed, and the company genuinely has no
+   * cases — carried by `ListRead` + `listViewState()`
+   * (src/lib/services/listRead.ts), exactly as «قضاياي» carries them.
+   */
+  const [read, setRead] = useState<ListRead<CaseRow> | null>(null);
+  const [loading, setLoading] = useState(true);
+  // Set when the server holds more rows than this page asked for. Stated on
+  // screen rather than truncating in silence — see CLIENT_REQUESTS_FETCH_LIMIT.
+  const [truncatedAt, setTruncatedAt] = useState<number | null>(null);
 
-  // Drag & drop state for Kanban
-  const dragId = useRef<string | null>(null);
-  const [dragOverCol, setDragOverCol] = useState<KanbanCol | null>(null);
+  /**
+   * Only the NEWEST load may write. This page fires `load()` from the mount
+   * effect, the `nzamy-workflow-updated` listener, and «إعادة المحاولة» —
+   * routinely two in flight at once. Same sequence guard as «قضاياي», for the
+   * same reason: a slower stale reply must not overwrite a newer good one.
+   */
+  const loadSeq = useRef(0);
 
-  const onKanbanDragStart = useCallback((id: string) => { dragId.current = id; }, []);
-  const onKanbanDrop = useCallback((col: KanbanCol) => {
-    if (!dragId.current) return;
-    setCases(prev => prev.map(c => c.id === dragId.current ? { ...c, kanbanCol: col } : c));
-    dragId.current = null;
-    setDragOverCol(null);
-  }, []);
+  const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    try {
+      const page = await listClientWorkflowRequestsPage({ requesterUserId: user.userId });
+      if (seq !== loadSeq.current) return;
+      // PER-ROW pairing, never index pairing: `toClientCase` returns null for a
+      // row it cannot render (no id), so mapping the two lists separately and
+      // zipping them by position would shift every card after the first drop.
+      const mapped = page.requests
+        .map((raw) => ({
+          raw,
+          // The local/demo store writes `createdAt`; an API row carries
+          // `created_at`. Supplying the camelCase value as a FALLBACK keeps
+          // the submission date from being silently dropped in demo mode.
+          card: toClientCase({ created_at: raw.createdAt, ...raw }),
+        }))
+        .filter((row): row is CaseRow => row.card !== null);
+      setRead(page.degraded ? listFailed<CaseRow>() : listOk(mapped));
+      // Compare the server's total against the rows it returned BEFORE the
+      // requester filter — the only question here is "did the limit cut rows off".
+      setTruncatedAt(page.total !== null && page.total > page.fetched ? page.limit : null);
+    } catch (err) {
+      console.error('[business cases] load failed:', err);
+      if (seq !== loadSeq.current) return;
+      setRead(listFailed<CaseRow>());
+      setTruncatedAt(null);
+    } finally {
+      if (seq === loadSeq.current) setLoading(false);
+    }
+  }, [user.userId]);
 
-  const card = isDark
-    ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
-    : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
+  /** The retry the failure banner and the failure empty-state both press. */
+  const retry = useCallback(() => {
+    setLoading(true);
+    setRead(null);
+    void load();
+  }, [load]);
 
-  // All team members
-  const allTeam = useMemo(() => {
-    const s = new Set<string>();
-    MOCK_CASES.forEach(c => c.team.forEach(m => s.add(m)));
-    return Array.from(s);
-  }, []);
+  useEffect(() => {
+    // Wait for useUser() to resolve first — it starts at a guest session, so
+    // `user.userId` is undefined on the first render even in Supabase mode.
+    // A load fired there goes down the no-requester-id branch of
+    // `listClientWorkflowRequestsPage`, which correctly refuses every server
+    // row. Same reasoning as «قضاياي».
+    if (user.loading) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+    const onUpdated = () => { void load(); };
+    window.addEventListener('nzamy-workflow-updated', onUpdated);
+    return () => window.removeEventListener('nzamy-workflow-updated', onUpdated);
+  }, [load, user.loading]);
 
-  // Filtered cases.
-  //
-  // Owner item ١ — the same stale-memo bug already fixed on the lawyer board,
-  // fixed here the same way. `filtered` reads three things its dependency array
-  // did not list:
-  //
-  //   • `courtFilter` — the المحكمة buttons below set it, and the list simply
-  //     did not move.
-  //   • `cases` — via `activeCases` / `archivedCases`. The kanban drop handler
-  //     calls `setCases` to move a card between columns, and the memo held on
-  //     to the pre-drop array.
-  //
-  // The two derived arrays are memoised over `[cases]` so that listing them as
-  // dependencies is meaningful; as bare `.filter()` calls they were a fresh
-  // identity on every render and would have defeated the memo entirely.
-  const activeCases = useMemo(() => cases.filter(c => c.status !== "archived"), [cases]);
-  const archivedCases = useMemo(() => cases.filter(c => c.status === "archived"), [cases]);
+  const view = listViewState(loading, read);
+  // itemsOf() answers [] on every branch but 'ready' — which is what the
+  // filter and the counts below are entitled to see: on an unreadable read
+  // there is nothing this page may count.
+  const rows = useMemo(() => itemsOf(read), [read]);
 
   const filtered = useMemo(() => {
-    const base = viewMode === "archive" ? archivedCases : activeCases;
-    return base.filter(c => {
-      if (statusFilter !== "all" && c.status !== statusFilter) return false;
-      if (typeFilter !== "all" && c.type !== typeFilter) return false;
-      if (degreeFilter !== "all" && c.degree !== degreeFilter) return false;
-      if (courtFilter !== "all" && c.court !== courtFilter) return false;
-      if (teamFilter !== "all" && !c.team.includes(teamFilter)) return false;
-      if (priorityFilter !== "all" && c.priority !== priorityFilter) return false;
-      if (timeFilter === "today"  && (c.nextDateSort === undefined || c.nextDateSort > 0)) return false;
-      if (timeFilter === "week"   && (c.nextDateSort === undefined || c.nextDateSort > 7)) return false;
-      if (timeFilter === "month"  && (c.nextDateSort === undefined || c.nextDateSort > 30)) return false;
-      if (timeFilter === "urgent" && !c.hasDeadline) return false;
-      if (search && !c.title.includes(search) && !c.client.includes(search) && !c.court.includes(search)) return false;
-      return true;
-    }).sort((a, b) => {
-      // مواعيد الطعون أولاً
-      if (a.hasDeadline && !b.hasDeadline) return -1;
-      if (!a.hasDeadline && b.hasDeadline) return 1;
-      // ثم الأولوية
-      const pOrder = { critical: 0, high: 1, normal: 2, low: 3 };
-      return (pOrder[a.priority] ?? 3) - (pOrder[b.priority] ?? 3);
+    const nq = normalizeDigits(search.trim().toLowerCase());
+    return rows.filter(({ raw, card }) => {
+      if (filter !== 'all' && STATUS_GROUP[raw.status] !== filter) return false;
+      if (!nq) return true;
+      return (
+        normalizeDigits(card.title.toLowerCase()).includes(nq) ||
+        (card.serviceLabel ? normalizeDigits(card.serviceLabel.toLowerCase()).includes(nq) : false) ||
+        matchesOrderReference(card.id, search.trim())
+      );
     });
-  }, [activeCases, archivedCases, statusFilter, typeFilter, degreeFilter, courtFilter, teamFilter, timeFilter, priorityFilter, search, viewMode]);
+  }, [rows, filter, search]);
 
-  const counts = {
-    all: activeCases.length,
-    active: activeCases.filter(c => c.status === "active").length,
-    pending: activeCases.filter(c => c.status === "pending").length,
-    suspended: activeCases.filter(c => c.status === "suspended").length,
-    closed: activeCases.filter(c => c.status === "closed").length,
-    archived: archivedCases.length,
-  };
-
-  const criticalCount = MOCK_CASES.filter(c => c.hasDeadline).length;
-
-  // ─── VIEWS ────────────────────────────────────────────────────────────────
-
-  function CaseCard({ c, compact = false }: { c: Case; compact?: boolean }) {
-    const status = STATUS_CONFIG[c.status];
-    const pConf  = PRIORITY_CONFIG[c.priority];
-    return (
-      <Link href={`/dashboard/business/cases/${c.id}`}
-        className={`group ${card} p-4 flex items-center gap-4 hover:border-royal/30 hover:scale-[1.005] transition-all ${compact ? "p-3" : ""}`}>
-        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${status.dot}`} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-            <p className={`text-[13px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.title}</p>
-            {c.hasDeadline && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 flex-shrink-0">⏰ طعن</span>}
-            <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${status.bg} ${status.color}`}>{status.label}</span>
-          </div>
-          <div className={`flex items-center gap-2 text-[11px] flex-wrap ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            <span>{c.client}</span>
-            <span className="w-1 h-1 rounded-full bg-current opacity-40" />
-            <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>{TYPE_LABELS[c.type]}</span>
-            {c.team.length > 0 && <span className="flex items-center gap-0.5"><Users size={9} />{c.team.join("، ")}</span>}
-          </div>
-        </div>
-        <div className="flex-shrink-0 text-left hidden sm:block">
-          <p className={`text-[12px] font-medium mb-0.5 ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{c.stage}</p>
-          {c.nextDate
-            ? <p className={`text-[11px] flex items-center gap-1 ${c.hasDeadline ? "text-red-500 font-semibold" : isDark ? "text-zinc-600" : "text-slate-400"}`}><Clock size={10} />{c.nextDate}</p>
-            : <p className={`text-[11px] ${isDark ? "text-zinc-700" : "text-slate-300"}`}>{c.filedDate}</p>}
-          {c.value && <p className={`text-[10px] mt-0.5 font-mono ${isDark ? "text-zinc-600" : "text-slate-300"}`}>{c.value}</p>}
-        </div>
-        <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${isDark ? "text-zinc-700 group-hover:bg-white/[0.06] group-hover:text-zinc-300" : "text-slate-200 group-hover:bg-royal group-hover:text-white"}`}>
-          <CaretLeft size={15} />
-        </div>
-      </Link>
-    );
-  }
-
-  function ListView() {
-    return (
-      <div className="space-y-2">
-        {filtered.length === 0
-          ? <EmptyState />
-          : filtered.map((c, i) => (
-              <motion.div key={c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                <CaseCard c={c} />
-              </motion.div>
-            ))}
-      </div>
-    );
-  }
-
-  function KanbanView() {
-    // Build columns based on grouping mode
-    type Col = { key: string; label: string; color: string; bg: string; cases: Case[] };
-    let cols: Col[] = [];
-
-    if (kanbanGroup === "status") {
-      cols = [
-        { key:"active",    label:"نشطة",        color:"text-emerald-500", bg:"bg-emerald-500/10",  cases: filtered.filter(c=>c.status==="active") },
-        { key:"pending",   label:"انتظار",       color:"text-amber-500",   bg:"bg-amber-500/10",   cases: filtered.filter(c=>c.status==="pending") },
-        { key:"suspended", label:"معلقة",        color:"text-blue-500",    bg:"bg-blue-500/10",    cases: filtered.filter(c=>c.status==="suspended") },
-        { key:"closed",    label:"مغلقة",        color:"text-slate-400",   bg:"bg-slate-100 dark:bg-white/[0.03]", cases: filtered.filter(c=>c.status==="closed") },
-      ];
-    } else if (kanbanGroup === "degree") {
-      cols = [
-        { key:"primary",  label:"ابتدائي",             color:"text-blue-500",    bg:"bg-blue-500/10",    cases: filtered.filter(c=>c.degree==="primary") },
-        { key:"labor",    label:"عمالية",              color:"text-teal-500",    bg:"bg-teal-500/10",    cases: filtered.filter(c=>c.degree==="labor") },
-        { key:"criminal", label:"جزائية",              color:"text-red-600",     bg:"bg-red-600/10",     cases: filtered.filter(c=>c.degree==="criminal") },
-        { key:"admin",    label:"ديوان المظالم",        color:"text-purple-500",  bg:"bg-purple-500/10",  cases: filtered.filter(c=>c.degree==="admin") },
-        { key:"appeal",   label:"استئناف",             color:"text-orange-500",  bg:"bg-orange-500/10", cases: filtered.filter(c=>c.degree==="appeal") },
-        { key:"supreme",  label:"المحكمة العليا",       color:"text-rose-500",    bg:"bg-rose-500/10",    cases: filtered.filter(c=>c.degree==="supreme") },
-      ];
-    } else if (kanbanGroup === "priority") {
-      cols = [
-        { key:"critical", label:"حرج",    color:"text-red-500",    bg:"bg-red-500/10",    cases: filtered.filter(c=>c.priority==="critical") },
-        { key:"high",     label:"عالٍ",   color:"text-orange-500", bg:"bg-orange-500/10", cases: filtered.filter(c=>c.priority==="high") },
-        { key:"normal",   label:"عادي",   color:"text-blue-500",   bg:"bg-blue-500/10",   cases: filtered.filter(c=>c.priority==="normal") },
-        { key:"low",      label:"منخفض",  color:"text-slate-400",  bg:"bg-slate-100 dark:bg-white/[0.03]", cases: filtered.filter(c=>c.priority==="low") },
-      ];
-    } else if (kanbanGroup === "team") {
-      cols = allTeam.map(m => ({
-        key: m, label: m, color: "text-indigo-500", bg: "bg-indigo-500/10",
-        cases: filtered.filter(c=>c.team.includes(m)),
-      }));
-      cols.push({ key:"unassigned", label:"غير مُسند", color:"text-slate-400", bg:"bg-slate-100 dark:bg-white/[0.03]", cases: filtered.filter(c=>c.team.length===0) });
+  const counts = useMemo(() => {
+    const base: Record<FilterKey, number> = { all: rows.length, pending: 0, active: 0, completed: 0, cancelled: 0 };
+    for (const { raw } of rows) {
+      const group = STATUS_GROUP[raw.status];
+      if (group) base[group] += 1;
     }
+    return base;
+  }, [rows]);
 
-    const isDraggable = kanbanGroup === "status"; // drag only in status mode
-
-    return (
-      <div className="space-y-3">
-        {/* Group selector */}
-        <div className={`flex gap-1.5 flex-wrap p-1 rounded-2xl w-fit ${isDark?"bg-zinc-800/60":"bg-slate-100"}`}>
-          {([
-            {k:"status"  as KanbanGroupBy, l:"حالة القضية"},
-            {k:"degree"  as KanbanGroupBy, l:"درجة التقاضي"},
-            {k:"priority"as KanbanGroupBy, l:"الأولوية"},
-            {k:"team"    as KanbanGroupBy, l:"عضو الفريق"},
-          ]).map(g=>(
-            <button key={g.k} onClick={()=>setKanbanGroup(g.k)}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all ${
-                kanbanGroup===g.k?isDark?"bg-zinc-700 text-white":"bg-white text-[#0B3D2E] shadow-sm":isDark?"text-zinc-500 hover:text-zinc-300":"text-slate-400 hover:text-slate-600"
-              }`}>{g.l}</button>
-          ))}
-        </div>
-
-        {/* Kanban columns */}
-        <div className="flex gap-4 overflow-x-auto pb-4" style={{minHeight:440}}>
-          {cols.filter(c=>c.cases.length>0||kanbanGroup==="status").map(col=>{
-            const isOver = isDraggable && dragOverCol === col.key;
-            return (
-              <div key={col.key}
-                className={`flex-shrink-0 rounded-3xl transition-all ${isDark?"bg-zinc-800/40":"bg-slate-50/80"} ${isOver?isDark?"ring-2 ring-royal/40":"ring-2 ring-royal/30 bg-royal/[0.02]":""}`}
-                style={{minWidth:260,width:260}}
-                onDragOver={e=>{e.preventDefault();if(isDraggable)setDragOverCol(col.key as KanbanCol);}}
-                onDrop={()=>{if(isDraggable)onKanbanDrop(col.key as KanbanCol);}}
-              >
-                <div className={`flex items-center gap-2 px-4 py-3.5 border-b ${isDark?"border-white/[0.06]":"border-slate-200/80"} border-dashed`}>
-                  <span className={`text-[11px] font-black uppercase tracking-wider flex-1 ${col.color}`}>{col.label}</span>
-                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${isDark?"bg-white/[0.06] text-zinc-500":"bg-white text-slate-500 shadow-sm"}`}>{col.cases.length}</span>
-                </div>
-                <div className="p-3 space-y-2.5 min-h-[160px]">
-                  {col.cases.map(c=>(
-                    <div key={c.id}
-                      draggable={isDraggable}
-                      onDragStart={()=>isDraggable&&onKanbanDragStart(c.id)}
-                      className={`relative rounded-2xl border p-3.5 ${isDraggable?"cursor-grab active:cursor-grabbing":""} hover:shadow-md transition-all hover:scale-[1.01] ${isDark?"bg-zinc-900 border-white/[0.07] hover:border-white/[0.12]":"bg-white border-slate-100 shadow-sm"}`}
-                    >
-                      {c.hasDeadline&&<span className="text-[9px] font-black text-red-500 block mb-1.5 flex items-center gap-1">⏰ طعن قادم</span>}
-                      <p className={`text-[13px] font-bold leading-snug mb-1 ${isDark?"text-zinc-100":"text-slate-800"}`}>{c.title}</p>
-                      <p className={`text-[11px] mb-2 ${isDark?"text-zinc-500":"text-slate-400"}`}>{c.client}</p>
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_CONFIG[c.status].bg} ${STATUS_CONFIG[c.status].color}`}>{STATUS_CONFIG[c.status].label}</span>
-                        {kanbanGroup!=="degree"&&<span className={`text-[9px] px-1.5 py-0.5 rounded-full ${isDark?"bg-white/[0.05] text-zinc-500":"bg-slate-100 text-slate-400"}`}>{DEGREE_LABELS[c.degree] ?? c.degree}</span>}
-                        {c.nextDate&&<span className={`text-[10px] font-mono flex items-center gap-0.5 ${c.hasDeadline?"text-red-500":isDark?"text-zinc-600":"text-slate-400"}`}><Clock size={9}/>{c.nextDate}</span>}
-                      </div>
-                      {c.team.length>0&&(
-                        <div className="flex gap-1 mt-2">{c.team.map(m=>(
-                          <span key={m} className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold ${isDark?"bg-white/[0.06] text-zinc-400":"bg-slate-100 text-slate-500"}`}>{m}</span>
-                        ))}</div>
-                      )}
-                      <Link href={`/dashboard/business/cases/${c.id}`} className="absolute inset-0 rounded-2xl"
-                        onClick={e=>{if(dragId.current)e.preventDefault();}} />
-                    </div>
-                  ))}
-                  {col.cases.length===0&&(
-                    <div className={`flex flex-col items-center justify-center py-10 rounded-2xl border-2 border-dashed transition-all ${isOver?isDark?"border-royal/40":"border-royal/30":isDark?"border-white/[0.06]":"border-slate-200"}`}>
-                      <p className={`text-[11px] ${isDark?"text-zinc-700":"text-slate-400"}`}>{isOver?"أسقط هنا":"لا توجد قضايا"}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  function ArchiveView() {
-    return (
-      <div className="space-y-2">
-        <div className={`p-3 rounded-2xl border flex items-center gap-3 ${isDark ? "border-purple-500/20 bg-purple-500/5" : "border-purple-100 bg-purple-50"}`}>
-          <Archive size={16} className="text-purple-500 flex-shrink-0" />
-          <p className={`text-[12px] font-semibold ${isDark ? "text-purple-300" : "text-purple-700"}`}>
-            الأرشيف — القضايا المنتهية والمغلقة ({counts.archived + counts.closed} قضية)
-          </p>
-        </div>
-        {[...activeCases.filter(c => c.status === "closed")].map((c, i) => (
-          <motion.div key={c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-            <CaseCard c={c} />
-          </motion.div>
-        ))}
-        {counts.closed === 0 && <EmptyState />}
-      </div>
-    );
-  }
-
-  function EmptyState() {
-    return (
-      <div className={`${card} p-12 text-center`}>
-        <Gavel size={36} weight="duotone" className={`mx-auto mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
-        <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>لا توجد قضايا مطابقة</p>
-      </div>
-    );
-  }
-
-  // ─── Render ───────────────────────────────────────────────────────────────
+  const tabs: { key: FilterKey; label: string; count: number }[] = [
+    { key: 'all', label: 'الكل', count: counts.all },
+    { key: 'pending', label: 'معلّقة', count: counts.pending },
+    { key: 'active', label: 'جارية', count: counts.active },
+    { key: 'completed', label: 'مكتملة', count: counts.completed },
+    { key: 'cancelled', label: 'ملغاة', count: counts.cancelled },
+  ];
 
   return (
-    <RoleGuard blockedRoles={["hr_manager", "finance_manager", "employee"]}>
-    <SubscriptionGuard featureKey="business-litigation">
-    <div className="max-w-[1200px] mx-auto space-y-4" dir="rtl">
+    <div className={`p-6 md:p-8 max-w-[1200px] mx-auto ${isDark ? 'text-white' : 'text-zinc-900'}`} dir="rtl" suppressHydrationWarning>
 
-      {/* Critical Banner */}
-      {criticalCount > 0 && (
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-red-500/30 bg-red-500/8 p-3 flex items-center gap-3">
-          <Hourglass size={16} weight="duotone" className="text-red-500 flex-shrink-0 animate-pulse" />
-          <p className="text-[12px] font-bold text-red-500 flex-1">
-            {criticalCount} قضية لديها مواعيد طعون قادمة — تتطلب متابعة فورية
-          </p>
-          <button onClick={() => { setTimeFilter("urgent"); setViewMode("list"); }}
-            className="text-[11px] font-bold text-red-500 hover:underline flex-shrink-0">
-            عرض فقط
-          </button>
-        </motion.div>
-      )}
+      {view === 'loading' ? (
+        <SkeletonList count={3} />
+      ) : (
+        <>
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 mb-8">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-black tracking-tight" style={{ fontFamily: 'var(--font-brand)' }}>قضايا الشركة</h1>
+              <p className={`text-sm mt-1.5 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>كل طلب قانوني قدّمته منشأتك إلى مكتب نظامي، وحالته الحالية</p>
+            </div>
+            {/*
+              The SAME link «قضاياي» and «../page.tsx»'s header both use —
+              the real three-step intake, not a modal. The old «قضية جديدة»
+              button opened `AddCaseModal`, a two-step form whose only wired
+              callback was `onClose`; nothing it collected was ever sent.
+            */}
+            <Link
+              href="/dashboard/client/services"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white rounded-xl text-sm font-bold shadow-md hover:bg-[#0a3328] transition-colors self-start md:self-auto"
+            >
+              <ArrowUpRight size={18} weight="bold" />
+              اطلب خدمة قانونية
+            </Link>
+          </div>
 
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className={`text-2xl font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`}
-              style={{ fontFamily: "var(--font-brand)" }}>ملف القضايا</h1>
-          <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {counts.all} قضية · <span className="text-emerald-500 font-semibold">{counts.active} نشطة</span>
-            {criticalCount > 0 && <> · <span className="text-red-500 font-semibold">{criticalCount} طعون</span></>}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/dashboard/business/hearings"
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            <CalendarCheck size={15} />الجلسات
-          </Link>
-          <button onClick={() => setShowAddCase(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
-            <Plus size={15} weight="bold" />قضية جديدة
-          </button>
-        </div>
-      </motion.div>
-
-      {/* View Switcher + Search */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Search */}
-        <div className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
-          <MagnifyingGlass size={16} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث في القضايا، العملاء، المحاكم..."
-            className={`flex-1 bg-transparent text-sm outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
-        </div>
-        {/* View mode */}
-        <div className={`flex rounded-xl overflow-hidden border flex-shrink-0 ${isDark ? "border-white/[0.06]" : "border-slate-200"}`}>
-          {([
-            { key: "list",    icon: List,    title: "قائمة" },
-            { key: "kanban",  icon: Kanban,  title: "كانبان" },
-            { key: "archive", icon: Archive,  title: "الأرشيف" },
-          ] as const).map(v => {
-            const Icon = v.icon;
-            return (
-              <button key={v.key} onClick={() => setViewMode(v.key)} title={v.title}
-                className={`px-3 py-2.5 flex items-center gap-1.5 text-[11px] font-bold transition-all ${
-                  viewMode === v.key ? isDark ? "bg-white/[0.08] text-white" : "bg-royal text-white" : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"
-                }`}>
-                <Icon size={14} />
-                <span className="hidden sm:block">{v.title}</span>
-              </button>
-            );
-          })}
-        </div>
-        {/* Filters toggle */}
-        <button onClick={() => setShowFilters(p => !p)}
-          className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-[12px] font-bold transition-all flex-shrink-0 ${
-            showFilters ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-200 text-slate-500"
-          }`}>
-          <FunnelSimple size={14} />فلاتر
-        </button>
-      </div>
-
-      {/* Expanded Filters */}
-      <AnimatePresence>
-        {showFilters && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden">
-            <div className={`p-4 rounded-2xl border space-y-4 ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-100 bg-slate-50"}`}>
-
-              {/* Time filters */}
-              <div>
-                <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>نطاق زمني</p>
-                <div className="flex gap-1.5 flex-wrap">
-                  {TIME_FILTERS.map(tf => (
-                    <button key={tf.key} onClick={() => setTimeFilter(tf.key)}
-                      className={`px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
-                        timeFilter === tf.key ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-200 text-slate-500"
-                      }`}>{tf.label}</button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Status filters */}
-              <div>
-                <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>حالة القضية</p>
-                <div className="flex gap-1.5 flex-wrap">
-                  {(["all", "active", "pending", "suspended", "closed"] as const).map(s => (
-                    <button key={s} onClick={() => setStatusFilter(s)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
-                        statusFilter === s ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-200 text-slate-500"
-                      }`}>
-                      {s !== "all" && <span className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[s]?.dot}`} />}
-                      {s === "all" ? "الكل" : STATUS_CONFIG[s].label}
-                      <span className={`text-[9px] px-1.5 rounded-full ${statusFilter === s ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                        {s === "all" ? counts.all : counts[s]}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Type + Priority + Degree + Team */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                <div>
-                  <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>الفرع القانوني</p>
-                  <div className="flex flex-wrap gap-1">
-                    <button onClick={() => setTypeFilter("all")}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${typeFilter === "all" ? "bg-royal text-white" : isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-200 text-slate-500"}`}>الكل</button>
-                    {(Object.entries(TYPE_LABELS) as [CaseType, string][]).map(([k, v]) => (
-                      <button key={k} onClick={() => setTypeFilter(k)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${typeFilter === k ? "bg-royal text-white" : isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-200 text-slate-500"}`}>{v}</button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>المحكمة</p>
-                  <div className="flex flex-wrap gap-1">
-                    <button onClick={() => setCourtFilter("all")}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${courtFilter === "all" ? "bg-royal text-white" : isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-200 text-slate-500"}`}>الكل</button>
-                    {COURTS_LIST.map(ct => (
-                      <button key={ct.id} onClick={() => setCourtFilter(ct.id)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${courtFilter === ct.id ? "bg-royal text-white" : isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-200 text-slate-500"}`}>
-                        {ct.icon} {ct.id}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>درجة التقاضي</p>
-                  <div className="flex flex-wrap gap-1">
-                    <button onClick={() => setDegreeFilter("all")}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${degreeFilter === "all" ? "bg-royal text-white" : isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-200 text-slate-500"}`}>الكل</button>
-                    {(Object.entries(DEGREE_LABELS) as [CourtDegree, string][]).map(([d, label]) => (
-                      <button key={d} onClick={() => setDegreeFilter(d)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${degreeFilter === d ? "bg-royal text-white" : isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-200 text-slate-500"}`}>{label}</button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>الأولوية</p>
-                  <div className="flex flex-wrap gap-1">
-                    {(["all", "critical", "high", "normal", "low"] as const).map(p => (
-                      <button key={p} onClick={() => setPriorityFilter(p)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${priorityFilter === p ? "bg-royal text-white" : isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-200 text-slate-500"}`}>
-                        {p === "all" ? "الكل" : PRIORITY_CONFIG[p].label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>عضو الفريق</p>
-                  <div className="flex flex-wrap gap-1">
-                    <button onClick={() => setTeamFilter("all")}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${teamFilter === "all" ? "bg-royal text-white" : isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-200 text-slate-500"}`}>الكل</button>
-                    {allTeam.map(m => (
-                      <button key={m} onClick={() => setTeamFilter(m)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${teamFilter === m ? "bg-royal text-white" : isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-200 text-slate-500"}`}>{m}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Reset */}
-              <button onClick={() => { setStatusFilter("all"); setTypeFilter("all"); setDegreeFilter("all"); setCourtFilter("all"); setTeamFilter("all"); setTimeFilter("all"); setPriorityFilter("all"); setSearch(""); }}
-                className={`text-[11px] font-semibold underline ${isDark ? "text-zinc-600 hover:text-zinc-400" : "text-slate-400 hover:text-slate-600"}`}>
-                إعادة ضبط الفلاتر
+          {/* Load failure — said out loud, because an empty list and a broken
+              query look identical and only one of them is a fact about the
+              company. The retry beside it refetches in place. */}
+          {view === 'unreadable' && (
+            <div className={`flex items-start gap-3 px-4 py-3 mb-6 rounded-xl border text-[12px] ${
+              isDark ? 'bg-red-900/10 border-red-700/20 text-red-400' : 'bg-red-50 border-red-200 text-red-700'
+            }`}>
+              <Warning size={16} weight="duotone" className="flex-shrink-0 mt-0.5" />
+              <span className="flex-1">تعذّرت قراءة قضايا منشأتك من الخادم.</span>
+              <button
+                type="button"
+                onClick={retry}
+                className={`flex-shrink-0 inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition ${
+                  isDark ? 'border-red-700/40 hover:bg-red-900/20' : 'border-red-300 hover:bg-red-100'
+                }`}
+              >
+                <ArrowClockwise size={12} weight="bold" />
+                إعادة المحاولة
               </button>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
 
-      {/* Quick status pills (always visible) */}
-      {!showFilters && (
-        <div className="flex gap-1.5 flex-wrap">
-          {(["all", "active", "pending", "suspended"] as const).map(s => (
-            <button key={s} onClick={() => setStatusFilter(s)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
-                statusFilter === s ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"
-              }`}>
-              {s !== "all" && <span className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[s]?.dot}`} />}
-              {s === "all" ? "الكل" : STATUS_CONFIG[s].label}
-              <span className={`text-[9px] rounded-full px-1.5 ${statusFilter === s ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
-                {s === "all" ? counts.all : counts[s]}
-              </span>
-            </button>
-          ))}
-        </div>
+          {/* Filters & Search */}
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-4 mb-8">
+            <div className="relative flex-1 max-w-md">
+              <MagnifyingGlass size={16} className={`absolute right-4 top-1/2 -translate-y-1/2 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="ابحث بالعنوان أو رقم الطلب (ORD-…)"
+                className={`w-full pr-10 pl-4 py-3 text-sm rounded-2xl border outline-none transition-all ${
+                  isDark
+                    ? 'bg-zinc-900/50 border-white/10 text-white placeholder:text-zinc-600 focus:border-[#0B3D2E] focus:bg-zinc-900'
+                    : 'bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-[#0B3D2E] focus:ring-4 focus:ring-[#0B3D2E]/5'
+                }`}
+              />
+            </div>
+
+            <div className={`flex items-center gap-1.5 p-1.5 rounded-2xl overflow-x-auto ${isDark ? 'bg-white/5' : 'bg-zinc-100'}`}>
+              {tabs.map((tab) => {
+                const isActive = filter === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setFilter(tab.key)}
+                    className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold transition-all whitespace-nowrap ${
+                      isActive
+                        ? isDark ? 'bg-zinc-800 text-white shadow-sm' : 'bg-white text-zinc-900 shadow-sm'
+                        : isDark ? 'text-zinc-400 hover:text-white hover:bg-white/5' : 'text-zinc-500 hover:text-zinc-900 hover:bg-white/50'
+                    }`}
+                  >
+                    {isActive && (
+                      <motion.div layoutId="businessCasesTabActive" className={`absolute inset-0 rounded-xl ${isDark ? 'bg-zinc-800' : 'bg-white'} shadow-sm -z-10`} />
+                    )}
+                    {tab.label}
+                    {/* THE COUNT IS DROPPED ON A FAILED LOAD, not zeroed —
+                        see «قضاياي» for the full reasoning. */}
+                    {view !== 'unreadable' && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                        isActive
+                          ? 'bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-emerald-500/20 dark:text-emerald-400'
+                          : isDark ? 'bg-white/10 text-zinc-400' : 'bg-zinc-200 text-zinc-500'
+                      }`}>
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Cases Grid */}
+          <AnimatePresence mode="popLayout">
+            {filtered.length > 0 ? (
+              <motion.div
+                key="grid"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-stretch"
+              >
+                {filtered.map((row, i) => (
+                  <CaseCard key={row.card.id} row={row} index={i} isDark={isDark} />
+                ))}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className={`flex flex-col items-center justify-center py-24 px-6 text-center rounded-[2.5rem] border border-dashed ${
+                  isDark ? 'border-white/10 bg-white/[0.02]' : 'border-zinc-200 bg-zinc-50/50'
+                }`}
+              >
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-5 shadow-inner ${
+                  isDark ? 'bg-white/5 text-zinc-600' : 'bg-white border border-zinc-100 text-zinc-300'
+                }`}>
+                  <Scales size={36} weight="duotone" />
+                </div>
+
+                {/* Three different empty states, because they are three
+                    different facts. Only the last one is allowed to say the
+                    company has no cases. */}
+                {view === 'unreadable' ? (
+                  <>
+                    <p className={`text-lg font-bold mb-2 ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>تعذّر عرض قضايا منشأتك</p>
+                    <p className={`text-sm mb-6 max-w-sm ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
+                      لم نتمكن من قراءة السجلّ من الخادم، ولا يمكننا تأكيد ما إذا كانت لدى منشأتك قضايا.
+                    </p>
+                    <button
+                      onClick={retry}
+                      className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-colors ${
+                        isDark ? 'bg-white/[0.05] text-zinc-200 hover:bg-white/[0.1]' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                      }`}
+                    >
+                      <ArrowClockwise size={16} weight="bold" />
+                      إعادة المحاولة
+                    </button>
+                  </>
+                ) : rows.length > 0 ? (
+                  <>
+                    <p className={`text-lg font-bold mb-2 ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>لا توجد قضايا مطابقة</p>
+                    <p className={`text-sm mb-6 max-w-sm ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
+                      لا تطابق أي من قضايا منشأتك هذا البحث أو هذا الفلتر. جرّب مسح البحث أو اختيار «الكل».
+                    </p>
+                    <button
+                      onClick={() => { setSearch(''); setFilter('all'); }}
+                      className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-colors ${
+                        isDark ? 'bg-white/[0.05] text-zinc-200 hover:bg-white/[0.1]' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                      }`}
+                    >
+                      إعادة ضبط البحث
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className={`text-lg font-bold mb-2 ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>لا توجد قضايا بعد</p>
+                    <p className={`text-sm mb-6 max-w-sm ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
+                      لم تقدّم منشأتك أي طلب قانوني حتى الآن. ابدأ من قائمة الخدمات وسيظهر طلبك هنا فور إرساله.
+                    </p>
+                    <Link
+                      href="/dashboard/client/services"
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-[#0B3D2E] text-white rounded-xl text-sm font-bold shadow-md hover:bg-[#0a3328] transition-colors"
+                    >
+                      تصفّح الخدمات القانونية
+                      <ArrowUpRight size={16} />
+                    </Link>
+                  </>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* The cap, stated — same figure, same words, as «قضاياي» prints,
+              matched deliberately so the two cannot drift apart. */}
+          {truncatedAt !== null && (
+            <p className={`mt-6 text-center text-[12px] ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+              يُعرض أحدث {truncatedAt.toLocaleString('ar-SA')} طلب فقط. للاطلاع على ما هو أقدم، تواصل مع فريق نظامي.
+            </p>
+          )}
+        </>
       )}
-
-      {/* Active View */}
-      <AnimatePresence mode="wait">
-        <motion.div key={viewMode} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-          {viewMode === "list"    && <ListView />}
-          {viewMode === "kanban"  && <KanbanView />}
-          {viewMode === "archive" && <ArchiveView />}
-        </motion.div>
-      </AnimatePresence>
-
-      {/* Stats footer */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
-        className={`${card} p-4 flex flex-wrap items-center gap-5`}>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>نشطة: <strong className="text-emerald-500">{counts.active}</strong></span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-amber-400" />
-          <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>انتظار: <strong className="text-amber-500">{counts.pending}</strong></span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-          <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>طعون: <strong className="text-red-500">{criticalCount}</strong></span>
-        </div>
-        <div className="mr-auto flex gap-3">
-          <Link href="/ai/draft" className="flex items-center gap-1.5 text-[12px] text-royal hover:underline">
-            <ArrowUpRight size={13} />صياغة مذكرة
-          </Link>
-          <Link href="/ai/wargaming" className="flex items-center gap-1.5 text-[12px] text-orange-500 hover:underline">
-            <ArrowUpRight size={13} />محاكي خصم
-          </Link>
-        </div>
-      </motion.div>
-      <AnimatePresence>
-        {showAddCase && <AddCaseModal onClose={() => setShowAddCase(false)} isDark={isDark} />}
-      </AnimatePresence>
     </div>
-    </SubscriptionGuard>
+  );
+}
+
+// ─── Guarded export ─────────────────────────────────────────────────────────
+
+export default function CasesPage() {
+  return (
+    <RoleGuard blockedRoles={["hr_manager", "finance_manager", "employee"]}>
+      <SubscriptionGuard featureKey="business-litigation">
+        <BusinessCasesPage />
+      </SubscriptionGuard>
     </RoleGuard>
   );
 }

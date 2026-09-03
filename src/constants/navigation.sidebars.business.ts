@@ -15,7 +15,7 @@ import type { SidebarGroup } from "./navigation.types";
 // the hidden link straight back into the fabricated screen.
 //
 // Removed, with the evidence (file:line of the invented data):
-//   إدارة القضايا          → constants/businessCasesData.ts:34   MOCK_CASES
+//   إدارة القضايا          → (was constants/businessCasesData.ts MOCK_CASES — file deleted 2026-09-03; the page now reads the account's own service_requests, still hidden here pending the owner's build-or-delete call)
 //   الدوائر والإيميلات    → business/circuits-emails/page.tsx:25   INITIAL_CIRCUITS
 //   الأقسام               → business/departments/page.tsx:43       MOCK_DEPTS
 //   إدارة الفريق           → business/team/page.tsx:72             MEMBERS (+ a fake invite link, :141)

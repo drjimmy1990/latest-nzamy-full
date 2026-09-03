@@ -1,580 +1,361 @@
 "use client";
 
-import { useState, useMemo } from "react";
+/**
+ * Firm cases list — rewritten 2026-09-03.
+ *
+ * ── WHAT THIS PAGE READS ────────────────────────────────────────────────────
+ * `apiGet("/api/v1/service-requests", { limit: 200 })` — NO `receiver` filter.
+ * The lawyer list filters on `receiver: "lawyer"` because a lawyer only ever
+ * appears as `assigned_to`; a firm account can be BOTH the requester (it filed
+ * a case for a client) and the assignee (a case was routed to it), so a
+ * receiver filter would silently drop half the firm's own rows. The route's
+ * RLS already scopes the result to rows where the signed-in user is the
+ * requester or the assignee — the fetch does not (and could not) ask for more
+ * than that.
+ *
+ * Rows are filtered with `isCaseRow` (copied from
+ * `src/app/dashboard/lawyer/cases/page.tsx`'s `isLawyerCaseRow`) to drop tasks,
+ * clients, invoices and hearings — the other four things that live on this
+ * same endpoint — then mapped through `workflowToCase` from
+ * `@/constants/lawyerCasesData`, the same mapper the lawyer list uses.
+ *
+ * ── WHY THERE IS NO FIRM-WIDE VIEW ──────────────────────────────────────────
+ * "قضايا المكتب" reads as "every case anyone at the firm is handling", but no
+ * code path in this repo ever inserts a `firm_members` row, and
+ * `service_requests` RLS admits only `requester_user_id = auth.uid()` or
+ * `assigned_to = auth.uid()`. There is no membership model yet, so a firm
+ * account today sees exactly the rows IT filed or IT was assigned — its own
+ * activity under its own login, not a roster of colleagues' cases. That is the
+ * honest behaviour of the data as it exists now; building a real firm-wide
+ * view needs a `firm_members` table plus an RLS policy that joins through it,
+ * which is Phase 2, not this page.
+ *
+ * ── WHAT WAS REMOVED ─────────────────────────────────────────────────────────
+ * The previous 580-line version rendered `ACTIVE_CASES`/`ARCHIVE_CASES`, two
+ * hand-written arrays of eight and five fictional cases (invented client
+ * names, court dates, SAR values) from `@/constants/firmCasesData.ts`. Every
+ * derived screen built on top of that mock has no equivalent here because
+ * nothing on `service_requests` backs it:
+ *   • urgency/`daysLeft`/`isAppealDeadline` — no deadline column exists on the
+ *     row (same gap the lawyer list's `hasDeadline` comment documents); the
+ *     red "critical appeal" banner, the urgent tab and its countdown cards are
+ *     gone with it.
+ *   • `importance` (1/2/3) — an invented ranking with no source field.
+ *   • reminder popovers ("إضافة تذكير") — the button opened a modal whose
+ *     "حفظ التذكير" button called nothing; no reminder table exists.
+ *   • Kanban board — the mock's 3-status board (active/pending/suspended)
+ *     dragged nothing anywhere; there was no persistence path at all, unlike
+ *     the lawyer list's Kanban which does PATCH a real row.
+ *   • sort-by-urgency/importance — sorted on fields that no longer exist.
+ *   • `FirmCase`'s own `AddCaseModal` (`@/components/dashboard/firm/`) wrote
+ *     nowhere; its submit handler was never wired to any request. Replaced
+ *     with the lawyer dashboard's real `AddCaseModal`, which does insert a
+ *     `service_requests` row via `createWorkflowRequest`.
+ */
+
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  MagnifyingGlass, Plus, CalendarCheck,
-  ArrowUpRight, Clock, CaretLeft, CircleHalf,
-  List, SquaresFour, Warning, Archive,
-  Fire, SortAscending, Bell,
-  Scales, CheckCircle, XCircle, Handshake,
+  Gavel, MagnifyingGlass, Plus, CalendarCheck, CaretLeft,
+  Clock, Archive, Warning,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-
-import { AddCaseModal } from "@/components/dashboard/firm/AddCaseModal";
+import { useUser } from "@/hooks/useUser";
+import { apiGet } from "@/lib/services/api";
+import type { WorkflowRequest } from "@/lib/workflowStore";
+import { workflowToCase, STATUS_CONFIG, TYPE_LABELS } from "@/constants/lawyerCasesData";
+import type { Case, CaseStatus } from "@/app/dashboard/lawyer/cases/_types";
+import AddCaseModal from "@/app/dashboard/lawyer/_components/AddCaseModal";
+import EmptyState from "@/components/ui/EmptyState";
+import { toArabicDigits } from "@/lib/services/arabicCount";
 import {
-  type CaseStatus,
-  type CaseType,
-  type Urgency,
-  type ArchiveResult,
-  type PageView,
-  type FirmCase,
-  ACTIVE_CASES,
-  ARCHIVE_CASES,
-  getUrgency,
-  URGENCY_CONFIG,
-  STATUS_CONFIG,
-  RESULT_CONFIG,
-  TYPE_LABELS,
-} from "@/constants/firmCasesData";
+  type ListRead,
+  listFromApi,
+  listViewState,
+  itemsOf,
+} from "@/lib/services/listRead";
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// How many rows to ask the list endpoint for. The route's own default is 20,
+// and tasks/clients/invoices/hearings all share that same budget alongside
+// actual cases — see `isCaseRow` below.
+const LIST_LIMIT = 200;
+
+/**
+ * Which rows on this endpoint are actually cases. Copied from
+ * `isLawyerCaseRow` in the lawyer cases list — same endpoint, same four
+ * non-case shapes riding along on it (tasks/clients/invoices/hearings). See
+ * that file for the full reasoning behind each check; kept in sync here.
+ */
+function isCaseRow(request: WorkflowRequest): boolean {
+  if (request.type !== "service") return false;
+  const metadata = (request.metadata ?? {}) as Record<string, unknown>;
+  if (metadata.task === true) return false;
+  if (metadata.client === true) return false;
+  if (metadata.invoice === true) return false;
+  if (metadata.hearing === true) return false;
+  if ("caseName" in metadata && "time" in metadata) return false;
+  return true;
+}
+
+// Status chips this page filters by. "suspended" is left out for the same
+// reason the lawyer list leaves it out: no backend status round-trips as
+// "suspended" (see workflowToCase), so the chip could only ever read a hard 0.
+const STATUS_CHIPS: (CaseStatus | "all")[] = ["all", "active", "pending", "closed", "archived"];
 
 export default function FirmCasesPage() {
   const { isDark } = useTheme();
-  const [search, setSearch]       = useState("");
+  const user = useUser();
+
+  const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<CaseStatus | "all">("all");
-  const [viewMode, setViewMode]   = useState<"list" | "kanban">("list");
-  const [pageView, setPageView]   = useState<PageView>("active");
-  const [sortBy, setSortBy]       = useState<"urgency" | "importance" | "date">("urgency");
-  const [showReminder, setShowReminder] = useState<string | null>(null);
-  const [archiveFilter, setArchiveFilter] = useState<ArchiveResult | "all">("all");
-  const [archiveSearch, setArchiveSearch] = useState("");
-  const [showAddCase, setShowAddCase]     = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
+  const [showAddCase, setShowAddCase] = useState(false);
+
+  const [loading, setLoading] = useState(true);
+  const [read, setRead] = useState<ListRead<Case> | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCases = async () => {
+      setLoading(true);
+      try {
+        const response = await apiGet<{ data?: WorkflowRequest[]; total?: number; degraded?: boolean }>(
+          "/api/v1/service-requests",
+          { limit: LIST_LIMIT },
+        );
+        if (cancelled) return;
+        if (response.degraded === true) {
+          // The route answers a failed Supabase query with HTTP 200 and
+          // `{ data: [], total: 0, degraded: true }` — a failure, not an
+          // absence. `listFromApi` treats `degraded: true` as unreadable.
+          setRead(listFromApi<Case>({ degraded: true }));
+          return;
+        }
+        const rawRows = response.data ?? [];
+        // `response.total` counts every row on this endpoint the RLS admits —
+        // cases + tasks + clients + invoices + hearings together, same as the
+        // lawyer list's fetch — so truncation is judged against the RAW fetch
+        // count, not the case-only count after `isCaseRow`. There is no
+        // server-side count of cases alone.
+        setTruncated((response.total ?? rawRows.length) > rawRows.length);
+        setRead(listFromApi({ data: rawRows.filter(isCaseRow).map(workflowToCase) }));
+      } catch {
+        if (cancelled) return;
+        // A read that failed must never be rendered as "no cases". See
+        // listRead.ts for why this stays a distinct state from empty.
+        setRead(listFromApi(null));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    fetchCases();
+    const handler = () => fetchCases();
+    window.addEventListener("nzamy-workflow-updated", handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("nzamy-workflow-updated", handler);
+    };
+  }, [reloadKey]);
+
+  const viewState = listViewState(loading, read);
+  const cases = itemsOf(read);
+
+  const retryLoad = useCallback(() => {
+    setReloadKey(k => k + 1);
+  }, []);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
-  // Active cases with urgency
-  const activeCasesWithUrgency = useMemo(() => ACTIVE_CASES.map(c => ({
-    ...c,
-    urgency: getUrgency(c.daysLeft, c.isAppealDeadline),
-  })), []);
+  const baseCases = useMemo(
+    () => cases.filter(c => (showArchive ? c.status === "closed" || c.status === "archived" : c.status !== "closed" && c.status !== "archived")),
+    [cases, showArchive],
+  );
 
-  // Urgent cases = deadline cases sorted by daysLeft then importance
-  const urgentCases = useMemo(() => activeCasesWithUrgency
-    .filter(c => c.urgency !== "normal")
-    .sort((a, b) => {
-      if (a.urgency !== b.urgency) {
-        const order = { critical: 0, high: 1, medium: 2, normal: 3 };
-        return order[a.urgency] - order[b.urgency];
-      }
-      return (a.daysLeft ?? 99) - (b.daysLeft ?? 99) || a.importance - b.importance;
-    }), [activeCasesWithUrgency]);
-
-  // Regular filtered list
   const filtered = useMemo(() => {
-    let cases = activeCasesWithUrgency.filter(c => {
-      const matchStatus = statusFilter === "all" || c.status === statusFilter;
-      const matchSearch = !search || c.title.includes(search) || c.client.includes(search) || c.assignee.includes(search);
-      return matchStatus && matchSearch;
+    return baseCases.filter(c => {
+      if (statusFilter !== "all" && c.status !== statusFilter) return false;
+      if (search && !c.title.includes(search) && !c.client.includes(search) && !c.court.includes(search)) return false;
+      return true;
     });
-    if (sortBy === "urgency") cases = [...cases].sort((a, b) => {
-      const order = { critical: 0, high: 1, medium: 2, normal: 3 };
-      return order[a.urgency] - order[b.urgency] || (a.daysLeft ?? 99) - (b.daysLeft ?? 99);
-    });
-    else if (sortBy === "importance") cases = [...cases].sort((a, b) => a.importance - b.importance);
-    return cases;
-  }, [activeCasesWithUrgency, statusFilter, search, sortBy]);
+  }, [baseCases, statusFilter, search]);
 
-  // Archive filtered
-  const filteredArchive = useMemo(() => ARCHIVE_CASES.filter(c =>
-    (archiveFilter === "all" || c.result === archiveFilter) &&
-    (!archiveSearch || c.title.includes(archiveSearch) || c.client.includes(archiveSearch))
-  ), [archiveFilter, archiveSearch]);
+  const counts = useMemo(() => ({
+    all: cases.filter(c => c.status !== "closed" && c.status !== "archived").length,
+    active: cases.filter(c => c.status === "active").length,
+    pending: cases.filter(c => c.status === "pending").length,
+    // No backend status round-trips as "suspended" (see workflowToCase in
+    // lawyerCasesData.ts), so this can only ever be 0 — kept only so `counts`
+    // is indexable by every `CaseStatus`, never rendered as a chip.
+    suspended: 0,
+    closed: cases.filter(c => c.status === "closed").length,
+    archived: cases.filter(c => c.status === "archived").length,
+  }), [cases]);
 
-  const counts = {
-    all:       ACTIVE_CASES.length,
-    active:    ACTIVE_CASES.filter(c => c.status === "active").length,
-    pending:   ACTIVE_CASES.filter(c => c.status === "pending").length,
-    suspended: ACTIVE_CASES.filter(c => c.status === "suspended").length,
-    closed:    ACTIVE_CASES.filter(c => c.status === "closed").length,
+  const resetFilters = () => {
+    setStatusFilter("all");
+    setSearch("");
   };
 
-  const criticalCount = urgentCases.filter(c => c.urgency === "critical").length;
-  const highCount     = urgentCases.filter(c => c.urgency === "high").length;
+  function CaseCard({ c }: { c: Case }) {
+    const status = STATUS_CONFIG[c.status];
+    return (
+      <Link href={`/dashboard/firm/cases/${c.id}`}
+        className={`group ${card} p-4 flex items-center gap-4 hover:border-royal/30 hover:scale-[1.005] transition-all`}>
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${status.dot}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+            <p className={`text-[13px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.title}</p>
+            <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${status.bg} ${status.color}`}>{status.label}</span>
+          </div>
+          <div className={`flex items-center gap-2 text-[11px] flex-wrap ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+            <span>{c.client}</span>
+            <span className="w-1 h-1 rounded-full bg-current opacity-40" />
+            <span>{c.court}</span>
+            <span className="w-1 h-1 rounded-full bg-current opacity-40" />
+            <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>{TYPE_LABELS[c.type]}</span>
+          </div>
+        </div>
+        <div className="flex-shrink-0 text-left hidden sm:block">
+          <p className={`text-[11px] flex items-center gap-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}><Clock size={10} />{c.filedDate}</p>
+        </div>
+        <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${isDark ? "text-zinc-700 group-hover:bg-white/[0.06] group-hover:text-zinc-300" : "text-slate-200 group-hover:bg-royal group-hover:text-white"}`}>
+          <CaretLeft size={15} />
+        </div>
+      </Link>
+    );
+  }
 
   return (
-    <div className="max-w-[1200px] mx-auto space-y-5" dir="rtl">
+    <div className="max-w-[1200px] mx-auto space-y-4" dir="rtl">
 
-      {/* ── Critical Alert Banner ── */}
-      {criticalCount > 0 && (
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-red-500/30 bg-red-500/8 p-3.5 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-red-500/20 flex items-center justify-center flex-shrink-0">
-            <Fire size={16} weight="duotone" className="text-red-500" />
-          </div>
-          <div className="flex-1">
-            <p className="text-[13px] font-bold text-red-500">
-              {criticalCount} قضية حرجة — ميعاد الطعن خلال ٣ أيام أو أقل
-            </p>
-            <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-              {urgentCases.filter(c => c.urgency === "critical").map(c => c.title).join(" · ")}
-            </p>
-          </div>
-          <button onClick={() => setPageView("urgent")}
-            className="flex-shrink-0 text-[11px] font-bold text-red-500 hover:underline">
-            عرض الآن
-          </button>
-        </motion.div>
-      )}
-
-      {/* ── Header ── */}
+      {/* Header */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className={`text-2xl font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`}
-            style={{ fontFamily: "var(--font-brand)" }}>
-            قضايا المكتب
-          </h1>
+            style={{ fontFamily: "var(--font-brand)" }}>قضايا المكتب</h1>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {ACTIVE_CASES.length} قضية نشطة{criticalCount > 0 ? ` · ` : ""}{criticalCount > 0 && <span className="text-red-500 font-semibold">{criticalCount} حرجة</span>}{highCount > 0 && <span className="text-orange-500 font-semibold"> · {highCount} عاجلة</span>}
+            {viewState === "loading"
+              ? "جاري تحميل القضايا…"
+              : viewState === "unreadable"
+                ? <span className="text-red-500 font-semibold">تعذّر تحميل القضايا</span>
+                : <>{toArabicDigits(counts.all)} قضية · <span className="text-emerald-500 font-semibold">{toArabicDigits(counts.active)} نشطة</span></>}
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          {/* View toggle */}
-          {pageView === "active" && (
-            <div className={`flex p-1 rounded-xl border gap-1 ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
-              <button onClick={() => setViewMode("list")}
-                className={`p-2 rounded-lg transition-all ${viewMode === "list" ? "bg-royal text-white" : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}
-                title="عرض قائمة"><List size={15} /></button>
-              <button onClick={() => setViewMode("kanban")}
-                className={`p-2 rounded-lg transition-all ${viewMode === "kanban" ? "bg-royal text-white" : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}
-                title="عرض كانبان"><SquaresFour size={15} /></button>
-            </div>
-          )}
+        <div className="flex gap-2">
           <Link href="/dashboard/firm/hearings"
-            className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
             <CalendarCheck size={15} />الجلسات
           </Link>
-          <button onClick={() => setShowAddCase(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
+          <button onClick={() => setShowAddCase(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
             <Plus size={15} weight="bold" />قضية جديدة
           </button>
         </div>
       </motion.div>
 
-      {/* ── Page View Tabs ── */}
-      <div className={`flex gap-1 p-1 rounded-2xl ${isDark ? "bg-zinc-900/60 border border-white/[0.06]" : "bg-slate-100/80"}`}>
-        {[
-          { id: "active",  label: "القضايا النشطة", icon: Scales,   badge: ACTIVE_CASES.length },
-          { id: "urgent",  label: "الطعون العاجلة", icon: Warning,  badge: urgentCases.length, badgeColor: urgentCases.filter(c => c.urgency === "critical").length > 0 ? "bg-red-500" : "bg-orange-500" },
-          { id: "archive", label: "الأرشيف",        icon: Archive,  badge: ARCHIVE_CASES.length },
-        ].map(tab => {
-          const Icon = tab.icon;
-          const isActive = pageView === tab.id;
-          return (
-            <button key={tab.id} onClick={() => setPageView(tab.id as PageView)}
-              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all ${isActive
-                ? isDark ? "bg-white/[0.08] text-white shadow-sm" : "bg-white text-slate-800 shadow-sm"
-                : isDark ? "text-zinc-600 hover:text-zinc-400" : "text-slate-500 hover:text-slate-700"
-              }`}>
-              <Icon size={14} weight={isActive ? "duotone" : "regular"} />
-              <span className="hidden sm:inline">{tab.label}</span>
-              {tab.badge !== undefined && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isActive ? (tab.badgeColor ?? "bg-royal") + " text-white" : isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-200 text-slate-500"}`}>
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      {/* Search + archive toggle */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
+          <MagnifyingGlass size={16} className={isDark ? "text-zinc-500" : "text-slate-400"} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث في القضايا، العملاء، المحاكم..."
+            className={`flex-1 bg-transparent text-sm outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
+        </div>
+        <button onClick={() => setShowArchive(p => !p)}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-[12px] font-bold transition-all flex-shrink-0 ${
+            showArchive ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-200 text-slate-500"
+          }`}>
+          <Archive size={14} />الأرشيف
+        </button>
       </div>
 
-      <AnimatePresence mode="wait">
-
-        {/* ════════════════ ACTIVE CASES ════════════════ */}
-        {pageView === "active" && (
-          <motion.div key="active" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-
-            {/* Filters row */}
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
-                <MagnifyingGlass size={16} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-                <input value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="بحث بالقضية أو الموكل أو المحامي..."
-                  className={`flex-1 bg-transparent text-sm outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
-              </div>
-              <div className="flex gap-1.5 flex-wrap">
-                {(["all", "active", "pending", "suspended"] as const).map(s => (
-                  <button key={s} onClick={() => setStatusFilter(s)}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold flex-shrink-0 transition-all ${statusFilter === s
-                      ? "bg-royal text-white border-royal"
-                      : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"
-                    }`}>
-                    {s !== "all" && <span className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[s]?.dot}`} />}
-                    {s === "all" ? "الكل" : STATUS_CONFIG[s].label}
-                    <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${statusFilter === s ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>{counts[s]}</span>
-                  </button>
-                ))}
-                {/* Sort */}
-                <div className={`flex items-center gap-1 px-2 py-2 rounded-xl border text-[11px] ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-100 bg-white"}`}>
-                  <SortAscending size={13} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-                  <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
-                    className={`bg-transparent outline-none text-[11px] cursor-pointer ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                    <option value="urgency">الأعجل</option>
-                    <option value="importance">الأهم</option>
-                    <option value="date">الأحدث</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* List view */}
-            {viewMode === "list" && (
-              <div className="space-y-2">
-                {filtered.map((c, i) => {
-                  const status  = STATUS_CONFIG[c.status];
-                  const urgConf = URGENCY_CONFIG[c.urgency];
-                  return (
-                    <motion.div key={c.id}
-                      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
-                      <Link href={`/dashboard/firm/cases/${c.id}`}
-                        className={`group block ${card} p-4 hover:border-royal/30 hover:scale-[1.004] transition-all ${c.urgency === "critical" ? "border-l-4 border-l-red-500" : c.urgency === "high" ? "border-l-4 border-l-orange-500" : ""}`}>
-                        <div className="flex items-center gap-4">
-                          {/* Urgency dot */}
-                          <div className={`relative flex-shrink-0 w-2.5 h-2.5 rounded-full ${urgConf.dot}`}>
-                            {c.urgency === "critical" && <span className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-75" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-start gap-2 mb-1 flex-wrap">
-                              <p className={`text-[14px] font-semibold leading-snug flex-1 truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.title}</p>
-                              <div className="flex items-center gap-1.5 flex-wrap flex-shrink-0">
-                                {c.isAppealDeadline && (
-                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${urgConf.bg} ${urgConf.color} border ${urgConf.border}`}>
-                                    ميعاد طعن
-                                  </span>
-                                )}
-                                {c.daysLeft !== undefined && c.daysLeft <= 14 && (
-                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${urgConf.bg} ${urgConf.color}`}>
-                                    <Clock size={8} />
-                                    {c.daysLeft === 0 ? "اليوم!" : `${c.daysLeft} أيام`}
-                                  </span>
-                                )}
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${status.color}`}>{status.label}</span>
-                              </div>
-                            </div>
-                            <div className={`flex items-center gap-3 text-[12px] flex-wrap ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                              <span>{c.client}</span>
-                              <span className="w-1 h-1 rounded-full bg-current opacity-40" />
-                              <span>{c.court}</span>
-                              <span className="w-1 h-1 rounded-full bg-current opacity-40" />
-                              <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>{TYPE_LABELS[c.type]}</span>
-                              <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${isDark ? "bg-royal/10 text-royal/80" : "bg-royal/8 text-royal"}`}>{c.assignee}</span>
-                              {c.value && <span className={`text-[10px] font-medium ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{c.value}</span>}
-                            </div>
-                          </div>
-                          <div className="flex-shrink-0 text-left hidden sm:flex flex-col items-end gap-1.5">
-                            <p className={`text-[12px] font-medium ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{c.stage}</p>
-                            {c.nextDate && <p className={`text-[11px] flex items-center gap-1 ${c.urgency === "critical" ? "text-red-500 font-semibold" : isDark ? "text-zinc-600" : "text-slate-400"}`}><Clock size={10} />{c.nextDate}</p>}
-                            {/* Reminder button */}
-                            <button onClick={e => { e.preventDefault(); setShowReminder(c.id); }}
-                              className={`text-[9px] flex items-center gap-0.5 px-2 py-0.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity ${isDark ? "bg-white/[0.06] text-zinc-400 hover:text-zinc-200" : "bg-slate-100 text-slate-400 hover:text-slate-600"}`}>
-                              <Bell size={8} />تذكير
-                            </button>
-                          </div>
-                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${isDark ? "text-zinc-700 group-hover:bg-white/[0.06] group-hover:text-zinc-300" : "text-slate-200 group-hover:bg-royal group-hover:text-white"}`}>
-                            <CaretLeft size={15} />
-                          </div>
-                        </div>
-                      </Link>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Kanban view */}
-            {viewMode === "kanban" && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {(["active", "pending", "suspended"] as CaseStatus[]).map(col => {
-                  const colCases = filtered.filter(c => c.status === col);
-                  const sConf = STATUS_CONFIG[col];
-                  return (
-                    <div key={col} className={`rounded-2xl border border-t-4 p-3 ${sConf.kanbanBg} ${isDark ? "bg-zinc-900/40 border-white/[0.06]" : "bg-slate-50/80 border-slate-100"}`}>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${sConf.dot}`} />
-                          <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{sConf.label}</p>
-                        </div>
-                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-200 text-slate-500"}`}>{colCases.length}</span>
-                      </div>
-                      <div className="space-y-2">
-                        {colCases.map((c, i) => {
-                          const urgConf = URGENCY_CONFIG[c.urgency];
-                          return (
-                            <motion.div key={c.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                              <Link href={`/dashboard/firm/cases/${c.id}`}
-                                className={`group block ${card} p-3 hover:border-royal/30 hover:scale-[1.02] transition-all`}>
-                                {c.urgency !== "normal" && (
-                                  <div className={`text-[9px] font-bold px-2 py-0.5 rounded-full mb-2 inline-flex items-center gap-1 ${urgConf.bg} ${urgConf.color}`}>
-                                    {c.isAppealDeadline && "⚠ ميعاد طعن · "}{c.daysLeft} أيام
-                                  </div>
-                                )}
-                                <p className={`text-[12px] font-semibold leading-snug mb-1 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.title}</p>
-                                <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{c.client}</p>
-                                <div className={`mt-2 pt-2 border-t flex items-center gap-1.5 ${isDark ? "border-white/[0.04]" : "border-slate-100"}`}>
-                                  <div className="w-5 h-5 rounded-lg bg-royal/10 flex items-center justify-center">
-                                    <span className="text-[9px] font-bold text-royal">{c.assignee.charAt(3)}</span>
-                                  </div>
-                                  <p className={`text-[9px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{c.assignee}</p>
-                                </div>
-                              </Link>
-                            </motion.div>
-                          );
-                        })}
-                        {colCases.length === 0 && (
-                          <div className={`${card} p-4 text-center opacity-40`}>
-                            <p className={`text-[11px] ${isDark ? "text-zinc-700" : "text-slate-400"}`}>لا توجد قضايا</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </motion.div>
-        )}
-
-        {/* ════════════════ URGENT / APPEAL DEADLINES ════════════════ */}
-        {pageView === "urgent" && (
-          <motion.div key="urgent" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-            
-            {/* Stats row */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { label: "حرجة (≤٣ أيام)",  count: urgentCases.filter(c => c.urgency === "critical").length, color: "text-red-500",    bg: "bg-red-500/10",    icon: Fire },
-                { label: "عاجلة (≤٧ أيام)",  count: urgentCases.filter(c => c.urgency === "high").length,     color: "text-orange-500", bg: "bg-orange-500/10", icon: Warning },
-                { label: "متوسطة (≤١٤ يوم)", count: urgentCases.filter(c => c.urgency === "medium").length,   color: "text-amber-500",  bg: "bg-amber-500/10",  icon: Clock },
-              ].map((s, i) => {
-                const Icon = s.icon;
-                return (
-                  <div key={i} className={`${card} p-4 flex items-center gap-3`}>
-                    <div className={`w-10 h-10 rounded-xl ${s.bg} flex items-center justify-center flex-shrink-0`}>
-                      <Icon size={18} weight="duotone" className={s.color} />
-                    </div>
-                    <div>
-                      <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
-                      <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{s.label}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Cases list sorted by urgency */}
-            <div className="space-y-2">
-              {urgentCases.length === 0 && (
-                <div className={`${card} p-12 text-center`}>
-                  <CheckCircle size={36} weight="duotone" className="mx-auto mb-3 text-emerald-500" />
-                  <p className={`text-sm font-semibold ${isDark ? "text-zinc-400" : "text-slate-600"}`}>لا توجد قضايا بمواعيد حرجة</p>
-                </div>
-              )}
-              {urgentCases.map((c, i) => {
-                const urgConf = URGENCY_CONFIG[c.urgency];
-                const status  = STATUS_CONFIG[c.status];
-                return (
-                  <motion.div key={c.id}
-                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                    <Link href={`/dashboard/firm/cases/${c.id}`}
-                      className={`group block ${card} p-4 hover:scale-[1.004] transition-all border-r-4 ${c.urgency === "critical" ? "border-r-red-500" : c.urgency === "high" ? "border-r-orange-500" : "border-r-amber-400"}`}>
-                      <div className="flex items-start gap-4">
-                        {/* Days countdown */}
-                        <div className={`flex-shrink-0 w-16 h-16 rounded-2xl flex flex-col items-center justify-center ${urgConf.bg}`}>
-                          <p className={`text-2xl font-black leading-none ${urgConf.color}`}>{c.daysLeft}</p>
-                          <p className={`text-[9px] font-bold mt-0.5 ${urgConf.color}`}>يوم</p>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            {c.isAppealDeadline && (
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${urgConf.bg} ${urgConf.color} border ${urgConf.border}`}>
-                                ⚠ ميعاد طعن
-                              </span>
-                            )}
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${status.color}`}>{status.label}</span>
-                          </div>
-                          <p className={`text-[14px] font-bold mb-1 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.title}</p>
-                          <div className={`flex items-center gap-3 text-[12px] flex-wrap ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                            <span>{c.client}</span>
-                            <span className="w-1 h-1 rounded-full bg-current opacity-40" />
-                            <span>{c.court}</span>
-                            <span className="w-1 h-1 rounded-full bg-current opacity-40" />
-                            <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${isDark ? "bg-royal/10 text-royal/80" : "bg-royal/8 text-royal"}`}>{c.assignee}</span>
-                          </div>
-                          <p className={`text-[11px] mt-1 font-medium ${isDark ? "text-zinc-500" : "text-slate-400"}`}>الجلسة القادمة: {c.nextDate}</p>
-                        </div>
-                        <div className="flex flex-col gap-2 flex-shrink-0">
-                          <button onClick={e => { e.preventDefault(); setShowReminder(c.id); }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-colors ${isDark ? "bg-white/[0.06] text-zinc-300 hover:bg-white/10" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
-                            <Bell size={12} />إضافة تذكير
-                          </button>
-                          <Link href={`/ai/draft`}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-colors ${isDark ? "bg-[#C8A762]/10 text-[#C8A762] hover:bg-[#C8A762]/20" : "bg-[#C8A762]/10 text-[#8B6914] hover:bg-[#C8A762]/20"}`}>
-                            صياغة طعن
-                          </Link>
-                        </div>
-                      </div>
-                    </Link>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-
-        {/* ════════════════ ARCHIVE ════════════════ */}
-        {pageView === "archive" && (
-          <motion.div key="archive" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-
-            {/* Archive stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {(["won", "lost", "settled", "withdrawn"] as ArchiveResult[]).map(r => {
-                const conf = RESULT_CONFIG[r];
-                const Icon = conf.icon;
-                const count = ARCHIVE_CASES.filter(c => c.result === r).length;
-                return (
-                  <button key={r} onClick={() => setArchiveFilter(archiveFilter === r ? "all" : r)}
-                    className={`${card} p-3.5 flex items-center gap-3 hover:border-royal/20 transition-all text-right ${archiveFilter === r ? "border-royal" : ""}`}>
-                    <div className={`w-9 h-9 rounded-xl ${conf.bg} flex items-center justify-center flex-shrink-0`}>
-                      <Icon size={16} weight="duotone" className={conf.color} />
-                    </div>
-                    <div>
-                      <p className={`text-xl font-black ${conf.color}`}>{count}</p>
-                      <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{conf.label}</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Search */}
-            <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
-              <MagnifyingGlass size={16} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-              <input value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)}
-                placeholder="بحث في الأرشيف..."
-                className={`flex-1 bg-transparent text-sm outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
-            </div>
-
-            {/* Archive list */}
-            <div className="space-y-2">
-              {filteredArchive.map((c, i) => {
-                const conf = RESULT_CONFIG[c.result!];
-                const Icon = conf.icon;
-                return (
-                  <motion.div key={c.id}
-                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                    <div className={`group ${card} p-4 flex items-center gap-4 hover:border-royal/20 transition-all`}>
-                      <div className={`w-10 h-10 rounded-xl ${conf.bg} flex items-center justify-center flex-shrink-0`}>
-                        <Icon size={18} weight="duotone" className={conf.color} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <p className={`text-[14px] font-semibold truncate ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{c.title}</p>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${conf.bg} ${conf.color}`}>{conf.label}</span>
-                        </div>
-                        <div className={`flex items-center gap-3 text-[12px] flex-wrap ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                          <span>{c.client}</span>
-                          <span className="w-1 h-1 rounded-full bg-current opacity-40" />
-                          <span>{c.court}</span>
-                          <span className="w-1 h-1 rounded-full bg-current opacity-40" />
-                          <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>{TYPE_LABELS[c.type]}</span>
-                          {c.value && <span className="font-medium">{c.value}</span>}
-                        </div>
-                        <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                          تقديم: {c.filedDate} · إغلاق: {c.closedDate} · {c.assignee}
-                        </p>
-                      </div>
-                      <div className="flex gap-1.5 flex-shrink-0">
-                        <Link href={`/dashboard/firm/cases/${c.id}`}
-                          className={`text-[10px] font-semibold px-3 py-1.5 rounded-xl transition-colors ${isDark ? "bg-white/[0.06] text-zinc-400 hover:text-zinc-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
-                          ملف القضية
-                        </Link>
-                        <Link href={`/dashboard/firm/cases/${c.id}?tab=graph`}
-                          className={`text-[10px] font-semibold px-3 py-1.5 rounded-xl transition-colors ${isDark ? "bg-royal/10 text-royal/80 hover:bg-royal/20" : "bg-royal/8 text-royal hover:bg-royal/15"}`}>
-                          خريطة القضية
-                        </Link>
-                      </div>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Reminder Modal ── */}
-      <AnimatePresence>
-        {showReminder && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowReminder(null)}>
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              onClick={e => e.stopPropagation()}
-              className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-100"}`}>
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-2xl bg-royal/10 flex items-center justify-center">
-                  <Bell size={18} weight="duotone" className="text-royal" />
-                </div>
-                <div>
-                  <p className={`text-[14px] font-bold ${isDark ? "text-white" : "text-slate-800"}`}>إضافة تذكير</p>
-                  <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>للقضية المحددة</p>
-                </div>
-              </div>
-              <p className={`text-[12px] mb-3 ${isDark ? "text-zinc-400" : "text-slate-600"}`}>التذكير قبل الميعاد بـ:</p>
-              <div className="grid grid-cols-3 gap-2 mb-5">
-                {["يوم واحد", "٣ أيام", "أسبوع"].map(opt => (
-                  <button key={opt}
-                    className={`py-2.5 rounded-xl text-[12px] font-semibold border transition-all hover:border-royal hover:text-royal ${isDark ? "border-white/[0.08] text-zinc-400" : "border-slate-200 text-slate-500"}`}>
-                    {opt}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => setShowReminder(null)}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${isDark ? "bg-white/[0.06] text-zinc-300" : "bg-slate-100 text-slate-600"}`}>
-                  إلغاء
-                </button>
-                <button onClick={() => setShowReminder(null)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
-                  حفظ التذكير
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-        {showAddCase && <AddCaseModal onClose={() => setShowAddCase(false)} isDark={isDark} />}
-      </AnimatePresence>
-
-      {/* Bottom stats bar */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
-        className={`${card} p-4 flex flex-wrap items-center gap-5`}>
-        <div className="flex items-center gap-1.5">
-          <CircleHalf size={14} weight="duotone" className="text-royal" />
-          <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            إجمالي: <strong className={isDark ? "text-zinc-200" : "text-slate-700"}>{ACTIVE_CASES.length}</strong>
-          </span>
+      {/* Status chips */}
+      {viewState !== "loading" && viewState !== "unreadable" && (
+        <div className="flex gap-1.5 flex-wrap">
+          {STATUS_CHIPS.filter(s => showArchive ? (s === "all" || s === "closed" || s === "archived") : (s === "all" || s === "active" || s === "pending" || s === "closed")).map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
+                statusFilter === s ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"
+              }`}>
+              {s !== "all" && <span className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[s]?.dot}`} />}
+              {s === "all" ? "الكل" : STATUS_CONFIG[s].label}
+              <span className={`text-[9px] rounded-full px-1.5 ${statusFilter === s ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>
+                {toArabicDigits(s === "all" ? (showArchive ? counts.closed + counts.archived : counts.all) : counts[s])}
+              </span>
+            </button>
+          ))}
         </div>
-        <div className={`h-4 w-px ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`} />
-        {(["active", "pending", "suspended"] as CaseStatus[]).map(s => (
-          <div key={s} className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full ${STATUS_CONFIG[s].dot}`} />
-            <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-              {STATUS_CONFIG[s].label}: <strong>{counts[s]}</strong>
-            </span>
+      )}
+
+      {/* Body — four states kept apart: loading, unreadable, empty, ready */}
+      {viewState === "loading" ? (
+        <div className={`${card} p-4 space-y-2`}>
+          {[0, 1, 2].map(i => (
+            <div key={i} className={`h-16 rounded-2xl animate-pulse ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`} />
+          ))}
+          <p className={`text-[12px] text-center pt-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جاري تحميل القضايا…</p>
+        </div>
+      ) : viewState === "unreadable" ? (
+        <div className={`${card} p-6 text-center space-y-3`}>
+          <Warning size={26} weight="duotone" className="mx-auto text-red-500" />
+          <p className={`text-[14px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>تعذّرت قراءة قضايا المكتب</p>
+          <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+            لم يستجب الخادم لطلب القائمة. هذه ليست قائمة فارغة — قد تكون هناك قضايا لم تُقرأ بعد.
+          </p>
+          <button onClick={retryLoad}
+            className="px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
+            إعادة المحاولة
+          </button>
+        </div>
+      ) : (
+        <>
+          {truncated && (
+            <div className={`mb-1 rounded-2xl border p-3 text-[12px] font-semibold ${isDark ? "border-white/[0.08] bg-white/[0.03] text-zinc-400" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+              تُعرض أحدث {LIST_LIMIT} سجل فقط — قد تكون هناك قضايا أقدم غير معروضة في هذه القائمة.
+            </div>
+          )}
+          <div className="space-y-2">
+            {filtered.length === 0 ? (
+              cases.length === 0 ? (
+                <EmptyState
+                  icon={<Gavel />}
+                  title="لا توجد قضايا بعد"
+                  description="القضايا التي يضيفها المكتب أو تُسند إليه ستظهر هنا."
+                  action={{ label: "قضية جديدة", onClick: () => setShowAddCase(true) }}
+                />
+              ) : (
+                <EmptyState
+                  icon={showArchive ? <Archive /> : <Gavel />}
+                  title={showArchive ? "لا توجد قضايا مؤرشفة" : "لا توجد قضايا مطابقة"}
+                  description={showArchive ? "القضايا المغلقة أو المؤرشفة ستظهر هنا." : "لم يتم العثور على أي قضايا تطابق شروط البحث الحالية."}
+                  action={{ label: "إعادة ضبط الفلاتر", onClick: resetFilters }}
+                />
+              )
+            ) : (
+              filtered.map((c, i) => (
+                <motion.div key={c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
+                  <CaseCard c={c} />
+                </motion.div>
+              ))
+            )}
           </div>
-        ))}
-        <div className="mr-auto flex items-center gap-3">
-          <span className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-            الأرشيف: <strong>{ARCHIVE_CASES.length} قضية</strong>
-          </span>
-          <Link href="/ai/draft" className="flex items-center gap-1.5 text-[12px] text-royal hover:underline">
-            <ArrowUpRight size={13} />صياغة مذكرة
-          </Link>
-        </div>
-      </motion.div>
+        </>
+      )}
+
+      <AnimatePresence>
+        {showAddCase && (
+          <AddCaseModal
+            onClose={() => setShowAddCase(false)}
+            isDark={isDark}
+            user={{ userId: user.userId, name: user.name, userType: user.userType, tier: user.tier }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
