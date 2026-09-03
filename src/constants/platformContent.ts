@@ -7,6 +7,17 @@ export interface PlatformBlogCategory {
   labelEn: string;
 }
 
+/**
+ * The byline an article carries when the row names no author.
+ *
+ * There used to be THREE answers to that question in a single request:
+ * the visible byline said «فريق المحتوى», the JSON-LD handed Google
+ * «فريق نظامي القانوني», and the OpenGraph `authors` array was left empty.
+ * Google was told a name the page never showed. One constant, read by all
+ * three, so the page and its structured data cannot disagree again.
+ */
+export const BLOG_FALLBACK_AUTHOR = "فريق نظامي القانوني";
+
 export interface PlatformBlogArticle {
   id: string;
   slug: string;
@@ -24,8 +35,10 @@ export interface PlatformBlogArticle {
     slug: string;
     specialty: string;
     specialtyEn: string;
-    rating: number;
-    reviewCount: number;
+    /** Author rating — only meaningful for a real reviewed profile.
+        Absent for platform-authored articles; the card renders nothing. */
+    rating?: number;
+    reviewCount?: number;
     url?: string | null;
     credentials?: string | null;
   };

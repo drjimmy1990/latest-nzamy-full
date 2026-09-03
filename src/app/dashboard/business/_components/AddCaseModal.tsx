@@ -229,7 +229,11 @@ export default function AddCaseModal({ onClose, isDark, onCaseAdded }: Props) {
                   <div>
                     <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>نوع الطلب / القضية *</label>
                     <select className={inputCls} value={caseType} onChange={e => setCaseType(e.target.value)}>
-                      <option value="" disabled>اختر التصنيف...</option>
+                      {/* Was «اختر التصنيف...» under a label reading «نوع الطلب / القضية»
+                          — one field named two ways, the same mismatch already
+                          fixed in the lawyer's add-hearing modal. The
+                          placeholder repeats the label's word. */}
+                      <option value="" disabled>اختر نوع الطلب...</option>
                       {CASE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>

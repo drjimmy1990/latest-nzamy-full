@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Scales, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 
 const footerLinksAr = {
   "عن المنصة": [
@@ -32,7 +33,9 @@ const footerLinksAr = {
     { label: "نظامي ERP", href: "/erp" },
     { label: "المكتبة القانونية", href: "/erp/library" },
     { label: "نظامي AI MAX", href: "/ai#max" },
-    { label: "سوق المهنيين", href: "/pro/marketplace" },
+    // «سوق المهنيين» is appended below, and only when the marketplace is
+    // actually offered. Advertising it from every page while the route
+    // redirects away is a link the footer cannot honour.
   ],
 };
 
@@ -63,9 +66,17 @@ const footerLinksEn = {
     { label: "Nezamy ERP", href: "/erp" },
     { label: "Legal Library", href: "/erp/library" },
     { label: "Nezamy AI MAX", href: "/ai#max" },
-    { label: "Professional Marketplace", href: "/pro/marketplace" },
   ],
 };
+
+// The marketplace is one product behind one flag. When BETA_MONOPOLY_MODE is
+// switched off, `/marketplace` and `/pro/marketplace` both open and the footer
+// link comes back with them — from this one place, so the two can no longer
+// drift apart the way they just did.
+if (!BETA_MONOPOLY_MODE) {
+  footerLinksAr["للمحامين"].push({ label: "سوق المهنيين", href: "/pro/marketplace" });
+  footerLinksEn["For Lawyers"].push({ label: "Professional Marketplace", href: "/pro/marketplace" });
+}
 
 export default function Footer() {
   const { lang } = useTheme();

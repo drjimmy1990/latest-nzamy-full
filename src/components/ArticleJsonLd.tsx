@@ -23,6 +23,8 @@ export interface ArticleLdData {
   canonical_url?: string | null;
 }
 
+import { BLOG_FALLBACK_AUTHOR } from "@/constants/platformContent";
+
 const BASE_URL = "https://nezamy.sa";
 
 export function ArticleJsonLd({ article }: { article: ArticleLdData }) {
@@ -38,7 +40,7 @@ export function ArticleJsonLd({ article }: { article: ArticleLdData }) {
 
   const author = {
     "@type": "Person",
-    name: article.author_name || "فريق نظامي القانوني",
+    name: article.author_name || BLOG_FALLBACK_AUTHOR,
     ...(article.author_url ? { url: article.author_url } : {}),
     ...(article.author_credentials ? { description: article.author_credentials } : {}),
   };
