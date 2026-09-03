@@ -3,8 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
-  Buildings, Gavel, ArrowRight, ListChecks, X, Warning, Star,
-} from "@phosphor-icons/react";
+  Buildings, Gavel, ArrowRight, ListChecks, X, Warning, Star, User } from "@phosphor-icons/react";
 import Link from "next/link";
 import { FLAG_CONFIG } from "@/constants/lawyerClientsData";
 import { apiGet } from "@/lib/services/api";
@@ -240,6 +239,15 @@ export default function ClientDrawer({ client, isDark, onClose }: { client: Lawy
               </div>
             ))}
           </div>
+
+          {/* The full client file (identity block, confidential notes, inline
+              edit) lives at /dashboard/lawyer/clients/[id]. Until 2026-09-04
+              nothing linked to it — a skeptic pass on the owner's test guide
+              found the page reachable only by typing the URL. First button. */}
+          <Link href={`/dashboard/lawyer/clients/${encodeURIComponent(client.id)}`}
+            className="flex items-center justify-center gap-2 p-3 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22] transition-colors">
+            <User size={14} weight="duotone" /> ملف الموكّل الكامل <ArrowRight size={11} className="opacity-70" />
+          </Link>
 
           {/* Quick actions — plain navigation, no per-client filter promised:
               /dashboard/lawyer/cases does not read a ?client= param. */}
