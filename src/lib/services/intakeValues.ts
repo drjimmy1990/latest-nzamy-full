@@ -444,6 +444,19 @@ export const INTAKE_LABELS: Record<string, string> = {
   // «lawyerName» — labelFor() deliberately falls back to the key rather than
   // dropping the row, so a missing label is visible but ugly.
   lawyerName: "المحامي المطلوب",
+  // Written by the same wizard when the booking arrived from a lawyer's
+  // public profile with a specific priced service pre-selected
+  // (?lawyer=<uuid>&service=<serviceId> — the id is lawyer_services.id, and
+  // `serviceTitleAr` is that row's own title_ar, read off GET
+  // /api/v1/lawyers/[id]'s `services` array so the fulfilment brief and the
+  // client's own receipt name the exact listing the client clicked, not a
+  // guess at it). NOT the same field as the top-level `metadata.serviceId`
+  // this wizard already writes (that one is the consultation MODE's catalog
+  // id — "video-full" etc — and orderPrompt.ts's heading reads a *separate*
+  // top-level `metadata.serviceTitleAr` this wizard does not set). These two
+  // live only inside `intake`, alongside the other picked-detail rows.
+  serviceId: "معرّف الخدمة المطلوبة",
+  serviceTitleAr: "الخدمة المطلوبة",
   preferredTiming: "التوقيت المطلوب",
   estimatedPrice: "السعر التقديري",
   // ── The floating WhatsApp widget (2026-08-27) ─────────────────────────────

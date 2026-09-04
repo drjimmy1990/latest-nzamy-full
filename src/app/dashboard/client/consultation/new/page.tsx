@@ -21,8 +21,19 @@ import {
   formatClientServicePrice,
 } from "@/lib/pricingRepository";
 import { LEGAL_BRANCHES_REGULAR } from "@/components/draft/draftConstants";
-import { getLawyerById, type LawyerProfile } from "@/lib/services/lawyerService";
+import {
+  getLawyerById,
+  getPublicLawyerProfile,
+  type LawyerProfile,
+  type PublicLawyerProfile,
+} from "@/lib/services/lawyerService";
 import { uploadDocumentFile, isUploadTimeoutError } from "@/lib/services/documentService";
+// U5: resolving the titleAr of ONE service off a lawyer's own priced list —
+// see the "?lawyer=&service=" effect below. Type only; the fetch itself goes
+// through getPublicLawyerProfile(), which already carries `services` on the
+// wire (src/app/api/v1/lawyers/[id]/route.ts) even though PublicLawyerProfile
+// does not declare that field — see the cast at the call site.
+import type { LawyerService } from "@/lib/services/lawyerServicesService";
 // Task B1, item 15: same helper client/requests/page.tsx prints its raw
 // UUIDs through — a 36-character id is not something a client reads over
 // the phone.
@@ -137,6 +148,14 @@ export default function NewConsultationPage() {
   const isDark = theme === "dark";
   const [selectedLawyer, setSelectedLawyer] = useState<LawyerProfile | null>(null);
   const urlLawyerId = searchParams.get("lawyer");
+  // U5: a specific priced service off that lawyer's own list
+  // (lawyer_services.id — src/lib/services/lawyerServicesService.ts), picked
+  // from their public profile and carried here as "?service=". Resolved only
+  // together with `lawyer` below — a LawyerService row has no meaning without
+  // the lawyer that owns it, and this wizard has no other list to check it
+  // against.
+  const urlServiceId = searchParams.get("service");
+  const [prefillServiceTitleAr, setPrefillServiceTitleAr] = useState<string | null>(null);
   const modeConfig = useMemo(() => (
     Object.fromEntries(
       (Object.entries(MODE_COPY) as [LawyerMode, typeof MODE_COPY[LawyerMode]][]).map(([key, cfg]) => [
@@ -193,6 +212,64 @@ export default function NewConsultationPage() {
     });
     return () => { cancelled = true; };
   }, [urlLawyerId]);
+
+  // ── Resolve the picked service's Arabic title (U5), from whichever of TWO
+  // shapes "?service=" turns out to hold. Both are live in src/:
+  //
+  //   1. lawyer_services.id — a specific priced listing off ONE lawyer's own
+  //      public profile, always paired with "?lawyer=" in that link. This is
+  //      what `titleAr` in the task's own wording names (the field the DTO
+  //      itself uses — src/lib/services/lawyerServicesService.ts), so it is
+  //      tried FIRST. Read via getPublicLawyerProfile() rather than the
+  //      getLawyerById() effect above: that one maps the response into the
+  //      legacy `Lawyer` shape and drops `services` on the way, and this is
+  //      the one place on the page that needs that array.
+  //   2. a CLIENT_SERVICE_CATALOG id with no lawyer attached — the shape
+  //      src/app/ai/contract-drafter/_components/StepLawyerCTA.tsx:90 sends
+  //      today ("?service=contract-review", no "?lawyer="). Tried only when
+  //      (1) did not resolve — no lawyer in the URL, the lawyer 404s (every
+  //      production lawyer row is `pending`/un-listed as of this writing —
+  //      see the docstring on GET /api/v1/lawyers/[id] — so this is the
+  //      branch that actually fires today), or the lawyer has no such
+  //      listing. getClientServiceById() falls back to the "general" catalog
+  //      entry for an id it cannot find, so the resolved id is checked
+  //      against the one asked for before trusting the label.
+  //
+  // Both branches end the same way: a `prefillServiceTitleAr` used below when
+  // the request is submitted, and a `topic` prefill that never overwrites
+  // text the client already typed — this whole resolution is async and can
+  // land after they started editing.
+  useEffect(() => {
+    if (!urlServiceId) {
+      setPrefillServiceTitleAr(null);
+      return;
+    }
+    let cancelled = false;
+    const applyTitle = (titleAr: string) => {
+      if (cancelled) return;
+      setPrefillServiceTitleAr(titleAr);
+      setTopic((prev) => (prev.trim() ? prev : `طلب خدمة: ${titleAr}`));
+    };
+    const tryCatalogFallback = () => {
+      if (cancelled) return;
+      const resolved = getClientServiceById(urlServiceId, catalog);
+      if (resolved.serviceId === urlServiceId) applyTitle(resolved.label);
+    };
+    if (urlLawyerId) {
+      getPublicLawyerProfile(urlLawyerId).then((result) => {
+        if (cancelled) return;
+        const services = result.status === "ok"
+          ? (result.lawyer as PublicLawyerProfile & { services?: LawyerService[] | null }).services
+          : null;
+        const picked = services?.find((s) => s.id === urlServiceId);
+        if (picked) applyTitle(picked.titleAr);
+        else tryCatalogFallback();
+      });
+    } else {
+      tryCatalogFallback();
+    }
+    return () => { cancelled = true; };
+  }, [urlLawyerId, urlServiceId, catalog]);
 
   // ── Pre-fill from URL context (e.g. coming from Services or AI assistant) ──
   useEffect(() => {
@@ -393,6 +470,14 @@ export default function NewConsultationPage() {
               path === "ai" ? "استشارة بالذكاء الاصطناعي" : `استشارة ${MODE_COPY[mode].label}`,
             specialty,
             ...(selectedLawyer?.name ? { lawyerName: selectedLawyer.name } : {}),
+            // U5: only when the booking came in with a resolved
+            // "?lawyer=&service=" pair — see the effect above. `urlServiceId`
+            // is checked alongside the resolved title so a service id that
+            // never matched (bad link, or the lawyer since removed/disabled
+            // it) writes nothing rather than an id with no name next to it.
+            ...(prefillServiceTitleAr && urlServiceId
+              ? { serviceId: urlServiceId, serviceTitleAr: prefillServiceTitleAr }
+              : {}),
             subject: activeTopic,
             // «درجة الأولوية». The client has always been asked this and the
             // answer has never left the browser — three buttons whose only

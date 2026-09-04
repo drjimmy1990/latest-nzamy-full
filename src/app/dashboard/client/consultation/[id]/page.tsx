@@ -31,6 +31,12 @@ import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import { CONSULTATION_STATUS_AR, CONSULTATION_MODE_AR, type ConsultationStatus } from "@/lib/services/consultationVocabulary";
 import { formatGregorianAr } from "@/app/dashboard/lawyer/_components/DeadlineCard";
 import { toArabicDigits, countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
+// Item 192 (U4), additive: a completed consultation request can be reviewed
+// once. Same eligibility source as «طلباتي» (requests/page.tsx) — never just
+// `consultation.status === "completed"`, which stays true after the review
+// is already in.
+import { getReviewableRequests, type ReviewableRequest } from "@/lib/services/reviewsService";
+import ReviewForm from "@/components/reviews/ReviewForm";
 
 // ─── Types & Configurations ──────────────────────────────────────────────────
 
@@ -353,6 +359,26 @@ export default function ConsultationRoomPage() {
     () => itemsOf(consultRead).find((c) => c.request_id === id) ?? null,
     [consultRead, id],
   );
+
+  // «قيّم محاميك» (item 192, U4). Checked only once the request record is
+  // loaded and reads "completed" — the eligible-list read is otherwise a
+  // wasted round trip on every other status. `null` covers both "not
+  // completed yet" and "completed but already reviewed / not eligible" —
+  // this page has no per-request review fetch, so an ineligible completed
+  // request renders no review section at all rather than a stale form.
+  const [reviewEligible, setReviewEligible] = useState<ReviewableRequest | null>(null);
+  useEffect(() => {
+    if (!consultation || consultation.status !== "completed") {
+      setReviewEligible(null);
+      return;
+    }
+    let cancelled = false;
+    getReviewableRequests().then((read) => {
+      if (cancelled) return;
+      setReviewEligible(read.ok ? read.items.find((r) => r.requestId === consultation.id) ?? null : null);
+    });
+    return () => { cancelled = true; };
+  }, [consultation]);
 
   // Chat panel states
   const [messages, setMessages] = useState<Message[]>([]);
@@ -1271,6 +1297,19 @@ export default function ConsultationRoomPage() {
                 </a>
               </div>
             </div>
+
+            {/* A review — mounted ONLY when getReviewableRequests() still
+                lists this request. `consultation.status === "completed"`
+                alone is not enough: a completed request already reviewed is
+                not in that list, and this section then renders nothing. */}
+            {consultation.status === "completed" && reviewEligible && (
+              <ReviewForm
+                requestId={reviewEligible.requestId}
+                lawyerName={consultation.lawyerName ?? reviewEligible.lawyerName}
+                isDark={isDark}
+                onSubmitted={() => setReviewEligible(null)}
+              />
+            )}
 
             {/* Actions */}
             <div className={`p-6 rounded-[2rem] border relative space-y-3 ${cardBg}`}>

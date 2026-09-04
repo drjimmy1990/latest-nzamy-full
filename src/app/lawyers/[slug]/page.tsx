@@ -17,22 +17,31 @@
  * was deleted along with the UI that framed it.
  *
  * ─── The route param ──────────────────────────────────────────────────────────
- * The folder is `[slug]`, so `useParams()` yields `{ slug }` — but `slug` is a
- * misnomer and the value is a `profiles.id` UUID. Verified three ways:
- *   • src/app/dashboard/client/find-lawyer/page.tsx:236 links `/lawyers/${l.id}`
- *   • src/app/dashboard/client/find-lawyer/[id]/page.tsx:4 redirects `/lawyers/${params.id}`
- *   • src/app/dashboard/lawyer/page.tsx:208 shares `/lawyers/${userId}`
- * and the API behind it filters `profiles.id` and rejects anything that is not
- * 36 hex-and-dashes characters. So: read `params.slug`, pass it as an id.
+ * The folder is `[slug]`, so `useParams()` yields `{ slug }` — but the value is
+ * NOT always a slug. It started life as a plain `profiles.id` UUID (linked from
+ * find-lawyer, the lawyer's own dashboard, etc.), and Phase 7 (item 130) let a
+ * verified lawyer additionally claim a chosen slug (`lawyer_profiles.slug`, ASCII,
+ * unique). The API (src/app/api/v1/lawyers/[id]/route.ts) resolves BOTH: a real
+ * UUID shape looks up `profiles.id`, anything else looks up the slug. This page
+ * does no branching of its own — it reads `params.slug` and passes it straight
+ * through, exactly as it did when the value was id-only.
  *
  * ─── What is actually renderable ──────────────────────────────────────────────
- * Only the allow-list projection in src/app/api/v1/lawyers/[id]/route.ts. There
- * is no ratings table, no reviews table, no case-outcome data and no analytics
- * in the schema. Every field below is also optional IN PRACTICE — measured
- * against production, 4 of the 5 lawyer rows have zero specialties, zero years
- * of experience and an empty bio. A nearly-empty profile is the common case, so
- * each section is omitted rather than rendered blank: no «الخبرة: 0 سنوات», no
- * empty bio box, no label with nothing after it.
+ * Only the allow-list projection in src/app/api/v1/lawyers/[id]/route.ts, which
+ * as of Phase 7 (items 128 · 130 · 178 · 192) also embeds the lawyer's education,
+ * courts, languages and headline, their priced service list (`lawyer_services`),
+ * and their real reviews (`reviews` + the `lawyer_review_stats` view) — one
+ * review per completed, paid request, never free-floating. There is still no
+ * win-rate, satisfaction-score or case-outcome table, and none of that is
+ * synthesized here either. Every field below is also optional IN PRACTICE —
+ * measured against production, most lawyer rows have zero specialties, zero
+ * years of experience and an empty bio, and the new fields are exactly as
+ * likely to be unset. A nearly-empty profile is the common case, so each
+ * section is omitted rather than rendered blank: no «الخبرة: 0 سنوات», no empty
+ * bio box, no label with nothing after it, no «٠ تقييمات» standing in for "we
+ * don't know" (the reviews sub-read failing and a lawyer genuinely having zero
+ * reviews both come back `null`/`[]` from the route — see the comment above the
+ * `reviews`/`reviewStats` extraction below for how this page tells them apart).
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -52,6 +61,11 @@ import {
   ArrowClockwise,
   CheckCircle,
   UserCircle,
+  GraduationCap,
+  Gavel,
+  Translate,
+  Star,
+  Clock,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -60,14 +74,47 @@ import {
   getPublicLawyerProfile,
   type PublicLawyerProfile,
 } from "@/lib/services/lawyerService";
+import {
+  COURT_AR,
+  LANGUAGE_AR,
+  SERVICE_CATEGORY_AR,
+  isCourtCode,
+  isLanguageCode,
+  servicePriceLabelAr,
+  type EducationEntry,
+} from "@/lib/services/lawyerProfileFields";
+import type { LawyerService } from "@/lib/services/lawyerServicesService";
+import type { Review, ReviewStats } from "@/lib/services/reviewsService";
 
 const GOLD = "#C8A762";
 const GREEN = "#0B3D2E";
 const DIRECTORY_HREF = "/lawyers/browse";
 
+/**
+ * The route response (src/app/api/v1/lawyers/[id]/route.ts, R2) promotes five
+ * profile-detail columns to the top level and attaches three sub-resource
+ * reads that `PublicLawyerProfile` (src/lib/services/lawyerService.ts) does
+ * not type — that file is a contract this page does not own. The runtime
+ * object carries them regardless (`normalizeEmbedded` there spreads `...row`),
+ * so this widens the type locally rather than reaching into that file.
+ */
+interface FullLawyerProfile extends PublicLawyerProfile {
+  slug: string | null;
+  headline_ar: string;
+  education: EducationEntry[];
+  courts: string[];
+  languages: string[];
+  /** null = the sub-read failed server-side; [] = genuinely no active services yet. */
+  services: LawyerService[] | null;
+  /** null both on a failed sub-read AND on genuinely zero reviews — see below. */
+  reviewStats: ReviewStats | null;
+  /** null = the sub-read failed server-side; [] = genuinely no active reviews yet. */
+  reviews: Review[] | null;
+}
+
 type LoadState =
   | { phase: "loading" }
-  | { phase: "ok"; lawyer: PublicLawyerProfile }
+  | { phase: "ok"; lawyer: FullLawyerProfile }
   | { phase: "not-found" }
   | { phase: "error" };
 
@@ -118,6 +165,42 @@ function membershipYear(iso: string, isRTL: boolean): string | null {
   });
 }
 
+/** A review's date — day + month + year, Gregorian with Latin digits, same reasoning as `membershipYear`. */
+function reviewDate(iso: string, isRTL: boolean): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(isRTL ? "ar-SA-u-nu-latn" : "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    calendar: "gregory",
+  });
+}
+
+/**
+ * Five stars, filled up to `Math.round(rating)`. Gold when filled, muted
+ * outline otherwise on screen; the print stylesheet below re-colors them to a
+ * fixed, theme-independent pair (`.rs-filled` / `.rs-empty`) — the on-screen
+ * `color` prop becomes a literal `fill` attribute (IconBase spreads it as-is,
+ * never `currentColor`), and this page's light-theme "muted" shade
+ * (`#d1d5db`) is close to invisible ink on white paper. Without that override
+ * a two-star review and a five-star review could print looking the same —
+ * a misrepresentation of a licensed advocate's rating, the exact class of
+ * problem this file exists to avoid.
+ */
+function ratingStars(rating: number, isDark: boolean, size = 13) {
+  const filled = Math.round(rating);
+  return Array.from({ length: 5 }).map((_, i) => (
+    <Star
+      key={i}
+      size={size}
+      weight={i < filled ? "fill" : "regular"}
+      color={i < filled ? GOLD : isDark ? "#3a4453" : "#d1d5db"}
+      className={i < filled ? "rs-filled" : "rs-empty"}
+    />
+  ));
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LawyerProfilePage() {
@@ -153,7 +236,7 @@ export default function LawyerProfilePage() {
         key: requestKey,
         state:
           result.status === "ok"
-            ? { phase: "ok", lawyer: result.lawyer }
+            ? { phase: "ok", lawyer: result.lawyer as FullLawyerProfile }
             : result.status === "not-found"
               ? { phase: "not-found" }
               : { phase: "error" },
@@ -174,7 +257,7 @@ export default function LawyerProfilePage() {
   const backLink = (
     <Link
       href={DIRECTORY_HREF}
-      className={`inline-flex items-center gap-1.5 text-sm font-medium transition hover:underline ${
+      className={`print:hidden inline-flex items-center gap-1.5 text-sm font-medium transition hover:underline ${
         isDark ? "text-gray-400 hover:text-[#C8A762]" : "text-gray-500 hover:text-[#0B3D2E]"
       }`}
     >
@@ -185,9 +268,37 @@ export default function LawyerProfilePage() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`}
+      className={`nz-lawyer-print min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`}
       dir={isRTL ? "rtl" : "ltr"}
     >
+      {/* globals.css already forces the page to white-on-black for print, but
+          only by matching `bg-white`/`bg-zinc-900`/`bg-purple-950/10` class
+          names — this page's dark-mode surfaces (`bg-[#0c0f12]`, `bg-[#161b22]`)
+          match none of those, so a dark-theme visitor printing «حفظ PDF» would
+          get white text on a white page. Scope a blanket override to this page
+          instead of touching the shared stylesheet. Framer's `initial={{opacity:0}}`
+          can also freeze mid-animation on print if the browser paints before the
+          animation settles, hence the opacity/transform reset.
+          `break-inside: avoid` is scoped to LIST ITEMS, not `section` — the hero
+          and the reviews list are sections taller than a printed page, and
+          forbidding a break inside a block that tall clips it instead of
+          flowing it, the opposite of "prints cleanly". `.rs-filled`/`.rs-empty`
+          re-fix the star-rating icons to a legible, theme-independent pair —
+          see the comment on `ratingStars()`. */}
+      <style>{`
+        @media print {
+          .nz-lawyer-print, .nz-lawyer-print * {
+            color: #000 !important;
+            background: transparent !important;
+            opacity: 1 !important;
+            transform: none !important;
+          }
+          .nz-lawyer-print li { break-inside: avoid; }
+          .nz-lawyer-print h2 { break-after: avoid; }
+          .nz-lawyer-print svg.rs-filled { fill: #000 !important; }
+          .nz-lawyer-print svg.rs-empty { fill: #9ca3af !important; }
+        }
+      `}</style>
       <Navbar />
 
       <div className="flex-1 max-w-5xl mx-auto w-full px-4 py-10 space-y-6">
@@ -316,9 +427,44 @@ export default function LawyerProfilePage() {
           const avatar = text(p.avatar_url);
           const initials = initialsOf(name);
 
+          // ── Phase 7 fields (R2 promotes these five to the top level) ──
+          const headline = text(p.headline_ar);
+          // Defensive against a malformed stored entry (educationIssue() gates
+          // the WRITE side, not this read) — an entry with no degree is
+          // skipped rather than rendered as an empty line.
+          const education = (p.education ?? []).filter((e) => e && text(e.degree));
+          const courts = (p.courts ?? []).filter(isCourtCode);
+          // `languages` defaults to `{"ar"}` on every row (the migration's
+          // column default), so its presence alone is not evidence the lawyer
+          // touched the field — unlike `courts`/`education`, which default
+          // empty. Still real information either way (nobody's array holds an
+          // invented language), so it is shown, just excluded from `isSparse`
+          // below where "has the lawyer added anything" is being decided.
+          const languages = (p.languages ?? []).filter(isLanguageCode);
+          const toDigits = (n: number) => n.toLocaleString(isRTL ? "ar-SA-u-nu-latn" : "en-US");
+          // A calendar year is not a quantity to group — toDigits (shared with
+          // prices/counts, which DO want the thousands separator) would render
+          // graduation year 2015 as "٢٬٠١٥" / "2,015". Same locale/numeral
+          // system, grouping explicitly off.
+          const toYearDigits = (n: number) =>
+            n.toLocaleString(isRTL ? "ar-SA-u-nu-latn" : "en-US", { useGrouping: false });
+
+          // `null` = the sub-read failed server-side (logged there); this page
+          // omits the section rather than asserting zero. `[]` = a genuine
+          // empty success, which IS worth a quiet "nothing here yet" line —
+          // see reviewStats below for the one case that cannot be told apart.
+          const services = p.services;
+          const reviews = p.reviews;
+          const reviewStats = p.reviewStats;
+
           // True only when the lawyer has published nothing beyond the identity
-          // the platform itself verified. Common: 4 of 5 production rows.
-          const isSparse = !bio && specialties.length === 0 && years <= 0 && !bar && !licence;
+          // the platform itself verified. Reviews are excluded — that is
+          // client-authored content, not something absent from it should read
+          // as "this lawyer hasn't filled out their profile".
+          const isSparse =
+            !bio && specialties.length === 0 && years <= 0 && !bar && !licence &&
+            !headline && education.length === 0 && courts.length === 0 &&
+            (services === null || services.length === 0);
 
           return (
             <>
@@ -371,6 +517,12 @@ export default function LawyerProfilePage() {
                         {isRTL ? "موثّق" : "Verified"}
                       </span>
                     </div>
+
+                    {headline && (
+                      <p className={`text-sm font-medium mb-3 ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+                        {headline}
+                      </p>
+                    )}
 
                     {specialties.length > 0 && (
                       <div className="flex flex-wrap gap-2 mb-3">
@@ -442,7 +594,7 @@ export default function LawyerProfilePage() {
                       normal gate rather than a broken control; that is called
                       out in the caption below so nobody is surprised. */}
                   {accepting && (
-                    <div className="flex flex-col gap-2 w-full sm:w-56 flex-shrink-0">
+                    <div className="print:hidden flex flex-col gap-2 w-full sm:w-56 flex-shrink-0">
                       <motion.a
                         href={`/dashboard/client/consultation/new?lawyer=${encodeURIComponent(p.id)}`}
                         whileHover={{ scale: 1.03 }}
@@ -473,6 +625,86 @@ export default function LawyerProfilePage() {
                   <p className={`leading-relaxed text-sm whitespace-pre-line ${isDark ? "text-gray-300" : "text-gray-600"}`}>
                     {bio}
                   </p>
+                </motion.section>
+              )}
+
+              {/* ── Education — «المؤهلات». Free-text entries the lawyer typed
+                  themselves (educationIssue() gates the write side); nothing
+                  here is verified the way the «موثّق» seal is. ── */}
+              {education.length > 0 && (
+                <motion.section
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.08 }}
+                  className={card}
+                >
+                  <h2 className={heading}>المؤهلات</h2>
+                  <ul className="space-y-3">
+                    {education.map((e, i) => (
+                      <li key={i} className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-[#0B3D2E]/10 flex items-center justify-center flex-shrink-0">
+                          <GraduationCap size={18} color={GREEN} weight="duotone" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className={`font-semibold text-sm break-words ${isDark ? "text-white" : "text-gray-800"}`}>
+                            {e.degree}
+                          </p>
+                          <p className={`text-xs ${muted}`}>
+                            {[text(e.institution), e.year ? toYearDigits(e.year) : null].filter(Boolean).join(" · ")}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </motion.section>
+              )}
+
+              {/* ── Courts & languages — «المحاكم» / «اللغات». Codes rendered
+                  through COURT_AR/LANGUAGE_AR only; an unrecognised code (from
+                  a stale row) is silently dropped rather than printed raw. ── */}
+              {(courts.length > 0 || languages.length > 0) && (
+                <motion.section
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className={card}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {courts.length > 0 && (
+                      <div>
+                        <h2 className={heading}>المحاكم</h2>
+                        <div className="flex flex-wrap gap-2">
+                          {courts.map((c) => (
+                            <span
+                              key={c}
+                              className="flex items-center gap-1.5 text-xs px-3 py-1 rounded-full font-medium bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#0B3D2E]/30 dark:text-[#C8A762]"
+                            >
+                              <Gavel size={12} weight="duotone" />
+                              {COURT_AR[c]}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {languages.length > 0 && (
+                      <div>
+                        <h2 className={heading}>اللغات</h2>
+                        <div className="flex flex-wrap gap-2">
+                          {languages.map((l) => (
+                            <span
+                              key={l}
+                              className={`flex items-center gap-1.5 text-xs px-3 py-1 rounded-full font-medium border ${
+                                isDark ? "border-[#C8A762]/30 text-[#C8A762] bg-[#C8A762]/10" : "border-[#C8A762]/40 text-[#8a6b2e] bg-[#C8A762]/10"
+                              }`}
+                            >
+                              <Translate size={12} weight="duotone" />
+                              {LANGUAGE_AR[l]}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </motion.section>
               )}
 
@@ -564,6 +796,156 @@ export default function LawyerProfilePage() {
                       </p>
                     </div>
                   </div>
+                </motion.section>
+              )}
+
+              {/* ── Services — «الخدمات» (item 178). Not gated on `accepting`:
+                  is_accepting_clients defaults to true and gating this would
+                  turn a published price list into a dead end on the one row
+                  where it matters most. The request goes to the real intake,
+                  which the sibling wizard task honours `?service=` on. ── */}
+              {services !== null && services.length > 0 && (
+                <motion.section
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.18 }}
+                  className={card}
+                >
+                  <h2 className={heading}>الخدمات</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {services.map((s) => {
+                      const description = text(s.descriptionAr);
+                      return (
+                        <div
+                          key={s.id}
+                          className={`rounded-xl border p-4 flex flex-col gap-2 ${
+                            isDark ? "border-[#2d3748] bg-[#0c0f12]" : "border-gray-200 bg-gray-50"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className={`font-semibold text-sm break-words ${isDark ? "text-white" : "text-gray-800"}`}>
+                              {s.titleAr}
+                            </h3>
+                            <span
+                              className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                isDark ? "border-white/10 bg-white/5 text-gray-400" : "border-gray-200 bg-white text-gray-500"
+                              }`}
+                            >
+                              {SERVICE_CATEGORY_AR[s.category]}
+                            </span>
+                          </div>
+                          {description && (
+                            <p className={`text-xs leading-relaxed ${muted}`}>{description}</p>
+                          )}
+                          <div className="flex flex-wrap items-center gap-3 text-xs mt-1">
+                            <span className="font-bold" style={{ color: GOLD }}>
+                              {servicePriceLabelAr(s.pricingKind, s.priceSar, toDigits)}
+                            </span>
+                            {s.durationLabel && (
+                              <span className={`flex items-center gap-1 ${muted}`}>
+                                <Clock size={12} weight="duotone" />
+                                {s.durationLabel}
+                              </span>
+                            )}
+                          </div>
+                          <Link
+                            href={`/dashboard/client/consultation/new?lawyer=${encodeURIComponent(s.lawyerUserId)}&service=${encodeURIComponent(s.id)}`}
+                            className="print:hidden mt-1 inline-flex items-center justify-center px-4 py-2 rounded-lg bg-[#0B3D2E] text-white text-xs font-semibold hover:bg-[#0a3328] transition"
+                          >
+                            اطلب هذه الخدمة
+                          </Link>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </motion.section>
+              )}
+
+              {/* ── Reviews — «التقييمات» (item 192). `reviews === null` means
+                  the sub-read failed server-side (logged there) and the whole
+                  section is omitted — a section rendered with nothing in it
+                  would still read as "zero reviews", a claim this page cannot
+                  back. `reviews === []` (the read succeeded, genuinely empty)
+                  IS shown, with a quiet line rather than a bio-style silence,
+                  because "no reviews yet" is itself honest information for a
+                  visitor deciding whether to request a consultation.
+                  `reviewStats` is null in BOTH the failure and the genuinely-
+                  empty case (the route cannot tell them apart on a
+                  `.maybeSingle()` view read), so the aggregate figure is only
+                  ever shown when `reviews.length > 0` corroborates it. ── */}
+              {reviews !== null && (
+                <motion.section
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.22 }}
+                  className={card}
+                >
+                  <div className="flex items-center justify-between gap-3 flex-wrap mb-5">
+                    <h2 className={`text-xl font-bold ${isDark ? "text-white" : "text-gray-800"}`}>التقييمات</h2>
+                    {reviews.length > 0 && reviewStats && reviewStats.avgRating !== null && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex">{ratingStars(reviewStats.avgRating, isDark, 14)}</div>
+                        <span className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-800"}`}>
+                          {reviewStats.avgRating.toLocaleString(isRTL ? "ar-SA-u-nu-latn" : "en-US", { maximumFractionDigits: 1 })}
+                        </span>
+                        <span className={`text-xs ${muted}`}>
+                          ({toDigits(reviewStats.reviewCount)} {reviewStats.reviewCount === 1 ? "تقييم" : "تقييمات"})
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {reviews.length === 0 ? (
+                    <p className={`text-sm leading-relaxed ${muted}`}>
+                      لم يحصل هذا المحامي على تقييمات بعد.
+                    </p>
+                  ) : (
+                    <ul className="space-y-4">
+                      {reviews.map((r) => {
+                        const rDate = reviewDate(r.createdAt, isRTL);
+                        const title = text(r.title);
+                        const body = text(r.body);
+                        const response = text(r.response);
+                        return (
+                          <li
+                            key={r.id}
+                            className={`rounded-xl border p-4 ${isDark ? "border-[#2d3748]" : "border-gray-200"}`}
+                          >
+                            <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                              <div className="flex items-center gap-2">
+                                <div className="flex">{ratingStars(r.rating, isDark)}</div>
+                                <span className={`text-xs font-semibold ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                                  {r.reviewerName ?? "عميل"}
+                                </span>
+                              </div>
+                              {rDate && <span className={`text-[11px] ${muted}`}>{rDate}</span>}
+                            </div>
+                            {r.serviceTitleAr && (
+                              <p className={`text-[11px] mb-1.5 ${muted}`}>عن: {r.serviceTitleAr}</p>
+                            )}
+                            {title && (
+                              <p className={`font-semibold text-sm mb-1 ${isDark ? "text-white" : "text-gray-800"}`}>
+                                {title}
+                              </p>
+                            )}
+                            {body && (
+                              <p className={`text-sm leading-relaxed whitespace-pre-line ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+                                {body}
+                              </p>
+                            )}
+                            {response && (
+                              <div className={`mt-3 pt-3 border-t ${isDark ? "border-[#2d3748]" : "border-gray-100"}`}>
+                                <p className={`text-xs font-semibold mb-1 ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                                  ردّ المحامي
+                                </p>
+                                <p className={`text-xs leading-relaxed whitespace-pre-line ${muted}`}>{response}</p>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </motion.section>
               )}
 

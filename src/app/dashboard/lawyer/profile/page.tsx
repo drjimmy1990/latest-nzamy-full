@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   UserCircle, Phone, Envelope, MapPin, PencilSimple, SealCheck,
-  Warning, FilePdf, Certificate, Clock, XCircle, Prohibit,
-  Eye, EyeSlash, SpinnerGap, ArrowClockwise, Info,
+  Warning, Printer, Certificate, Clock, XCircle, Prohibit,
+  Eye, EyeSlash, SpinnerGap, ArrowClockwise, Info, ShareNetwork,
+  GraduationCap, Bank, Translate, Plus, TrashSimple,
+  ToggleLeft, ToggleRight, CircleNotch,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
@@ -13,6 +15,17 @@ import { useUser } from "@/hooks/useUser";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 import { OverviewTab } from "@/components/dashboard/LawyerProfileForms";
+import {
+  COURT_AR, LANGUAGE_AR, SERVICE_CATEGORY_AR, servicePriceLabelAr,
+  isCourtCode, isLanguageCode, type EducationEntry,
+} from "@/lib/services/lawyerProfileFields";
+import { toArabicDigits } from "@/lib/services/arabicCount";
+import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
+import {
+  getMyServices, deleteService, updateService, type LawyerService,
+} from "@/lib/services/lawyerServicesService";
+import ServiceFormModal from "../_components/profile/ServiceFormModal";
+import ReviewsPanel from "../_components/profile/ReviewsPanel";
 
 /*
  * ─── WHAT THIS PAGE NO LONGER CLAIMS ─────────────────────────────────────────
@@ -111,20 +124,21 @@ const EMPTY_PROFILE = {
   roleProfileReadFailed: false,
   bio: "",
   expertise: [] as string[],
-  // REMOVED — `languages`, `education`, `courts`, `linkedin`, `twitter`: keys
-  // that were written here and read nowhere. The OverviewTab cards that mapped
-  // them were deleted (see the header of LawyerProfileForms.tsx) and
-  // `lawyer_profiles` has no column for any of them
-  // (supabase/migrations/20260603_phase1_001_profiles.sql:92-115), so nothing
-  // could ever have filled them. The comment that used to sit on `languages`
-  // described the five-segment proficiency bar in the PRESENT TENSE — «renders
-  // … always true» — for a card that no longer existed.
-  // REMOVED — `website`: the one dead key that was still read, by the Globe
-  // contact chip below. There is no `website` column either and the load effect
-  // never assigned it, so its value was permanently "" and the chips'
-  // `.filter((c) => c.val)` dropped it on every render. Unreachable UI rather
-  // than an empty state, so the chip and the now-unused `Globe` icon import
-  // went with the key.
+  // REVIVED (item 128 · 130) — `education`, `courts`, `languages` were REMOVED
+  // above through 2026-09; the paragraph used to end here explaining that
+  // `lawyer_profiles` had no column for any of them. That is no longer true:
+  // supabase/migrations/20260907_phase7_profile_services_reviews.sql adds all
+  // three (plus `slug`, `headline_ar`), GET /api/v1/profile's `.select("*")`
+  // already returns them, and the «نبذة» tab below renders them again — this
+  // time from real columns, not the old literal five-segment proficiency bar.
+  slug: "",
+  headlineAr: "",
+  education: [] as EducationEntry[],
+  courts: [] as string[],
+  languages: [] as string[],
+  // `linkedin` / `twitter` / `website` stay removed — no column exists for
+  // any of the three (DECISION 1 in the same migration: «NO social_links,
+  // EVER»), so they are not part of this revival.
 };
 
 type VerificationStatus = "pending" | "verified" | "rejected" | "suspended";
@@ -147,6 +161,69 @@ const VERIFICATION_CFG: Record<VerificationStatus, { label: string; icon: typeof
 //            it exists so a demo build does not spin forever.
 type LoadState = "loading" | "failed" | "ready" | "no-server";
 
+// «إنجازات» is deliberately absent: no data source on this platform, same
+// reasoning as the removed «الأداء» tab (see the file header).
+const TABS: { id: "about" | "services" | "reviews"; label: string }[] = [
+  { id: "about", label: "نبذة" },
+  { id: "services", label: "الخدمات" },
+  { id: "reviews", label: "التقييمات" },
+];
+
+/**
+ * Defensive read of `lawyer_profiles.education` (jsonb array of
+ * {degree, institution, year} — educationIssue() in lawyerProfileFields.ts is
+ * the write-side check; this is the read side). A malformed or partial entry
+ * is dropped rather than rendered with a blank degree or institution.
+ */
+function sanitizeEducation(raw: unknown): EducationEntry[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((e): e is Record<string, unknown> => !!e && typeof e === "object")
+    .map((e) => ({
+      degree: typeof e.degree === "string" ? e.degree.trim() : "",
+      institution: typeof e.institution === "string" ? e.institution.trim() : "",
+      year: typeof e.year === "number" && Number.isInteger(e.year) ? e.year : null,
+    }))
+    .filter((e) => e.degree && e.institution);
+}
+
+/**
+ * Copy `text` to the clipboard, reporting whether it actually landed there.
+ *
+ * Duplicated from the identical two-tier helper in
+ * src/app/dashboard/lawyer/page.tsx (Clipboard API, falling back to a
+ * textarea + execCommand("copy") for the insecure-origin/denied-permission
+ * case — the office LAN reaches the dashboard over plain http) rather than
+ * imported: that copy is a private, unexported function in a sibling page
+ * module, not a shared utility.
+ */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Insecure origin, denied permission, or an unfocused document — fall through.
+  }
+  try {
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.top = "-1000px";
+    field.style.opacity = "0";
+    document.body.appendChild(field);
+    field.select();
+    field.setSelectionRange(0, text.length);
+    const copied = document.execCommand("copy");
+    document.body.removeChild(field);
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
 export default function LawyerProfilePage() {
   const { isDark } = useTheme();
   const user = useUser();
@@ -159,6 +236,26 @@ export default function LawyerProfilePage() {
   // effect below is safe — effects are client-only.
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState("");
+
+  const [activeTab, setActiveTab] = useState<"about" | "services" | "reviews">("about");
+
+  // ─── Services tab state (item 178) — honest states via listRead.ts, same
+  // contract every other list on this dashboard follows. Loaded lazily, on
+  // first visit to the tab, not on page mount: the identity/about data above
+  // is already part of GET /api/v1/profile, but a lawyer who never opens
+  // «الخدمات» should not pay for that request. ─────────────────────────────
+  const [servicesRead, setServicesRead] = useState<ListRead<LawyerService> | null>(null);
+  const [servicesLoading, setServicesLoading] = useState(false);
+  const [servicesRequested, setServicesRequested] = useState(false);
+  const [serviceModal, setServiceModal] = useState<
+    { mode: "create" } | { mode: "edit"; service: LawyerService } | null
+  >(null);
+  const [serviceBusyId, setServiceBusyId] = useState<string | null>(null);
+  const [serviceActionError, setServiceActionError] = useState<string | null>(null);
+
+  // ─── Share link (item 130) ────────────────────────────────────────────────
+  const [shareState, setShareState] = useState<"idle" | "copied" | "manual">("idle");
+  const [profileUrl, setProfileUrl] = useState("");
 
   type ProfileApiResponse = {
     profile: {
@@ -175,6 +272,12 @@ export default function LawyerProfilePage() {
       city?: string | null;
       verification_status?: VerificationStatus | null;
       marketplace_visible?: boolean | null;
+      // Phase 7 (item 128 · 130) — see the EMPTY_PROFILE comment above.
+      slug?: string | null;
+      headline_ar?: string | null;
+      education?: unknown;
+      courts?: string[] | null;
+      languages?: string[] | null;
     } | null;
     // Optional so an older deploy of the route (which did not send the key)
     // reads as `undefined` → `!== true` → "did not fail", the same conclusion
@@ -211,6 +314,12 @@ export default function LawyerProfilePage() {
         marketplaceVisible: r?.marketplace_visible === true,
         hasRoleProfile: r != null,
         roleProfileReadFailed: res.roleProfileReadFailed === true,
+        // Phase 7 fields — real columns, honest empties (see EMPTY_PROFILE).
+        slug: r?.slug?.trim() || "",
+        headlineAr: r?.headline_ar?.trim() || "",
+        education: sanitizeEducation(r?.education),
+        courts: (r?.courts ?? []).filter(isCourtCode),
+        languages: (r?.languages ?? []).filter(isLanguageCode),
       }));
       setLoadState("ready");
     } catch (err) {
@@ -222,6 +331,112 @@ export default function LawyerProfilePage() {
   }, [user.name]);
 
   useEffect(() => { load(); }, [load]);
+
+  // ─── Services tab (item 178) ────────────────────────────────────────────
+  const loadServices = useCallback(() => {
+    setServicesLoading(true);
+    getMyServices().then((res) => {
+      setServicesRead(res);
+      setServicesLoading(false);
+    });
+  }, []);
+
+  // Lazy: only fires the first time the lawyer opens the tab, not on mount.
+  useEffect(() => {
+    if (activeTab === "services" && !servicesRequested) {
+      setServicesRequested(true);
+      loadServices();
+    }
+  }, [activeTab, servicesRequested, loadServices]);
+
+  /** Merge a server-confirmed row (create or edit) into the held list. */
+  const handleServiceSaved = useCallback((service: LawyerService) => {
+    setServicesRead((prev) => {
+      if (!prev || !prev.ok) return prev;
+      const exists = prev.items.some((s) => s.id === service.id);
+      return {
+        ...prev,
+        items: exists
+          ? prev.items.map((s) => (s.id === service.id ? service : s))
+          : [...prev.items, service],
+        total: exists ? prev.total : (prev.total ?? prev.items.length) + 1,
+      };
+    });
+  }, []);
+
+  const handleToggleActive = useCallback(async (service: LawyerService) => {
+    setServiceBusyId(service.id);
+    setServiceActionError(null);
+    try {
+      const updated = await updateService(service.id, { active: !service.active });
+      handleServiceSaved(updated);
+    } catch (err) {
+      setServiceActionError(err instanceof Error && err.message ? err.message : "تعذّر تحديث حالة الخدمة.");
+    } finally {
+      setServiceBusyId(null);
+    }
+  }, [handleServiceSaved]);
+
+  const handleDeleteService = useCallback(async (service: LawyerService) => {
+    if (!window.confirm(`حذف خدمة «${service.titleAr}»؟`)) return;
+    setServiceBusyId(service.id);
+    setServiceActionError(null);
+    try {
+      await deleteService(service.id);
+      setServicesRead((prev) => {
+        if (!prev || !prev.ok) return prev;
+        return {
+          ...prev,
+          items: prev.items.filter((s) => s.id !== service.id),
+          total: prev.total === null ? null : Math.max(0, prev.total - 1),
+        };
+      });
+    } catch (err) {
+      setServiceActionError(err instanceof Error && err.message ? err.message : "تعذّر حذف الخدمة.");
+    } finally {
+      setServiceBusyId(null);
+    }
+  }, []);
+
+  // ─── Share link (item 130) ───────────────────────────────────────────────
+  //
+  // Same gating semantics as the dashboard home page's «مشاركة» button
+  // (src/app/dashboard/lawyer/page.tsx:348-355, `canShareProfile` /
+  // `shareDisabledReason`), reproduced rather than imported — that button's
+  // state lives in a page component with no exports. What differs here is
+  // the URL itself: that button still hands out `/lawyers/${userId}`
+  // unconditionally (see the comment above it — written before the slug
+  // column existed) and is now the one stale copy left in the app. This page
+  // has the lawyer's own `slug` in hand (GET /api/v1/profile → roleProfile,
+  // Phase 7) and prefers it, falling back to the id exactly the way
+  // /api/v1/lawyers/[id] resolves either.
+  const canShareProfile = Boolean(user.userId) && !BETA_MONOPOLY_MODE;
+  const shareDisabledReason = BETA_MONOPOLY_MODE
+    ? "صفحة الملف العام غير متاحة حالياً — دليل المحامين غير مفتوح للنشر بعد"
+    : "سجّل الدخول بحسابك المهني لمشاركة رابط ملفك العام";
+
+  const handleShareProfile = useCallback(async () => {
+    const uid = user.userId;
+    if (!canShareProfile || !uid) return;
+    const path = profileData.slug || uid;
+    const url = `${window.location.origin}/lawyers/${encodeURIComponent(path)}`;
+    setProfileUrl(url);
+    setShareState((await copyToClipboard(url)) ? "copied" : "manual");
+  }, [canShareProfile, user.userId, profileData.slug]);
+
+  useEffect(() => {
+    if (shareState !== "copied") return;
+    const timer = window.setTimeout(() => setShareState("idle"), 2500);
+    return () => window.clearTimeout(timer);
+  }, [shareState]);
+
+  // ─── Print / PDF (item 131) ──────────────────────────────────────────────
+  // No custom PDF generation — the browser's own print dialog offers "Save
+  // as PDF" on every platform this app ships to. What makes the output only
+  // the profile (not the tab chrome, not whichever tab happens to be open)
+  // is CSS: see the print:hidden / print:block wrappers in the JSX below,
+  // layered on top of the global @media print rules in globals.css.
+  const handlePrintProfile = useCallback(() => { window.print(); }, []);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -279,8 +494,42 @@ export default function LawyerProfilePage() {
     { icon: Envelope, val: profileData.email },
   ].filter((c) => c.val);
 
+  // `languages` defaults to `{"ar"}` for EVERY row at the database level
+  // (migration default, not a lawyer's choice) — rendering «اللغات: العربية»
+  // off that bare default would look like a claim the lawyer made about
+  // himself when he may never have touched the field. The card is shown only
+  // when the array holds something beyond that default, same treatment as
+  // courts/education, which have no non-empty default to worry about.
+  const languagesToShow =
+    profileData.languages.length === 1 && profileData.languages[0] === "ar"
+      ? []
+      : profileData.languages;
+
+  const sectionLabelCls = `text-[11px] font-bold uppercase tracking-wide mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`;
+  const chipCls = `px-2.5 py-1 rounded-lg text-[11px] font-semibold ${isDark ? "bg-[#0B3D2E]/30 text-emerald-400" : "bg-[#0B3D2E]/8 text-[#0B3D2E]"}`;
+
+  const servicesView = listViewState(servicesLoading, servicesRead);
+  const serviceItems = itemsOf(servicesRead);
+
   return (
-    <div className="max-w-5xl mx-auto space-y-5" dir="rtl">
+    <div className="nz-profile-print max-w-5xl mx-auto space-y-5" dir="rtl">
+      {/* globals.css's @media print rules only neutralize backgrounds/colors
+          on elements matching bg-zinc-900/bg-white/card-surface class
+          patterns — this page's dark-mode text utilities (text-white,
+          text-zinc-100/200/300, used throughout the isDark branches below)
+          match none of those, so a dark-theme lawyer clicking «طباعة / حفظ
+          PDF» (handlePrintProfile, above) would get near-invisible light
+          text on white paper. Scope a blanket override to this page, same
+          approach as the public profile's `.nz-lawyer-print` (see
+          src/app/lawyers/[slug]/page.tsx). */}
+      <style>{`
+        @media print {
+          .nz-profile-print, .nz-profile-print * {
+            color: #000 !important;
+            background: transparent !important;
+          }
+        }
+      `}</style>
 
       {/* Header hero card */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
@@ -318,14 +567,34 @@ export default function LawyerProfilePage() {
                 )}
               </div>
             </div>
-            {/* Action buttons */}
-            <div className="flex flex-wrap items-center gap-2 pb-1 sm:ms-auto">
+            {/* Action buttons — print:hidden as a group: none of the three
+                belong in the printed output itself (globals.css already
+                hides <button>, but «تعديل» is a Next <Link> → <a>, which that
+                rule does not reach, so the whole row is scoped explicitly). */}
+            <div className="flex flex-wrap items-center gap-2 pb-1 sm:ms-auto print:hidden">
+              <span className="inline-flex" title={canShareProfile ? "انسخ رابط ملفك العام وشاركه مع موكليك" : shareDisabledReason}>
+                <button
+                  type="button"
+                  onClick={handleShareProfile}
+                  disabled={!canShareProfile}
+                  aria-label={canShareProfile ? "مشاركة ملفي المهني" : shareDisabledReason}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold border transition-all ${
+                    !canShareProfile
+                      ? `opacity-50 cursor-not-allowed ${isDark ? "border-white/[0.08] text-zinc-500" : "border-slate-200 text-slate-400"}`
+                      : shareState === "copied"
+                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-600"
+                        : isDark ? "border-white/[0.08] text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}>
+                  <ShareNetwork size={13} weight="duotone" />
+                  {shareState === "copied" ? "تم نسخ الرابط ✓" : "مشاركة"}
+                </button>
+              </span>
               <button
-                disabled
-                title="تصدير PDF — قريباً"
-                aria-label="تصدير PDF — قريباً"
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold border transition-all opacity-50 cursor-not-allowed ${isDark ? "border-white/[0.08] text-zinc-500" : "border-slate-200 text-slate-400"}`}>
-                <FilePdf size={13} /> تصدير PDF
+                type="button"
+                onClick={handlePrintProfile}
+                title="طباعة الملف أو حفظه كملف PDF من نافذة الطباعة"
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold border transition-all ${isDark ? "border-white/[0.08] text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                <Printer size={13} /> طباعة / حفظ PDF
               </button>
               <Link href="/dashboard/lawyer/profile/edit"
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
@@ -333,6 +602,20 @@ export default function LawyerProfilePage() {
               </Link>
             </div>
           </div>
+
+          {/* Manual copy fallback — neither the Clipboard API nor
+              execCommand worked, so the link is put on screen in a
+              selectable field. No tick: nothing has been copied yet. */}
+          {shareState === "manual" && (
+            <div className={`rounded-xl border p-3 mb-4 print:hidden ${isDark ? "border-white/[0.08] bg-white/[0.02]" : "border-slate-200 bg-slate-50/60"}`}>
+              <p className={`text-[11px] font-bold mb-1.5 ${isDark ? "text-zinc-300" : "text-slate-600"}`}>تعذّر النسخ تلقائياً — انسخ الرابط يدوياً</p>
+              <input
+                type="text" dir="ltr" readOnly value={profileUrl}
+                onFocus={(e) => e.currentTarget.select()}
+                className={`w-full rounded-lg border px-3 py-1.5 text-[11px] font-mono ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200" : "border-slate-200 bg-white text-slate-700"}`}
+              />
+            </div>
+          )}
 
           {/*
             Status row — replaces the old hero stats row of four literals.
@@ -501,11 +784,209 @@ export default function LawyerProfilePage() {
       </motion.div>
 
       {/*
-        Single view. The «الأداء» tab is gone (see the file header) and the
-        achievements / reviews tabs were already withheld, so a tab bar with one
-        remaining button would only read as broken chrome.
+        Three tabs now that each has a real data source (see the file header
+        for what «الأداء» was and why it stayed gone). «إنجازات» is still
+        absent, deliberately — no achievements table exists either.
+        print:hidden — the tab bar itself never prints.
       */}
-      <OverviewTab isDark={isDark} profile={profileData} cardClass={card} />
+      <div className={`${card} p-1.5 flex gap-1 print:hidden`}>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setActiveTab(t.id)}
+            className={`flex-1 rounded-xl px-3 py-2 text-[12px] font-bold transition-colors ${
+              activeTab === t.id
+                ? "bg-[#0B3D2E] text-[#C8A762]"
+                : isDark ? "text-zinc-400 hover:bg-white/5" : "text-slate-500 hover:bg-slate-50"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/*
+        «نبذة» — always mounted (its data is already part of profileData; no
+        separate fetch) and toggled with hidden/print:block rather than
+        conditionally rendered, so «طباعة / حفظ PDF» prints the profile card
+        itself regardless of which tab happens to be open on screen — the
+        task this button describes, not "whatever the lawyer was looking at".
+      */}
+      <div className={`space-y-4 ${activeTab === "about" ? "" : "hidden print:block"}`}>
+        <OverviewTab isDark={isDark} profile={profileData} cardClass={card} />
+        {(profileData.headlineAr || profileData.education.length > 0 || profileData.courts.length > 0 || languagesToShow.length > 0) && (
+          <div className={`${card} p-5 space-y-4`}>
+            {profileData.headlineAr && (
+              <p className={`text-[13px] font-semibold leading-relaxed ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                {profileData.headlineAr}
+              </p>
+            )}
+            {profileData.education.length > 0 && (
+              <div>
+                <p className={sectionLabelCls}>
+                  <GraduationCap size={12} weight="bold" className="inline -mt-0.5 me-1" /> المؤهلات
+                </p>
+                <ul className="space-y-1">
+                  {profileData.education.map((e, i) => (
+                    <li key={i} className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
+                      {e.degree} — {e.institution}{e.year ? ` (${toArabicDigits(e.year)})` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {profileData.courts.length > 0 && (
+              <div>
+                <p className={sectionLabelCls}>
+                  <Bank size={12} weight="bold" className="inline -mt-0.5 me-1" /> المحاكم
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {profileData.courts.map((c) => (
+                    <span key={c} className={chipCls}>{COURT_AR[c] ?? c}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {languagesToShow.length > 0 && (
+              <div>
+                <p className={sectionLabelCls}>
+                  <Translate size={12} weight="bold" className="inline -mt-0.5 me-1" /> اللغات
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {languagesToShow.map((l) => (
+                    <span key={l} className={chipCls}>{LANGUAGE_AR[l] ?? l}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* «الخدمات» (item 178) — never printed: a service list is not the
+          profile card, and it is mounted only while the lawyer is on this
+          tab (its own fetch, see loadServices above), so print:hidden here
+          is a formality for the moment it happens to be on screen. */}
+      {activeTab === "services" && (
+        <div className="print:hidden space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>الخدمات</h2>
+            <button
+              type="button"
+              onClick={() => setServiceModal({ mode: "create" })}
+              className="flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-3 py-2 text-[12px] font-bold text-[#C8A762] hover:bg-[#0a3328] transition-colors"
+            >
+              <Plus size={13} weight="bold" /> إضافة خدمة
+            </button>
+          </div>
+
+          {serviceActionError && (
+            <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-[12px] font-semibold text-red-500">
+              <Warning size={14} weight="fill" className="mt-0.5 flex-shrink-0" />
+              <span>{serviceActionError}</span>
+            </div>
+          )}
+
+          {servicesView === "loading" && (
+            <div className={`${card} p-10 text-center`}>
+              <SpinnerGap size={22} className="animate-spin mx-auto text-zinc-400" />
+              <p className={`mt-3 text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل خدماتك…</p>
+            </div>
+          )}
+
+          {servicesView === "unreadable" && (
+            <div className={`${card} p-6 text-center`}>
+              <p className={`text-[13px] font-bold mb-1 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>تعذّرت القراءة</p>
+              <p className={`text-[12px] mb-4 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>لم نتمكن من تحميل قائمة خدماتك. لم نعرض بيانات بديلة.</p>
+              <button
+                type="button" onClick={loadServices}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-4 py-2 text-[12px] font-bold text-[#C8A762] hover:bg-[#0a3328]"
+              >
+                <ArrowClockwise size={13} weight="bold" /> إعادة المحاولة
+              </button>
+            </div>
+          )}
+
+          {servicesView === "empty" && (
+            <div className={`${card} p-10 text-center`}>
+              <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>لا خدمات بعد</p>
+              <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>أضف خدماتك المسعّرة ليتمكن الموكلون من طلبها من ملفك.</p>
+            </div>
+          )}
+
+          {servicesView === "ready" && (
+            <div className="space-y-3">
+              {serviceItems.map((s) => (
+                <div key={s.id} className={`${card} p-4`}>
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{s.titleAr}</span>
+                        {!s.active && (
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isDark ? "bg-zinc-800 text-zinc-500" : "bg-slate-100 text-slate-400"}`}>غير مُفعَّلة</span>
+                        )}
+                      </div>
+                      <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                        {SERVICE_CATEGORY_AR[s.category]} · {servicePriceLabelAr(s.pricingKind, s.priceSar, toArabicDigits)}
+                        {s.durationLabel ? ` · ${s.durationLabel}` : ""}
+                      </p>
+                      {s.descriptionAr && (
+                        <p className={`text-[12px] mt-2 leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{s.descriptionAr}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        type="button" onClick={() => handleToggleActive(s)} disabled={serviceBusyId === s.id}
+                        title={s.active ? "إخفاء الخدمة" : "تفعيل الخدمة"}
+                        className={`p-1.5 rounded-lg disabled:opacity-40 ${isDark ? "text-zinc-400 hover:bg-white/5" : "text-slate-500 hover:bg-slate-50"}`}
+                      >
+                        {serviceBusyId === s.id
+                          ? <CircleNotch size={15} className="animate-spin" />
+                          : s.active ? <ToggleRight size={17} weight="fill" className="text-emerald-500" /> : <ToggleLeft size={17} />}
+                      </button>
+                      <button
+                        type="button" onClick={() => setServiceModal({ mode: "edit", service: s })}
+                        title="تعديل"
+                        className={`p-1.5 rounded-lg ${isDark ? "text-zinc-400 hover:bg-white/5" : "text-slate-500 hover:bg-slate-50"}`}
+                      >
+                        <PencilSimple size={15} />
+                      </button>
+                      <button
+                        type="button" onClick={() => handleDeleteService(s)} disabled={serviceBusyId === s.id}
+                        title="حذف"
+                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10 disabled:opacity-40"
+                      >
+                        <TrashSimple size={15} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* «التقييمات» (item 192) — self-contained, fetches its own data;
+          mounted only while this tab is open, so print:hidden here is the
+          same formality as on the services tab above. */}
+      {activeTab === "reviews" && (
+        <div className="print:hidden">
+          <ReviewsPanel isDark={isDark} />
+        </div>
+      )}
+
+      <AnimatePresence>
+        {serviceModal && (
+          <ServiceFormModal
+            isDark={isDark}
+            initial={serviceModal.mode === "edit" ? serviceModal.service : undefined}
+            onClose={() => setServiceModal(null)}
+            onSaved={handleServiceSaved}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

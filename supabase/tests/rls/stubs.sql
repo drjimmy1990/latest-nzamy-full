@@ -175,6 +175,108 @@ create policy "hearings readable by owner or firm" on public.hearings for select
 create policy "hearings insertable by owner" on public.hearings for insert
   with check (owner_user_id = auth.uid());
 
+-- 20260603_phase1_001 + 20260705 (minimal shape; live policies)
+create table public.lawyer_profiles (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  license_number text,
+  specialties text[] not null default '{}',
+  years_experience int not null default 0,
+  bio_ar text not null default '',
+  hourly_rate numeric(12,2),
+  marketplace_visible boolean not null default false,
+  verification_status text not null default 'pending'
+    check (verification_status in ('pending','verified','rejected','suspended')),
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.lawyer_profiles enable row level security;
+create policy "lawyers read own profile" on public.lawyer_profiles for select using (user_id = auth.uid());
+create policy "public read verified lawyers" on public.lawyer_profiles for select
+  using (verification_status = 'verified' and marketplace_visible = true);
+create policy "lawyers update own profile" on public.lawyer_profiles for update
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- 20260603_phase1_005 (live shape + live policies; Phase 7 replaces the insert policy)
+create table public.reviews (
+  id uuid primary key default gen_random_uuid(),
+  reviewer_id uuid not null references public.profiles(id) on delete cascade,
+  reviewee_id uuid not null references public.profiles(id) on delete cascade,
+  request_id text references public.service_requests(id) on delete set null,
+  rating int not null check (rating >= 1 and rating <= 5),
+  title text not null default '',
+  body text not null default '',
+  is_anonymous boolean not null default false,
+  status text not null default 'active' check (status in ('pending','active','moderated','deleted')),
+  response text,
+  response_at timestamptz,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.reviews enable row level security;
+create policy "anyone reads active reviews" on public.reviews for select using (status = 'active');
+create policy "reviewers create reviews" on public.reviews for insert with check (reviewer_id = auth.uid());
+create policy "reviewers update own reviews" on public.reviews for update
+  using (reviewer_id = auth.uid()) with check (reviewer_id = auth.uid());
+create policy "reviewees respond to reviews" on public.reviews for update
+  using (reviewee_id = auth.uid()) with check (reviewee_id = auth.uid());
+
+-- 20260626 legal library (minimal) — Phase 6 adds is_pinned
+create schema if not exists library;
+create table library.smart_folders (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- 20260603_phase1_004 research (live shape + live owner policies)
+create table public.research_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  title text not null default '',
+  status text not null default 'active',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.research_sessions enable row level security;
+create policy "users read their own research sessions" on public.research_sessions for select using (user_id = auth.uid());
+create policy "users create their own research sessions" on public.research_sessions for insert with check (user_id = auth.uid());
+create table public.research_items (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.research_sessions(id) on delete cascade,
+  content text not null,
+  source text not null default '',
+  item_type text not null default 'fact'
+    check (item_type in ('fact', 'source', 'note', 'highlight', 'bookmark', 'ai_output')),
+  position int not null default 0,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+alter table public.research_items enable row level security;
+create policy "users manage items of their own sessions" on public.research_items for all
+  using (exists (select 1 from public.research_sessions s where s.id = session_id and s.user_id = auth.uid()))
+  with check (exists (select 1 from public.research_sessions s where s.id = session_id and s.user_id = auth.uid()));
+
+-- 20260518 attachments (live shape + live select/insert policies)
+create table public.attachments (
+  id bigserial primary key,
+  request_id text not null references public.service_requests(id) on delete cascade,
+  owner_user_id uuid references auth.users(id) on delete cascade,
+  file_name text not null,
+  storage_path text not null,
+  mime_type text,
+  size_bytes bigint,
+  created_at timestamptz not null default now()
+);
+alter table public.attachments enable row level security;
+create policy "participants read attachments" on public.attachments for select
+  using (exists (select 1 from public.service_requests sr where sr.id = attachments.request_id and (sr.requester_user_id = auth.uid() or sr.assigned_to = auth.uid())));
+create policy "participants insert attachments" on public.attachments for insert
+  with check (exists (select 1 from public.service_requests sr where sr.id = attachments.request_id and sr.requester_user_id = auth.uid()));
+
 -- A non-superuser role: RLS does NOT apply to superusers, so every test
 -- below would silently pass as postgres.
 create role app_user login;

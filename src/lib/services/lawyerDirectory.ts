@@ -67,6 +67,8 @@ export interface DirectoryLawyerProfileRow {
    * belong on a directory card.
    */
   license_number?: string | null;
+  /** Phase 7 (item 130) — the lawyer's chosen public link segment, e.g. `/lawyers/ahmad-alghamdi`. */
+  slug?: string | null;
 }
 
 export interface DirectoryLawyerRow {
@@ -87,6 +89,21 @@ export interface DirectoryLawyerRow {
     | DirectoryLawyerProfileRow
     | DirectoryLawyerProfileRow[]
     | null;
+  /** Phase 7 (item 130) — mirrors `lawyer_profiles.slug`, promoted to the top level by the route. */
+  slug?: string | null;
+  /**
+   * Phase 7 (item 192) — attached by the route from a SEPARATE query on the
+   * `lawyer_review_stats` view (no PostgREST-embeddable FK from `profiles`),
+   * never part of the `lawyer_profiles!inner(...)` projection above. `null`
+   * means either "no active reviews yet" or "the stats query failed" — the
+   * route does not tell the two apart per row, the same honest-absence rule
+   * `listRead.ts` states for lists.
+   */
+  reviewStats?: {
+    reviewCount: number;
+    avgRating: number | null;
+    lastReviewAt: string | null;
+  } | null;
 }
 
 // ─── The view model ───────────────────────────────────────────────────────────

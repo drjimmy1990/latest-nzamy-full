@@ -8,9 +8,10 @@ import {
   Clock, CheckCircle, XCircle, HourglassSimple,
   ArrowClockwise, ArrowLeft, Plus, MagnifyingGlass, Storefront,
   Users, CalendarCheck, X, Copy, Check, DownloadSimple,
-  NotePencil, Scales, Lightbulb, Warning, Info, ArrowSquareOut,
+  NotePencil, Scales, Lightbulb, Warning, Info, ArrowSquareOut, Star,
 } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
+import { useTheme } from "@/components/ThemeProvider";
 import {
   listClientWorkflowRequestsPage,
   updateWorkflowRequestById,
@@ -24,6 +25,13 @@ import {
   itemsOf,
   type ListRead,
 } from "@/lib/services/listRead";
+// Item 192 (U4): a completed request can be reviewed once. `getReviewableRequests`
+// is the single source of truth for "still eligible" — the modal below shows
+// ReviewForm ONLY for a request that comes back in this list, never merely
+// because its status reads "completed" (a request can be completed AND already
+// reviewed).
+import { getReviewableRequests, type ReviewableRequest } from "@/lib/services/reviewsService";
+import ReviewForm from "@/components/reviews/ReviewForm";
 // The short, readable order reference. A client quotes their order number over
 // WhatsApp or on the phone; a 36-character UUID is not quotable, so this screen
 // used to hand them something they could not read back. See
@@ -262,9 +270,14 @@ interface RequestDetailModalProps {
   req: WorkflowRequest | null;
   onClose: () => void;
   onCancel: (id: string) => void;
+  /** This request's row from getReviewableRequests(), or null when it is not
+   * (or is no longer) reviewable — never derived from `req.status` alone. */
+  reviewableEntry: ReviewableRequest | null;
+  onReviewed: (requestId: string) => void;
+  isDark: boolean;
 }
 
-function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps) {
+function RequestDetailModal({ req, onClose, onCancel, reviewableEntry, onReviewed, isDark }: RequestDetailModalProps) {
   const [copied, setCopied] = useState(false);
   const [copiedRef, setCopiedRef] = useState(false);
 
@@ -537,6 +550,23 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
             </div>
             )}
 
+            {/* A review — mounted ONLY when this request is still eligible per
+                getReviewableRequests(). `req.status === "completed"` alone is
+                not enough: a completed request already reviewed is not in
+                that list, and this section then renders nothing, matching
+                item 192's "once" rule from the screen side (the DB unique
+                index and RLS are the actual backstop). */}
+            {req.status === "completed" && reviewableEntry && (
+              <div className="mb-6">
+                <ReviewForm
+                  requestId={reviewableEntry.requestId}
+                  lawyerName={reviewableEntry.lawyerName}
+                  isDark={isDark}
+                  onSubmitted={() => onReviewed(req.id)}
+                />
+              </div>
+            )}
+
             {/* Bottom Actions */}
             <div className="flex items-center gap-3 pt-6 mt-6 border-t border-gray-100 dark:border-white/5">
               {(req.status === "pending_assignment" || req.status === "pending_payment" || req.status === "draft") && (
@@ -587,6 +617,7 @@ function RequestDetailModal({ req, onClose, onCancel }: RequestDetailModalProps)
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function MyRequestsPage() {
   const user = useUser();
+  const { isDark } = useTheme();
   /**
    * The read, in the one shape the whole platform now uses for a list —
    * `ListRead` + `listViewState()` (src/lib/services/listRead.ts).
@@ -614,6 +645,20 @@ export default function MyRequestsPage() {
   const [truncatedAt, setTruncatedAt] = useState<number | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  // Item 192 (U4). Read independently of the main list — a completed request
+  // stays in `requests` forever, but it drops out of THIS list the moment it
+  // is reviewed, which is the signal the modal and the «قيّم محاميك» strip
+  // both key off. A failed read here leaves the previous list standing rather
+  // than wiping a real "you have N to review" strip to nothing, so this is
+  // deliberately NOT run through listRead's unreadable/empty split — there is
+  // no dedicated banner for it, and the one honest thing to do on failure is
+  // change nothing on screen.
+  const [reviewable, setReviewable] = useState<ReviewableRequest[]>([]);
+  const loadReviewable = useCallback(async () => {
+    const read = await getReviewableRequests();
+    if (read.ok) setReviewable(read.items);
+  }, []);
 
   /**
    * Only the NEWEST load may write.
@@ -688,10 +733,21 @@ export default function MyRequestsPage() {
     // through the async boundary.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
-    const onUpdated = () => { void load(); };
+    void loadReviewable();
+    const onUpdated = () => { void load(); void loadReviewable(); };
     window.addEventListener("nzamy-workflow-updated", onUpdated);
     return () => window.removeEventListener("nzamy-workflow-updated", onUpdated);
-  }, [load, user.loading]);
+  }, [load, loadReviewable, user.loading]);
+
+  /**
+   * ReviewForm just saved — drop the request out of the eligible list right
+   * away rather than waiting on a refetch, so the modal's review section and
+   * the «قيّم محاميك» strip both stop offering a second review on this
+   * request the instant the first one lands.
+   */
+  const handleReviewed = useCallback((requestId: string) => {
+    setReviewable((prev) => prev.filter((r) => r.requestId !== requestId));
+  }, []);
 
   const view = listViewState(loading, read);
   // itemsOf() is [] on every branch but 'ready', which is exactly what the
@@ -790,6 +846,41 @@ export default function MyRequestsPage() {
           </motion.button>
         </Link>
       </div>
+
+      {/* «قيّم محاميك» — completed requests still eligible per
+          getReviewableRequests(). Clicking one opens the SAME detail modal
+          the list already has, which renders ReviewForm for it — no separate
+          review UI to keep in sync with the modal's own eligibility check. */}
+      {reviewable.length > 0 && (
+        <div className={`mb-5 rounded-2xl border p-4 ${isDark ? "border-amber-700/25 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+          <div className="flex items-center gap-2 mb-2.5">
+            <Star size={16} weight="fill" className="text-amber-500" />
+            <span className={`text-[12.5px] font-black ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+              قيّم محاميك — لديك {reviewable.length.toLocaleString("ar-SA")} {reviewable.length === 1 ? "طلب مكتمل" : "طلبات مكتملة"} بانتظار تقييمك
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {reviewable.map((r) => {
+              const match = requests.find((req) => req.id === r.requestId) ?? null;
+              return (
+                <button
+                  key={r.requestId}
+                  type="button"
+                  disabled={!match}
+                  onClick={() => match && setSelectedRequest(match)}
+                  className={`text-[11px] font-bold px-3 py-1.5 rounded-xl border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isDark
+                      ? "border-amber-700/30 bg-amber-900/10 text-amber-200 hover:bg-amber-900/20"
+                      : "border-amber-200 bg-white text-amber-800 hover:bg-amber-100"
+                  }`}
+                >
+                  {r.titleAr || "طلب"} — {r.lawyerName}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative mb-4">
@@ -940,6 +1031,9 @@ export default function MyRequestsPage() {
         req={selectedRequest}
         onClose={() => setSelectedRequest(null)}
         onCancel={handleCancel}
+        reviewableEntry={selectedRequest ? reviewable.find((r) => r.requestId === selectedRequest.id) ?? null : null}
+        onReviewed={handleReviewed}
+        isDark={isDark}
       />
     </div>
   );
