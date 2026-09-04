@@ -27,7 +27,7 @@ import AddHearingModal from "../../_components/AddHearingModal";
 import AddCaseStageModal from "../../_components/AddCaseStageModal";
 import AddDeadlineModal from "../../_components/AddDeadlineModal";
 import RecordStageOutcomeModal from "../../_components/RecordStageOutcomeModal";
-import DeadlineCard from "../../_components/DeadlineCard";
+import DeadlineCard, { daysLeftChip } from "../../_components/DeadlineCard";
 import dynamic from "next/dynamic";
 import {
   itemsOf,
@@ -56,6 +56,7 @@ import {
   type LawyerSubtask,
   type LawyerTaskStatus,
 } from "@/lib/services/lawyerTasksService";
+import { urgentCaseTasks, nextOpenDeadline } from "@/lib/services/caseOverviewCockpit";
 
 /**
  * Arabic counted-noun tables for this page's two tab counters.
@@ -379,10 +380,6 @@ export default function CaseDetailPage() {
   const [activeTab, setActiveTab] = useState(
     TABS.some(t => t.id === requestedTab) ? (requestedTab as string) : "overview",
   );
-  // `noteInput` survives; `noteSaving`/`noteSaved` do not. See the comment on
-  // the notes composer below for why the save button is disabled rather than
-  // wired.
-  const [noteInput, setNoteInput] = useState("");
   const [graphFullscreen, setGraphFullscreen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -708,6 +705,27 @@ export default function CaseDetailPage() {
 
   const visibleTasks = taskFilter === "all" ? tasks : tasks.filter(t => t.status === taskFilter);
 
+  // ── Overview cockpit: مهام عاجلة ──
+  // Not-done tasks due within 7 days or already overdue, soonest/most-overdue
+  // first — same `tasks` read the Tasks tab renders, so this list and that
+  // tab can never disagree about which tasks exist. Gated on `tasksKnown` for
+  // the same reason the stat tiles above are: an unreadable read must never
+  // present as "no urgent tasks".
+  const urgentTasks = useMemo(
+    () => (tasksKnown ? urgentCaseTasks(tasks, todayIso()) : []),
+    [tasks, tasksKnown],
+  );
+
+  // ── Overview cockpit: المهلة القادمة ──
+  // The soonest still-open deadline, from the same `caseDeadlines` read the
+  // المهل tab renders. The header card above already shows «الجلسة القادمة»
+  // on every tab (including this one) — this fills the other half, which
+  // nothing on the page surfaced before.
+  const nextDeadline = useMemo(
+    () => (deadlinesKnown ? nextOpenDeadline(caseDeadlines, todayIso()) : null),
+    [caseDeadlines, deadlinesKnown],
+  );
+
   const addCaseTask = async () => {
     const title = newTaskTitle.trim();
     if (!title || addingTask) return;
@@ -761,29 +779,29 @@ export default function CaseDetailPage() {
     }
   };
 
-  // ── Notes save: REMOVED, not re-implemented. ──
+  // ── Notes composer: REMOVED, not re-implemented, and not merely disabled. ──
   //
-  // `saveNote` stood here. Its own comment said «do NOT pretend it saved» and
-  // then the body did exactly that: a 600 ms setTimeout behind a spinner,
-  // followed by `setNoteInput("")`. Nothing was ever sent anywhere.
+  // `saveNote` and the textarea it sat under both stood here. The disabled
+  // «حفظ الملاحظة · قريباً» button and its amber caption were honest about
+  // the button; the still-live, still-editable textarea beside it was not —
+  // an empty composer waiting for text is the one shape every interface on
+  // earth uses to mean "type here, this will be kept", regardless of what a
+  // 10px pill beside it says. There is nowhere for that text to go, so the
+  // composer itself had to go, not just the button.
   //
-  // The cleared textarea was the damaging half. The «قريباً» pill and the
-  // amber line were honest, but an emptied composer is the one gesture every
-  // interface on earth uses to mean "your text is committed now" — so the
-  // lawyer's note was destroyed by the control they pressed to keep it, and
-  // the marker saying otherwise was two lines away in 10px text.
-  //
-  // It is NOT wired, and the blocker is the route, not effort: the POST in
-  // src/app/api/v1/service-requests/[id]/events/route.ts reads `body.event`
-  // and `body.actor_name`, and its `recordEvent({...})` call passes only
-  // { supabase, requestId, event, actorUserId, actorName }. The string
-  // "metadata" does not occur in that file, so the note text has nowhere to
-  // go. The read side is already waiting for it: `notes` above maps
-  // `metadata.text`. One forwarded field on that route makes this real, and
-  // that route is not this file's to change.
-  //
-  // Until then the button is disabled — the same shape as «إضافة جلسة · قريباً»
-  // on this page — and the composer keeps whatever was typed in it.
+  // Checked before removing (per the owner's item): no `case_notes` /
+  // `lawyer_case_notes` table exists, no /api/v1/cases/[id]/notes (or
+  // equivalent) route exists, and the Phase 1 case-tables migration
+  // (20260903_phase1_case_tables.sql) adds none. The one candidate write path
+  // is the POST in src/app/api/v1/service-requests/[id]/events/route.ts, and
+  // it cannot carry a note today at two levels, not one: the route forwards
+  // only `{ event, actorName }` into `recordEvent`, AND `recordEvent`'s own
+  // header (src/lib/events.ts) states `request_events` has NO `metadata`
+  // column at all — forwarding the field would still have nowhere to land
+  // without a migration. Real note-taking needs a table and a route; neither
+  // is this file's to add. The read side stays: `notes` above still maps
+  // `metadata.text` off any event that does carry it, so a note recorded any
+  // other way (support tooling, a future write path) keeps showing up here.
 
   // ── Document upload: wire to documentService.uploadDocumentFile ──
   const handleUpload = async (file: File) => {
@@ -1120,34 +1138,128 @@ export default function CaseDetailPage() {
                   </p>
                 )}
               </div>
-              {/* Timeline */}
-              <div className={`${card} p-5`}>
-                <h2 className={`text-sm font-bold mb-3 flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-                  <ChartLine size={14} className="text-royal" />المخطط الزمني
-                </h2>
-                {timeline.length === 0 ? (
-                  <div className="text-center py-8">
-                    <ChartLine size={24} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
-                    <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد أحداث مسجّلة بعد</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {timeline.map((ev, i) => {
-                      const Icon = ev.icon;
-                      return (
-                        <div key={i} className="flex items-start gap-3">
-                          <div className={`w-7 h-7 rounded-xl flex-shrink-0 flex items-center justify-center ${isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
-                            <Icon size={13} weight="duotone" className={ev.color} />
+              {/* Right rail — the cockpit itself: what needs attention first
+                  (مهام عاجلة, المهلة القادمة — both from reads the page
+                  already makes for the Tasks/المهل tabs), then the existing
+                  history (المخطط الزمني), then a peek at آخر الملاحظات. The
+                  header card above already shows «الجلسة القادمة» on every
+                  tab including this one, so hearings are not repeated here. */}
+              <div className="space-y-4">
+                {/* مهام عاجلة — not-done tasks due within 7 days or overdue */}
+                <div className={`${card} p-5`}>
+                  <h2 className={`text-sm font-bold mb-3 flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                    <Warning size={14} className="text-amber-500" />مهام عاجلة
+                  </h2>
+                  {!tasksKnown ? (
+                    <p className={`text-[11px] text-center py-4 ${tasksView === "loading" ? (isDark ? "text-zinc-600" : "text-slate-400") : "font-semibold text-amber-500"}`}>
+                      {tasksView === "loading" ? "جارٍ التحقق من المهام…" : "تعذّرت قراءة المهام — قائمة العاجلة غير معروفة."}
+                    </p>
+                  ) : urgentTasks.length === 0 ? (
+                    <p className={`text-[11px] text-center py-4 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                      لا مهام مستحقة خلال الأيام السبعة القادمة
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {urgentTasks.map((t) => {
+                        const chip = daysLeftChip(t.daysLeft, isDark);
+                        return (
+                          <button key={t.id} onClick={() => setActiveTab("tasks")} title="فتح في تبويب المهام"
+                            className={`w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-start transition-colors ${isDark ? "hover:bg-white/[0.05]" : "hover:bg-slate-50"}`}>
+                            <span className={`min-w-0 flex-1 truncate text-[12px] font-medium ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{t.title}</span>
+                            {chip && (
+                              <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${chip.cls}`}>{chip.label}</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* المهلة القادمة — soonest still-open deadline */}
+                <div className={`${card} p-5`}>
+                  <h2 className={`text-sm font-bold mb-3 flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                    <Timer size={14} className="text-royal" />المهلة القادمة
+                  </h2>
+                  {!deadlinesKnown ? (
+                    <p className={`text-[11px] text-center py-2 ${deadlinesView === "loading" ? (isDark ? "text-zinc-600" : "text-slate-400") : "font-semibold text-amber-500"}`}>
+                      {deadlinesView === "loading" ? "جارٍ التحقق من المهل…" : "تعذّرت قراءة المهل — الموعد القادم غير معروف."}
+                    </p>
+                  ) : nextDeadline === null ? (
+                    <p className={`text-[11px] text-center py-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا مهل قادمة مسجّلة</p>
+                  ) : (
+                    <button onClick={() => setActiveTab("deadlines")} title="فتح في تبويب المهل"
+                      className="w-full flex items-center justify-between gap-2 text-start">
+                      <span className={`min-w-0 flex-1 truncate text-[13px] font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{nextDeadline.title}</span>
+                      {(() => {
+                        const chip = daysLeftChip(nextDeadline.daysLeft, isDark);
+                        return chip ? (
+                          <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${chip.cls}`}>{chip.label}</span>
+                        ) : null;
+                      })()}
+                    </button>
+                  )}
+                </div>
+
+                {/* Timeline */}
+                <div className={`${card} p-5`}>
+                  <h2 className={`text-sm font-bold mb-3 flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                    <ChartLine size={14} className="text-royal" />المخطط الزمني
+                  </h2>
+                  {timeline.length === 0 ? (
+                    <div className="text-center py-8">
+                      <ChartLine size={24} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                      <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد أحداث مسجّلة بعد</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {timeline.map((ev, i) => {
+                        const Icon = ev.icon;
+                        return (
+                          <div key={i} className="flex items-start gap-3">
+                            <div className={`w-7 h-7 rounded-xl flex-shrink-0 flex items-center justify-center ${isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
+                              <Icon size={13} weight="duotone" className={ev.color} />
+                            </div>
+                            <div>
+                              <p className={`text-[12px] font-medium ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{ev.event}</p>
+                              <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{ev.date}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className={`text-[12px] font-medium ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{ev.event}</p>
-                            <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{ev.date}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* آخر الملاحظات — a peek, not the full log; «الملاحظات» tab
+                    has that. Closes the other half of the cockpit the header
+                    card doesn't: this page's own notes, derived from
+                    `caseData.events` the same way the notes tab renders them. */}
+                <div className={`${card} p-5`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className={`text-sm font-bold flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                      <ChatDots size={14} className="text-royal" />آخر الملاحظات
+                    </h2>
+                    {notes.length > 0 && (
+                      <button onClick={() => setActiveTab("notes")} className="text-[11px] font-semibold text-royal hover:underline">
+                        عرض الكل
+                      </button>
+                    )}
                   </div>
-                )}
+                  {notes.length === 0 ? (
+                    <p className={`text-[11px] text-center py-4 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد ملاحظات بعد</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {notes.slice(0, 3).map((n, i) => (
+                        <button key={i} onClick={() => setActiveTab("notes")} title="فتح في تبويب الملاحظات"
+                          className={`w-full text-start rounded-xl px-2.5 py-2 transition-colors ${isDark ? "hover:bg-white/[0.05]" : "hover:bg-slate-50"}`}>
+                          <p className={`text-[10px] font-semibold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{n.author} · {n.date}</p>
+                          <p className={`text-[12px] mt-0.5 line-clamp-2 ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{n.text}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1751,40 +1863,15 @@ export default function CaseDetailPage() {
           {/* ── Notes ── */}
           {activeTab === "notes" && (
             <div className="space-y-4">
-              <div className={`${card} p-4`}>
-                <div className="flex items-center justify-between mb-2">
-                  <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>ملاحظة جديدة</p>
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#C8A762]/10 text-[#C8A762]">قريباً</span>
-                </div>
-                <textarea
-                  value={noteInput}
-                  onChange={e => setNoteInput(e.target.value)}
-                  placeholder="اكتب ملاحظتك هنا..."
-                  rows={3}
-                  className={`w-full text-sm bg-transparent outline-none resize-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`}
-                />
-                {/* Always shown, not only after a press: the lawyer needs to
-                    know the draft is not stored BEFORE they navigate away, not
-                    after. The old amber line appeared for 2.5s once the (fake)
-                    save had already cleared the box.
-                    Per-theme amber, not a single `amber-500`: this card is
-                    `bg-zinc-900/60` in dark, and the one line whose entire job
-                    is to be read before the lawyer leaves the page cannot be
-                    the one that is hard to read. Same pair the contracts page
-                    uses on its own amber notice. */}
-                <div className="flex flex-wrap justify-end mt-2 items-center gap-2">
-                  <span className={`text-[10px] font-bold me-auto ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-                    حفظ الملاحظات غير مفعّل بعد — انسخ نصك قبل مغادرة الصفحة.
-                  </span>
-                  <button
-                    disabled
-                    title="حفظ الملاحظات — قريباً"
-                    aria-label="حفظ الملاحظات — قريباً"
-                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] transition-colors opacity-40 cursor-not-allowed flex items-center gap-1.5">
-                    حفظ الملاحظة · قريباً
-                  </button>
-                </div>
-              </div>
+              {/* The composer that stood here — a textarea plus a disabled
+                  «حفظ الملاحظة · قريباً» — is REMOVED, not disabled: there is
+                  no case-notes table or write route to save into (see the
+                  comment on its old handler, above `handleUpload`). An honest
+                  one-liner replaces it rather than an editable box with
+                  nowhere for its text to go. */}
+              <p className={`text-[11px] text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                لا يمكن حفظ ملاحظة من هذا الملف حالياً.
+              </p>
               <div className="space-y-3">
                 {notes.length === 0 ? (
                   <div className={`${card} p-8 text-center`}>

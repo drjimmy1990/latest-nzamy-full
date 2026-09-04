@@ -101,8 +101,14 @@ export function DesktopPanel({ onToast }: Props) {
     setSelected(new Set()); reload(); onToast(`حُذف ${selected.size} عنصر`);
   }
 
-  function handleMarkUsed() {
-    markUsed(Array.from(selected)); setSelected(new Set()); reload(); onToast("مُميَّز كـ مستخدم");
+  // Awaited before the reload — markUsed PATCHes the server in supabase mode
+  // (researchService.ts) now; firing it and re-fetching in the same tick raced
+  // the write against the reload that follows.
+  async function handleMarkUsed() {
+    await markUsed(Array.from(selected));
+    setSelected(new Set());
+    await reload();
+    onToast("مُميَّز كـ مستخدم");
   }
 
   function handleMerge() {

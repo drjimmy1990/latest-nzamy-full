@@ -16,6 +16,8 @@ import { X, List, Bell } from "@phosphor-icons/react";
 
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { isSupabaseMode } from "@/lib/services/api";
+import { getPreferences, patchPreferences } from "@/lib/services/preferencesService";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
 import { getSidebarByUserType, getRoleLabel } from "@/constants/navigation";
@@ -36,7 +38,7 @@ export default function SharedSidebar() {
   const {
     userType: sessionUserType, subRole, name, credits, creditsMax,
     dashboardMode, active_roles, governmentRole, businessRole,
-    affiliation, isDemoBypass, country, loading
+    affiliation, isDemoBypass, country, loading, isLoggedIn
   } = useUser();
 
   // Whether the two inputs `useSubscription().can()` reads have settled.
@@ -59,18 +61,59 @@ export default function SharedSidebar() {
   const [featureBlocked, setFeatureBlocked] = useState<string | undefined>();
   const { hasGroup: hasClientGroup } = useClientGroupMembership();
   
+  // ── Phase 6: dashboardMode's source of truth is the server for a signed-in
+  // user. Initial value is the session's own dashboardMode (whatever
+  // useUser() resolved it to); getPreferences().dashboardMode overrides it
+  // once read, since the server may hold a choice this browser never made.
+  // The pre-Phase-6 nzamy_dashboard_mode localStorage key is read exactly
+  // once below (to carry a value set before this shipped up to the server)
+  // and then deleted — nothing after that read ever consults it again. Demo
+  // mode (!isSupabaseMode) keeps the toggle in React state only: no server,
+  // no localStorage, matching the rule that demo accounts never persist.
   const [mode, setMode] = useState<"light" | "full">(dashboardMode);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("nzamy_dashboard_mode");
-      if (saved === "light" || saved === "full") setMode(saved);
-    } catch {}
-  }, []);
+    if (loading) return; // wait for the session to resolve before deciding guest/demo vs. signed-in
+    if (!isLoggedIn || !isSupabaseMode) return;
+
+    let cancelled = false;
+
+    (async () => {
+      let legacyLocal: "light" | "full" | null = null;
+      try {
+        const saved = localStorage.getItem("nzamy_dashboard_mode");
+        if (saved === "light" || saved === "full") legacyLocal = saved;
+        localStorage.removeItem("nzamy_dashboard_mode");
+      } catch {}
+
+      const prefs = await getPreferences();
+      if (cancelled) return;
+
+      if (prefs?.dashboardMode) {
+        setMode(prefs.dashboardMode);
+      } else if (legacyLocal) {
+        // No server value yet — carry this browser's last known choice up
+        // instead of silently losing it now that the local key is gone.
+        setMode(legacyLocal);
+        patchPreferences({ dashboardMode: legacyLocal }).catch(err => {
+          console.error("[SharedSidebar] dashboardMode migration patch failed:", err);
+        });
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, isLoggedIn]);
 
   function handleModeChange(m: "light" | "full") {
     setMode(m);
-    try { localStorage.setItem("nzamy_dashboard_mode", m); } catch {}
+    if (isLoggedIn && isSupabaseMode) {
+      patchPreferences({ dashboardMode: m }).catch(err => {
+        console.error("[SharedSidebar] patchPreferences(dashboardMode) failed:", err);
+      });
+    }
+    // Demo mode: React state only — never persisted, per the rule that demo
+    // accounts touch neither the server nor localStorage.
   }
 
   // Infer user type from URL path first — session userType is fallback.

@@ -12,6 +12,7 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
+import { useSubscription } from "@/hooks/useSubscription";
 import { useTheme } from "@/components/ThemeProvider";
 import {
   GOVERNMENT_ENTITY_TYPE_LABEL,
@@ -35,6 +36,52 @@ interface SectorProfileReadinessPanelProps {
 
 type FeatureRecord = Record<string, unknown>;
 
+/**
+ * sectorServiceKeyToFeatureFlag() returns a *Profile property name (e.g.
+ * "hasJudiciary") — the admin-flag storage shape, not a FEATURE_GATES key.
+ * This bridges to the actual gate names so the entitlement chips below can
+ * go through useSubscription().can() instead of reading
+ * currentGovernmentProfile/currentNgoProfile/currentMicroProfile[...]
+ * directly (a viewer could otherwise flip that in localStorage and see a
+ * different "enabled surfaces" list in production). One entry per gov-,
+ * ngo- and micro- gate in featureAccess.ts; flag names collide across
+ * sectors (e.g. "hasCompliance"), hence one table per sector.
+ */
+const SECTOR_FLAG_TO_FEATURE_KEY: Record<SectorProfileType, Partial<Record<string, string>>> = {
+  government: {
+    hasJudiciary: "gov-judiciary",
+    hasProsecution: "gov-prosecution",
+    hasInvestigation: "gov-investigation",
+    hasPolice: "gov-police",
+    hasCounsel: "gov-counsel",
+    hasCompliance: "gov-compliance",
+    hasReports: "gov-reports",
+    hasContracts: "gov-contracts",
+    hasSso: "gov-sso",
+    hasAiByRole: "gov-ai",
+  },
+  ngo: {
+    hasVolunteers: "ngo-volunteers",
+    hasDonations: "ngo-donations",
+    hasAwqaf: "ngo-awqaf",
+    hasBoard: "ngo-board",
+    hasPrograms: "ngo-programs",
+    hasCompliance: "ngo-compliance",
+    hasReports: "ngo-reports",
+    hasAi: "ngo-ai",
+  },
+  micro: {
+    hasRequirements: "micro-requirements",
+    hasContracts: "micro-contracts",
+    hasDocuments: "micro-documents",
+    hasWallet: "micro-wallet",
+    hasRequests: "micro-requests",
+    hasMarketplace: "micro-marketplace",
+    hasCases: "micro-cases",
+    hasAi: "micro-ai",
+  },
+};
+
 export function SectorProfileReadinessPanel({ sector, compact = false }: SectorProfileReadinessPanelProps) {
   const { isDark } = useTheme();
   const {
@@ -43,6 +90,7 @@ export function SectorProfileReadinessPanel({ sector, compact = false }: SectorP
     currentMicroProfile,
     mounted,
   } = useAdminSettings();
+  const { can } = useSubscription();
 
   const card = isDark
     ? "border-white/[0.06] bg-zinc-900/80 text-zinc-100"
@@ -110,7 +158,8 @@ export function SectorProfileReadinessPanel({ sector, compact = false }: SectorP
       service.key as GovernmentServiceKey | NgoServiceKey | MicroServiceKey,
     );
     if (!featureFlag) return true;
-    return Boolean(config.features[featureFlag]);
+    const featureKey = SECTOR_FLAG_TO_FEATURE_KEY[sector][featureFlag];
+    return featureKey ? can(featureKey) : Boolean(config.features[featureFlag]);
   });
   const Icon = config.icon;
 

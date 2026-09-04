@@ -1438,18 +1438,27 @@ export default function AdminServiceOrdersPage() {
 
                 {o.status === "in_review" && (
                   <div className="space-y-2">
-                    {/* Fix (review finding IMPORTANT 2): the backend's claim
-                        action is an intentional takeover — it re-assigns an
-                        in_review order to whoever calls it, specifically so an
-                        order stuck with an AWOL admin can be unstuck (see the
-                        PATCH handler's own comment). Without this control, a
-                        second admin who opens an in_review order they aren't
-                        assigned to has no way to become the assignee, so their
-                        upload silently 403s at POST /api/v1/documents. */}
-                    <button disabled={busy} onClick={() => act(o.id, { action: "claim" }, { keepOpen: true })}
-                      className="rounded-xl border border-emerald-500/30 px-4 py-2 text-[12px] font-bold text-emerald-500 disabled:opacity-40">
-                      تولّي الطلب (نقل لي)
-                    </button>
+                    {/* The "تولّي الطلب" (self re-claim) button that used to
+                        render here (added for review finding IMPORTANT 2, see
+                        .superpowers/sdd/2026-08-14-manual-fulfillment-order-pipeline/task-9-report.md)
+                        is gone as of owner item ٦٩'s concurrency fix. It called
+                        the same `action: "claim"` the atomic RPC now guards
+                        (supabase/migrations/20260908_claim_service_request_atomic.sql):
+                        claim only succeeds when `assigned_to is null or
+                        assigned_to = p_actor_id`, on purpose — a bare
+                        `assigned_to is null or = p_actor_id` guard closes the
+                        double-claim race this item targets, but there is no
+                        row state that tells the atomic UPDATE "this in_review
+                        order was already settled a while ago, let a different
+                        admin take it anyway" apart from "this in_review order
+                        was JUST won by the admin racing you" — the two are the
+                        same row shape. So the button, kept as-is, would always
+                        409 on an order assigned to someone else instead of
+                        occasionally losing a real race, which is worse than
+                        not having it. «توجيه» — the assign <select> just above,
+                        which sets `assigned_to` with no precondition on who
+                        holds it now — is the recovery route for a stuck order;
+                        see the PATCH handler's own doc comment. */}
                     {/* Owner item ٣٢. The two boxes were already separate
                         fields — this one goes to `metadata.deliverable.notes`
                         on تسليم and to `metadata.cancelReason` on إلغاء, the

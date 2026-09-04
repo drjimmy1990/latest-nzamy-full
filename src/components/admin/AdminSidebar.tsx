@@ -10,6 +10,7 @@ import {
   Scales, ShieldCheck, Database, CaretDown, ClipboardText,
   Money, Megaphone, Star, Globe, BookOpen, Article,
   Storefront, ToggleRight, Flag, Tag, UsersFour, Crown, Tray, Files,
+  Lightbulb,
 } from "@phosphor-icons/react";
 import { useNotifications } from "@/hooks/useNotifications";
 import { createClient } from "@/lib/supabase/client";
@@ -44,6 +45,7 @@ const NAV = [
       { href: "/dashboard/admin/ai-usage",   icon: Robot,   label: "استخدام الذكاء الاصطناعي" },
       { href: "/dashboard/admin/service-orders", icon: Files, label: "طلبات الخدمات" },
       { href: "/dashboard/admin/tickets",    icon: Ticket,  label: "تذاكر الدعم" },
+      { href: "/dashboard/admin/feature-requests", icon: Lightbulb, label: "طلبات الميزات" },
       { href: "/dashboard/admin/broadcasts", icon: Megaphone, label: "البث والإشعارات" },
       { href: "/dashboard/admin/reviews",    icon: Star,    label: "التقييمات" },
     ],
@@ -53,6 +55,7 @@ const NAV = [
     items: [
       { href: "/dashboard/admin/platform",          icon: Globe,      label: "مركز تحكم المنصة" },
       { href: "/dashboard/admin/content/laws",      icon: BookOpen,   label: "المكتبة القانونية" },
+      { href: "/dashboard/admin/library-issue-reports", icon: Flag,   label: "بلاغات المكتبة" },
       { href: "/dashboard/admin/content/articles",  icon: Article,    label: "المدونة القانونية" },
       { href: "/dashboard/admin/community/moderation", icon: Flag, label: "إشراف المجتمع" },
       { href: "/dashboard/admin/marketplace/orders",icon: Storefront, label: "طلبات السوق" },
@@ -66,6 +69,7 @@ const NAV = [
       { href: "/dashboard/admin/audit-log", icon: ClipboardText, label: "سجل التدقيق" },
       { href: "/dashboard/admin/security",  icon: ShieldCheck,   label: "الأمان" },
       { href: "/dashboard/admin/system",    icon: Database,      label: "إعدادات النظام" },
+      { href: "/dashboard/admin/library-invitations", icon: Ticket, label: "أكواد دعوة المكتبة" },
     ],
   },
 ];

@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useUser } from "@/hooks/useUser";
+import AILoading from "./loading";
 import BusinessDashboardLayout from "@/app/dashboard/business/layout";
 import ClientDashboardLayout from "@/app/dashboard/client/layout";
 import LawyerDashboardLayout from "@/app/dashboard/lawyer/layout";
@@ -28,10 +29,23 @@ import ProviderDashboardLayout from "@/app/dashboard/provider/layout";
  *   breaking arbitrators (provider/arbitrator) who click "باحث المبادئ" from their
  *   dedicated sidebar — they would see the Government sidebar instead of their own.
  *   Session now takes priority over path inference to prevent all such bleeding.
+ * FIX ٨٣    (2026-09-04): while `user.loading` is true, `user.userType` is
+ *   still the guest default, so every check below fell through to the
+ *   FALLBACK — a lawyer opening /ai/case-brief saw the Business sidebar for
+ *   one frame, then had it swapped for the Lawyer sidebar once the session
+ *   resolved. Holding on the loading state (the same `AILoading` used as
+ *   this route segment's own loading.tsx) removes the guess instead of
+ *   showing it and correcting it a frame later.
  */
 export default function AILayout({ children }: { children: React.ReactNode }) {
   const user = useUser();
   const pathname = usePathname();
+
+  // ── 0. SESSION GATE ───────────────────────────────────────────────────────
+  // Wait for the session before picking a sidebar at all — see FIX ٨٣ above.
+  if (user.loading) {
+    return <AILoading />;
+  }
 
   // Read last-visited dashboard (written by each dashboard layout on mount)
   const lastDashboard =
@@ -73,7 +87,8 @@ export default function AILayout({ children }: { children: React.ReactNode }) {
     return <NGODashboardLayout>{children}</NGODashboardLayout>;
   }
 
-  // ── 2. PATH-BASED INFERENCE (for unresolved/guest sessions only) ─────────────
+  // ── 2. PATH-BASED INFERENCE (session resolved but userType matched none above,
+  //      e.g. a guest or a profile with no recognised type) ────────────────────
   // Corporate-specific AI tools → business sidebar
   if (pathname.startsWith("/ai/corp/") || pathname === "/ai/corp") {
     return <BusinessDashboardLayout>{children}</BusinessDashboardLayout>;

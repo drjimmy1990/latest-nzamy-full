@@ -191,7 +191,10 @@ export function StepLaws({ isDark, customLegalTexts, setCustomLegalTexts }: Step
     if (!toAdd.length) return;
     const appended = toAdd.map(i => `• ${i.title}\n${i.content}`).join("\n\n");
     setCustomLegalTexts(customLegalTexts ? `${customLegalTexts}\n\n${appended}` : appended);
-    markUsed(Array.from(selectedInbox));
+    // Awaited before the reload below — markUsed is a real PATCH to the server
+    // in supabase mode now (researchService.ts). Firing it and reloading in the
+    // same tick raced the write against the re-fetch that follows.
+    await markUsed(Array.from(selectedInbox));
     setAddedInbox(prev => new Set([...prev, ...selectedInbox]));
     setSelectedInbox(new Set());
     await loadInbox();

@@ -1,56 +1,32 @@
-import RequirementsChecklist, { ChecklistItem } from "../_components/RequirementsChecklist";
+"use client";
 
-const ITEMS: ChecklistItem[] = [
-  {
-    id: "li1",
-    title: "ترخيص الجهة الرقابية المتخصصة",
-    detail: "تحقق مما إذا كان نشاطك يستلزم ترخيصاً من جهة متخصصة (صحة، تجارة، اتصالات…)",
-    status: "done",
-  },
-  {
-    id: "li2",
-    title: "ترخيص وزارة الصحة (إن انطبق)",
-    detail: "للأنشطة الصحية والطبية والصيدلانية",
-    status: "na",
-    portal: { label: "بوابة وزارة الصحة", url: "https://moh.gov.sa" },
-  },
-  {
-    id: "li3",
-    title: "ترخيص هيئة الاتصالات والفضاء (إن انطبق)",
-    detail: "للأنشطة التقنية والاتصالات والمحتوى الرقمي",
-    status: "na",
-    portal: { label: "بوابة CITC", url: "https://citc.gov.sa" },
-  },
-  {
-    id: "li4",
-    title: "ترخيص هيئة الغذاء والدواء (إن انطبق)",
-    detail: "للأنشطة الغذائية والتجميلية والدوائية",
-    status: "na",
-    portal: { label: "بوابة SFDA", url: "https://sfda.gov.sa" },
-  },
-  {
-    id: "li5",
-    title: "تجديد الترخيص المتخصص سنوياً",
-    detail: "تواريخ انتهاء التراخيص المتخصصة تختلف عن البلدية — تأكد من التقويم",
-    status: "pending",
-    deadline: "حسب جهة الترخيص",
-  },
-  {
-    id: "li6",
-    title: "شهادة المطابقة (SASO) للمنتجات (إن انطبق)",
-    detail: "للمنتجات المستوردة أو المصنّعة محلياً الخاضعة لاشتراطات الجودة",
-    status: "na",
-    portal: { label: "بوابة SASO", url: "https://saso.gov.sa" },
-  },
-];
+// Beta honesty gate: «التراخيص التخصصية» has no data model at all — there
+// is no specialized-license (health / CITC / SFDA / SASO) record behind
+// this screen, only what was hardcoded here.
+//
+// WHAT WAS REMOVED, and why:
+//   - ITEMS was six hardcoded checklist rows (الجهة الرقابية / وزارة الصحة
+//     / CITC / SFDA / التجديد السنوي / SASO) with an invented per-item
+//     `status` and `deadline` — identical for every micro account that
+//     opened the page, none of it this account's actual license mix.
+//   - the `aiTip` prop claimed renewal "يستغرق ٣٠-٦٠ يوماً" and urged
+//     starting "قبل ٩٠ يوماً" — a fabricated, generic claim treated as if
+//     it were computed for this account.
+//   - the checkbox toggle in RequirementsChecklist only flipped local
+//     component state — nothing was written or read anywhere.
+//
+// The previous UI (and RequirementsChecklist, still in ../_components) is
+// preserved in git history and can be restored once a real specialized-
+// license record exists behind this account.
+
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 export default function MicroLicensesPage() {
   return (
-    <RequirementsChecklist
+    <DashboardComingSoon
       title="التراخيص التخصصية"
-      subtitle="تراخيص الجهات الرقابية المتخصصة حسب طبيعة نشاط منشأتك"
-      aiTip="تجديد الترخيص المتخصص قد يستغرق ٣٠-٦٠ يوماً — ابدأ الإجراءات قبل ٩٠ يوماً من تاريخ الانتهاء."
-      items={ITEMS}
+      description="التراخيص التخصصية غير متاحة حالياً. حالة تراخيص الجهات الرقابية ومواعيد تجديدها في هذه الصفحة كانت بيانات ثابتة لا تخص أي منشأة حقيقية، ولم يكن تحديد بند كمكتمل يحفظ شيئاً. ستُفعَّل الصفحة عند ربط سجل التراخيص الفعلي بحساب المنشأة."
+      backHref="/dashboard/micro/requirements"
     />
   );
 }

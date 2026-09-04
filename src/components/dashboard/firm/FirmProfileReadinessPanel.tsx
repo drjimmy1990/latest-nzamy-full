@@ -11,6 +11,7 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
+import { useSubscription } from "@/hooks/useSubscription";
 import { useTheme } from "@/components/ThemeProvider";
 import {
   FIRM_PRACTICE_MODEL_LABEL,
@@ -25,9 +26,38 @@ interface FirmProfileReadinessPanelProps {
   compact?: boolean;
 }
 
+/**
+ * firmServiceKeyToFeatureFlag() returns a CompanyFeatures/FirmFeatures
+ * property name (e.g. "hasDepartments") — the admin-flag storage shape, not
+ * a FEATURE_GATES key. This table is the bridge to the actual gate names so
+ * the chip list below can go through useSubscription().can() instead of
+ * reading currentFirmFeatures[...] directly (a viewer could otherwise flip
+ * that in localStorage and see a different "enabled services" list in
+ * production). One entry per firm-* gate in featureAccess.ts.
+ */
+const FIRM_FLAG_TO_FEATURE_KEY: Partial<Record<string, string>> = {
+  hasDepartments: "firm-departments",
+  hasBranches: "firm-branches",
+  hasFinance: "firm-finance",
+  hasHr: "firm-hr",
+  hasGovernance: "firm-governance",
+  hasChineseWalls: "firm-chinese-walls",
+  hasClientPortal: "firm-client-portal",
+  hasMarketplace: "firm-marketplace",
+  hasExternalCollaboration: "firm-collaboration",
+  hasSecondment: "firm-secondment",
+  hasSharedRooms: "firm-shared-rooms",
+  hasAdvancedAi: "firm-ai",
+  hasLegalLibrary: "firm-legal-library",
+  hasAnalytics: "firm-analytics",
+  hasHealthCheck: "firm-health-check",
+  hasFirmPointsWallet: "firm-wallet",
+};
+
 export function FirmProfileReadinessPanel({ compact = false }: FirmProfileReadinessPanelProps) {
   const { isDark } = useTheme();
   const { currentFirmFeatures, mounted } = useAdminSettings();
+  const { can } = useSubscription();
 
   const scenario = resolveFirmScenario(
     currentFirmFeatures.firmSize,
@@ -38,7 +68,8 @@ export function FirmProfileReadinessPanel({ compact = false }: FirmProfileReadin
   const enabledServices = FIRM_SERVICE_ENTITLEMENTS.filter((service) => {
     const featureFlag = firmServiceKeyToFeatureFlag(service.key);
     if (!featureFlag) return scenario.recommendedServices.includes(service.key);
-    return Boolean(currentFirmFeatures[featureFlag as keyof typeof currentFirmFeatures]);
+    const featureKey = FIRM_FLAG_TO_FEATURE_KEY[featureFlag];
+    return featureKey ? can(featureKey) : Boolean(currentFirmFeatures[featureFlag as keyof typeof currentFirmFeatures]);
   });
 
   const spent = Math.max(currentFirmFeatures.annualPoints - currentFirmFeatures.availablePoints, 0);

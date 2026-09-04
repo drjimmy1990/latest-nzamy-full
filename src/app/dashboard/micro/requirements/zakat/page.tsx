@@ -1,57 +1,32 @@
-import RequirementsChecklist, { ChecklistItem } from "../_components/RequirementsChecklist";
+"use client";
 
-const ITEMS: ChecklistItem[] = [
-  {
-    id: "z1",
-    title: "شهادة تسجيل ZATCA (ضريبة القيمة المضافة)",
-    detail: "التسجيل في هيئة الزكاة والضريبة والجمارك إذا تجاوز الإيراد ٣٧٥٬٠٠٠ ﷼",
-    status: "done",
-    deadline: "سارية",
-    fee: "مجاني",
-    portal: { label: "بوابة ZATCA", url: "https://zatca.gov.sa" },
-  },
-  {
-    id: "z2",
-    title: "الإقرار الضريبي الفصلي (VAT)",
-    detail: "تقديم إقرار ضريبة القيمة المضافة كل 3 أشهر",
-    status: "pending",
-    deadline: "٣٠ يونيو ٢٠٢٤",
-    fee: "لا توجد رسوم (غرامة التأخر ٥ - ٢٥٪)",
-    portal: { label: "بوابة ZATCA", url: "https://zatca.gov.sa" },
-  },
-  {
-    id: "z3",
-    title: "فاتورة إلكترونية (e-invoicing) المرحلة الثانية",
-    detail: "ربط منظومة الفوترة بنظام فاتورة ZATCA — المرحلة الثانية",
-    status: "pending",
-    deadline: "حسب موجة القطاع",
-    fee: "تكلفة النظام",
-    portal: { label: "متطلبات فاتورة", url: "https://zatca.gov.sa/ar/E-Invoicing" },
-  },
-  {
-    id: "z4",
-    title: "زكاة الأعمال السنوية",
-    detail: "تقديم إقرار الزكاة السنوي للمنشآت المملوكة لسعوديين",
-    status: "done",
-    deadline: "٣١ مارس ٢٠٢٥",
-    fee: "٢.٥٪ من الوعاء الزكوي",
-    portal: { label: "بوابة ZATCA", url: "https://zatca.gov.sa" },
-  },
-  {
-    id: "z5",
-    title: "ضريبة الاستقطاع (إن وجدت)",
-    detail: "على المدفوعات للأجانب غير المقيمين",
-    status: "na",
-  },
-];
+// Beta honesty gate: «الزكاة والضريبة» has no data model at all — there is
+// no ZATCA registration/filing record behind this screen, only what was
+// hardcoded here.
+//
+// WHAT WAS REMOVED, and why:
+//   - ITEMS was five hardcoded checklist rows (تسجيل ZATCA / الإقرار
+//     الفصلي / الفوترة الإلكترونية / زكاة الأعمال / ضريبة الاستقطاع) with
+//     an invented per-item `status`, `deadline` and `fee` — identical for
+//     every micro account that opened the page, none of it this account's
+//     actual filing status.
+//   - the `aiTip` prop claimed a specific VAT return deadline («تستحق قبل
+//     ٣٠ يونيو») — a fabricated, dated claim about this account.
+//   - the checkbox toggle in RequirementsChecklist only flipped local
+//     component state — nothing was written or read anywhere.
+//
+// The previous UI (and RequirementsChecklist, still in ../_components) is
+// preserved in git history and can be restored once a real ZATCA
+// registration/filing record exists behind this account.
+
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 export default function MicroZakatPage() {
   return (
-    <RequirementsChecklist
+    <DashboardComingSoon
       title="الزكاة والضريبة (ZATCA)"
-      subtitle="الالتزامات الضريبية والزكوية لمنشأتك أمام هيئة الزكاة والضريبة والجمارك"
-      aiTip="الإقرار الفصلي لضريبة القيمة المضافة يستحق قبل ٣٠ يونيو — تأكد من مطابقة الفواتير قبل التقديم لتجنب غرامة التأخر."
-      items={ITEMS}
+      description="الزكاة والضريبة غير متاحة حالياً. حالة التسجيل والإقرارات والمواعيد في هذه الصفحة كانت بيانات ثابتة لا تخص أي منشأة حقيقية، ولم يكن تحديد بند كمكتمل يحفظ شيئاً. ستُفعَّل الصفحة عند ربط سجل ZATCA الفعلي بحساب المنشأة."
+      backHref="/dashboard/micro/requirements"
     />
   );
 }

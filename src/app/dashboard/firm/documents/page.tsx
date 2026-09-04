@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { FolderOpen, Plus, UploadSimple, FileText, Download, Eye } from "@phosphor-icons/react";
+import { FolderOpen, Plus, UploadSimple, FileText, Download, Eye, TrashSimple, CaretDown, CaretUp } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { DocumentsTrashPanel } from "@/components/documents/DocumentsTrashPanel";
 
 const MOCK_DOCS = [
   { id: "1", name: "صك ملكية شركة الأفق",          type: "pdf",  size: "٢.١ MB", date: "١٢ أبريل ٢٠٢٤", case: "نزاع تجاري — الأفق" },
@@ -14,6 +16,7 @@ const MOCK_DOCS = [
 
 export default function FirmDocumentsPage() {
   const { isDark } = useTheme();
+  const [trashOpen, setTrashOpen] = useState(false);
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
@@ -64,6 +67,32 @@ export default function FirmDocumentsPage() {
             </div>
           </motion.div>
         ))}
+      </div>
+
+      {/* سلة المحذوفات — a real bin over the account's real documents, kept
+          separate from the list above: that list is still MOCK_DOCS (owner
+          item pending), so it carries no delete control and no legal-hold
+          toggle to give it copy or state that would not be real. This panel
+          itself is real (documentService.getTrash/restoreDocument/
+          purgeDocument), independent of what the list above shows. */}
+      <div className={`${card} overflow-hidden`}>
+        <button
+          type="button"
+          onClick={() => setTrashOpen((v) => !v)}
+          className={`flex w-full items-center justify-between gap-2 p-4 text-[13px] font-bold ${
+            isDark ? "text-zinc-300" : "text-slate-700"
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <TrashSimple size={15} weight="bold" /> سلة المحذوفات
+          </span>
+          {trashOpen ? <CaretUp size={13} weight="bold" /> : <CaretDown size={13} weight="bold" />}
+        </button>
+        {trashOpen && (
+          <div className="px-4 pb-4">
+            <DocumentsTrashPanel isDark={isDark} showHeader={false} />
+          </div>
+        )}
       </div>
     </div>
   );

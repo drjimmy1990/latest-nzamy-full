@@ -8,6 +8,25 @@ import {
   type EducationEntry,
 } from "@/lib/services/lawyerProfileFields";
 import { offPlatformContactIssue } from "@/lib/services/contactSanitizer";
+import { entityProfileTableFor } from "@/lib/services/profileSettingsFields";
+import {
+  nationalityIssue,
+  officeAddressIssue,
+  licenseIssuedOnIssue,
+  isPlainObject,
+  validateEntitySettingsPatch,
+  mergeEntitySettings,
+  readEntitySettings,
+  validateBusinessProfilePatch,
+  type EntitySettingsValue,
+  type BusinessProfilePatch,
+} from "@/lib/services/profileEntityFields";
+// The registration form's own contract file (src/app/register/client/…) —
+// reused rather than re-implemented so the CR normalization and the capacity
+// allowlist stay in exactly one place. See its own header: renaming a value
+// here without updating 20260826_corporate_identity_persisted.sql breaks the
+// signup trigger silently.
+import { normalizeCrNumber, isLegalRepCapacity } from "@/app/register/client/components/_corporateIdentity";
 
 // ─── Arabic error copy ────────────────────────────────────────────────────────
 // Every message this route can return reaches a user: the lawyer profile
@@ -32,10 +51,31 @@ const AR = {
   unknownCourt: "محكمة غير معروفة",
   unknownLanguage: "لغة غير معروفة",
   badHeadline: "قيمة العنوان التعريفي غير صالحة.",
+  // ─── task S1 additions ────────────────────────────────────────────────
+  badEntitySettingsShape: "بيانات إعدادات الكيان يجب أن تكون كائناً.",
+  noEntityForType: "لا توجد بيانات كيان مرتبطة بنوع حسابك.",
+  entityRowMissing: "لم نعثر على بيانات الكيان الخاصة بحسابك.",
+  businessFieldsOnly: "هذه الحقول متاحة للحسابات التجارية فقط.",
 } as const;
 
 /** lawyer_profiles.headline_ar — checked in code, not just at the column (item 130). */
 const MAX_HEADLINE_LENGTH = 160;
+
+/**
+ * The column `<entityProfileTableFor(userType)>` keys its own row by.
+ *
+ * firm_profiles / business_profiles / government_profiles / ngo_profiles
+ * (supabase/migrations/20260603_phase1_002_entities.sql) use
+ * `owner_user_id`; micro_profiles / provider_profiles
+ * (20260603_phase1_001_profiles.sql) use `user_id` — the SAME column GET
+ * already reads them by above as `roleProfile`. Every one of the six carries
+ * an owner-scoped UPDATE policy ("<table>: owner can update" /
+ * "<role> update own profile") using this exact column, which is what makes
+ * the RLS-scoped writes below safe without a service-role client.
+ */
+function entityOwnerColumn(table: string): "owner_user_id" | "user_id" {
+  return table === "micro_profiles" || table === "provider_profiles" ? "user_id" : "owner_user_id";
+}
 
 /**
  * Arabic-Indic (٠١٢…) and Extended Arabic-Indic (۰۱۲…) digits → ASCII.
@@ -209,6 +249,52 @@ export async function GET() {
     else roleProfile = data;
   }
 
+  // ─── entitySettings (+ businessProfile for corporate) — task S1 ─────────
+  //
+  // entityProfileTableFor(user_type) names the ONE table whose
+  // metadata.settings holds this account's entitySettings. For "provider"
+  // and "micro" that table is the SAME one just read above as roleProfile —
+  // its `metadata` is already in hand, so no second round trip. Every other
+  // mapped type (firm/corporate/government/ngo) has no roleProfile fetch
+  // above and needs its own read, scoped by entityOwnerColumn() (always
+  // `owner_user_id` for those four).
+  let entitySettings: Record<string, unknown> = {};
+  let businessProfile: Record<string, unknown> | null = null;
+  const entityTable = entityProfileTableFor(profile.user_type);
+  if (entityTable === "provider_profiles" || entityTable === "micro_profiles") {
+    entitySettings = readEntitySettings((roleProfile as { metadata?: unknown } | null)?.metadata);
+  } else if (entityTable) {
+    const ownerCol = entityOwnerColumn(entityTable);
+    const selectCols =
+      entityTable === "business_profiles"
+        ? "metadata, company_name_ar, cr_number, legal_rep_name, legal_rep_capacity"
+        : "metadata";
+    const { data, error } = await supabase
+      .from(entityTable)
+      .select(selectCols)
+      .eq(ownerCol, user.id)
+      .maybeSingle();
+    if (error) {
+      roleReadFailed(entityTable, error.message, error.code);
+    } else if (data) {
+      entitySettings = readEntitySettings((data as { metadata?: unknown }).metadata);
+      if (entityTable === "business_profiles") {
+        const row = data as {
+          company_name_ar?: unknown;
+          cr_number?: unknown;
+          legal_rep_name?: unknown;
+          legal_rep_capacity?: unknown;
+        };
+        businessProfile = {
+          company_name_ar: row.company_name_ar ?? null,
+          cr_number: row.cr_number ?? null,
+          legal_rep_name: row.legal_rep_name ?? null,
+          legal_rep_capacity: row.legal_rep_capacity ?? null,
+        };
+      }
+    }
+  }
+
   // Fetch subscription
   const { data: subscription } = await supabase
     .from("subscriptions")
@@ -222,11 +308,20 @@ export async function GET() {
   // Always emitted, including `false`. An absent key would be
   // indistinguishable from an older deploy, and a client that reads
   // `res.roleProfileReadFailed === true` must not have to guess which it got.
+  //
+  // `entitySettings` is always present ({} when the account type has no
+  // entity table). `businessProfile` is present ONLY for corporate — every
+  // other type's business_profiles reference stays null, which is what
+  // keeps this addition backward-compatible for the three existing readers
+  // (onboarding wizard, LawyerProfileEditPage, LawyerProfileForms) that
+  // destructure only `{ profile, roleProfile }`.
   return NextResponse.json({
     profile,
     roleProfile,
     roleProfileReadFailed,
     subscription,
+    entitySettings,
+    ...(profile.user_type === "corporate" ? { businessProfile } : {}),
   });
 }
 
@@ -275,6 +370,8 @@ export async function PATCH(request: Request) {
     "country_code",
     "city",
     "onboarding_completed",
+    // Task S1 — supabase/migrations/20260906_phase6_settings_out_of_browser.sql.
+    "nationality",
   ];
   // lawyer_profiles allowlist (real column names from the 20260603 schema).
   // NOTE: verification_status is intentionally NOT self-editable (admin-only) —
@@ -299,6 +396,12 @@ export async function PATCH(request: Request) {
     "courts",
     "languages",
     "headline_ar",
+    // Task S1 — supabase/migrations/20260906_phase6_settings_out_of_browser.sql.
+    // NOT license_expiry: that column exists but is outside this task's
+    // authorized field list — ProfileTab renders it read-only rather than
+    // silently dropping a value the caller thinks it sent.
+    "license_issued_on",
+    "office_address",
   ];
   // `city` is the one name on both lists — profiles.city and
   // lawyer_profiles.city are separate columns
@@ -391,6 +494,66 @@ export async function PATCH(request: Request) {
     if (contactIssue) return NextResponse.json({ error: contactIssue }, { status: 400 });
   }
 
+  // ─── Task S1 fields ───────────────────────────────────────────────────
+  // Format-validated here regardless of account type, same as everything
+  // above — the account-type gates (lawyer-only, entity-table-only,
+  // corporate-only) run once user_type is known, further down.
+  if ("nationality" in body) {
+    const issue = nationalityIssue(body.nationality);
+    if (issue) return NextResponse.json({ error: issue }, { status: 400 });
+  }
+
+  if ("license_issued_on" in body) {
+    const issue = licenseIssuedOnIssue(body.license_issued_on);
+    if (issue) return NextResponse.json({ error: issue }, { status: 400 });
+  }
+
+  if ("office_address" in body) {
+    const issue = officeAddressIssue(body.office_address);
+    if (issue) return NextResponse.json({ error: issue }, { status: 400 });
+  }
+
+  // `entitySettings` shallow-merges into <entity table>.metadata.settings.
+  // `null` in the patch object clears (not deletes) a key — see
+  // mergeEntitySettings — but the whole `entitySettings` body key itself
+  // being `null`/absent/`{}` just means "nothing to merge this call", not an
+  // error: ProfileTab always includes the key (possibly empty) for every
+  // account type, since not every type has entitySettings-targeted fields.
+  let entitySettingsPatch: Record<string, EntitySettingsValue> | null = null;
+  if ("entitySettings" in body) {
+    const raw = body.entitySettings;
+    if (raw !== null && raw !== undefined) {
+      if (!isPlainObject(raw)) {
+        return NextResponse.json({ error: AR.badEntitySettingsShape }, { status: 400 });
+      }
+      if (Object.keys(raw).length > 0) {
+        const validation = validateEntitySettingsPatch(raw);
+        if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 });
+        entitySettingsPatch = validation.patch;
+      }
+    }
+  }
+
+  // `businessProfile` writes the four real business_profiles columns
+  // (corporate accounts only — gated below once user_type is known).
+  let businessProfilePatch: BusinessProfilePatch | null = null;
+  if ("businessProfile" in body) {
+    const raw = body.businessProfile;
+    if (raw !== null && raw !== undefined) {
+      const validation = validateBusinessProfilePatch(
+        raw,
+        normalizeCrNumber,
+        // isLegalRepCapacity's own parameter type (string | null | undefined)
+        // is narrower than the (v: unknown) => boolean the pure module
+        // declares — a deliberate wrapper, not a cast that hides anything:
+        // isLegalRepCapacity itself starts with `typeof value === "string"`.
+        (v: unknown) => isLegalRepCapacity(v as string | null | undefined),
+      );
+      if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 });
+      if (Object.keys(validation.patch).length > 0) businessProfilePatch = validation.patch;
+    }
+  }
+
   const profileUpdates: Record<string, unknown> = {};
   for (const key of profileFields) if (key in body) profileUpdates[key] = body[key];
 
@@ -402,7 +565,9 @@ export async function PATCH(request: Request) {
 
   if (
     Object.keys(profileUpdates).length === 0 &&
-    Object.keys(lawyerUpdates).length === 0
+    Object.keys(lawyerUpdates).length === 0 &&
+    entitySettingsPatch === null &&
+    businessProfilePatch === null
   ) {
     return NextResponse.json(
       { error: AR.noFields },
@@ -436,6 +601,14 @@ export async function PATCH(request: Request) {
       { error: AR.lawyerFieldsOnly },
       { status: 403 },
     );
+  }
+
+  if (entitySettingsPatch !== null && !entityProfileTableFor(baseProfile.user_type)) {
+    return NextResponse.json({ error: AR.noEntityForType }, { status: 400 });
+  }
+
+  if (businessProfilePatch !== null && baseProfile.user_type !== "corporate") {
+    return NextResponse.json({ error: AR.businessFieldsOnly }, { status: 403 });
   }
 
   let profile = null;
@@ -477,5 +650,62 @@ export async function PATCH(request: Request) {
     roleProfile = data;
   }
 
-  return NextResponse.json({ profile, roleProfile });
+  // ─── entitySettings — read-merge-write, same pattern as
+  // PATCH /api/v1/settings/preferences (mergePreferences there,
+  // mergeEntitySettings here). Not atomic with the writes above, same as
+  // profiles/lawyer_profiles are not atomic with each other already.
+  let entitySettings: Record<string, unknown> | null = null;
+  if (entitySettingsPatch !== null) {
+    const entityTable = entityProfileTableFor(baseProfile.user_type)!; // guarded above
+    const ownerCol = entityOwnerColumn(entityTable);
+    const { data: entityRow, error: entityReadErr } = await supabase
+      .from(entityTable)
+      .select("metadata")
+      .eq(ownerCol, user.id)
+      .maybeSingle();
+    if (entityReadErr) {
+      console.error(`[api/v1/profile] ${entityTable} read failed:`, entityReadErr.message, entityReadErr.code);
+      return NextResponse.json({ error: AR.saveFailed }, { status: 500 });
+    }
+    if (!entityRow) {
+      // The signup trigger (handle_new_user) creates this row for every
+      // mapped type; a missing row here means that trigger did not run for
+      // this account, not that the caller did anything wrong.
+      console.error(`[api/v1/profile] ${entityTable} row missing for user`, user.id);
+      return NextResponse.json({ error: AR.entityRowMissing }, { status: 404 });
+    }
+    const mergedMetadata = mergeEntitySettings(
+      (entityRow as { metadata?: unknown }).metadata,
+      entitySettingsPatch,
+    );
+    const { data: updatedEntity, error: entityWriteErr } = await supabase
+      .from(entityTable)
+      .update({ metadata: mergedMetadata })
+      .eq(ownerCol, user.id)
+      .select("metadata")
+      .single();
+    if (entityWriteErr) {
+      console.error(`[api/v1/profile] ${entityTable} update failed:`, entityWriteErr.message);
+      return NextResponse.json({ error: AR.saveFailed }, { status: 500 });
+    }
+    entitySettings = readEntitySettings((updatedEntity as { metadata?: unknown } | null)?.metadata);
+  }
+
+  // ─── businessProfile — direct column update, corporate only ─────────────
+  let businessProfile: Record<string, unknown> | null = null;
+  if (businessProfilePatch !== null) {
+    const { data, error } = await supabase
+      .from("business_profiles")
+      .update(businessProfilePatch)
+      .eq("owner_user_id", user.id)
+      .select("company_name_ar, cr_number, legal_rep_name, legal_rep_capacity")
+      .single();
+    if (error) {
+      console.error("[api/v1/profile] business_profiles update failed:", error.message);
+      return NextResponse.json({ error: AR.saveFailed }, { status: 500 });
+    }
+    businessProfile = data;
+  }
+
+  return NextResponse.json({ profile, roleProfile, entitySettings, businessProfile });
 }

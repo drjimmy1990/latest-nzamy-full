@@ -20,12 +20,20 @@ export async function GET() {
     // 20260906) straight through as the raw column — there is no mapper in
     // this route, so the frontend's `apiFolder.is_pinned ?? false`
     // (SmartFolders.tsx mapApiFolderToSmartFolder) reads it as-is.
+    //
+    // The embedded item select carries title/title_en/cat_id too — migration
+    // 20260701_smart_folder_items_display_cols.sql added those columns
+    // specifically "so a saved item can render its title/category without a
+    // second lookup", and POST /api/library/folders/items writes them.
+    // Without them here, mapApiFolderToSmartFolder's `item.title ||
+    // item.entity_id` fallback silently renders the raw slug instead of the
+    // real title on every reload.
     const { data: folders, error } = await supabase
       .schema('library')
       .from('smart_folders')
       .select(`
         *,
-        smart_folder_items ( id, entity_type, entity_id, created_at )
+        smart_folder_items ( id, entity_type, entity_id, title, title_en, cat_id, created_at )
       `)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });

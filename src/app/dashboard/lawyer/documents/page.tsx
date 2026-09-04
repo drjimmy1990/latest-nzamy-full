@@ -6,7 +6,7 @@ import {
   FolderOpen, MagnifyingGlass, UploadSimple,
   Download, Eye, CalendarBlank,
   GridFour, List,
-  Warning, Info, ArrowClockwise,
+  Warning, Info, ArrowClockwise, Trash, ShieldWarning,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import {
@@ -15,12 +15,17 @@ import {
 } from "./_taxonomy";
 import { TYPE_ICON, TYPE_COLOR, TMPL_CAT_CONFIG_ICONS } from "./_ui-config";
 import {
-  getDocuments, uploadDocumentFile, getDocumentFileUrl,
+  getDocuments, uploadDocumentFile, getDocumentFileUrl, deleteDocument, setLegalHold,
   isUploadTimeoutError, isDocumentTimeoutError,
 } from "@/lib/services/documentService";
 import type { Document } from "@/lib/services/documentService";
 import { partitionUploadFiles } from "@/lib/services/fileValidation";
 import { isSupabaseMode } from "@/lib/services/api";
+import { DocumentsTrashPanel } from "@/components/documents/DocumentsTrashPanel";
+import {
+  confirmDeleteToBinAr, holdFailureAr, holdReasonTooLongAr,
+  MAX_HOLD_REASON_LEN,
+} from "@/components/documents/_trashCopy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +51,9 @@ interface Doc {
   /** Required to sign a URL. The old mapper dropped it, which is why the
    *  view/download buttons could not have worked even with a handler. */
   storagePath: string;
+  /** Phase 6 bin/hold columns — attachments.legal_hold / hold_reason. */
+  legalHold: boolean;
+  holdReason: string | null;
 }
 
 function apiDocToDoc(d: Document): Doc {
@@ -64,6 +72,8 @@ function apiDocToDoc(d: Document): Doc {
     size: sizeStr,
     date: d.created_at ? new Date(d.created_at).toLocaleDateString("ar-SA") : "",
     storagePath: d.storage_path,
+    legalHold: d.legal_hold === true,
+    holdReason: d.hold_reason ?? null,
   };
 }
 
@@ -87,7 +97,7 @@ export default function DocumentsPage() {
 
   const [docs,          setDocs]          = useState<Doc[]>([]);
   const [loadState,     setLoadState]     = useState<LoadState>("loading");
-  const [mainTab,       setMainTab]       = useState<"docs" | "templates">("docs");
+  const [mainTab,       setMainTab]       = useState<"docs" | "templates" | "trash">("docs");
   const [search,        setSearch]        = useState("");
   const [tmplCat,       setTmplCat]       = useState<TemplateCategory | "all">("all");
   const [tmplBranch,    setTmplBranch]    = useState<LegalBranch | "all">("all");
@@ -267,6 +277,74 @@ export default function DocumentsPage() {
     window.document.body.removeChild(a);
   }, [resolveFileUrl]);
 
+  /**
+   * «حذف» was missing from this page entirely — a lawyer had no way to move a
+   * document into سلة المحذوفات from here at all. Mirrors
+   * dashboard/client/documents/page.tsx's handleDelete: deleteDocument() is a
+   * SOFT delete (documentService.ts), so the confirm names the bin, not
+   * "irreversible". A row under legal hold is refused server-side (409) —
+   * the button is disabled for those rows below so a lawyer is not sent into
+   * a failing request to learn that.
+   */
+  const handleDelete = useCallback(async (doc: Doc) => {
+    if (!confirm(confirmDeleteToBinAr(doc.name))) return;
+    setActionError(null);
+    setBusyDocId(doc.id);
+    try {
+      await deleteDocument(doc.id);
+      setDocs((prev) => prev.filter((d) => d.id !== doc.id));
+    } catch (err) {
+      console.error("[lawyer-documents] delete failed:", doc.id, err);
+      setActionError(
+        isDocumentTimeoutError(err)
+          ? `تعذّر تأكيد نقل «${doc.name}» إلى السلة — انتهت المهلة قبل وصول ردّ الخادم، وقد يكون النقل قد تم فعلاً. حدّث الصفحة للتحقق.`
+          : `فشل حذف «${doc.name}». حاول مرة أخرى.`,
+      );
+    } finally {
+      setBusyDocId(null);
+    }
+  }, []);
+
+  /**
+   * «حجز قانوني» — owner item Phase 6. Setting a hold asks for an optional
+   * reason with a native prompt(), the same class of dialog `confirm()`
+   * already is on this page; clearing one asks for a plain confirm. The API
+   * (PATCH .../hold) refuses `legalHold: true` on a row already in the bin
+   * (409) — restore it first — but that combination cannot be reached from
+   * this tab, since a held row can never be soft-deleted in the first place
+   * (DB CHECK attachments_hold_blocks_delete_check makes the two mutually
+   * exclusive), so no extra guard is needed here for that case.
+   */
+  const handleToggleHold = useCallback(async (doc: Doc) => {
+    const turningOn = !doc.legalHold;
+    let reason: string | undefined;
+    if (turningOn) {
+      const input = window.prompt("سبب الحجز القانوني (اختياري):", "");
+      if (input === null) return; // cancelled
+      const trimmed = input.trim();
+      if (trimmed.length > MAX_HOLD_REASON_LEN) {
+        setActionError(holdReasonTooLongAr());
+        return;
+      }
+      reason = trimmed || undefined;
+    } else if (!confirm(`إلغاء الحجز القانوني عن «${doc.name}»؟`)) {
+      return;
+    }
+    setActionError(null);
+    setBusyDocId(doc.id);
+    try {
+      await setLegalHold(doc.id, turningOn, reason);
+      setDocs((prev) => prev.map((d) => (
+        d.id === doc.id ? { ...d, legalHold: turningOn, holdReason: turningOn ? (reason ?? null) : null } : d
+      )));
+    } catch (err) {
+      console.error("[lawyer-documents] hold toggle failed:", doc.id, err);
+      setActionError(holdFailureAr(doc.name, turningOn, isDocumentTimeoutError(err)));
+    } finally {
+      setBusyDocId(null);
+    }
+  }, []);
+
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
@@ -307,6 +385,24 @@ export default function DocumentsPage() {
         title="تنزيل"
         className={`p-2 rounded-xl disabled:opacity-40 ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
         <Download size={14} />
+      </button>
+      <button
+        onClick={() => handleToggleHold(doc)}
+        disabled={busyDocId === doc.id}
+        title={doc.legalHold ? `إلغاء الحجز القانوني${doc.holdReason ? ` — ${doc.holdReason}` : ""}` : "حجز قانوني"}
+        className={`p-2 rounded-xl disabled:opacity-40 ${
+          doc.legalHold
+            ? isDark ? "text-amber-400 bg-amber-500/10" : "text-amber-600 bg-amber-50"
+            : isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"
+        }`}>
+        <ShieldWarning size={14} weight={doc.legalHold ? "fill" : "regular"} />
+      </button>
+      <button
+        onClick={() => handleDelete(doc)}
+        disabled={busyDocId === doc.id || doc.legalHold}
+        title={doc.legalHold ? "لا يمكن الحذف أثناء الحجز القانوني" : "حذف"}
+        className={`p-2 rounded-xl disabled:opacity-40 ${isDark ? "hover:bg-red-500/10 text-zinc-400 hover:text-red-400" : "hover:bg-red-50 text-slate-500 hover:text-red-600"}`}>
+        <Trash size={14} />
       </button>
     </div>
   );
@@ -360,7 +456,7 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      {/* View / download failures */}
+      {/* View / download / delete / hold failures */}
       {actionError && (
         <div className={`flex items-start gap-3 p-4 rounded-2xl border text-sm ${isDark ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-800"}`}>
           <Warning size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
@@ -371,8 +467,12 @@ export default function DocumentsPage() {
       {/* Main Tab Switch */}
       <div className={`flex rounded-2xl p-1 ${isDark ? "bg-zinc-800/80 border border-white/[0.06]" : "bg-slate-100/80 border border-slate-200"}`}>
         {([
-          { key: "docs",      label: "مستنداتي", count: loadState === "ready" ? String(docs.length) : "—" },
-          { key: "templates", label: "النماذج",  count: String(TEMPLATES.length) },
+          { key: "docs",      label: "مستنداتي",        count: loadState === "ready" ? String(docs.length) : "—" },
+          { key: "templates", label: "النماذج",          count: String(TEMPLATES.length) },
+          // Not prefetched on mount — the count is unknown until the tab is
+          // opened, same convention "—" already carries for `docs` before its
+          // own read settles.
+          { key: "trash",     label: "سلة المحذوفات",   count: "—" },
         ] as const).map(tab => (
           <button key={tab.key} onClick={() => setMainTab(tab.key)}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-bold transition-all ${
@@ -450,7 +550,14 @@ export default function DocumentsPage() {
                       <Icon size={20} weight="duotone" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-[14px] font-semibold truncate mb-0.5 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{doc.name}</p>
+                      <p className={`flex items-center gap-1.5 text-[14px] font-semibold truncate mb-0.5 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>
+                        {doc.name}
+                        {doc.legalHold && (
+                          <span title={doc.holdReason ?? undefined} className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${isDark ? "bg-amber-500/15 text-amber-400" : "bg-amber-50 text-amber-700"}`}>
+                            <ShieldWarning size={9} weight="fill" /> حجز قانوني
+                          </span>
+                        )}
+                      </p>
                       <div className={`flex items-center gap-2 text-[11px] flex-wrap ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                         <span className="flex items-center gap-1"><CalendarBlank size={10} />{doc.date}</span>
                         <span>{doc.size}</span>
@@ -473,6 +580,11 @@ export default function DocumentsPage() {
                       <Icon size={22} weight="duotone" />
                     </div>
                     <p className={`text-[13px] font-semibold line-clamp-2 mb-1 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{doc.name}</p>
+                    {doc.legalHold && (
+                      <span title={doc.holdReason ?? undefined} className={`mb-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${isDark ? "bg-amber-500/15 text-amber-400" : "bg-amber-50 text-amber-700"}`}>
+                        <ShieldWarning size={9} weight="fill" /> حجز قانوني
+                      </span>
+                    )}
                     <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{doc.size} · {doc.date}</p>
                     {/* The grid used to carry no actions at all, so switching
                         view silently removed the only way to open a file. */}
@@ -618,6 +730,13 @@ export default function DocumentsPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ──────────────────── سلة المحذوفات TAB ──────────────────── */}
+      {mainTab === "trash" && (
+        <div className={`${card} p-5`}>
+          <DocumentsTrashPanel isDark={isDark} onRestored={() => { void loadDocs(); }} showHeader={false} />
+        </div>
       )}
     </div>
   );

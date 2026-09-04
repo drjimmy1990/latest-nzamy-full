@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   NotePencil, Highlighter, CaretDown, CaretUp, ArrowSquareOut, Trash,
-  Microphone, List, SquaresFour
+  Microphone, List, SquaresFour, Warning, SpinnerGap, ArrowClockwise
 } from "@phosphor-icons/react";
+import { useUser } from "@/hooks/useUser";
+import { isSupabaseMode } from "@/lib/services/api";
+import { getMyArticleNotes, deleteArticleNote, type ArticleNote } from "@/lib/services/articleNotesService";
+import { listViewState, type ListRead } from "@/lib/services/listRead";
 
 interface NoteEntry {
   pageId: string;
@@ -80,7 +84,35 @@ function getCategoryInfo(pageId: string, isDark: boolean): DocCategory {
   };
 }
 
+/** A committed, non-empty strokes array — not merely a key that exists. ResearchWorkspace's guest-mode
+ *  write fires on every page visit (even one with nothing drawn), so `highlighter_strokes_<pageId>` can
+ *  hold a harmless "[]" — treating that as "this page has a highlight" would list every law page a guest
+ *  has ever opened, not the ones they actually marked up. */
+function hasRealGuestStrokes(raw: string | null): boolean {
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function noteToEntry(note: ArticleNote): NoteEntry {
+  return {
+    pageId: note.pageId,
+    lawName: getCleanDocumentName(note.pageId),
+    text: note.noteText,
+    hasAudio: note.audioPath !== null,
+    hasStrokes: Array.isArray(note.strokes) && note.strokes.length > 0,
+    updatedAt: Date.parse(note.updatedAt) || 0,
+  };
+}
+
 export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRTL?: boolean }) {
+  const { isLoggedIn, loading: authLoading } = useUser();
+  const signedIn = isLoggedIn && isSupabaseMode;
+
   const [tab, setTab] = useState<Tab>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("flat");
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
@@ -88,7 +120,31 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
   const [expanded, setExpanded] = useState<string | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  // Signed-in: getMyArticleNotes() — loading/unreadable/empty are three
+  // different answers (see listRead.ts); a failed read must never render as
+  // "you have no notes". Guest: unchanged local scan, no loading state,
+  // exactly as before this phase.
+  const [loading, setLoading] = useState(true);
+  const [noteRead, setNoteRead] = useState<ListRead<ArticleNote> | null>(null);
+
+  const loadServerNotes = useCallback(async () => {
+    setLoading(true);
+    const read = await getMyArticleNotes();
+    setNoteRead(read);
+    setEntries(read.ok ? read.items.map(noteToEntry) : []);
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
+    if (authLoading) return; // wait for the session to settle before deciding guest vs. signed-in
+    if (!signedIn) { setLoading(false); return; }
+    void loadServerNotes();
+  }, [authLoading, signedIn, loadServerNotes]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (signedIn) return; // server path above owns `entries` for a signed-in reader
+
     const pageIds = new Set<string>();
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -106,7 +162,7 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
     pageIds.forEach(pageId => {
       const text   = localStorage.getItem(`sticky_note_text_${pageId}`) ?? "";
       const audio  = !!localStorage.getItem(`sticky_note_audio_${pageId}`);
-      const strk   = !!localStorage.getItem(`highlighter_strokes_${pageId}`);
+      const strk   = hasRealGuestStrokes(localStorage.getItem(`highlighter_strokes_${pageId}`));
       if (text || audio || strk) {
         found.push({
           pageId,
@@ -114,15 +170,28 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
           text,
           hasAudio: audio,
           hasStrokes: strk,
-          updatedAt: Date.now(),
+          // No real timestamp exists for a browser-only note — 0 is an explicit
+          // "unknown", never rendered as a date. Do not replace with Date.now():
+          // that would assert a last-edited time nothing here actually recorded.
+          updatedAt: 0,
         });
       }
     });
 
     setEntries(found);
-  }, []);
+  }, [authLoading, signedIn]);
 
   const deleteEntry = (pageId: string) => {
+    if (signedIn) {
+      setEntries(prev => prev.filter(e => e.pageId !== pageId));
+      if (selectedDoc === pageId) setSelectedDoc(null);
+      void deleteArticleNote(pageId).catch(err => {
+        console.error("[MyNotesSection] deleteArticleNote failed:", err);
+        // The row may still exist server-side; the next successful load will bring it back.
+        void loadServerNotes();
+      });
+      return;
+    }
     localStorage.removeItem(`sticky_note_text_${pageId}`);
     localStorage.removeItem(`sticky_note_audio_${pageId}`);
     localStorage.removeItem(`sticky_note_pos_${pageId}`);
@@ -133,6 +202,10 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
       setSelectedDoc(null);
     }
   };
+
+  // Guest reads are a synchronous local scan — always "ready", never "loading"/"unreadable",
+  // matching this component's pre-Phase-6 behaviour exactly.
+  const viewState = authLoading ? "loading" : signedIn ? listViewState(loading, noteRead) : "ready";
 
   // Get unique documents list for filter chips
   const uniqueDocs = Array.from(new Set(entries.map(e => e.pageId))).map(pageId => ({
@@ -303,7 +376,11 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
               {isRTL ? "ملاحظاتي وتحديداتي" : "My Notes & Annotations"}
             </p>
             <p className={`text-[11px] ${muted}`}>
-              {entries.length > 0
+              {viewState === "loading"
+                ? (isRTL ? "جارٍ التحميل..." : "Loading…")
+                : viewState === "unreadable"
+                ? (isRTL ? "تعذّرت القراءة" : "Could not read")
+                : entries.length > 0
                 ? (isRTL ? `${entries.length} نظام به ملاحظات` : `${entries.length} laws with notes`)
                 : (isRTL ? "لا توجد ملاحظات بعد" : "No notes yet")}
             </p>
@@ -385,9 +462,36 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
               )}
             </div>
 
-            {/* Content list */}
+            {/* Content list — four separate states: loading / unreadable / genuinely
+                empty / the list. «لا يوجد» and «لم نستطع القراءة» are not the same
+                claim — a signed-in reader whose read failed must never be told they
+                have no notes when the truth is we simply could not check. */}
             <div className="px-5 py-3 space-y-2 max-h-72 overflow-y-auto">
-              {filtered.length === 0 ? (
+              {viewState === "loading" ? (
+                <div className={`flex items-center justify-center gap-2 py-8 text-[12px] ${muted}`}>
+                  <SpinnerGap size={16} className="animate-spin" />
+                  {isRTL ? "جارٍ تحميل ملاحظاتك..." : "Loading your notes…"}
+                </div>
+              ) : viewState === "unreadable" ? (
+                <div className="flex flex-col items-center gap-2 py-8 text-center">
+                  <Warning size={20} weight="fill" className="text-amber-500" />
+                  <p className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
+                    {isRTL ? "تعذّرت قراءة ملاحظاتك" : "Could not read your notes"}
+                  </p>
+                  <p className={`text-[11px] max-w-xs ${muted}`}>
+                    {isRTL
+                      ? "هذه ليست قائمة فارغة — قد تكون هناك ملاحظات محفوظة لا تظهر هنا الآن."
+                      : "This is not an empty list — saved notes may exist that just aren't showing."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { void loadServerNotes(); }}
+                    className={`mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition ${isDark ? "bg-white/10 text-zinc-200 hover:bg-white/20" : "bg-slate-800 text-white hover:bg-slate-700"}`}
+                  >
+                    <ArrowClockwise size={12} weight="bold" /> {isRTL ? "إعادة المحاولة" : "Retry"}
+                  </button>
+                </div>
+              ) : filtered.length === 0 ? (
                 <div className={`text-center py-6 text-[12px] ${muted}`}>
                   {isRTL ? "لا يوجد شيء هنا بعد" : "Nothing here yet"}
                 </div>

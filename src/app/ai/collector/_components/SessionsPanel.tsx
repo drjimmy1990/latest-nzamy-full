@@ -204,7 +204,15 @@ export function SessionsPanel({ onToast }: Props) {
 
   function handleDelete(id: string) { removeFromInbox(id); reload(); onToast("حُذف"); }
   function handleDeleteSel() { selected.forEach(id => removeFromInbox(id)); setSelected(new Set()); reload(); onToast(`حُذف ${selected.size}`); }
-  function handleMarkUsed() { markUsed(Array.from(selected)); setSelected(new Set()); reload(); onToast("مُميَّز كمستخدم"); }
+  // Awaited before the reload — markUsed PATCHes the server in supabase mode
+  // (researchService.ts) now; firing it and re-fetching in the same tick raced
+  // the write against the reload that follows.
+  async function handleMarkUsed() {
+    await markUsed(Array.from(selected));
+    setSelected(new Set());
+    await reload();
+    onToast("مُميَّز كمستخدم");
+  }
   function handleMerge() {
     if (selected.size < 2 || !mergeTitle.trim() || !activeSession) return;
     mergeItems(Array.from(selected), mergeTitle.trim(), "session", activeSession);

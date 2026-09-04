@@ -5,7 +5,7 @@ import { motion, AnimatePresence, useInView } from 'framer-motion';
 import {
   FileText, FilePdf, FileDoc, UploadSimple, MagnifyingGlass, FolderOpen,
   ArrowClockwise, DownloadSimple, Trash, Eye, PlusCircle, SortAscending,
-  WarningCircle, SpinnerGap,
+  WarningCircle, SpinnerGap, TrashSimple, CaretDown, CaretUp,
 } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
 import {
@@ -16,6 +16,8 @@ import {
   type Document as ApiDocument,
 } from '@/lib/services';
 import { isUploadTimeoutError, isDocumentTimeoutError } from '@/lib/services/documentService';
+import { DocumentsTrashPanel } from '@/components/documents/DocumentsTrashPanel';
+import { confirmDeleteToBinAr } from '@/components/documents/_trashCopy';
 import { MAX_UPLOAD_BYTES, partitionUploadFiles } from '@/lib/services/fileValidation';
 import { isSupabaseMode } from '@/lib/services/api';
 import {
@@ -306,6 +308,7 @@ export default function ClientDocumentsPage() {
   // stopped failing silently, so the name still describes what it holds.
   const [actionError, setActionError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   /**
    * Reload the list. Returns whether it succeeded, because handleFiles() has
@@ -483,7 +486,7 @@ export default function ClientDocumentsPage() {
   }, [resolveFileUrl]);
 
   const handleDelete = useCallback(async (d: Doc) => {
-    if (!confirm(`حذف المستند «${d.name}»؟ لا يمكن التراجع.`)) return;
+    if (!confirm(confirmDeleteToBinAr(d.name))) return;
     setActionError(null);
     try {
       await deleteDocument(d.id, d.storagePath);
@@ -829,6 +832,30 @@ export default function ClientDocumentsPage() {
           <p className={`text-[11px] font-bold mt-2 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>
             {docs.length.toLocaleString('ar-EG')} مستند محفوظ
           </p>
+        )}
+      </div>
+
+      {/* سلة المحذوفات — collapsed by default so a client who deletes nothing
+          never sees an empty bin section cluttering the page. */}
+      <div className={`mt-6 rounded-[2rem] border transition-colors ${
+        isDark ? "bg-zinc-900/50 border-white/10" : "bg-white border-zinc-200"
+      }`}>
+        <button
+          type="button"
+          onClick={() => setTrashOpen((v) => !v)}
+          className={`flex w-full items-center justify-between gap-2 p-6 text-[13px] font-bold ${
+            isDark ? "text-zinc-300" : "text-zinc-700"
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <TrashSimple size={16} weight="bold" /> سلة المحذوفات
+          </span>
+          {trashOpen ? <CaretUp size={14} weight="bold" /> : <CaretDown size={14} weight="bold" />}
+        </button>
+        {trashOpen && (
+          <div className="px-6 pb-6">
+            <DocumentsTrashPanel isDark={isDark} onRestored={() => { void loadDocs(); }} showHeader={false} />
+          </div>
         )}
       </div>
 

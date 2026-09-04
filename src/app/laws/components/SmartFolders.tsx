@@ -16,40 +16,17 @@ import { FOLDER_COLORS, DEFAULT_LAWS, DEMO_FOLDERS, ALL_LIBRARY_DOCS } from "./S
 import FolderCard, { FolderIcon, ColorPicker } from "./FolderCard";
 import CreateFolderInline from "./CreateFolderInline";
 import { useUser } from "@/hooks/useUser";
+// The DB↔frontend mapper lives in its own plain-.ts module now — a pure
+// helper, shared with FolderSelectionModal.tsx, and unit-tested on its own
+// (see smartFolderApiMapper.test.ts). This file cannot host it and stay
+// testable with `node --test`: it is "use client" JSX.
+import { mapApiFolderToSmartFolder } from "./smartFolderApiMapper";
 
 // Re-export for project compatibility
 export type { LawRef, SmartFolder, LibraryDoc };
 export { FOLDER_COLORS, DEFAULT_LAWS, DEMO_FOLDERS, ALL_LIBRARY_DOCS };
 export { FolderIcon, ColorPicker, FolderCard, CreateFolderInline };
-
-// ─── API ↔ SmartFolder mapping helpers ──────────────────────────────────────────
-
-/** Convert a DB folder row (from GET /api/library/folders) to the frontend SmartFolder shape */
-function mapApiFolderToSmartFolder(apiFolder: any): SmartFolder {
-  return {
-    id: apiFolder.id,
-    name: apiFolder.name,
-    nameEn: apiFolder.name, // DB only stores one name; use it for both
-    color: apiFolder.color || "#C8A762",
-    icon: apiFolder.icon === "📁" ? "default" : (apiFolder.icon || "default"),
-    isDefault: false,
-    isPinned: apiFolder.is_pinned ?? false,
-    laws: (apiFolder.smart_folder_items || []).map((item: any) => ({
-      slug: item.entity_id,
-      title: item.title || item.entity_id,
-      titleEn: item.title_en || item.entity_id,
-      catId: item.cat_id || "",
-      type: item.entity_type || "law",
-      // Preserve the DB item id for deletion
-      _itemDbId: item.id,
-    })),
-    lastModified: apiFolder.updated_at
-      ? new Date(apiFolder.updated_at).getTime()
-      : apiFolder.created_at
-        ? new Date(apiFolder.created_at).getTime()
-        : Date.now(),
-  };
-}
+export { mapApiFolderToSmartFolder };
 
 // ─── localStorage helpers (same as before, extracted for reuse) ──────────────
 
@@ -103,8 +80,12 @@ export default function SmartFolders({
           const data = await res.json();
           const mapped = (data.folders || []).map(mapApiFolderToSmartFolder);
           setFolders(mapped);
-          // Also sync to localStorage for offline / cross-component compat
-          saveFoldersToLocalStorage(mapped);
+          // Signed-in: the server is the record of truth. Do NOT mirror it
+          // into localStorage — THE RULE OF THIS PHASE reserves localStorage
+          // for signed-out visitors only, and a shared/office machine would
+          // otherwise leak this user's folders to the next guest. The
+          // CustomEvent below is what keeps this component and
+          // FolderSelectionModal in sync within the same tab.
           dispatchFoldersChanged(mapped);
         } else {
           // API failed — fall back to localStorage
@@ -165,7 +146,8 @@ export default function SmartFolders({
     // Optimistic update
     setFolders(prev => {
       const next = prev.filter(f => f.id !== id);
-      saveFoldersToLocalStorage(next);
+      // Guests only — signed-in users' data lives on the server (see loadFolders).
+      if (!isAuthenticated) saveFoldersToLocalStorage(next);
       dispatchFoldersChanged(next);
       return next;
     });
@@ -194,7 +176,8 @@ export default function SmartFolders({
     // Optimistic update
     setFolders(prev => {
       const next = prev.map(f => f.id === id ? { ...f, name, nameEn: name, lastModified: Date.now() } : f);
-      saveFoldersToLocalStorage(next);
+      // Guests only — signed-in users' data lives on the server (see loadFolders).
+      if (!isAuthenticated) saveFoldersToLocalStorage(next);
       dispatchFoldersChanged(next);
       return next;
     });
@@ -223,7 +206,8 @@ export default function SmartFolders({
     // Optimistic update
     setFolders(prev => {
       const next = prev.map(f => f.id === id ? { ...f, color, lastModified: Date.now() } : f);
-      saveFoldersToLocalStorage(next);
+      // Guests only — signed-in users' data lives on the server (see loadFolders).
+      if (!isAuthenticated) saveFoldersToLocalStorage(next);
       dispatchFoldersChanged(next);
       return next;
     });
@@ -248,16 +232,40 @@ export default function SmartFolders({
 
   // ─── TOGGLE pin ────────────────────────────────────────────────────────────
 
-  const handleTogglePin = useCallback((id: string) => {
-    // Pin is a local-only feature (no DB column for is_pinned currently).
-    // Keep it in localStorage for both auth and guest users.
+  const handleTogglePin = useCallback(async (id: string) => {
+    // `library.smart_folders.is_pinned` (migration 20260906) backs this now —
+    // see route.ts's GET (`*` carries it through) and PATCH (`isPinned`).
+    // Optimistic update first, same shape as rename/color-change above.
+    const current = folders.find(f => f.id === id);
+    const nextPinned = !(current?.isPinned ?? false);
     setFolders(prev => {
       const next = prev.map(f => f.id === id ? { ...f, isPinned: !f.isPinned, lastModified: Date.now() } : f);
-      saveFoldersToLocalStorage(next);
+      // Guests: local-only — no account to persist the pin to. Signed-in
+      // users' pin lives on the server (PATCH below); it must NOT also be
+      // written to localStorage, or it would survive a browser cleanup and,
+      // worse, leak to the next guest on a shared machine.
+      if (!isAuthenticated) saveFoldersToLocalStorage(next);
       dispatchFoldersChanged(next);
       return next;
     });
-  }, []);
+
+    if (isAuthenticated) {
+      try {
+        const res = await fetch("/api/library/folders", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folderId: id, isPinned: nextPinned }),
+        });
+        if (!res.ok) {
+          console.error("[SmartFolders] Failed to update pin via API");
+          loadFolders();
+        }
+      } catch (err) {
+        console.error("[SmartFolders] API error updating pin:", err);
+        loadFolders();
+      }
+    }
+  }, [isAuthenticated, folders, loadFolders]);
 
   // ─── CREATE folder ─────────────────────────────────────────────────────────
 
@@ -275,7 +283,8 @@ export default function SmartFolders({
           const newFolder = mapApiFolderToSmartFolder(data.folder);
           setFolders(prev => {
             const next = [...prev, newFolder];
-            saveFoldersToLocalStorage(next);
+            // Signed-in only in this branch — server already has it, don't
+            // also mirror to localStorage (see loadFolders).
             dispatchFoldersChanged(next);
             return next;
           });
@@ -310,13 +319,17 @@ export default function SmartFolders({
         lastModified: Date.now(),
       };
       const next = [...prev, newFolder];
-      saveFoldersToLocalStorage(next);
+      // Guests: their only store. Signed-in users only reach this as an
+      // API-failure fallback — nothing was persisted server-side, but we
+      // still must not cache it to localStorage (THE RULE OF THIS PHASE);
+      // it would only outlive the tab as a leak risk, not as a real save.
+      if (!isAuthenticated) saveFoldersToLocalStorage(next);
       dispatchFoldersChanged(next);
       return next;
     });
     setIsCreating(false);
     setExpandedId(newFolderId);
-  }, []);
+  }, [isAuthenticated]);
 
   // ─── REMOVE item from folder ──────────────────────────────────────────────
 
@@ -341,7 +354,8 @@ export default function SmartFolders({
         }
         return f;
       });
-      saveFoldersToLocalStorage(next);
+      // Guests only — signed-in users' data lives on the server (see loadFolders).
+      if (!isAuthenticated) saveFoldersToLocalStorage(next);
       dispatchFoldersChanged(next);
       return next;
     });
@@ -384,7 +398,8 @@ export default function SmartFolders({
           }
           return f;
         });
-        saveFoldersToLocalStorage(next);
+        // Guests only — signed-in users' data lives on the server (see loadFolders).
+        if (!isAuthenticated) saveFoldersToLocalStorage(next);
         dispatchFoldersChanged(next);
         return next;
       });
@@ -440,7 +455,8 @@ export default function SmartFolders({
                 }
                 return f;
               });
-              saveFoldersToLocalStorage(next);
+              // Signed-in only in this branch — server already has it, don't
+              // also mirror to localStorage (see loadFolders).
               dispatchFoldersChanged(next);
               return next;
             });
@@ -472,7 +488,10 @@ export default function SmartFolders({
         }
         return f;
       });
-      saveFoldersToLocalStorage(next);
+      // Guests: their only store. Signed-in users only reach this as an
+      // API-failure fallback — nothing was persisted server-side, but we
+      // still must not cache it to localStorage (THE RULE OF THIS PHASE).
+      if (!isAuthenticated) saveFoldersToLocalStorage(next);
       dispatchFoldersChanged(next);
       return next;
     });

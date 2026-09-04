@@ -1,12 +1,20 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Lightbulb, X, PaperPlaneTilt, CheckCircle,
-  ClockCounterClockwise, CaretDown,
-  Star, CheckFat, Microphone, MicrophoneSlash, Stop,
+  ClockCounterClockwise, CaretDown, WarningCircle, ArrowClockwise,
+  Star, Microphone, SignIn,
 } from "@phosphor-icons/react";
+import { useTheme } from "@/components/ThemeProvider";
+import { useUser } from "@/hooks/useUser";
+import {
+  getMyFeatureRequests, submitFeatureRequest, FEATURE_REQUEST_STATUS_AR,
+  type FeatureRequest, type FeatureRequestStatus, type FeatureRequestPriority,
+} from "@/lib/services/feedbackService";
+import type { FeatureRequestCategory } from "@/lib/services/feedbackInput";
+import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 
 // ─── Voice hook (Web Speech API) ──────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,90 +60,92 @@ function useVoiceInput(onResult: (text: string) => void) {
 
   return { listening, supported, toggle };
 }
-import { useTheme } from "@/components/ThemeProvider";
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-export interface FeatureRequest {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  priority: string;
-  submittedAt: string;
-  status?: "pending" | "in_review" | "implemented"; // set by admin in future
-  implementedNote?: string;
-}
+// ─── Category / priority vocabularies (Arabic labels over the server's enums) ─
+// Values MUST stay inside FEATURE_REQUEST_CATEGORIES / the priority enum
+// (src/lib/services/feedbackInput.ts) — the API rejects anything else.
+const CATEGORY_OPTIONS: { value: FeatureRequestCategory; label: string }[] = [
+  { value: "ui",          label: "واجهة الاستخدام" },
+  { value: "library",     label: "المكتبة القانونية" },
+  { value: "billing",     label: "الفواتير والاشتراك" },
+  { value: "performance", label: "الأداء والسرعة" },
+  { value: "mobile",      label: "تطبيق الجوال" },
+  { value: "other",       label: "أخرى" },
+];
 
-const CATEGORIES = ["تحسين أداة موجودة", "أداة جديدة", "تكامل خارجي", "تقرير أو تحليل", "أخرى"];
-const PRIORITIES  = ["ضروري جداً", "مفيد", "لطيف أن يكون"];
-const STORAGE_KEY = "nzamy_feature_requests";
+const PRIORITY_OPTIONS: { value: FeatureRequestPriority; label: string }[] = [
+  { value: "high",   label: "ضروري جداً" },
+  { value: "normal", label: "مفيد" },
+  { value: "low",    label: "لطيف أن يكون" },
+];
 
-// status config
-const STATUS_CONFIG = {
-  pending:     { label: "قيد المراجعة",   dot: "bg-amber-400",  text: "text-amber-400",  bg: "bg-amber-400/10 border-amber-400/20" },
-  in_review:   { label: "بالدراسة",        dot: "bg-blue-400",   text: "text-blue-400",   bg: "bg-blue-400/10 border-blue-400/20" },
-  implemented: { label: "تم التطبيق! 🎉",  dot: "bg-emerald-500", text: "text-emerald-500", bg: "bg-emerald-500/10 border-emerald-500/20" },
+const STATUS_STYLE: Record<FeatureRequestStatus, { dot: string; text: string; bg: string }> = {
+  new:         { dot: "bg-amber-400",   text: "text-amber-400",   bg: "bg-amber-400/10 border-amber-400/20" },
+  planned:     { dot: "bg-blue-400",    text: "text-blue-400",    bg: "bg-blue-400/10 border-blue-400/20" },
+  implemented: { dot: "bg-emerald-500", text: "text-emerald-500", bg: "bg-emerald-500/10 border-emerald-500/20" },
+  declined:    { dot: "bg-zinc-400",    text: "text-zinc-400",    bg: "bg-zinc-400/10 border-zinc-400/20" },
 };
 
-// ─── Hook ──────────────────────────────────────────────────────────────────────
-export function useFeatureRequests() {
-  const [requests, setRequests] = useState<FeatureRequest[]>([]);
+// ─── Hook: the signed-in caller's own feature requests, from the server ──────
+function useMyFeatureRequests(enabled: boolean) {
+  const [read, setRead]       = useState<ListRead<FeatureRequest> | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  const reload = useCallback(async () => {
+    if (!enabled) { setRead(null); return; }
+    setLoading(true);
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) setRequests(JSON.parse(stored));
-    } catch { /* ignore */ }
-  }, []);
+      const result = await getMyFeatureRequests();
+      setRead(result);
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled]);
 
-  function saveRequest(r: Omit<FeatureRequest, "id" | "submittedAt" | "status">) {
-    const newReq: FeatureRequest = {
-      ...r,
-      id: Math.random().toString(36).slice(2),
-      submittedAt: new Date().toISOString(),
-      status: "pending",
-    };
-    setRequests(prev => {
-      const updated = [newReq, ...prev];
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(updated)); } catch { /* ignore */ }
-      return updated;
-    });
-  }
+  useEffect(() => { reload(); }, [reload]);
 
-  const implemented = requests.filter(r => r.status === "implemented");
-  const pending      = requests.filter(r => r.status !== "implemented");
-
-  return { requests, saveRequest, implemented, pending };
+  return { read, loading, reload };
 }
 
 // ─── Compact form (inline in sidebar) ─────────────────────────────────────────
 function InlineForm({
   isDark,
-  onSubmit,
+  onSubmitted,
   onDone,
 }: {
   isDark: boolean;
-  onSubmit: (r: Omit<FeatureRequest, "id" | "submittedAt" | "status">) => void;
+  onSubmitted: () => void;
   onDone: () => void;
 }) {
   const [title,       setTitle]       = useState("");
   const [description, setDescription] = useState("");
-  const [category,    setCategory]    = useState(CATEGORIES[0]);
-  const [priority,    setPriority]    = useState(PRIORITIES[0]);
+  const [category,    setCategory]    = useState<FeatureRequestCategory>(CATEGORY_OPTIONS[0].value);
+  const [priority,    setPriority]    = useState<FeatureRequestPriority>(PRIORITY_OPTIONS[0].value);
+  const [submitting,  setSubmitting]  = useState(false);
   const [submitted,   setSubmitted]   = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
 
   // Voice input — appends transcript to description
   const voice = useVoiceInput((text) => {
     setDescription(prev => (prev ? prev + " " + text : text));
   });
 
-  const canSubmit = title.trim().length >= 3 && description.trim().length >= 10;
+  const canSubmit = title.trim().length >= 3 && description.trim().length >= 10 && !submitting;
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!canSubmit) return;
-    onSubmit({ title: title.trim(), description: description.trim(), category, priority });
-    setSubmitted(true);
-    setTimeout(onDone, 2000);
+    setError(null);
+    setSubmitting(true);
+    try {
+      await submitFeatureRequest({ title: title.trim(), description: description.trim(), category, priority });
+      setSubmitted(true);
+      onSubmitted();
+      setTimeout(onDone, 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذّر إرسال الفكرة، حاول مرة أخرى.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const inputCls = `w-full px-2.5 py-2 rounded-lg border text-[11px] outline-none transition ${
@@ -276,17 +286,25 @@ function InlineForm({
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className={labelCls}>التصنيف</label>
-          <select value={category} onChange={e => setCategory(e.target.value)} className={inputCls}>
-            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          <select value={category} onChange={e => setCategory(e.target.value as FeatureRequestCategory)} className={inputCls}>
+            {CATEGORY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </div>
         <div>
           <label className={labelCls}>الأهمية</label>
-          <select value={priority} onChange={e => setPriority(e.target.value)} className={inputCls}>
-            {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+          <select value={priority} onChange={e => setPriority(e.target.value as FeatureRequestPriority)} className={inputCls}>
+            {PRIORITY_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
         </div>
       </div>
+
+      {/* Submit error */}
+      {error && (
+        <p className={`flex items-center gap-1.5 text-[10px] font-semibold ${isDark ? "text-red-400" : "text-red-600"}`}>
+          <WarningCircle size={12} weight="fill" />
+          {error}
+        </p>
+      )}
 
       {/* Submit */}
       <motion.button
@@ -301,31 +319,71 @@ function InlineForm({
         }`}
       >
         <PaperPlaneTilt size={13} />
-        إرسال الفكرة
+        {submitting ? "جارٍ الإرسال..." : "إرسال الفكرة"}
       </motion.button>
     </div>
   );
 }
 
+// ─── Guest nudge — no account, no request ─────────────────────────────────────
+function GuestNotice({ isDark }: { isDark: boolean }) {
+  return (
+    <div className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 mt-1 ${
+      isDark ? "border-white/[0.08] bg-white/[0.02]" : "border-slate-200 bg-slate-50"
+    }`}>
+      <SignIn size={16} weight="duotone" className={isDark ? "text-zinc-500" : "text-slate-400"} />
+      <div className="flex-1 min-w-0">
+        <p className={`text-[11px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>سجّل الدخول لإرسال فكرتك</p>
+        <p className={`text-[9px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>مقترحات الميزات متاحة للمستخدمين المسجّلين فقط</p>
+      </div>
+      <a href="/login" className="flex-shrink-0 text-[10px] font-bold text-[#C8A762] hover:underline">
+        دخول
+      </a>
+    </div>
+  );
+}
 
-// ─── Previous requests list ────────────────────────────────────────────────────
-function PreviousRequests({
-  requests,
+// ─── My requests list ("طلباتي") ───────────────────────────────────────────────
+function MyRequests({
+  read,
+  loading,
+  onRetry,
   isDark,
 }: {
-  requests: FeatureRequest[];
+  read: ListRead<FeatureRequest> | null;
+  loading: boolean;
+  onRetry: () => void;
   isDark: boolean;
 }) {
-  if (!requests.length) return null;
+  const state = listViewState(loading, read);
+  const items = itemsOf(read);
+
+  if (state === "loading") {
+    return <p className={`mt-3 text-center text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>جارٍ التحميل...</p>;
+  }
+  if (state === "unreadable") {
+    return (
+      <div className={`mt-3 flex items-center justify-between gap-2 rounded-xl border px-2.5 py-2 ${
+        isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50/60"
+      }`}>
+        <p className={`text-[10px] font-semibold ${isDark ? "text-red-400" : "text-red-600"}`}>تعذّر تحميل طلباتك</p>
+        <button onClick={onRetry} className={`flex items-center gap-1 text-[10px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"} hover:underline`}>
+          <ArrowClockwise size={11} />
+          إعادة المحاولة
+        </button>
+      </div>
+    );
+  }
+  if (state === "empty") return null;
 
   return (
     <div className="mt-3 space-y-1.5">
       <p className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
         <ClockCounterClockwise size={11} />
-        مقترحاتك السابقة
+        طلباتي
       </p>
-      {requests.slice(0, 5).map(req => {
-        const st = STATUS_CONFIG[req.status ?? "pending"];
+      {items.slice(0, 5).map(req => {
+        const st = STATUS_STYLE[req.status];
         return (
           <div
             key={req.id}
@@ -337,21 +395,21 @@ function PreviousRequests({
                 {req.title}
               </p>
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border flex-shrink-0 ${st.bg} ${st.text}`}>
-                {st.label}
+                {FEATURE_REQUEST_STATUS_AR[req.status]}
               </span>
             </div>
 
             {/* Implemented note */}
             {req.status === "implemented" && req.implementedNote && (
               <div className={`mt-1.5 flex items-center gap-1 text-[10px] ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
-                <CheckFat size={10} weight="fill" />
+                <CheckCircle size={10} weight="fill" />
                 <span>{req.implementedNote}</span>
               </div>
             )}
 
             {/* Date */}
             <p className={`text-[9px] mt-1 ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
-              {new Date(req.submittedAt).toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}
+              {new Date(req.createdAt).toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}
             </p>
           </div>
         );
@@ -403,13 +461,16 @@ function ImplementedBanner({
 // ─── Main Widget (for sidebar) ─────────────────────────────────────────────────
 export function SidebarFeatureRequest({ compact = false }: { compact?: boolean }) {
   const { isDark } = useTheme();
-  const { requests, saveRequest, implemented } = useFeatureRequests();
+  const { isLoggedIn } = useUser();
+  const { read, loading, reload } = useMyFeatureRequests(isLoggedIn);
   const [open,        setOpen]        = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
-  const hasImplemented = implemented.length > 0 && !bannerDismissed;
-  const hasPrevious    = requests.length > 0;
+  const items = itemsOf(read);
+  const implementedCount = items.filter(r => r.status === "implemented").length;
+  const hasImplemented   = implementedCount > 0 && !bannerDismissed;
+  const hasPrevious      = read?.ok === true && items.length > 0;
 
   const border = isDark ? "border-white/[0.06]" : "border-slate-100";
 
@@ -421,7 +482,7 @@ export function SidebarFeatureRequest({ compact = false }: { compact?: boolean }
         {hasImplemented && (
           <div className="px-2 pt-2">
             <ImplementedBanner
-              count={implemented.length}
+              count={implementedCount}
               isDark={isDark}
               onDismiss={() => setBannerDismissed(true)}
             />
@@ -448,7 +509,7 @@ export function SidebarFeatureRequest({ compact = false }: { compact?: boolean }
           </p>
           {hasPrevious && !open && (
             <p className={`text-[9px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-              {requests.length} مقترح مرسل
+              {items.length} مقترح مرسل
             </p>
           )}
         </div>
@@ -470,47 +531,53 @@ export function SidebarFeatureRequest({ compact = false }: { compact?: boolean }
           >
             <div className={`px-3 pb-3 border-t ${border}`}>
 
-              {/* Inline form */}
-              <InlineForm
-                isDark={isDark}
-                onSubmit={saveRequest}
-                onDone={() => {
-                  setTimeout(() => setOpen(false), 300);
-                }}
-              />
-
-              {/* Previous requests toggle */}
-              {hasPrevious && (
+              {isLoggedIn ? (
                 <>
-                  <button
-                    onClick={() => setShowHistory(v => !v)}
-                    className={`w-full flex items-center justify-between mt-3 text-[10px] font-bold py-1.5 transition-colors ${
-                      isDark ? "text-zinc-600 hover:text-zinc-400" : "text-slate-400 hover:text-slate-600"
-                    }`}
-                  >
-                    <span className="flex items-center gap-1">
-                      <ClockCounterClockwise size={11} />
-                      مقترحاتك السابقة ({requests.length})
-                    </span>
-                    <motion.span animate={{ rotate: showHistory ? 180 : 0 }} transition={{ duration: 0.2 }}>
-                      <CaretDown size={10} />
-                    </motion.span>
-                  </button>
+                  {/* Inline form */}
+                  <InlineForm
+                    isDark={isDark}
+                    onSubmitted={reload}
+                    onDone={() => {
+                      setTimeout(() => setOpen(false), 300);
+                    }}
+                  />
 
-                  <AnimatePresence>
-                    {showHistory && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
+                  {/* My requests toggle */}
+                  {hasPrevious && (
+                    <>
+                      <button
+                        onClick={() => setShowHistory(v => !v)}
+                        className={`w-full flex items-center justify-between mt-3 text-[10px] font-bold py-1.5 transition-colors ${
+                          isDark ? "text-zinc-600 hover:text-zinc-400" : "text-slate-400 hover:text-slate-600"
+                        }`}
                       >
-                        <PreviousRequests requests={requests} isDark={isDark} />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                        <span className="flex items-center gap-1">
+                          <ClockCounterClockwise size={11} />
+                          طلباتي ({items.length})
+                        </span>
+                        <motion.span animate={{ rotate: showHistory ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                          <CaretDown size={10} />
+                        </motion.span>
+                      </button>
+
+                      <AnimatePresence>
+                        {showHistory && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <MyRequests read={read} loading={loading} onRetry={reload} isDark={isDark} />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </>
+                  )}
                 </>
+              ) : (
+                <GuestNotice isDark={isDark} />
               )}
             </div>
           </motion.div>

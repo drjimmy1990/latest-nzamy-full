@@ -13,6 +13,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
 import { useUser } from "@/hooks/useUser";
+import { useSubscription } from "@/hooks/useSubscription";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -253,7 +254,8 @@ export default function BusinessTeamPage() {
   const session = useUser();
   const businessRole = session.businessRole ?? "employee";
   const { currentCompanyFeatures, mounted, updateCompanyFeatures } = useAdminSettings();
-  
+  const { can } = useSubscription();
+
   // States
   const [userType, setUserType] = useState<UserType>("corporate");
   const [search, setSearch] = useState("");
@@ -275,7 +277,12 @@ export default function BusinessTeamPage() {
     ? "bg-zinc-900 border border-white/[0.06] rounded-2xl"
     : "bg-white border border-zinc-200/70 rounded-2xl";
 
-  const currentMembers = hasInternalLegal
+  // Was: `hasInternalLegal ? MEMBERS : MEMBERS.filter(...)` — read the
+  // localStorage-backed admin flag directly, so a viewer could flip it in
+  // production. can("team-legal-department") routes the decision through
+  // resolveFeatureAccess: production decides on tier alone, demo mode still
+  // honours hasInternalLegal (see featureAccess.ts).
+  const currentMembers = can("team-legal-department")
     ? MEMBERS
     : MEMBERS.filter(m => m.role !== "legal_manager" && m.role !== "legal_staff");
 
@@ -398,7 +405,9 @@ export default function BusinessTeamPage() {
       </div>
 
       {/* ── K2/K3: External Legal Dept Alert / Marketplace Pipeline ───────────── */}
-      {!hasInternalLegal && userType === "corporate" && (
+      {/* Same gate as currentMembers above — was reading the local mirror of
+          currentCompanyFeatures.hasInternalLegal directly. */}
+      {!can("team-legal-department") && userType === "corporate" && (
         <motion.div variants={fadeUp} initial="hidden" animate="show" custom={1.5}
           className={`relative overflow-hidden rounded-2xl border p-6 ${isDark ? "border-[#C8A762]/30 bg-gradient-to-l from-[#C8A762]/10 to-transparent" : "border-[#C8A762] bg-gradient-to-l from-[#C8A762]/10 to-white shadow-sm"}`}
         >

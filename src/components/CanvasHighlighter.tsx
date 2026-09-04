@@ -4,38 +4,36 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Highlighter, Eraser, Trash, X } from "@phosphor-icons/react";
 
-interface Stroke {
+export interface CanvasHighlighterStroke {
   id: string;
   points: { x: number; y: number }[];
   color: string;
 }
 
-export function CanvasHighlighter({ isDark, pageId }: { isDark: boolean; pageId: string }) {
+/**
+ * A free-hand highlight canvas, fully controlled by its caller: `strokes` is
+ * read from props and every change is reported through `onStrokesChange`,
+ * never touched here directly. Not currently mounted anywhere — kept
+ * prop-driven (no localStorage of its own) so that if it is ever composed
+ * with ResearchWorkspace (or anything else persisting strokes), that caller
+ * stays the single writer instead of two components racing to save the same
+ * `highlighter_strokes_<pageId>` key. See useArticleNote.ts for the
+ * server-backed version ResearchWorkspace actually uses today.
+ */
+export function CanvasHighlighter({
+  isDark,
+  strokes,
+  onStrokesChange,
+}: {
+  isDark: boolean;
+  strokes: CanvasHighlighterStroke[];
+  onStrokesChange: (strokes: CanvasHighlighterStroke[]) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [isErasingMode, setIsErasingMode] = useState(false);
   const [color, setColor] = useState("#fef08a"); // Default yellow
-  const [strokes, setStrokes] = useState<Stroke[]>([]);
-  const [currentStroke, setCurrentStroke] = useState<Stroke | null>(null);
-
-  // Load strokes from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem(`highlighter_strokes_${pageId}`);
-    if (saved) {
-      try {
-        setStrokes(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to load strokes", e);
-      }
-    }
-  }, [pageId]);
-
-  // Save strokes to localStorage whenever they change
-  useEffect(() => {
-    if (strokes.length > 0 || currentStroke === null) { // Only save if not currently drawing
-      localStorage.setItem(`highlighter_strokes_${pageId}`, JSON.stringify(strokes));
-    }
-  }, [strokes, currentStroke, pageId]);
+  const [currentStroke, setCurrentStroke] = useState<CanvasHighlighterStroke | null>(null);
 
   const drawAll = useCallback(() => {
     const canvas = canvasRef.current;
@@ -148,7 +146,7 @@ export function CanvasHighlighter({ isDark, pageId }: { isDark: boolean; pageId:
 
   const stopDrawing = () => {
     if (currentStroke) {
-      setStrokes(prev => [...prev, currentStroke]);
+      onStrokesChange([...strokes, currentStroke]);
       setCurrentStroke(null);
     }
   };
@@ -156,8 +154,8 @@ export function CanvasHighlighter({ isDark, pageId }: { isDark: boolean; pageId:
   const eraseAt = (x: number, y: number) => {
     // Simple hit detection: if a point is within 20px, delete the stroke
     const eraserRadius = 20;
-    setStrokes(prev => prev.filter(stroke => {
-      return !stroke.points.some(p => 
+    onStrokesChange(strokes.filter(stroke => {
+      return !stroke.points.some(p =>
         Math.abs(p.x - x) < eraserRadius && Math.abs(p.y - y) < eraserRadius
       );
     }));
@@ -165,8 +163,7 @@ export function CanvasHighlighter({ isDark, pageId }: { isDark: boolean; pageId:
 
   const clearAll = () => {
     if (confirm("هل أنت متأكد من مسح جميع التظليلات؟")) {
-      setStrokes([]);
-      localStorage.removeItem(`highlighter_strokes_${pageId}`);
+      onStrokesChange([]);
     }
   };
 

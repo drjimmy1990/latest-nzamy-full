@@ -1,58 +1,34 @@
-import RequirementsChecklist, { ChecklistItem } from "../_components/RequirementsChecklist";
+"use client";
 
-const ITEMS: ChecklistItem[] = [
-  {
-    id: "m1",
-    title: "رخصة البلدية (رخصة النشاط)",
-    detail: "رخصة ممارسة النشاط التجاري الصادرة من الأمانة أو البلدية",
-    status: "done",
-    deadline: "١٥ مارس ٢٠٢٥",
-    fee: "١٬٢٠٠ ﷼ / سنة",
-    portal: { label: "بوابة بلدي", url: "https://balady.gov.sa" },
-  },
-  {
-    id: "m2",
-    title: "شهادة السجل التجاري",
-    detail: "تسجيل النشاط في وزارة التجارة",
-    status: "pending",
-    deadline: "٢٠ مايو ٢٠٢٤",
-    fee: "٢٠٠ ﷼ / سنة",
-    portal: { label: "بوابة وزارة التجارة", url: "https://mc.gov.sa" },
-  },
-  {
-    id: "m3",
-    title: "تصريح الإعلانات واللافتات",
-    detail: "تصريح اللافتات والإعلانات الخارجية من البلدية",
-    status: "overdue",
-    deadline: "١ يناير ٢٠٢٤",
-    fee: "٥٠٠ ﷼ / سنة",
-    portal: { label: "بوابة بلدي", url: "https://balady.gov.sa" },
-  },
-  {
-    id: "m4",
-    title: "شهادة السلامة (الدفاع المدني)",
-    detail: "شهادة اشتراطات الحماية من الحريق",
-    status: "done",
-    deadline: "١ أغسطس ٢٠٢٤",
-    fee: "٤٠٠ ﷼ / سنة",
-    portal: { label: "بوابة الدفاع المدني", url: "https://cd.gov.sa" },
-  },
-  {
-    id: "m5",
-    title: "شهادة بلدية للمخزن / المستودع",
-    detail: "إن كان لديك مستودع منفصل عن موقع النشاط",
-    status: "na",
-    portal: { label: "بوابة بلدي", url: "https://balady.gov.sa" },
-  },
-];
+// Beta honesty gate: «اشتراطات البلدية» has no data model at all — there is
+// no municipal-license table, no renewal-tracking record and no permit feed
+// behind this screen, only what was hardcoded here.
+//
+// WHAT WAS REMOVED, and why:
+//   - ITEMS was five hardcoded checklist rows (رخصة البلدية / السجل التجاري /
+//     تصريح الإعلانات / شهادة السلامة / شهادة المخزن) with an invented
+//     per-item `status` ('done'/'pending'/'overdue'/'na'), a fabricated
+//     `deadline` and `fee` — identical for every micro account that opened
+//     the page, none of it a real permit this account holds.
+//   - the `aiTip` prop claimed «تصريح الإعلانات منتهٍ منذ أكثر من 90 يوماً»
+//     and threatened a ٥٠٠٠ ﷼ fine — a fabricated, urgent claim about this
+//     specific account's compliance status, read from nothing.
+//   - the checkbox toggle in RequirementsChecklist only flipped local
+//     component state — nothing was written or read anywhere, so a reload
+//     reset every checked item back to its hardcoded starting status.
+//
+// The previous UI (and RequirementsChecklist, still in ../_components) is
+// preserved in git history and can be restored once a real municipal
+// permit/renewal table exists behind this account.
+
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 export default function MicroMunicipalityPage() {
   return (
-    <RequirementsChecklist
+    <DashboardComingSoon
       title="اشتراطات البلدية"
-      subtitle="تراخيص النشاط واللافتات والسلامة الصادرة من الأمانة والجهات البلدية"
-      aiTip="تصريح الإعلانات منتهٍ منذ أكثر من 90 يوماً — تواصل مع بلديتك فوراً لتجنب الغرامة الإدارية التي قد تصل إلى ٥٠٠٠ ﷼."
-      items={ITEMS}
+      description="اشتراطات البلدية غير متاحة حالياً. حالة الرخصة والمواعيد والرسوم في هذه الصفحة كانت بيانات ثابتة لا تخص أي منشأة حقيقية، ولم يكن تحديد بند كمكتمل يحفظ شيئاً. ستُفعَّل الصفحة عند ربط رخص البلدية الفعلية بحساب المنشأة."
+      backHref="/dashboard/micro/requirements"
     />
   );
 }

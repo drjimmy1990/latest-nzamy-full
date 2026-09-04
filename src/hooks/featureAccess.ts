@@ -43,6 +43,7 @@ export const FEATURE_GATES: Record<string, UserTier> = {
   "procedures-expert":  "ai",
   marketplace:          "shield",
   "team-manage":        "pro",
+  "team-legal-department": "pro", // legal_manager/legal_staff roster rows on the team page — same tier as the hasInternalLegal-gated siblings above (team-manage, hr-contracts, dept-reviews)
   finance:              "pro",
   reports:              "shield",
   wallet:               "free",
@@ -68,6 +69,7 @@ export const FEATURE_GATES: Record<string, UserTier> = {
   "firm-analytics":     "free",
   "firm-health-check":  "free",
   "firm-wallet":        "free",
+  "firm-legal-library": "free", // matches every other firm-* gate — no server entitlement truth yet
 
   // Government sector gates — local Backend-ready entitlements
   "gov-judiciary":      "free",
@@ -175,6 +177,7 @@ export function resolveFeatureAccess(
       if (featureKey === "governance" && !currentCompanyFeatures.hasGovernance) return false;
       if (featureKey === "departments" && !currentCompanyFeatures.hasDepartments) return false;
       if (featureKey === "team-manage" && !currentCompanyFeatures.hasInternalLegal && !currentCompanyFeatures.hasDepartments) return false;
+      if (featureKey === "team-legal-department" && !currentCompanyFeatures.hasInternalLegal) return false;
       if (featureKey === "hr-contracts" && !currentCompanyFeatures.hasHrFinanceAccess) return false;
       if (featureKey === "dept-reviews" && !currentCompanyFeatures.hasInternalLegal && !currentCompanyFeatures.hasDepartments) return false;
       if (featureKey === "reports" && !currentCompanyFeatures.hasHrFinanceAccess) return false;
@@ -200,6 +203,7 @@ export function resolveFeatureAccess(
       if (featureKey === "firm-analytics" && !currentFirmFeatures.hasAnalytics) return false;
       if (featureKey === "firm-health-check" && !currentFirmFeatures.hasHealthCheck) return false;
       if (featureKey === "firm-wallet" && !currentFirmFeatures.hasFirmPointsWallet) return false;
+      if (featureKey === "firm-legal-library" && !currentFirmFeatures.hasLegalLibrary) return false;
 
       if (featureKey === "gov-judiciary" && !currentGovernmentProfile.hasJudiciary) return false;
       if (featureKey === "gov-prosecution" && !currentGovernmentProfile.hasProsecution) return false;
