@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
 import { recordActivity, RequestEvent } from "@/lib/events";
+import type { AutoDeadlineResult, AutoDeadlineSummary } from "@/lib/services/caseStagesService";
 import {
   type UiDegree, VALID_UI_DEGREES, degreeToDb, degreeFromDb,
 } from "@/lib/services/caseStageVocabulary";
@@ -257,24 +258,25 @@ async function autoCreateStatutoryDeadline(params: {
   stageId: string;
   degree: string;
   closedOn: string;
-}): Promise<void> {
+}): Promise<AutoDeadlineResult> {
   const { supabase, userId, firmId, caseId, stageId, degree, closedOn } = params;
   try {
     const ruleCode = DEGREE_TO_AUTO_RULE_CODE[degree];
-    if (!ruleCode) return;
+    if (!ruleCode) return { created: false, skipped: "no_rule_for_degree" };
 
     const { data: rule, error: ruleError } = await supabase
       .from("deadline_rules")
-      .select("id, title_ar, period_days, count_from_next_day, roll_forward_if_holiday")
+      .select("id, title_ar, period_days, count_from_next_day, roll_forward_if_holiday, verified_by_owner")
       .eq("code", ruleCode)
       .is("owner_user_id", null)
       .eq("active", true)
       .maybeSingle();
     if (ruleError) {
       console.error("[case-stages PATCH] auto-deadline rule lookup failed:", ruleError.message, ruleError.code);
-      return;
+      // Couldn't confirm the rule exists/active — same user-facing bucket as "not found".
+      return { created: false, skipped: "rule_missing" };
     }
-    if (!rule) return; // no platform rule for this code — nothing to auto-create
+    if (!rule) return { created: false, skipped: "rule_missing" }; // no platform rule for this code — nothing to auto-create
 
     const { data: existing, error: existingError } = await supabase
       .from("deadlines")
@@ -284,9 +286,10 @@ async function autoCreateStatutoryDeadline(params: {
       .maybeSingle();
     if (existingError) {
       console.error("[case-stages PATCH] auto-deadline existing lookup failed:", existingError.message, existingError.code);
-      return;
+      // Couldn't confirm either way — technical failure, not a confirmed duplicate.
+      return { created: false, skipped: "insert_failed" };
     }
-    if (existing) return; // already created for this stage+rule — idempotent
+    if (existing) return { created: false, skipped: "already_exists" }; // already created for this stage+rule — idempotent
 
     const { data: holidayRows, error: holidayError } = await supabase
       .from("court_holidays")
@@ -294,7 +297,8 @@ async function autoCreateStatutoryDeadline(params: {
       .eq("active", true);
     if (holidayError) {
       console.error("[case-stages PATCH] auto-deadline holidays lookup failed:", holidayError.message, holidayError.code);
-      return;
+      // Can't compute a due date without holiday data.
+      return { created: false, skipped: "compute_failed" };
     }
     const holidayRules: HolidayRule[] = (holidayRows ?? []).map((h) => ({
       id: h.id as string,
@@ -312,7 +316,7 @@ async function autoCreateStatutoryDeadline(params: {
     }));
 
     const triggerYear = parseIsoDate(closedOn)?.getFullYear();
-    if (!triggerYear) return;
+    if (!triggerYear) return { created: false, skipped: "compute_failed" }; // closedOn failed to parse — can't compute
     const resolved = resolveHolidayDates(holidayRules, triggerYear, triggerYear + 1);
 
     const computation = computeDueDate({
@@ -322,7 +326,7 @@ async function autoCreateStatutoryDeadline(params: {
       rollForwardIfHoliday: rule.roll_forward_if_holiday as boolean,
       holidays: resolved,
     });
-    if (!computation) return;
+    if (!computation) return { created: false, skipped: "compute_failed" };
 
     const { data: caseRow } = await supabase
       .from("service_requests")
@@ -330,6 +334,7 @@ async function autoCreateStatutoryDeadline(params: {
       .eq("id", caseId)
       .maybeSingle();
     const caseTitle = (caseRow?.title as string | undefined) || null;
+    const title = `${rule.title_ar as string} — ${caseTitle || "قضية"}`;
 
     const { data: deadline, error: insertError } = await supabase
       .from("deadlines")
@@ -339,7 +344,7 @@ async function autoCreateStatutoryDeadline(params: {
         case_request_id: caseId,
         stage_id: stageId,
         rule_id: rule.id,
-        title: `${rule.title_ar as string} — ${caseTitle || "قضية"}`,
+        title,
         kind: "statutory",
         trigger_date: closedOn,
         due_date: computation.dueDate,
@@ -353,7 +358,25 @@ async function autoCreateStatutoryDeadline(params: {
       .single();
     if (insertError || !deadline) {
       console.error("[case-stages PATCH] auto-deadline insert failed:", insertError?.message, insertError?.code);
-      return;
+      return { created: false, skipped: "insert_failed" };
+    }
+
+    // Best-effort activity row — recordActivity already logs+swallows its own
+    // insert errors, but the hook's never-throws contract is guarded here too.
+    try {
+      await recordActivity({
+        supabase,
+        kind: RequestEvent.DEADLINE_CREATED,
+        ownerUserId: userId,
+        firmId,
+        actorUserId: userId,
+        caseRequestId: caseId,
+        subjectTable: "deadlines",
+        subjectId: deadline.id as string,
+        payload: { title, dueDate: deadline.due_date, auto: true, ruleCode },
+      });
+    } catch (activityErr) {
+      console.error("[case-stages PATCH] auto-deadline activity record failed:", activityErr);
     }
 
     const outboxRows = [7, 3, 1, 0].map((offsetDays) => ({
@@ -370,8 +393,21 @@ async function autoCreateStatutoryDeadline(params: {
         console.error("[case-stages PATCH] auto-deadline outbox insert failed:", outboxError.message, outboxError.code);
       }
     }
+
+    const summary: AutoDeadlineSummary = {
+      id: deadline.id as string,
+      title,
+      dueDate: deadline.due_date as string,
+      dueDateHijri: computation.dueDateHijri,
+      daysCount: computation.daysCount,
+      rolledFromHoliday: computation.rolledFromHoliday,
+      ruleTitleAr: rule.title_ar as string,
+      ruleVerified: rule.verified_by_owner === true,
+    };
+    return { created: true, deadline: summary };
   } catch (err) {
     console.error("[case-stages PATCH] auto-deadline unexpected error:", err);
+    return { created: false, skipped: "insert_failed" };
   }
 }
 
@@ -427,6 +463,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
       return NextResponse.json({ error: error?.message || "Update failed" }, { status: 500 });
     }
 
+    let autoDeadline: AutoDeadlineResult | null = null;
     if (outcome !== undefined) {
       const { data: membership, error: membershipError } = await supabase
         .from("firm_members")
@@ -453,7 +490,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
 
       const stageRow = data as StageRow;
       if (stageRow.closed_on) {
-        await autoCreateStatutoryDeadline({
+        autoDeadline = await autoCreateStatutoryDeadline({
           supabase,
           userId: user.id,
           firmId: membership?.firm_id ?? null,
@@ -462,10 +499,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
           degree: stageRow.degree,
           closedOn: stageRow.closed_on,
         });
+      } else {
+        autoDeadline = { created: false, skipped: "no_closed_on" };
       }
     }
 
-    return NextResponse.json({ data: toDto(data as StageRow) });
+    return NextResponse.json({ data: toDto(data as StageRow), autoDeadline });
   } catch (err) {
     console.error("[lawyer/case-stages PATCH] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

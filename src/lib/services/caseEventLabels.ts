@@ -39,6 +39,9 @@ export const CASE_EVENT_LABELS: Record<string, string> = {
   "task.deleted":                   "حذف مهمة",
   "case_stage.added":               "إضافة درجة تقاضٍ",
   "case_stage.outcome_recorded":    "تسجيل نتيجة درجة تقاضٍ",
+  // Phase 5 (2026-09-04): رادار المهل.
+  "deadline.created":               "إضافة مهلة",
+  "deadline.status_changed":        "تحديث حالة مهلة",
   "payment.created":                "تسجيل دفعة",
   // legacy free-text tokens still present on older rows
   "created":        "إنشاء القضية",

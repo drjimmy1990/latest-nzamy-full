@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { recordActivity, RequestEvent } from "@/lib/events";
 import { hijriLabelAr } from "@/lib/services/hijri";
 import { parseIsoDate, daysUntil } from "@/lib/services/deadlineEngine";
 
@@ -94,12 +95,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   try {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
-    const { supabase } = auth;
+    const { user, supabase } = auth;
     const { id } = await context.params;
 
     const { data: existing, error: fetchError } = await supabase
       .from("deadlines")
-      .select("id, trigger_date, computed_by_rule")
+      .select("id, trigger_date, computed_by_rule, status, owner_user_id, firm_id, case_request_id")
       .eq("id", id)
       .maybeSingle();
     if (fetchError) {
@@ -187,6 +188,25 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         .eq("status", "pending");
       if (outboxError) {
         console.error("[lawyer/deadlines PATCH] outbox cancel failed:", outboxError.message, outboxError.code);
+      }
+    }
+
+    // Best-effort activity row, only when the status actually changed.
+    if (status !== undefined && status !== existing.status) {
+      try {
+        await recordActivity({
+          supabase,
+          kind: RequestEvent.DEADLINE_STATUS_CHANGED,
+          ownerUserId: existing.owner_user_id,
+          firmId: existing.firm_id ?? null,
+          actorUserId: user.id,
+          caseRequestId: existing.case_request_id ?? null,
+          subjectTable: "deadlines",
+          subjectId: id,
+          payload: { title: (data as DeadlineRow).title, status },
+        });
+      } catch (activityErr) {
+        console.error("[lawyer/deadlines PATCH] activity record failed:", activityErr);
       }
     }
 
