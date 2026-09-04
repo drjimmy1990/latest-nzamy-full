@@ -92,7 +92,14 @@ create table public.consultations (
   requester_user_id uuid references auth.users(id) on delete set null,
   lawyer_user_id uuid references auth.users(id) on delete set null,
   mode text not null default 'text',
-  status text not null default 'pending_assignment'
+  specialty text,
+  scheduled_at timestamptz,
+  status text not null default 'pending_assignment',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  reminder_sent boolean not null default false,      -- 20260706
+  reminder_1h_sent boolean not null default false    -- 20260706
 );
 alter table public.consultations enable row level security;
 create policy "participants read consultations" on public.consultations for select
@@ -116,7 +123,11 @@ create table public.contracts (
   client_user_id uuid references auth.users(id) on delete set null,
   assigned_user_id uuid references auth.users(id) on delete set null,
   contract_type text not null default 'general',
-  status text not null default 'draft'
+  status text not null default 'draft',
+  document_path text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 alter table public.contracts enable row level security;
 create policy "participants read contracts" on public.contracts for select
