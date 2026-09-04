@@ -3,207 +3,276 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-  Plus,
   CheckCircle,
   Sun,
   Moon,
   Calendar as CalendarIcon,
   UserSwitch,
+  WarningCircle,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser, setDemoSession } from "@/hooks/useUser";
 import { DEMO_ACCOUNTS } from "@/constants/demoAccountsData";
 import { isDemoUiEnabled } from "@/lib/runtimeMode";
-import { BackendReadyNotice, LocalActionStatus, SectionTitle } from "./_shared";
+import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { profileFieldsFor, splitProfileForm, type ProfileFieldSpec } from "@/lib/services/profileSettingsFields";
+import {
+  buildProfileSubmitValues,
+  readProfileFieldValue,
+  isReadOnlyProfileField,
+} from "@/lib/services/profileFormTransform";
+import { LocalActionStatus, SectionTitle } from "./_shared";
 
-// ── Field definitions per user type ───────────────────────────────────
-interface FieldDef {
-  key: string;
-  label: string;
-  placeholder: string;
-  type?: string;
-  span?: 2;
+// ── The server envelope (GET/PATCH /api/v1/profile) — only the fields this tab reads ──
+interface ProfileServerRow {
+  profile: Record<string, unknown> | null;
+  roleProfile: Record<string, unknown> | null;
+  entitySettings: Record<string, unknown> | null;
+  // `true` when the route's `lawyer_profiles`/entity-table sub-read failed —
+  // the request still answered 200 because `profiles` itself was read fine
+  // (route.ts's GET docstring). Optional so an older deploy of the route
+  // (which did not send the key) reads as `undefined` → `!== true` → "did not
+  // fail", the same conclusion this tab drew before the marker existed.
+  roleProfileReadFailed?: boolean;
 }
 
-function getProfileFields(userType: string | null, subRole: string | null): FieldDef[] {
-  const base: FieldDef[] = [
-    { key: "fullName", label: "الاسم الكامل", placeholder: "فهد بن عبدالرحمن النمر", type: "text" },
-    { key: "phone",    label: "رقم الجوال",   placeholder: "054 839 2716",            type: "tel" },
-    { key: "email",    label: "البريد الإلكتروني", placeholder: "f.alnmer@nezamy.sa",  type: "email" },
-    { key: "city",     label: "المدينة",       placeholder: "الرياض",                  type: "text" },
-  ];
+/**
+ * Which of `profile` / `roleProfile` / `entitySettings` a field's raw value
+ * comes from, matching `splitProfileForm`'s own routing
+ * (profileSettingsFields.ts) one-to-one.
+ */
+function sourceFor(field: ProfileFieldSpec, row: ProfileServerRow): Record<string, unknown> | null {
+  if (field.target === "profile") return row.profile;
+  if (field.target === "lawyer") return row.roleProfile;
+  return row.entitySettings;
+}
 
-  switch (userType) {
-    case "individual":
-      return [
-        ...base,
-        { key: "nationalId",  label: "رقم الهوية الوطنية / الإقامة", placeholder: "1XXXXXXXXX" },
-        { key: "birthDate",   label: "تاريخ الميلاد",               placeholder: "1410/07/23" },
-        { key: "nationality", label: "الجنسية",                     placeholder: "سعودي" },
-      ];
-
-    case "lawyer":
-      return [
-        ...base,
-        { key: "licenseNumber", label: "رقم ترخيص المحاماة",         placeholder: "44/XXXXX" },
-        { key: "nationalId",    label: "رقم الهوية الوطنية",         placeholder: "1XXXXXXXXX" },
-        { key: "licenseIssue",  label: "تاريخ إصدار الترخيص",        placeholder: "1440/01/15" },
-        { key: "licenseExpiry",  label: "تاريخ انتهاء الترخيص",        placeholder: "1450/01/15" },
-        { key: "specialties",   label: "التخصصات",                   placeholder: "قانون تجاري، ملكية فكرية، عقود", span: 2 },
-        { key: "experience",    label: "سنوات الخبرة",               placeholder: "12" },
-        { key: "officeAddress", label: "عنوان المكتب",               placeholder: "حي الملقا، طريق الأمير محمد بن سلمان", span: 2 },
-        { key: "bio",           label: "نبذة مهنية",                 placeholder: "محامٍ متخصص في القضايا التجارية والملكية الفكرية منذ أكثر من 12 عاماً", span: 2 },
-      ];
-
-    case "firm":
-      return [
-        ...base,
-        { key: "role",         label: "الدور في المكتب",              placeholder: "شريك مدير" },
-        { key: "licenseNumber", label: "رقم ترخيص المحاماة",         placeholder: "44/XXXXX" },
-        { key: "department",   label: "القسم / الفرع",               placeholder: "القضايا التجارية" },
-        { key: "joinDate",     label: "تاريخ الانضمام",              placeholder: "1443/08/01" },
-      ];
-
-    case "corporate":
-      return [
-        ...base,
-        { key: "jobTitle",     label: "المسمى الوظيفي",              placeholder: "مدير الشؤون القانونية" },
-        { key: "platformRole", label: "الدور في المنصة",             placeholder: "مدير قانوني" },
-        { key: "department",   label: "القسم",                       placeholder: "الشؤون القانونية" },
-        { key: "joinDate",     label: "تاريخ الانضمام",              placeholder: "1445/03/15" },
-      ];
-
-    case "micro":
-      return [
-        ...base,
-        { key: "businessName", label: "اسم المنشأة",                 placeholder: "مؤسسة خالد للتجارة" },
-        { key: "activityType", label: "نوع النشاط",                  placeholder: "تجارة إلكترونية" },
-        { key: "employeeCount", label: "عدد الموظفين",               placeholder: "8" },
-      ];
-
-    case "government":
-      return [
-        ...base,
-        { key: "employeeId",   label: "الرقم الوظيفي",               placeholder: "XXXXXXX" },
-        { key: "govRole",      label: "الدور الحكومي",               placeholder: "قاضي" },
-        { key: "rank",         label: "المرتبة / الدرجة",            placeholder: "الرابعة عشرة" },
-        { key: "entity",       label: "الجهة التابع لها",             placeholder: "وزارة العدل" },
-        { key: "department",   label: "الإدارة / القسم",             placeholder: "الدائرة التجارية الأولى" },
-      ];
-
-    case "ngo":
-      return [
-        ...base,
-        { key: "title",        label: "المسمى",                      placeholder: "رئيس مجلس الإدارة" },
-        { key: "ngoName",      label: "اسم الجمعية",                 placeholder: "جمعية حقوق للتوعية القانونية" },
-      ];
-
-    case "provider": {
-      const providerFields: FieldDef[] = [
-        ...base,
-        { key: "serviceType",   label: "نوع الخدمة",                 placeholder: subRole === "notary" ? "موثق" : subRole === "arbitrator" ? "محكّم" : "معقّب" },
-        { key: "licenseNumber", label: "رقم الترخيص / التأهيل",      placeholder: "ARB-XXXXXX" },
-        { key: "licenseExpiry", label: "تاريخ انتهاء الترخيص",        placeholder: "1450/06/30" },
-        { key: "experience",    label: "سنوات الخبرة",               placeholder: "8" },
-        { key: "bio",           label: "نبذة مهنية",                 placeholder: "محكّم معتمد من المركز السعودي للتحكيم التجاري", span: 2 },
-      ];
-      return providerFields;
-    }
-
-    default:
-      return base;
-  }
+/**
+ * The Arabic message for a failed request, or a generic fallback.
+ *
+ * A deliberate duplicate of `arabicSettingsError` in NotificationsTab.tsx —
+ * same reason that one duplicates onboarding/page.tsx's version: `apiMutate`
+ * falls back to `API error: 500` when a response carries no JSON `error`,
+ * and that string must never reach an Arabic screen.
+ */
+function arabicProfileError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : "";
+  if (raw) console.warn("[Nzamy] profile request failed:", raw);
+  return /[؀-ۿ]/.test(raw) ? raw : "تعذّر حفظ التعديلات. تحقق من اتصالك وحاول مرة أخرى.";
 }
 
 // ── Component ─────────────────────────────────────────────────────────
 export function ProfileTab() {
   const { lang, theme, calendarType, setTheme, setLang, setCalendarType } = useTheme();
   const user = useUser();
-  const { userType, subRole } = user;
+  const { userType, loading, isLoggedIn } = user;
 
+  const fields = profileFieldsFor(userType ?? "individual");
+
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
+  // The exact values as last loaded from (or saved to) the server — the
+  // baseline `buildProfileSubmitValues` diffs `formValues` against so an
+  // untouched field, blank-on-failed-load or not, is never resubmitted. See
+  // that function's own docstring (profileFormTransform.ts) for why this
+  // matters beyond a nice-to-have.
+  const [loadedValues, setLoadedValues] = useState<Record<string, string>>({});
+  const [ready, setReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
 
-  // Profile field states
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("054 839 2716");
-  const [email, setEmail] = useState("f.alnmer@nezamy.sa");
-  const [city, setCity] = useState("الرياض");
-  const [additionalFields, setAdditionalFields] = useState<Record<string, string>>({});
-
-  // Developer switcher state
+  // Developer switcher state — demo mode only; its JSX below is gated by
+  // isDemoUiEnabled (a build-time constant, dead-code-eliminated from a
+  // supabase build), and every localStorage touch it makes is INSIDE that
+  // same guard so none of it executes in production either.
   const [activeDemoKey, setActiveDemoKey] = useState("");
 
-  const fields = getProfileFields(userType, subRole);
-
-  // Sync inputs on mount or user session change
+  // ── Load ────────────────────────────────────────────────────────────
+  //
+  // Gated on `!loading` (userType is only meaningful once useUser has
+  // resolved) and, in supabase mode, on `isLoggedIn` — Settings is a
+  // signed-in-only surface, but a stale session must not throw here.
   useEffect(() => {
-    if (user) {
-      setFullName(user.name ?? "");
-      
-      if (typeof window !== "undefined") {
+    if (loading) return;
+    const currentFields = profileFieldsFor(userType ?? "individual");
+
+    if (!isSupabaseMode) {
+      // Demo mode: seed from localStorage exactly as before — but ONLY
+      // here, never when isSupabaseMode is true (task S1's own rule).
+      const seeded: Record<string, string> = {};
+      for (const f of currentFields) seeded[f.key] = "";
+      seeded.displayName = user.name ?? "";
+      if (isDemoUiEnabled && typeof window !== "undefined") {
         setActiveDemoKey(localStorage.getItem("nzamy_demo_key") || "lawyer");
-        
         const stored = localStorage.getItem(`nzamy_profile_fields_${user.userType}`);
         if (stored) {
           try {
-            const parsed = JSON.parse(stored);
-            setPhone(parsed.phone ?? "054 839 2716");
-            setEmail(parsed.email ?? "f.alnmer@nezamy.sa");
-            setCity(parsed.city ?? "الرياض");
-            setAdditionalFields(parsed.additional ?? {});
+            const parsed = JSON.parse(stored) as {
+              phone?: string;
+              email?: string;
+              city?: string;
+              additional?: Record<string, string>;
+            };
+            if (typeof parsed.phone === "string") seeded.phone = parsed.phone;
+            if (typeof parsed.email === "string") seeded.email = parsed.email;
+            if (typeof parsed.city === "string") seeded.city = parsed.city;
+            if (parsed.additional && typeof parsed.additional === "object") {
+              for (const [k, v] of Object.entries(parsed.additional)) {
+                if (typeof v === "string" && k in seeded) seeded[k] = v;
+              }
+            }
           } catch {
-            setPhone("054 839 2716");
-            setEmail("f.alnmer@nezamy.sa");
-            setCity("الرياض");
-            setAdditionalFields({});
+            // Malformed local data — keep the blank seed above.
           }
         } else {
-          setPhone("054 839 2716");
-          setEmail(user.userType === "admin" ? "admin@nezamy.sa" : `${user.userType || "user"}@nezamy.sa`);
-          setCity("الرياض");
-          setAdditionalFields({});
+          seeded.email = user.userType === "admin" ? "admin@nezamy.sa" : `${user.userType || "user"}@nezamy.sa`;
         }
       }
+      setFormValues(seeded);
+      setReady(true);
+      return;
     }
-  }, [user]);
+
+    if (!isLoggedIn) {
+      setReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiGet<ProfileServerRow>("/api/v1/profile");
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        for (const f of currentFields) next[f.key] = readProfileFieldValue(f, sourceFor(f, res));
+        setFormValues(next);
+        setLoadedValues(next);
+
+        // A 200 response is not proof every table behind it was read. The
+        // route reports a failed lawyer_profiles/entity-table sub-read as
+        // `roleProfileReadFailed: true` on an otherwise-successful 200 (its
+        // own GET docstring explains why: `profiles` itself was fine, so a
+        // 500 would be wrong) — without this check that failure was
+        // indistinguishable from "nothing saved yet", and every field sourced
+        // from that table rendered blank with Save left fully enabled.
+        if (res.roleProfileReadFailed === true) {
+          setLoadFailed(true);
+          setError(
+            "تعذّر قراءة بعض بياناتك من الخادم، فبعض الحقول أدناه قد تظهر فارغة رغم أنها محفوظة فعلاً. الحفظ معطّل حتى تنجح القراءة — أعد تحميل الصفحة وحاول مرة أخرى.",
+          );
+        } else if (userType === "lawyer" && res.roleProfile === null) {
+          // The read succeeded and there is genuinely no lawyer_profiles row
+          // — a different fact than a failed read, but equally unsafe to
+          // save through: the same precedent LawyerProfileEditPage sets for
+          // ANY null roleProfile, not only a marked failure.
+          setLoadFailed(true);
+          setError(
+            "لم نجد سجلك المهني، فحقول الترخيص والتخصصات والمكتب والنبذة فارغة لهذا السبب لا لتعذّر القراءة. الحفظ معطّل حتى يتوفر هذا السجل.",
+          );
+        }
+        setReady(true);
+      } catch (err) {
+        if (cancelled) return;
+        // A failed load leaves the form blank (never a fabricated value) and
+        // blocks Save below — the same precedent LawyerProfileEditPage sets
+        // for a null roleProfile: a blank form must never be allowed to
+        // overwrite real stored data.
+        setLoadFailed(true);
+        setError(arabicProfileError(err));
+        setReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, userType, isLoggedIn, user.name, user.userType]);
+
+  const handleChange = (key: string, value: string) => {
+    setFormValues((prev) => ({ ...prev, [key]: value }));
+  };
 
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      // Update session in localStorage
-      const updatedSession = {
-        ...user,
-        name: fullName,
-      };
-      delete (updatedSession as any).isDemoBypass;
+    if (saving) return;
+    setError(null);
 
-      const currentDemoKey = localStorage.getItem("nzamy_demo_key") || "lawyer";
-      
-      setDemoSession(updatedSession, currentDemoKey);
-
-      // Save additional fields
-      const toStore = {
-        phone,
-        email,
-        city,
-        additional: additionalFields
-      };
-      localStorage.setItem(`nzamy_profile_fields_${user.userType}`, JSON.stringify(toStore));
-
-      setSaving(false);
-      setSaved(true);
-      setLocalMessage("تم حفظ التغييرات وتحديث الحساب المفعّل في المتصفح بنجاح!");
+    if (!isSupabaseMode) {
+      // Demo mode: local-only, exactly as before — confined here so it can
+      // never run when isSupabaseMode is true.
+      setSaving(true);
       setTimeout(() => {
-        setSaved(false);
-        setLocalMessage(null);
-      }, 2500);
-    }, 850);
+        const updatedSession = { ...user, name: formValues.displayName || user.name };
+        delete (updatedSession as { isDemoBypass?: boolean }).isDemoBypass;
+        if (isDemoUiEnabled && typeof window !== "undefined") {
+          const currentDemoKey = localStorage.getItem("nzamy_demo_key") || "lawyer";
+          setDemoSession(updatedSession, currentDemoKey);
+          const { phone, email, city, ...rest } = formValues;
+          const additional = { ...rest };
+          delete additional.displayName;
+          localStorage.setItem(
+            `nzamy_profile_fields_${user.userType}`,
+            JSON.stringify({ phone: phone ?? "", email: email ?? "", city: city ?? "", additional }),
+          );
+        }
+        setSaving(false);
+        setSaved(true);
+        setLocalMessage("تم حفظ التغييرات وتحديث الحساب المفعّل في المتصفح بنجاح!");
+        setTimeout(() => {
+          setSaved(false);
+          setLocalMessage(null);
+        }, 2500);
+      }, 850);
+      return;
+    }
+
+    setSaving(true);
+    (async () => {
+      try {
+        // Captured once, before the `await` — so an edit the user makes
+        // WHILE this save is in flight can never be misattributed as part of
+        // what this save actually sent.
+        const sentValues = formValues;
+
+        // Diffed against `loadedValues`: a field the caller never touched —
+        // including one whose column doesn't exist on the current schema
+        // yet, or one that rendered blank only because its load failed — is
+        // never sent, so it can never 400 the whole PATCH or shallow-merge a
+        // blank over a real stored value (profileFormTransform.ts).
+        const submitValues = buildProfileSubmitValues(fields, sentValues, loadedValues);
+        const { profile, lawyer, entitySettings } = splitProfileForm(userType ?? "individual", submitValues);
+        const body: Record<string, unknown> = { ...profile, ...lawyer };
+        if (Object.keys(entitySettings).length > 0) body.entitySettings = entitySettings;
+
+        if (Object.keys(body).length > 0) {
+          await apiMutate("/api/v1/profile", "PATCH", body);
+          // The new baseline for the NEXT diff — but ONLY for the fields
+          // actually part of THIS submit, not every current field. A field
+          // that changed but shaped to "omit" (e.g. displayName cleared to
+          // blank — OMIT_WHEN_EMPTY_KEYS) was never written, so it must not
+          // be silently adopted as the new truth; it stays "changed" against
+          // its real last-saved value until it either reverts or ships.
+          setLoadedValues((prev) => {
+            const next = { ...prev };
+            for (const key of Object.keys(submitValues)) {
+              if (key in sentValues) next[key] = sentValues[key];
+            }
+            return next;
+          });
+        }
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2500);
+      } catch (err) {
+        setError(arabicProfileError(err));
+      } finally {
+        setSaving(false);
+      }
+    })();
   };
 
   const handleSwitchAccount = (key: string) => {
-    const acc = DEMO_ACCOUNTS.find(a => a.key === key);
+    if (!isDemoUiEnabled) return;
+    const acc = DEMO_ACCOUNTS.find((a) => a.key === key);
     if (acc) {
       setDemoSession(acc.session, key);
       setActiveDemoKey(key);
@@ -215,28 +284,19 @@ export function ProfileTab() {
   };
 
   // Extract first letter for avatar
-  const avatarLetter = fullName?.charAt(0) ?? "م";
+  const avatarLetter = formValues.displayName?.charAt(0) || "م";
 
   return (
     <div className="space-y-8">
-      <BackendNoticeWrapper />
-
       {/* Avatar */}
       <div className="flex flex-col items-center gap-3">
-        <div className="relative w-24 h-24">
-          <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#0B3D2E] to-emerald-700 flex items-center justify-center text-white text-3xl font-bold shadow-[0_8px_24px_-8px_rgba(11,61,46,0.4)] transition-all">
-            {avatarLetter}
-          </div>
-          <div className="absolute -bottom-1 -end-1 w-7 h-7 bg-white dark:bg-zinc-800 border-2 border-gray-200 dark:border-white/[0.08] rounded-full flex items-center justify-center shadow">
-            <Plus size={14} className="text-zinc-600 dark:text-zinc-300" />
-          </div>
+        <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#0B3D2E] to-emerald-700 flex items-center justify-center text-white text-3xl font-bold shadow-[0_8px_24px_-8px_rgba(11,61,46,0.4)]">
+          {avatarLetter}
         </div>
-        <button
-          onClick={() => setLocalMessage("تغيير الصورة جاهز للربط لاحقاً برفع ملفات حقيقي.")}
-          className="text-sm text-royal dark:text-[#C8A762] font-semibold hover:underline transition-all"
-        >
-          تغيير الصورة
-        </button>
+        {/* No upload control — there is no Storage/API wiring behind one yet.
+            A button whose only effect is admitting it isn't wired is worse
+            than no button. */}
+        <p className="text-[11px] text-zinc-400 dark:text-zinc-500">تغيير الصورة غير متاح بعد</p>
       </div>
 
       {/* Dynamic form fields */}
@@ -245,51 +305,39 @@ export function ProfileTab() {
         <div className="bg-white/80 dark:bg-[#161b22]/80 backdrop-blur-xl rounded-[2rem] border border-slate-200/50 dark:border-white/[0.06] p-7 shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)]">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             {fields.map((field) => {
-              const val = field.key === "fullName" 
-                ? fullName 
-                : field.key === "phone"
-                ? phone
-                : field.key === "email"
-                ? email
-                : field.key === "city"
-                ? city
-                : (additionalFields[field.key] ?? "");
-
-              const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-                const text = e.target.value;
-                if (field.key === "fullName") setFullName(text);
-                else if (field.key === "phone") setPhone(text);
-                else if (field.key === "email") setEmail(text);
-                else if (field.key === "city") setCity(text);
-                else {
-                  setAdditionalFields(prev => ({
-                    ...prev,
-                    [field.key]: text
-                  }));
-                }
-              };
+              const val = formValues[field.key] ?? "";
+              const readOnly = isReadOnlyProfileField(field);
 
               return (
                 <div key={field.key} className={field.span === 2 ? "sm:col-span-2" : ""}>
                   <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
                     {field.label}
                   </label>
-                  {field.span === 2 && (field.key === "bio" || field.key === "specialties") ? (
+                  {field.type === "textarea" ? (
                     <textarea
                       rows={3}
                       placeholder={field.placeholder}
                       value={val}
-                      onChange={handleChange}
-                      className="w-full px-5 py-3 rounded-2xl border border-slate-200/60 dark:border-white/[0.06] bg-white/50 dark:bg-white/[0.02] text-zinc-800 dark:text-zinc-200 text-sm placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0B3D2E]/20 transition-all resize-none shadow-inner"
+                      maxLength={field.maxLength}
+                      disabled={readOnly}
+                      onChange={(e) => handleChange(field.key, e.target.value)}
+                      className="w-full px-5 py-3 rounded-2xl border border-slate-200/60 dark:border-white/[0.06] bg-white/50 dark:bg-white/[0.02] text-zinc-800 dark:text-zinc-200 text-sm placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0B3D2E]/20 transition-all resize-none shadow-inner disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   ) : (
                     <input
                       type={field.type ?? "text"}
                       placeholder={field.placeholder}
                       value={val}
-                      onChange={handleChange}
-                      className="w-full px-5 py-3 rounded-2xl border border-slate-200/60 dark:border-white/[0.06] bg-white/50 dark:bg-white/[0.02] text-zinc-800 dark:text-zinc-200 text-sm placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0B3D2E]/20 transition-all shadow-inner"
+                      maxLength={field.maxLength}
+                      disabled={readOnly}
+                      onChange={(e) => handleChange(field.key, e.target.value)}
+                      className="w-full px-5 py-3 rounded-2xl border border-slate-200/60 dark:border-white/[0.06] bg-white/50 dark:bg-white/[0.02] text-zinc-800 dark:text-zinc-200 text-sm placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0B3D2E]/20 transition-all shadow-inner disabled:opacity-60 disabled:cursor-not-allowed"
                     />
+                  )}
+                  {readOnly && (
+                    <p className="mt-1 text-[11px] text-zinc-400 dark:text-zinc-500">
+                      {field.key === "email" ? "البريد الإلكتروني مرتبط بحساب الدخول ولا يُعدَّل من هنا." : "يُعرض للاطلاع فقط ولا يُعدَّل من هذه الصفحة حالياً."}
+                    </p>
                   )}
                 </div>
               );
@@ -318,7 +366,9 @@ export function ProfileTab() {
         </div>
       </div>
 
-      {/* Preferences */}
+      {/* Preferences — device-local by design (task S1's own rule): the
+          theme, language and calendar type are NOT server fields; they live
+          in ThemeProvider's own storage, same as the sidebar state. */}
       <div>
         <SectionTitle>التفضيلات</SectionTitle>
         <div className="bg-white/80 dark:bg-[#161b22]/80 backdrop-blur-xl rounded-[2rem] border border-slate-200/50 dark:border-white/[0.06] p-7 shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)] space-y-5">
@@ -430,7 +480,7 @@ export function ProfileTab() {
               ))}
             </select>
           </div>
-          
+
           {/* Active account info card */}
           {(() => {
             const activeAcc = DEMO_ACCOUNTS.find(a => a.key === activeDemoKey) || DEMO_ACCOUNTS[0];
@@ -456,13 +506,26 @@ export function ProfileTab() {
       </div>
       )}
 
-      {/* Action alerts and Save button */}
+      {/* Server errors, action alerts and the Save button */}
+      {error && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+          <WarningCircle size={15} weight="fill" />
+          {error}
+        </div>
+      )}
       <LocalActionStatus show={Boolean(localMessage)} message={localMessage ?? undefined} />
-      
+
       <motion.button
         whileTap={{ scale: 0.98, y: 1 }}
         onClick={handleSave}
-        disabled={saving}
+        // `isSupabaseMode && !isLoggedIn`: a stale session on this
+        // signed-in-only surface leaves `formValues`/`loadedValues` both
+        // `{}` — every field diffs as "unchanged" against itself, so an
+        // enabled Save would build an empty body, skip the PATCH entirely,
+        // and still show «تم الحفظ», a fake success. Scoped to supabase mode
+        // only — demo mode's own `isLoggedIn` has no bearing on its
+        // local-only save path.
+        disabled={saving || !ready || loadFailed || (isSupabaseMode && !isLoggedIn)}
         className="flex items-center gap-2 px-8 py-3.5 bg-[#0B3D2E] hover:bg-[#0a3328] text-white rounded-2xl font-bold text-[13.5px] transition-all shadow-[0_4px_14px_0_rgba(11,61,46,0.3)] active:scale-[0.98] disabled:opacity-70"
       >
         {saving ? (
@@ -474,11 +537,4 @@ export function ProfileTab() {
       </motion.button>
     </div>
   );
-}
-
-/** Dynamic wrapper to bypass backend-ready styling for the preview sandbox */
-function BackendNoticeWrapper() {
-  const user = useUser();
-  if (user.userType === "admin") return null; // Admin notices are handled separately
-  return <BackendReadyNotice />;
 }

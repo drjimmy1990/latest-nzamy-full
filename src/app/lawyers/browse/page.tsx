@@ -20,11 +20,18 @@
  * together with the UI that framed them.
  *
  * ─── What is actually renderable ──────────────────────────────────────────────
- * Only the allow-list projection in src/app/api/v1/lawyers/route.ts. There is
- * no ratings table, no reviews table, no session counter, no response-time
- * metric and no case-outcome data anywhere in the schema. So this page renders:
- * name, avatar, city, specialties, years of experience, bio, hourly rate,
- * bar association and whether the lawyer is accepting clients. Nothing else.
+ * The allow-list projection in src/app/api/v1/lawyers/route.ts, plus — since
+ * Phase 7 (item 192) — `reviewStats` (avgRating, reviewCount) from a SEPARATE
+ * query on the `lawyer_review_stats` view, attached per row by that same
+ * route. There is still no session counter, no response-time metric, no
+ * case-outcome data and no gamification/badge system anywhere in the schema
+ * (item 40's other half — experience badges on the profile and in this
+ * directory — stays undone for exactly that reason: no data model, no owner
+ * sign-off on what a badge would even measure). So this page renders: name,
+ * avatar, city, specialties, years of experience, bio, hourly rate, bar
+ * association, whether the lawyer is accepting clients, and — only for a
+ * lawyer with at least one review — a star rating and review count. Nothing
+ * else.
  *
  * Every one of those is ALSO optional in practice. Measured against production:
  * 5 lawyer rows, all `verification_status = 'pending'`, all
@@ -55,7 +62,7 @@ import Link from "next/link";
 import {
   MagnifyingGlass, SealCheck, MapPin, Briefcase, Coins, Scales,
   Funnel, Sliders, X, ArrowLeft, ArrowRight, ArrowClockwise,
-  CheckCircle, Circle, WarningCircle, UserCircle,
+  CheckCircle, Circle, WarningCircle, UserCircle, Star,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -102,6 +109,13 @@ interface LawyerListRow {
    *  it for its own `show_contact` strip but forwards the row as-is, so it can
    *  arrive either way — see `normalizeRow`. */
   lawyer_profiles: LawyerProfileRow | LawyerProfileRow[] | null;
+  /** Phase 7 (item 192) — attached by the route from a SEPARATE query on the
+   *  `lawyer_review_stats` view (no PostgREST-embeddable FK from `profiles`,
+   *  so it never rides the `lawyer_profiles` embed above). `null` means either
+   *  "no reviews yet" or "the stats query failed" — the route does not tell
+   *  the two apart per row, so this page cannot either; it renders both as
+   *  "no rating shown", never as a fabricated zero. */
+  reviewStats: { reviewCount: number; avgRating: number | null; lastReviewAt: string | null } | null;
 }
 
 interface LawyerListResponse {
@@ -127,6 +141,14 @@ interface DirectoryLawyer {
   /** `null` means the lawyer never answered; the badge is omitted entirely. */
   accepting: boolean | null;
   bar: string | null;
+  /** Phase 7 (item 192). `null` = no reviews yet (or the stats read failed) —
+   *  the card renders no stars for either case, and `byRating` below sends
+   *  it to the end of the "highest rated" sort, same as an unstated
+   *  `years`/`rate` under the other orderings. */
+  avgRating: number | null;
+  /** 0 when `avgRating` is `null`; never rendered on its own without a rating
+   *  beside it, so a lawyer with zero reviews never prints «٠ تقييمات». */
+  reviewCount: number;
 }
 
 /** A localised row, resolved once per locale change. */
@@ -171,6 +193,16 @@ function arabicLawyerCount(n: number): string {
   return `${n} محامياً موثّقاً`;
 }
 
+/** «تقييم واحد» / «تقييمان» / «٣ تقييمات» / «١١ تقييماً» — same five-shape
+ *  agreement as `arabicYears`/`arabicLawyerCount` above, for the review count
+ *  beside a card's star rating. */
+function arabicReviewCount(n: number): string {
+  if (n === 1) return "تقييم واحد";
+  if (n === 2) return "تقييمان";
+  if (n <= 10) return `${n} تقييمات`;
+  return `${n} تقييماً`;
+}
+
 function normalizeRow(row: LawyerListRow): DirectoryLawyer {
   const embedded = row.lawyer_profiles;
   const lp = (Array.isArray(embedded) ? embedded[0] : embedded) ?? null;
@@ -195,6 +227,8 @@ function normalizeRow(row: LawyerListRow): DirectoryLawyer {
       : lp?.is_accepting_clients === false ? false
       : null,
     bar: text(lp?.bar_association),
+    avgRating: row.reviewStats?.avgRating ?? null,
+    reviewCount: row.reviewStats?.reviewCount ?? 0,
   };
 }
 
@@ -214,7 +248,7 @@ const hueFor = (specialty: string | undefined) =>
   (specialty && SPECIALTY_HUE[specialty]) || GREEN;
 
 const ALL = "__all__";
-type SortOption = "experience" | "price_asc" | "price_desc" | "name";
+type SortOption = "experience" | "rating" | "price_asc" | "price_desc" | "name";
 
 /** Unpriced lawyers sort LAST in both directions. Treating a missing
  *  `hourly_rate` as 0 would rank them "cheapest" — the same lie as «من ٠ ر.س». */
@@ -223,6 +257,17 @@ function byRate(a: ResolvedLawyer, b: ResolvedLawyer, ascending: boolean): numbe
   if (a.rate === null) return 1;
   if (b.rate === null) return -1;
   return ascending ? a.rate - b.rate : b.rate - a.rate;
+}
+
+/** «الأعلى تقييماً» — item 40 (Phase 7 half). A lawyer with no reviews sorts
+ *  LAST, not lowest-rated: `avgRating: null` is "unrated", not "rated zero",
+ *  same reasoning as `byRate` above. Two lawyers with the same average break
+ *  the tie on `reviewCount` — a 5.0 from ten reviews outranks a 5.0 from one. */
+function byRating(a: ResolvedLawyer, b: ResolvedLawyer): number {
+  if (a.avgRating === null && b.avgRating === null) return 0;
+  if (a.avgRating === null) return 1;
+  if (b.avgRating === null) return -1;
+  return b.avgRating - a.avgRating || b.reviewCount - a.reviewCount;
 }
 
 // ─── Load state ───────────────────────────────────────────────────────────────
@@ -276,6 +321,25 @@ function SpotlightCard({ children, className }: { children: React.ReactNode; cla
 }
 
 // ─── Lawyer Card ──────────────────────────────────────────────────────────────
+
+/**
+ * Five stars filled up to `Math.round(rating)` — the same visual language as
+ * the profile page's `ratingStars` (src/app/lawyers/[slug]/page.tsx), sized
+ * down for this card. Declared locally rather than imported: that file is a
+ * page component, not a shared module, and the file's header above already
+ * explains why this page keeps its own small presentational helpers.
+ */
+function ratingStars(rating: number, isDark: boolean, size = 11) {
+  const filled = Math.round(rating);
+  return Array.from({ length: 5 }).map((_, i) => (
+    <Star
+      key={i}
+      size={size}
+      weight={i < filled ? "fill" : "regular"}
+      color={i < filled ? GOLD : isDark ? "#3a4453" : "#d1d5db"}
+    />
+  ));
+}
 
 function LawyerCard({ lawyer, delay, isRTL, isDark }: {
   lawyer: ResolvedLawyer; delay: number; isRTL: boolean; isDark: boolean;
@@ -340,6 +404,22 @@ function LawyerCard({ lawyer, delay, isRTL, isDark }: {
                 {/* Real: the route filters verification_status = 'verified'. */}
                 <SealCheck size={14} weight="fill" style={{ color: GOLD }} />
               </div>
+
+              {/* Item 40 (Phase 7 half): only when `avgRating` is set — no
+                  reviews means no stars, never a rendered zero. */}
+              {lawyer.avgRating !== null && (
+                <div className="flex items-center gap-1 mt-1">
+                  <div className="flex">{ratingStars(lawyer.avgRating, isDark)}</div>
+                  <span className={`text-[11px] font-bold tabular-nums ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
+                    {lawyer.avgRating.toLocaleString(isRTL ? "ar-SA-u-nu-latn" : "en-US", { maximumFractionDigits: 1 })}
+                  </span>
+                  <span className={`text-[10px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                    ({isRTL
+                      ? arabicReviewCount(lawyer.reviewCount)
+                      : `${lawyer.reviewCount} ${lawyer.reviewCount === 1 ? "review" : "reviews"}`})
+                  </span>
+                </div>
+              )}
 
               {lawyer.specialties.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1.5">
@@ -740,12 +820,18 @@ export default function BrowseLawyersPage() {
   const showAvailableFilter = resolved.some((l) => l.accepting === true);
   const hasAnyFilter = showSpecialtyFilter || showCityFilter || showAvailableFilter;
   const hasRates = resolved.some((l) => l.rate !== null);
+  // Item 40 (Phase 7 half): a rating sort is offered only when at least one
+  // loaded lawyer actually has one — same rule as `hasRates` just above.
+  const hasRatings = resolved.some((l) => l.avgRating !== null);
 
-  // A fee sort is offered only when at least one lawyer has published a rate.
-  // If a retry returns rate-less rows under a selected fee sort, fall back
-  // rather than leave a <select> displaying an option it no longer contains.
+  // A fee or rating sort is offered only when at least one lawyer has the
+  // data behind it. If a retry returns rows without it under a selected
+  // sort, fall back rather than leave a <select> displaying an option it no
+  // longer contains.
   const effectiveSort: SortOption =
-    (sort === "price_asc" || sort === "price_desc") && !hasRates ? "experience" : sort;
+    (sort === "price_asc" || sort === "price_desc") && !hasRates ? "experience"
+    : sort === "rating" && !hasRatings ? "experience"
+    : sort;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -764,6 +850,7 @@ export default function BrowseLawyersPage() {
     });
 
     switch (effectiveSort) {
+      case "rating":     return [...result].sort(byRating);
       case "price_asc":  return [...result].sort((a, b) => byRate(a, b, true));
       case "price_desc": return [...result].sort((a, b) => byRate(a, b, false));
       case "name":       return [...result].sort((a, b) => a.name.localeCompare(b.name, isRTL ? "ar" : "en"));
@@ -792,6 +879,9 @@ export default function BrowseLawyersPage() {
 
   const sortOptions: { id: SortOption; label: string }[] = [
     { id: "experience", label: isRTL ? "الأكثر خبرة" : "Most experienced" },
+    ...(hasRatings
+      ? ([{ id: "rating", label: isRTL ? "الأعلى تقييماً" : "Highest rated" }] as { id: SortOption; label: string }[])
+      : []),
     ...(hasRates
       ? ([
           { id: "price_asc",  label: isRTL ? "الأتعاب: الأقل" : "Fee: lowest" },
@@ -1016,9 +1106,10 @@ export default function BrowseLawyersPage() {
                   )}
                 </div>
 
-                {/* Sort. «الأعلى تقييماً» is gone: there is no rating column,
-                    no reviews table, and nothing to order by. The fee options
-                    appear only when at least one lawyer has set a rate. */}
+                {/* Sort. «الأعلى تقييماً» reads Phase 7's `lawyer_review_stats`
+                    view (avgRating, reviewCount as the tiebreak) via `byRating`
+                    above, and — like the fee options beside it — is offered
+                    only when at least one loaded lawyer actually has one. */}
                 <select
                   value={effectiveSort}
                   onChange={(e) => { setSort(e.target.value as SortOption); setPage(1); }}

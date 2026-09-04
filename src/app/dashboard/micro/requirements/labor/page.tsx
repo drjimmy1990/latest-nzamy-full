@@ -1,54 +1,33 @@
-import RequirementsChecklist, { ChecklistItem } from "../_components/RequirementsChecklist";
+"use client";
 
-const ITEMS: ChecklistItem[] = [
-  {
-    id: "l1",
-    title: "نسبة السعودة (نطاقات)",
-    detail: "الالتزام بنسبة التوطين المطلوبة حسب حجم المنشأة ونشاطها",
-    status: "done",
-    portal: { label: "بوابة مساند / نطاقات", url: "https://nitaqat.hadaf.gov.sa" },
-  },
-  {
-    id: "l2",
-    title: "عقود العمل الموثقة",
-    detail: "يجب أن يكون لكل موظف عقد عمل مكتوب موثق في منصة قوى",
-    status: "done",
-    portal: { label: "منصة قوى", url: "https://qiwa.com.sa" },
-  },
-  {
-    id: "l3",
-    title: "حماية الأجور (WPS)",
-    detail: "صرف الرواتب عبر البنوك ورفع بيانات الأجور لنظام حماية الأجور شهرياً",
-    status: "done",
-    deadline: "أول كل شهر",
-    portal: { label: "منصة مدد", url: "https://mudad.com.sa" },
-  },
-  {
-    id: "l4",
-    title: "تصاريح العمالة الوافدة",
-    detail: "تصاريح العمل (إقامات) لكل موظف أجنبي سارية",
-    status: "pending",
-    deadline: "تتفاوت حسب الإقامة",
-    fee: "٢٤٠٠ ﷼ / عامل / سنة",
-    portal: { label: "منصة قوى", url: "https://qiwa.com.sa" },
-  },
-  {
-    id: "l5",
-    title: "نظام حماية الأجور — رفع الكشوفات",
-    detail: "رفع كشوف الرواتب شهرياً عبر مزود WPS المعتمد",
-    status: "done",
-    deadline: "قبل اليوم ٧ من كل شهر",
-    portal: { label: "منصة مدد", url: "https://mudad.com.sa" },
-  },
-];
+// Beta honesty gate: «اشتراطات العمل» has no data model at all — there is
+// no Nitaqat/Qiwa/Mudad compliance record behind this screen, only what
+// was hardcoded here.
+//
+// WHAT WAS REMOVED, and why:
+//   - ITEMS was five hardcoded checklist rows (نسبة السعودة / عقود العمل /
+//     حماية الأجور / تصاريح العمالة الوافدة / رفع كشوفات WPS) with an
+//     invented per-item `status` and `deadline` — identical for every
+//     micro account that opened the page, none of it this account's
+//     actual Saudization or WPS status.
+//   - the `aiTip` prop claimed work permits were "تقترب من انتهاء
+//     صلاحيتها" — a fabricated, urgent claim about this account's
+//     residency-permit expiries.
+//   - the checkbox toggle in RequirementsChecklist only flipped local
+//     component state — nothing was written or read anywhere.
+//
+// The previous UI (and RequirementsChecklist, still in ../_components) is
+// preserved in git history and can be restored once a real labor/WPS
+// compliance record exists behind this account.
+
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 export default function MicroLaborPage() {
   return (
-    <RequirementsChecklist
+    <DashboardComingSoon
       title="اشتراطات العمل والتوظيف"
-      subtitle="الالتزامات المتعلقة بنظام العمل وحماية الأجور والتوطين"
-      aiTip="تصاريح العمل للعمالة الوافدة تقترب من انتهاء صلاحيتها — التجديد يبدأ قبل 3 أشهر من تاريخ الانتهاء عبر منصة قوى."
-      items={ITEMS}
+      description="اشتراطات العمل غير متاحة حالياً. نسبة السعودة وحالة العقود وحماية الأجور والتصاريح في هذه الصفحة كانت بيانات ثابتة لا تخص أي منشأة حقيقية، ولم يكن تحديد بند كمكتمل يحفظ شيئاً. ستُفعَّل الصفحة عند ربط سجل التزام العمل الفعلي بحساب المنشأة."
+      backHref="/dashboard/micro/requirements"
     />
   );
 }

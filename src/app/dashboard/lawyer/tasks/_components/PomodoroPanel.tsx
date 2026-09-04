@@ -1,19 +1,26 @@
 "use client";
 // ─── PomodoroPanel Pro (Premium Gamification & Liquid Glass) ──────────────────
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import {
   Play, Pause, ArrowCounterClockwise, Coffee, Lightning, Leaf,
-  BellRinging, ChartBar, Bird, ClockCounterClockwise,
+  BellRinging, ChartBar, Bird, ClockCounterClockwise, WarningCircle,
 } from "@phosphor-icons/react";
 
 import { usePomodoroEngine } from "./_pomodoro/usePomodoroEngine";
 import { MODE_COLORS, MODE_LABELS, DURATIONS } from "./_pomodoro/types";
-import type { PomodoroMode } from "./_pomodoro/types";
+import type { PomodoroMode, PomodoroSession } from "./_pomodoro/types";
+import {
+  getServerSessions, recordSessionOnServer, migrateLocalSessionsToServer,
+  workSessionToPomodoroSession,
+} from "./_pomodoro/storage";
 import { NoiseMixer }     from "./NoiseMixer";
 import { StatsPanel }     from "./StatsPanel";
 import { RankLevelBadge, SmartInsights, ShareButton } from "./PomodoroExtras";
+import { useUser } from "@/hooks/useUser";
+import { isSupabaseMode } from "@/lib/services/api";
+import { listViewState, truncationNoticeAr, itemsOf, type ListRead } from "@/lib/services/listRead";
 
 // ─── Premium Magnetic Button ───────────────────────────────────────────────────
 const MagneticButton = ({ children, onClick, className, style, title }: any) => {
@@ -92,6 +99,27 @@ const CircularTimer = ({ pct, mode, isDark }: { pct: number; mode: PomodoroMode;
   );
 };
 
+// ─── Honest loading / unreadable states for server-sourced history ────────────
+// The rank badge, share card, stats and insights tabs, and the log all read
+// from `sessions` — while it isn't known yet (server fetch in flight) or
+// couldn't be read (the fetch failed), none of them render, so the panel
+// never shows a "٠" that just means "hasn't answered yet".
+const SessionsLoadingNote = ({ isDark }: { isDark: boolean }) => (
+  <div className={`flex items-center justify-center rounded-2xl py-8 text-[11px] font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+    <span className="animate-pulse">جاري تحميل سجل الجلسات…</span>
+  </div>
+);
+
+const SessionsUnreadableNote = ({ isDark, onRetry }: { isDark: boolean; onRetry: () => void }) => (
+  <div className={`flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed py-8 text-center ${isDark ? "border-red-500/20 text-red-400" : "border-red-200 text-red-500"}`}>
+    <WarningCircle size={20} weight="bold" />
+    <p className="text-[11px] font-bold">تعذّر تحميل سجل الجلسات.</p>
+    <button onClick={onRetry} className="text-[10px] font-black underline underline-offset-2">
+      إعادة المحاولة
+    </button>
+  </div>
+);
+
 // ─── Mode Config ──────────────────────────────────────────────────────────────
 const MODE_ICONS: Record<PomodoroMode, React.ElementType> = {
   focus: Lightning,
@@ -116,10 +144,82 @@ export default function PomodoroPanel({
 }) {
   const engine = usePomodoroEngine(onPomodoroComplete);
   const {
-    mode, timeLeft, running, sessions, pomCount,
+    mode, timeLeft, running, sessions: localSessions, pomCount,
     linkedTask, notif, noises,
     setMode, toggleRun, reset, setLinkedTask, setNoises,
   } = engine;
+
+  const { isLoggedIn, loading: userLoading } = useUser();
+  const useServer = isSupabaseMode && isLoggedIn;
+
+  // ── Server-backed session history (supabase mode, signed in) ──────────────
+  const [serverRead, setServerRead]       = useState<ListRead<PomodoroSession> | null>(null);
+  const [serverLoading, setServerLoading] = useState<boolean>(isSupabaseMode);
+  const [syncWarning, setSyncWarning]     = useState(false);
+  const initRan   = useRef(false);
+  const syncedKeys = useRef<Set<string>>(new Set());
+
+  const fetchServer = useCallback(async () => {
+    setServerLoading(true);
+    const read = await getServerSessions({ limit: 500 });
+    setServerRead(read);
+    setServerLoading(false);
+  }, []);
+
+  // One-time: migrate any leftover browser sessions, then load the true history.
+  useEffect(() => {
+    if (!isSupabaseMode || userLoading) return;
+    if (!isLoggedIn) { setServerLoading(false); return; }
+    if (initRan.current) return;
+    initRan.current = true;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await migrateLocalSessionsToServer();
+      } catch (error) {
+        console.error("[PomodoroPanel] migration failed:", error);
+      }
+      if (cancelled) return;
+      await fetchServer();
+    })();
+    return () => { cancelled = true; };
+  }, [isLoggedIn, userLoading, fetchServer]);
+
+  // Watch the engine's local buffer for a newly-completed session and record
+  // it server-side. Deduped on (startedAt, mode, durationMin) rather than the
+  // engine's own `Date.now()` id, which a double effect invocation could repeat.
+  useEffect(() => {
+    if (!useServer) return;
+    if (!serverRead || !serverRead.ok) return;
+    const latest = localSessions[0];
+    if (!latest) return;
+    const key = `${latest.startedAt}|${latest.mode}|${latest.durationMin}`;
+    if (syncedKeys.current.has(key)) return;
+    syncedKeys.current.add(key);
+
+    recordSessionOnServer(latest).then(saved => {
+      if (!saved) { setSyncWarning(true); return; }
+      setServerRead(prev => prev && prev.ok
+        ? {
+            ...prev,
+            items: [workSessionToPomodoroSession(saved), ...prev.items],
+            total: prev.total !== null ? prev.total + 1 : null,
+          }
+        : prev);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localSessions, useServer, serverRead?.ok]);
+
+  const localViewState = localSessions.length === 0 ? "empty" : "ready";
+  const viewState =
+    !isSupabaseMode ? localViewState :          // demo mode — local array only
+    userLoading     ? "loading" :               // auth not resolved yet
+    !isLoggedIn      ? localViewState :          // signed out — nothing to fetch
+    listViewState(serverLoading, serverRead);    // signed in — the real read
+
+  const sessions: PomodoroSession[] = useServer ? itemsOf(serverRead) : localSessions;
+  const truncationNotice = useServer ? truncationNoticeAr(serverRead) : null;
 
   const [tab, setTab] = useState<Tab>("timer");
 
@@ -295,10 +395,18 @@ export default function PomodoroPanel({
 
             {/* Bird Level + Share */}
             <div className={`rounded-3xl p-5 space-y-4 ${isDark ? "bg-black/20 border border-white/[0.03]" : "bg-slate-50 border border-slate-100"}`}>
-              <RankLevelBadge isDark={isDark} sessions={sessions} />
-              <div className="flex justify-end">
-                <ShareButton isDark={isDark} sessions={sessions} userName={userName} />
-              </div>
+              {viewState === "loading" ? (
+                <SessionsLoadingNote isDark={isDark} />
+              ) : viewState === "unreadable" ? (
+                <SessionsUnreadableNote isDark={isDark} onRetry={fetchServer} />
+              ) : (
+                <>
+                  <RankLevelBadge isDark={isDark} sessions={sessions} />
+                  <div className="flex justify-end">
+                    <ShareButton isDark={isDark} sessions={sessions} userName={userName} />
+                  </div>
+                </>
+              )}
             </div>
           </motion.div>
         )}
@@ -306,7 +414,13 @@ export default function PomodoroPanel({
         {/* ── STATS TAB ───────────────────────────────────────────────────────── */}
         {tab === "stats" && (
           <motion.div key="stats" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}>
-            <StatsPanel isDark={isDark} sessions={sessions} />
+            {viewState === "loading" ? (
+              <SessionsLoadingNote isDark={isDark} />
+            ) : viewState === "unreadable" ? (
+              <SessionsUnreadableNote isDark={isDark} onRetry={fetchServer} />
+            ) : (
+              <StatsPanel isDark={isDark} sessions={sessions} />
+            )}
           </motion.div>
         )}
 
@@ -314,7 +428,13 @@ export default function PomodoroPanel({
         {tab === "insights" && (
           <motion.div key="insights" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="space-y-4">
             <p className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>تحليل ذكي بناءً على فتراتك</p>
-            <SmartInsights isDark={isDark} sessions={sessions} />
+            {viewState === "loading" ? (
+              <SessionsLoadingNote isDark={isDark} />
+            ) : viewState === "unreadable" ? (
+              <SessionsUnreadableNote isDark={isDark} onRetry={fetchServer} />
+            ) : (
+              <SmartInsights isDark={isDark} sessions={sessions} />
+            )}
           </motion.div>
         )}
 
@@ -322,9 +442,19 @@ export default function PomodoroPanel({
         {tab === "log" && (
           <motion.div key="log" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="space-y-3">
             <p className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>
-              سجل الفترات ({sessions.length})
+              سجل الفترات{(viewState === "ready" || viewState === "empty") ? ` (${sessions.length})` : ""}
             </p>
-            {sessions.length === 0 ? (
+            {truncationNotice && (
+              <p className={`text-[10px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{truncationNotice}</p>
+            )}
+            {syncWarning && (
+              <p className={`text-[10px] font-bold ${isDark ? "text-red-400" : "text-red-500"}`}>تعذّر حفظ إحدى الفترات على الخادم.</p>
+            )}
+            {viewState === "loading" ? (
+              <SessionsLoadingNote isDark={isDark} />
+            ) : viewState === "unreadable" ? (
+              <SessionsUnreadableNote isDark={isDark} onRetry={fetchServer} />
+            ) : sessions.length === 0 ? (
               <div className={`flex flex-col items-center justify-center py-10 rounded-2xl border border-dashed ${isDark ? "border-white/[0.06]" : "border-slate-200"}`}>
                 <ClockCounterClockwise size={24} className={isDark ? "text-zinc-700" : "text-slate-300"} />
                 <p className={`text-[11px] mt-2 ${muted}`}>لا يوجد فترات محفوظة بعد</p>

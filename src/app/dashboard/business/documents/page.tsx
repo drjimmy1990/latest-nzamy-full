@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowClockwise, FolderOpen, UploadSimple, Trash, DownloadSimple } from "@phosphor-icons/react";
+import { ArrowClockwise, FolderOpen, UploadSimple, Trash, DownloadSimple, TrashSimple, CaretDown, CaretUp } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { isSupabaseMode } from "@/lib/runtimeMode";
 import {
@@ -18,6 +18,8 @@ import {
   itemsOf,
   type ListRead,
 } from "@/lib/services/listRead";
+import { DocumentsTrashPanel } from "@/components/documents/DocumentsTrashPanel";
+import { confirmDeleteToBinAr, deletedToBinNoticeAr } from "@/components/documents/_trashCopy";
 
 /**
  * خزنة وثائق المنشأة — owner item ٨.
@@ -74,6 +76,7 @@ export default function BusinessDocumentsPage() {
    */
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
+  const [trashOpen, setTrashOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -128,12 +131,13 @@ export default function BusinessDocumentsPage() {
   }
 
   async function remove(doc: Document) {
+    if (!confirm(confirmDeleteToBinAr(doc.file_name))) return;
     setBusy(true);
     setActionError("");
     setNotice("");
     try {
       await deleteDocument(String(doc.id), doc.storage_path);
-      setNotice("تم حذف الوثيقة من الخزنة.");
+      setNotice(deletedToBinNoticeAr(doc.file_name));
       await load();
     } catch {
       setActionError("تعذّر حذف الوثيقة.");
@@ -250,6 +254,46 @@ export default function BusinessDocumentsPage() {
           /* view === "unreadable" with nothing to fall back on. The banner
              above has already said why the list is missing; «لا توجد وثائق»
              would be a claim about a vault we never managed to open. */}
+
+          {/* سلة المحذوفات — collapsed by default, same convention as the
+              client documents page. */}
+          <div className={`${card} overflow-hidden`}>
+            <button
+              type="button"
+              onClick={() => setTrashOpen((v) => !v)}
+              className={`flex w-full items-center justify-between gap-2 p-4 text-[12px] font-bold ${
+                isDark ? "text-zinc-300" : "text-zinc-700"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <TrashSimple size={15} weight="bold" /> سلة المحذوفات
+              </span>
+              {trashOpen ? <CaretUp size={13} weight="bold" /> : <CaretDown size={13} weight="bold" />}
+            </button>
+            {trashOpen && (
+              <div className="px-4 pb-4">
+                <DocumentsTrashPanel
+                  isDark={isDark}
+                  showHeader={false}
+                  onRestored={(doc) => {
+                    // This vault view only ever shows unbound documents
+                    // (`load()` filters `!d.request_id`) — a restored row
+                    // that IS bound to an order will not reappear here after
+                    // `load()` runs below, and with no word said that looks
+                    // exactly like a restore that silently did nothing.
+                    if (doc.request_id) {
+                      setNotice(
+                        `تمت استعادة «${doc.file_name}» من السلة — لكنها مرتبطة بطلب خدمة، فلن تظهر في خزنة المنشأة. راجع ملف الطلب المرتبط بها.`,
+                      );
+                    } else {
+                      setNotice(`تمت استعادة «${doc.file_name}» إلى خزنة المنشأة.`);
+                    }
+                    void load();
+                  }}
+                />
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>

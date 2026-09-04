@@ -1,42 +1,56 @@
 "use client";
 // ─── GamificationCard ──────────────────────────────────────────────────────────
-// Tracks reading activity from localStorage and presents it as shareable stats.
-// Redesigned with premium square layout, custom SVG progress meter, rank, and streak.
+// Reading-activity stats — read-only here. preferences.readingActivity for a
+// signed-in user (Phase 6, getPreferences); the browser for a guest. Every
+// number this card renders is one it actually read: a reader with no
+// activity yet sees real zeros, never a placeholder substitute.
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Books, BookOpen, Gavel, Notebook, ShareNetwork, Lightning,
-  Flame, Sparkle, DownloadSimple, WhatsappLogo, Copy, X
+  Sparkle, DownloadSimple, WhatsappLogo, Copy, X
 } from "@phosphor-icons/react";
+import { useUser } from "@/hooks/useUser";
+import { isSupabaseMode } from "@/lib/services/api";
+import { getPreferences } from "@/lib/services/preferencesService";
+import { EMPTY_READING_ACTIVITY, type ReadingActivity } from "@/lib/services/readingActivityStats";
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-function readLS(key: string, fallback = "0") {
-  if (typeof window === "undefined") return fallback;
-  return localStorage.getItem(key) ?? fallback;
+// ── guest (local) read ──────────────────────────────────────────────────────
+function loadLocalActivity(): ReadingActivity {
+  if (typeof window === "undefined") return EMPTY_READING_ACTIVITY;
+  try {
+    const raw = localStorage.getItem("nzamy_activity");
+    if (!raw) return EMPTY_READING_ACTIVITY;
+    return { ...EMPTY_READING_ACTIVITY, ...JSON.parse(raw) };
+  } catch {
+    return EMPTY_READING_ACTIVITY;
+  }
 }
 
-function safeParse<T>(raw: string, fallback: T): T {
-  try { return JSON.parse(raw) as T; }
-  catch { return fallback; }
-}
+/** readingActivity from preferences for a signed-in user; the browser for a guest. */
+function useReadingActivity(): { data: ReadingActivity | null; ready: boolean } {
+  const { isLoggedIn, loading: authLoading } = useUser();
+  const [data, setData]   = useState<ReadingActivity | null>(null);
+  const [ready, setReady] = useState(false);
 
-interface ActivityData {
-  lawsThisWeek:   number;
-  lawsThisMonth:  number;
-  articles:       number;  // cumulative articles opened
-  principles:     number;
-  feqhPages:      number;
-}
+  useEffect(() => {
+    if (authLoading) return; // wait for the session to settle before deciding guest vs. signed-in
+    let cancelled = false;
+    if (isLoggedIn && isSupabaseMode) {
+      getPreferences().then(prefs => {
+        if (cancelled) return;
+        setData(prefs?.readingActivity ?? EMPTY_READING_ACTIVITY);
+        setReady(true);
+      });
+    } else {
+      setData(loadLocalActivity());
+      setReady(true);
+    }
+    return () => { cancelled = true; };
+  }, [isLoggedIn, authLoading]);
 
-function loadActivity(): ActivityData {
-  return safeParse(readLS("nzamy_activity", "{}"), {
-    lawsThisWeek: 0,
-    lawsThisMonth: 0,
-    articles: 0,
-    principles: 0,
-    feqhPages: 0,
-  });
+  return { data, ready };
 }
 
 function drawShareCard(
@@ -202,26 +216,11 @@ function drawShareCard(
     startY += rowHeight;
   });
 
-  ctx.fillStyle = "rgba(16, 185, 129, 0.1)";
-  ctx.strokeStyle = "rgba(16, 185, 129, 0.3)";
-  ctx.beginPath();
-  ctx.roundRect ? ctx.roundRect(50, 390, 260, 32, 16) : ctx.rect(50, 390, 260, 32);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = "#10b981";
-  ctx.font = `bold 12px ${fontFam}`;
-  ctx.textAlign = "center";
-  const compareText = data.isRTL
-    ? (data.view === "week" ? "▲ +12% زيادة في القراءة عن الأسبوع الماضي" : "▲ +18% زيادة في القراءة عن الشهر الماضي")
-    : (data.view === "week" ? "▲ +12% increase vs last week" : "▲ +18% increase vs last month");
-  ctx.fillText(compareText, 180, 410);
-
-  ctx.fillStyle = "#f59e0b";
-  ctx.font = `bold 13px ${fontFam}`;
-  ctx.textAlign = data.isRTL ? "right" : "left";
-  const streakText = data.isRTL ? "🔥 نشاط مستمر: ٤ أيام متتالية" : "🔥 Streak: 4 Consecutive Days";
-  ctx.fillText(streakText, data.isRTL ? w - 50 : 350, 410);
+  // Note: this card used to also draw a "+12%/+18% vs last period" badge and
+  // a "4-day streak" line here. Neither figure was ever computed from real
+  // data — no previous-period baseline or daily-streak counter exists in
+  // readingActivity — so both were invented on every render. Removed rather
+  // than wired up: the platform tracks no history to compute either from yet.
 
   ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
   ctx.font = `11px ${fontFam}`;
@@ -231,39 +230,19 @@ function drawShareCard(
 
 export function GamificationCard({ isRTL, isDark }: { isRTL: boolean; isDark: boolean }) {
   const [view, setView] = useState<"week" | "month">("week");
-  const [data, setData] = useState<ActivityData | null>(null);
+  const { data, ready } = useReadingActivity();
   const [showShare, setShowShare] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
 
-  useEffect(() => {
-    setData(loadActivity());
-  }, []);
+  // Nothing to render until the read (server or local) has resolved. When it
+  // has and there is genuinely no activity yet, `data` holds real zeros —
+  // rendered as-is below, never swapped for a placeholder.
+  if (!ready || !data) return null;
 
-  if (!data) return null;
-
-  const rawData = loadActivity();
-  const activeData: ActivityData = {
-    lawsThisWeek: rawData.lawsThisWeek ?? 0,
-    lawsThisMonth: rawData.lawsThisMonth ?? 0,
-    articles: rawData.articles ?? 0,
-    principles: rawData.principles ?? 0,
-    feqhPages: rawData.feqhPages ?? 0,
-  };
-
-  const hasActivity = activeData.lawsThisWeek > 0 || activeData.lawsThisMonth > 0 || activeData.articles > 0 || activeData.principles > 0 || activeData.feqhPages > 0;
-  
-  const finalData: ActivityData = hasActivity ? activeData : {
-    lawsThisWeek: 3,
-    lawsThisMonth: 8,
-    articles: 12,
-    principles: 5,
-    feqhPages: 14,
-  };
-
-  const lawsCount = view === "week" ? finalData.lawsThisWeek : finalData.lawsThisMonth;
-  const articlesCount = finalData.articles;
-  const principlesCount = finalData.principles;
-  const feqhCount = finalData.feqhPages;
+  const lawsCount = view === "week" ? data.lawsThisWeek : data.lawsThisMonth;
+  const articlesCount = data.articles;
+  const principlesCount = data.principles;
+  const feqhCount = data.feqhPages;
 
   const currentRead = lawsCount + articlesCount + principlesCount + feqhCount;
   const target = view === "week" ? 25 : 80;
@@ -472,23 +451,6 @@ export function GamificationCard({ isRTL, isDark }: { isRTL: boolean; isDark: bo
                 </span>
               </div>
             </div>
-
-            <div className="mt-3 w-full flex flex-col items-center gap-1">
-              <div className={`flex items-center justify-center gap-1 px-3 py-1 rounded-full border text-[10px] font-black ${
-                isDark ? "bg-emerald-950/40 text-emerald-400 border-emerald-500/20" : "bg-green-50 text-green-700 border-green-200"
-              }`}>
-                <span className="flex-shrink-0">▲</span>
-                <span>
-                  {view === "week"
-                    ? (isRTL ? "+12% عن الأسبوع الماضي" : "+12% vs last week")
-                    : (isRTL ? "+18% عن الشهر الماضي" : "+18% vs last month")}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 text-[9px] font-bold text-amber-500 dark:text-amber-400 mt-0.5">
-                <Flame size={11} weight="fill" />
-                <span>{isRTL ? "نشاط مستمر: ٤ أيام متتالية" : "Streak: 4 Days"}</span>
-              </div>
-            </div>
           </div>
 
           {/* Stats Grid */}
@@ -670,32 +632,11 @@ function ShareCardModal({
   );
 }
 
-// ── Activity tracker helper ─────────────────
-export function trackActivity(type: "laws" | "articles" | "principles" | "feqhPages") {
-  if (typeof window === "undefined") return;
-  const now = Date.now();
-  const weekMs = 7 * 24 * 60 * 60 * 1000;
-  const monthMs = 30 * 24 * 60 * 60 * 1000;
-
-  const data = safeParse(readLS("nzamy_activity", "{}"), {
-    lawsThisWeek: 0, lawsThisMonth: 0,
-    articles: 0, principles: 0, feqhPages: 0,
-    lastWeekReset: now, lastMonthReset: now,
-  } as ActivityData & { lastWeekReset: number; lastMonthReset: number });
-
-  if (now - data.lastWeekReset > weekMs) {
-    data.lawsThisWeek = 0;
-    data.lastWeekReset = now;
-  }
-  if (now - data.lastMonthReset > monthMs) {
-    data.lawsThisMonth = 0;
-    data.lastMonthReset = now;
-  }
-
-  if (type === "laws") { data.lawsThisWeek++; data.lawsThisMonth++; }
-  else if (type === "articles") data.articles++;
-  else if (type === "principles") data.principles++;
-  else if (type === "feqhPages") data.feqhPages++;
-
-  localStorage.setItem("nzamy_activity", JSON.stringify(data));
-}
+// `trackActivity` (a standalone "laws"/"articles"/"principles"/"feqhPages"
+// counter, called from nowhere in the codebase) used to live here. It wrote
+// unconditionally to localStorage with no signed-in/guest distinction, which
+// would have violated the Phase 6 rule (a signed-in user's data lives on the
+// server) the moment something started calling it. Removed rather than
+// ported: nothing currently increments "articles"/"principles"/"feqhPages"
+// activity at all — the law-open counters are recorded by
+// src/app/laws/[slug]/page.tsx via recordLawOpened().

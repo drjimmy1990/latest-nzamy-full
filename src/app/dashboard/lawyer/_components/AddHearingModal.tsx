@@ -9,6 +9,7 @@ import { createLawyerHearing } from "@/lib/services/lawyerHearingsService";
 import { createWorkflowId } from "@/lib/workflowStore";
 import type { UserType, UserTier } from "@/hooks/useUser";
 import { describeDateAr, toArabicDigits } from "@/lib/services/hijri";
+import { getHearingLocationField } from "./hearingLocationField";
 
 interface Props {
   onClose: () => void;
@@ -60,6 +61,19 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
   const [notes, setNotes] = useState("");
   const [urgency, setUrgency] = useState<Urgency>("normal");
   const [location, setLocation] = useState("");
+
+  // Row 70: step 2 no longer shows the same flat "الموقع" field for every
+  // type. `null` here means the field is hidden for this type (a deadline
+  // has no location) — see hearingLocationField.ts for why the other three
+  // named types relabel this ONE column instead of getting fields of their
+  // own.
+  const locationField = getHearingLocationField(type);
+  // What actually gets saved for `location`: never the field's leftover
+  // text from a type the lawyer has since switched away from. Switching
+  // from «جلسة قضائية» (courtroom filled in) to «موعد طعن / نهائي» (no
+  // location field shown) must not silently carry the old courtroom text
+  // into a deadline row nobody can see it was set on.
+  const effectiveLocation = locationField ? location : "";
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${
     isDark
@@ -117,7 +131,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
       // Demo mode still uses the old local-store path below: there it is the
       // real backend and genuinely round-trips. The lie was supabase-only.
       if (isSupabaseMode) {
-        await createLawyerHearing({ type, date, time, caseName, caseRequestId, urgency, location, notes, title });
+        await createLawyerHearing({ type, date, time, caseName, caseRequestId, urgency, location: effectiveLocation, notes, title });
       } else {
         const id = createWorkflowId();
         await createWorkflowRequest({
@@ -135,7 +149,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
           },
           payment: { amount: 0, status: "not_required" as const },
           sourcePath: "",
-          metadata: { hearing: true, date, time, type, urgency, location, notes, caseName },
+          metadata: { hearing: true, date, time, type, urgency, location: effectiveLocation, notes, caseName },
           assignedTo: user.userId,
         });
       }
@@ -301,10 +315,19 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
               )}
               {step === 2 && (
                 <motion.div key="step2" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="space-y-4">
-                  <div>
-                    <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الموقع</label>
-                    <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="مثال: المحكمة التجارية - الرياض" className={inputCls} />
-                  </div>
+                  {/* Row 70: one flat "الموقع" field used to show for every
+                      type, so a deadline offered a courtroom box it had no
+                      use for and a government review had nowhere honest to
+                      put the authority's name. `locationField` relabels the
+                      one column that actually saves (see
+                      hearingLocationField.ts) per type, and is `null` — the
+                      field is not rendered at all — for a deadline. */}
+                  {locationField && (
+                    <div>
+                      <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{locationField.label}</label>
+                      <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder={locationField.placeholder} className={inputCls} />
+                    </div>
+                  )}
                   <div>
                     <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>ملاحظات والتزامات</label>
                     <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="أي مستندات مطلوبة للصياغة؟" className={`${inputCls} resize-none`} />

@@ -1,298 +1,308 @@
 "use client";
 
-import { useState } from "react";
+/**
+ * Firm team workload — rebuilt 2026-09-04 (owner review item 4: "both pages
+ * still read MOCK_TEAM").
+ *
+ * ── WHAT CHANGED ─────────────────────────────────────────────────────────
+ * This page used to render a hardcoded `TEAM` array of six invented lawyers
+ * with a gamified "load points" system (`TASK_WEIGHTS` — litigation=8,
+ * memos=5, …, nothing in the schema backs any of it), `utilizationRate`/
+ * `deadlineAdherence` percentages nothing measures, an `overloaded`/`busy`/
+ * `normal`/`light` classification computed from those invented points, an
+ * invented `trend` (up/down/stable) per member, and a "rebalance suggestion"
+ * banner asserting a recommendation with no algorithm behind it. None of it
+ * came from a query.
+ *
+ * It now reads the real `firm_members` roster
+ * (`@/lib/services/firmMembersService`, same read `team/page.tsx` uses) and
+ * three real per-member counts computed from RLS-visible rows
+ * (`@/lib/services/firmMemberWorkloadService` →
+ * `GET /api/v1/firm/members/workload`) — see
+ * `@/lib/services/firmMemberWorkload` for exactly what each count means and
+ * the documented gap in "طلبات مسندة".
+ *
+ * ── WHAT WAS REMOVED, AND WHY IT HAS NO REPLACEMENT HERE ───────────────────
+ *   • the points system, MAX_POINTS, the load bar percentage
+ *                                    — no weighting rule exists anywhere;
+ *                                      inventing weights (why is a hearing
+ *                                      worth 8 and a memo 5?) is exactly the
+ *                                      kind of number this rebuild removes.
+ *   • overloaded/busy/normal/light   — thresholds over the invented points;
+ *                                      gone with the points. This page now
+ *                                      shows the three raw counts and lets
+ *                                      the reader judge, rather than
+ *                                      asserting a status this product
+ *                                      cannot back.
+ *   • utilizationRate, deadlineAdherence, trend (up/down/stable)
+ *                                    — no such measurement exists.
+ *   • the grid/list view toggle      — a display preference, not a data
+ *                                      concern; dropped to keep this rebuild
+ *                                      focused on real numbers. One list
+ *                                      layout remains.
+ *   • the "rebalance suggestion" banner («عرض الاقتراح» led nowhere)
+ *                                    — a recommendation with no algorithm
+ *                                      behind it; a dead affordance, not a
+ *                                      deferred feature.
+ *
+ * What IS real and shown: member count, and per member — assigned service
+ * requests, open tasks, upcoming hearings — each a straight count over an
+ * RLS-visible table, sortable, searchable by name.
+ */
+
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import {
-  UsersThree, Gavel, ChartBarHorizontal, Warning,
-  CheckCircle, Clock, ArrowLeft, ArrowsCounterClockwise,
-  SortAscending, MagnifyingGlass, SquaresFour, Rows,
-  TrendUp, TrendDown, Scales, FileText, Handshake,
-  MagnifyingGlassPlus, ChatCircle,
-} from "@phosphor-icons/react";
 import Link from "next/link";
+import {
+  UsersThree, Warning, MagnifyingGlass, SortAscending, ArrowLeft,
+  Scroll, ListChecks, Gavel,
+} from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import EmptyState from "@/components/ui/EmptyState";
+import { getFirmMembers, type FirmMember } from "@/lib/services/firmMembersService";
+import { getFirmMemberWorkload, type FirmMemberWorkloadCounts } from "@/lib/services/firmMemberWorkloadService";
+import { type ListRead, listViewState, itemsOf } from "@/lib/services/listRead";
+import { countTileAr, countPhraseAr, toArabicDigits } from "@/lib/services/arabicCount";
+import { FIRM_ROLE_CONFIG, FIRM_STATUS_STYLE } from "@/constants/firmMemberDisplay";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-type LoadStatus = "overloaded" | "busy" | "normal" | "light";
-
-interface TaskBreakdown {
-  litigation: number;
-  memos: number;
-  contracts_complex: number;
-  contracts_standard: number;
-  due_diligence: number;
-  advisory: number;
-  negotiations: number;
-}
-
-interface MemberLoad {
-  id: string;
-  name: string;
-  role: "partner" | "associate" | "trainee";
-  specialization: string;
-  tasks: TaskBreakdown;
-  utilizationRate: number;
-  deadlineAdherence: number;
-  // ملاحظة تنظيمية: لا يوجد حقل «نسبة فوز» هنا عن قصد — القاعدة ٣٨ من قرار وزير
-  // العدل رقم ٦٧٦ (١٩/٤/١٤٤٦هـ) تمنع عرض نسب فوز غير موثّقة. لا تُعِد إضافته.
-  trend: "up" | "down" | "stable";
-}
-
-// ─── Weights (UTBMS-aligned) ──────────────────────────────────────────────────
-const TASK_WEIGHTS: Record<keyof TaskBreakdown, { weight: number; label: string; icon: typeof Gavel }> = {
-  litigation:          { weight: 8, label: "ترافع",           icon: Scales },
-  memos:               { weight: 5, label: "مذكرات",          icon: FileText },
-  contracts_complex:   { weight: 5, label: "عقود معقدة",      icon: Handshake },
-  contracts_standard:  { weight: 2, label: "عقود نمطية",      icon: FileText },
-  due_diligence:       { weight: 6, label: "عناية واجبة",     icon: MagnifyingGlassPlus },
-  advisory:            { weight: 3, label: "استشارات وبحث",   icon: ChatCircle },
-  negotiations:        { weight: 4, label: "تفاوض",           icon: Handshake },
-};
-
-const MAX_POINTS = 50;
-
-function calcPoints(tasks: TaskBreakdown): number {
-  return (Object.keys(tasks) as (keyof TaskBreakdown)[])
-    .reduce((sum, k) => sum + tasks[k] * TASK_WEIGHTS[k].weight, 0);
-}
-
-function getStatus(pts: number): LoadStatus {
-  if (pts >= 46) return "overloaded";
-  if (pts >= 36) return "busy";
-  if (pts >= 21) return "normal";
-  return "light";
-}
-
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-const TEAM: MemberLoad[] = [
-  { id:"1", name:"سارة المنصور",  role:"partner",   specialization:"التجاري والعقاري", tasks:{ litigation:2, memos:1, contracts_complex:1, contracts_standard:2, due_diligence:0, advisory:2, negotiations:1 }, utilizationRate:72, deadlineAdherence:96, trend:"stable" },
-  { id:"2", name:"تركي العمر",    role:"associate", specialization:"العمالي والمدني",  tasks:{ litigation:3, memos:2, contracts_complex:0, contracts_standard:1, due_diligence:1, advisory:1, negotiations:0 }, utilizationRate:81, deadlineAdherence:88, trend:"up" },
-  { id:"3", name:"نورة الشمري",   role:"associate", specialization:"الأحوال الشخصية", tasks:{ litigation:1, memos:1, contracts_complex:0, contracts_standard:0, due_diligence:0, advisory:3, negotiations:1 }, utilizationRate:65, deadlineAdherence:97, trend:"stable" },
-  { id:"4", name:"خالد الحربي",   role:"associate", specialization:"الإداري",          tasks:{ litigation:0, memos:1, contracts_complex:1, contracts_standard:3, due_diligence:0, advisory:1, negotiations:0 }, utilizationRate:55, deadlineAdherence:94, trend:"down" },
-  { id:"5", name:"موضي القرشي",   role:"trainee",   specialization:"عام",              tasks:{ litigation:0, memos:1, contracts_complex:0, contracts_standard:2, due_diligence:0, advisory:1, negotiations:0 }, utilizationRate:48, deadlineAdherence:92, trend:"stable" },
-  { id:"6", name:"فيصل الدوسري",  role:"trainee",   specialization:"التجاري",          tasks:{ litigation:0, memos:0, contracts_complex:0, contracts_standard:1, due_diligence:0, advisory:2, negotiations:0 }, utilizationRate:40, deadlineAdherence:100, trend:"down" },
-];
-
-// ─── Config ───────────────────────────────────────────────────────────────────
 const spring = { type: "spring" as const, stiffness: 100, damping: 20 };
 
-const STATUS_CFG: Record<LoadStatus, { label: string; bar: string; text: string; bg: string; icon: typeof Warning }> = {
-  overloaded: { label:"مثقّل", bar:"bg-red-500",   text:"text-red-500",   bg:"bg-red-500/8",   icon: Warning },
-  busy:       { label:"مشغول", bar:"bg-amber-400", text:"text-amber-500", bg:"bg-amber-500/8", icon: Clock },
-  normal:     { label:"معتدل", bar:"bg-[#0B3D2E]", text:"text-[#0B3D2E]", bg:"bg-[#0B3D2E]/8", icon: CheckCircle },
-  light:      { label:"خفيف", bar:"bg-blue-400",   text:"text-blue-500",  bg:"bg-blue-500/8",  icon: ChartBarHorizontal },
-};
+type SortKey = "total" | "assignedRequests" | "openTasks" | "upcomingHearings";
 
-const ROLE_LABEL: Record<string, string> = { partner:"شريك", associate:"محامي", trainee:"متدرب" };
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "total", label: "الإجمالي" },
+  { key: "assignedRequests", label: "الطلبات" },
+  { key: "openTasks", label: "المهام" },
+  { key: "upcomingHearings", label: "الجلسات" },
+];
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+/** «—» for an unknown/unreadable count, the Arabic-Indic digit otherwise. */
+function cell(value: number | undefined, unreadable: boolean): string {
+  if (unreadable || value === undefined) return "—";
+  return countTileAr(value);
+}
+
 export default function FirmWorkloadPage() {
   const { isDark } = useTheme();
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"load"|"util"|"deadline">("load");
-  const [viewMode, setViewMode] = useState<"list"|"grid">("list");
+  const [sortBy, setSortBy] = useState<SortKey>("total");
 
-  const allPoints = TEAM.map(m => ({ ...m, pts: calcPoints(m.tasks) }));
-  const teamAvg = Math.round(allPoints.reduce((s,m) => s + m.pts, 0) / allPoints.length);
-  const overloaded = allPoints.filter(m => getStatus(m.pts) === "overloaded").length;
-  const lightCount = allPoints.filter(m => getStatus(m.pts) === "light").length;
-  const totalPts = allPoints.reduce((s,m) => s + m.pts, 0);
+  const [membersLoading, setMembersLoading] = useState(true);
+  const [membersRead, setMembersRead] = useState<ListRead<FirmMember> | null>(null);
+  const [workloadLoading, setWorkloadLoading] = useState(true);
+  const [workloadRead, setWorkloadRead] = useState<ListRead<FirmMemberWorkloadCounts> | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const filtered = allPoints
-    .filter(m => !search || m.name.includes(search) || m.specialization.includes(search))
-    .sort((a,b) => {
-      if (sortBy === "load") return b.pts - a.pts;
-      if (sortBy === "util") return b.utilizationRate - a.utilizationRate;
-      return b.deadlineAdherence - a.deadlineAdherence;
-    });
+  const load = useCallback(async () => {
+    setMembersLoading(true);
+    setWorkloadLoading(true);
+    const [m, w] = await Promise.all([getFirmMembers(), getFirmMemberWorkload()]);
+    setMembersRead(m);
+    setMembersLoading(false);
+    setWorkloadRead(w);
+    setWorkloadLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load, reloadKey]);
+
+  const retry = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  const membersViewState = listViewState(membersLoading, membersRead);
+  const members = itemsOf(membersRead);
+
+  const workloadViewState = listViewState(workloadLoading, workloadRead);
+  const workloadUnreadable = workloadViewState === "unreadable";
+  const workloadByMemberId = useMemo(() => {
+    const map = new Map<string, FirmMemberWorkloadCounts>();
+    for (const w of itemsOf(workloadRead)) map.set(w.memberId, w);
+    return map;
+  }, [workloadRead]);
+
+  const rows = useMemo(
+    () => members.map((m) => ({ member: m, counts: workloadByMemberId.get(m.id) })),
+    [members, workloadByMemberId],
+  );
+
+  // Team-wide totals — over every member, not the filtered/searched view.
+  const totals = useMemo(() => {
+    if (workloadUnreadable) return null;
+    return rows.reduce(
+      (acc, r) => ({
+        assignedRequests: acc.assignedRequests + (r.counts?.assignedRequests ?? 0),
+        openTasks: acc.openTasks + (r.counts?.openTasks ?? 0),
+        upcomingHearings: acc.upcomingHearings + (r.counts?.upcomingHearings ?? 0),
+      }),
+      { assignedRequests: 0, openTasks: 0, upcomingHearings: 0 },
+    );
+  }, [rows, workloadUnreadable]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim();
+    const list = q
+      ? rows.filter((r) => r.member.displayName.includes(q) || (r.member.email ?? "").toLowerCase().includes(q.toLowerCase()))
+      : rows;
+    // Unknown counts sink to the bottom rather than looking like a real
+    // zero — a member whose workload we couldn't read is not "the lightest".
+    const valueOf = (r: (typeof rows)[number]) => {
+      if (!r.counts) return -1;
+      if (sortBy === "total") return r.counts.assignedRequests + r.counts.openTasks + r.counts.upcomingHearings;
+      return r.counts[sortBy];
+    };
+    return [...list].sort((a, b) => valueOf(b) - valueOf(a));
+  }, [rows, search, sortBy]);
 
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
   const card = `rounded-2xl border p-5 ${isDark ? "bg-zinc-900/60 border-white/[0.06]" : "bg-white border-slate-100 shadow-sm"}`;
 
+  const subtitle = membersViewState === "loading"
+    ? "جاري التحميل…"
+    : membersViewState === "unreadable"
+      ? "تعذّر تحميل الفريق"
+      : countPhraseAr(members.length, { zero: "لا يوجد أعضاء", one: "عضو واحد", two: "عضوان", few: "أعضاء", many: "عضواً" }) ?? "";
+
   return (
     <div className="max-w-[1200px] mx-auto space-y-5" dir="rtl">
       {/* Header */}
-      <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className={`text-2xl font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>توزيع عبء العمل</h1>
-          <p className={`text-sm ${muted}`}>
-            {TEAM.length} أعضاء · {totalPts} نقطة إجمالاً · المتوسط {teamAvg} نقطة/فرد
-            {overloaded > 0 && <span className="text-red-500 font-bold"> · {overloaded} مثقّل</span>}
-          </p>
+          <p className={`text-sm ${membersViewState === "unreadable" ? "text-red-500 font-semibold" : muted}`}>{subtitle}</p>
         </div>
         <Link href="/dashboard/firm/team" className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
           <UsersThree size={15} /> إدارة الفريق
         </Link>
       </motion.div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label:"مثقّلون", value:String(overloaded), color:"text-red-500", bg:"bg-red-500/8", icon:Warning, warn:overloaded>0 },
-          { label:"إجمالي النقاط", value:String(totalPts), color:"text-[#0B3D2E]", bg:"bg-[#0B3D2E]/8", icon:Gavel, warn:false },
-          { label:"طاقة خفيفة", value:String(lightCount), color:"text-blue-500", bg:"bg-blue-500/8", icon:ArrowsCounterClockwise, warn:false },
-          { label:"متوسط نقطة/محامي", value:String(teamAvg), color:"text-amber-500", bg:"bg-amber-500/8", icon:ChartBarHorizontal, warn:false },
-        ].map((kpi,i) => {
-          const Icon = kpi.icon;
-          return (
-            <motion.div key={i} initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ ...spring, delay:i*0.05 }} className={card}>
-              <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-3 ${kpi.bg}`}>
-                <Icon size={16} weight={kpi.warn?"fill":"duotone"} className={kpi.color} />
-              </div>
-              <p className={`text-[24px] font-black font-mono leading-none ${kpi.warn?"text-red-500":isDark?"text-white":"text-slate-900"}`}>{kpi.value}</p>
-              <p className={`text-[11px] mt-1 ${muted}`}>{kpi.label}</p>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border ${isDark?"border-white/[0.06] bg-zinc-900/60":"border-slate-200 bg-white"}`}>
-          <MagnifyingGlass size={15} className={muted} />
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="بحث بالاسم أو التخصص..."
-            className={`flex-1 bg-transparent text-sm outline-none ${isDark?"text-zinc-200 placeholder:text-zinc-600":"text-slate-700 placeholder:text-slate-400"}`} />
-        </div>
-        <div className="flex gap-1.5">
-          {([{key:"load",label:"الأثقل"},{key:"util",label:"الاستغلال"},{key:"deadline",label:"الالتزام"}] as const).map(s=>(
-            <button key={s.key} onClick={()=>setSortBy(s.key)}
-              className={`flex items-center gap-1 px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${sortBy===s.key?"bg-[#0B3D2E] text-white border-[#0B3D2E]":isDark?"border-white/[0.06] text-zinc-500":"border-slate-100 text-slate-500"}`}>
-              <SortAscending size={12} /> {s.label}
-            </button>
+      {membersViewState === "loading" ? (
+        <div className={`${card} space-y-2`}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className={`h-16 rounded-2xl animate-pulse ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`} />
           ))}
         </div>
-        <div className={`flex gap-1 p-1 rounded-xl border ${isDark?"border-white/[0.06] bg-zinc-900/40":"border-slate-200 bg-slate-50"}`}>
-          {([{mode:"list" as const,icon:Rows},{mode:"grid" as const,icon:SquaresFour}]).map(({mode,icon:Icon})=>(
-            <button key={mode} onClick={()=>setViewMode(mode)}
-              className={`p-1.5 rounded-lg cursor-pointer transition-all ${viewMode===mode?isDark?"bg-zinc-700 text-white":"bg-white text-slate-700 shadow-sm":isDark?"text-zinc-600":"text-slate-400"}`}>
-              <Icon size={15} />
-            </button>
-          ))}
+      ) : membersViewState === "unreadable" ? (
+        <div className={`${card} text-center space-y-3`}>
+          <Warning size={26} weight="duotone" className="mx-auto text-red-500" />
+          <p className={`text-[14px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>تعذّرت قراءة فريق المكتب</p>
+          <p className={`text-[12px] ${muted}`}>لم يستجب الخادم لطلب الفريق. هذه ليست قائمة فارغة — قد يكون للمكتب أعضاء لم تُقرأ بياناتهم بعد.</p>
+          <button onClick={retry} className="px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors cursor-pointer">
+            إعادة المحاولة
+          </button>
         </div>
-      </div>
-
-      {/* Team */}
-      <div className={viewMode==="grid"?"grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4":"space-y-3"}>
-        {filtered.length===0 ? (
-          <div className={`${card} p-12 text-center ${viewMode==="grid"?"md:col-span-3":""}`}>
-            <UsersThree size={36} weight="duotone" className={`mx-auto mb-3 ${isDark?"text-zinc-700":"text-slate-300"}`} />
-            <p className={`text-sm ${muted}`}>لا توجد نتائج مطابقة</p>
+      ) : members.length === 0 ? (
+        <EmptyState
+          icon={<UsersThree />}
+          title="لا يوجد أعضاء بعد"
+          description="أضِف زملاءك المحامين إلى فريق المكتب من صفحة إدارة الفريق."
+          action={{ label: "إدارة الفريق", href: "/dashboard/firm/team" }}
+        />
+      ) : (
+        <>
+          {/* KPIs */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "الأعضاء", value: toArabicDigits(members.length), icon: UsersThree, unreadable: false },
+              { label: "طلبات مسندة", value: totals ? toArabicDigits(totals.assignedRequests) : "—", icon: Scroll, unreadable: workloadUnreadable },
+              { label: "مهام مفتوحة", value: totals ? toArabicDigits(totals.openTasks) : "—", icon: ListChecks, unreadable: workloadUnreadable },
+              { label: "جلسات قادمة", value: totals ? toArabicDigits(totals.upcomingHearings) : "—", icon: Gavel, unreadable: workloadUnreadable },
+            ].map((kpi, i) => {
+              const Icon = kpi.icon;
+              return (
+                <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: i * 0.05 }} className={card}>
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-3 ${isDark ? "bg-[#0B3D2E]/20" : "bg-[#0B3D2E]/8"}`}>
+                    <Icon size={16} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
+                  </div>
+                  <p className={`text-[24px] font-black font-mono leading-none ${isDark ? "text-white" : "text-slate-900"}`}>{kpi.value}</p>
+                  <p className={`text-[11px] mt-1 ${muted}`}>{kpi.label}{kpi.unreadable ? " · تعذّر التحميل" : ""}</p>
+                </motion.div>
+              );
+            })}
           </div>
-        ) : filtered.map(m => {
-          const status = getStatus(m.pts);
-          const cfg = STATUS_CFG[status];
-          const StatusIcon = cfg.icon;
-          const pct = Math.min(Math.round((m.pts/MAX_POINTS)*100),100);
-          const vsAvg = m.pts - teamAvg;
-          const activeTaskTypes = (Object.keys(m.tasks) as (keyof TaskBreakdown)[]).filter(k => m.tasks[k] > 0);
 
-          if (viewMode === "list") {
-            return (
-              <motion.div key={m.id} layout initial={{opacity:0,x:12}} animate={{opacity:1,x:0}} transition={spring}
-                className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${isDark?`bg-zinc-900/60 border-white/[0.06] ${status==="overloaded"?"border-red-500/20":""}`:`bg-white border-slate-100 shadow-sm ${status==="overloaded"?"border-red-200":""}`}`}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-sm flex-shrink-0 ${m.role==="partner"?"bg-gradient-to-br from-[#0B3D2E] to-[#1a5c45]":"bg-[#0B3D2E]/70"}`}>{m.name.charAt(0)}</div>
-                <div className="w-28 flex-shrink-0">
-                  <p className={`text-[13px] font-bold ${isDark?"text-zinc-100":"text-slate-800"}`}>{m.name}</p>
-                  <p className={`text-[11px] ${muted}`}>{ROLE_LABEL[m.role]} · {m.specialization}</p>
-                </div>
-                {/* Load bar */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={`text-[11px] font-mono font-bold ${cfg.text}`}>{m.pts}/{MAX_POINTS}</span>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${cfg.bg} ${cfg.text}`}><StatusIcon size={9} weight="fill" /> {cfg.label}</span>
-                  </div>
-                  <div className={`w-full h-2 rounded-full ${isDark?"bg-zinc-800":"bg-slate-100"}`}>
-                    <motion.div initial={{width:0}} animate={{width:`${pct}%`}} transition={{...spring,delay:0.1}} className={`h-full rounded-full ${cfg.bar} ${pct>=100?"animate-pulse":""}`} />
-                  </div>
-                  {/* Task chips */}
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {activeTaskTypes.map(k => {
-                      const tw = TASK_WEIGHTS[k];
-                      return <span key={k} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isDark?"bg-white/[0.05] text-zinc-400":"bg-slate-100 text-slate-500"}`}>{tw.label} ×{m.tasks[k]}</span>;
-                    })}
-                  </div>
-                </div>
-                {/* Metrics */}
-                <div className="flex gap-3 flex-shrink-0 text-center">
-                  <div><p className={`text-[13px] font-black font-mono ${isDark?"text-white":"text-slate-800"}`}>{m.utilizationRate}%</p><p className={`text-[9px] ${muted}`}>استغلال</p></div>
-                  <div><p className={`text-[13px] font-black font-mono ${m.deadlineAdherence>=95?"text-emerald-500":m.deadlineAdherence>=90?isDark?"text-white":"text-slate-800":"text-amber-500"}`}>{m.deadlineAdherence}%</p><p className={`text-[9px] ${muted}`}>التزام</p></div>
-                </div>
-                {/* vs avg */}
-                <div className="flex-shrink-0 w-16 text-center">
-                  <p className={`text-[12px] font-bold font-mono ${vsAvg>5?"text-red-500":vsAvg<-5?"text-blue-500":isDark?"text-zinc-400":"text-slate-500"}`}>
-                    {vsAvg>0?`+${vsAvg}`:String(vsAvg)}
-                  </p>
-                  <p className={`text-[9px] ${muted}`}>vs المتوسط</p>
-                </div>
-                <div className="flex-shrink-0">
-                  {m.trend==="up"&&<TrendUp size={14} className="text-amber-500"/>}
-                  {m.trend==="down"&&<TrendDown size={14} className="text-blue-400"/>}
-                  {m.trend==="stable"&&<span className={`text-[10px] font-bold ${muted}`}>—</span>}
-                </div>
-              </motion.div>
-            );
-          }
+          {workloadUnreadable && (
+            <div className={`${card} flex items-center gap-3 !p-3 border-red-500/20`}>
+              <Warning size={16} className="text-red-500 flex-shrink-0" />
+              <p className="text-[12px] flex-1">تعذّر تحميل أعباء العمل — الأعداد أدناه غير متاحة حاليًا.</p>
+              <button onClick={retry} className="text-[11px] font-bold text-red-500 hover:underline cursor-pointer flex-shrink-0">إعادة المحاولة</button>
+            </div>
+          )}
 
-          // Grid card
-          return (
-            <motion.div key={m.id} layout initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} transition={spring}
-              className={`rounded-2xl border p-5 transition-all ${isDark?`bg-zinc-900/60 border-white/[0.06] ${status==="overloaded"?"border-red-500/25 bg-red-500/[0.03]":""}`: `bg-white shadow-sm border-slate-100 ${status==="overloaded"?"border-red-200 bg-red-50/30":""}`}`}>
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-white text-sm ${m.role==="partner"?"bg-gradient-to-br from-[#0B3D2E] to-[#1a5c45]":"bg-[#0B3D2E]/70"}`}>{m.name.charAt(0)}</div>
-                  <div>
-                    <p className={`text-[13px] font-bold ${isDark?"text-zinc-100":"text-slate-800"}`}>{m.name}</p>
-                    <p className={`text-[11px] ${muted}`}>{ROLE_LABEL[m.role]}</p>
-                  </div>
-                </div>
-                <span className={`text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 ${cfg.bg} ${cfg.text}`}><StatusIcon size={10} weight="fill" /> {cfg.label}</span>
-              </div>
-              {/* Load bar */}
-              <div className="mb-3">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className={`text-[11px] ${muted}`}>عبء العمل</span>
-                  <span className={`text-[12px] font-black font-mono ${cfg.text}`}>{m.pts}/{MAX_POINTS}</span>
-                </div>
-                <div className={`w-full h-2 rounded-full ${isDark?"bg-zinc-800":"bg-slate-100"}`}>
-                  <motion.div initial={{width:0}} animate={{width:`${pct}%`}} transition={{...spring,delay:0.1}} className={`h-full rounded-full ${cfg.bar}`} />
-                </div>
-              </div>
-              {/* Task chips */}
-              <div className="flex flex-wrap gap-1 mb-3">
-                {activeTaskTypes.map(k => {
-                  const tw = TASK_WEIGHTS[k];
-                  return <span key={k} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isDark?"bg-white/[0.05] text-zinc-400":"bg-slate-100 text-slate-500"}`}>{tw.label} ×{m.tasks[k]}</span>;
-                })}
-              </div>
-              {/* Stats */}
-              <div className={`grid grid-cols-3 gap-2 py-3 border-t border-b mb-3 text-center ${isDark?"border-white/[0.05]":"border-slate-100"}`}>
-                <div><p className={`text-[14px] font-black font-mono ${isDark?"text-white":"text-slate-800"}`}>{m.utilizationRate}%</p><p className={`text-[9px] ${muted}`}>استغلال</p></div>
-                <div><p className={`text-[14px] font-black font-mono ${m.deadlineAdherence>=95?"text-emerald-500":"text-amber-500"}`}>{m.deadlineAdherence}%</p><p className={`text-[9px] ${muted}`}>التزام</p></div>
-                <div><p className={`text-[14px] font-black font-mono ${vsAvg>5?"text-red-500":vsAvg<-5?"text-blue-500":isDark?"text-zinc-400":"text-slate-500"}`}>{vsAvg>0?`+${vsAvg}`:String(vsAvg)}</p><p className={`text-[9px] ${muted}`}>vs المتوسط</p></div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className={`text-[11px] ${muted}`}>{m.specialization}</span>
-                <Link href={`/dashboard/firm/team/${m.id}`} className={`text-[11px] font-bold flex items-center gap-1 hover:underline ${isDark?"text-zinc-400":"text-slate-500"}`}>الملف <ArrowLeft size={10}/></Link>
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      {/* Rebalance suggestion */}
-      {overloaded > 0 && lightCount > 0 && (
-        <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{delay:0.3}}
-          className={`rounded-2xl border-2 border-dashed p-5 flex items-center gap-4 ${isDark?"border-amber-500/20 bg-amber-500/5":"border-amber-200 bg-amber-50/50"}`}>
-          <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-            <ArrowsCounterClockwise size={20} className="text-amber-500" weight="duotone" />
+          {/* Filters */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
+              <MagnifyingGlass size={15} className={muted} />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="بحث بالاسم أو البريد..."
+                className={`flex-1 bg-transparent text-sm outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {SORT_OPTIONS.map((s) => (
+                <button key={s.key} onClick={() => setSortBy(s.key)}
+                  className={`flex items-center gap-1 px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${sortBy === s.key ? "bg-[#0B3D2E] text-white border-[#0B3D2E]" : isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
+                  <SortAscending size={12} /> {s.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex-1">
-            <p className={`text-sm font-bold ${isDark?"text-white":"text-slate-800"}`}>اقتراح إعادة توزيع</p>
-            <p className={`text-xs mt-0.5 ${muted}`}>{overloaded} محامٍ مثقّل و{lightCount} بطاقة خفيفة — يمكن نقل مهام لتحقيق توازن</p>
-          </div>
-          <button className="shrink-0 px-4 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors cursor-pointer">عرض الاقتراح</button>
-        </motion.div>
+
+          {/* Team */}
+          {filtered.length === 0 ? (
+            <EmptyState
+              icon={<MagnifyingGlass />}
+              title="لا توجد نتائج مطابقة"
+              description="لم يُعثر على أعضاء يطابقون البحث الحالي."
+              action={{ label: "إعادة ضبط البحث", onClick: () => setSearch("") }}
+            />
+          ) : (
+            <div className="space-y-3">
+              {filtered.map((r) => {
+                const rc = FIRM_ROLE_CONFIG[r.member.role];
+                const sc = FIRM_STATUS_STYLE[r.member.status];
+                return (
+                  <motion.div key={r.member.id} layout initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={spring}
+                    className={`flex flex-wrap items-center gap-4 p-4 rounded-2xl border transition-all ${isDark ? "bg-zinc-900/60 border-white/[0.06]" : "bg-white border-slate-100 shadow-sm"}`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-sm flex-shrink-0 ${r.member.isOwner ? "bg-gradient-to-br from-[#0B3D2E] to-[#1a5c45]" : "bg-[#0B3D2E]/70"}`}>
+                      {r.member.displayName.charAt(0)}
+                    </div>
+                    <div className="w-40 flex-shrink-0 min-w-0">
+                      <p className={`text-[13px] font-bold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{r.member.displayName}</p>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${rc.bg} ${rc.color}`}>{rc.label}</span>
+                        <span className={`text-[10px] ${sc.text}`}>{r.member.isOwner ? "صاحب المكتب" : sc.label}</span>
+                      </div>
+                    </div>
+
+                    {/* Real counts */}
+                    <div className="flex gap-4 flex-1 min-w-[180px] flex-wrap justify-start sm:justify-end">
+                      <div className="text-center">
+                        <p className={`text-[15px] font-black font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{cell(r.counts?.assignedRequests, workloadUnreadable)}</p>
+                        <p className={`text-[9px] ${muted}`}>طلبات</p>
+                      </div>
+                      <div className="text-center">
+                        <p className={`text-[15px] font-black font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{cell(r.counts?.openTasks, workloadUnreadable)}</p>
+                        <p className={`text-[9px] ${muted}`}>مهام</p>
+                      </div>
+                      <div className="text-center">
+                        <p className={`text-[15px] font-black font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{cell(r.counts?.upcomingHearings, workloadUnreadable)}</p>
+                        <p className={`text-[9px] ${muted}`}>جلسات</p>
+                      </div>
+                    </div>
+
+                    <Link href={`/dashboard/firm/team/${r.member.id}`} className={`text-[11px] font-bold flex items-center gap-1 hover:underline flex-shrink-0 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                      الملف <ArrowLeft size={10} />
+                    </Link>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* «طلبات» caveat — spelled out once rather than on every row */}
+          <p className={`text-[11px] text-center ${muted}`}>
+            «طلبات» تقتصر على الطلبات المرتبطة بسجل المكتب في النظام، وقد لا تشمل كل تكليف فعلي.
+          </p>
+        </>
       )}
     </div>
   );

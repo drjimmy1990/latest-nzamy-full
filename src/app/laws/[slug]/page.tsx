@@ -12,12 +12,16 @@ import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
+import { isSupabaseMode } from "@/lib/services/api";
+import { getPreferences, patchPreferences, type RecentSession } from "@/lib/services/preferencesService";
+import { recordLawOpened, type ReadingActivity } from "@/lib/services/readingActivityStats";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 import type { LawArticle, LawSystem } from "../data";
 import { getLawMeta, fetchLawMetadata, SECTION_COLORS } from "../law-metadata-map";
 import type { LawMetaEntry } from "../law-metadata-map";
 import { PaywallModal } from "../components/PaywallModal";
 import { useDraftCart } from "@/hooks/useDraftCart";
+import ReportArticleIssueButton from "@/components/laws/ReportArticleIssueButton";
 import {
   ArticleBlock,
   ArticleExplainModal,
@@ -35,7 +39,16 @@ import { apiSlug } from '@/utils/apiSlug';
 
 function LawSystemPageContent() {
   const { isDark, isRTL }  = useTheme();
-  const { userType, isLoggedIn } = useUser();
+  const { userType, isLoggedIn, loading: authLoading } = useUser();
+
+  // ── Phase 6: reading activity + recent sessions ride the server for
+  // signed-in users (getPreferences/patchPreferences); guests keep the
+  // browser. `prefsLoaded` gates the first write until the one-time read
+  // below has resolved (or determined this is a guest), so a signed-in
+  // user's counters are never overwritten with an empty stub.
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [serverReadingActivity, setServerReadingActivity] = useState<ReadingActivity | null>(null);
+  const [serverRecentSessions, setServerRecentSessions] = useState<RecentSession[] | null>(null);
 
   const [showFolderModal, setShowFolderModal] = useState(false);
   const params = useParams();
@@ -187,84 +200,85 @@ function LawSystemPageContent() {
     loadLaw();
   }, [slug]);
 
-  // ── Persist law name + track activity ────────────────────────────────────
+  // ── Load server-side preferences once (signed-in users only) ────────────
+  // Runs once per session's auth resolution — not per slug — since the whole
+  // point is a single read followed by patches, not a re-read per law page.
   useEffect(() => {
-    if (slug && law?.title) {
-      localStorage.setItem(`nzamy_law_title_${slug}`, law.title);
+    if (authLoading) return; // wait for the session to settle before deciding guest vs. signed-in
+    if (!isLoggedIn || !isSupabaseMode) { setPrefsLoaded(true); return; }
+    let cancelled = false;
+    getPreferences().then(prefs => {
+      if (cancelled) return;
+      setServerReadingActivity(prefs?.readingActivity ?? null);
+      setServerRecentSessions(prefs?.recentSessions ?? null);
+      setPrefsLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, [authLoading, isLoggedIn]);
+
+  // ── Reading-activity counters (nzamy_activity) ───────────────────────────
+  // Server (preferences.readingActivity) for signed-in users; the browser for
+  // guests. The week/month rolling-window reset lives in the pure, tested
+  // recordLawOpened() helper (src/lib/services/readingActivityStats.ts) —
+  // this used to be two duplicated inline blocks here, which double-counted
+  // every law opened.
+  useEffect(() => {
+    // `law.slug !== slug` catches the render between a navigation and the
+    // new fetch resolving, where `slug` (the URL param) has already changed
+    // but `law` still holds the PREVIOUS law's data — `setLaw` is never
+    // cleared to null before the next fetch. Without this guard that render
+    // would record the new slug against the old law's title.
+    if (authLoading || !prefsLoaded || !slug || !law?.title || law.slug !== slug) return;
+    if (isLoggedIn && isSupabaseMode) {
+      const next = recordLawOpened(serverReadingActivity);
+      setServerReadingActivity(next);
+      patchPreferences({ readingActivity: next }).catch(err => {
+        console.error("[LawReader] patchPreferences(readingActivity) failed:", err);
+      });
+    } else {
       try {
         const raw = localStorage.getItem("nzamy_activity");
-        const data = raw ? JSON.parse(raw) : {};
-        const now = Date.now();
-        const weekMs  = 7  * 24 * 60 * 60 * 1000;
-        const monthMs = 30 * 24 * 60 * 60 * 1000;
-        if (!data.lastWeekReset  || now - data.lastWeekReset  > weekMs)  { data.lawsThisWeek  = 0; data.lastWeekReset  = now; }
-        if (!data.lastMonthReset || now - data.lastMonthReset > monthMs) { data.lawsThisMonth = 0; data.lastMonthReset = now; }
-        data.lawsThisWeek  = (data.lawsThisWeek  || 0) + 1;
-        data.lawsThisMonth = (data.lawsThisMonth || 0) + 1;
-        localStorage.setItem("nzamy_activity", JSON.stringify(data));
+        const next = recordLawOpened(raw ? JSON.parse(raw) : null);
+        localStorage.setItem("nzamy_activity", JSON.stringify(next));
       } catch {}
     }
-  }, [slug, law?.title]);
+    // serverReadingActivity is read, not a trigger — including it would fire
+    // this effect again on every patch, double-counting the same law visit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, law?.title, prefsLoaded, authLoading, isLoggedIn]);
 
-  // Track this law in recent sessions
+  // ── Recent sessions (nzamy_recent_sessions) ──────────────────────────────
+  // Server (preferences.recentSessions, capped at 10 by the route) for
+  // signed-in users; the browser for guests. The title is carried on the
+  // session entry itself — there is no separate `nzamy_law_title_*` cache.
   useEffect(() => {
-    if (!slug || !law?.title) return;
-    try {
-      const meta = lawMeta;
-      const raw = localStorage.getItem("nzamy_recent_sessions");
-      const sessions = raw ? JSON.parse(raw) : [];
-      const filtered = sessions.filter((s: any) => !(s.slug === slug && s.type === "law"));
-      filtered.unshift({
-        slug,
-        title: law.title,
-        titleEn: law.titleEn || law.title,
-        catId: meta.section_code ? `SA-${meta.section_code}` : "SA-00",
-        type: "law"
+    // Same navigation-race guard as the reading-activity effect above.
+    if (authLoading || !prefsLoaded || !slug || !law?.title || law.slug !== slug) return;
+    const entry: RecentSession = {
+      slug,
+      title: law.title,
+      titleEn: law.titleEn || law.title,
+      catId: lawMeta.section_code ? `SA-${lawMeta.section_code}` : "SA-00",
+      type: "law",
+    };
+    if (isLoggedIn && isSupabaseMode) {
+      const filtered = (serverRecentSessions ?? []).filter(s => !(s.slug === slug && s.type === "law"));
+      const next = [entry, ...filtered].slice(0, 10);
+      setServerRecentSessions(next);
+      patchPreferences({ recentSessions: next }).catch(err => {
+        console.error("[LawReader] patchPreferences(recentSessions) failed:", err);
       });
-      localStorage.setItem("nzamy_recent_sessions", JSON.stringify(filtered.slice(0, 10)));
-    } catch {}
-  }, [slug, law?.title, lawMeta]);
-
-
-  // ── Persist law name + track activity ────────────────────────────────────
-  useEffect(() => {
-    if (slug && law?.title) {
-      localStorage.setItem(`nzamy_law_title_${slug}`, law.title);
+    } else {
       try {
-        const raw = localStorage.getItem("nzamy_activity");
-        const data = raw ? JSON.parse(raw) : {};
-        const now = Date.now();
-        const weekMs  = 7  * 24 * 60 * 60 * 1000;
-        const monthMs = 30 * 24 * 60 * 60 * 1000;
-        if (!data.lastWeekReset  || now - data.lastWeekReset  > weekMs)  { data.lawsThisWeek  = 0; data.lastWeekReset  = now; }
-        if (!data.lastMonthReset || now - data.lastMonthReset > monthMs) { data.lawsThisMonth = 0; data.lastMonthReset = now; }
-        data.lawsThisWeek  = (data.lawsThisWeek  || 0) + 1;
-        data.lawsThisMonth = (data.lawsThisMonth || 0) + 1;
-        localStorage.setItem("nzamy_activity", JSON.stringify(data));
+        const raw = localStorage.getItem("nzamy_recent_sessions");
+        const sessions = raw ? JSON.parse(raw) : [];
+        const filtered = Array.isArray(sessions) ? sessions.filter((s: any) => !(s.slug === slug && s.type === "law")) : [];
+        localStorage.setItem("nzamy_recent_sessions", JSON.stringify([entry, ...filtered].slice(0, 10)));
       } catch {}
     }
-  }, [slug, law?.title]);
-
-  // Track this law in recent sessions
-  useEffect(() => {
-    if (!slug || !law?.title) return;
-    try {
-      const meta = getLawMeta(slug);
-      const raw = localStorage.getItem("nzamy_recent_sessions");
-      const sessions = raw ? JSON.parse(raw) : [];
-      const filtered = sessions.filter((s: any) => !(s.slug === slug && s.type === "law"));
-      filtered.unshift({
-        slug,
-        title: law.title,
-        titleEn: law.titleEn || law.title,
-        catId: meta.section_code ? `SA-${meta.section_code}` : "SA-00",
-        type: "law"
-      });
-      localStorage.setItem("nzamy_recent_sessions", JSON.stringify(filtered.slice(0, 10)));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [slug, law]);
+    // serverRecentSessions is read, not a trigger — see the note above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, law?.title, lawMeta, prefsLoaded, authLoading, isLoggedIn]);
 
   // Listen to open folder modal from mobile trigger stacked FAB
   useEffect(() => {
@@ -687,6 +701,14 @@ function LawSystemPageContent() {
                 </button>
               ))}
             </div>
+
+            <ReportArticleIssueButton
+              lawSlug={slug}
+              articleRef={activeArticle ? `${activeArticle.num} — ${lawTitle}` : lawTitle}
+              isDark={isDark}
+              isRTL={isRTL}
+              disabled={!activeArticle}
+            />
           </div>
         </div>
 

@@ -176,15 +176,22 @@ async function dispatchOrderNotice(opts: {
  *         documentId?, fileName?, notes?, reason?, sendWhatsapp?, assigneeUserId? }
  * Side-channels (event, notification, n8n) are best-effort and never break the write.
  *
- * "claim" is intentionally idempotent-as-takeover, not a 409: re-claiming an
- * already-claimed (in_review) order re-assigns it to whichever admin calls
- * claim last, rather than refusing. There is no reassignment route anywhere
- * else in the codebase, and POST /api/v1/documents (the only way to upload a
- * deliverable) only accepts a request_id whose order has
- * requester_user_id === caller OR assigned_to === caller. If claim 409'd on a
- * second call, an order claimed by one admin who then goes AWOL could never
- * be delivered by anyone else — permanently stuck at in_review with no
- * recovery path. Allowing takeover is the only unstick mechanism available.
+ * "claim" is a single atomic UPDATE via public.claim_service_request() (Owner
+ * item ٦٩, concurrency half) — one SQL statement is its own lock, so two
+ * admins pressing «استلام» on the same still-open order in the same instant
+ * can no longer both get a 200 with each screen believing it won. Zero rows
+ * back means someone else claimed it (or it moved to completed/cancelled)
+ * between this handler's read above and the write; answered as 409. Re-
+ * pressing استلام on an order the caller already owns still succeeds — the
+ * function's WHERE also matches `assigned_to = caller`.
+ *
+ * This used to be "idempotent-as-takeover" on the reasoning that there was no
+ * other reassignment route, so refusing a re-claim would strand an order
+ * whose claimant went AWOL. That premise is false: the "assign" action right
+ * below writes `assigned_to` from an explicit team-member id with no
+ * precondition on the row's current assignee, and IS the recovery route for
+ * a stuck order. Takeover-via-reclaim is no longer needed and no longer
+ * happens.
  */
 export async function PATCH(
   request: NextRequest,
@@ -418,9 +425,35 @@ export async function PATCH(
     return NextResponse.json({ error: "إجراء غير معروف" }, { status: 400 });
   }
 
-  const { data: updated, error } = await admin
-    .from("service_requests").update(patch).eq("id", id).select().single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // "claim" writes through the atomic RPC (Owner item ٦٩ — see the doc
+  // comment above the handler); every other action keeps the plain
+  // `.update(patch)` it always used. `patch` above is still computed for
+  // "claim" (unused for the write itself) so its notifyTitle/eventName
+  // neighbours read the same as every other branch.
+  let updated: Record<string, unknown>;
+  if (body.action === "claim") {
+    const { data: claimed, error: claimError } = await admin.rpc(
+      "claim_service_request",
+      { p_request_id: id, p_actor_id: adminUserId, p_now: nowIso },
+    );
+    if (claimError) {
+      return NextResponse.json({ error: claimError.message }, { status: 500 });
+    }
+    // A SETOF-returning RPC comes back as an array from supabase-js: one row
+    // claimed, zero rows means another admin's claim (or a deliver/cancel)
+    // won the race between this handler's read of `order` above and this
+    // write — the exact TOCTOU the single UPDATE statement closes.
+    const claimedRow = Array.isArray(claimed) ? claimed[0] : claimed;
+    if (!claimedRow) {
+      return NextResponse.json({ error: "سبق أن أُسند هذا الطلب" }, { status: 409 });
+    }
+    updated = claimedRow as Record<string, unknown>;
+  } else {
+    const { data, error } = await admin
+      .from("service_requests").update(patch).eq("id", id).select().single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    updated = data as Record<string, unknown>;
+  }
 
   // ── side-channels: best-effort, never break the write ──────────────────────
   try {

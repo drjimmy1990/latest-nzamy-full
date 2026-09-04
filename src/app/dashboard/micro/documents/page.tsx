@@ -5,9 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   FolderOpen, MagnifyingGlass, DownloadSimple, Eye,
   FilePdf, FileDoc, FileImage, FunnelSimple, Clock,
-  Folder, X, Upload, CheckCircle, Trash,
+  Folder, X, Upload, CheckCircle, TrashSimple, CaretDown, CaretUp,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { DocumentsTrashPanel } from "@/components/documents/DocumentsTrashPanel";
 
 // ─── Types & Mock Data ──────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ export default function MicroDocumentsPage() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Document | null>(null);
   const [uploadDone, setUploadDone] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   const card = isDark
     ? "bg-zinc-900 border border-white/[0.07] rounded-2xl"
@@ -228,6 +230,29 @@ export default function MicroDocumentsPage() {
         )}
       </AnimatePresence>
 
+      {/* سلة المحذوفات — a real bin over the account's real documents. The
+          list above is DOCUMENTS (mock data), so it carries no delete control
+          to reword; this panel is the real, backend-wired piece. */}
+      <motion.div variants={fadeUp} initial="hidden" animate="show" custom={3} className={card}>
+        <button
+          type="button"
+          onClick={() => setTrashOpen((v) => !v)}
+          className={`flex w-full items-center justify-between gap-2 p-4 text-[13px] font-bold ${
+            isDark ? "text-zinc-300" : "text-zinc-700"
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <TrashSimple size={15} weight="bold" /> سلة المحذوفات
+          </span>
+          {trashOpen ? <CaretUp size={13} weight="bold" /> : <CaretDown size={13} weight="bold" />}
+        </button>
+        {trashOpen && (
+          <div className="px-4 pb-4">
+            <DocumentsTrashPanel isDark={isDark} showHeader={false} />
+          </div>
+        )}
+      </motion.div>
+
       {/* Detail Modal */}
       <AnimatePresence>
         {selected && (
@@ -287,11 +312,11 @@ export default function MicroDocumentsPage() {
                   >
                     <DownloadSimple size={15} /> تحميل الملف
                   </motion.button>
-                  <motion.button whileHover={{ scale: 1.02 }}
-                    className={`px-4 py-3 rounded-xl font-bold text-[13px] cursor-pointer transition-colors text-red-400 ${isDark ? "bg-red-900/20 hover:bg-red-900/30" : "bg-red-50 hover:bg-red-100"}`}
-                  >
-                    <Trash size={14} />
-                  </motion.button>
+                  {/* The delete button here had no onClick at all — a control
+                      that looked like a delete and did nothing. Removed
+                      rather than wired to DOCUMENTS (mock data, not a real
+                      document a deleteDocument() call could target); see the
+                      real سلة المحذوفات panel below instead. */}
                 </div>
               </div>
             </motion.div>

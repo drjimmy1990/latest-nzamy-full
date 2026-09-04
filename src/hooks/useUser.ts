@@ -480,6 +480,18 @@ export function logout(): void {
 
   // Supabase mode: sign out through Supabase Auth
   if (BACKEND_MODE === "supabase") {
+    // Defense in depth: the library-folders / recent-sessions keys must
+    // never carry a signed-in user's data (THE RULE OF THIS PHASE — that
+    // data lives on the server only). Nothing should write them while
+    // authenticated any more, but this clears any stale value already on
+    // disk (written before that fix shipped, or by a demo/guest visit on
+    // this same browser) so the next signed-out visitor on a shared machine
+    // never inherits a previous account's folders or recent reads.
+    try {
+      localStorage.removeItem("nzamy_smart_folders");
+      localStorage.removeItem("nzamy_recent_sessions");
+    } catch { /* ignore quota / private-mode errors */ }
+
     const supabase = createClient();
     supabase.auth.signOut().finally(() => {
       window.location.href = "/login";

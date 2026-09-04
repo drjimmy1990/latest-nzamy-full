@@ -101,11 +101,11 @@ export const MICRO_SIDEBAR: SidebarGroup[] = [
   {
     title: "اشتراطات نشاطي", titleEn: "Business Requirements",
     items: [
-      { label: "اشتراطات البلدية",   labelEn: "Municipality",  href: "/dashboard/micro/requirements/municipality", icon: "Buildings", gateKey: "micro-requirements" },
-      { label: "الزكاة والضريبة",   labelEn: "Zakat & Tax",   href: "/dashboard/micro/requirements/zakat",        icon: "Percent", gateKey: "micro-requirements" },
-      { label: "التأمينات الاجتماعية",labelEn: "GOSI",         href: "/dashboard/micro/requirements/gosi",         icon: "ShieldStar", gateKey: "micro-requirements" },
-      { label: "نظام العمل",          labelEn: "Labor Law",    href: "/dashboard/micro/requirements/labor",        icon: "Briefcase", gateKey: "micro-requirements" },
-      { label: "الرخص والتصاريح",    labelEn: "Licenses",     href: "/dashboard/micro/requirements/licenses",     icon: "Stamp", gateKey: "micro-requirements" },
+      { label: "اشتراطات البلدية",   labelEn: "Municipality",  href: "/dashboard/micro/requirements/municipality", icon: "Buildings", gateKey: "micro-requirements", badge: "قريباً" },
+      { label: "الزكاة والضريبة",   labelEn: "Zakat & Tax",   href: "/dashboard/micro/requirements/zakat",        icon: "Percent", gateKey: "micro-requirements", badge: "قريباً" },
+      { label: "التأمينات الاجتماعية",labelEn: "GOSI",         href: "/dashboard/micro/requirements/gosi",         icon: "ShieldStar", gateKey: "micro-requirements", badge: "قريباً" },
+      { label: "نظام العمل",          labelEn: "Labor Law",    href: "/dashboard/micro/requirements/labor",        icon: "Briefcase", gateKey: "micro-requirements", badge: "قريباً" },
+      { label: "الرخص والتصاريح",    labelEn: "Licenses",     href: "/dashboard/micro/requirements/licenses",     icon: "Stamp", gateKey: "micro-requirements", badge: "قريباً" },
     ],
   },
   {
@@ -259,9 +259,9 @@ export const NGO_SIDEBAR: SidebarGroup[] = [
       { label: "المتطوعون",           labelEn: "Volunteers",  href: "/dashboard/ngo/volunteers",   icon: "Users", gateKey: "ngo-volunteers" },
       { label: "العقود والاتفاقيات",  labelEn: "Contracts",   href: "/dashboard/ngo/contracts",    icon: "FileText" },
       { label: "الماليات والتبرعات",  labelEn: "Finance",     href: "/dashboard/ngo/finance",      icon: "Money", gateKey: "ngo-donations" },
-      { label: "الأوقاف والأصول",      labelEn: "Awqaf & Assets", href: "/dashboard/ngo/awqaf",     icon: "Buildings", gateKey: "ngo-awqaf", badge: "تجريبي" },
+      { label: "الأوقاف والأصول",      labelEn: "Awqaf & Assets", href: "/dashboard/ngo/awqaf",     icon: "Buildings", gateKey: "ngo-awqaf", badge: "قريباً" },
       { label: "البرامج والحملات",     labelEn: "Programs",    href: "/dashboard/ngo/programs",    icon: "Target", gateKey: "ngo-programs", badge: "تجريبي" },
-      { label: "مجلس الإدارة",         labelEn: "Board",       href: "/dashboard/ngo/board",       icon: "UsersThree", gateKey: "ngo-board", badge: "تجريبي" },
+      { label: "مجلس الإدارة",         labelEn: "Board",       href: "/dashboard/ngo/board",       icon: "UsersThree", gateKey: "ngo-board", badge: "قريباً" },
       { label: "الامتثال والحوكمة",   labelEn: "Compliance",  href: "/dashboard/ngo/compliance",   icon: "ShieldCheck", gateKey: "ngo-compliance" },
       { label: "التقارير الدورية",    labelEn: "Reports",     href: "/dashboard/ngo/reports",      icon: "ChartBar", gateKey: "ngo-reports" },
     ],

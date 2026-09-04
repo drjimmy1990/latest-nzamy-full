@@ -3,45 +3,47 @@
 /**
  * InvitationBanner.tsx
  * ─────────────────────────────────────────────────────────────
- * A subtle, non-intrusive banner shown inside /laws to
- * subscribers who have pending colleague invitations.
- * Clicking "إدارة الدعوات" opens InvitationModal.
+ * A subtle, non-intrusive banner shown inside /laws to a
+ * signed-in user who does not yet have full library access
+ * (tier below Pro — src/hooks/useSubscription.ts's
+ * "library-full-access" gate), inviting them to redeem a library
+ * invitation code if they have one. Clicking "تفعيل الكود" opens
+ * InvitationModal, which spends the code through
+ * POST /api/v1/library/invitations/redeem.
+ *
+ * Previously read src/lib/invitationStore.ts and told a
+ * SUBSCRIBER they had "3 invitations for your colleagues" — a
+ * count no endpoint ever produced. That flow is gone: this
+ * banner only offers what the server can actually do, which is
+ * redeem a code an admin issued (see
+ * src/lib/services/libraryInvitationsService.ts).
  * ─────────────────────────────────────────────────────────────
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Gift, X } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import {
-  getLibrarySubscription,
-  hasActiveLibrarySubscription,
-  getRemainingInvitations,
-} from "@/lib/invitationStore";
+import { useUser } from "@/hooks/useUser";
+import { useSubscription } from "@/hooks/useSubscription";
+import { isSupabaseMode } from "@/lib/services/api";
 import InvitationModal from "./InvitationModal";
 
 export default function InvitationBanner() {
-  const { isDark, isRTL } = useTheme();
-  const [show, setShow]         = useState(false);
+  const { isDark } = useTheme();
+  const { isLoggedIn } = useUser();
+  const { can } = useSubscription();
   const [dismissed, setDismissed] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [remaining, setRemaining] = useState(0);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const active = hasActiveLibrarySubscription();
-    const rem    = getRemainingInvitations();
-    setRemaining(rem);
-    setShow(active && rem > 0);
-  }, []);
+  // Demo mode cannot redeem anything — the endpoint only exists in Supabase
+  // mode (see redeemLibraryInvitation's DEMO guard) — so offering the CTA
+  // there would be a control that can only fail.
+  const eligible = isLoggedIn && isSupabaseMode && !can("library-full-access");
 
-  if (!show || dismissed) return (
-    <>
-      <InvitationModal open={modalOpen} onClose={() => setModalOpen(false)} />
-    </>
-  );
-
-  const sub = getLibrarySubscription();
+  if (!eligible || dismissed) {
+    return <InvitationModal open={modalOpen} onClose={() => setModalOpen(false)} />;
+  }
 
   return (
     <>
@@ -68,14 +70,10 @@ export default function InvitationBanner() {
           {/* Text */}
           <div className="flex-1 min-w-0">
             <p className={`text-[13px] font-semibold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-              {isRTL
-                ? `لديك ${remaining} ${remaining === 1 ? "دعوة" : "دعوات"} متبقية لزملائك`
-                : `You have ${remaining} pending invitation${remaining !== 1 ? "s" : ""} for colleagues`}
+              لديك كود دعوة للمكتبة القانونية؟
             </p>
             <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-              {isRTL
-                ? `ادعُهم للاستفادة من المكتبة مجاناً لمدة ${sub?.trialDaysPerInvite ?? 30} يوماً`
-                : `Invite them to try the library free for ${sub?.trialDaysPerInvite ?? 30} days`}
+              فعّله للحصول على وصول كامل لنصوص الأنظمة والبحث الذكي
             </p>
           </div>
 
@@ -88,7 +86,7 @@ export default function InvitationBanner() {
                 : "bg-[#0B3D2E] text-white hover:bg-[#155e41]"
             }`}
           >
-            {isRTL ? "ادعُ زميلك" : "Invite Colleague"}
+            تفعيل الكود
           </button>
 
           {/* Dismiss */}

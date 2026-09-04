@@ -2,24 +2,14 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Highlighter, Eraser, Trash, X, NotePencil, 
+import {
+  Highlighter, Eraser, Trash, X, NotePencil,
   ArrowsOutCardinal, Check,
   Microphone, Play, Pause, Stop,
   Bookmark, Gear
 } from "@phosphor-icons/react";
 import { createPortal } from "react-dom";
-
-interface Stroke {
-  id: string;
-  points: { x: number; y: number }[];
-  color: string;
-  opacity: number;
-  w?: number;
-  h?: number;
-  isRelative?: boolean;
-  blockId?: string;
-}
+import { useArticleNote, type ArticleNoteStroke as Stroke } from "@/hooks/useArticleNote";
 
 const HIGHLIGHT_COLORS = [
   { hex: "#fef08a", name: "أصفر" },
@@ -35,17 +25,29 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [isErasingMode, setIsErasingMode] = useState(false);
   const [color, setColor] = useState("#fef08a");
-  const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [currentStroke, setCurrentStroke] = useState<Stroke | null>(null);
-  const [showNote, setShowNote] = useState(false);
-  const [noteText, setNoteText] = useState("");
-  const [notePos, setNotePos] = useState({ x: 100, y: 100 });
-  const [isLoaded, setIsLoaded] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Signed-in: server-backed via law_article_notes (debounced PUT, one row
+  // per pageId, migrated once from these same localStorage keys). Signed-out:
+  // this hook keeps the browser exactly as before — see useArticleNote.ts.
+  const {
+    hydrated,
+    canWrite,
+    noteText, setNoteText,
+    notePos, setNotePos,
+    showNote, setShowNote,
+    strokes, setStrokes,
+    clearStrokes,
+    hasAudio,
+    isUploadingAudio,
+    saveRecordedAudio,
+    clearAudio: clearRemoteOrLocalAudio,
+    fetchAudioPlaybackUrl,
+  } = useArticleNote(pageId);
 
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
-  const [audioDataUrl, setAudioDataUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState<1 | 2>(1);
   const [recSecs, setRecSecs] = useState(0);
@@ -55,35 +57,7 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    const s = localStorage.getItem(`highlighter_strokes_${pageId}`);
-    if (s) { try { setStrokes(JSON.parse(s)); } catch(e){} }
-    const t = localStorage.getItem(`sticky_note_text_${pageId}`);
-    if (t) setNoteText(t);
-    const p = localStorage.getItem(`sticky_note_pos_${pageId}`);
-    if (p) { try { setNotePos(JSON.parse(p)); } catch(e){} }
-    const sh = localStorage.getItem(`sticky_note_show_${pageId}`);
-    if (sh === "true") setShowNote(true);
-    const a = localStorage.getItem(`sticky_note_audio_${pageId}`);
-    if (a) setAudioDataUrl(a);
-    setIsLoaded(true);
-  }, [pageId]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (strokes.length > 0 || currentStroke === null) localStorage.setItem(`highlighter_strokes_${pageId}`, JSON.stringify(strokes));
-    localStorage.setItem(`sticky_note_text_${pageId}`, noteText);
-    localStorage.setItem(`sticky_note_pos_${pageId}`, JSON.stringify(notePos));
-    localStorage.setItem(`sticky_note_show_${pageId}`, showNote ? "true" : "false");
-  }, [strokes, currentStroke, noteText, notePos, showNote, isLoaded, pageId]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (audioDataUrl) localStorage.setItem(`sticky_note_audio_${pageId}`, audioDataUrl);
-    else localStorage.removeItem(`sticky_note_audio_${pageId}`);
-  }, [audioDataUrl, isLoaded, pageId]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
+    if (!hydrated) return;
     const clampPos = () => {
       setNotePos(prev => {
         const noteW = 288;
@@ -101,9 +75,13 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
     clampPos();
     window.addEventListener("resize", clampPos);
     return () => window.removeEventListener("resize", clampPos);
-  }, [isLoaded]);
+  }, [hydrated]);
 
   const startRecording = async () => {
+    // canWrite (not just hydrated) — a signed-in read/migration that failed
+    // leaves hydrated=true but must not let a first audio-only save create
+    // the server row before the pending local note text/strokes migrate.
+    if (!hydrated || !canWrite) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const rec = new MediaRecorder(stream);
@@ -113,11 +91,12 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
       rec.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        const reader = new FileReader();
-        reader.onloadend = () => setAudioDataUrl(reader.result as string);
-        reader.readAsDataURL(blob);
         if (timerRef.current) clearInterval(timerRef.current);
         setRecSecs(0); setIsRecording(false);
+        void saveRecordedAudio(blob).catch((err) => {
+          console.error("[ResearchWorkspace] saveRecordedAudio failed:", err);
+          alert(isRTL ? "تعذّر حفظ التسجيل الصوتي" : "Could not save the recording");
+        });
       };
       rec.start(); setIsRecording(true); setRecSecs(0);
       timerRef.current = setInterval(() => {
@@ -135,15 +114,32 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
     setIsRecording(false);
   };
 
-  const togglePlayback = () => {
-    if (!audioDataUrl) return;
-    if (!audioRef.current) {
-      audioRef.current = new Audio(audioDataUrl);
-      audioRef.current.onended = () => setIsPlaying(false);
+  // A signed-in playback URL is short-lived (5 minutes), so it is fetched
+  // fresh on every play rather than cached on the Audio element — otherwise
+  // a long reading session would 403 partway through a replay.
+  const togglePlayback = async () => {
+    if (isPlaying) {
+      audioRef.current?.pause();
+      setIsPlaying(false);
+      return;
     }
-    audioRef.current.playbackRate = playbackRate;
-    if (isPlaying) { audioRef.current.pause(); setIsPlaying(false); }
-    else { audioRef.current.play(); setIsPlaying(true); }
+    if (!hasAudio) return;
+    const url = await fetchAudioPlaybackUrl();
+    if (!url) {
+      alert(isRTL ? "تعذّر تشغيل التسجيل الصوتي" : "Could not play the recording");
+      return;
+    }
+    const audio = new Audio(url);
+    audio.playbackRate = playbackRate;
+    audio.onended = () => setIsPlaying(false);
+    audio.onerror = () => setIsPlaying(false);
+    audioRef.current = audio;
+    try {
+      await audio.play();
+      setIsPlaying(true);
+    } catch {
+      setIsPlaying(false);
+    }
   };
 
   const toggleSpeed = () => {
@@ -153,8 +149,12 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
   };
 
   const deleteAudio = () => {
+    if (!canWrite) return;
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    setAudioDataUrl(null); setIsPlaying(false); setPlaybackRate(1);
+    setIsPlaying(false); setPlaybackRate(1);
+    void clearRemoteOrLocalAudio().catch((err) => {
+      console.error("[ResearchWorkspace] clearAudio failed:", err);
+    });
   };
 
   const fmtSec = (s: number) => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
@@ -555,6 +555,7 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
   }, []);
 
   const toggleNote = () => {
+    if (!hydrated) return; // don't open an editable note before we know what — if anything — is already saved for this page
     const w = !showNote; setShowNote(w);
     if (w) {
       setIsDrawingMode(false);
@@ -563,7 +564,11 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
     }
   };
 
-  if (!isLoaded) return null;
+  // Renders immediately rather than gating on hydration — the toolbar used
+  // to return null until the (now server-backed) read landed, which turned
+  // a signed-in reader's first paint into a blank spot on every law page.
+  // The entry points that could actually lose data to that race (opening
+  // the note, drawing, recording) each check `hydrated` for themselves.
 
   const floatingLayers = typeof document !== "undefined" ? createPortal(
     <>
@@ -608,7 +613,7 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
             <div className="border-t border-black/10 dark:border-white/10 p-2 flex flex-col gap-2">
               {/* Player (after recording) */}
               <AnimatePresence>
-                {audioDataUrl && (
+                {hasAudio && (
                   <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}}
                     className={`flex items-center gap-2 px-2 py-1.5 rounded-xl ${isDark?"bg-white/10":"bg-blue-100"}`}
                   >
@@ -626,8 +631,8 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
                       className={`text-[10px] font-black px-1.5 py-0.5 rounded-md transition ${playbackRate===2?(isDark?"bg-yellow-500/30 text-yellow-300":"bg-yellow-200 text-yellow-800"):(isDark?"bg-white/10 text-blue-300":"bg-blue-200 text-blue-700")}`}>
                       {playbackRate===2?"2x":"1x"}
                     </button>
-                    <button onClick={deleteAudio}
-                      className={`p-1 rounded-lg transition ${isDark?"hover:bg-red-500/20 text-red-400":"hover:bg-red-100 text-red-500"}`}>
+                    <button onClick={deleteAudio} disabled={!canWrite}
+                      className={`p-1 rounded-lg transition disabled:opacity-50 ${isDark?"hover:bg-red-500/20 text-red-400":"hover:bg-red-100 text-red-500"}`}>
                       <Trash size={13}/>
                     </button>
                   </motion.div>
@@ -635,12 +640,12 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
               </AnimatePresence>
 
               {/* Mic Row (before recording) */}
-              {!audioDataUrl && (
+              {!hasAudio && (
                 <div className="flex items-center gap-2">
-                  <button onClick={isRecording?stopRecording:startRecording}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition ${isRecording?(isDark?"bg-red-500/30 text-red-300 animate-pulse":"bg-red-100 text-red-700 animate-pulse"):(isDark?"bg-white/10 text-blue-200 hover:bg-white/20":"bg-blue-200 text-blue-800 hover:bg-blue-300")}`}>
+                  <button onClick={isRecording?stopRecording:startRecording} disabled={!hydrated || !canWrite || isUploadingAudio}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition disabled:opacity-50 ${isRecording?(isDark?"bg-red-500/30 text-red-300 animate-pulse":"bg-red-100 text-red-700 animate-pulse"):(isDark?"bg-white/10 text-blue-200 hover:bg-white/20":"bg-blue-200 text-blue-800 hover:bg-blue-300")}`}>
                     {isRecording?<Stop size={13} weight="fill"/>:<Microphone size={13} weight="fill"/>}
-                    {isRecording?`${fmtSec(recSecs)} — إيقاف`:(isRTL?"تسجيل صوتي":"Record")}
+                    {isUploadingAudio?(isRTL?"جارٍ الحفظ...":"Saving…"):isRecording?`${fmtSec(recSecs)} — إيقاف`:(isRTL?"تسجيل صوتي":"Record")}
                   </button>
                   {isRecording && (
                     <div className="flex-1 flex items-center gap-0.5 overflow-hidden">
@@ -675,13 +680,15 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 15, scale: 0.8 }}
                 onClick={() => {
+                  if (!hydrated) return;
                   setShowNote(!showNote);
                   if (!showNote && notePos.x === 100 && notePos.y === 100) {
                     setNotePos({ x: window.innerWidth / 2 - 140, y: window.innerHeight / 2 - 140 });
                   }
                   setIsMobileMenuOpen(false);
                 }}
-                className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-all ${
+                disabled={!hydrated}
+                className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-all disabled:opacity-50 ${
                   showNote
                     ? "bg-blue-600 border-blue-500 text-white"
                     : isDark ? "bg-zinc-800 border-zinc-700 text-zinc-300" : "bg-white border-slate-200 text-slate-600"
@@ -697,11 +704,13 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 15, scale: 0.8 }}
                 onClick={() => {
+                  if (!hydrated) return;
                   setIsDrawingMode(!isDrawingMode);
                   setIsErasingMode(false);
                   setIsMobileMenuOpen(false);
                 }}
-                className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-all ${
+                disabled={!hydrated}
+                className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-all disabled:opacity-50 ${
                   isDrawingMode
                     ? "bg-yellow-500 border-yellow-400 text-white"
                     : isDark ? "bg-zinc-800 border-zinc-700 text-zinc-300" : "bg-white border-slate-200 text-slate-600"
@@ -717,11 +726,13 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 15, scale: 0.8 }}
                 onClick={() => {
+                  if (!hydrated) return;
                   setIsErasingMode(!isErasingMode);
                   setIsDrawingMode(false);
                   setIsMobileMenuOpen(false);
                 }}
-                className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-all ${
+                disabled={!hydrated}
+                className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-all disabled:opacity-50 ${
                   isErasingMode
                     ? "bg-red-600 border-red-500 text-white"
                     : isDark ? "bg-zinc-800 border-zinc-700 text-zinc-300" : "bg-white border-slate-200 text-slate-600"
@@ -799,8 +810,7 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
                 <span className="w-px h-4 bg-slate-200 dark:bg-white/10" />
                 <button
                   onClick={() => {
-                    setStrokes([]);
-                    localStorage.removeItem(`highlighter_strokes_${pageId}`);
+                    clearStrokes();
                     const c = canvasRef.current;
                     if (c) {
                       const ctx = c.getContext("2d");
@@ -869,18 +879,18 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
         <div className={`flex flex-col gap-2 p-3 rounded-2xl shadow-sm border ${isDark?"bg-zinc-900 border-white/10":"bg-white border-slate-200"}`}>
           <p className={`text-[10px] font-bold uppercase tracking-wider ${isDark?"text-zinc-500":"text-slate-400"}`}>{isRTL?"أدوات البحث":"Research tools"}</p>
           <div className="flex items-center justify-between gap-1.5 mt-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
-            <button onClick={toggleNote}
-              className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-lg transition-all ${showNote?(isDark?"bg-blue-600/30 text-blue-400 ring-1 ring-blue-500/50":"bg-blue-100 text-blue-700 ring-1 ring-blue-400"):(isDark?"text-zinc-400 hover:bg-white/10":"text-slate-500 hover:bg-white hover:shadow-sm")}`}>
+            <button onClick={toggleNote} disabled={!hydrated}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-lg transition-all disabled:opacity-50 ${showNote?(isDark?"bg-blue-600/30 text-blue-400 ring-1 ring-blue-500/50":"bg-blue-100 text-blue-700 ring-1 ring-blue-400"):(isDark?"text-zinc-400 hover:bg-white/10":"text-slate-500 hover:bg-white hover:shadow-sm")}`}>
               <NotePencil size={20} weight={showNote?"fill":"duotone"}/>
               <span className="text-[9px] font-bold">{isRTL?"ملاحظة":"Note"}</span>
             </button>
-            <button onClick={()=>{const n=!isDrawingMode;setIsDrawingMode(n);if(n){setIsErasingMode(false);setShowNote(false);}}}
-              className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-lg transition-all ${isDrawingMode?(isDark?"bg-yellow-500/20 text-yellow-400 ring-1 ring-yellow-500/50":"bg-yellow-100 text-yellow-700 ring-1 ring-yellow-400"):(isDark?"text-zinc-400 hover:bg-white/10":"text-slate-500 hover:bg-white hover:shadow-sm")}`}>
+            <button onClick={()=>{if(!hydrated)return;const n=!isDrawingMode;setIsDrawingMode(n);if(n){setIsErasingMode(false);setShowNote(false);}}} disabled={!hydrated}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-lg transition-all disabled:opacity-50 ${isDrawingMode?(isDark?"bg-yellow-500/20 text-yellow-400 ring-1 ring-yellow-500/50":"bg-yellow-100 text-yellow-700 ring-1 ring-yellow-400"):(isDark?"text-zinc-400 hover:bg-white/10":"text-slate-500 hover:bg-white hover:shadow-sm")}`}>
               <Highlighter size={20} weight={isDrawingMode?"fill":"duotone"}/>
               <span className="text-[9px] font-bold">{isRTL?"تظليل":"Highlight"}</span>
             </button>
-            <button onClick={()=>{const n=!isErasingMode;setIsErasingMode(n);if(n){setIsDrawingMode(false);setShowNote(false);}}}
-              className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-lg transition-all ${isErasingMode?(isDark?"bg-red-500/20 text-red-400 ring-1 ring-red-500/50":"bg-red-100 text-red-700 ring-1 ring-red-400"):(isDark?"text-zinc-400 hover:bg-white/10":"text-slate-500 hover:bg-white hover:shadow-sm")}`}>
+            <button onClick={()=>{if(!hydrated)return;const n=!isErasingMode;setIsErasingMode(n);if(n){setIsDrawingMode(false);setShowNote(false);}}} disabled={!hydrated}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-lg transition-all disabled:opacity-50 ${isErasingMode?(isDark?"bg-red-500/20 text-red-400 ring-1 ring-red-500/50":"bg-red-100 text-red-700 ring-1 ring-red-400"):(isDark?"text-zinc-400 hover:bg-white/10":"text-slate-500 hover:bg-white hover:shadow-sm")}`}>
               <Eraser size={20} weight={isErasingMode?"fill":"duotone"}/>
               <span className="text-[9px] font-bold">{isRTL?"ممحاة":"Eraser"}</span>
             </button>
@@ -904,7 +914,7 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
             {strokes.length > 0 && (
               <motion.button
                 initial={{height:0,opacity:0,marginTop:0}} animate={{height:"auto",opacity:1,marginTop:8}} exit={{height:0,opacity:0,marginTop:0}}
-                onClick={()=>{setStrokes([]);localStorage.removeItem(`highlighter_strokes_${pageId}`);const c=canvasRef.current;if(c){const ctx=c.getContext("2d");if(ctx)ctx.clearRect(0,0,c.width,c.height);}}}
+                onClick={()=>{clearStrokes();const c=canvasRef.current;if(c){const ctx=c.getContext("2d");if(ctx)ctx.clearRect(0,0,c.width,c.height);}}}
                 className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${isDark?"bg-red-900/10 text-red-500 hover:bg-red-900/30":"bg-red-50 text-red-500 hover:bg-red-100"}`}>
                 <Trash size={14} weight="duotone"/>
                 {isRTL?"مسح كل التظليلات":"Clear all highlights"}

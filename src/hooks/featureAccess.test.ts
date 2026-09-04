@@ -95,6 +95,50 @@ test("celebrity is unrestricted in production once mounted (no FEATURE_GATES ent
   assert.equal(resolveFeatureAccess("celebrity", "free", flags, false), false);
 });
 
+test("team-legal-department: production ignores hasInternalLegal, decides on tier alone", () => {
+  // The business team page used to filter legal_manager/legal_staff rows by
+  // reading currentCompanyFeatures.hasInternalLegal straight from the
+  // localStorage-backed admin flags — a viewer could flip that key in
+  // production. Now it goes through can("team-legal-department"), which in
+  // production consults only the "pro" FEATURE_GATES entry.
+  const flags = makeAdminFlags({
+    currentCompanyFeatures: { ...DEFAULT_FEATURES[MOCK_CURRENT_COMPANY_ID], hasInternalLegal: false },
+  });
+  assert.equal(resolveFeatureAccess("team-legal-department", "pro", flags, /* isProduction */ true), true);
+  assert.equal(resolveFeatureAccess("team-legal-department", "free", flags, /* isProduction */ true), false);
+});
+
+test("team-legal-department: demo mode still honours the hasInternalLegal flag ahead of the tier gate", () => {
+  const flagsOff = makeAdminFlags({
+    currentCompanyFeatures: { ...DEFAULT_FEATURES[MOCK_CURRENT_COMPANY_ID], hasInternalLegal: false },
+  });
+  assert.equal(resolveFeatureAccess("team-legal-department", "pro", flagsOff, /* isProduction */ false), false);
+
+  const flagsOn = makeAdminFlags({
+    currentCompanyFeatures: { ...DEFAULT_FEATURES[MOCK_CURRENT_COMPANY_ID], hasInternalLegal: true },
+  });
+  assert.equal(resolveFeatureAccess("team-legal-department", "pro", flagsOn, /* isProduction */ false), true);
+  // Tier gate still applies once the flag is on.
+  assert.equal(resolveFeatureAccess("team-legal-department", "free", flagsOn, /* isProduction */ false), false);
+});
+
+test("firm-legal-library: production ignores hasLegalLibrary, free tier is unrestricted", () => {
+  // FirmProfileReadinessPanel used to decide the "المكتبة القانونية" chip by
+  // reading currentFirmFeatures.hasLegalLibrary directly. Now it goes through
+  // can("firm-legal-library"), "free" tier like every other firm-* gate.
+  const flags = makeAdminFlags({
+    currentFirmFeatures: { ...DEFAULT_FIRM_FEATURES[MOCK_CURRENT_FIRM_ID], hasLegalLibrary: false },
+  });
+  assert.equal(resolveFeatureAccess("firm-legal-library", "free", flags, /* isProduction */ true), true);
+});
+
+test("firm-legal-library: demo mode still honours the hasLegalLibrary flag", () => {
+  const flags = makeAdminFlags({
+    currentFirmFeatures: { ...DEFAULT_FIRM_FEATURES[MOCK_CURRENT_FIRM_ID], hasLegalLibrary: false },
+  });
+  assert.equal(resolveFeatureAccess("firm-legal-library", "free", flags, /* isProduction */ false), false);
+});
+
 test("TIER_RANK and FEATURE_GATES are internally consistent for every gated key", () => {
   for (const [featureKey, minTier] of Object.entries(FEATURE_GATES)) {
     assert.ok(minTier in TIER_RANK, `FEATURE_GATES["${featureKey}"] references unknown tier "${minTier}"`);

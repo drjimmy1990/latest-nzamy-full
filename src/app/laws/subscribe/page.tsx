@@ -5,13 +5,14 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   BookOpen, Check, ArrowLeft, ArrowRight, MagnifyingGlass,
-  Scales, Buildings,
-  Crown,
+  Bell, Lock, Scales, Gavel, Buildings, ShieldCheck,
+  Lightning, Star, FileText, Crown, Users, Gift,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { createLibrarySubscription, syncInvitationCodes } from "@/lib/invitationStore";
 import InvitationModal from "@/components/InvitationModal";
 import { useUser } from "@/hooks/useUser";
+import { useSubscription } from "@/hooks/useSubscription";
+import { isSupabaseMode } from "@/lib/services/api";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 
 // ─── Bilingual ──────────────────────────────────────────────────────────────
@@ -28,7 +29,7 @@ const txt = {
       { val: "AI", label: "بحث ذكي" },
     ],
     plansTitle: "اختر خطتك",
-    plansSub: "جميع الخطط تتضمن تجربة مجانية لمدة ٧ أيام. بدون بطاقة ائتمان.",
+    plansSub: "اختر الخطة المناسبة — يُراجع طلبك ويُفعَّل الاشتراك بعد الموافقة.",
     monthly: "شهري",
     yearly: "سنوي (وفّر ١٦٪)",
     popular: "الأكثر طلباً",
@@ -66,7 +67,6 @@ const txt = {
           "نصوص الأنظمة واللوائح كاملة",
           "بحث ذكي AI غير محدود",
           "تحديثات يومية فور الصدور",
-          "٣ دعوات لزملائك (تجربة ١ شهر لكل دعوة)",
           "دعم البريد الإلكتروني",
         ],
         cta: "اشترك الآن",
@@ -84,7 +84,6 @@ const txt = {
           "كل مزايا الربع سنوي",
           "السوابق والمبادئ القضائية",
           "بحث بالمواد والبنود",
-          "٣ دعوات لزملائك (تجربة ٢ شهر لكل دعوة)",
           "دعم عبر واتساب",
         ],
         cta: "اشترك الآن",
@@ -102,7 +101,6 @@ const txt = {
           "كل مزايا النصف سنوي",
           "مقارنة التعديلات (diff)",
           "تصدير نصوص الأنظمة بصيغة PDF",
-          "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
           "دعم واتساب أولوية + مدير حساب مخصص",
         ],
         cta: "اشترك الآن",
@@ -111,7 +109,7 @@ const txt = {
     ],
     faqTitle: "أسئلة شائعة",
     faqs: [
-      { q: "هل يمكنني تجربة الخدمة قبل الاشتراك؟", a: "نعم! جميع الخطط المدفوعة تتضمن فترة تجربة مجانية لمدة 7 أيام كاملة بدون الحاجة لإدخال بطاقة ائتمان." },
+      { q: "كيف يتم تفعيل الاشتراك؟", a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه. إن كان لديك كود دعوة، فإنه يُفعّل باقة Pro فوراً دون انتظار." },
       { q: "ما الفرق بين البحث المحدود والبحث الذكي؟", a: "البحث المحدود يسمح بـ 5 عمليات يومية في عناوين الأنظمة فقط. البحث الذكي يتيح بحثاً غير محدود في النصوص الكاملة باستخدام الذكاء الاصطناعي مع اقتراحات ذكية." },
       { q: "هل يمكنني ترقية أو تنزيل خطتي في أي وقت؟", a: "بالتأكيد. يمكنك الترقية فوراً وسيُحسب الفرق تناسبياً. التنزيل يبدأ من دورة الفوترة التالية." },
       { q: "هل المكتبة تشمل الأنظمة الملغاة؟", a: "نعم. نحتفظ بجميع الأنظمة بما فيها الملغاة والمعدلة مع إشارة واضحة لحالة كل نظام وتاريخ التعديل." },
@@ -129,7 +127,7 @@ const txt = {
       { val: "AI", label: "Smart Search" },
     ],
     plansTitle: "Choose Your Plan",
-    plansSub: "All paid plans include a 7-day free trial. No credit card required.",
+    plansSub: "Choose the plan that fits — your request is reviewed and activated once approved.",
     monthly: "Monthly",
     yearly: "Yearly (Save 16%)",
     popular: "Most Popular",
@@ -167,7 +165,6 @@ const txt = {
           "Full law & regulation texts",
           "Unlimited AI smart search",
           "Daily updates upon issuance",
-          "3 colleague invites (1-month trial each)",
           "Email support",
         ],
         cta: "Subscribe Now",
@@ -185,7 +182,6 @@ const txt = {
           "All Quarterly features",
           "Judicial precedents & principles",
           "Article & clause level search",
-          "3 colleague invites (2-month trial each)",
           "WhatsApp support",
         ],
         cta: "Subscribe Now",
@@ -203,7 +199,6 @@ const txt = {
           "All Semi-Annual features",
           "Amendment diff comparison",
           "Export laws to PDF",
-          "3 colleague invites (3-month trial each)",
           "Priority WhatsApp & account manager",
         ],
         cta: "Subscribe Now",
@@ -212,7 +207,7 @@ const txt = {
     ],
     faqTitle: "Frequently Asked Questions",
     faqs: [
-      { q: "Can I try before subscribing?", a: "Yes! All paid plans include a full 7-day free trial with no credit card required." },
+      { q: "How does activation work?", a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved. If you have an invitation code, it activates the Pro tier immediately with no wait." },
       { q: "What's the difference between limited and smart search?", a: "Limited search allows 5 daily queries on titles only. Smart search provides unlimited AI-powered full-text search with intelligent suggestions." },
       { q: "Can I upgrade or downgrade anytime?", a: "Absolutely. Upgrades take effect immediately with prorated pricing. Downgrades begin on your next billing cycle." },
       { q: "Does the library include repealed laws?", a: "Yes. We maintain all laws including repealed and amended ones with clear status indicators and modification dates." },
@@ -226,6 +221,7 @@ const txt = {
 export default function LawsSubscribePage() {
   const { isDark, lang } = useTheme();
   const { isLoggedIn } = useUser();
+  const { can } = useSubscription();
   const isAr = lang === "ar";
   const t = isAr ? txt.ar : txt.en;
   const Arrow = isAr ? ArrowLeft : ArrowRight;
@@ -233,6 +229,13 @@ export default function LawsSubscribePage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // "pro" tier or higher — src/hooks/useSubscription.ts's
+  // "library-full-access" gate — is what actually unlocks the full library.
+  const hasFullLibrary = can("library-full-access");
+  // The code-redeem CTA can only ever succeed for a signed-in user in
+  // Supabase mode (redeemLibraryInvitation throws in demo mode).
+  const canRedeemCode = isLoggedIn && isSupabaseMode && !hasFullLibrary;
 
   function handleSubscribe(planId: string) {
     if (planId === "free") {
@@ -252,13 +255,14 @@ export default function LawsSubscribePage() {
       });
       return;
     }
-    // Guests: keep the existing local subscription + invite flow.
-    const sub = createLibrarySubscription(planId as any);
-    // Best-effort: persist the generated codes server-side so they are
-    // actually acceptable via /invite/[code]. No-ops quietly if the visitor
-    // isn't logged in yet — InvitationModal retries this on open.
-    syncInvitationCodes(sub.invitations.map((inv) => inv.code));
-    setModalOpen(true);
+    // Guests: no gateway and no entitlement request without a session — the
+    // old fallback here created a fake local "subscription" and handed out
+    // 3 fabricated referral links (src/lib/invitationStore.ts). The honest
+    // action is to send them to sign in first.
+    setToast({ ok: false, msg: "يلزم تسجيل الدخول للاشتراك في المكتبة" });
+    window.setTimeout(() => {
+      window.location.href = "/login";
+    }, 1400);
   }
 
   const card = isDark
@@ -425,6 +429,27 @@ export default function LawsSubscribePage() {
           })}
         </div>
 
+        {/* ── Redeem an invitation code ──────────────────────────────────
+            Only for a signed-in user below Pro — the code always grants the
+            "pro" tier via POST /api/v1/library/invitations/redeem (admin-
+            issued, src/lib/services/libraryInvitationsService.ts). Nothing
+            here is offered to a guest or to a Pro+ user who has no use for it. */}
+        {canRedeemCode && (
+          <motion.div variants={fadeUp} initial="hidden" animate="show" custom={9} className="text-center">
+            <button
+              onClick={() => setModalOpen(true)}
+              className={`inline-flex items-center gap-2 text-[13px] font-bold px-4 py-2.5 rounded-xl border transition-colors ${
+                isDark
+                  ? "border-[#C8A762]/30 bg-[#C8A762]/10 text-[#C8A762] hover:bg-[#C8A762]/15"
+                  : "border-[#0B3D2E]/20 bg-[#0B3D2E]/5 text-[#0B3D2E] hover:bg-[#0B3D2E]/10"
+              }`}
+            >
+              <Gift size={16} weight="fill" />
+              لديك كود دعوة؟ فعّله هنا
+            </button>
+          </motion.div>
+        )}
+
         {/* ── FAQ ──────────────────────────────────────────────────────── */}
         <motion.section variants={fadeUp} initial="hidden" animate="show" custom={10}>
           <h2 className={`text-xl font-bold mb-6 text-center ${isDark ? "text-white" : "text-zinc-900"}`}>
@@ -483,7 +508,7 @@ export default function LawsSubscribePage() {
         </motion.div>
       )}
 
-            <InvitationModal open={modalOpen} onClose={() => setModalOpen(false)} isPostSubscription={true} />
+      <InvitationModal open={modalOpen} onClose={() => setModalOpen(false)} />
     </div>
   );
 }

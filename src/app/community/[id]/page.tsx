@@ -16,6 +16,8 @@ import {
   getCommunityPost,
   addCommunityAnswer,
 } from "@/lib/services/communityService";
+import { mapCommunityAnswer, type CommunityAnswerLike } from "@/lib/services/communityAnswerMap";
+import { mapCommunityPost, type CommunityPostLike } from "@/lib/services/communityPostMap";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -92,8 +94,17 @@ const CATEGORY_LABELS: Record<string, string> = {
   "real-estate": "عقاري",
 };
 
+/**
+ * Item 147 (question half). `question` is typed as the demo-mode
+ * `StoredCommunityQuestion`, but in supabase mode it is actually a raw
+ * `community_posts` row (real column names — see communityPostMap.ts's own
+ * header). Both shapes go through `mapCommunityPost`, which reads whichever
+ * fields are present instead of assuming the demo shape and crashing on a
+ * real one (the owner's `asker.includes(...)` crash).
+ */
 function mapStoredQuestion(question: StoredCommunityQuestion) {
   const tag = CATEGORY_LABELS[question.category] ?? "قانوني";
+  const mapped = mapCommunityPost(question as unknown as CommunityPostLike);
   return {
     id: question.id,
     category: question.category,
@@ -103,30 +114,45 @@ function mapStoredQuestion(question: StoredCommunityQuestion) {
     titleEn: question.title,
     body: question.body ?? "لم يضف صاحب السؤال تفاصيل إضافية.",
     bodyEn: question.body ?? "No additional details were provided.",
-    asker: question.asker,
-    askerType: question.askerType,
-    isAnon: question.asker.includes("مجهول") || question.askerType === "guest",
-    views: question.views,
-    votes: question.votes,
-    ago: question.ago,
-    agoEn: question.ago,
-    tags: question.tags.length ? question.tags : [tag],
+    asker: mapped.asker,
+    askerType: mapped.askerType,
+    isAnon: mapped.isAnon,
+    views: mapped.views,
+    votes: mapped.votes,
+    ago: mapped.ago,
+    agoEn: mapped.ago,
+    tags: question.tags?.length ? question.tags : [tag],
   };
 }
 
-function mapStoredReply(answer: StoredCommunityQuestion["answers"][number]): Reply {
+/**
+ * Item 147. `answer` is typed as the demo-mode `StoredCommunityAnswer`, but
+ * in supabase mode it is actually a raw `community_answers` row (real column
+ * names, plus `lawyerSlug` — see the route's own note). Both shapes go
+ * through `mapCommunityAnswer`, which reads whichever fields are present and
+ * — the point of this item — takes `type`/`isVerified` from the server
+ * column `is_lawyer_verified` whenever the row carries one, never from a
+ * client-sent `authorType`.
+ */
+function mapStoredReply(
+  answer: StoredCommunityQuestion["answers"][number],
+  acceptedAnswerId?: string | number | null,
+): Reply {
+  const mapped = mapCommunityAnswer(answer as unknown as CommunityAnswerLike, acceptedAnswerId);
   return {
     id: answer.id,
-    type: answer.authorType,
-    author: answer.author,
-    authorEn: answer.author,
-    text: answer.content,
-    textEn: answer.content,
-    date: answer.ago,
-    dateEn: answer.ago,
-    likes: answer.votes,
-    isBest: answer.isAccepted,
-    rating: answer.authorRating,
+    type: mapped.type,
+    author: mapped.author,
+    authorEn: mapped.author,
+    lawyerSlug: mapped.lawyerSlug,
+    text: mapped.text,
+    textEn: mapped.text,
+    date: mapped.date,
+    dateEn: mapped.date,
+    likes: mapped.likes,
+    isVerified: mapped.isVerified,
+    isBest: mapped.isBest,
+    rating: mapped.rating,
   };
 }
 
@@ -148,14 +174,28 @@ export default function QuestionDetailPage() {
 
   useEffect(() => {
     const loadQuestion = async () => {
-      const id = Number(params?.id);
-      if (!Number.isFinite(id)) { setMounted(true); return; }
+      // A real community_posts id is a uuid (community_posts.id uuid primary
+      // key, 20260603_phase1_004_community_features.sql:34) — `Number(id)`
+      // on one is always `NaN`, so this used to bail out before ever
+      // fetching and every real post silently rendered the mock REPLIES.
+      // Demo-mode ids stay numeric (communityStore's `Date.now()`) and
+      // `getCommunityPost` already accepts either as `number | string`.
+      const id = params?.id;
+      if (!id) { setMounted(true); return; }
       try {
         const savedQuestion = await getCommunityPost(id);
         setStoredQuestion(savedQuestion);
         if (savedQuestion) {
-          setVotes(savedQuestion.votes);
-          setReplies(savedQuestion.answers.map(mapStoredReply));
+          // `accepted_answer_id` lives on the post, not on `StoredCommunityQuestion`
+          // (a supabase-mode-only field the wire carries but the demo type
+          // doesn't declare) — see mapCommunityAnswer's isBest fallback.
+          const acceptedAnswerId = (savedQuestion as unknown as { accepted_answer_id?: string | null })
+            .accepted_answer_id;
+          // Same real-row-has-no-`votes`-field gap `mapStoredQuestion` fixes
+          // below — read it through the same mapper so the vote counter and
+          // `handleVote`'s arithmetic don't seed themselves from `undefined`.
+          setVotes(mapCommunityPost(savedQuestion as unknown as CommunityPostLike).votes);
+          setReplies(savedQuestion.answers.map((a) => mapStoredReply(a, acceptedAnswerId)));
         } else {
           setVotes(QUESTION.votes);
           setReplies(REPLIES);
@@ -254,20 +294,46 @@ export default function QuestionDetailPage() {
           <div className="flex items-center gap-3">
             {/* Avatar */}
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${isLawyer ? "bg-[#0B3D2E] text-white" : isDark ? "bg-white/10 text-gray-300" : "bg-gray-200 text-gray-600"}`}>
-              {(isRTL ? reply.author : reply.authorEn).charAt(0)}
+              {((isRTL ? reply.author : reply.authorEn) || "؟").charAt(0)}
             </div>
             <div>
               {isLawyer ? (
-                <Link href={`/lawyers/${reply.lawyerSlug}`} className="group">
-                  <p className={`text-sm font-bold flex items-center gap-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition ${isDark ? "text-gray-100" : "text-gray-800"}`}>
-                    {isRTL ? reply.author : reply.authorEn}
-                    <SealCheck size={14} color="#C8A762" weight="fill" />
-                    <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/10 dark:text-[#C8A762]">
-                      ⚖️ {isRTL ? reply.lawyerSpecialty : reply.lawyerSpecialtyEn}
-                    </span>
-                  </p>
-                  <p className={`text-xs ${muted}`}>⭐ {reply.rating} · {isRTL ? reply.date : reply.dateEn}</p>
-                </Link>
+                // Item 147: only a real `lawyerSlug` (from the server, never
+                // a client-sent field) makes this a link — otherwise it's the
+                // dead /lawyers/undefined the owner flagged.
+                reply.lawyerSlug ? (
+                  <Link href={`/lawyers/${reply.lawyerSlug}`} className="group">
+                    <p className={`text-sm font-bold flex items-center gap-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+                      {isRTL ? reply.author : reply.authorEn}
+                      <SealCheck size={14} color="#C8A762" weight="fill" />
+                      {(isRTL ? reply.lawyerSpecialty : reply.lawyerSpecialtyEn) && (
+                        <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/10 dark:text-[#C8A762]">
+                          ⚖️ {isRTL ? reply.lawyerSpecialty : reply.lawyerSpecialtyEn}
+                        </span>
+                      )}
+                    </p>
+                    <p className={`text-xs ${muted}`}>
+                      {typeof reply.rating === "number" ? `⭐ ${reply.rating} · ` : ""}
+                      {isRTL ? reply.date : reply.dateEn}
+                    </p>
+                  </Link>
+                ) : (
+                  <div>
+                    <p className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+                      {isRTL ? reply.author : reply.authorEn}
+                      <SealCheck size={14} color="#C8A762" weight="fill" />
+                      {(isRTL ? reply.lawyerSpecialty : reply.lawyerSpecialtyEn) && (
+                        <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/10 dark:text-[#C8A762]">
+                          ⚖️ {isRTL ? reply.lawyerSpecialty : reply.lawyerSpecialtyEn}
+                        </span>
+                      )}
+                    </p>
+                    <p className={`text-xs ${muted}`}>
+                      {typeof reply.rating === "number" ? `⭐ ${reply.rating} · ` : ""}
+                      {isRTL ? reply.date : reply.dateEn}
+                    </p>
+                  </div>
+                )
               ) : (
                 <div>
                   <p className={`text-sm font-semibold ${isDark ? "text-gray-200" : "text-gray-700"}`}>
@@ -301,8 +367,9 @@ export default function QuestionDetailPage() {
           {(isRTL ? reply.text : reply.textEn).replace(/\*\*(.+?)\*\*/g, "«$1»")}
         </p>
 
-        {/* Lawyer: book CTA */}
-        {isLawyer && (
+        {/* Lawyer: book CTA — item 147: only when a real slug exists, and no
+            dead #consult anchor (retired on the lawyer surfaces already). */}
+        {isLawyer && reply.lawyerSlug && (
           <div className="mt-4 pt-3 border-t border-current/10 flex items-center justify-between gap-3">
             <Link
               href={`/lawyers/${reply.lawyerSlug}`}
@@ -312,7 +379,7 @@ export default function QuestionDetailPage() {
               <ArrowRight size={11} className={isRTL ? "rotate-180" : ""} />
             </Link>
             <Link
-              href={`/lawyers/${reply.lawyerSlug}#consult`}
+              href={`/lawyers/${reply.lawyerSlug}`}
               className="px-4 py-1.5 bg-[#0B3D2E] text-white text-xs font-bold rounded-xl hover:bg-[#0a3328] transition"
             >
               {isRTL ? "احجز استشارة" : "Book Consultation"}
