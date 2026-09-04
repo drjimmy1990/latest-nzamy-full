@@ -16,6 +16,10 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // `*` already carries `is_pinned` (library.smart_folders, migration
+    // 20260906) straight through as the raw column — there is no mapper in
+    // this route, so the frontend's `apiFolder.is_pinned ?? false`
+    // (SmartFolders.tsx mapApiFolderToSmartFolder) reads it as-is.
     const { data: folders, error } = await supabase
       .schema('library')
       .from('smart_folders')
@@ -88,16 +92,20 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { folderId, name, color, icon } = body;
+    const { folderId, name, color, icon, isPinned } = body;
 
     if (!folderId) {
       return NextResponse.json({ error: 'folderId is required' }, { status: 400 });
+    }
+    if (isPinned !== undefined && typeof isPinned !== 'boolean') {
+      return NextResponse.json({ error: 'قيمة التثبيت يجب أن تكون true أو false' }, { status: 400 });
     }
 
     const updates: Record<string, unknown> = {};
     if (name) updates.name = name;
     if (color) updates.color = color;
     if (icon) updates.icon = icon;
+    if (isPinned !== undefined) updates.is_pinned = isPinned;
 
     const { data: folder, error } = await supabase
       .schema('library')

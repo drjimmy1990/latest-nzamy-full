@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { validateTitle } from "@/app/api/v1/research/items/_shared";
 
 /**
  * Helper: get or create the user's "desktop" research session.
@@ -46,14 +47,25 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get("limit") ?? "50", 10);
   const offset = parseInt(searchParams.get("offset") ?? "0", 10);
+  const usedParam = searchParams.get("used");
+  if (usedParam !== null && usedParam !== "true" && usedParam !== "false") {
+    return NextResponse.json(
+      { error: "قيمة used يجب أن تكون true أو false" },
+      { status: 400 },
+    );
+  }
 
   try {
     const sessionId = await getOrCreateDesktopSession(supabase, user.id);
 
-    const { data, count, error } = await supabase
+    let query = supabase
       .from("research_items")
       .select("*", { count: "exact" })
-      .eq("session_id", sessionId)
+      .eq("session_id", sessionId);
+    if (usedParam !== null) {
+      query = query.eq("used", usedParam === "true");
+    }
+    const { data, count, error } = await query
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -91,6 +103,10 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+  const titleCheck = validateTitle(body.title);
+  if (!titleCheck.ok) {
+    return NextResponse.json({ error: titleCheck.error }, { status: 400 });
+  }
 
   try {
     const sessionId = await getOrCreateDesktopSession(supabase, user.id);
@@ -101,6 +117,7 @@ export async function POST(request: NextRequest) {
         session_id: sessionId,
         source: body.source ?? "",
         item_type: body.item_type ?? "note",
+        title: titleCheck.value,
         content: body.content,
       })
       .select()

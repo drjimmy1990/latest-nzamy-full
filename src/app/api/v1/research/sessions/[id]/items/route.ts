@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { validateTitle } from "@/app/api/v1/research/items/_shared";
 
 /**
  * GET /api/v1/research/sessions/[id]/items — List items in session
@@ -76,6 +77,10 @@ export async function POST(
       { status: 400 },
     );
   }
+  const titleCheck = validateTitle(body.title);
+  if (!titleCheck.ok) {
+    return NextResponse.json({ error: titleCheck.error }, { status: 400 });
+  }
 
   // Verify session belongs to user
   const { data: session, error: sessionError } = await supabase
@@ -98,6 +103,7 @@ export async function POST(
       session_id: sessionId,
       source: body.source ?? "",
       item_type: body.item_type ?? "note",
+      title: titleCheck.value,
       content: body.content,
     })
     .select()

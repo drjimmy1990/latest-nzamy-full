@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { recordNotification } from "@/lib/notify";
 import { daysUntil, parseIsoDate } from "@/lib/services/deadlineEngine";
 import { toArabicDigits, countPhraseAr } from "@/lib/services/arabicCount";
+import { purgeCutoffIso } from "@/lib/services/attachmentPurge";
 
 /**
  * POST /api/v1/cron/deadlines — the رادار المهل scheduler (Phase 5,
@@ -18,6 +19,12 @@ import { toArabicDigits, countPhraseAr } from "@/lib/services/arabicCount";
  *       and are `failed` with `last_error: 'channel not configured'` when
  *       that env var is unset — this never pretends to have sent something
  *       it didn't.
+ *   (c) PURGE   — `attachments` rows soft-deleted more than
+ *       PURGE_AFTER_DAYS (30) ago, carrying no legal_hold, are purged for
+ *       real: the storage object is removed, then the row is deleted.
+ *       Phase 6, DECISION 3 (20260906_phase6_settings_out_of_browser.sql).
+ *       Per-row try/catch, same shape as MISSED/DELIVER — one bad row never
+ *       stops the rest of the run.
  *
  * ── AUTH — fails CLOSED, same contract as src/app/api/v1/n8n/callback ──────
  * Header `x-cron-secret` must equal `process.env.CRON_SECRET`. An unset or
@@ -281,5 +288,45 @@ export async function POST(request: NextRequest) {
     console.error("[cron/deadlines] DELIVER step threw:", err);
   }
 
-  return NextResponse.json({ enqueued, sent, failed, missed, skipped });
+  // ── (c) PURGE ──────────────────────────────────────────────────────────
+  let purged = 0;
+  try {
+    const cutoffIso = purgeCutoffIso();
+    // .lt("deleted_at", cutoffIso) already excludes untouched rows: SQL
+    // evaluates `NULL < x` as NULL (not true), so no separate
+    // .not("deleted_at", "is", null) is needed alongside it.
+    const { data: purgeRows, error: purgeQueryError } = await admin
+      .from("attachments")
+      .select("id, storage_path")
+      .lt("deleted_at", cutoffIso)
+      .eq("legal_hold", false);
+
+    if (purgeQueryError) {
+      console.error("[cron/deadlines] purge query failed:", purgeQueryError.message, purgeQueryError.code);
+    } else {
+      const rows = (purgeRows ?? []) as Array<{ id: string; storage_path: string | null }>;
+      for (const row of rows) {
+        try {
+          if (row.storage_path) {
+            const { error: removeErr } = await admin.storage.from("documents").remove([row.storage_path]);
+            if (removeErr) {
+              console.error("[cron/deadlines] purge storage remove failed:", row.id, removeErr.message);
+            }
+          }
+          const { error: delErr } = await admin.from("attachments").delete().eq("id", row.id);
+          if (delErr) {
+            console.error("[cron/deadlines] purge row delete failed:", row.id, delErr.message, delErr.code);
+          } else {
+            purged++;
+          }
+        } catch (err) {
+          console.error("[cron/deadlines] purging one attachment threw:", row.id, err);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[cron/deadlines] PURGE step threw:", err);
+  }
+
+  return NextResponse.json({ enqueued, sent, failed, missed, skipped, purged });
 }

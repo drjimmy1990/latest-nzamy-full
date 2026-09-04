@@ -12,6 +12,7 @@
 
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { listFromApi, listFailed, listOk, type ListRead } from "@/lib/services/listRead";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,13 @@ export interface Document {
   mime_type: string | null;
   size_bytes: number | null;
   created_at: string;
+  /** 'upload' | 'generated' | 'imported' | 'contract_version' — see attachments.source's CHECK. */
+  source: string;
+  /** Phase 6 bin (20260906_phase6_settings_out_of_browser.sql): set once soft-deleted, null otherwise. */
+  deleted_at: string | null;
+  deleted_by: string | null;
+  legal_hold: boolean;
+  hold_reason: string | null;
 }
 
 export interface DocumentInput {
@@ -482,49 +490,104 @@ export async function getDocumentFileUrl(storagePath: string): Promise<string | 
 }
 
 /**
- * Delete a document (storage object + metadata row).
+ * Delete a document — a SOFT delete now (Phase 6, DECISION 3 in
+ * 20260906_phase6_settings_out_of_browser.sql): the row moves to the bin
+ * (deleted_at/deleted_by set server-side) and the storage object is left in
+ * place. The hourly cron purges the object 30 days later (attachmentPurge.ts),
+ * or purgeDocument() below removes it immediately once the row is in the bin.
  *
- * ONE DEADLINE FOR BOTH CALLS, the same reasoning as uploadDocumentFile():
- * two independent 15-second ceilings would mean a client waiting half a minute
- * on one «حذف» press, and the ceiling is supposed to be what the client waits,
- * not what each call is allowed to take.
+ * STOPPED REMOVING THE STORAGE OBJECT ITSELF, on purpose — a soft delete that
+ * also deleted the file would defeat the bin. `storagePath` stays in the
+ * signature (five call sites across the two callers still pass it, and the
+ * API's DELETE response no longer echoes it back for them to use anyway) but
+ * is no longer read; kept rather than removed to avoid an unrelated signature
+ * change on a function two dashboard pages already call.
  *
- * WHAT A TIMEOUT ON THE DELETE LEAVES BEHIND — racing cancels nothing, so the
- * DELETE may still be executed server-side after we give up on it. A timeout
- * therefore does NOT mean the document survived, and a caller that reports it
+ * WHAT A TIMEOUT LEAVES BEHIND — racing cancels nothing, so the DELETE may
+ * still be executed server-side after we give up on it. A timeout therefore
+ * does NOT mean the document survived undeleted, and a caller that reports it
  * as «فشل الحذف» is printing a guess as a statement.
  * dashboard/client/documents/page.tsx says the timeout happened and asks the
  * client to refresh and check.
- *
- * WHAT A TIMEOUT ON THE CLEANUP LEAVES BEHIND — an orphaned storage object,
- * swallowed with every other cleanup error exactly as before. The row is
- * already gone by then, and an object with no row pointing at it is this app's
- * accepted leftover (see the rollback in uploadDocumentFile).
  */
-export async function deleteDocument(id: string, storagePath?: string | null): Promise<void> {
+export async function deleteDocument(id: string, _storagePath?: string | null): Promise<void> {
   if (!isSupabaseMode) return;
-
-  const deadline = Date.now() + DOCUMENT_OP_TIMEOUT_MS;
-  const msUntil = (at: number) => at - Date.now();
 
   await withTimeout(
     apiMutate<{ ok: boolean }>(`/api/v1/documents/${id}`, "DELETE", {}),
-    msUntil(deadline),
+    DOCUMENT_OP_TIMEOUT_MS,
     () => new DocumentTimeoutError(),
   );
+}
 
-  if (storagePath) {
-    const supabase = createBrowserClient();
-    // The `> 0` guard is defensive, as in the upload rollback: reaching this
-    // line means the DELETE settled before the deadline, so in practice there
-    // is always budget left.
-    const cleanupBudget = msUntil(deadline);
-    if (cleanupBudget > 0) {
-      await withTimeout(
-        supabase.storage.from("documents").remove([storagePath]),
-        cleanupBudget,
-        () => new DocumentTimeoutError(),
-      ).catch(() => {});
-    }
+// ─── Bin (Phase 6) ────────────────────────────────────────────────────────────
+
+interface TrashApiResponse {
+  data?: Document[] | null;
+  total?: number | null;
+}
+
+/**
+ * Every soft-deleted document the signed-in user may see (`?trash=1`).
+ *
+ * Returns `ListRead<Document>` rather than throwing, unlike getDocuments()
+ * above — this is the newer contract (listRead.ts) that lets a screen render
+ * "could not read the bin" distinctly from "the bin is empty" without a
+ * try/catch of its own. Demo mode reads as an honest empty list — there is no
+ * request to fail.
+ */
+export async function getTrash(): Promise<ListRead<Document>> {
+  if (!isSupabaseMode) return listOk<Document>([]);
+  try {
+    const response = await withTimeout(
+      apiGet<TrashApiResponse>("/api/v1/documents", { trash: 1 }),
+      DOCUMENT_OP_TIMEOUT_MS,
+      () => new DocumentTimeoutError(),
+    );
+    return listFromApi(response);
+  } catch {
+    return listFailed<Document>();
   }
+}
+
+/** Pull a document back out of the bin (deleted_at/deleted_by cleared server-side). Throws on failure. */
+export async function restoreDocument(id: string): Promise<void> {
+  if (!isSupabaseMode) return;
+  await withTimeout(
+    apiMutate<{ ok: boolean }>(`/api/v1/documents/${id}/restore`, "POST", {}),
+    DOCUMENT_OP_TIMEOUT_MS,
+    () => new DocumentTimeoutError(),
+  );
+}
+
+/**
+ * Permanently remove a document already in the bin — the storage object AND
+ * the row. Only valid for a row whose deleted_at is already set and which
+ * carries no legal hold; the API answers 409 otherwise. Throws on failure.
+ */
+export async function purgeDocument(id: string): Promise<void> {
+  if (!isSupabaseMode) return;
+  await withTimeout(
+    apiMutate<{ ok: boolean }>(`/api/v1/documents/${id}?permanent=1`, "DELETE", {}),
+    DOCUMENT_OP_TIMEOUT_MS,
+    () => new DocumentTimeoutError(),
+  );
+}
+
+/**
+ * Set or clear a document's legal hold. A document already in the bin cannot
+ * be placed on hold (the API answers 409 — restore it first); clearing a hold
+ * is always allowed. `reason` is only meaningful while `on` is true — the API
+ * drops it when clearing. Throws on failure.
+ */
+export async function setLegalHold(id: string, on: boolean, reason?: string): Promise<void> {
+  if (!isSupabaseMode) return;
+  await withTimeout(
+    apiMutate<{ ok: boolean }>(`/api/v1/documents/${id}/hold`, "PATCH", {
+      legalHold: on,
+      ...(reason !== undefined ? { holdReason: reason } : {}),
+    }),
+    DOCUMENT_OP_TIMEOUT_MS,
+    () => new DocumentTimeoutError(),
+  );
 }
