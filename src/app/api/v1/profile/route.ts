@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import {
+  slugIssue,
+  educationIssue,
+  isCourtCode,
+  isLanguageCode,
+  type EducationEntry,
+} from "@/lib/services/lawyerProfileFields";
+import { offPlatformContactIssue } from "@/lib/services/contactSanitizer";
 
 // ─── Arabic error copy ────────────────────────────────────────────────────────
 // Every message this route can return reaches a user: the lawyer profile
@@ -19,7 +27,15 @@ const AR = {
   badOnboardingFlag: "قيمة حالة إكمال الإعداد غير صالحة.",
   lawyerFieldsOnly: "هذه الحقول متاحة لحسابات المحامين فقط.",
   saveFailed: "تعذّر حفظ التعديلات. حاول مرة أخرى.",
+  badSlug: "قيمة الرابط غير صالحة.",
+  slugTaken: "هذا الرابط مستخدم من محامٍ آخر",
+  unknownCourt: "محكمة غير معروفة",
+  unknownLanguage: "لغة غير معروفة",
+  badHeadline: "قيمة العنوان التعريفي غير صالحة.",
 } as const;
+
+/** lawyer_profiles.headline_ar — checked in code, not just at the column (item 130). */
+const MAX_HEADLINE_LENGTH = 160;
 
 /**
  * Arabic-Indic (٠١٢…) and Extended Arabic-Indic (۰۱۲…) digits → ASCII.
@@ -275,6 +291,14 @@ export async function PATCH(request: Request) {
     "marketplace_visible",
     "is_accepting_clients",
     "show_contact",
+    // Phase 7 (item 128 · 130 · 133) — contracts in lawyerProfileFields.ts /
+    // contactSanitizer.ts; columns added by
+    // supabase/migrations/20260907_phase7_profile_services_reviews.sql.
+    "slug",
+    "education",
+    "courts",
+    "languages",
+    "headline_ar",
   ];
   // `city` is the one name on both lists — profiles.city and
   // lawyer_profiles.city are separate columns
@@ -300,6 +324,71 @@ export async function PATCH(request: Request) {
     // (supabase/migrations/20260603_phase1_001_profiles.sql:50); anything else
     // would come back as a Postgres error in English.
     return NextResponse.json({ error: AR.badOnboardingFlag }, { status: 400 });
+  }
+
+  // ─── Phase 7 profile fields (item 128 · 130 · 133) ───────────────────────
+  // Format-validated here regardless of account type, same as phone/
+  // onboarding_completed above — the lawyer-only 403 (below, once user_type is
+  // known) is a separate gate from "is this value even well-formed".
+  if ("slug" in body) {
+    const raw = body.slug;
+    if (raw === null || raw === undefined) {
+      body.slug = null; // clears it
+    } else if (typeof raw !== "string") {
+      return NextResponse.json({ error: AR.badSlug }, { status: 400 });
+    } else {
+      const trimmed = raw.trim();
+      if (trimmed === "") {
+        body.slug = null; // clears it
+      } else {
+        const issue = slugIssue(trimmed);
+        if (issue) return NextResponse.json({ error: issue }, { status: 400 });
+        // slugIssue already refused anything not equal to its own lowercase
+        // form; .toLowerCase() here is belt-and-suspenders, not a bypass.
+        body.slug = trimmed.toLowerCase();
+      }
+    }
+  }
+
+  if ("education" in body) {
+    const issue = educationIssue(body.education as EducationEntry[]);
+    if (issue) return NextResponse.json({ error: issue }, { status: 400 });
+  }
+
+  if ("courts" in body) {
+    const val = body.courts;
+    if (!Array.isArray(val) || !val.every(isCourtCode)) {
+      return NextResponse.json({ error: AR.unknownCourt }, { status: 400 });
+    }
+  }
+
+  if ("languages" in body) {
+    const val = body.languages;
+    if (!Array.isArray(val) || !val.every(isLanguageCode)) {
+      return NextResponse.json({ error: AR.unknownLanguage }, { status: 400 });
+    }
+  }
+
+  if ("headline_ar" in body) {
+    const raw = body.headline_ar;
+    if (typeof raw !== "string") {
+      return NextResponse.json({ error: AR.badHeadline }, { status: 400 });
+    }
+    if (raw.length > MAX_HEADLINE_LENGTH) {
+      return NextResponse.json(
+        { error: `العنوان التعريفي يجب ألا يتجاوز ${MAX_HEADLINE_LENGTH} حرفًا.` },
+        { status: 400 },
+      );
+    }
+    const contactIssue = offPlatformContactIssue(raw);
+    if (contactIssue) return NextResponse.json({ error: contactIssue }, { status: 400 });
+  }
+
+  // bio_ar is an existing field (not new in this phase); off-platform-contact
+  // checking it is the new part (item 179).
+  if (typeof body.bio_ar === "string") {
+    const contactIssue = offPlatformContactIssue(body.bio_ar);
+    if (contactIssue) return NextResponse.json({ error: contactIssue }, { status: 400 });
   }
 
   const profileUpdates: Record<string, unknown> = {};
@@ -373,6 +462,15 @@ export async function PATCH(request: Request) {
       .select()
       .single();
     if (error) {
+      // uq_lawyer_profiles_slug (20260907_phase7_profile_services_reviews.sql)
+      // — another lawyer claimed this slug between our format check and the
+      // write. Gated on "slug" actually being in THIS update (not just
+      // `error.code === "23505"`) so a 23505 from some other unique index on
+      // lawyer_profiles doesn't get mislabeled as a slug collision. `in`, not
+      // `!== undefined`: clearing the slug (null) still counts as "in play".
+      if (error.code === "23505" && "slug" in lawyerUpdates) {
+        return NextResponse.json({ error: AR.slugTaken }, { status: 409 });
+      }
       console.error("[api/v1/profile] lawyer_profiles update failed:", error.message);
       return NextResponse.json({ error: AR.saveFailed }, { status: 500 });
     }

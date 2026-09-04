@@ -23,6 +23,15 @@ const footerLinksAr = {
   "خدمات المنصة": [
     { label: "الاستشارات", href: "/services/consultations" },
     { label: "العقود", href: "/services/contracts" },
+    // «التمثيل القضائي» و«التوثيق»: تدقيق صريح — رُوجعت صفحتا الهبوط
+    // (services/legal-representation، services/notary) بتاريخ ٢٠٢٦-٠٩-٠٤ ولا
+    // تحملان أرقاماً أو تقييمات مختلَقة اليوم؛ الأولى تحمل تعليقاً صريحاً
+    // يوثّق إزالة أربع إحصاءات مختلَقة استناداً لقاعدة ٣٨ من قواعد السلوك
+    // المهني (قرار وزير العدل ٦٧٦). بوابة BETA_MONOPOLY_MODE أدناه تغطي
+    // /pro/marketplace فقط؛ هذان الرابطان ليسا سوق مهنيين خارجيين فلا علاقة
+    // لهما بتلك البوابة. ملاحظة: صفحة legal-representation ما زالت تعد
+    // بـ«محامين متخصصين مع تقييماتهم وسجل قضاياهم» (page.tsx:55) رغم عدم
+    // وجود جدول تقييمات ودليل محامين منشور صفر — راجع سجل الإغلاق.
     { label: "التمثيل القضائي", href: "/services/legal-representation" },
     { label: "التوثيق", href: "/services/notary" },
     { label: "التعقيب", href: "/services/tracking" },

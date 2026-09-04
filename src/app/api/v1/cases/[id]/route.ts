@@ -31,13 +31,15 @@ export async function GET(
     return NextResponse.json({ error: "Case not found" }, { status: 404 });
   }
 
-  // Fetch related attachments via the case's request_id
+  // Fetch related attachments via the case's request_id — excludes the bin
+  // (Phase 6: a soft-deleted document must not still show up on the case file).
   let attachments: Record<string, unknown>[] | null = null;
   if (caseData.request_id) {
     const { data: attachmentData } = await supabase
       .from("attachments")
       .select("*")
       .eq("request_id", caseData.request_id)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
     attachments = attachmentData;
   }

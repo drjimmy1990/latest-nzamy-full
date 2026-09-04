@@ -4,10 +4,23 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, ArrowClockwise, CheckCircle, Info, SpinnerGap, Warning } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowClockwise, CheckCircle, Info, Plus, SpinnerGap, Trash, Warning } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
+import {
+  slugIssue,
+  suggestSlug,
+  educationIssue,
+  COURTS,
+  LANGUAGES,
+  isCourtCode,
+  isLanguageCode,
+  type EducationEntry,
+  type CourtCode,
+  type LanguageCode,
+} from "@/lib/services/lawyerProfileFields";
+import { offPlatformContactIssue } from "@/lib/services/contactSanitizer";
 
 type Form = {
   bio_ar: string;
@@ -20,15 +33,54 @@ type Form = {
   marketplace_visible: boolean;
   is_accepting_clients: boolean;
   show_contact: boolean;
+  // Phase 7 (items 128 · 130 · 133) — contracts in lawyerProfileFields.ts.
+  slug: string;
+  headline_ar: string;
+  education: EducationEntry[];
+  courts: CourtCode[];
+  languages: LanguageCode[];
 };
 
 /** The three boolean fields, narrowed so the toggle list needs no casts. */
 type BooleanFormKey = "marketplace_visible" | "is_accepting_clients" | "show_contact";
 
+// lawyer_profiles.headline_ar's own limit (src/app/api/v1/profile/route.ts
+// MAX_HEADLINE_LENGTH) — not exported from there, so mirrored here for the
+// counter. Keep both in sync if the column's check ever changes.
+const MAX_HEADLINE_LENGTH = 160;
+
+// AR.slugTaken in src/app/api/v1/profile/route.ts — not exported, so matched
+// by exact text against the PATCH failure to show the 409 under the slug
+// field too, not only in the general save banner. Keep in sync with that
+// route's copy.
+const SLUG_TAKEN_MESSAGE = "هذا الرابط مستخدم من محامٍ آخر";
+
+/**
+ * `lawyer_profiles.education` is jsonb — Postgres enforces "is this an
+ * array" (the `education_is_array_check` constraint) but nothing enforces
+ * the shape of what is inside it, and this app has no admin tool that writes
+ * this column today besides this form. Coerced defensively per-entry rather
+ * than trusted as `EducationEntry[]`: a malformed `degree`/`institution`
+ * (missing, non-string) would otherwise reach `<input value={undefined}>`,
+ * which React logs as an uncontrolled-input warning and half-renders.
+ */
+function sanitizeEducation(raw: unknown): EducationEntry[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((e) => {
+    const entry = (e ?? {}) as Partial<EducationEntry>;
+    return {
+      degree: typeof entry.degree === "string" ? entry.degree : "",
+      institution: typeof entry.institution === "string" ? entry.institution : "",
+      year: typeof entry.year === "number" ? entry.year : null,
+    };
+  });
+}
+
 const EMPTY: Form = {
   bio_ar: "", specialties: "", years_experience: "", hourly_rate: "",
   license_number: "", bar_association: "", city: "",
   marketplace_visible: false, is_accepting_clients: true, show_contact: false,
+  slug: "", headline_ar: "", education: [], courts: [], languages: ["ar"],
 };
 
 type VerificationStatus = "pending" | "verified" | "rejected" | "suspended";
@@ -41,7 +93,9 @@ const VERIFICATION_LABEL: Record<VerificationStatus, string> = {
 };
 
 type ProfileApiResponse = {
-  profile: { city?: string | null } | null;
+  // display_name_en feeds suggestSlug() below — «from the Latin display name
+  // when available» — never sent back on save (it is not on the lawyer form).
+  profile: { city?: string | null; display_name_en?: string | null } | null;
   roleProfile: {
     bio_ar?: string | null; specialties?: string[] | null;
     years_experience?: number | null; hourly_rate?: number | null;
@@ -49,6 +103,10 @@ type ProfileApiResponse = {
     city?: string | null; marketplace_visible?: boolean | null;
     is_accepting_clients?: boolean | null; show_contact?: boolean | null;
     verification_status?: VerificationStatus | null;
+    // Phase 7 — same columns PATCH /api/v1/profile allowlists.
+    slug?: string | null; headline_ar?: string | null;
+    education?: EducationEntry[] | null;
+    courts?: string[] | null; languages?: string[] | null;
   } | null;
   // Optional so an older deploy of the route (which did not send the key) reads
   // as `undefined` → `!== true` → "did not fail", which is the same conclusion
@@ -135,6 +193,37 @@ export default function LawyerProfileEditPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [verification, setVerification] = useState<VerificationStatus | null>(null);
+  // Source for the "اقترح رابطاً" button only — never written back.
+  const [displayNameEn, setDisplayNameEn] = useState("");
+  /*
+   * Whether 20260907_phase7_profile_services_reviews.sql — the migration that
+   * adds slug/education/courts/languages/headline_ar — has actually run on
+   * whatever database this deploy talks to. Migrations here are applied by
+   * the project owner, never assumed from the code being merged (see
+   * MASTER_PRIORITY_LIST_2026-07-16.md's deploy/migration gap and this file's
+   * own "central routes send new columns only when non-null" rule).
+   *
+   * Detected from GET's response rather than guessed: `.select("*")` in
+   * src/app/api/v1/profile/route.ts omits a column entirely when it does not
+   * exist in the table (as opposed to existing and being null), so `"slug" in
+   * r` is a reliable migrated/not-migrated signal — cheaper and more honest
+   * than a second endpoint or a hardcoded flag that drifts from reality.
+   *
+   * Gates two things: whether the five new sections render at all, and
+   * whether handleSave includes their keys in the PATCH body. Without this,
+   * on any environment behind the migration the update would carry columns
+   * PostgREST does not recognise (PGRST204), the WHOLE row update fails, and
+   * bio/licence/city — fields this task was told to keep working — silently
+   * stop saving right along with the new ones.
+   */
+  const [newFieldsAvailable, setNewFieldsAvailable] = useState(false);
+  // Distinguishes "this slug is already taken" (a 409 discovered only by
+  // trying to save — a race with another lawyer's save, not something the
+  // client-side format check in `slugErr` below can ever catch) from every
+  // other save failure, so it can be shown under the slug field too and not
+  // only in the general banner. The literal text mirrors AR.slugTaken in
+  // src/app/api/v1/profile/route.ts, which is not exported from there.
+  const [slugServerError, setSlugServerError] = useState<string | null>(null);
   /*
    * `loaded` — true ONLY once the form actually holds server state.
    *
@@ -192,8 +281,21 @@ export default function LawyerProfileEditPage() {
           marketplace_visible: r.marketplace_visible ?? false,
           is_accepting_clients: r.is_accepting_clients ?? true,
           show_contact: r.show_contact ?? false,
+          slug: r.slug ?? "",
+          headline_ar: r.headline_ar ?? "",
+          education: sanitizeEducation(r.education),
+          courts: (r.courts ?? []).filter(isCourtCode),
+          // The column defaults to {"ar"} and R1's route always sends the key,
+          // but an empty array is treated the same as "not set yet" so the
+          // preselection promised by this task still holds on an old row.
+          languages: (r.languages && r.languages.length > 0 ? r.languages : ["ar"]).filter(isLanguageCode),
         });
         setVerification(r.verification_status ?? null);
+        setDisplayNameEn(res.profile?.display_name_en ?? "");
+        // See the state's own comment: key PRESENCE, not value, is what
+        // separates a migrated row (slug present, null or not) from one read
+        // off a table that never got the migration (key absent entirely).
+        setNewFieldsAvailable("slug" in r);
         setBlocked(null);
         setLoaded(true);
       } else {
@@ -271,10 +373,10 @@ export default function LawyerProfileEditPage() {
   useEffect(() => { load(); }, [load]);
 
   const handleSave = async () => {
-    if (!loaded) return; // belt and braces; the button is disabled too
-    setSaving(true); setMsg(null);
+    if (!loaded || hasClientIssue) return; // belt and braces; the button is disabled too
+    setSaving(true); setMsg(null); setSlugServerError(null);
     try {
-      const body = {
+      const body: Record<string, unknown> = {
         bio_ar: form.bio_ar,
         specialties: form.specialties.split(/[،,]/).map((s) => s.trim()).filter(Boolean),
         years_experience: form.years_experience ? parseInt(form.years_experience, 10) : 0,
@@ -286,13 +388,28 @@ export default function LawyerProfileEditPage() {
         is_accepting_clients: form.is_accepting_clients,
         show_contact: form.show_contact,
       };
+      // Phase 7 columns — keys exactly as PATCH /api/v1/profile allowlists
+      // them (src/app/api/v1/profile/route.ts lawyerFields) — included ONLY
+      // once the migration that adds them is confirmed live (see
+      // `newFieldsAvailable`'s own comment). Sending them unconditionally
+      // would fail the WHOLE update (PGRST204) on a database that lacks
+      // these columns, taking bio/licence/city down with them.
+      if (newFieldsAvailable) {
+        body.slug = form.slug.trim();
+        body.headline_ar = form.headline_ar;
+        body.education = form.education;
+        body.courts = form.courts;
+        body.languages = form.languages;
+      }
       // Route the PATCH through the same api service used for the GET so auth /
       // base-url handling is consistent (never a raw fetch).
       await apiMutate("/api/v1/profile", "PATCH", body);
       setMsg({ type: "ok", text: "تم حفظ التعديلات بنجاح" });
       setTimeout(() => router.push("/dashboard/lawyer/profile"), 800);
     } catch (err) {
-      setMsg({ type: "err", text: err instanceof Error ? err.message : "حدث خطأ" });
+      const text = err instanceof Error ? err.message : "حدث خطأ";
+      setMsg({ type: "err", text });
+      if (text === SLUG_TAKEN_MESSAGE) setSlugServerError(text);
     } finally { setSaving(false); }
   };
 
@@ -304,6 +421,42 @@ export default function LawyerProfileEditPage() {
            : "bg-slate-50 border-slate-200 text-slate-700 placeholder:text-slate-400"}`;
   const label = `text-[11px] font-bold mb-1 block ${isDark ? "text-zinc-400" : "text-slate-500"}`;
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Same rules the route enforces (slugIssue / educationIssue /
+  // offPlatformContactIssue), run here so the lawyer sees the refusal before
+  // submitting rather than only after a round trip — and so a client that
+  // never even attempts the request cannot desync from what the server would
+  // have said. Recomputed on every render; the inputs are a handful of short
+  // strings and a ≤10-entry array, not worth memoizing.
+  // "" when displayNameEn has no Latin characters at all — computed once so
+  // the suggest button's onClick/disabled/title agree on one answer instead
+  // of calling suggestSlug() three times per render.
+  const slugSuggestion = suggestSlug(displayNameEn);
+  const slugErr = slugIssue(form.slug);
+  const eduErr = educationIssue(form.education);
+  const bioContactErr = offPlatformContactIssue(form.bio_ar);
+  const headlineContactErr = offPlatformContactIssue(form.headline_ar);
+  const hasClientIssue = Boolean(slugErr || eduErr || bioContactErr || headlineContactErr);
+
+  const addEducation = () => {
+    if (form.education.length >= 10) return; // educationIssue's own ceiling
+    set("education", [...form.education, { degree: "", institution: "", year: null }]);
+  };
+  const removeEducation = (index: number) => set("education", form.education.filter((_, i) => i !== index));
+  const setEducationField = <K extends keyof EducationEntry>(index: number, key: K, value: EducationEntry[K]) =>
+    set("education", form.education.map((e, i) => (i === index ? { ...e, [key]: value } : e)));
+
+  const toggleCourt = (code: CourtCode) =>
+    set("courts", form.courts.includes(code) ? form.courts.filter((c) => c !== code) : [...form.courts, code]);
+  const toggleLanguage = (code: LanguageCode) =>
+    set("languages", form.languages.includes(code) ? form.languages.filter((l) => l !== code) : [...form.languages, code]);
+
+  const chip = (active: boolean) =>
+    `px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors ${
+      active
+        ? "bg-[#0B3D2E] border-[#0B3D2E] text-[#C8A762]"
+        : isDark ? "border-white/[0.08] text-zinc-400 hover:border-white/20" : "border-slate-200 text-slate-500 hover:border-slate-300"
+    }`;
 
   // Sub-copy under each toggle. Without it «الظهور في دليل المحامين» reads as
   // "tick this and clients find you", which is not what it does — see the
@@ -383,7 +536,72 @@ export default function LawyerProfileEditPage() {
         <div>
           <label className={label}>نبذة تعريفية</label>
           <textarea rows={4} value={form.bio_ar} onChange={(e) => set("bio_ar", e.target.value)} className={input} placeholder="نبذة عن خبرتك ومجالات عملك" />
+          {/* item 179 — same rule the route refuses with, shown before submit rather than after. */}
+          {bioContactErr && (
+            <p className="text-[11px] font-bold text-red-500 mt-1 flex items-start gap-1">
+              <Warning size={12} weight="fill" className="flex-shrink-0 mt-0.5" /> {bioContactErr}
+            </p>
+          )}
         </div>
+
+        {/*
+          The four Phase 7 sections below (سطر تعريفي / رابط ملفك العام here,
+          المؤهلات العلمية / المحاكم / اللغات further down) render only once
+          `newFieldsAvailable` confirms the migration that adds their columns
+          is live — see that state's own comment. Hidden, not disabled: an
+          editable field that silently cannot save is worse than one that is
+          not there yet.
+        */}
+        {newFieldsAvailable && <>
+        <div>
+          <label className={label}>سطر تعريفي</label>
+          <input value={form.headline_ar} maxLength={MAX_HEADLINE_LENGTH}
+            onChange={(e) => set("headline_ar", e.target.value)} className={input}
+            placeholder="جملة قصيرة تظهر أعلى ملفك العام" />
+          <div className="flex items-center justify-between mt-1">
+            {headlineContactErr ? (
+              <p className="text-[11px] font-bold text-red-500 flex items-start gap-1">
+                <Warning size={12} weight="fill" className="flex-shrink-0 mt-0.5" /> {headlineContactErr}
+              </p>
+            ) : <span />}
+            <span className={`text-[10px] flex-shrink-0 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+              {form.headline_ar.length}/{MAX_HEADLINE_LENGTH}
+            </span>
+          </div>
+        </div>
+
+        <div>
+          <label className={label}>رابط ملفك العام</label>
+          <div className="flex items-center gap-2">
+            <span className={`text-[12px] flex-shrink-0 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>nezamy.sa/lawyers/</span>
+            <input value={form.slug}
+              // A typed edit means the 409 the last save attempt hit no
+              // longer describes this input — leaving it up would show a
+              // stale "taken" warning under a slug that is now valid, or a
+              // different one nobody has tried yet.
+              onChange={(e) => { set("slug", e.target.value.trim().toLowerCase()); setSlugServerError(null); }}
+              className={input} placeholder="ahmad-al-ghamdi" dir="ltr" />
+            <button type="button"
+              // slugSuggestion is "" when displayNameEn has no Latin
+              // characters at all (an Arabic-only name, or none set) —
+              // guarded so the button can never silently blank a slug the
+              // lawyer already typed.
+              onClick={() => { if (slugSuggestion) { set("slug", slugSuggestion); setSlugServerError(null); } }}
+              disabled={!slugSuggestion}
+              title={slugSuggestion ? undefined : "لا يوجد اسم لاتيني في حسابك لاقتراح رابط منه"}
+              className={`flex-shrink-0 px-3 py-2 rounded-xl text-[11px] font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                isDark ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+              اقتراح رابط
+            </button>
+          </div>
+          {(slugErr || slugServerError) && (
+            <p className="text-[11px] font-bold text-red-500 mt-1 flex items-start gap-1">
+              <Warning size={12} weight="fill" className="flex-shrink-0 mt-0.5" /> {slugErr ?? slugServerError}
+            </p>
+          )}
+        </div>
+        </>}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div><label className={label}>التخصصات (افصل بفاصلة)</label>
             <input value={form.specialties} onChange={(e) => set("specialties", e.target.value)} className={input} placeholder="قانون تجاري، قانون عمل" /></div>
@@ -398,6 +616,65 @@ export default function LawyerProfileEditPage() {
           <div><label className={label}>جهة الترخيص</label>
             <input value={form.bar_association} onChange={(e) => set("bar_association", e.target.value)} className={input} placeholder="الهيئة السعودية للمحامين" /></div>
         </div>
+
+        {newFieldsAvailable && <>
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className={`${label} mb-0`}>المؤهلات العلمية</label>
+            <button type="button" onClick={addEducation} disabled={form.education.length >= 10}
+              className="flex items-center gap-1 text-[11px] font-bold text-[#C8A762] hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed">
+              <Plus size={12} weight="bold" /> إضافة مؤهل
+            </button>
+          </div>
+          {form.education.length === 0 && (
+            <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد مؤهلات مضافة بعد.</p>
+          )}
+          <div className="space-y-2">
+            {form.education.map((entry, i) => (
+              <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_90px_auto] gap-2 items-start">
+                <input value={entry.degree} onChange={(e) => setEducationField(i, "degree", e.target.value)}
+                  className={input} placeholder="الدرجة العلمية (مثال: بكالوريوس القانون)" />
+                <input value={entry.institution} onChange={(e) => setEducationField(i, "institution", e.target.value)}
+                  className={input} placeholder="الجهة (مثال: جامعة الملك سعود)" />
+                <input type="number" value={entry.year ?? ""}
+                  onChange={(e) => setEducationField(i, "year", e.target.value ? Number(e.target.value) : null)}
+                  className={input} placeholder="السنة" />
+                <button type="button" onClick={() => removeEducation(i)}
+                  className={`h-full min-h-[38px] px-2.5 rounded-xl flex items-center justify-center transition-colors ${isDark ? "bg-zinc-800 text-red-400 hover:bg-zinc-700" : "bg-slate-100 text-red-500 hover:bg-slate-200"}`}>
+                  <Trash size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+          {eduErr && (
+            <p className="text-[11px] font-bold text-red-500 mt-1.5 flex items-start gap-1">
+              <Warning size={12} weight="fill" className="flex-shrink-0 mt-0.5" /> {eduErr}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className={label}>المحاكم</label>
+          <div className="flex flex-wrap gap-2">
+            {COURTS.map((c) => (
+              <button key={c.code} type="button" onClick={() => toggleCourt(c.code)} className={chip(form.courts.includes(c.code))}>
+                {c.ar}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className={label}>اللغات</label>
+          <div className="flex flex-wrap gap-2">
+            {LANGUAGES.map((l) => (
+              <button key={l.code} type="button" onClick={() => toggleLanguage(l.code)} className={chip(form.languages.includes(l.code))}>
+                {l.ar}
+              </button>
+            ))}
+          </div>
+        </div>
+        </>}
 
         <div className="space-y-3 pt-2">
           {TOGGLES.map(({ key, label: lbl, hint }) => (
@@ -461,8 +738,8 @@ export default function LawyerProfileEditPage() {
             unconditionally — the wrong reason for the lawyer who has no
             professional row at all, and the right one for only one of three.
           */}
-          <button onClick={handleSave} disabled={saving || !loaded}
-            title={!loaded && blocked ? BLOCKED_COPY[blocked].title : undefined}
+          <button onClick={handleSave} disabled={saving || !loaded || hasClientIssue}
+            title={!loaded && blocked ? BLOCKED_COPY[blocked].title : hasClientIssue ? "أصلح الأخطاء الموضّحة أعلاه أولاً" : undefined}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             {saving ? <SpinnerGap size={14} className="animate-spin" /> : <CheckCircle size={14} />} حفظ التعديلات
           </button>

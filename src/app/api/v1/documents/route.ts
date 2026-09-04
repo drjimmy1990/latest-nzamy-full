@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { DOCUMENT_SOURCE_VALUES, isDocumentSource } from "./_shared";
 
 /**
- * GET /api/v1/documents — List user's documents
- * Auth required.
+ * GET /api/v1/documents — List user's documents.
+ * Auth required. Excludes the bin by default (deleted_at is null);
+ * `?trash=1` flips that to list ONLY the bin (deleted_at is not null) —
+ * Phase 6, DECISION 3 in 20260906_phase6_settings_out_of_browser.sql.
  *
  * FAILURE IS A 500, NOT AN EMPTY VAULT. This route's empty-200 was the single
  * most-cited instance of the defect in this codebase: three other modules had
@@ -18,7 +21,7 @@ import { createClient } from "@/lib/supabase/server";
  * which already throws on any non-2xx — so a real status is what its callers
  * are built to receive, and no caller reads a marker inside the body.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     const {
@@ -27,14 +30,27 @@ export async function GET() {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
     }
 
-    const { data, error } = await supabase
-      .from("attachments")
-      .select("*")
-      .eq("owner_user_id", user.id)
-      .order("created_at", { ascending: false });
+    const { searchParams } = new URL(request.url);
+    const trash = searchParams.get("trash") === "1";
+
+    // Two separate full builders rather than reassigning one, since chaining
+    // .is()/.not() onto a `let`-typed builder does not narrow cleanly here.
+    const { data, error } = trash
+      ? await supabase
+          .from("attachments")
+          .select("*")
+          .eq("owner_user_id", user.id)
+          .not("deleted_at", "is", null)
+          .order("deleted_at", { ascending: false })
+      : await supabase
+          .from("attachments")
+          .select("*")
+          .eq("owner_user_id", user.id)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false });
 
     if (error) {
       console.error("[documents GET] Supabase error:", error.message, error.details, error.hint, error.code);
@@ -152,6 +168,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // source is optional and defaults to 'upload' (the shape every existing
+    // caller already produces); when supplied it must be one of the CHECK
+    // list's values or the insert fails as a raw 23514 the caller can't read.
+    let source: string = "upload";
+    if (body.source !== undefined && body.source !== null) {
+      if (!isDocumentSource(body.source)) {
+        return NextResponse.json(
+          { error: `مصدر المستند غير صالح — القيم المسموحة: ${DOCUMENT_SOURCE_VALUES.join(", ")}` },
+          { status: 400 },
+        );
+      }
+      source = body.source;
+    }
+
     const { data, error } = await supabase
       .from("attachments")
       .insert({
@@ -161,6 +191,7 @@ export async function POST(request: NextRequest) {
         mime_type: body.mime_type ?? "application/octet-stream",
         size_bytes: body.size_bytes ?? 0,
         request_id: requestId,
+        source,
       })
       .select()
       .single();
