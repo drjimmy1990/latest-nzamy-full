@@ -99,12 +99,15 @@ const STATUSES = [
 
 // Task 5 — account-type badge, keyed by profiles.user_type. Every key here
 // matches a value in the CHECK constraint at
-// supabase/migrations/20260603_phase1_001_profiles.sql:32-35. `admin` is the
-// only value of that constraint left unmapped, deliberately: nothing in the
-// schema stops an account with user_type 'admin' from placing an order, but
-// this queue has no reason to name that case, and an unmapped user_type
-// simply renders no badge — see the `ACCOUNT_BADGE[...]` guard below — never
-// an empty grey pill.
+// supabase/migrations/20260603_phase1_001_profiles.sql:32-35, with ONE
+// deliberate exception: `guest`, which no profiles row can ever hold (the
+// list route synthesizes it for a null requester_user_id — an
+// unauthenticated lead never got a profile at all). `admin` is the only real
+// constraint value left unmapped, deliberately: nothing in the schema stops
+// an account with user_type 'admin' from placing an order, but this queue
+// has no reason to name that case, and an unmapped user_type simply renders
+// no badge — see the `ACCOUNT_BADGE[...]` guard below — never an empty grey
+// pill.
 //
 // `provider` (owner س٦: «شارة ملونة وموحدة لـ provider — 🟣 مزوّد خدمة») is
 // fuchsia rather than violet or purple. violet-500 is already spent on TWO
@@ -121,6 +124,7 @@ const ACCOUNT_BADGE: Record<string, { label: string; cls: string }> = {
   provider:   { label: "مزوّد خدمة",   cls: "bg-fuchsia-500/10 text-fuchsia-500" },
   government: { label: "جهة حكومية",   cls: "bg-violet-500/10 text-violet-500" },
   ngo:        { label: "جهة غير ربحية", cls: "bg-violet-500/10 text-violet-500" },
+  guest:      { label: "زائر غير مسجَّل", cls: "bg-slate-500/10 text-slate-500" },
 };
 
 /**

@@ -153,6 +153,15 @@ export default function AILegalOpinionPage() {
     attachments, uploading, attachError, attachFiles, removeAttachment, clearAttachError,
   } = useOrderAttachments();
 
+  // Mirrors ServiceRequestWizard.tsx's dismissBlocked (Task B1, item 13): an
+  // attachment only lands in `attachments` after uploadAndRecord's await
+  // resolves (useOrderAttachments.ts), so jumping away from the context step
+  // mid-upload — via the progress bar's onStepClick, back to "type", then a
+  // different service card — runs clearFlowState() and drops the file that
+  // was still in flight. Blocks that escape route the same way canProceed()
+  // below blocks "التالي".
+  const dismissBlocked = uploading;
+
   // Submit-step state
   const [submitting, setSubmitting] = useState(false);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
@@ -180,6 +189,11 @@ export default function AILegalOpinionPage() {
   // gate at > 10 (or, for due-diligence, not at all), which let a client
   // click through every step and only discover the real minimum at submit.
   function canProceed() {
+    // Task B1, item 13: an in-flight upload has not yet reached `attachments`
+    // (useOrderAttachments.ts resolves it only after the upload settles), so
+    // letting "التالي" advance mid-upload silently ships an order missing the
+    // file. Mirrors ServiceRequestWizard.tsx's canProceed().
+    if (uploading) return false;
     if (currentStep === "type") return !!selectedType;
     if (currentStep === "context") {
       if (selectedType === "consult") return !!topicArea && description.trim().length >= 20;
@@ -383,6 +397,13 @@ export default function AILegalOpinionPage() {
   // That profile read is load-bearing: the n8n WhatsApp notification
   // addresses requester.phone.
   async function submitOrder() {
+    // Completes the same guard as canProceed()/dismissBlocked above (Task B1,
+    // item 13) at the one remaining entry point: SubmitStep does not receive
+    // `uploading` today, so its own button has no visual disabled state to
+    // match ServiceRequestWizard.tsx's `disabled={submitting || uploading}` —
+    // this stops the order from being created out from under an attachment
+    // still in flight regardless of how submitOrder() gets called.
+    if (uploading) return;
     setSubmitErrors([]);
     const intake = buildIntake();
     const check = validateLegalOpinionIntake(intake);
@@ -445,7 +466,7 @@ export default function AILegalOpinionPage() {
       {/* Progress */}
       {currentStep !== "type" && !isLetterMode && (
         <div className={`${card} p-4`}>
-          <StepProgress steps={steps} currentStep={currentStep} isDark={isDark} onStepClick={setCurrentStep} />
+          <StepProgress steps={steps} currentStep={currentStep} isDark={isDark} onStepClick={dismissBlocked ? undefined : setCurrentStep} />
         </div>
       )}
 
@@ -724,11 +745,19 @@ export default function AILegalOpinionPage() {
       {/* Navigation — hidden in letter mode (letter has its own nav) and on
           the submit step (SubmitStep has its own back/submit buttons) */}
       {currentStep !== "processing" && currentStep !== "result" && currentStep !== "submit" && !isLetterMode && (
-        <div className="flex items-center justify-between pt-1">
-          <button onClick={prev} disabled={ci === 0}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px] font-semibold border transition-colors disabled:opacity-30 ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-300" : "border-slate-200 bg-white text-slate-600"}`}>
-            <ArrowRight size={13} /> السابق
-          </button>
+        <div className="space-y-2 pt-1">
+          {/* Same wording and same trigger as ServiceRequestWizard.tsx's
+              upload-in-progress notice (Task B1, item 13). */}
+          {uploading && (
+            <p className={`text-[11px] font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+              انتظر انتهاء رفع الملفات قبل المتابعة حتى لا يُرسَل الطلب ناقص المرفقات.
+            </p>
+          )}
+          <div className="flex items-center justify-between">
+            <button onClick={prev} disabled={ci === 0 || dismissBlocked}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px] font-semibold border transition-colors disabled:opacity-30 ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-300" : "border-slate-200 bg-white text-slate-600"}`}>
+              <ArrowRight size={13} /> السابق
+            </button>
           {ci < steps.length - 1 && (
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
               onClick={next} disabled={!canProceed()}
@@ -740,6 +769,7 @@ export default function AILegalOpinionPage() {
               )}
             </motion.button>
           )}
+          </div>
         </div>
       )}
     </div>

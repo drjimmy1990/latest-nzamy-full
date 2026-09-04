@@ -77,8 +77,11 @@ const plans = [
     unit: { ar: "", en: "" },
     desc: { ar: "للشركات القانونية الكبرى", en: "For large law firms" },
     features: {
-      ar: ["كل شيء في Office", "API مخصص", "SSO", "مدير حساب مخصص", "SLA مضمون"],
-      en: ["Everything in Office", "Custom API", "SSO", "Dedicated account manager", "Guaranteed SLA"],
+      // "SLA مضمون" / "Guaranteed SLA" dropped (Task B1, item 14) — no
+      // service-level agreement is published anywhere on the platform to be
+      // guaranteed (same finding already fixed on /erp's FAQ).
+      ar: ["كل شيء في Office", "API مخصص", "SSO", "مدير حساب مخصص"],
+      en: ["Everything in Office", "Custom API", "SSO", "Dedicated account manager"],
     },
     highlight: false,
   },

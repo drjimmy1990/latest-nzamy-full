@@ -26,7 +26,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { useTheme } from "@/components/ThemeProvider";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useSubscription, tierLabelAr } from "@/hooks/useSubscription";
 import { type SidebarGroup, type SidebarItem } from "@/constants/navigation";
 import { type UserType } from "@/hooks/useUser";
 import { toArabicDigits } from "@/lib/services/arabicCount";
@@ -95,17 +95,20 @@ const AI_SECTION_DEFAULT_VISIBLE = 9;
  * caller (SidebarLink) filters that case out before it gets here; anything new
  * that calls this must do the same.
  *
- * The `tier` it prints is the raw English key — `shield`, `pro`, `corp` — in an
- * otherwise Arabic RTL sidebar. The Arabic names for those exist, but only as a
- * local literal inside SubscriptionGuard.tsx; wiring them up means exporting
- * one labels map from useSubscription.ts and is reported rather than duplicated
- * here, because a second copy of that map is a second thing to drift.
+ * `tier` used to print the raw English key — `shield`, `pro`, `corp` — in an
+ * otherwise Arabic RTL sidebar. `tierLabelAr()` (useSubscription.ts) is the
+ * canonical Arabic-labels map, exported from there so this stays the only
+ * caller that needed wiring; SubscriptionGuard.tsx keeps its own older copy
+ * of the same labels (that file is CRITICAL-risk to touch — 19 callers —
+ * so its literal was left as a known, reported duplicate rather than
+ * unified here). An unrecognized key still falls back to «ترقية», never
+ * to the raw key itself.
  */
 export function UpgradeBadge({ tier }: { tier: string }) {
   return (
     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-400/10 text-amber-400 border border-amber-400/20 flex-shrink-0 flex items-center gap-1">
       <span>🔒</span>
-      {tier}
+      {tierLabelAr(tier)}
     </span>
   );
 }

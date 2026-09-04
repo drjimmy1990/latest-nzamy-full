@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { stripInternalNotes } from "@/lib/services/internalNotes";
 
 /**
  * GET /api/v1/dashboard/summary — Aggregated dashboard data
@@ -52,7 +53,21 @@ export async function GET() {
         .limit(3),
     )
       .then(({ data, count }) => ({
-        rows: data ?? [],
+        // This is the client's OWN dashboard (rows are scoped to
+        // requester_user_id = uid above) — the same "reading my own order"
+        // case service-requests/[id]/route.ts hardcodes `isAdmin: false` for,
+        // never a staff queue. metadata.internalNotes is a private note the
+        // team writes about the client, and every other read path
+        // (service-requests list/[id], the n8n payload) strips it via this
+        // same helper before a non-admin caller ever sees the row — this was
+        // the one path that shipped it raw. See src/lib/services/internalNotes.ts.
+        rows: (data ?? []).map((row) => ({
+          ...row,
+          metadata: stripInternalNotes(
+            row.metadata as Record<string, unknown> | null | undefined,
+            false,
+          ),
+        })),
         // A null count (PostgREST omitted the range header) must not become a
         // zero that contradicts the rows we are about to return.
         total: count ?? (data?.length ?? 0),

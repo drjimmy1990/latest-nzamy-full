@@ -367,9 +367,16 @@ export default function ClientsPage() {
                         )}
                       </div>
                       {/* Source chip — a real platform account vs. a card typed
-                          into AddClientModal are not the same kind of record. */}
+                          into AddClientModal are not the same kind of record.
+                          A2: a "profile" row also gets a subtle hint pointing
+                          at where a card actually gets made — the full client
+                          file (ClientDrawer/[id]/page.tsx) — not a second
+                          "create card" flow duplicated on this card. */}
                       <p className={`text-[9px] font-bold mb-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                         {client.source === "profile" ? "حساب على المنصّة" : "بطاقة"}
+                        {client.source === "profile" && (
+                          <span className={`font-semibold ${isDark ? "text-zinc-700" : "text-slate-300"}`}> · بلا بطاقة — أنشئ بطاقة من الملف</span>
+                        )}
                       </p>
                       {/* Flags */}
                       {client.flags.length > 0 && (

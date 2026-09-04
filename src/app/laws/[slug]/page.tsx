@@ -60,6 +60,13 @@ function LawSystemPageContent() {
   // while its own data loaded. The `if (!law)` guard below the loading/error
   // early-returns is what lets the rest of the component keep reading `law.x`.
   const [law, setLaw] = useState<LawSystem | null>(null);
+  // The server-enforced free-article count for THIS law, straight off
+  // `paywall.freeLimit` in the API response below (checkLibraryAccess — folds
+  // in any per-law override, not just the platform default). Kept separate
+  // from `law` because LawSystem has no paywall field; PaywallModal falls
+  // back to its own default when this is still null (loading, or the fetch
+  // failed before setting it).
+  const [libraryFreeLimit, setLibraryFreeLimit] = useState<number | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [jumpQuery,  setJumpQuery]  = useState("");  // بحث سريع للمواد
@@ -120,6 +127,9 @@ function LawSystemPageContent() {
           return;
         }
         const data = await res.json();
+        setLibraryFreeLimit(
+          typeof data?.paywall?.freeLimit === "number" ? data.paywall.freeLimit : null,
+        );
         // Transform API response to match LawSystem interface
         setLaw({
           id: data.id || data.slug,
@@ -1114,7 +1124,7 @@ function LawSystemPageContent() {
         )}
       </AnimatePresence>
 
-      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} isRTL={isRTL} isDark={isDark} />
+      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} isRTL={isRTL} isDark={isDark} freeLimit={libraryFreeLimit ?? undefined} />
 
       <AnimatePresence>
         {explainArticle && (

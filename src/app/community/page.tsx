@@ -17,7 +17,7 @@
  *   - باقي الأنواع → يرون Public فقط
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   MagnifyingGlass, ArrowUp, ArrowDown, CheckCircle, ChatCircle,
@@ -74,33 +74,57 @@ export default function CommunityPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreFailed, setMoreFailed] = useState(false);
   const [questionVotes, setQuestionVotes] = useState<Record<number, "up" | "down" | null>>({});
+  // True once the visitor has clicked a tab themselves — stops the
+  // land-on-lawyers effect below from overriding a deliberate choice
+  // (e.g. a lawyer who switches to "public" should not get bounced back).
+  const userPickedTabRef = useRef(false);
+  // Landing on "lawyers" flips `tab` right after this fires, which queues a
+  // second loadPosts() call before the first (tab="public") one may have
+  // resolved. Without a sequence guard, a slow "public" response arriving
+  // after the "lawyers" one would overwrite the correct feed with the wrong
+  // tab's posts while the UI still shows "lawyers" selected.
+  const loadSeqRef = useRef(0);
 
   const loadPosts = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setMoreFailed(false);
-    if (isSupabaseMode) {
-      // getCommunityPosts no longer rejects — it answers `ok: false`. The
-      // `catch { readCommunityQuestionsLocal() }` that used to sit here was
-      // therefore dead code, AND it was the defect: it rendered THIS browser's
-      // own localStorage as the community's feed, so on the usual fresh browser
-      // a failed load looked exactly like a forum with no questions in it.
-      setRead(await getCommunityPosts({
-        tab,
-        category: category !== "all" ? category : undefined,
-        limit: PAGE_SIZE,
-      }));
-    } else {
-      // Demo mode: communityStore IS the backend, so reading it is the real
-      // read, not a fallback. Unfiltered on purpose — the client-side filter
-      // below already applies tab/category, as it always has here.
-      setRead(listOk(readCommunityQuestionsLocal()));
-    }
+    // getCommunityPosts no longer rejects — it answers `ok: false`. The
+    // `catch { readCommunityQuestionsLocal() }` that used to sit here was
+    // therefore dead code, AND it was the defect: it rendered THIS browser's
+    // own localStorage as the community's feed, so on the usual fresh browser
+    // a failed load looked exactly like a forum with no questions in it.
+    //
+    // Demo mode: communityStore IS the backend, so reading it is the real
+    // read, not a fallback. Unfiltered on purpose — the client-side filter
+    // below already applies tab/category, as it always has here.
+    const result = isSupabaseMode
+      ? await getCommunityPosts({
+          tab,
+          category: category !== "all" ? category : undefined,
+          limit: PAGE_SIZE,
+        })
+      : listOk(readCommunityQuestionsLocal());
+    if (seq !== loadSeqRef.current) return; // superseded by a newer tab/category change — discard
+    setRead(result);
     setLoading(false);
   }, [tab, category]);
 
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => { void loadPosts(); }, [loadPosts]);
+
+  // Land a signed-in lawyer/firm account on "مجتمع المحامين" instead of the
+  // guest default. Gated on `user.loading` so this never fires against the
+  // unloaded session (which would read as a guest and do nothing, then flip
+  // the tab out from under someone already reading) — and it never fires at
+  // all once the visitor has picked a tab themselves. Guests keep today's
+  // default forever: `isLawyer` is false for them for the life of the page.
+  useEffect(() => {
+    if (user.loading) return;
+    if (userPickedTabRef.current) return;
+    if (isLawyer) setTab("lawyers");
+  }, [user.loading, isLawyer]);
 
   useEffect(() => {
     if (isSupabaseMode) return;
@@ -215,7 +239,7 @@ export default function CommunityPage() {
         {/* ── Tabs ── */}
         <div className={`flex gap-1 p-1.5 rounded-2xl mb-6 w-fit backdrop-blur-md ${isDark ? "bg-[#161b22]/60 border border-white/[0.06]" : "bg-white/60 border border-slate-200/60 shadow-sm"}`}>
           <button
-            onClick={() => setTab("public")}
+            onClick={() => { userPickedTabRef.current = true; setTab("public"); }}
             className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all ${
               tab === "public"
                 ? "bg-[#0B3D2E] text-white shadow"
@@ -238,7 +262,7 @@ export default function CommunityPage() {
           </button>
           {isLawyer ? (
             <button
-              onClick={() => setTab("lawyers")}
+              onClick={() => { userPickedTabRef.current = true; setTab("lawyers"); }}
               className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all ${
                 tab === "lawyers"
                   ? "bg-[#C8A762] text-white shadow"

@@ -71,11 +71,11 @@ export default function StepModeSelector({ onSelect }: Props) {
             {isRTL ? "مراجعة عقد قائم" : "Review Existing Contract"}
           </h3>
           <p className={`text-[13px] leading-relaxed font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-            {isRTL ? "ألصق نص عقدك الحالي وسيقوم AI بتحليل المخاطر واقتراح التعديلات لحمايتك." : "Paste your contract text and let AI analyze risks and suggest edits to protect you."}
+            {isRTL ? "ألصق نص عقدك الحالي — يراجعه فريقنا القانوني ويرسل لك تقرير المخاطر." : "Paste your existing contract text — our legal team reviews it and sends you a risk report."}
           </p>
           <span className={`absolute top-6 end-6 text-[10px] font-bold px-3 py-1.5 rounded-full border ${
             isDark ? "bg-violet-500/10 border-violet-500/20 text-violet-400" : "bg-violet-50 border-violet-200 text-violet-600"
-          }`}>AI Powered</span>
+          }`}>{isRTL ? "مراجعة بشرية" : "Human Reviewed"}</span>
         </motion.button>
       </div>
     </motion.div>

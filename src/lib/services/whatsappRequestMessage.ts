@@ -202,8 +202,10 @@ export const WA_PAYMENT_METHOD_AR: Record<string, string> = {
 export function widgetPriceAr(selections: Record<string, string>): string {
   if (selections.provider === "ai") return "٥٠ ر.س";
   if (selections.provider === "lawyer") return "٧٠٠ ر.س";
-  if (selections.contractService === "ai-review") return "١٥٠ ر.س";
-  if (selections.contractService === "lawyer-review") return "٤٩٩ ر.س";
+  // contractService ("ai-review" / "lawyer-review") no longer prints a fixed
+  // number here (Task B1, item 163) — StepContract.tsx dropped "١٥٠ ر.س" /
+  // "٤٩٩ ر.س" for the same reason: no catalog price backed either figure.
+  // "" falls through to buildWhatsAppRequestContent's existing no-price path.
   return "";
 }
 
@@ -216,8 +218,7 @@ export function widgetPriceAr(selections: Record<string, string>): string {
 export function widgetPriceValue(selections: Record<string, string>): number | null {
   if (selections.provider === "ai") return 50;
   if (selections.provider === "lawyer") return 700;
-  if (selections.contractService === "ai-review") return 150;
-  if (selections.contractService === "lawyer-review") return 499;
+  // See widgetPriceAr above — contractService carries no catalog price.
   return null;
 }
 

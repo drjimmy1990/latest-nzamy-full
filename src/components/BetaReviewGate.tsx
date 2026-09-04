@@ -51,6 +51,13 @@ import {
   createServiceOrder, ORDER_STATUS_AR, type ServiceOrder,
 } from "@/lib/services/serviceOrders";
 import type { ServiceKey, OrderAttachment } from "@/lib/services/orderIntake";
+// The platform's one real support number (Task B1, item 45) — NOT
+// betaConfig.ts's BETA_WHATSAPP_NUMBER, still a literal placeholder
+// ("966XXXXXXXXX" — "Update with real number"), and not a second literal
+// pasted here. Same constant buildWhatsAppHref (src/app/ai/orders/[id]/page.tsx's
+// wa.me link) defaults to; src/app/contact/page.tsx still hardcodes the same
+// digits as a literal rather than importing this.
+import { NZAMY_WHATSAPP_NUMBER } from "@/components/floating/whatsappWorkflow";
 
 // ── Safe import: if betaConfig is deleted, default to OFF ────────────────────
 let BETA_REVIEW_MODE = false;
@@ -288,7 +295,7 @@ export default function BetaReviewGate({
 
           {/* WhatsApp CTA */}
           <a
-            href="https://wa.me/966XXXXXXXXX"
+            href={`https://wa.me/${NZAMY_WHATSAPP_NUMBER}`}
             target="_blank"
             rel="noopener noreferrer"
             className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-bold transition-all

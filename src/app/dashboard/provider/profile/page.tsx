@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   PencilSimple, Briefcase, Certificate, Clock, CurrencyDollar,
   GraduationCap, MapPin, Globe, Scales, Star, Plus, Trash,
-  FloppyDisk, CheckCircle, Upload,
+  FloppyDisk, CheckCircle, Upload, User as UserIcon,
 } from "@phosphor-icons/react";
 import { useState, useEffect } from "react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -168,7 +168,7 @@ export default function ProviderProfilePage() {
                   {/* Avatar */}
                   <div className="flex items-center gap-5">
                     <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-2xl font-bold ${isDark ? "bg-zinc-800 text-zinc-300" : "bg-slate-100 text-slate-400"}`}>
-                      ن
+                      {user.name?.trim() ? user.name.trim().charAt(0) : <UserIcon size={32} weight="bold" />}
                     </div>
                     <div>
                       <button className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium ${isDark ? "border-white/10 text-zinc-300" : "border-slate-200 text-zinc-600"}`}>

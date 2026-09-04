@@ -99,13 +99,13 @@ const contractTypes = {
 const pricingTiers = {
   ar: [
     { name: "أساسي", price: "٢٤٩", currency: "ر.س", desc: "مراجعة عقد واحد", features: ["مراجعة بالذكاء الاصطناعي", "تقرير PDF", "٢٤ ساعة تسليم"], highlight: false },
-    { name: "متقدم", price: "٤٩٩", currency: "ر.س", desc: "صياغة أو مراجعة شاملة", features: ["مراجعة محامٍ متخصص", "تعديلات غير محدودة", "تقرير مفصل", "دعم أولوية"], highlight: true },
-    { name: "مؤسسي", price: "يُحدد", currency: "", desc: "للشركات والمؤسسات", features: ["عقود غير محدودة", "فريق قانوني مخصص", "SLA مضمون", "اجتماعات شهرية"], highlight: false },
+    { name: "متقدم", price: "٤٩٩", currency: "ر.س", desc: "صياغة أو مراجعة شاملة", features: ["مراجعة محامٍ متخصص", "تعديلات ضمن نطاق الطلب", "تقرير مفصل", "دعم أولوية"], highlight: true },
+    { name: "مؤسسي", price: "يُحدد", currency: "", desc: "للشركات والمؤسسات", features: ["عقود غير محدودة", "فريق قانوني مخصص", "مدة التسليم تُؤكَّد مع الفريق قبل البدء", "اجتماعات شهرية"], highlight: false },
   ],
   en: [
     { name: "Basic", price: "249", currency: "SAR", desc: "Single contract review", features: ["AI-powered review", "PDF report", "24-hour delivery"], highlight: false },
-    { name: "Advanced", price: "499", currency: "SAR", desc: "Full drafting or review", features: ["Specialist lawyer review", "Unlimited revisions", "Detailed report", "Priority support"], highlight: true },
-    { name: "Enterprise", price: "Custom", currency: "", desc: "For companies and organizations", features: ["Unlimited contracts", "Dedicated legal team", "Guaranteed SLA", "Monthly meetings"], highlight: false },
+    { name: "Advanced", price: "499", currency: "SAR", desc: "Full drafting or review", features: ["Specialist lawyer review", "Revisions within request scope", "Detailed report", "Priority support"], highlight: true },
+    { name: "Enterprise", price: "Custom", currency: "", desc: "For companies and organizations", features: ["Unlimited contracts", "Dedicated legal team", "Delivery timeline confirmed with team before start", "Monthly meetings"], highlight: false },
   ],
 };
 

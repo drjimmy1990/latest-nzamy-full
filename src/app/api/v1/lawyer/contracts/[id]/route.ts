@@ -7,6 +7,7 @@ import {
   CONTRACT_SELECT, ISO_DATE_RE, dbErrorResponse, toContractDto, profileNames, contractListExtras,
   loadContractDetail, type ContractRow,
 } from "../_shared";
+import { assertLinkableAccount } from "../../clients/_link";
 
 /**
  * /api/v1/lawyer/contracts/[id] — Phase 3 (مدير العقود). See ../route.ts.
@@ -186,10 +187,25 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     // only when that card actually has one (linkedClientUserId is null both
     // when lawyerClientId was not touched this call and when the linked card
     // has no account, so nothing is patched in either case).
-    const clientUserId =
+    const clientUserIdExplicit =
       body.clientUserId !== undefined
         ? (typeof body.clientUserId === "string" && body.clientUserId.trim() ? body.clientUserId.trim() : null)
-        : (linkedClientUserId ?? undefined);
+        : undefined;
+    const clientUserId = clientUserIdExplicit !== undefined ? clientUserIdExplicit : (linkedClientUserId ?? undefined);
+
+    // Same guard as POST (see that file): an EXPLICIT clientUserId must prove
+    // a prior relationship before it is allowed onto `contracts.client_user_id`
+    // — that column alone grants that account read access to this contract
+    // (contracts SELECT RLS). The card-fallback path is not re-checked here on
+    // the assumption the card's own client_user_id was itself vetted at link
+    // time — true since the lawyer_clients guard shipped, not for a link made
+    // before it existed. See the fixer report for that data-state caveat.
+    if (typeof clientUserIdExplicit === "string") {
+      const linkCheck = await assertLinkableAccount(supabase, user.id, clientUserIdExplicit, undefined, false);
+      if (!linkCheck.ok) {
+        return NextResponse.json({ error: linkCheck.error }, { status: linkCheck.status });
+      }
+    }
 
     // status BECOMES active in this PATCH (not merely "is already active" —
     // that must not stamp a signature date on an unrelated field edit), no
