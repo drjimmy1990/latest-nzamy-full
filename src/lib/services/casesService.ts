@@ -62,6 +62,15 @@ export { getCaseTypeLabel };
  */
 export interface Consultation {
   id: string;
+  /**
+   * The service_requests row this consultation is a facet of — real column,
+   * `not null unique` in the database (20260518_client_workflow_backend_ready.sql:54),
+   * but kept OPTIONAL here (not `string`) so the dead demo-mode stub in
+   * `createConsultation` below, which predates this field and does not set
+   * it, still satisfies this type. A client screen matching its own request
+   * id against this list must check it, not assume it is always present.
+   */
+  request_id?: string;
   client_id: string;
   lawyer_id?: string;
   type: string;

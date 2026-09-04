@@ -1,12 +1,16 @@
 "use client";
 
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, ArrowRight, ArrowLeft, PencilSimple, ShieldCheck, FileText, Files, Warning, LockKey } from "@phosphor-icons/react";
+import { Check, ArrowRight, ArrowLeft, PencilSimple, ShieldCheck, FileText, Files, Warning, LockKey, LinkSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
 import { useContractsState } from "@/hooks/useContractsState";
 import { CONTRACT_TYPES } from "@/components/contracts/constants";
 import type { PartyData } from "@/components/contracts/types";
+import { getContract } from "@/lib/services/contractsService";
+import { CONTRACT_TYPE_AR, type ContractType } from "@/lib/services/contractVocabulary";
 
 import { StepParties } from "@/components/contracts/steps/draft/StepParties";
 import { StepDomain } from "@/components/contracts/steps/draft/StepDomain";
@@ -37,9 +41,28 @@ const LANGUAGE_LABEL_AR: Record<string, string> = {
   ar_en: "عربي / إنجليزي",
 };
 
-export default function AIContractsPage() {
+function AIContractsPageInner() {
   const { isDark } = useTheme();
-  const s = useContractsState();
+  const searchParams = useSearchParams();
+  const contractParam = searchParams.get("contract");
+
+  // ── item 115: the "افحص العقد بالذكاء الاصطناعي" link from the contract
+  // manager (?contract=<id>) — see ContractDetail.tsx (lawyer + firm, same
+  // component). getContract() is the LAWYER-side read (/api/v1/lawyer/
+  // contracts/[id]): a 401 for a non-lawyer/firm account, or a 404 for a bad
+  // id, both fail silently here — the wizard is fully usable without a
+  // linked contract, so nothing is shown and nothing blocks the intake.
+  const [linkedContract, setLinkedContract] = useState<{ id: string; title: string; contractType: ContractType } | null>(null);
+  useEffect(() => {
+    if (!contractParam) { setLinkedContract(null); return; }
+    let cancelled = false;
+    getContract(contractParam)
+      .then((c) => { if (!cancelled) setLinkedContract({ id: c.id, title: c.title, contractType: c.contractType }); })
+      .catch(() => { /* silent — 401 (non-lawyer) or 404, wizard still works */ });
+    return () => { cancelled = true; };
+  }, [contractParam]);
+
+  const s = useContractsState(linkedContract ? { id: linkedContract.id, title: linkedContract.title } : null);
   const card = isDark ? "bg-zinc-900 border border-white/[0.07] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
 
   // Draft-mode submit recap — rows for the "submit" step. Mirrors buildIntake()
@@ -123,6 +146,23 @@ export default function AIContractsPage() {
             : "صف فكرة عقدك وبنوده — يراجعها فريق نظامي ويتولى صياغته يدوياً"}
         </p>
       </div>
+
+      {/* Linked-contract banner — item 115: opened from an existing contract's
+          «افحص العقد بالذكاء الاصطناعي» link. Stays visible across every step
+          so the client never loses track of which contract the request will
+          be attached to. */}
+      {linkedContract && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`flex items-center gap-2.5 rounded-2xl border px-4 py-3 text-[12.5px] ${isDark ? "border-[#C8A762]/25 bg-[#C8A762]/[0.06] text-zinc-200" : "border-[#0B3D2E]/15 bg-[#0B3D2E]/[0.04] text-zinc-700"}`}>
+          <LinkSimple size={15} className={isDark ? "text-[#C8A762] shrink-0" : "text-[#0B3D2E] shrink-0"} weight="bold" />
+          <span>
+            العقد: <span className="font-bold">{linkedContract.title}</span>
+            {" — "}
+            {CONTRACT_TYPE_AR[linkedContract.contractType]}
+            {" — "}سيُربط الطلب بهذا العقد
+          </span>
+        </motion.div>
+      )}
 
       {/* ── B0: Mode Selector ─────────────────────────────────────────────── */}
       {!s.contractMode && (
@@ -388,5 +428,16 @@ export default function AIContractsPage() {
         </>
       )}
     </div>
+  );
+}
+
+// useSearchParams() (read inside AIContractsPageInner, for the ?contract=
+// link above) requires a Suspense boundary in Next 16 — same pattern
+// src/app/ai/analyze/page.tsx already uses for the same hook.
+export default function AIContractsPage() {
+  return (
+    <Suspense>
+      <AIContractsPageInner />
+    </Suspense>
   );
 }

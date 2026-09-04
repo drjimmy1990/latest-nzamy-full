@@ -1,12 +1,12 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ArrowRight, Robot, FileText, Warning, SealCheck,
-  Copy, FileArrowUp, WhatsappLogo,
+  Copy, FileArrowUp, WhatsappLogo, CalendarBlank, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -26,6 +26,11 @@ import {
   sendChatMessage,
   type ChatMessage,
 } from "@/lib/services/chatService";
+import { getConsultations, type Consultation as ConsultationStatusRow } from "@/lib/services/casesService";
+import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
+import { CONSULTATION_STATUS_AR, CONSULTATION_MODE_AR, type ConsultationStatus } from "@/lib/services/consultationVocabulary";
+import { formatGregorianAr } from "@/app/dashboard/lawyer/_components/DeadlineCard";
+import { toArabicDigits, countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
 
 // ─── Types & Configurations ──────────────────────────────────────────────────
 
@@ -220,6 +225,50 @@ function channelLabelOf(c: Consultation): string | null {
   return c.channel ? CHANNEL_LABEL[c.channel] : null;
 }
 
+// ─── «حالة الاستشارة» — a REAL public.consultations row, read independently of
+// the service_requests row above and matched onto it by `request_id`. Both
+// helpers below PARSE a stored timestamptz value, never the current moment —
+// unlike `new Date()`/`Date.now()` in a useState initializer or module scope,
+// which the SSR cached-date trap this codebase has already been bitten by
+// once, this is deterministic on the value it is given and carries no such
+// risk. ───────────────────────────────────────────────────────────────────
+
+/** The Gregorian+Hijri date half of a stored timestamptz, in local time. */
+function isoDatePartAr(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return formatGregorianAr(`${y}-${m}-${day}`);
+}
+
+/** The 12-hour Arabic-Indic time half of a stored timestamptz, in local time. */
+function isoTimePartAr(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const hours = d.getHours();
+  const minutes = d.getMinutes();
+  const period = hours < 12 ? "ص" : "م";
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${toArabicDigits(hour12)}:${toArabicDigits(String(minutes).padStart(2, "0"))} ${period}`;
+}
+
+const DURATION_FORMS: ArabicCountForms = {
+  zero: null, one: "دقيقة واحدة", two: "دقيقتان", few: "دقائق", many: "دقيقة",
+};
+
+/** Local styling only — the wording itself is CONSULTATION_STATUS_AR. */
+const CONSULT_ROW_STATUS_BADGE: Record<ConsultationStatus, string> = {
+  requested: "text-amber-600 bg-amber-500/10 border-amber-500/20",
+  scheduled: "text-blue-600 bg-blue-500/10 border-blue-500/20",
+  completed: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20",
+  cancelled: "text-rose-500 bg-rose-500/10 border-rose-500/20",
+  no_show:   "text-zinc-500 bg-zinc-500/10 border-zinc-500/20",
+};
+
 /**
  * Escapes text interpolated into the printable document.
  *
@@ -277,6 +326,33 @@ export default function ConsultationRoomPage() {
   // Assigned lawyer's user id (used to find/create the chat room). Null until the
   // workflow request resolves; stays null for ai_workspace or unassigned requests.
   const [lawyerUserId, setLawyerUserId] = useState<string | null>(null);
+
+  // «حالة الاستشارة» card — a REAL public.consultations row, read
+  // independently of the service_requests row above (getConsultations has no
+  // request_id filter, so the whole list is read and matched client-side;
+  // limit raised well past the route's default 20 so a client with more
+  // activity than that still finds their own row). Unlike `consultation`
+  // above, a missing match here is not an error: the card simply renders
+  // nothing (see the render below).
+  const [consultRead, setConsultRead] = useState<ListRead<ConsultationStatusRow> | null>(null);
+  const [consultLoading, setConsultLoading] = useState(true);
+  const [consultReloadKey, setConsultReloadKey] = useState(0);
+
+  useEffect(() => {
+    if (user.loading) return;
+    let cancelled = false;
+    setConsultLoading(true);
+    getConsultations({ limit: 200 })
+      .then((result) => { if (!cancelled) setConsultRead(result); })
+      .finally(() => { if (!cancelled) setConsultLoading(false); });
+    return () => { cancelled = true; };
+  }, [user.loading, consultReloadKey]);
+
+  const consultView = listViewState(consultLoading, consultRead);
+  const consultationStatusRow = useMemo(
+    () => itemsOf(consultRead).find((c) => c.request_id === id) ?? null,
+    [consultRead, id],
+  );
 
   // Chat panel states
   const [messages, setMessages] = useState<Message[]>([]);
@@ -587,7 +663,17 @@ export default function ConsultationRoomPage() {
       consultation.topic.trim() || NO_REQUEST_TEXT_AR,
       "",
       "الرأي القانوني:",
-      NO_OPINION_AR,
+      // A real `consultations.opinion_text`, when the lawyer has actually
+      // delivered one (`opinion_delivered_at` set) — never NO_OPINION_AR
+      // beside it, which would deny what the line above it just said.
+      ...(consultationStatusRow?.opinion_delivered_at
+        ? [
+            consultationStatusRow.opinion_text?.trim() || "سُلِّم رأي قانوني على هذه الاستشارة.",
+            ...(isoDatePartAr(consultationStatusRow.opinion_delivered_at)
+              ? [`(تاريخ التسليم: ${isoDatePartAr(consultationStatusRow.opinion_delivered_at)})`]
+              : []),
+          ]
+        : [NO_OPINION_AR]),
       "",
       "-----------------------------------------",
       "هذه نسخة من طلب مقدَّم عبر منصة نظامي، وليست رأياً قانونياً ولا تقريراً صادراً عن محامٍ.",
@@ -669,6 +755,15 @@ export default function ConsultationRoomPage() {
       ? `<tr><th>المبلغ المسجّل على الطلب</th><td>${escapeHtml(consultation.price.toLocaleString("ar-SA"))} ر.س</td></tr>`
       : "";
     const requestText = consultation.topic.trim();
+    // A real delivered opinion, when the «حالة الاستشارة» card found one on
+    // the consultations row — never NO_OPINION_AR printed under the same
+    // «الرأي القانوني» heading as the actual text, which would hand the
+    // client a document contradicting itself.
+    const opinionDeliveredDate = isoDatePartAr(consultationStatusRow?.opinion_delivered_at);
+    const opinionNoticeHtml = consultationStatusRow?.opinion_delivered_at
+      ? `${escapeHtml(consultationStatusRow.opinion_text?.trim() || "سُلِّم رأي قانوني على هذه الاستشارة.")}` +
+        (opinionDeliveredDate ? `<br/><br/><strong>تاريخ التسليم:</strong> ${escapeHtml(opinionDeliveredDate)}` : "")
+      : escapeHtml(NO_OPINION_AR);
 
     printWindow.document.write(`
       <html dir="rtl" lang="ar">
@@ -811,7 +906,7 @@ export default function ConsultationRoomPage() {
 
         <div class="section">
           <div class="section-title">الرأي القانوني</div>
-          <div class="notice">${escapeHtml(NO_OPINION_AR)}</div>
+          <div class="notice">${opinionNoticeHtml}</div>
         </div>
 
         <div class="footer">
@@ -989,6 +1084,97 @@ export default function ConsultationRoomPage() {
               </div>
             </div>
 
+            {/* «حالة الاستشارة» — additive: a real consultations row, when one
+                matches this request. Unreadable → a one-line notice + retry.
+                No match (never asked, or asked and found none) → nothing;
+                the request card above already stands on its own. */}
+            {consultView === "unreadable" && (
+              <div className={`flex items-center justify-between gap-3 px-5 py-3 rounded-2xl border text-[12px] font-bold ${
+                isDark ? "bg-amber-900/15 border-amber-700/25 text-amber-300" : "bg-amber-50 border-amber-200 text-amber-800"
+              }`}>
+                <span>تعذّرت قراءة حالة الاستشارة</span>
+                <button
+                  type="button"
+                  onClick={() => setConsultReloadKey((k) => k + 1)}
+                  className="flex items-center gap-1 underline underline-offset-2"
+                >
+                  <ArrowClockwise size={12} /> إعادة المحاولة
+                </button>
+              </div>
+            )}
+            {consultationStatusRow && (
+              <div className={`p-6 rounded-[2rem] border relative space-y-4 ${cardBg}`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-[#0B3D2E] flex items-center justify-center shadow-md">
+                    <CalendarBlank size={24} weight="duotone" className="text-[#C8A762]" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-black text-zinc-900 dark:text-white" style={{ fontFamily: 'var(--font-brand)' }}>
+                      حالة الاستشارة
+                    </h2>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">آخر ما هو مسجَّل على استشارتك لدى المحامي</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-zinc-200/5">
+                  <span className={`inline-flex items-center gap-1.5 text-[11px] font-black px-3 py-1 rounded-full border ${CONSULT_ROW_STATUS_BADGE[consultationStatusRow.status]}`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                    {CONSULTATION_STATUS_AR[consultationStatusRow.status]}
+                  </span>
+                  {consultationStatusRow.mode && (
+                    <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400">
+                      {CONSULTATION_MODE_AR[consultationStatusRow.mode]}
+                    </span>
+                  )}
+                </div>
+
+                {isoDatePartAr(consultationStatusRow.scheduled_at) && (
+                  <div className="flex items-center justify-between text-[12.5px] font-bold py-2 border-t border-zinc-200/5">
+                    <span className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
+                      <CalendarBlank size={14} /> الموعد
+                    </span>
+                    <span className="text-zinc-900 dark:text-white">
+                      {isoDatePartAr(consultationStatusRow.scheduled_at)}
+                      {isoTimePartAr(consultationStatusRow.scheduled_at) ? ` — ${isoTimePartAr(consultationStatusRow.scheduled_at)}` : ""}
+                    </span>
+                  </div>
+                )}
+
+                {typeof consultationStatusRow.duration_minutes === "number" && (
+                  <div className="flex items-center justify-between text-[12.5px] font-bold py-2 border-t border-zinc-200/5">
+                    <span className="text-zinc-500 dark:text-zinc-400">مدة الجلسة</span>
+                    <span className="text-zinc-900 dark:text-white">
+                      {countPhraseAr(consultationStatusRow.duration_minutes, DURATION_FORMS) ?? `${toArabicDigits(consultationStatusRow.duration_minutes)} دقيقة`}
+                    </span>
+                  </div>
+                )}
+
+                {/* The delivered legal opinion — a real column, distinct from
+                    the honest «no opinion issued» panel below (which speaks
+                    only about the request record and is unaware of this
+                    table). Rendered only when the lawyer has actually
+                    delivered one. */}
+                {consultationStatusRow.opinion_delivered_at && (
+                  <div className={`p-5 rounded-2xl border space-y-2 ${isDark ? "bg-emerald-900/10 border-emerald-700/25" : "bg-emerald-50 border-emerald-200"}`}>
+                    <div className="flex items-center gap-2">
+                      <SealCheck size={18} weight="fill" className="text-emerald-500" />
+                      <span className={`text-[12.5px] font-black ${isDark ? "text-emerald-300" : "text-emerald-800"}`}>الرأي القانوني</span>
+                    </div>
+                    {consultationStatusRow.opinion_text && (
+                      <p className={`text-[12.5px] leading-relaxed whitespace-pre-wrap ${isDark ? "text-emerald-100/90" : "text-emerald-900"}`}>
+                        {consultationStatusRow.opinion_text}
+                      </p>
+                    )}
+                    {isoDatePartAr(consultationStatusRow.opinion_delivered_at) && (
+                      <p className={`text-[11px] font-bold ${isDark ? "text-emerald-300/70" : "text-emerald-700/70"}`}>
+                        سُلِّم في {isoDatePartAr(consultationStatusRow.opinion_delivered_at)}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* The client's own submitted text — labelled as exactly that */}
             <div className={`p-6 rounded-[2rem] border relative space-y-4 ${cardBg}`}>
               <div className="flex items-center justify-between border-b border-zinc-200/5 pb-3 gap-3">
@@ -1031,19 +1217,29 @@ export default function ConsultationRoomPage() {
               )}
             </div>
 
-            {/* The honest empty state that replaced the fabricated opinion */}
+            {/* The honest empty state that replaced the fabricated opinion.
+                The claim itself — icon, heading and NO_OPINION_AR — is
+                rendered ONLY when the «حالة الاستشارة» card above did NOT
+                already find a delivered opinion on the real consultations
+                row: that card's own claim («لم يصدر رأي قانوني») is a
+                statement about that same fact, and showing it beside the
+                real opinion above would contradict what the page just
+                displayed. The support actions below stay unconditional —
+                they are not part of that claim. */}
             <div className={`p-6 rounded-[2rem] border relative space-y-4 ${
               isDark ? "bg-amber-900/10 border-amber-700/25" : "bg-amber-50 border-amber-200"
             }`}>
-              <div className="flex items-center gap-2">
-                <Warning size={20} weight="fill" className="text-amber-500" />
-                <span className={`text-[13px] font-black tracking-wider ${isDark ? "text-amber-300" : "text-amber-800"}`}>
-                  الرأي القانوني
-                </span>
-              </div>
-              <p className={`text-[13px] font-semibold leading-relaxed ${isDark ? "text-amber-200/90" : "text-amber-900"}`}>
-                {NO_OPINION_AR}
-              </p>
+              {!consultationStatusRow?.opinion_delivered_at && (<>
+                <div className="flex items-center gap-2">
+                  <Warning size={20} weight="fill" className="text-amber-500" />
+                  <span className={`text-[13px] font-black tracking-wider ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+                    الرأي القانوني
+                  </span>
+                </div>
+                <p className={`text-[13px] font-semibold leading-relaxed ${isDark ? "text-amber-200/90" : "text-amber-900"}`}>
+                  {NO_OPINION_AR}
+                </p>
+              </>)}
               {consultation.orderHref && (
                 <p className={`text-[12px] font-bold leading-relaxed ${isDark ? "text-amber-200/70" : "text-amber-800"}`}>
                   عند إصدار الفريق للمستند يظهر للتحميل في صفحة الطلب.
@@ -1080,7 +1276,9 @@ export default function ConsultationRoomPage() {
             <div className={`p-6 rounded-[2rem] border relative space-y-3 ${cardBg}`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 max-w-md leading-relaxed">
-                  يمكنك تنزيل نسخة مطبوعة من هذا الطلب. النسخة تتضمن نص طلبك وبياناته فقط، ولا تتضمن رأياً قانونياً.
+                  {consultationStatusRow?.opinion_delivered_at
+                    ? "يمكنك تنزيل نسخة مطبوعة من هذا الطلب. النسخة تتضمن نص طلبك وبياناته والرأي القانوني المسلَّم عليه."
+                    : "يمكنك تنزيل نسخة مطبوعة من هذا الطلب. النسخة تتضمن نص طلبك وبياناته فقط، ولا تتضمن رأياً قانونياً."}
                 </p>
                 <div className="flex items-center gap-2">
                   <motion.button

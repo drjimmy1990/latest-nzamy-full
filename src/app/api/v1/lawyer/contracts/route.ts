@@ -224,17 +224,33 @@ export async function POST(request: NextRequest) {
       typeof body.counterpartyName === "string" ? body.counterpartyName.trim() || null : null;
 
     let lawyerClientId: string | null = null;
+    // The linked lawyer_clients row's own platform account, when it has one —
+    // read alongside `id` so a contract created against a client CARD can
+    // still reach that client's «عقودي» even when the caller never passes
+    // clientUserId explicitly (the create form only knows the client card).
+    let linkedClientUserId: string | null = null;
     if (body.lawyerClientId) {
       const { data: clientRow, error: clientErr } = await supabase
-        .from("lawyer_clients").select("id").eq("id", body.lawyerClientId).maybeSingle();
+        .from("lawyer_clients").select("id, client_user_id").eq("id", body.lawyerClientId).maybeSingle();
       if (clientErr) {
         console.error("[lawyer/contracts POST] lawyer_clients lookup failed:", clientErr.message, clientErr.code);
       }
       if (!clientRow) return NextResponse.json({ error: "بطاقة الموكّل غير موجودة" }, { status: 400 });
       lawyerClientId = clientRow.id as string;
+      linkedClientUserId = (clientRow as { client_user_id: string | null }).client_user_id ?? null;
     }
 
-    const clientUserId = typeof body.clientUserId === "string" && body.clientUserId.trim() ? body.clientUserId.trim() : null;
+    // clientUserId — an explicit body value (a string, or an explicit
+    // null/empty meaning "do not share") always wins. Only when the caller
+    // left the field out of the body entirely do we fall back to the linked
+    // lawyer_clients row's own platform account — the one path that lets a
+    // contract created against a client card reach that client's «عقودي»
+    // without the caller having to already know the account id.
+    const clientUserIdExplicit =
+      body.clientUserId !== undefined
+        ? (typeof body.clientUserId === "string" && body.clientUserId.trim() ? body.clientUserId.trim() : null)
+        : undefined;
+    const clientUserId = clientUserIdExplicit !== undefined ? clientUserIdExplicit : linkedClientUserId;
 
     // firm_id — ALWAYS resolved server-side from the creator's own active
     // firm_members row (same lookup as service-requests POST), never trusted

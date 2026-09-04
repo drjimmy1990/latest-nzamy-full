@@ -393,6 +393,14 @@ export const INTAKE_LABELS: Record<string, string> = {
   representing: "الطرف الذي تمثله",
   concerns: "نقاط القلق",
   otherParty: "الطرف الآخر",
+  // Set only when the wizard was opened from an existing contract's «افحص
+  // العقد بالذكاء الاصطناعي» link (src/app/ai/contracts/page.tsx,
+  // ?contract=<id>) — merged into the intake by useContractsState.ts after
+  // validation, since validateContractsIntake's ContractsIntakeV1 shape has
+  // no field for either. Without a label here the fulfilment brief would
+  // print the raw keys «contractId»/«contractTitle».
+  contractId: "معرّف العقد المرتبط",
+  contractTitle: "عنوان العقد المرتبط",
   // shared: parties (draft + contracts)
   parties: "الأطراف",
   one: "الطرف الأول",

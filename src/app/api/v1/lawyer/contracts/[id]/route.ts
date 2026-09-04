@@ -154,24 +154,42 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         : undefined;
 
     let lawyerClientId: string | null | undefined;
+    // Set only when this PATCH re-links to a client CARD that itself carries
+    // a platform account — see the clientUserId fallback below. Left null
+    // when lawyerClientId is being cleared (unlinked), so that branch cannot
+    // contribute a fallback value.
+    let linkedClientUserId: string | null = null;
     if (body.lawyerClientId !== undefined) {
       if (body.lawyerClientId) {
         const { data: clientRow, error: clientErr } = await supabase
-          .from("lawyer_clients").select("id").eq("id", body.lawyerClientId).maybeSingle();
+          .from("lawyer_clients").select("id, client_user_id").eq("id", body.lawyerClientId).maybeSingle();
         if (clientErr) {
           console.error("[lawyer/contracts PATCH] lawyer_clients lookup failed:", clientErr.message, clientErr.code);
         }
         if (!clientRow) return NextResponse.json({ error: "بطاقة الموكّل غير موجودة" }, { status: 400 });
         lawyerClientId = clientRow.id as string;
+        linkedClientUserId = (clientRow as { client_user_id: string | null }).client_user_id ?? null;
       } else {
+        // Unlinking the client card. `client_user_id` — the platform account
+        // the contract is actually SHARED with — is left untouched: clearing
+        // the CRM link must not silently un-share a contract the client can
+        // already see under «عقودي». An explicit clientUserId in this same
+        // body (handled below) can still change it.
         lawyerClientId = null;
       }
     }
 
+    // clientUserId — an explicit body value (a string, or an explicit
+    // null/empty meaning "un-share") always wins. Only when the caller PATCHes
+    // a new lawyerClientId AND leaves clientUserId out of the body entirely do
+    // we adopt that client card's own platform account, mirroring POST — and
+    // only when that card actually has one (linkedClientUserId is null both
+    // when lawyerClientId was not touched this call and when the linked card
+    // has no account, so nothing is patched in either case).
     const clientUserId =
       body.clientUserId !== undefined
         ? (typeof body.clientUserId === "string" && body.clientUserId.trim() ? body.clientUserId.trim() : null)
-        : undefined;
+        : (linkedClientUserId ?? undefined);
 
     // status BECOMES active in this PATCH (not merely "is already active" —
     // that must not stamp a signature date on an unrelated field edit), no
