@@ -4,9 +4,9 @@ import { assertRole } from "@/lib/auth/assertRole";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import { hijriLabelAr } from "@/lib/services/hijri";
 import {
-  parseIsoDate, isoDate, addDays, daysUntil, resolveHolidayDates, computeDueDate,
-  pendingReminderOffsets, type HolidayRule,
+  parseIsoDate, daysUntil, resolveHolidayDates, computeDueDate, type HolidayRule,
 } from "@/lib/services/deadlineEngine";
+import { enqueueDeadlineReminders } from "@/lib/deadlineReminders";
 
 /**
  * /api/v1/lawyer/deadlines — Phase 5 (رادار المهل).
@@ -23,17 +23,17 @@ import {
  *
  * POST also enqueues `notification_outbox` rows for the reminders this
  * deadline asked for (`reminderOffsetsDays`, default {7,3,1}) plus a
- * same-day "due" reminder when the due date is today or later. The table's
- * UNIQUE (deadline_id, recipient_user_id, channel, kind) means a duplicate
- * enqueue (a retried request, a re-run scheduler) is a no-op, not a double
- * notification — 23505 on that insert is expected and swallowed.
+ * same-day "due" reminder when the due date is today or later, via
+ * `enqueueDeadlineReminders` — an upsert on the table's own UNIQUE
+ * (deadline_id, recipient_user_id, channel, kind), so a duplicate enqueue (a
+ * retried request, a re-run scheduler) is a no-op, not a double
+ * notification.
  */
 
 const VALID_STATUS = new Set(["open", "done", "missed", "cancelled"]);
 const VALID_PRIORITY = new Set(["urgent", "high", "normal"]);
 const VALID_KIND = new Set(["statutory", "court_order", "internal", "contract"]);
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const RIYADH_06 = "T06:00:00+03:00";
 
 interface DeadlineRow {
   id: string;
@@ -366,37 +366,14 @@ export async function POST(request: NextRequest) {
     const row = data as DeadlineRow;
 
     // Enqueue reminder + due-date rows. Best-effort: never fails the create.
-    try {
-      const effectiveOffsets = row.reminder_offsets_days ?? [7, 3, 1];
-      const pending = pendingReminderOffsets(finalDueDate, effectiveOffsets);
-      const outboxRows: Record<string, unknown>[] = pending.map((n) => ({
-        deadline_id: row.id,
-        recipient_user_id: user.id,
-        channel: "in_app",
-        kind: `deadline_reminder_${n}d`,
-        scheduled_for: `${isoDate(addDays(parseIsoDate(finalDueDate)!, -n))}${RIYADH_06}`,
-        payload: { title: row.title, dueDate: finalDueDate },
-      }));
-      const left = daysUntil(finalDueDate);
-      if (left !== null && left >= 0) {
-        outboxRows.push({
-          deadline_id: row.id,
-          recipient_user_id: user.id,
-          channel: "in_app",
-          kind: "deadline_due",
-          scheduled_for: `${finalDueDate}${RIYADH_06}`,
-          payload: { title: row.title, dueDate: finalDueDate },
-        });
-      }
-      if (outboxRows.length > 0) {
-        const { error: outboxError } = await supabase.from("notification_outbox").insert(outboxRows);
-        if (outboxError && outboxError.code !== "23505") {
-          console.error("[lawyer/deadlines POST] outbox enqueue failed:", outboxError.message, outboxError.code);
-        }
-      }
-    } catch (outboxErr) {
-      console.error("[lawyer/deadlines POST] outbox enqueue threw:", outboxErr);
-    }
+    await enqueueDeadlineReminders({
+      supabase,
+      deadlineId: row.id,
+      recipientUserId: user.id,
+      title: row.title,
+      dueDate: finalDueDate,
+      offsets: row.reminder_offsets_days,
+    });
 
     // Best-effort activity row for the lawyer's own feed. auto:false marks
     // this as a manually-added deadline, distinct from the case-stages

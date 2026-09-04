@@ -3,6 +3,7 @@ import { assertRole } from "@/lib/auth/assertRole";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import { hijriLabelAr } from "@/lib/services/hijri";
 import { parseIsoDate, daysUntil } from "@/lib/services/deadlineEngine";
+import { enqueueDeadlineReminders, cancelPendingDeadlineReminders } from "@/lib/deadlineReminders";
 
 /**
  * /api/v1/lawyer/deadlines/[id] — Phase 5 (رادار المهل).
@@ -10,11 +11,16 @@ import { parseIsoDate, daysUntil } from "@/lib/services/deadlineEngine";
  * PATCH only. A rule-computed deadline (`computed_by_rule = true`) cannot
  * have its `due_date` edited here — the engine, not a hand edit, is what
  * produced that date; recreate it instead. Marking a deadline done/cancelled
- * also cancels its still-pending `notification_outbox` rows so a reminder
- * never fires for a deadline the lawyer already closed; re-opening a
- * deadline does NOT re-queue them (the same reminder cannot fire twice per
- * the outbox's UNIQUE constraint, and a stale "reminder" for something
- * that's already moving again is not useful).
+ * cancels its still-pending `notification_outbox` rows so a reminder never
+ * fires for a deadline the lawyer already closed. Re-dating a manual
+ * deadline, or reopening one (status back to `open`), cancels then
+ * re-queues: `cancelPendingDeadlineReminders` invalidates whatever kinds no
+ * longer fit the new schedule, and `enqueueDeadlineReminders` — an upsert
+ * keyed on the outbox's own UNIQUE (deadline_id, recipient_user_id, channel,
+ * kind) — revives every kind the new schedule still wants (however it was
+ * left: pending, cancelled, or sent) and inserts any kind that never had a
+ * row at all. See that function's own header for why the upsert, not a
+ * plain insert, is what makes this safe.
  */
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -100,7 +106,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     const { data: existing, error: fetchError } = await supabase
       .from("deadlines")
-      .select("id, trigger_date, computed_by_rule, status, owner_user_id, firm_id, case_request_id")
+      .select("id, trigger_date, due_date, computed_by_rule, status, owner_user_id, firm_id, case_request_id")
       .eq("id", id)
       .maybeSingle();
     if (fetchError) {
@@ -181,13 +187,24 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
 
     if (status === "done" || status === "cancelled") {
-      const { error: outboxError } = await supabase
-        .from("notification_outbox")
-        .update({ status: "cancelled" })
-        .eq("deadline_id", id)
-        .eq("status", "pending");
-      if (outboxError) {
-        console.error("[lawyer/deadlines PATCH] outbox cancel failed:", outboxError.message, outboxError.code);
+      await cancelPendingDeadlineReminders(supabase, id);
+    } else {
+      // Re-dating a manual deadline, or reopening one, invalidates whatever
+      // was queued for the old schedule — requeue for the row as it stands
+      // after this update.
+      const redated = dueDate !== undefined && dueDate !== existing.due_date;
+      const reopened = status === "open" && existing.status !== "open";
+      if (redated || reopened) {
+        const finalRow = data as DeadlineRow;
+        await cancelPendingDeadlineReminders(supabase, id);
+        await enqueueDeadlineReminders({
+          supabase,
+          deadlineId: id,
+          recipientUserId: existing.owner_user_id,
+          title: finalRow.title,
+          dueDate: finalRow.due_date,
+          offsets: finalRow.reminder_offsets_days,
+        });
       }
     }
 

@@ -15,7 +15,8 @@ test("every status, mode and outcome has an Arabic label — no raw token can re
 
 test("the lifecycle: requested → scheduled → completed; terminal states stay terminal", () => {
   assert.equal(canTransitionConsultation("requested", "scheduled"), true);
-  assert.equal(canTransitionConsultation("requested", "completed"), false, "cannot complete what was never scheduled");
+  assert.equal(canTransitionConsultation("requested", "completed"), true, "a written consultation is answered without a session");
+  assert.equal(canTransitionConsultation("requested", "no_show"), false, "nobody can miss a session that was never scheduled");
   assert.equal(canTransitionConsultation("scheduled", "scheduled"), true, "re-scheduling is allowed");
   assert.equal(canTransitionConsultation("scheduled", "completed"), true);
   assert.equal(canTransitionConsultation("scheduled", "no_show"), true);

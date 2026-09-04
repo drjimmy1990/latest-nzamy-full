@@ -10,6 +10,7 @@ import Link from "next/link";
 import { listClientWorkflowRequests } from "@/lib/clientWorkflowRepository";
 import type { WorkflowRequest, WorkflowRequestStatus } from "@/lib/workflowStore";
 import { getConsultations } from "@/lib/services";
+import type { ConsultationStatus } from "@/lib/services/consultationVocabulary";
 import {
   listOk,
   listFailed,
@@ -142,14 +143,26 @@ const REQUEST_STATUS_AR: Record<WorkflowRequestStatus, string> = {
   cancelled: "ملغى",
 };
 
-/** The status union of a `getConsultations()` row (casesService.ts:32). */
-type ServiceConsultStatus = "requested" | "scheduled" | "completed" | "cancelled";
+/**
+ * The status union of a `getConsultations()` row — consultationVocabulary.ts's
+ * `ConsultationStatus` (5 values; 20260905_phase3 added `no_show` and put a
+ * real CHECK behind the column, which is why this is imported rather than
+ * re-typed — house rule: vocabularies come from consultationVocabulary.ts /
+ * contractVocabulary.ts, never a second hand-typed list).
+ */
+type ServiceConsultStatus = ConsultationStatus;
 
+// This page's ConsultStatus has no fourth bucket for a no-show — it is not
+// "upcoming" (nothing is coming) and not really "completed" either, so it
+// joins "cancelled": the same "session did not happen" shelf a client reads
+// as ملغية. Widening ConsultStatus itself is the real fix but redesigns this
+// page's filter chips/counts, which is out of scope here.
 const CONSULT_STATUS_BY_SERVICE_STATUS: Record<ServiceConsultStatus, ConsultStatus> = {
   requested: "upcoming",
   scheduled: "upcoming",
   completed: "completed",
   cancelled: "cancelled",
+  no_show: "cancelled",
 };
 
 const SERVICE_STATUS_AR: Record<ServiceConsultStatus, string> = {
@@ -157,6 +170,7 @@ const SERVICE_STATUS_AR: Record<ServiceConsultStatus, string> = {
   scheduled: "موعد مجدول",
   completed: "مكتمل",
   cancelled: "ملغى",
+  no_show: "لم يحضر",
 };
 
 /**
@@ -447,7 +461,14 @@ export default function ConsultationListPage() {
                 // filled in as 0, which rendered «٠ ر.س» — a stated price,
                 // invented.
                 price: null,
-                notes: sc.notes,
+                // `notes` was dropped from casesService.ts's `Consultation`
+                // (2026-09-05, phase 3): it was never a real column on this
+                // row — the lawyer's private notes live in
+                // `consultation_notes`, which this client-facing read never
+                // sees (DECISION 3). This card's own `notes` field stays
+                // optional and simply goes unset for service-sourced rows,
+                // same as it already does for workflow-sourced ones
+                // (toConsultation below never sets it either).
               };
             }),
           )

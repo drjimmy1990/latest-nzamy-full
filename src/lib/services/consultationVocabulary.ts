@@ -46,10 +46,12 @@ export const CONSULTATION_OUTCOME_AR: Record<ConsultationOutcome, string> = {
 
 /**
  * Which status may follow which. `completed` and `cancelled` are terminal;
- * a scheduled consultation may be re-scheduled (scheduled → scheduled).
+ * a scheduled consultation may be re-scheduled (scheduled → scheduled); a
+ * written consultation is answered without a session (requested → completed,
+ * which is what delivering the opinion does).
  */
 export const CONSULTATION_TRANSITIONS: Record<ConsultationStatus, readonly ConsultationStatus[]> = {
-  requested: ["scheduled", "cancelled"],
+  requested: ["scheduled", "completed", "cancelled"],
   scheduled: ["scheduled", "completed", "cancelled", "no_show"],
   no_show:   ["scheduled", "cancelled"],
   completed: [],

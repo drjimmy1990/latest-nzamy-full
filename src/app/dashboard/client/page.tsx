@@ -188,15 +188,18 @@ function readNextAppointment(value: unknown): {
     // against the row; «بانتظار تعيين المحامي» would assert an assignment
     // process is under way, which no column here states.
     //
-    // EXPECT THIS LINE NEVER TO APPEAR TODAY, and do not go hunting for a bug
-    // when it doesn't. Nothing in this repository sets `lawyer_user_id` after
-    // the row exists — the PATCH allow-list is ["status", "scheduled_at",
-    // "notes"] (consultations/[id]/route.ts:79) — and the booking wizard does
-    // not set it at creation either (IS_BETA is true in
-    // clientConsultationData.ts, so the system assigns and the client never
-    // picks). The branch is kept because the column is real and the day
-    // something writes it this card is already correct; it is not kept to
-    // display anything now.
+    // UPDATE (2026-09-05, phase 3): this line CAN appear now, and that is
+    // correct, not a bug to chase. The legacy PATCH's allow-list dropped to
+    // ["status", "scheduled_at"] (`notes` was never a real column —
+    // consultations/[id]/route.ts) and it still never writes `lawyer_user_id`
+    // — but 20260905_phase3_consultations_and_contracts.sql's
+    // `consultation_follow_service_request()` trigger now sets
+    // `lawyer_user_id = coalesce(new.assigned_to, c.lawyer_user_id)`
+    // whenever the parent service_request's `assigned_to` changes, i.e. the
+    // moment a lawyer picks up the request. The booking wizard still never
+    // sets it at creation (IS_BETA is true in clientConsultationData.ts, so
+    // the system assigns and the client never picks), so this stays null
+    // until assignment, then flips true.
     assignedLabel: readText(value.lawyer_user_id) ? "تم تعيين محامٍ" : null,
   };
 }
