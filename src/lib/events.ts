@@ -171,6 +171,11 @@ export const RequestEvent = {
   HEARING_CREATED: "hearing.created",
   CASE_STAGE_ADDED: "case_stage.added",
   CASE_STAGE_OUTCOME_RECORDED: "case_stage.outcome_recorded",
+  // Phase 5 (2026-09-04): رادار المهل — written by /api/v1/lawyer/deadlines
+  // (POST / PATCH status) and by the judgment hook in case-stages PATCH,
+  // which sets payload.auto = true so the feed can say the clock started itself.
+  DEADLINE_CREATED: "deadline.created",
+  DEADLINE_STATUS_CHANGED: "deadline.status_changed",
   PAYMENT_CREATED: "payment.created",
 } as const;
 
@@ -190,6 +195,7 @@ export type ActivityBadge =
   | "contract"
   | "hearing"
   | "stage"
+  | "deadline"
   | "client";
 
 export interface DescribedEvent {
@@ -359,6 +365,21 @@ export function describeActivityEvent(opts: {
       };
       const outcome = typeof payload.outcome === "string" ? outcomeAr[payload.outcome] ?? "" : "";
       return { title: outcome ? `تم تسجيل نتيجة درجة تقاضٍ: ${outcome}` : "تم تسجيل نتيجة درجة تقاضٍ", badge: "stage" };
+    }
+    case RequestEvent.DEADLINE_CREATED: {
+      const head = payload.auto === true ? "حُسبت مهلة نظامية تلقائياً" : "تمت إضافة مهلة";
+      return { title: title ? `${head}: ${title}` : head, badge: "deadline" };
+    }
+    case RequestEvent.DEADLINE_STATUS_CHANGED: {
+      const status = typeof payload.status === "string" ? payload.status : "";
+      const statusAr =
+        status === "done" ? "تمّت"
+        : status === "cancelled" ? "أُلغيت"
+        : status === "missed" ? "فاتت"
+        : status === "open" ? "أُعيد فتحها"
+        : "";
+      const suffix = statusAr ? ` — ${statusAr}` : "";
+      return { title: title ? `تحديث حالة مهلة: ${title}${suffix}` : `تحديث حالة مهلة${suffix}`, badge: "deadline" };
     }
     default:
       return { title: "نشاط جديد مسجَّل", badge: "notice" };

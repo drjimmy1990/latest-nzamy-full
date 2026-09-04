@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import Link from "next/link";
 import {
   Timer, Plus, ArrowClockwise, CircleNotch, Warning, CalendarBlank,
-  Scales, ClockCountdown, SealCheck, SealWarning, Info,
+  ClockCountdown, SealCheck, SealWarning, Info,
 } from "@phosphor-icons/react";
 
 import { useTheme } from "@/components/ThemeProvider";
@@ -19,35 +18,7 @@ import {
   type Deadline, type DeadlineRule, type HolidayRule, type DeadlineStatus,
 } from "@/lib/services/deadlinesService";
 import AddDeadlineModal from "../_components/AddDeadlineModal";
-
-// ─── Arabic date formatting (Gregorian only — the Hijri half comes straight
-// from the row's own `dueDateHijri`, never recomputed on this screen, so a
-// runtime without Umm al-Qura data cannot silently disagree with the server
-// that already checked). ──────────────────────────────────────────────────────
-const AR_MONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
-
-function formatGregorianAr(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return iso;
-  const year = Number(m[1]);
-  const month = Number(m[2]);
-  const day = Number(m[3]);
-  const monthName = AR_MONTHS[month - 1];
-  if (!monthName) return iso;
-  return `${toArabicDigits(day)} ${monthName} ${toArabicDigits(year)}`;
-}
-
-// ─── Days-left chip ──────────────────────────────────────────────────────────
-function daysLeftChip(daysLeft: number | null, isDark: boolean): { label: string; cls: string } | null {
-  if (daysLeft === null) return null;
-  const red = isDark ? "bg-red-500/10 text-red-400 border-red-500/20" : "bg-red-50 text-red-600 border-red-200";
-  const amber = isDark ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-600 border-amber-200";
-  const neutral = isDark ? "bg-white/[0.06] text-zinc-300 border-white/[0.08]" : "bg-slate-100 text-slate-600 border-slate-200";
-  if (daysLeft < 0) return { label: `متأخرة ${toArabicDigits(Math.abs(daysLeft))} يوماً`, cls: red };
-  if (daysLeft === 0) return { label: "اليوم", cls: red };
-  if (daysLeft <= 3) return { label: `متبقٍّ ${toArabicDigits(daysLeft)} أيام`, cls: amber };
-  return { label: `متبقٍّ ${toArabicDigits(daysLeft)} يوماً`, cls: neutral };
-}
+import DeadlineCard, { formatGregorianAr, AR_MONTHS } from "../_components/DeadlineCard";
 
 // ─── «العطل الرسمية» shape in words ────────────────────────────────────────────
 function holidayShapeAr(h: HolidayRule): string {
@@ -285,73 +256,16 @@ export default function LawyerDeadlinesPage() {
         </div>
       ) : (
         <div className="space-y-2.5">
-          {rows.map((d) => {
-            const chip = daysLeftChip(d.daysLeft, isDark);
-            const busy = !!rowBusy[d.id];
-            const actionable = d.status === "open" || d.status === "missed";
-            return (
-              <div key={d.id} className={`${card} p-4`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className={`font-bold text-[13px] ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{d.title}</p>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
-                      <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-                        {formatGregorianAr(d.dueDate)}{d.dueDateHijri ? ` · ${d.dueDateHijri}` : ""}
-                      </span>
-                      {d.caseRequestId && (
-                        <Link href={`/dashboard/lawyer/cases/${d.caseRequestId}`} className={`flex items-center gap-1 text-[11px] font-semibold hover:underline ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>
-                          <Scales size={11} /> القضية
-                        </Link>
-                      )}
-                    </div>
-                    {d.rolledFromHoliday && (
-                      <p className={`mt-1.5 text-[10.5px] flex items-center gap-1 ${isDark ? "text-amber-400" : "text-amber-600"}`}>
-                        <Info size={11} /> رُحِّلت لأول يوم عمل بعد عطلة/عطلة نهاية الأسبوع
-                      </p>
-                    )}
-                    {d.ruleTitleAr && (
-                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-slate-100 text-slate-600"}`}>
-                          {d.ruleTitleAr}
-                        </span>
-                        {d.ruleVerified === false && (
-                          <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"}`}>
-                            <SealWarning size={10} /> قاعدة افتراضية — تحتاج مراجعتك
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {rowError[d.id] && (
-                      <p className={`mt-1.5 text-[10.5px] ${isDark ? "text-red-400" : "text-red-600"}`}>{rowError[d.id]}</p>
-                    )}
-                  </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    {chip && (
-                      <span className={`rounded-full border px-2.5 py-1 text-[10.5px] font-bold ${chip.cls}`}>{chip.label}</span>
-                    )}
-                    {actionable && (
-                      <div className="flex gap-1.5">
-                        <button
-                          disabled={busy}
-                          onClick={() => handleRowAction(d, "done")}
-                          className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition disabled:opacity-50 ${isDark ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
-                        >
-                          تمّ
-                        </button>
-                        <button
-                          disabled={busy}
-                          onClick={() => handleRowAction(d, "cancelled")}
-                          className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition disabled:opacity-50 ${isDark ? "bg-white/[0.06] text-zinc-400 hover:bg-white/[0.1]" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
-                        >
-                          إلغاء
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {rows.map((d) => (
+            <DeadlineCard
+              key={d.id}
+              deadline={d}
+              isDark={isDark}
+              busy={!!rowBusy[d.id]}
+              error={rowError[d.id] ?? null}
+              onAction={(next) => handleRowAction(d, next)}
+            />
+          ))}
         </div>
       )}
 

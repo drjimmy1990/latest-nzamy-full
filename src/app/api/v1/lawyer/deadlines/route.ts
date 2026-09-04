@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
+import { recordActivity, RequestEvent } from "@/lib/events";
 import { hijriLabelAr } from "@/lib/services/hijri";
 import {
   parseIsoDate, isoDate, addDays, daysUntil, resolveHolidayDates, computeDueDate,
@@ -395,6 +396,25 @@ export async function POST(request: NextRequest) {
       }
     } catch (outboxErr) {
       console.error("[lawyer/deadlines POST] outbox enqueue threw:", outboxErr);
+    }
+
+    // Best-effort activity row for the lawyer's own feed. auto:false marks
+    // this as a manually-added deadline, distinct from the case-stages
+    // judgment hook's auto-created rows.
+    try {
+      await recordActivity({
+        supabase,
+        kind: RequestEvent.DEADLINE_CREATED,
+        ownerUserId: user.id,
+        firmId,
+        actorUserId: user.id,
+        caseRequestId: row.case_request_id ?? null,
+        subjectTable: "deadlines",
+        subjectId: row.id,
+        payload: { title: row.title, dueDate: row.due_date, auto: false, computedByRule: row.computed_by_rule },
+      });
+    } catch (activityErr) {
+      console.error("[lawyer/deadlines POST] activity record failed:", activityErr);
     }
 
     const ruleInfo = ruleId

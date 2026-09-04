@@ -10,7 +10,7 @@ import {
   ArrowUpRight, CheckCircle, Warning, PencilSimple, Scales,
   MapPin, MoneyWavy, Robot, FolderOpen, Eye, CheckSquare,
   Graph, UsersThree, Circle, DotsThree,
-  ArrowsOut, ArrowsIn, Spinner, ArrowClockwise,
+  ArrowsOut, ArrowsIn, Spinner, ArrowClockwise, Timer,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -18,8 +18,16 @@ import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount
 import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearingsService";
 import { getCaseStages, type CaseStage } from "@/lib/services/caseStagesService";
 import { caseEventLabel } from "@/lib/services/caseEventLabels";
+import {
+  getDeadlines,
+  updateDeadline,
+  type Deadline,
+} from "@/lib/services/deadlinesService";
 import AddHearingModal from "../../_components/AddHearingModal";
 import AddCaseStageModal from "../../_components/AddCaseStageModal";
+import AddDeadlineModal from "../../_components/AddDeadlineModal";
+import RecordStageOutcomeModal from "../../_components/RecordStageOutcomeModal";
+import DeadlineCard from "../../_components/DeadlineCard";
 import dynamic from "next/dynamic";
 import {
   itemsOf,
@@ -73,6 +81,14 @@ const DOCUMENTS_COUNT: ArabicCountForms = {
   many: "مستنداً",
 };
 
+const DEADLINES_COUNT: ArabicCountForms = {
+  zero: "لا مهل مسجَّلة",
+  one: "مهلة واحدة مسجَّلة",
+  two: "مهلتان مسجَّلتان",
+  few: "مهل مسجَّلة",
+  many: "مهلة مسجَّلة",
+};
+
 
 const CaseGraphView = dynamic(
   () => import("@/app/dashboard/business/kanban/CaseGraphView"),
@@ -122,7 +138,7 @@ const STATUS_CONFIG: Record<CaseStatus, { label: string; color: string; dot: str
   cancelled: { label: "ملغاة",  color: "text-rose-500 bg-rose-500/10 border-rose-500/20",          dot: "bg-rose-400" },
 };
 
-/** درجات التقاضي outcomes — `public.case_stages.outcome`, read-only in v1 (no PATCH UI yet, so a stage sits here as "pending" until a later wave adds one). */
+/** درجات التقاضي outcomes — `public.case_stages.outcome`, edited from this tab via RecordStageOutcomeModal (PATCH /api/v1/lawyer/case-stages/[caseId]). */
 const OUTCOME_CONFIG: Record<string, { label: string; color: string }> = {
   pending:   { label: "قيد النظر", color: "text-amber-500 bg-amber-500/10 border-amber-500/20" },
   won:       { label: "كسب القضية", color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" },
@@ -192,6 +208,7 @@ const TABS = [
   { id: "tasks",     label: "المهام",      icon: CheckSquare },
   { id: "hearings",  label: "الجلسات",     icon: CalendarCheck },
   { id: "stages",    label: "درجات التقاضي", icon: Scales },
+  { id: "deadlines", label: "المهل",       icon: Timer },
   { id: "documents", label: "المستندات",   icon: FolderOpen },
   { id: "team",      label: "الفريق",      icon: UsersThree },
   { id: "graph",     label: "خريطة القضية", icon: Graph },
@@ -346,6 +363,16 @@ export default function CaseDetailPage() {
   const [stagesRead, setStagesRead] = useState<ListRead<CaseStage> | null>(null);
   const [stagesLoading, setStagesLoading] = useState(true);
   const [showAddStage, setShowAddStage] = useState(false);
+  // The stage currently open in RecordStageOutcomeModal — null closes it.
+  const [editingStage, setEditingStage] = useState<CaseStage | null>(null);
+
+  // ── المهل linked to this case (Phase 5, public.deadlines) ──
+  const [deadlinesRead, setDeadlinesRead] = useState<ListRead<Deadline> | null>(null);
+  const [deadlinesLoading, setDeadlinesLoading] = useState(true);
+  const [showAddDeadline, setShowAddDeadline] = useState(false);
+  // Optimistic «تمّ / إلغاء» on one row, mirroring رادار المهل's handleRowAction.
+  const [deadlineRowBusy, setDeadlineRowBusy] = useState<Record<string, boolean>>({});
+  const [deadlineRowError, setDeadlineRowError] = useState<Record<string, string>>({});
   const user = useUser();
   // Declared here (not beside loadCaseHearings further down) because the
   // `hearings` useMemo below reads it, and hooks below its own declaration
@@ -524,6 +551,20 @@ export default function CaseDetailPage() {
 
   useEffect(() => { loadCaseStages(); }, [loadCaseStages]);
 
+  // ── المهل linked to this case ──
+  // GET /api/v1/lawyer/deadlines?caseId=<this case>&status=all — loaded eagerly
+  // on mount, same as hearings/stages above, so the tab's count is right the
+  // first time the lawyer opens it rather than only after they click the tab.
+  const loadDeadlines = useCallback(() => {
+    if (!id) return;
+    setDeadlinesLoading(true);
+    getDeadlines({ caseId: id, status: "all", limit: 200 })
+      .then(setDeadlinesRead)
+      .finally(() => setDeadlinesLoading(false));
+  }, [id]);
+
+  useEffect(() => { loadDeadlines(); }, [loadDeadlines]);
+
   // AddHearingModal dispatches this on a confirmed save (same signal the
   // standalone diary listens for) — without it, a hearing added from this
   // very case file would not appear until the page was reloaded.
@@ -535,6 +576,50 @@ export default function CaseDetailPage() {
 
   const stagesView = listViewState(stagesLoading, stagesRead);
   const caseStages = itemsOf(stagesRead);
+
+  const deadlinesView = listViewState(deadlinesLoading, deadlinesRead);
+  const caseDeadlines = itemsOf(deadlinesRead);
+  // Open/missed need attention first (soonest due date on top); done/cancelled
+  // are history, most recent first. Together the two filters are exhaustive
+  // over DeadlineStatus — every row lands in exactly one of them.
+  const sortedDeadlines = [
+    ...caseDeadlines
+      .filter((d) => d.status === "open" || d.status === "missed")
+      .slice()
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+    ...caseDeadlines
+      .filter((d) => d.status === "done" || d.status === "cancelled")
+      .slice()
+      .sort((a, b) => b.dueDate.localeCompare(a.dueDate)),
+  ];
+  // Gates the header count — an unreadable/loading read must never print
+  // «لا مهل مسجَّلة» (itemsOf returns [] for a failed read too), which is
+  // exactly the false "empty" claim listRead.ts exists to prevent.
+  const deadlinesKnown = deadlinesView === "ready" || deadlinesView === "empty";
+
+  // Optimistic «تمّ / إلغاء» on one deadline row, rolled back on failure —
+  // mirrors رادار المهل's handleRowAction (src/app/dashboard/lawyer/deadlines/page.tsx).
+  const handleDeadlineAction = async (deadline: Deadline, next: "done" | "cancelled") => {
+    setDeadlineRowBusy((b) => ({ ...b, [deadline.id]: true }));
+    setDeadlineRowError((e) => { const n = { ...e }; delete n[deadline.id]; return n; });
+    setDeadlinesRead((prev) => (prev && prev.ok
+      ? listOk(prev.items.map((d) => (d.id === deadline.id ? { ...d, status: next } : d)), prev.total)
+      : prev));
+    try {
+      await updateDeadline(deadline.id, { status: next });
+      loadDeadlines();
+    } catch (err) {
+      setDeadlinesRead((prev) => (prev && prev.ok
+        ? listOk(prev.items.map((d) => (d.id === deadline.id ? deadline : d)), prev.total)
+        : prev));
+      setDeadlineRowError((e) => ({
+        ...e,
+        [deadline.id]: err instanceof Error && err.message ? err.message : "تعذّر تحديث المهلة.",
+      }));
+    } finally {
+      setDeadlineRowBusy((b) => ({ ...b, [deadline.id]: false }));
+    }
+  };
 
   const tasksView = listViewState(tasksLoading, tasksRead);
   const tasks = itemsOf(tasksRead);
@@ -1316,7 +1401,13 @@ export default function CaseDetailPage() {
                             )}
                           </div>
                         </div>
-                        <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border whitespace-nowrap ${outcome.color}`}>{outcome.label}</span>
+                        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border whitespace-nowrap ${outcome.color}`}>{outcome.label}</span>
+                          <button onClick={() => setEditingStage(s)}
+                            className={`text-[11px] font-bold whitespace-nowrap hover:underline ${isDark ? "text-[#C8A762]" : "text-royal"}`}>
+                            {!s.outcome || s.outcome === "pending" ? "تسجيل النتيجة" : "تعديل النتيجة"}
+                          </button>
+                        </div>
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px]">
                         {s.courtCaseNo && (
@@ -1331,6 +1422,9 @@ export default function CaseDetailPage() {
                         {s.openedOn && (
                           <span className={isDark ? "text-zinc-500" : "text-slate-400"}>فُتحت في {formatHearingDate(s.openedOn)}</span>
                         )}
+                        {s.closedOn && (
+                          <span className={isDark ? "text-zinc-500" : "text-slate-400"}>أُغلقت في {formatHearingDate(s.closedOn)}</span>
+                        )}
                       </div>
                       {s.notes && (
                         <p className={`text-[12px] mt-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{s.notes}</p>
@@ -1338,6 +1432,61 @@ export default function CaseDetailPage() {
                     </motion.div>
                   );
                 })
+              )}
+            </div>
+          )}
+
+          {/* ── المهل ── */}
+          {activeTab === "deadlines" && (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                  {deadlinesKnown ? countPhraseAr(caseDeadlines.length, DEADLINES_COUNT) : "المهل"}
+                </p>
+                <button onClick={() => setShowAddDeadline(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22] transition-colors">
+                  <Plus size={12} weight="bold" />إضافة مهلة
+                </button>
+              </div>
+              {deadlinesView === "loading" ? (
+                <div className={`${card} p-10 flex items-center justify-center gap-2`}>
+                  <Spinner size={20} className="text-royal animate-spin" />
+                  <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل المهل...</span>
+                </div>
+              ) : deadlinesView === "unreadable" ? (
+                <div className={`${card} p-10 flex flex-col items-center justify-center`}>
+                  <Warning size={32} weight="duotone" className="mb-3 text-red-500" />
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّرت قراءة المهل</p>
+                  <p className={`text-[11px] mt-1 text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                    هذه ليست قائمة فارغة — قد توجد مهل لم تُقرأ.
+                  </p>
+                  <button onClick={loadDeadlines}
+                    className="mt-3 flex items-center gap-1.5 text-[12px] font-bold text-royal hover:underline">
+                    <ArrowClockwise size={13} /> إعادة المحاولة
+                  </button>
+                </div>
+              ) : deadlinesView === "empty" ? (
+                <div className={`${card} p-10 flex flex-col items-center justify-center text-center`}>
+                  <Timer size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا مهل لهذه القضية بعد</p>
+                  <p className={`text-[11px] mt-1 max-w-[320px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                    أضف مهلة، أو سجّل نتيجة درجة تقاضٍ بتاريخ إغلاق وستُحسب مهلة الاعتراض تلقائياً.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {sortedDeadlines.map((d) => (
+                    <DeadlineCard
+                      key={d.id}
+                      deadline={d}
+                      isDark={isDark}
+                      showCaseLink={false}
+                      busy={!!deadlineRowBusy[d.id]}
+                      error={deadlineRowError[d.id] ?? null}
+                      onAction={(next) => handleDeadlineAction(d, next)}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -1590,6 +1739,37 @@ export default function CaseDetailPage() {
           caseRequestId={id}
           onCreated={(created) => {
             if (stagesRead?.ok) setStagesRead(listOk([...stagesRead.items, created]));
+          }}
+        />
+      )}
+
+      {editingStage && (
+        <RecordStageOutcomeModal
+          onClose={() => setEditingStage(null)}
+          isDark={isDark}
+          caseRequestId={id}
+          stage={editingStage}
+          onSaved={(savedStage, autoDeadline) => {
+            if (stagesRead?.ok) {
+              setStagesRead(listOk(
+                stagesRead.items.map((s) => (s.id === savedStage.id ? savedStage : s)),
+                stagesRead.total,
+              ));
+            }
+            setEditingStage(null);
+            if (autoDeadline?.created) loadDeadlines();
+          }}
+        />
+      )}
+
+      {showAddDeadline && (
+        <AddDeadlineModal
+          onClose={() => setShowAddDeadline(false)}
+          isDark={isDark}
+          caseRequestId={id}
+          onCreated={() => {
+            setShowAddDeadline(false);
+            loadDeadlines();
           }}
         />
       )}

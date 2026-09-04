@@ -40,7 +40,7 @@ import {
   Briefcase, ArrowRight, CalendarCheck, Clock, Buildings,
   FileText, ChartLine, Plus, Download, UploadSimple,
   ArrowUpRight, CheckCircle, Warning, Scales,
-  CheckSquare, FolderOpen, Eye, Graph, Spinner, ArrowClockwise,
+  CheckSquare, FolderOpen, Eye, Graph, Spinner, ArrowClockwise, Timer,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -69,17 +69,25 @@ import {
 } from "@/lib/services/lawyerTasksService";
 import { getCaseStages, type CaseStage } from "@/lib/services/caseStagesService";
 import {
+  getDeadlines,
+  updateDeadline,
+  type Deadline,
+} from "@/lib/services/deadlinesService";
+import {
   uploadDocumentFile,
   getDocumentFileUrl,
   isDocumentTimeoutError,
 } from "@/lib/services/documentService";
 import AddHearingModal from "../../../lawyer/_components/AddHearingModal";
 import AddCaseStageModal from "../../../lawyer/_components/AddCaseStageModal";
+import AddDeadlineModal from "../../../lawyer/_components/AddDeadlineModal";
+import DeadlineCard from "../../../lawyer/_components/DeadlineCard";
+import RecordStageOutcomeModal from "../../../lawyer/_components/RecordStageOutcomeModal";
 import LegalCanvas from "./LegalCanvas";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type CaseTab = "overview" | "tasks" | "hearings" | "stages" | "documents" | "canvas";
+type CaseTab = "overview" | "tasks" | "hearings" | "stages" | "deadlines" | "documents" | "canvas";
 type CaseStatus = "active" | "pending" | "suspended" | "closed" | "cancelled";
 type TaskStatus = "todo" | "inprogress" | "done";
 
@@ -115,6 +123,7 @@ const TABS: { id: CaseTab; label: string; icon: React.ElementType }[] = [
   { id: "tasks",     label: "المهام",         icon: CheckSquare },
   { id: "hearings",  label: "الجلسات",        icon: CalendarCheck },
   { id: "stages",    label: "درجات التقاضي",  icon: Scales },
+  { id: "deadlines", label: "المهل",          icon: Timer },
   { id: "documents", label: "المستندات",      icon: FolderOpen },
   { id: "canvas",    label: "خريطة القضية",   icon: Graph },
 ];
@@ -150,6 +159,14 @@ const STAGES_COUNT: ArabicCountForms = {
   two: "درجتا تقاضٍ",
   few: "درجات تقاضٍ",
   many: "درجة تقاضٍ",
+};
+
+const DEADLINES_COUNT: ArabicCountForms = {
+  zero: "لا مهل مسجّلة",
+  one: "مهلة واحدة",
+  two: "مهلتان",
+  few: "مهل",
+  many: "مهلة",
 };
 
 const DOCUMENTS_COUNT: ArabicCountForms = {
@@ -295,6 +312,14 @@ export default function FirmCaseDetailsPage() {
   const [stagesRead, setStagesRead] = useState<ListRead<CaseStage> | null>(null);
   const [stagesLoading, setStagesLoading] = useState(true);
   const [showAddStage, setShowAddStage] = useState(false);
+  const [outcomeStage, setOutcomeStage] = useState<CaseStage | null>(null);
+
+  // ── المهل (public.deadlines, this case) ──
+  const [deadlinesRead, setDeadlinesRead] = useState<ListRead<Deadline> | null>(null);
+  const [deadlinesLoading, setDeadlinesLoading] = useState(true);
+  const [showAddDeadline, setShowAddDeadline] = useState(false);
+  const [deadlineRowBusy, setDeadlineRowBusy] = useState<Record<string, boolean>>({});
+  const [deadlineRowError, setDeadlineRowError] = useState<Record<string, string>>({});
 
   // ── Documents ──
   const [uploading, setUploading] = useState(false);
@@ -446,6 +471,60 @@ export default function FirmCaseDetailsPage() {
 
   const stagesView = listViewState(stagesLoading, stagesRead);
   const caseStages = itemsOf(stagesRead);
+
+  // ── المهل ──
+  const loadCaseDeadlines = useCallback(() => {
+    if (!id) return;
+    setDeadlinesLoading(true);
+    getDeadlines({ caseId: id, status: "all", limit: 200 })
+      .then(setDeadlinesRead)
+      .finally(() => setDeadlinesLoading(false));
+  }, [id]);
+
+  useEffect(() => { loadCaseDeadlines(); }, [loadCaseDeadlines]);
+
+  const deadlinesView = listViewState(deadlinesLoading, deadlinesRead);
+  const caseDeadlines = itemsOf(deadlinesRead);
+  const deadlinesKnown = deadlinesView === "ready" || deadlinesView === "empty";
+  // Open/missed need attention first (soonest due date on top); done/cancelled
+  // are history, most recent first. Together the two filters are exhaustive
+  // over DeadlineStatus — every row lands in exactly one of them. Mirrors the
+  // lawyer case page's sortedDeadlines so the same case reads the same way
+  // from either dashboard.
+  const sortedDeadlines = [
+    ...caseDeadlines
+      .filter((d) => d.status === "open" || d.status === "missed")
+      .slice()
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+    ...caseDeadlines
+      .filter((d) => d.status === "done" || d.status === "cancelled")
+      .slice()
+      .sort((a, b) => b.dueDate.localeCompare(a.dueDate)),
+  ];
+
+  // Optimistic «تمّ»/«إلغاء» — copied from رادار المهل's handleRowAction so
+  // the same row action feels identical on both screens.
+  async function handleDeadlineRowAction(deadline: Deadline, next: "done" | "cancelled") {
+    setDeadlineRowBusy((b) => ({ ...b, [deadline.id]: true }));
+    setDeadlineRowError((e) => { const n = { ...e }; delete n[deadline.id]; return n; });
+    setDeadlinesRead((prev) => prev && prev.ok
+      ? listOk(prev.items.map((d) => (d.id === deadline.id ? { ...d, status: next } : d)), prev.total)
+      : prev);
+    try {
+      await updateDeadline(deadline.id, { status: next });
+      loadCaseDeadlines();
+    } catch (err) {
+      setDeadlinesRead((prev) => prev && prev.ok
+        ? listOk(prev.items.map((d) => (d.id === deadline.id ? deadline : d)), prev.total)
+        : prev);
+      setDeadlineRowError((e) => ({
+        ...e,
+        [deadline.id]: err instanceof Error && err.message ? err.message : "تعذّر تحديث المهلة.",
+      }));
+    } finally {
+      setDeadlineRowBusy((b) => ({ ...b, [deadline.id]: false }));
+    }
+  }
 
   // ── Documents ──
   const handleUpload = async (file: File) => {
@@ -893,7 +972,13 @@ export default function FirmCaseDetailsPage() {
                             )}
                           </div>
                         </div>
-                        <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border whitespace-nowrap ${outcome.color}`}>{outcome.label}</span>
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border whitespace-nowrap ${outcome.color}`}>{outcome.label}</span>
+                          <button onClick={() => setOutcomeStage(s)}
+                            className={`text-[10.5px] font-bold hover:underline ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>
+                            {s.outcome ? "تعديل النتيجة" : "تسجيل النتيجة"}
+                          </button>
+                        </div>
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px]">
                         {s.courtCaseNo && (
@@ -908,6 +993,9 @@ export default function FirmCaseDetailsPage() {
                         {s.openedOn && (
                           <span className={isDark ? "text-zinc-500" : "text-slate-400"}>فُتحت في {formatHearingDate(s.openedOn)}</span>
                         )}
+                        {s.closedOn && (
+                          <span className={isDark ? "text-zinc-500" : "text-slate-400"}>أُغلقت في {formatHearingDate(s.closedOn)}</span>
+                        )}
                       </div>
                       {s.notes && (
                         <p className={`text-[12px] mt-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{s.notes}</p>
@@ -915,6 +1003,61 @@ export default function FirmCaseDetailsPage() {
                     </motion.div>
                   );
                 })
+              )}
+            </div>
+          )}
+
+          {/* ── المهل ── */}
+          {activeTab === "deadlines" && (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                  {deadlinesKnown ? countPhraseAr(caseDeadlines.length, DEADLINES_COUNT) : "المهل"}
+                </p>
+                <button onClick={() => setShowAddDeadline(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22] transition-colors">
+                  <Plus size={12} weight="bold" />إضافة مهلة
+                </button>
+              </div>
+              {deadlinesView === "loading" ? (
+                <div className={`${card} p-10 flex items-center justify-center gap-2`}>
+                  <Spinner size={20} className="text-royal animate-spin" />
+                  <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل المهل...</span>
+                </div>
+              ) : deadlinesView === "unreadable" ? (
+                <div className={`${card} p-10 flex flex-col items-center justify-center`}>
+                  <Warning size={32} weight="duotone" className="mb-3 text-red-500" />
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّرت قراءة المهل</p>
+                  <p className={`text-[11px] mt-1 text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                    هذه ليست قائمة فارغة — قد توجد مهل لم تُقرأ.
+                  </p>
+                  <button onClick={loadCaseDeadlines}
+                    className="mt-3 flex items-center gap-1.5 text-[12px] font-bold text-royal hover:underline">
+                    <ArrowClockwise size={13} /> إعادة المحاولة
+                  </button>
+                </div>
+              ) : caseDeadlines.length === 0 ? (
+                <div className={`${card} p-10 flex flex-col items-center justify-center`}>
+                  <Timer size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا مهل لهذه القضية بعد</p>
+                  <p className={`text-[11px] mt-1 text-center max-w-[320px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                    أضف مهلة، أو سجّل نتيجة درجة تقاضٍ بتاريخ إغلاق وستُحسب مهلة الاعتراض تلقائياً.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {sortedDeadlines.map((d) => (
+                    <DeadlineCard
+                      key={d.id}
+                      deadline={d}
+                      isDark={isDark}
+                      showCaseLink={false}
+                      busy={!!deadlineRowBusy[d.id]}
+                      error={deadlineRowError[d.id] ?? null}
+                      onAction={(next) => handleDeadlineRowAction(d, next)}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -1011,6 +1154,34 @@ export default function FirmCaseDetailsPage() {
           caseRequestId={id}
           onCreated={(created) => {
             if (stagesRead?.ok) setStagesRead(listOk([...stagesRead.items, created]));
+          }}
+        />
+      )}
+
+      {outcomeStage && (
+        <RecordStageOutcomeModal
+          onClose={() => setOutcomeStage(null)}
+          isDark={isDark}
+          caseRequestId={id}
+          stage={outcomeStage}
+          onSaved={(stage, autoDeadline) => {
+            setOutcomeStage(null);
+            if (stagesRead?.ok) {
+              setStagesRead(listOk(stagesRead.items.map((s) => (s.id === stage.id ? stage : s))));
+            }
+            if (autoDeadline?.created) loadCaseDeadlines();
+          }}
+        />
+      )}
+
+      {showAddDeadline && (
+        <AddDeadlineModal
+          onClose={() => setShowAddDeadline(false)}
+          isDark={isDark}
+          caseRequestId={id}
+          onCreated={() => {
+            setShowAddDeadline(false);
+            loadCaseDeadlines();
           }}
         />
       )}
