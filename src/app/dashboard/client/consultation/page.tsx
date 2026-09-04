@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowClockwise, CalendarBlank, ChatCircle, SealCheck,
-  Plus, Robot, MagnifyingGlass, Warning,
+  Plus, Robot, MagnifyingGlass, Warning, User,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { listClientWorkflowRequests } from "@/lib/clientWorkflowRepository";
@@ -64,8 +64,20 @@ interface Consultation {
   requestStatusLabel: string;
   /** The stored request title, as the booking wizard wrote it. */
   title: string;
-  /** Who delivers it, when the row says. null while no lawyer is named. */
+  /**
+   * Who delivers it, when the row says. This is a DISPLAY label: it holds
+   * placeholder wording ("بانتظار تعيين المحامي" / "محامٍ معيَّن") while no
+   * name is known, same as `lawyerDisplayName` on the detail page. Never
+   * read this for the avatar initial — see `providerName` below.
+   */
   provider: string | null;
+  /**
+   * The lawyer's actual name, or null. Unlike `provider`, this is NEVER a
+   * placeholder string — the service-table path (no name column at all,
+   * only a `lawyer_id` uuid) always leaves it null. The avatar reads this
+   * field so it never turns a status placeholder into a fabricated letter.
+   */
+  providerName: string | null;
   /** `metadata.specialty`, or null — never a generic stand-in. */
   specialty: string | null;
   /** The client's own submitted text. Never an answer. */
@@ -229,7 +241,9 @@ function ConsultCard({ c, isDark }: { c: Consultation; isDark: boolean }) {
           }`}>
             {c.channel === "ai"
               ? <Robot size={24} weight="duotone" className="text-[#C8A762]" />
-              : <span className="text-white font-extrabold text-sm">ن</span>}
+              : c.providerName?.trim()
+                ? <span className="text-white font-extrabold text-sm">{c.providerName.trim().charAt(0)}</span>
+                : <User size={22} weight="bold" className="text-white" />}
           </div>
 
           <div className="flex-1 min-w-0">
@@ -252,7 +266,12 @@ function ConsultCard({ c, isDark }: { c: Consultation; isDark: boolean }) {
                   <p className="text-xs text-gray-500 dark:text-zinc-400 mt-0.5 font-medium flex items-center gap-1.5 flex-wrap">
                     {c.provider && (
                       <span className="flex items-center gap-1">
-                        {c.channel !== "ai" && <SealCheck size={12} weight="fill" className="text-[#C8A762]" />}
+                        {/* The seal certifies a verified LAWYER, not a status
+                            placeholder — same providerName/provider split as
+                            the avatar above. Without this gate, a pending row
+                            ("بانتظار تعيين المحامي") wore a gold verification
+                            badge next to a sentence naming no one. */}
+                        {c.channel !== "ai" && c.providerName && <SealCheck size={12} weight="fill" className="text-[#C8A762]" />}
                         {c.provider}
                       </span>
                     )}
@@ -369,6 +388,8 @@ const toConsultation = (request: WorkflowRequest): Consultation => {
     provider: channel === "ai"
       ? "نظامي AI"
       : metaString(request.metadata?.lawyerName) ?? "بانتظار تعيين المحامي",
+    // Raw, never a placeholder — see the field comment on Consultation.
+    providerName: channel === "ai" ? null : metaString(request.metadata?.lawyerName) ?? null,
     specialty: metaString(request.metadata?.specialty),
     topic: request.description ?? "",
     date: formatDate(request.createdAt),
@@ -453,6 +474,9 @@ export default function ConsultationListPage() {
                 // assigned; we do not know the name, and this says exactly
                 // that much.
                 provider: sc.lawyer_id ? "محامٍ معيَّن" : "بانتظار تعيين المحامي",
+                // No name column on this row at all — only a uuid or
+                // nothing. Never a placeholder; see the field comment.
+                providerName: null,
                 specialty: null,
                 topic: sc.description || "",
                 date: formatDate(sc.created_at),

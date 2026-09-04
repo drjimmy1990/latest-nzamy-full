@@ -48,9 +48,17 @@ function getContractTypes(category?: UserCategory | null, actorContext?: Floatin
   return ["عقد عمل", "عقد إيجار", "عقد بيع", "شراكة", "أخرى"];
 }
 
+// Task B1, item 163: "١٥٠ ر.س" / "٤٩٩ ر.س" were fixed numbers with no
+// catalog behind them — they matched neither clientServiceCatalog.ts's
+// contract-analyze/contract-review entries (79 / 800) nor
+// services/contracts/page.tsx's own tiers (249 / 499) nor
+// pricing.individuals.ts's drafting price (1,500). Same non-binding-estimate
+// wording StepConsult.tsx already uses for its "lawyer" tier, minus the
+// number this flow has none of.
+const NO_FIXED_PRICE_NOTE = "تقدير غير مُلزِم — يؤكد الفريق الأتعاب قبل البدء";
 const CONTRACT_SERVICES = [
-  { icon: <Robot size={20} weight="fill" />, label: "مراجعة AI", desc: "تقرير فوري + تحديد البنود الغامضة", price: "١٥٠ ر.س", val: "ai-review", colorClass: "border-emerald-400 dark:border-emerald-500", iconColor: "text-emerald-600 dark:text-emerald-400" },
-  { icon: <Gavel size={20} weight="fill" />, label: "محامي متخصص", desc: "مراجعة كاملة + تقرير مخاطر مفصّل", price: "٤٩٩ ر.س", val: "lawyer-review", colorClass: "border-[#C8A762]", iconColor: "text-[#C8A762]" },
+  { icon: <Robot size={20} weight="fill" />, label: "مراجعة AI", desc: "تقرير فوري + تحديد البنود الغامضة", price: NO_FIXED_PRICE_NOTE, val: "ai-review", colorClass: "border-emerald-400 dark:border-emerald-500", iconColor: "text-emerald-600 dark:text-emerald-400" },
+  { icon: <Gavel size={20} weight="fill" />, label: "محامي متخصص", desc: "مراجعة كاملة + تقرير مخاطر مفصّل", price: NO_FIXED_PRICE_NOTE, val: "lawyer-review", colorClass: "border-[#C8A762]", iconColor: "text-[#C8A762]" },
 ];
 
 export default function StepContract({ step, isDark, selections, contractNotes, onNavigate, onSelect, setContractNotes, userCategory, actorContext }: Props) {
@@ -91,7 +99,7 @@ export default function StepContract({ step, isDark, selections, contractNotes, 
             <div className="flex-1 min-w-0 pt-0.5">
               <div className={`text-[13px] font-bold ${isDark ? "text-white" : "text-gray-900"} mb-0.5`}>{label}</div>
               <div className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 leading-snug">{desc}</div>
-              <div className={`text-[13px] font-black ${iconColor}`}>{price}</div>
+              <div className={`text-[11px] font-bold mt-0.5 ${iconColor}`}>{price}</div>
             </div>
           </motion.button>
         ))}

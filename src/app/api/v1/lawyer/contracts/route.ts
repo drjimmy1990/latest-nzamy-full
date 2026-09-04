@@ -11,6 +11,7 @@ import {
   CONTRACT_SELECT, ISO_DATE_RE, dbErrorResponse, toContractDto, profileNames, contractListExtras,
   type ContractRow,
 } from "./_shared";
+import { assertLinkableAccount } from "../clients/_link";
 
 /**
  * /api/v1/lawyer/contracts — Phase 3 (مدير العقود).
@@ -113,6 +114,17 @@ function isIsoOrNull(value: string | null | undefined): boolean {
  * Best-effort — the contract row is already committed by the time this runs.
  * An invalid party in the array is skipped (and logged), never fails the
  * request; `position` mirrors the party's index in the submitted array.
+ *
+ * lawyerClientId is body-supplied and NOT checked against contractId's own
+ * owner/firm — same shape as the fixed contracts.client_user_id hole (a bare
+ * id from the client, straight into a foreign key). It is not a read-access
+ * grant (PARTY_SELECT never joins back to lawyer_clients — name/phone/email
+ * on a party row are whatever was typed into this same request, not hydrated
+ * from the card), but it is still a wrong association: without this check a
+ * lawyer could tag a party with a card id belonging to a different lawyer or
+ * firm. Mirrors the same-file POST /[id]/parties route's existing check —
+ * lawyer_clients SELECT is RLS-scoped, so a maybeSingle() that resolves
+ * proves the caller can actually see that card.
  */
 async function insertParties(
   supabase: SupabaseClient,
@@ -120,6 +132,19 @@ async function insertParties(
   parties: CreatePartyBody[],
 ): Promise<void> {
   try {
+    const requestedClientIds = Array.from(
+      new Set(parties.map((p) => p?.lawyerClientId).filter((id): id is string => typeof id === "string" && !!id)),
+    );
+    let visibleClientIds = new Set<string>();
+    if (requestedClientIds.length > 0) {
+      const { data: visibleRows, error: visibleErr } = await supabase
+        .from("lawyer_clients").select("id").in("id", requestedClientIds);
+      if (visibleErr) {
+        console.error("[lawyer/contracts POST] lawyer_clients visibility check failed:", visibleErr.message, visibleErr.code);
+      }
+      visibleClientIds = new Set((visibleRows ?? []).map((r) => (r as { id: string }).id));
+    }
+
     const rows: Record<string, unknown>[] = [];
     parties.forEach((p, index) => {
       if (!p || typeof p !== "object") {
@@ -136,13 +161,18 @@ async function insertParties(
         console.error("[lawyer/contracts POST] skipping party with invalid commercial register at index", index);
         return;
       }
+      let lawyerClientId = p.lawyerClientId ?? null;
+      if (lawyerClientId && !visibleClientIds.has(lawyerClientId)) {
+        console.error("[lawyer/contracts POST] dropping unresolvable/foreign lawyerClientId on party at index", index);
+        lawyerClientId = null;
+      }
       rows.push({
         contract_id: contractId,
         role: p.role,
         party_kind: p.partyKind,
         name,
         entity_type: p.entityType,
-        lawyer_client_id: p.lawyerClientId ?? null,
+        lawyer_client_id: lawyerClientId,
         commercial_register_no: commercialRegisterNo,
         contact_phone: p.contactPhone ?? null,
         contact_email: p.contactEmail ?? null,
@@ -251,6 +281,25 @@ export async function POST(request: NextRequest) {
         ? (typeof body.clientUserId === "string" && body.clientUserId.trim() ? body.clientUserId.trim() : null)
         : undefined;
     const clientUserId = clientUserIdExplicit !== undefined ? clientUserIdExplicit : linkedClientUserId;
+
+    // An EXPLICIT clientUserId must prove a prior relationship — the same
+    // guard PATCH/POST on lawyer_clients run before binding a card to an
+    // account — otherwise this insert is the exact hole that guard was built
+    // to close, just reached through a different table: `client_user_id` sets
+    // read access on `contracts` directly (contracts SELECT RLS), so an
+    // unchecked value here hands a stranger the contract immediately. The
+    // fallback-from-card path (linkedClientUserId, clientUserIdExplicit
+    // undefined) is NOT re-checked here on the assumption that the card was
+    // itself linked through the guarded PATCH/POST — true for any link made
+    // since that guard shipped, NOT for a card whose client_user_id was
+    // written before it existed. Stale unvetted links are a data-state issue,
+    // not something this request can detect; see the fixer report.
+    if (typeof clientUserIdExplicit === "string") {
+      const linkCheck = await assertLinkableAccount(supabase, user.id, clientUserIdExplicit, undefined, false);
+      if (!linkCheck.ok) {
+        return NextResponse.json({ error: linkCheck.error }, { status: linkCheck.status });
+      }
+    }
 
     // firm_id — ALWAYS resolved server-side from the creator's own active
     // firm_members row (same lookup as service-requests POST), never trusted

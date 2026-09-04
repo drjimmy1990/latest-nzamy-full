@@ -102,7 +102,6 @@ export default function ProceduresPage() {
         ))}
       </div>
 
-      {/* ── MODE: ASK ── */}
       {/* ── MODE: CIRCUITS ── */}
       <AnimatePresence mode="wait">
         {mode === "circuits" && (

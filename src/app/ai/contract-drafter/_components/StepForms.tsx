@@ -67,7 +67,7 @@ export function StepReviewInput({ contractText, onTextChange, onBack, onStartRev
           {isRTL ? "أضف نص العقد للمراجعة" : "Add Contract for Review"}
         </h2>
         <p className={`text-[15px] font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-          {isRTL ? "ارفع ملف العقد أو الصق النص — AI سيحلّله فوراً" : "Upload the contract file or paste text — AI will analyze it instantly."}
+          {isRTL ? "ارفع ملف العقد أو الصق النص — المراجعة تتم عبر الفريق" : "Upload the contract file or paste text — review is handled by our team."}
         </p>
       </div>
 
@@ -144,7 +144,7 @@ export function StepReviewInput({ contractText, onTextChange, onBack, onStartRev
           }`}
         >
           <Brain size={20} weight="fill" />
-          {isRTL ? "بدء المراجعة بواسطة AI" : "Start AI Review"}
+          {isRTL ? "متابعة" : "Continue"}
         </motion.button>
       </div>
     </motion.div>

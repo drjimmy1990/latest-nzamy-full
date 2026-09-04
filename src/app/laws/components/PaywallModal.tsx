@@ -9,7 +9,24 @@ import Link from "next/link";
 
 // ─── Types & Constants ─────────────────────────────────────────────────────────
 
-export const FREE_LIMIT = 3;
+/**
+ * Fallback free-article count shown when no caller supplies the real one.
+ * Mirrors the PLATFORM DEFAULT in checkLibraryAccess()
+ * (src/lib/access-control.ts:177 — `library_free_article_limit ?? 5`), which
+ * is the number actually enforced for any law without its own override.
+ *
+ * This can only ever be a mirrored literal, not an import: access-control.ts
+ * pulls in `@/lib/supabase/server` → `next/headers`, which cannot be bundled
+ * into a "use client" component. If that default setting ever changes, this
+ * literal has to change with it.
+ *
+ * A caller that already knows the SERVER-COMPUTED number for the item the
+ * user is actually looking at — e.g. `/api/library/laws/[slug]`'s
+ * `paywall.freeLimit`, which folds in any per-law override — should pass it
+ * via the `freeLimit` prop instead of relying on this fallback, so the text
+ * never contradicts what was actually enforced.
+ */
+export const FREE_LIMIT = 5;
 
 // ─── Library Paywall Plans ─────────────────────────────────────────────────────
 // NOTE: الصائغ القانوني + السكرتير + AI tokens هي أدوات المحامي حصراً
@@ -59,10 +76,21 @@ export const PLANS = [
 
 // ─── PaywallModal ──────────────────────────────────────────────────────────────
 
-export function PaywallModal({ isOpen, onClose, isRTL, isDark }: {
+export function PaywallModal({ isOpen, onClose, isRTL, isDark, freeLimit }: {
   isOpen: boolean; onClose: () => void; isRTL: boolean; isDark: boolean;
+  /**
+   * The server-enforced free-article count for the item the caller is
+   * actually showing (e.g. `paywall.freeLimit` from
+   * `/api/library/laws/[slug]`, which already folds in any per-law
+   * override) — pass it whenever it's known, so the copy below matches what
+   * the server actually enforced instead of a generic default. `-1` means
+   * "unlimited" (whitelisted/Pro+, see checkLibraryAccess) and can't be
+   * rendered as a count, so it falls back to FREE_LIMIT like an omitted prop.
+   */
+  freeLimit?: number;
 }) {
   if (!isOpen) return null;
+  const displayLimit = typeof freeLimit === "number" && freeLimit > 0 ? freeLimit : FREE_LIMIT;
   return (
     <AnimatePresence>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -79,8 +107,16 @@ export function PaywallModal({ isOpen, onClose, isRTL, isDark }: {
             </h2>
             <p className="text-sm text-white/70">
               {isRTL
-                ? `استكشف ${FREE_LIMIT} أنظمة مجاناً — اختر الباقة التي تناسب احتياجك البحثي`
-                : `Explore ${FREE_LIMIT} systems free — choose the plan that fits your research needs`}
+                // A number-then-noun sentence ("أول ٥ مواد") needs different
+                // Arabic agreement at 1, 2, 3–10, and 11+ — and this same
+                // modal is reused from the precedents/books tabs (laws/page.tsx),
+                // where the unit checkLibraryAccess actually gates is pages or
+                // blocks, not articles. A label:value form sidesteps both: the
+                // digit is a value next to "العدد", never the head of an
+                // agreeing noun phrase, and "عنصر" stays true whatever the
+                // content type gates on.
+                ? `عدد العناصر المجانية من كل نص: ${displayLimit} — اختر الباقة التي تناسب احتياجك البحثي`
+                : `Free items per text: ${displayLimit} — choose the plan that fits your research needs`}
             </p>
           </div>
           <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4" dir={isRTL ? "rtl" : "ltr"}>

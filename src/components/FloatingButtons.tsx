@@ -33,14 +33,22 @@ interface FloatingButtonsProps {
 
 // ─── Auto-detect category from logged-in user session ────────────────────────
 
-function useAutoCategory(): { category: UserCategory; isLoggedIn: boolean } {
+function useAutoCategory(): { category: UserCategory; isLoggedIn: boolean; loading: boolean } {
   const session = useUser();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
 
-  if (!mounted || !session.isLoggedIn || !session.userType) {
-    return { category: null, isLoggedIn: mounted ? session.isLoggedIn : false };
+  // Session still resolving (or not yet hydrated) — do not report "guest"
+  // here. A logged-in lawyer whose session hasn't settled yet would
+  // otherwise render as a guest for a frame, showing the guest category
+  // chooser before flipping to their real role.
+  if (!mounted || session.loading) {
+    return { category: null, isLoggedIn: false, loading: true };
+  }
+
+  if (!session.isLoggedIn || !session.userType) {
+    return { category: null, isLoggedIn: false, loading: false };
   }
 
   const typeMap: Record<string, UserCategory> = {
@@ -57,7 +65,7 @@ function useAutoCategory(): { category: UserCategory; isLoggedIn: boolean } {
   };
 
   const category = typeMap[session.userType] ?? null;
-  return { category, isLoggedIn: session.isLoggedIn };
+  return { category, isLoggedIn: session.isLoggedIn, loading: false };
 }
 
 // ─── Report Issue Drawer (embedded) ──────────────────────────────────────────
@@ -540,7 +548,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
   const { lang, isDark } = useTheme();
   const isRTL = lang === "ar";
-  const { category: autoCategory, isLoggedIn } = useAutoCategory();
+  const { category: autoCategory, isLoggedIn, loading: categoryLoading } = useAutoCategory();
   const rootRef = useRef<HTMLDivElement>(null);
 
   const [isPrimaryInstance, setIsPrimaryInstance] = useState(true);
@@ -551,6 +559,19 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   const effectiveUserCategory = userCategory ?? autoCategory;
   // Admins manage the platform, not client relationships — the WhatsApp FAB is noise for them.
   const isAdmin = effectiveUserCategory === "admin";
+
+  // A category picked manually (guest chooser, or an earlier session) must
+  // not survive the guest→logged-in transition — once the real session
+  // resolves to a logged-in user, the role's own category takes over. Keyed
+  // on the false→true edge (a ref, not render-height state) so it fires once
+  // per login rather than fighting every later manual pick.
+  const wasLoggedInRef = useRef(false);
+  useEffect(() => {
+    if (isLoggedIn && !wasLoggedInRef.current) {
+      setUserCategory(null);
+    }
+    wasLoggedInRef.current = isLoggedIn;
+  }, [isLoggedIn]);
 
   const openWa  = useCallback(() => setWaOpen(true),  []);
   const closeWa = useCallback(() => setWaOpen(false), []);
@@ -589,9 +610,17 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   const waBtnSide   = isRTL ? "left-6" : "right-6";
   const waPanelSide = isRTL ? "left-6" : "right-6";
   const panelBottom = "bottom-24 md:bottom-20";
-  const buttonTooltip = isRTL
-    ? (isLoggedIn ? "مساعد نظامي حسب دورك" : "اطلب خدمة قانونية")
-    : (isLoggedIn ? "Role-aware Nzamy assistant" : "Request Legal Service");
+  // While the session is still resolving, useAutoCategory forces
+  // isLoggedIn to false (by design — see its comment), so reading isLoggedIn
+  // here during that window would announce the guest label to a user who
+  // turns out to be logged in. This always-visible FAB (unlike the panel
+  // below, which is withheld outright) uses a role-neutral label until
+  // categoryLoading clears, then shows the real one.
+  const buttonTooltip = categoryLoading
+    ? (isRTL ? "المساعد القانوني" : "Legal Assistant")
+    : isRTL
+      ? (isLoggedIn ? "مساعد نظامي حسب دورك" : "اطلب خدمة قانونية")
+      : (isLoggedIn ? "Role-aware Nzamy assistant" : "Request Legal Service");
 
   const reportTooltip = isRTL ? "أبلغ عن مشكلة" : "Report an issue";
 
@@ -602,8 +631,10 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
   return (
     <div ref={rootRef} data-nzamy-floating-root="true" className={`${isPrimaryInstance && !aiModeActive ? "" : "hidden"} print:hidden`}>
-      {/* WhatsApp Panel */}
-      {!isAdmin && (
+      {/* WhatsApp Panel — hidden for admins (owner-edits), and withheld while the
+          session is still resolving, so a logged-in user can never be shown the
+          guest category chooser first (main). */}
+      {!isAdmin && !categoryLoading && (
         <WhatsAppWidget
           open={waOpen} onClose={closeWa}
           bottomPos={panelBottom} panelSide={waPanelSide}

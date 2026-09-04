@@ -664,7 +664,7 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
 }
 
 // ─── Calendar View ─────────────────────────────────────────────────────────────
-function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
+function CalendarView({events,isDark,onAddOnDate}:{events:CalEvent[];isDark:boolean;onAddOnDate?:(dateKey:string)=>void}) {
   const now = new Date();
   const [calYear,setCalYear] = useState(now.getFullYear());
   const [calMonth,setCalMonth] = useState(now.getMonth());
@@ -753,6 +753,8 @@ function CalendarView({events,isDark}:{events:CalEvent[];isDark:boolean}) {
             const hijri = hijriDayOnly(gDate);
             return (
               <button key={day} onClick={()=>setSelectedDay(isSelected?null:day)}
+                onDoubleClick={()=>{setSelectedDay(day);onAddOnDate?.(localDayKey(gDate));}}
+                title="نقر مزدوج لإضافة موعد في هذا اليوم"
                 className={`relative flex flex-col items-center py-1.5 px-0.5 rounded-xl transition-all ${
                   isSelected?"bg-[#0B3D2E] text-white":isToday(day)?isDark?"bg-zinc-700 text-zinc-100":"bg-slate-200 text-slate-800":isDark?"hover:bg-zinc-800 text-zinc-300":"hover:bg-slate-100 text-slate-600"
                 }`}>
@@ -844,6 +846,10 @@ export default function LawyerHearingsPage() {
   const [urgencyFilter,setUrgencyFilter] = useState<"all"|"critical"|"high"|"normal">("all");
   const [search,setSearch] = useState("");
   const [showAddHearing, setShowAddHearing] = useState(false);
+  // Set only by a calendar-day double-click, so AddHearingModal opens with
+  // that day already in the date field. Cleared whenever the modal is opened
+  // any other way, so a stale day never leaks into the plain "+" flow.
+  const [addHearingDate, setAddHearingDate] = useState<string | null>(null);
   const [showDeadlinesOnly,setShowDeadlinesOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false); // To toggle advanced filters
 
@@ -1103,7 +1109,7 @@ export default function LawyerHearingsPage() {
           </div>
           
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowAddHearing(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] text-[#C8A762] shadow-md hover:shadow-lg transition-all">
+            <button onClick={() => { setAddHearingDate(null); setShowAddHearing(true); }} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] text-[#C8A762] shadow-md hover:shadow-lg transition-all">
               <Plus size={15} weight="bold"/>موعد جديد
             </button>
             <div className={`flex items-center p-1 rounded-xl border ${isDark?"border-white/[0.06] bg-zinc-800":"border-slate-200 bg-slate-50"}`}>
@@ -1196,7 +1202,7 @@ export default function LawyerHearingsPage() {
                 <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>لا توجد مواعيد مطابقة للفلتر المختار</p>
               </div>
             )}
-            <CalendarView events={filtered} isDark={isDark}/>
+            <CalendarView events={filtered} isDark={isDark} onAddOnDate={(dateKey)=>{ setAddHearingDate(dateKey); setShowAddHearing(true); }}/>
           </motion.div>
         ):(
           <motion.div key="list" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-6">
@@ -1243,7 +1249,7 @@ export default function LawyerHearingsPage() {
         )}
       </AnimatePresence>
       <AnimatePresence>
-        {showAddHearing && <AddHearingModal onClose={() => setShowAddHearing(false)} isDark={isDark} user={{ userId: user.userId, name: user.name, userType: user.userType, tier: user.tier }} />}
+        {showAddHearing && <AddHearingModal onClose={() => { setShowAddHearing(false); setAddHearingDate(null); }} isDark={isDark} user={{ userId: user.userId, name: user.name, userType: user.userType, tier: user.tier }} initialDate={addHearingDate ?? undefined} />}
       </AnimatePresence>
     </div>
   );

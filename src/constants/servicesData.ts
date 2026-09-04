@@ -41,7 +41,7 @@ export const services = {
       duration: "٢٤ ساعة",
       color: "bg-emerald-50 text-emerald-600",
       borderHover: "hover:border-emerald-200",
-      features: ["AI يكشف البنود المجحفة تلقائياً", "مراجعة محامٍ متخصص", "تعديلات غير محدودة", "نموذج مخصص لاحتياجك"],
+      features: ["AI يكشف البنود المجحفة تلقائياً", "مراجعة محامٍ متخصص", "تعديلات ضمن نطاق الطلب", "نموذج مخصص لاحتياجك"],
     },
     {
       id: "notary",
@@ -123,7 +123,7 @@ export const services = {
       duration: "24 hours",
       color: "bg-emerald-50 text-emerald-600",
       borderHover: "hover:border-emerald-200",
-      features: ["AI auto-detects unfair clauses", "Human review by specialist lawyer", "Unlimited revisions", "Custom template for your needs"],
+      features: ["AI auto-detects unfair clauses", "Human review by specialist lawyer", "Revisions within the request scope", "Custom template for your needs"],
     },
     {
       id: "notary",

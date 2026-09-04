@@ -81,6 +81,67 @@ export default async function proxy(req: NextRequest) {
     return apiResponse;
   }
 
+  // 1c. /ai/orders redirect (owner item ١٠٠).
+  //
+  // This used to be a single permanent redirect in next.config.ts. It moved
+  // here because next.config.ts's redirects() run BEFORE this file on every
+  // request (Next's documented routing order: next.config headers → next.config
+  // redirects → middleware/proxy → filesystem routes), so a rule left there
+  // would answer every /ai/orders hit before the session-aware gates below
+  // ever ran — this block would never run. See next.config.ts for the
+  // Cache-Control header this split leaves in place and why.
+  //
+  // /ai/orders (bare) has no filesystem route any more — the list it
+  // duplicated is «طلباتي» (/dashboard/client/requests) — so it always ends
+  // in a redirect there, for every visitor, role included. This block is
+  // deliberately role-AGNOSTIC: routeAccess.ts restricts that destination to
+  // individual/corporate, but that is not this block's problem to solve —
+  // Gate 2, a few dozen lines down in this same file, already answers "a
+  // lawyer/firm/micro/provider/government/ngo account landed on a
+  // /dashboard/* prefix it is not allowed on" by bouncing it to
+  // `dashboardPathFor(that type)`, i.e. that role's OWN real dashboard home
+  // (/dashboard/lawyer, /dashboard/firm, /dashboard/micro,
+  // /dashboard/provider, /dashboard/government, /dashboard/ngo — all real,
+  // built screens, not a «قريباً» template) rather than an error page. Two
+  // redirects (browser: /ai/orders → /dashboard/client/requests → its own
+  // dashboard) is the price of reusing that existing, already-tested
+  // (routeAccess.test.ts) logic instead of duplicating a second role →
+  // destination table here that could drift from it.
+  //
+  // An earlier version of this block looked up the caller's role directly
+  // and sent lawyer/firm/micro/provider to a role-specific destination
+  // instead of letting Gate 2 do it. That table is deleted: two of those four
+  // destinations (`/dashboard/lawyer/marketplace`,
+  // `/dashboard/firm/marketplace`) render nothing but a `DashboardComingSoon`
+  // placeholder (src/components/marketplace/MyMarketplaceDashboard.tsx), and
+  // the other two (`/dashboard/micro/requests`, `/dashboard/provider/requests`)
+  // render hardcoded fixture rows unconditionally — routing a user AWAY from
+  // their real, working dashboard home and INTO one of those would have been
+  // a regression, not the fix owner item ١٠٠ asked for. No role has a real
+  // "my AI orders" screen of its own yet; when one exists, point Gate 2's
+  // `DASHBOARD_PATHS` (or a table here) at it instead.
+  //
+  // /ai/orders/[id] — the order-DETAIL screen, attachments and download link
+  // included — is NEVER redirected by this block, for any role, and is not
+  // in the PROTECTED list below either (unchanged from before this owner
+  // item existed). It is not a stale link: legal-opinion, wargaming,
+  // contracts and draft all send a signed-in user of ANY role straight to
+  // `/ai/orders/${order.id}` the moment they submit a real order
+  // (src/app/ai/legal-opinion/page.tsx:432,
+  // src/app/ai/legal-opinion/_components/LetterWorkflow.tsx:198,
+  // src/app/ai/wargaming/page.tsx:954, src/hooks/useContractsState.ts:228+285,
+  // src/hooks/useDraftState.ts:169) — a live flow today for lawyer/firm
+  // (navigation.sidebars.legal.ts:35-41) and micro/provider
+  // (navigation.sidebars.business.ts:171-173), none of which routeAccess.ts
+  // or PROTECTED restricts. Redirecting that path would drop the order id
+  // and strand the user who just submitted a real order on a page with
+  // nothing of theirs to show.
+  if (pathname === "/ai/orders") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/dashboard/client/requests";
+    return NextResponse.redirect(url, 302);
+  }
+
   // 2. Check if route requires authentication
   const isProtected = PROTECTED.some((p) => pathname.startsWith(p));
   if (!isProtected) return NextResponse.next();

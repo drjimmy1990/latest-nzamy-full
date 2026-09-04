@@ -158,4 +158,6 @@ export function isLegalDataReviewGatedTool(toolId?: string): boolean {
 export const BETA_REVIEW_HOURS = "4-24";
 
 // ── Contact channel for beta inquiries ────────────────────────────────────────
-export const BETA_WHATSAPP_NUMBER = "966XXXXXXXXX"; // Update with real number
+// The platform has ONE WhatsApp number; it lives in whatsappWorkflow.ts. This
+// used to be a "966XXXXXXXXX" placeholder that a beta gate could have dialled.
+export { NZAMY_WHATSAPP_NUMBER as BETA_WHATSAPP_NUMBER } from "@/components/floating/whatsappWorkflow";

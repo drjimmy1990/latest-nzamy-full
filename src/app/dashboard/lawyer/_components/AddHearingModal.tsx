@@ -28,6 +28,12 @@ interface Props {
   caseRequestId?: string;
   /** Prefills the case-name field for the general diary (unlinked) flow. */
   defaultCaseName?: string;
+  /**
+   * Prefills the date field, e.g. when opened by double-clicking a day on the
+   * calendar grid. Expected as "YYYY-MM-DD" — the same shape the date input
+   * and the hearings rows use. The lawyer can still change it before saving.
+   */
+  initialDate?: string;
 }
 
 type Urgency = "critical" | "high" | "normal";
@@ -40,7 +46,7 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "internal",     label: "أخرى" },
 ];
 
-export default function AddHearingModal({ onClose, isDark, user, caseRequestId, defaultCaseName }: Props) {
+export default function AddHearingModal({ onClose, isDark, user, caseRequestId, defaultCaseName, initialDate }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
   const [done, setDone] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -49,7 +55,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
   // Controlled inputs
   const [type, setType] = useState("");
   const [caseName, setCaseName] = useState(defaultCaseName ?? "");
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(initialDate ?? "");
   const [time, setTime] = useState("");
   const [notes, setNotes] = useState("");
   const [urgency, setUrgency] = useState<Urgency>("normal");

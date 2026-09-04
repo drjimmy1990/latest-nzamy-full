@@ -1,9 +1,10 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { FileText, Brain, Warning, CheckCircle, Copy, Check, Minus, Sparkle } from "@phosphor-icons/react";
+import Link from "next/link";
+import { FileText, Brain, Warning, Copy, Check, Sparkle } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { ContractType, ReviewResult } from "./contractTypes";
+import { ContractType } from "./contractTypes";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 
@@ -12,8 +13,6 @@ interface Props {
   contractType: ContractType | null;
   copied: boolean;
   step4Tab: "text" | "review";
-  isReviewing: boolean;
-  reviewResult: ReviewResult | null;
   onCopy: () => void;
   onTabChange: (tab: "text" | "review") => void;
   onBack: () => void;
@@ -26,7 +25,7 @@ interface Props {
 // ─── StepContractResult ───────────────────────────────────────────────────────
 
 export default function StepContractResult({
-  contractText, contractType, copied, step4Tab, isReviewing, reviewResult,
+  contractText, contractType, copied, step4Tab,
   onCopy, onTabChange, onBack, onRequestLawyer, ArrowBack, Arrow, savedId,
 }: Props) {
   const { theme, lang } = useTheme();
@@ -70,7 +69,7 @@ export default function StepContractResult({
       <div className={`flex gap-1.5 p-1.5 rounded-[1.25rem] mb-6 shadow-inner mx-auto max-w-md ${isDark ? "bg-zinc-900" : "bg-slate-100"}`}>
         {[
           { id: "text" as const, label: isRTL ? "نص العقد" : "Contract Text", icon: FileText },
-          { id: "review" as const, label: isRTL ? "مراجعة سريعة AI" : "Quick AI Review", icon: Brain },
+          { id: "review" as const, label: isRTL ? "مراجعة العقد" : "Contract Review", icon: Brain },
         ].map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -83,7 +82,6 @@ export default function StepContractResult({
           >
             <Icon size={18} weight={step4Tab === id ? "bold" : "regular"} />
             {label}
-            {id === "review" && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 text-[#C8A762]">جديد</span>}
           </button>
         ))}
       </div>
@@ -119,77 +117,26 @@ export default function StepContractResult({
 
         {step4Tab === "review" && (
           <motion.div key="review-tab" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}>
-            {isReviewing ? (
-              <div className={`rounded-[2rem] border p-12 flex flex-col items-center gap-6 ${isDark ? "border-white/10 bg-zinc-900/50 backdrop-blur-xl" : "border-zinc-200 bg-white shadow-lg"}`}>
-                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }} className="w-20 h-20 rounded-full bg-violet-500/10 flex items-center justify-center border border-violet-500/20 relative">
-                  <div className="absolute inset-0 bg-violet-500/20 blur-xl rounded-full" />
-                  <Brain size={36} className="text-violet-500 relative z-10" weight="duotone" />
-                </motion.div>
-                <p className={`text-[15px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
-                  {isRTL ? "AI يراجع بنود العقد بتمعّن…" : "AI is carefully reviewing contract clauses…"}
+            <div className={`rounded-[2rem] border p-10 flex flex-col items-center text-center gap-5 ${isDark ? "border-white/10 bg-zinc-900/50 backdrop-blur-xl" : "border-zinc-200 bg-white shadow-lg"}`}>
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${isDark ? "bg-[#0B3D2E]/20 border border-[#0B3D2E]/30" : "bg-[#0B3D2E]/10 border border-[#0B3D2E]/20"}`}>
+                <Brain size={30} className="text-[#0B3D2E]" weight="duotone" />
+              </div>
+              <div>
+                <p className={`text-[16px] font-bold mb-2 ${isDark ? "text-white" : "text-zinc-900"}`}>
+                  {isRTL ? "مراجعة العقد يقوم بها فريقنا القانوني" : "Contract review is handled by our legal team"}
+                </p>
+                <p className={`text-[13px] font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                  {isRTL ? "المراجعة تتم عبر الفريق — يصلك التقرير في طلبك" : "Review is handled by the team — you'll receive the report in your request"}
                 </p>
               </div>
-            ) : reviewResult && (
-              <div className="space-y-6">
-                {/* Score */}
-                <div className={`rounded-[2rem] border p-8 flex items-center gap-6 ${isDark ? "border-white/10 bg-zinc-900/50 backdrop-blur-xl" : "border-zinc-200 bg-white shadow-lg"}`}>
-                  <div className="relative flex-shrink-0">
-                    <svg viewBox="0 0 100 100" className="w-28 h-28 -rotate-90">
-                      <circle cx="50" cy="50" r="40" fill="none" strokeWidth="8" className={isDark ? "stroke-zinc-800" : "stroke-zinc-100"} />
-                      <motion.circle cx="50" cy="50" r="40" fill="none" strokeWidth="8" stroke="#C8A762" strokeLinecap="round"
-                        strokeDasharray={`${2 * Math.PI * 40}`}
-                        initial={{ strokeDashoffset: 2 * Math.PI * 40 }}
-                        animate={{ strokeDashoffset: 2 * Math.PI * 40 * (1 - reviewResult.score / 100) }}
-                        transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1] }} className="drop-shadow-[0_0_10px_rgba(200,167,98,0.5)]" />
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-2xl font-black text-[#C8A762] tabular-nums">{reviewResult.score}</span>
-                      <span className={`text-[11px] font-bold ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>/100</span>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <p className={`text-[12px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>تقييم العقد</p>
-                    <p className={`text-[16px] font-bold leading-relaxed ${isDark ? "text-white" : "text-zinc-800"}`}>{reviewResult.verdict}</p>
-                  </div>
-                </div>
-
-                {/* Risks & Suggestions */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div className={`rounded-[1.5rem] border p-6 ${isDark ? "border-rose-500/20 bg-rose-500/5" : "border-rose-200 bg-rose-50"}`}>
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center">
-                        <Warning size={18} className="text-rose-500" weight="duotone" />
-                      </div>
-                      <p className={`text-[14px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>مخاطر محتملة</p>
-                    </div>
-                    <ul className="space-y-3">
-                      {reviewResult.risks.map((r, i) => (
-                        <li key={i} className={`flex items-start gap-3 text-[13px] leading-relaxed font-medium ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                          <Minus size={12} weight="bold" className="flex-shrink-0 mt-1 text-rose-500" />{r}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className={`rounded-[1.5rem] border p-6 ${isDark ? "border-emerald-500/20 bg-emerald-500/5" : "border-emerald-200 bg-emerald-50"}`}>
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                        <CheckCircle size={18} className="text-emerald-500" weight="duotone" />
-                      </div>
-                      <p className={`text-[14px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>توصيات للتحسين</p>
-                    </div>
-                    <ul className="space-y-3">
-                      {reviewResult.suggestions.map((s, i) => (
-                        <li key={i} className={`flex items-start gap-3 text-[13px] leading-relaxed font-medium ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                          <Minus size={12} weight="bold" className="flex-shrink-0 mt-1 text-emerald-500" />{s}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-
-              </div>
-            )}
+              <Link
+                href="/ai/contracts"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-6 py-3 text-[13px] font-bold text-white transition-colors hover:bg-[#0a3328]"
+              >
+                {isRTL ? "طلب مراجعة العقد" : "Request Contract Review"}
+                <Arrow size={16} weight="bold" />
+              </Link>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

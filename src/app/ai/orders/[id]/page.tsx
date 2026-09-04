@@ -13,6 +13,13 @@ import {
 // BETA_WHATSAPP_NUMBER / BetaReviewGate's inline "966XXXXXXXXX" — those are
 // explicitly still placeholders ("Update with real number").
 import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
+// Task B1, item 166: the shared wa.me body builder, so this message carries
+// only the reference/service label/account type/path rows buildWhatsAppMessage
+// itself decides — never order.title, which is client free text an order can
+// set to anything.
+import { buildWhatsAppMessage } from "@/lib/services/whatsappRequestMessage";
+import { CATEGORY_LABELS } from "@/components/floating/roleContext";
+import { SERVICE_TITLE_AR } from "@/lib/services/orderIntake";
 import { OrderTimeline } from "./_components/OrderTimeline";
 import { OrderSummary } from "./_components/OrderSummary";
 import { OrderActions } from "./_components/OrderActions";
@@ -156,12 +163,22 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     return Array.isArray(raw) ? raw.length : 0;
   })();
   const underRevision = order.status === "in_review" && revisionCount > 0;
+  // Task B1, item 166: was hand-composing this from `order.title`, which the
+  // client supplies as free text at submit and can set to anything — a wa.me
+  // body built from it is a message the office cannot trust. serviceTitleAr
+  // fell back to that same free text when absent; the fallback here is
+  // SERVICE_TITLE_AR (orderIntake.ts), which is keyed off metadata.service
+  // and never client-authored.
   const supportHref = buildWhatsAppHref(
-    // Both forms on purpose: the short reference is what the client would
-    // read out, the full id is what makes the message unambiguous for whoever
-    // picks it up. A WhatsApp body is not read aloud, so carrying both costs
-    // nothing.
-    `مرحباً فريق نظامي، أحتاج مساعدة بخصوص طلبي ${orderReference(order.id)} (${order.metadata?.serviceTitleAr ?? order.title}). المعرّف الكامل: ${order.id}`,
+    buildWhatsAppMessage({
+      intro: "مرحباً فريق نظامي، أحتاج مساعدة بخصوص طلبي.",
+      serviceTitle:
+        order.metadata?.serviceTitleAr
+        ?? (order.metadata?.service ? SERVICE_TITLE_AR[order.metadata.service] : "طلب خدمة"),
+      actor: { name: user.name, categoryLabel: CATEGORY_LABELS[user.userType ?? "guest"] ?? "زائر" },
+      sourcePath: `/ai/orders/${order.id}`,
+      outcome: { kind: "recorded", reference: orderReference(order.id) },
+    }),
   );
 
   return (

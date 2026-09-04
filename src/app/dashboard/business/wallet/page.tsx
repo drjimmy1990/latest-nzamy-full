@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { 
   BuildingOffice, CheckCircle, WarningCircle, Receipt, 
   DownloadSimple, CreditCard, ClockCounterClockwise, Crown, FileText, Brain
@@ -65,9 +66,12 @@ export default function BusinessWalletPage() {
                   {isRTL ? "إدارة اشتراك الشركة والمزايا المتاحة للفريق" : "Manage company subscription and team features"}
                 </p>
               </div>
-              <button className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#C8A762] text-[#0B3D2E] text-sm font-bold rounded-xl hover:opacity-90 transition shadow-sm">
+              <Link
+                href="/pricing"
+                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#C8A762] text-[#0B3D2E] text-sm font-bold rounded-xl hover:opacity-90 transition shadow-sm"
+              >
                 {isRTL ? "ترقية الباقة" : "Upgrade Plan"}
-              </button>
+              </Link>
             </div>
 
             {/* Top Cards */}

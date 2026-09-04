@@ -27,6 +27,28 @@ const TIER_RANK: Record<UserTier, number> = {
   enterprise: 6,
 };
 
+// ─── Tier → Arabic label ───────────────────────────────────────────────────────
+// The one canonical copy. Previously duplicated as a local literal inside
+// SubscriptionGuard.tsx (still is — that copy is CRITICAL risk to touch, see
+// its own file); every NEW caller should read from here instead of adding a
+// third copy.
+export const TIER_LABELS_AR: Record<UserTier, string> = {
+  free:       "المجانية",
+  shield:     "التأمين القانوني",
+  ai:         "نظامي AI",
+  pro:        "الاحترافية",
+  max:        "الماكس",
+  corp:       "حوكمة الشركات",
+  enterprise: "الشركات المتكاملة",
+};
+
+/** Arabic label for a tier key that may not be a known `UserTier` (e.g. read
+ *  off a route/config value rather than the session). Never prints a raw
+ *  English key — falls back to a generic upgrade word. */
+export function tierLabelAr(tier: string): string {
+  return TIER_LABELS_AR[tier as UserTier] ?? "ترقية";
+}
+
 // ─── Feature → minimum tier required ─────────────────────────────────────────
 const FEATURE_GATES: Record<string, UserTier> = {
   // Business / Corporate features

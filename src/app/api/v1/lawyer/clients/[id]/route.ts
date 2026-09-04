@@ -11,6 +11,7 @@ import {
   CARD_SELECT, cardToDto, foldRequest, zeroStats, dbErrorResponse, digitsOnly,
   type CardRow, type Stats,
 } from "../route";
+import { assertLinkableAccount, propagateLink } from "../_link";
 
 /**
  * /api/v1/lawyer/clients/[id] — single-client read/update, Phase 2.
@@ -213,7 +214,25 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (phone !== undefined) patch.phone = phone?.trim() || null;
     if (email !== undefined) patch.email = email?.trim() || null;
     if (city !== undefined) patch.city = city?.trim() || null;
-    if (clientUserId !== undefined) patch.client_user_id = clientUserId || null;
+    // linkTargetUserId is set ONLY when this PATCH performs a fresh LINK —
+    // that is what triggers propagation below. An unlink (null/"") clears
+    // the card's own link but never touches anything downstream: a shared
+    // contract stays shared once made, so nothing is un-propagated here.
+    let linkTargetUserId: string | null = null;
+    if (clientUserId !== undefined) {
+      if (!clientUserId) {
+        patch.client_user_id = null;
+      } else {
+        const linkCheck = await assertLinkableAccount(supabase, uid, clientUserId, id);
+        if (!linkCheck.ok) {
+          const errorBody: Record<string, unknown> = { error: linkCheck.error };
+          if (linkCheck.cardId) errorBody.cardId = linkCheck.cardId;
+          return NextResponse.json(errorBody, { status: linkCheck.status });
+        }
+        patch.client_user_id = clientUserId;
+        linkTargetUserId = clientUserId;
+      }
+    }
 
     if (nationalId !== undefined) {
       if (!nationalId) {
@@ -303,8 +322,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
 
     const updatedCard = data as CardRow;
+    const linked = linkTargetUserId ? await propagateLink(supabase, updatedCard.id, linkTargetUserId) : null;
     const stats = await statsForCard(supabase, uid, updatedCard);
-    return NextResponse.json({ data: cardToDto(updatedCard, stats) });
+    return NextResponse.json({ data: cardToDto(updatedCard, stats), linked });
   } catch (err) {
     console.error("[lawyer/clients/[id] PATCH] Unexpected error:", err);
     return NextResponse.json({ error: "تعذّر حفظ التعديلات." }, { status: 500 });

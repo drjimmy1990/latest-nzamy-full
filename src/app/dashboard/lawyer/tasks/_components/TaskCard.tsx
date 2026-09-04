@@ -162,8 +162,8 @@ export function TaskCard({
             </button>
           )}
 
-          {/* Hover actions */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* Actions — always on below md (touch has no hover), hover/focus-revealed at md+ */}
+          <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity">
             <button onClick={e => { e.stopPropagation(); openEdit(); }}
               className={`p-1.5 rounded-lg transition-all ${isDark ? "hover:bg-white/[0.06] text-zinc-500 hover:text-[#C8A762]" : "hover:bg-slate-100 text-slate-300 hover:text-royal"}`}
               title="تحرير">
@@ -188,41 +188,47 @@ export function TaskCard({
           </div>
         </div>
 
-        {/* Subtasks (read + toggle) */}
-        <AnimatePresence>
-          {expanded && task.subtasks && (
-            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden mt-2 pt-2 border-t border-dashed">
-              <p className={`text-[10px] font-bold uppercase tracking-wider mb-1.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                خطوات العمل ({task.subtasks.filter(s => s.done).length}/{task.subtasks.length})
-              </p>
-              <div className={`h-1 rounded-full mb-2 overflow-hidden ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-                <motion.div className="h-full bg-royal rounded-full"
-                  animate={{ width: `${(task.subtasks.filter(s => s.done).length / task.subtasks.length) * 100}%` }}
-                  transition={{ type: "spring", stiffness: 120, damping: 20 }}
-                />
-              </div>
-              <div className="space-y-1.5">
-                {task.subtasks.map(sub => (
-                  <button key={sub.id}
-                    onClick={e => { e.stopPropagation(); onSubtaskToggle?.(task.id, sub.id); }}
-                    className={`w-full flex items-center gap-2 text-[12px] rounded-lg px-1.5 py-1 transition-all group/sub ${
-                      onSubtaskToggle ? (isDark ? "hover:bg-white/[0.04] cursor-pointer" : "hover:bg-slate-50 cursor-pointer") : "cursor-default"
-                    } ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
-                    <div className={`w-3.5 h-3.5 rounded flex items-center justify-center flex-shrink-0 transition-all ${
-                      sub.done
-                        ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]"
-                        : isDark ? "border border-zinc-600 group-hover/sub:border-emerald-500/50" : "border border-slate-300 group-hover/sub:border-emerald-400/60"
-                    }`}>
-                      {sub.done && <CheckCircle size={9} weight="fill" className="text-white" />}
-                    </div>
-                    <span className={`text-start leading-tight ${sub.done ? "line-through opacity-50" : ""}`}>{sub.title}</span>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Subtasks — the first two are always visible so a touch user (no
+            hover, and the row-tap now competes with the action bar) is not
+            one tap away from a count with nothing under it. Anything past
+            the second only shows once «عرض الكل» is used to ask for it. */}
+        {!!task.subtasks?.length && (
+          <div className="mt-2 pt-2 border-t border-dashed">
+            <p className={`text-[10px] font-bold uppercase tracking-wider mb-1.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+              خطوات العمل ({task.subtasks.filter(s => s.done).length}/{task.subtasks.length})
+            </p>
+            <div className={`h-1 rounded-full mb-2 overflow-hidden ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
+              <motion.div className="h-full bg-royal rounded-full"
+                animate={{ width: `${(task.subtasks.filter(s => s.done).length / task.subtasks.length) * 100}%` }}
+                transition={{ type: "spring", stiffness: 120, damping: 20 }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              {(expanded ? task.subtasks : task.subtasks.slice(0, 2)).map(sub => (
+                <button key={sub.id}
+                  onClick={e => { e.stopPropagation(); onSubtaskToggle?.(task.id, sub.id); }}
+                  className={`w-full flex items-center gap-2 text-[12px] rounded-lg px-1.5 py-1 transition-all group/sub ${
+                    onSubtaskToggle ? (isDark ? "hover:bg-white/[0.04] cursor-pointer" : "hover:bg-slate-50 cursor-pointer") : "cursor-default"
+                  } ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
+                  <div className={`w-3.5 h-3.5 rounded flex items-center justify-center flex-shrink-0 transition-all ${
+                    sub.done
+                      ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]"
+                      : isDark ? "border border-zinc-600 group-hover/sub:border-emerald-500/50" : "border border-slate-300 group-hover/sub:border-emerald-400/60"
+                  }`}>
+                    {sub.done && <CheckCircle size={9} weight="fill" className="text-white" />}
+                  </div>
+                  <span className={`text-start leading-tight ${sub.done ? "line-through opacity-50" : ""}`}>{sub.title}</span>
+                </button>
+              ))}
+            </div>
+            {task.subtasks.length > 2 && (
+              <button onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
+                className={`mt-1.5 text-[10px] font-bold ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>
+                {expanded ? "إخفاء" : `عرض الكل (${task.subtasks.length})`}
+              </button>
+            )}
+          </div>
+        )}
       </motion.div>
 
       {/* ── Edit Modal ── */}

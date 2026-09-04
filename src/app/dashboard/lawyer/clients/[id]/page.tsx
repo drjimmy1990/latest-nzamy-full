@@ -2,21 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   User, Buildings, ArrowRight, Gavel, ChatDots,
   CurrencyCircleDollar, Star, Phone, EnvelopeSimple, MapPin,
   Warning, ArrowClockwise, CalendarBlank, Scales, Notepad,
   CaretLeft, IdentificationCard, PencilSimple, FloppyDisk, X,
-  Trash, LockKey, CheckCircle, Clock,
+  Trash, LockKey, CheckCircle, Clock, LinkSimple,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { itemsOf, listFailed, listOk, listViewState, type ListRead } from "@/lib/services/listRead";
 import {
-  getLawyerClient, updateLawyerClient,
-  type LawyerClient, type UpdateLawyerClientInput,
+  getLawyerClient, updateLawyerClient, createLawyerClient, getLawyerClients,
+  type LawyerClient, type UpdateLawyerClientInput, type LinkedCounts,
   type ClientFlag, type ClientStatus,
 } from "@/lib/services/lawyerClientsService";
 import {
@@ -24,6 +24,7 @@ import {
   type LawyerClientNote, type NoteVisibility,
 } from "@/lib/services/lawyerClientNotesService";
 import { CLIENT_FLAGS, feePairIssue, isMoneyFigure } from "@/lib/services/clientIdentityRules";
+import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -54,6 +55,36 @@ const FLAG_CONFIG: Record<ClientFlag, { label: string; color: string; bg: string
 const STATUS_LABEL: Record<ClientStatus, string> = {
   active: "نشط", inactive: "غير نشط", archived: "مؤرشف",
 };
+
+// ── Linking a card to a platform account ────────────────────────────────────
+// The five shapes of each counted noun the linked-message and the modal's
+// per-account request count need. `*_LINKED_FORMS` drop a zero clause
+// entirely (see arabicCount.ts) so «تم الربط» never lists a category nothing
+// moved into; `REQUEST_COUNT_FORMS` is the modal's own «N طلبات» line, where
+// zero is a real, displayed state («لا طلبات»), not an omission.
+const CONTRACT_NOUN = { one: "عقد واحد", two: "عقدان", few: "عقود", many: "عقد" };
+const REQUEST_NOUN = { one: "طلب واحد", two: "طلبان", few: "طلبات", many: "طلب" };
+const CONSULT_NOUN = { one: "استشارة واحدة", two: "استشارتان", few: "استشارات", many: "استشارة" };
+const CONTRACTS_LINKED_FORMS: ArabicCountForms = { zero: null, ...CONTRACT_NOUN };
+const REQUESTS_LINKED_FORMS: ArabicCountForms = { zero: null, ...REQUEST_NOUN };
+const CONSULTS_LINKED_FORMS: ArabicCountForms = { zero: null, ...CONSULT_NOUN };
+const REQUEST_COUNT_FORMS: ArabicCountForms = { zero: "لا طلبات", ...REQUEST_NOUN };
+
+/** «تم الربط: ٣ عقود، طلب واحد رُبطت بالبطاقة.» — only the categories that
+ *  actually moved. `null`/`undefined` (an unlink, which never carries one, or
+ *  a route that hasn't shipped `linked` yet) reads as "nothing to report",
+ *  not an error — `confirmLink` below falls back to a plain «تم الربط» rather
+ *  than showing NO confirmation for a link that actually succeeded. */
+function buildLinkedMessage(linked: LinkedCounts | null | undefined): string | null {
+  if (!linked) return null;
+  const parts = [
+    countPhraseAr(linked.contracts, CONTRACTS_LINKED_FORMS),
+    countPhraseAr(linked.serviceRequests, REQUESTS_LINKED_FORMS),
+    countPhraseAr(linked.consultations, CONSULTS_LINKED_FORMS),
+  ].filter((p): p is string => p !== null);
+  if (parts.length === 0) return "تم الربط — لم يكن لهذا الحساب سجلات أخرى لنقلها إلى البطاقة.";
+  return `تم الربط: ${parts.join("، ")} رُبطت بالبطاقة.`;
+}
 
 /**
  * Shared budget for the two service_requests reads below. Each one is a
@@ -93,6 +124,7 @@ export default function ClientDetailPage() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const params = useParams();
+  const router = useRouter();
   const clientId = params.id as string;
 
   // ── The client card itself ────────────────────────────────────────────────
@@ -121,6 +153,103 @@ export default function ClientDetailPage() {
   }, [clientId]);
 
   useEffect(() => { loadClient(); }, [loadClient]);
+
+  // ── Link a CARD to a platform account, or create a CARD for a profile ────
+  // A2: A "card" with no `clientUserId` gets «ربط بحساب على المنصّة» (opens
+  // the modal below); a linked card gets the chip + «فكّ الربط». A "profile"
+  // row (a platform account with requests but no card — see the DTO note at
+  // the top of this file) gets «إنشاء بطاقة موكّل لهذا الحساب» instead of the
+  // old dead end that only said editing was impossible.
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [accountsRead, setAccountsRead] = useState<ListRead<LawyerClient> | null>(null);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
+  const [linkModalError, setLinkModalError] = useState<string | null>(null);
+  const [linkedBanner, setLinkedBanner] = useState<string | null>(null);
+  const [unlinkConfirmOpen, setUnlinkConfirmOpen] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  const [creatingCard, setCreatingCard] = useState(false);
+  const [createCardError, setCreateCardError] = useState<string | null>(null);
+
+  const loadAccounts = useCallback(() => {
+    setAccountsLoading(true);
+    getLawyerClients().then((res) => {
+      setAccountsRead(res);
+      setAccountsLoading(false);
+    });
+  }, []);
+
+  const accountsView = listViewState(accountsLoading, accountsRead);
+  // The route only ever emits "profile" rows for an account with no card yet
+  // (see lawyerClientsService.ts) — filtered again here defensively, since a
+  // "card" row in this same list is not a candidate to link to itself.
+  const platformAccounts = useMemo(
+    () => itemsOf(accountsRead).filter((a) => a.source === "profile"),
+    [accountsRead],
+  );
+
+  const openLinkModal = () => {
+    setSelectedAccountId(null);
+    setLinkModalError(null);
+    setShowLinkModal(true);
+    loadAccounts();
+  };
+  const closeLinkModal = () => { if (!linking) setShowLinkModal(false); };
+
+  const confirmLink = async () => {
+    if (!client || !selectedAccountId || linking) return;
+    setLinking(true);
+    setLinkModalError(null);
+    try {
+      const updated = await updateLawyerClient(client.id, { clientUserId: selectedAccountId });
+      // A real link that succeeds must never read as silence — see the note
+      // on buildLinkedMessage above.
+      setLinkedBanner(buildLinkedMessage(updated.linked) ?? "تم الربط بحساب على المنصّة.");
+      setShowLinkModal(false);
+      loadClient();
+    } catch (e) {
+      setLinkModalError(e instanceof Error ? e.message : "تعذّر إتمام الربط.");
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const confirmUnlink = async () => {
+    if (!client || unlinking) return;
+    setUnlinking(true);
+    setUnlinkError(null);
+    try {
+      await updateLawyerClient(client.id, { clientUserId: null });
+      setUnlinkConfirmOpen(false);
+      setLinkedBanner(null);
+      loadClient();
+    } catch (e) {
+      setUnlinkError(e instanceof Error ? e.message : "تعذّر فكّ الربط.");
+    } finally {
+      setUnlinking(false);
+    }
+  };
+
+  const createCardForProfile = async () => {
+    if (!client || client.source !== "profile" || creatingCard) return;
+    setCreatingCard(true);
+    setCreateCardError(null);
+    try {
+      const created = await createLawyerClient({
+        name: client.name,
+        clientType: "individual",
+        phone: client.phone ?? undefined,
+        email: client.email ?? undefined,
+        clientUserId: client.clientUserId ?? client.id,
+      });
+      router.push(`/dashboard/lawyer/clients/${created.id}`);
+    } catch (e) {
+      setCreateCardError(e instanceof Error ? e.message : "تعذّر إنشاء بطاقة الموكّل.");
+      setCreatingCard(false);
+    }
+  };
 
   // ── Related work: this client's cases + consultations ────────────────────
   const [casesRead, setCasesRead] = useState<ListRead<RelatedRow> | null>(null);
@@ -447,6 +576,20 @@ export default function ClientDetailPage() {
         <span className={isDark ? "text-zinc-300" : "text-slate-700"}>{client.name}</span>
       </motion.div>
 
+      {/* Linked-account confirmation — the counts the server just moved onto
+          this card, echoed straight from updateLawyerClient's response. */}
+      {linkedBanner && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-emerald-500/20 bg-emerald-500/5" : "border-emerald-200 bg-emerald-50"}`}>
+          <LinkSimple size={18} className="text-emerald-500 flex-shrink-0" />
+          <p className={`text-[12px] font-semibold flex-1 ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>{linkedBanner}</p>
+          <button onClick={() => setLinkedBanner(null)}
+            className={`flex-shrink-0 ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>
+            <X size={14} />
+          </button>
+        </motion.div>
+      )}
+
       {/* Related-fetch error banner */}
       {relatedError && (
         <div className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50"}`}>
@@ -547,23 +690,65 @@ export default function ClientDetailPage() {
             </div>
           </div>
 
-          {/* Edit affordance — only for an actual card. A "profile" row (a
-              platform account with requests but no card yet) has no
-              lawyer_clients row for updateLawyerClient to write to. */}
-          <div className="flex-shrink-0">
+          {/* Edit affordance + platform-account link controls (A2). A "card"
+              gets تعديل plus a link chip/button; a "profile" row (a platform
+              account with requests but no card yet — its `id` IS the
+              account's user id, see the DTO note at the top of this file)
+              gets a button that makes it one instead of the old dead end
+              that only said editing was impossible. */}
+          <div className="flex-shrink-0 flex flex-col items-end gap-2">
             {client.source === "card" ? (
-              !isEditing && (
-                <button onClick={openEdit}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-bold transition-colors ${
-                    isDark ? "bg-white/[0.06] text-zinc-300 hover:bg-white/[0.1]" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}>
-                  <PencilSimple size={13} /> تعديل
-                </button>
-              )
+              <>
+                {!isEditing && (
+                  <button onClick={openEdit}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-bold transition-colors ${
+                      isDark ? "bg-white/[0.06] text-zinc-300 hover:bg-white/[0.1]" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}>
+                    <PencilSimple size={13} /> تعديل
+                  </button>
+                )}
+                {client.clientUserId ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-600"}`}>
+                      <LinkSimple size={11} /> مربوطة بحساب على المنصّة
+                    </span>
+                    {!unlinkConfirmOpen ? (
+                      <button onClick={() => setUnlinkConfirmOpen(true)}
+                        className={`text-[10px] font-bold ${isDark ? "text-zinc-500 hover:text-red-400" : "text-slate-400 hover:text-red-500"}`}>
+                        فكّ الربط
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-[10px]">
+                        <span className={isDark ? "text-zinc-500" : "text-slate-400"}>تأكيد الفكّ؟</span>
+                        <button onClick={confirmUnlink} disabled={unlinking}
+                          className="font-bold text-red-500 hover:underline disabled:opacity-50">
+                          {unlinking ? "…" : "نعم"}
+                        </button>
+                        <button onClick={() => setUnlinkConfirmOpen(false)} disabled={unlinking}
+                          className={`font-bold ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>
+                          إلغاء
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <button onClick={openLinkModal}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold transition-colors ${
+                      isDark ? "bg-royal/15 text-royal hover:bg-royal/20" : "bg-royal/10 text-royal hover:bg-royal/15"
+                    }`}>
+                    <LinkSimple size={13} /> ربط بحساب على المنصّة
+                  </button>
+                )}
+                {unlinkError && <p className="text-[10px] font-semibold text-red-500 max-w-[200px] text-left">{unlinkError}</p>}
+              </>
             ) : (
-              <p className={`text-[10px] max-w-[180px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                لا توجد بطاقة موكّل لهذا الحساب بعد — لا يمكن التعديل.
-              </p>
+              <>
+                <button onClick={createCardForProfile} disabled={creatingCard}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] disabled:opacity-50 transition-colors">
+                  <IdentificationCard size={13} /> {creatingCard ? "جارٍ الإنشاء…" : "إنشاء بطاقة موكّل لهذا الحساب"}
+                </button>
+                {createCardError && <p className="text-[10px] font-semibold text-red-500 max-w-[200px] text-left">{createCardError}</p>}
+              </>
             )}
           </div>
         </div>
@@ -948,6 +1133,88 @@ export default function ClientDetailPage() {
 
         </div>
       </div>
+
+      {/* Link-to-platform-account modal (A2). Radio cards are this lawyer's
+          own "profile" rows — a platform account with a request assigned to
+          this lawyer but no card yet, see getLawyerClients()/lawyerClientsService.ts. */}
+      {showLinkModal && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+          onClick={closeLinkModal}>
+          <motion.div initial={{ scale: 0.92, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 28 }}
+            className={`w-full max-w-md rounded-3xl border shadow-2xl overflow-hidden max-h-[85vh] flex flex-col ${isDark ? "border-white/[0.08] bg-zinc-900" : "border-slate-200 bg-white"}`}
+            onClick={e => e.stopPropagation()}>
+            <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+              <h2 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-slate-800"}`}>ربط بحساب على المنصّة</h2>
+              <button onClick={closeLinkModal}
+                className={`p-2 rounded-xl transition-colors ${isDark ? "hover:bg-white/[0.07] text-zinc-500" : "hover:bg-slate-100 text-slate-400"}`}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-2.5 overflow-y-auto flex-1">
+              {accountsView === "loading" ? (
+                <div className="text-center py-8">
+                  <div className="inline-block w-6 h-6 rounded-full border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] animate-spin" />
+                </div>
+              ) : accountsView === "unreadable" ? (
+                <div className="text-center py-8">
+                  <Warning size={24} className="mx-auto mb-2 text-red-500" weight="duotone" />
+                  <p className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّرت قراءة الحسابات</p>
+                  <button onClick={loadAccounts} className="mt-2 flex items-center gap-1 mx-auto text-[11px] font-bold text-royal hover:underline">
+                    <ArrowClockwise size={12} /> إعادة المحاولة
+                  </button>
+                </div>
+              ) : accountsView === "empty" || platformAccounts.length === 0 ? (
+                <p className={`text-[12px] text-center leading-relaxed py-8 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                  لا حسابات على المنصّة طلبت خدمة منك بعد — يظهر هنا كل عميل له طلب مُسنَد إليك.
+                </p>
+              ) : (
+                platformAccounts.map(acc => (
+                  <label key={acc.id}
+                    className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                      selectedAccountId === acc.id
+                        ? isDark ? "border-royal bg-royal/10" : "border-royal bg-royal/5"
+                        : isDark ? "border-white/[0.06] hover:border-white/[0.15]" : "border-slate-200 hover:border-slate-300"
+                    }`}>
+                    <input type="radio" name="link-platform-account" className="mt-1 accent-[#0B3D2E]"
+                      checked={selectedAccountId === acc.id}
+                      onChange={() => setSelectedAccountId(acc.id)} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[13px] font-bold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{acc.name}</p>
+                      <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                        {[acc.email, acc.phone].filter(Boolean).join(" · ") || "بلا بيانات تواصل"}
+                      </p>
+                      <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                        {countPhraseAr(acc.requestCount, REQUEST_COUNT_FORMS)}
+                      </p>
+                    </div>
+                  </label>
+                ))
+              )}
+              {linkModalError && <p className="text-[11px] font-semibold text-red-500">{linkModalError}</p>}
+            </div>
+
+            <div className={`px-5 py-4 border-t space-y-2.5 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+              <p className={`text-[10px] leading-relaxed ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                بعد الربط يرى العميل في حسابه العقود التي تربطها بهذه البطاقة، وتظهر استشاراته وطلباته تحت الموكّل نفسه.
+              </p>
+              <div className="flex items-center gap-2">
+                <button onClick={confirmLink} disabled={!selectedAccountId || linking}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] disabled:opacity-50 transition-colors">
+                  {linking ? "جارٍ الربط…" : "ربط"}
+                </button>
+                <button onClick={closeLinkModal} disabled={linking}
+                  className={`px-4 py-2.5 rounded-xl text-[12px] font-bold transition-colors ${isDark ? "text-zinc-400 hover:bg-white/[0.05]" : "text-slate-500 hover:bg-slate-100"}`}>
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
 
     </div>
   );

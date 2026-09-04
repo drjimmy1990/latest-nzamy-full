@@ -80,7 +80,39 @@ export interface CreateLawyerClientInput {
   clientUserId?: string;
 }
 
-export type UpdateLawyerClientInput = Partial<CreateLawyerClientInput> & { status?: ClientStatus };
+/**
+ * `clientUserId` here widens to `| null` on top of `CreateLawyerClientInput`'s
+ * `?: string` — the one call `createLawyerClient` never needs (a brand-new
+ * card cannot un-link an account it never had) but `updateLawyerClient` does:
+ * «فكّ الربط» sends `{ clientUserId: null }` to clear an existing link, and an
+ * omitted key (still valid — every other patch) leaves it untouched.
+ */
+export type UpdateLawyerClientInput =
+  Omit<Partial<CreateLawyerClientInput>, "clientUserId"> & { status?: ClientStatus; clientUserId?: string | null };
+
+/**
+ * Contracts/requests/consultations the server re-attributed to a card the
+ * moment `clientUserId` was set — echoed back on the SAME response as the
+ * updated `data`, so a screen can say exactly what just moved without a
+ * second read. Present only when a link actually happened this call: absent
+ * on every other create/update, and absent when unlinking (`clientUserId:
+ * null`) since nothing moves TO the card at that point.
+ */
+export interface LinkedCounts {
+  contracts: number;
+  serviceRequests: number;
+  consultations: number;
+}
+
+/**
+ * What `createLawyerClient`/`updateLawyerClient` actually return: the saved
+ * `LawyerClient` row, plus `linked` when this call linked a platform account.
+ * A structural superset of `LawyerClient` — every existing caller that only
+ * reads client fields (or assigns the result to a `LawyerClient`-typed
+ * variable) keeps compiling unchanged; only a caller that wants the linked
+ * counts needs to know this type exists.
+ */
+export type LawyerClientWithLinked = LawyerClient & { linked?: LinkedCounts };
 
 const BASE = "/api/v1/lawyer/clients";
 
@@ -111,16 +143,19 @@ export async function getLawyerClient(id: string): Promise<LawyerClient | null> 
 }
 
 /** Throws on failure — a save button must be able to say it failed. The message is screen copy from the route. */
-export async function createLawyerClient(input: CreateLawyerClientInput): Promise<LawyerClient> {
+export async function createLawyerClient(input: CreateLawyerClientInput): Promise<LawyerClientWithLinked> {
   if (!isSupabaseMode) throw new Error("حفظ الموكّلين غير متاح في وضع العرض التجريبي");
-  const res = await apiMutate<{ data: LawyerClient }>(BASE, "POST", input);
+  // `linked` is typed `| null` (not just `?:`) because the route SENDS an
+  // explicit `null` on every call that did not link an account — never an
+  // omitted key. `res.linked ? … : res.data` reads null and undefined alike.
+  const res = await apiMutate<{ data: LawyerClient; linked?: LinkedCounts | null }>(BASE, "POST", input);
   if (!res?.data) throw new Error("لم يُعِد الخادم بيانات الموكّل المحفوظ.");
-  return res.data;
+  return res.linked ? { ...res.data, linked: res.linked } : res.data;
 }
 
-export async function updateLawyerClient(id: string, patch: UpdateLawyerClientInput): Promise<LawyerClient> {
+export async function updateLawyerClient(id: string, patch: UpdateLawyerClientInput): Promise<LawyerClientWithLinked> {
   if (!isSupabaseMode) throw new Error("تعديل الموكّلين غير متاح في وضع العرض التجريبي");
-  const res = await apiMutate<{ data: LawyerClient }>(`${BASE}/${encodeURIComponent(id)}`, "PATCH", patch);
+  const res = await apiMutate<{ data: LawyerClient; linked?: LinkedCounts | null }>(`${BASE}/${encodeURIComponent(id)}`, "PATCH", patch);
   if (!res?.data) throw new Error("لم يُعِد الخادم بيانات الموكّل بعد التعديل.");
-  return res.data;
+  return res.linked ? { ...res.data, linked: res.linked } : res.data;
 }

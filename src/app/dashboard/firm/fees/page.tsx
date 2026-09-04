@@ -8,6 +8,7 @@ import {
   ArrowUp, ArrowDown,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { useRouter } from "next/navigation";
 import React, { memo } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -119,6 +120,7 @@ function StatusBadge({ status }: { status: Invoice["status"] }) {
 
 export default function FirmFeesPage() {
   const { isDark } = useTheme();
+  const router = useRouter();
 
   const ts = isDark ? "text-zinc-500" : "text-zinc-400";
   const tp = isDark ? "text-white" : "text-zinc-900";
@@ -281,7 +283,10 @@ export default function FirmFeesPage() {
             <p className={`text-[11px] leading-relaxed mb-4 ${ts}`}>
               فوترة غير محدودة، تذكيرات آلية بالسداد، وربط مباشر مع ZATCA.
             </p>
-            <MagneticButton className="w-full py-2.5 rounded-xl bg-[#C8A762] text-white text-[11px] font-bold tracking-wide transition-opacity hover:opacity-90">
+            <MagneticButton
+              onClick={() => router.push("/pricing")}
+              className="w-full py-2.5 rounded-xl bg-[#C8A762] text-white text-[11px] font-bold tracking-wide transition-opacity hover:opacity-90"
+            >
               <Sparkle size={12} className="inline ml-1" />
               عرض الباقات
             </MagneticButton>

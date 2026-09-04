@@ -8,6 +8,7 @@ import {
   feePairIssue, normalizeDigits,
 } from "@/lib/services/clientIdentityRules";
 import { hashNationalId, normalizedCommercialRegister } from "@/lib/services/clientIdentityHash";
+import { assertLinkableAccount, propagateLink } from "./_link";
 
 /**
  * /api/v1/lawyer/clients — Phase 2 (خطة_البناء_الكاملة_٢٠٢٦-٠٩-٠٢.md §6).
@@ -384,6 +385,15 @@ export async function POST(request: NextRequest) {
     });
     if (issue) return NextResponse.json({ error: issue }, { status: 400 });
 
+    if (clientUserId) {
+      const linkCheck = await assertLinkableAccount(supabase, user.id, clientUserId);
+      if (!linkCheck.ok) {
+        const errorBody: Record<string, unknown> = { error: linkCheck.error };
+        if (linkCheck.cardId) errorBody.cardId = linkCheck.cardId;
+        return NextResponse.json(errorBody, { status: linkCheck.status });
+      }
+    }
+
     const validFlags = Array.isArray(flags) ? flags.filter(isClientFlag) : [];
 
     const { data: membership, error: membershipError } = await supabase
@@ -428,7 +438,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: message }, { status });
     }
 
-    return NextResponse.json({ data: cardToDto(data as CardRow, zeroStats()) });
+    const createdCard = data as CardRow;
+    const linked = clientUserId ? await propagateLink(supabase, createdCard.id, clientUserId) : null;
+    return NextResponse.json({ data: cardToDto(createdCard, zeroStats()), linked }, { status: 201 });
   } catch (err) {
     console.error("[lawyer/clients POST] Unexpected error:", err);
     return NextResponse.json({ error: "تعذّر حفظ الموكّل." }, { status: 500 });

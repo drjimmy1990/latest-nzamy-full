@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, CheckCircle, Brain, PencilSimple } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, CheckCircle, PencilSimple } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { createWorkflowId, saveWorkflowRequest } from "@/lib/workflowStore";
-import { ContractType, Mode, ReviewResult, Step } from "./_components/contractTypes";
+import { ContractType, Mode, Step } from "./_components/contractTypes";
 import { generateContractText } from "./_components/contractTemplates";
 import StepModeSelector from "./_components/StepModeSelector";
 import StepTypeSelector from "./_components/StepTypeSelector";
@@ -58,32 +58,9 @@ export default function ContractDrafterPage() {
   const [contractText, setContractText] = useState("");
   const [copied, setCopied] = useState(false);
   const [step4Tab, setStep4Tab] = useState<"text" | "review">("text");
-  const [isReviewing, setIsReviewing] = useState(false);
-  const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
   const [savedContractId, setSavedContractId] = useState<string | null>(null);
 
   // ── Actions ────────────────────────────────────────────────────────────────
-
-  async function handleQuickReview() {
-    setIsReviewing(true);
-    setStep4Tab("review");
-    await new Promise((r) => setTimeout(r, 2000));
-    setReviewResult({
-      score: 62,
-      verdict: "المسودة مقبولة للغرض الأساسي لكنها تفتقر لبنود حماية مهمة",
-      risks: [
-        "لا تتضمن شرط جزائي واضح عند التأخر أو المخالفة",
-        "بند حل النزاعات مكتفٍ بالتراضي فقط — يُنصح بتحديد المحكمة المختصة",
-        "غياب آلية lien أو ضمان عيني يُضعف موقفك إن أخلّ الطرف الآخر بالتزاماته",
-      ],
-      suggestions: [
-        "أضف شرطاً جزائياً: ٢-٥٪ من قيمة العقد عن كل أسبوع تأخير",
-        "حدد المحكمة المختصة: محاكم مدينة ... باعتبارها الاختصاص الأصيل",
-        "فكّر في مراجعة محامٍ متخصص للحصول على نسخة مُحكمة قانونياً",
-      ],
-    });
-    setIsReviewing(false);
-  }
 
   async function handleGenerateContract() {
     setIsGenerating(true);
@@ -137,7 +114,6 @@ export default function ContractDrafterPage() {
     setFormData({});
     setAgreed(false);
     setContractText("");
-    setReviewResult(null);
     setSavedContractId(null);
   }
 
@@ -262,10 +238,8 @@ export default function ContractDrafterPage() {
                 contractType={selectedType}
                 copied={copied}
                 step4Tab={step4Tab}
-                isReviewing={isReviewing}
-                reviewResult={reviewResult}
                 onCopy={handleCopy}
-                onTabChange={(tab) => { setStep4Tab(tab); if (tab === "review" && !reviewResult && !isReviewing) handleQuickReview(); }}
+                onTabChange={setStep4Tab}
                 onBack={() => setStep(3)}
                 onRequestLawyer={() => setStep(5)}
                 ArrowBack={ArrowBack}
@@ -280,34 +254,16 @@ export default function ContractDrafterPage() {
                 contractText={contractText}
                 onTextChange={setContractText}
                 onBack={() => setMode(null)}
-                onStartReview={() => {
-                  setStep(2);
-                  handleQuickReview().then(() => setStep(3));
-                }}
+                onStartReview={() => setStep(3)}
                 ArrowBack={ArrowBack}
               />
             )}
-            {mode === "review" && step === 2 && (
-              <motion.div key="step2-review" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center justify-center py-20">
-                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }} className="mb-6">
-                  <Brain size={48} className="text-[#0B3D2E]" weight="duotone" />
-                </motion.div>
-                <h2 className={`text-xl font-bold mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>
-                  {isRTL ? "يتم تقييم العقد..." : "Evaluating Contract..."}
-                </h2>
-                <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                  {isRTL ? "يقوم نظامي AI بفحص البنود لاكتشاف المخاطر وبنود الغبن." : "Nezamy AI is scanning clauses to detect risks."}
-                </p>
-              </motion.div>
-            )}
-            {mode === "review" && step === 3 && reviewResult && (
+            {mode === "review" && step === 3 && (
               <StepContractResult
                 contractText={contractText}
                 contractType={null}
                 copied={copied}
                 step4Tab="review"
-                isReviewing={false}
-                reviewResult={reviewResult}
                 onCopy={handleCopy}
                 onTabChange={setStep4Tab}
                 onBack={() => setStep(1)}

@@ -23,6 +23,10 @@ import {
 import { LEGAL_BRANCHES_REGULAR } from "@/components/draft/draftConstants";
 import { getLawyerById, type LawyerProfile } from "@/lib/services/lawyerService";
 import { uploadDocumentFile, isUploadTimeoutError } from "@/lib/services/documentService";
+// Task B1, item 15: same helper client/requests/page.tsx prints its raw
+// UUIDs through — a 36-character id is not something a client reads over
+// the phone.
+import { orderReference } from "@/lib/services/orderReference";
 
 import {
   type ConsultPath,
@@ -551,7 +555,7 @@ export default function NewConsultationPage() {
                   clause is the truth about what that remedy does and does not
                   do — it must not promise an automatic re-attach. */}
               <p>
-                الطلب نفسه مسجَّل ولم يتأثر، ولا يمكن إعادة إرفاق هذه الملفات به من هذه الصفحة. لإرسالها ارفعها من صفحة «مستنداتي»، ثم اذكر رقم الطلب <strong>{requestId}</strong> عند التواصل — الملفات المرفوعة هناك تُحفظ في حسابك ولا تُربط بهذا الطلب تلقائياً.
+                الطلب نفسه مسجَّل ولم يتأثر، ولا يمكن إعادة إرفاق هذه الملفات به من هذه الصفحة. لإرسالها ارفعها من صفحة «مستنداتي»، ثم اذكر رقم الطلب <strong dir="ltr">{orderReference(requestId) || requestId}</strong> عند التواصل — الملفات المرفوعة هناك تُحفظ في حسابك ولا تُربط بهذا الطلب تلقائياً.
               </p>
               <Link
                 href="/dashboard/client/documents"
@@ -570,11 +574,11 @@ export default function NewConsultationPage() {
                   on that field — and the only queue that reads it is the نظامي
                   team's fulfilment queue. No lawyer dashboard is shown this
                   request, so the sentence now names the desk that does see it. */}
-              <span>رقم الطلب <strong>{requestId}</strong>. يظهر الآن في طلباتك، ووصل إلى فريق نظامي كطلب وارد.</span>
+              <span>رقم الطلب <strong dir="ltr">{orderReference(requestId) || requestId}</strong>. يظهر الآن في طلباتك، ووصل إلى فريق نظامي كطلب وارد.</span>
             </div>
           )}
           {path === "ai" && requestId && (
-            <p className={`mb-5 text-xs font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>رقم الطلب: {requestId}</p>
+            <p className={`mb-5 text-xs font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>رقم الطلب: <span dir="ltr">{orderReference(requestId) || requestId}</span></p>
           )}
           <div className="flex flex-col gap-2.5">
             <button

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ArrowRight, Robot, FileText, Warning, SealCheck,
-  Copy, FileArrowUp, WhatsappLogo, CalendarBlank, ArrowClockwise,
+  Copy, FileArrowUp, WhatsappLogo, CalendarBlank, ArrowClockwise, User,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -1357,7 +1357,9 @@ export default function ConsultationRoomPage() {
                 always a lawyer. The old code chose between an «AI» avatar and
                 this one on `receiver`, which meant every row got the AI mark. */}
             <div className="h-10 w-10 rounded-full bg-emerald-600 flex items-center justify-center shadow-md">
-              <span className="text-white font-extrabold text-sm">ن</span>
+              {consultation.lawyerName?.trim()
+                ? <span className="text-white font-extrabold text-sm">{consultation.lawyerName.trim().charAt(0)}</span>
+                : <User size={20} weight="bold" className="text-white" />}
             </div>
           </div>
           <div className="min-w-0">

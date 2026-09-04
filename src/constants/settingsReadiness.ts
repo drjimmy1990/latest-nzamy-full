@@ -166,8 +166,8 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
       canUseDelegation: false,
       canUseReferral: true,
       showPayments: true,
-      showSubscription: false,
-      visibleTabs: uniqueTabs(["profile", "security", "notifications", "privacy", "payments", "referral", "help"]),
+      showSubscription: true,
+      visibleTabs: uniqueTabs(["profile", "security", "notifications", "privacy", "payments", "subscription", "referral", "help"]),
       inviteRoles: [],
     };
   }

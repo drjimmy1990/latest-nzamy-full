@@ -238,7 +238,16 @@ export async function GET(request: NextRequest) {
     total: typeof count === "number" ? count : null,
     data: orders.map((o) => ({
       ...o,
-      profile: profileMap.get(o.requester_user_id as string) ?? null,
+      // requester_user_id is null for an unauthenticated lead (the three-step
+      // form does not require an account). That is not "no profile data yet"
+      // — it is a different account type from every value profiles.user_type
+      // can hold, so it gets its own synthetic one here rather than `null`,
+      // which the admin queue's ACCOUNT_BADGE map (keyed on this same field)
+      // would otherwise render as no badge at all, indistinguishable from a
+      // registered client whose profile row is simply missing.
+      profile: o.requester_user_id
+        ? (profileMap.get(o.requester_user_id as string) ?? null)
+        : { user_type: "guest" },
       // null for every individual order, and for a company whose row has not
       // been created yet. The card must render nothing at all in that case —
       // never «شركة جديدة», never a blank CR label.
