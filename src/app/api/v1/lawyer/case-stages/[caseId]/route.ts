@@ -8,10 +8,9 @@ import {
 } from "@/lib/services/caseStageVocabulary";
 import {
   type HolidayKind, type HolidayRule,
-  computeDueDate, resolveHolidayDates, parseIsoDate, addDays, isoDate,
+  computeDueDate, resolveHolidayDates, parseIsoDate,
 } from "@/lib/services/deadlineEngine";
-
-const RIYADH_06 = "T06:00:00+03:00";
+import { enqueueDeadlineReminders } from "@/lib/deadlineReminders";
 
 /**
  * /api/v1/lawyer/case-stages/[caseId] — Phase 1 (خطة_البناء_الكاملة §5), the
@@ -48,11 +47,12 @@ const RIYADH_06 = "T06:00:00+03:00";
  * row for this `(stage_id, rule_id)` pair already does (idempotent — a PATCH
  * that repeats the same outcome does not double-create). The due date is
  * computed the same way the deadlines POST route will (`deadlineEngine.ts`
- * against `court_holidays`), and the same {7,3,1}+due reminder rows are
- * queued into `notification_outbox` for the cron scheduler
- * (`/api/v1/cron/deadlines`) to deliver. This whole hook is best-effort: any
- * failure in it is logged and swallowed — it must never fail the PATCH that
- * recorded the outcome.
+ * against `court_holidays`), and the reminders are queued into
+ * `notification_outbox` through `enqueueDeadlineReminders` — the default
+ * {7,3,1}+due offsets, with any already past skipped rather than
+ * back-dated — for the cron scheduler (`/api/v1/cron/deadlines`) to
+ * deliver. This whole hook is best-effort: any failure in it is logged and
+ * swallowed — it must never fail the PATCH that recorded the outcome.
  */
 
 interface StageRow {
@@ -235,13 +235,6 @@ const DEGREE_TO_AUTO_RULE_CODE: Record<string, string | undefined> = {
   appeal: "cassation",
 };
 
-/** "<due_date - offsetDays>T06:00:00+03:00" — Riyadh 06:00, per the reminder contract. offsetDays 0 = the due date itself. Date math goes through deadlineEngine's addDays/isoDate — the ONE place a date is computed (see deadlines/route.ts line 371, the identical pattern). */
-function reminderScheduledForIso(dueDateIso: string, offsetDays: number): string | null {
-  const due = parseIsoDate(dueDateIso);
-  if (!due) return null;
-  return `${isoDate(addDays(due, -offsetDays))}${RIYADH_06}`;
-}
-
 /**
  * Auto-creates the statutory deadline for the filing window that opens when
  * a stage closes (see the header comment's Phase 5 hook section). Runs on
@@ -379,20 +372,13 @@ async function autoCreateStatutoryDeadline(params: {
       console.error("[case-stages PATCH] auto-deadline activity record failed:", activityErr);
     }
 
-    const outboxRows = [7, 3, 1, 0].map((offsetDays) => ({
-      deadline_id: deadline.id as string,
-      recipient_user_id: userId,
-      channel: "in_app" as const,
-      kind: offsetDays === 0 ? "deadline_due" : `deadline_reminder_${offsetDays}d`,
-      scheduled_for: reminderScheduledForIso(deadline.due_date as string, offsetDays),
-    })).filter((row): row is typeof row & { scheduled_for: string } => row.scheduled_for !== null);
-
-    if (outboxRows.length > 0) {
-      const { error: outboxError } = await supabase.from("notification_outbox").insert(outboxRows);
-      if (outboxError && outboxError.code !== "23505") {
-        console.error("[case-stages PATCH] auto-deadline outbox insert failed:", outboxError.message, outboxError.code);
-      }
-    }
+    await enqueueDeadlineReminders({
+      supabase,
+      deadlineId: deadline.id as string,
+      recipientUserId: userId,
+      title,
+      dueDate: deadline.due_date as string,
+    });
 
     const summary: AutoDeadlineSummary = {
       id: deadline.id as string,

@@ -36,6 +36,7 @@ import {
 import type { SharedCase, CaseStatus, CaseType, CasePriority } from "@/lib/casesStore";
 import { readWorkflowRequestsLocal } from "@/lib/clientWorkflowRepository";
 import type { WorkflowRequest } from "@/lib/workflowStore";
+import type { ConsultationStatus, ConsultationMode, ConsultationOutcome } from "@/lib/services/consultationVocabulary";
 
 // Re-export
 export type { SharedCase, CaseStatus, CaseType, CasePriority };
@@ -43,6 +44,22 @@ export { getCaseTypeLabel };
 
 // ─── Consultation types ───────────────────────────────────────────────────────
 
+/**
+ * A row of GET /api/v1/consultations (`select("*")` on `public.consultations`
+ * — 20260905_phase3_consultations_and_contracts.sql).
+ *
+ * `status` is now the full five-value lifecycle from consultationVocabulary.ts
+ * (was a stale four-value union missing `no_show`, which the migration's own
+ * CHECK constraint allows). `notes` was removed: it was never a real column —
+ * the lawyer's private notes live in `consultation_notes` instead (DECISION 3
+ * of that migration), reachable only through
+ * /api/v1/lawyer/consultations/[id]/notes, never through this row (a client
+ * who can SELECT their own consultation must not be able to SELECT a lawyer's
+ * private note by widening this DTO). The five new optional fields below are
+ * real columns the row now carries that the client's own consultation list may
+ * want to show; snake_case to match `select("*")` exactly, like every other
+ * field here.
+ */
 export interface Consultation {
   id: string;
   client_id: string;
@@ -50,9 +67,13 @@ export interface Consultation {
   type: string;
   topic: string;
   description: string;
-  status: "requested" | "scheduled" | "completed" | "cancelled";
+  status: ConsultationStatus;
   scheduled_at?: string;
-  notes?: string;
+  duration_minutes?: number;
+  mode?: ConsultationMode;
+  outcome?: ConsultationOutcome;
+  opinion_text?: string;
+  opinion_delivered_at?: string;
   created_at: string;
 }
 
@@ -239,6 +260,13 @@ export async function getConsultations(opts?: {
 }
 
 /**
+ * @deprecated (2026-09-05, phase 3) POST /api/v1/consultations now answers
+ * every call with 409 — a `consultations` row is born automatically with its
+ * `service_requests` row (trigger `consultation_from_service_request()`,
+ * 20260905_phase3_consultations_and_contracts.sql, DECISION 2). Still zero
+ * call sites, same as when the note below was written; kept for whoever
+ * searches for how a consultation used to get created.
+ *
  * `request_id` is REQUIRED and has been since this function was written — the
  * column is `not null unique references service_requests(id)`
  * (20260518_client_workflow_backend_ready.sql:54). It was missing from this
@@ -287,6 +315,17 @@ export async function createConsultation(data: {
 }
 
 /**
+ * @deprecated (2026-09-05, phase 3) The CLIENT side may not drive
+ * `status`/`scheduled_at` any more — PATCH /api/v1/consultations/[id] scopes
+ * that UPDATE to the lawyer/firm side only (RLS policy "consultations
+ * update", can_access_case_row(lawyer_user_id, firm_id)) and answers a
+ * client-originated call with 403, not a write. `notes` was removed from the
+ * patch shape: it was never a real column on this row (see the `Consultation`
+ * interface's own comment above) and the route no longer accepts it either.
+ * A lawyer screen wanting to change a consultation's status/schedule should
+ * call /api/v1/lawyer/consultations/[id] (lawyerConsultationsService.ts)
+ * instead — this function is the client-side shape and stays retired with it.
+ *
  * THROWS on failure, like `createConsultation` above and unlike the old
  * `catch { return null }`. A write that silently reports "nothing came back"
  * is how a rescheduled hearing date ends up shown as saved when the PATCH was
@@ -300,7 +339,7 @@ export async function createConsultation(data: {
  */
 export async function updateConsultation(
   id: string,
-  patch: { status?: string; scheduled_at?: string; notes?: string },
+  patch: { status?: ConsultationStatus; scheduled_at?: string },
 ): Promise<Consultation> {
   if (!isSupabaseMode) {
     throw new Error("تعديل الاستشارات غير متاح في وضع العرض التجريبي");
