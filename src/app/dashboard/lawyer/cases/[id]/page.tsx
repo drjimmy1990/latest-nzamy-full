@@ -10,7 +10,7 @@ import {
   ArrowUpRight, CheckCircle, Warning, PencilSimple, Scales,
   MapPin, MoneyWavy, Robot, FolderOpen, Eye, CheckSquare,
   Graph, UsersThree, Circle, DotsThree,
-  ArrowsOut, ArrowsIn, Spinner, ArrowClockwise, Timer,
+  ArrowsOut, ArrowsIn, Spinner, ArrowClockwise, Timer, SortAscending,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -130,6 +130,26 @@ interface TimelineRow {
 /** The four stages of the file, in order. `stageIdx` indexes into this. */
 const CASE_STAGES = ["تقديم", "قيد التداول", "مراجعة", "إغلاق"] as const;
 
+/**
+ * Arabic labels for `service_requests.type` — every value the
+ * `service_requests_type_check` CHECK constraint allows
+ * (supabase/migrations/20260814_service_orders_types.sql). The header badge
+ * used to print this column raw, so a case a lawyer created themselves — its
+ * type is the literal "service" (AddCaseModal.tsx) — showed the English word
+ * "service" on an otherwise fully Arabic card. Same words the client sees for
+ * the same type in dashboard/client/requests/page.tsx's TYPE_CFG.
+ */
+const CASE_TYPE_LABELS: Record<string, string> = {
+  service: "خدمة",
+  consultation: "استشارة",
+  business_case: "قضية",
+  ngo_volunteer: "متطوع",
+  ai_draft: "صياغة مذكرة",
+  ai_contracts: "عقود",
+  ai_wargaming: "محاكاة",
+  ai_legal_opinion: "رأي قانوني",
+};
+
 const STATUS_CONFIG: Record<CaseStatus, { label: string; color: string; dot: string }> = {
   active:    { label: "نشطة",   color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20", dot: "bg-emerald-400 animate-pulse" },
   pending:   { label: "انتظار", color: "text-amber-500 bg-amber-500/10 border-amber-500/20",       dot: "bg-amber-400" },
@@ -201,7 +221,7 @@ function toCaseTask(t: LawyerTask): CaseTask {
 
 // «٢ من ٣» — the progress indicator the owner asked for, in Arabic-Indic digits.
 const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-const toArabicDigits = (n: number) => String(n).replace(/\d/g, d => AR_DIGITS[Number(d)]);
+const toArabicDigits = (n: number | string) => String(n).replace(/\d/g, d => AR_DIGITS[Number(d)]);
 
 const TABS = [
   { id: "overview",  label: "نظرة عامة",  icon: Gavel },
@@ -292,11 +312,40 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * Was `${bytes} B` / `${n} KB` / `${n} MB` — Western digits with a Latin unit
+ * sitting beside this page's Arabic-Indic dates and `toArabicDigits` counters
+ * on the same document row (finding 189). `toArabicDigits` here can take the
+ * whole formatted string, not just an integer — the decimal point in "1.1"
+ * survives untouched, only the digits change.
+ */
 function formatFileSize(bytes: number | null | undefined): string {
   if (bytes == null) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024) return `${toArabicDigits(bytes)} بايت`;
+  if (bytes < 1024 * 1024) return `${toArabicDigits((bytes / 1024).toFixed(1))} كيلوبايت`;
+  return `${toArabicDigits((bytes / (1024 * 1024)).toFixed(1))} ميجابايت`;
+}
+
+/**
+ * A coarse, honest file-type label from `mime_type` — the real column
+ * `attachments.mime_type` already carries (used before only to pick the
+ * card's icon colour). The document row had no category at all (finding
+ * 190); this is the part of "category" that real data on the row can answer
+ * without inventing a taxonomy nothing writes to. Uploader is now the other
+ * real column: `attachments.owner_user_id` resolved to `profiles.display_name`
+ * server-side (the same service-role join finding 183 added) and returned as
+ * `doc.uploaderName` — shown next to the type chip when present. "Source" (an
+ * intake channel — email, WhatsApp, portal) still has no column anywhere and
+ * stays out rather than be invented.
+ */
+function fileTypeLabel(mimeType: string | null | undefined): string {
+  const mt = (mimeType ?? "").toLowerCase();
+  if (mt.startsWith("image/")) return "صورة";
+  if (mt.includes("sheet") || mt.includes("excel") || mt.includes("csv")) return "جدول بيانات";
+  if (mt.includes("presentation") || mt.includes("powerpoint")) return "عرض تقديمي";
+  if (mt.startsWith("text/")) return "ملف نصي";
+  if (mt.includes("pdf") || mt.includes("word") || mt.includes("msword") || mt.includes("document")) return "مستند";
+  return "ملف";
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -358,6 +407,10 @@ export default function CaseDetailPage() {
   const [hearingsRead, setHearingsRead] = useState<ListRead<HearingDto> | null>(null);
   const [hearingsLoading, setHearingsLoading] = useState(true);
   const [showAddHearing, setShowAddHearing] = useState(false);
+  // The API already returns hearings date-asc (see the note on `hearings`
+  // below), so this tab had no sort control at all. `false` keeps that order
+  // (soonest first); `true` flips it (most recent first).
+  const [hearingsSortDesc, setHearingsSortDesc] = useState(false);
 
   // ── درجات التقاضي linked to this case (Phase 1, public.case_stages) ──
   const [stagesRead, setStagesRead] = useState<ListRead<CaseStage> | null>(null);
@@ -431,6 +484,13 @@ export default function CaseDetailPage() {
   // "upcoming" row is genuinely the soonest.
   const nextHearing = hearings.find((h) => h.status === "upcoming");
 
+  /** The hearings tab's sort toggle — see `hearingsSortDesc` above. `hearings`
+   * is already date-asc, so flipping it is a plain reverse, not a re-sort. */
+  const sortedHearings = useMemo(
+    () => (hearingsSortDesc ? [...hearings].reverse() : hearings),
+    [hearings, hearingsSortDesc],
+  );
+
   // ── Derived: timeline from events ──
   const timeline: TimelineRow[] = useMemo(() => {
     if (!caseData?.events) return [];
@@ -466,21 +526,22 @@ export default function CaseDetailPage() {
 
   // ── Derived: team = assigned lawyer + client ──
   //
-  // `assignedTo` معرّف حساب (UUID) وليس اسماً: المسار يعيد
-  // `assignedTo: row.assigned_to` بلا أي ضمّ لجدول profiles
-  // (api/v1/service-requests/[id]/route.ts:126). فكان يُعرض هنا اسماً كاملاً تحت
-  // «المحامي المسؤول»، وتُشتق منه الحرف الأول للصورة الرمزية — أي خانة سداسية
-  // عشرية داخل الدائرة. المعرّف ليس اسماً فلا يُعرض كاسم؛ ما نملكه حقاً هو أن
-  // الطلب مُسند، لا إلى مَن. الاسم الحقيقي يحتاج ضمّ profiles على ذلك المسار.
+  // `assignedTo` معرّف حساب (UUID) وليس اسماً، و`api/v1/service-requests/[id]/
+  // route.ts`'s GET كان يعيده بلا أي ضمّ لجدول profiles — فكان يُعرض هنا اسماً
+  // كاملاً تحت «المحامي المسؤول» وتُشتق منه الحرف الأول للصورة الرمزية، أي خانة
+  // سداسية عشرية داخل الدائرة. المسار الآن يضمّ `profiles.display_name` عبر
+  // عميل service-role (بحث finding 183) ويعيده كـ`assignedToName`؛ يُعرض عند
+  // توفره، وإلا فواقعة الإسناد وحدها كما كانت.
   const team = useMemo(() => {
     if (!caseData) return [] as { name: string; role: string; avatar: string; nameKnown: boolean }[];
     const members: { name: string; role: string; avatar: string; nameKnown: boolean }[] = [];
     if (caseData.assignedTo) {
+      const name = caseData.assignedToName?.trim();
       members.push({
-        name: "الاسم غير متاح",
+        name: name || "الاسم غير متاح",
         role: "المحامي المسؤول",
-        avatar: "",
-        nameKnown: false,
+        avatar: name ? name.charAt(0) : "",
+        nameKnown: !!name,
       });
     }
     if (caseData.requester?.name) {
@@ -861,9 +922,10 @@ export default function CaseDetailPage() {
   const filedDate = formatDate(caseData.createdAt);
   const referenceNo = caseData.id;
   // كان هذا يطبع `assigned_to` كما هو تحت أيقونة شخص في ترويسة القضية — أي UUID
-  // في موضع اسم المحامي. لا اسم في اليد (اقرأ التعليق على `team` أعلاه)، والحقيقة
-  // الوحيدة المتاحة هي وجود إسناد من عدمه، فهي وحدها ما يُعرض.
-  const assigneeDisplay = caseData.assignedTo ? "مُسندة إلى محامٍ" : "غير مُسندة";
+  // في موضع اسم المحامي. الاسم الحقيقي متاح الآن عبر `assignedToName` (اقرأ
+  // التعليق على `team` أعلاه)؛ يُعرض عند توفره، وإلا فواقعة الإسناد وحدها.
+  const assigneeName = caseData.assignedToName?.trim();
+  const assigneeDisplay = assigneeName || (caseData.assignedTo ? "مُسندة إلى محامٍ" : "غير مُسندة");
 
   return (
     <div className="max-w-[1100px] mx-auto space-y-5" dir="rtl">
@@ -888,7 +950,7 @@ export default function CaseDetailPage() {
                 {statusConf.label}
               </span>
               <span className={`text-[11px] px-2 py-1 rounded-lg ${isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
-                {caseData.type}
+                {CASE_TYPE_LABELS[caseData.type] ?? caseData.type}
               </span>
               <span className={`text-[11px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                 {referenceNo}
@@ -909,10 +971,11 @@ export default function CaseDetailPage() {
                   tell which was which (finding 183). The scales are the lawyer
                   in this product's own icon vocabulary; they are what the case
                   tab strip uses.
-                  The missing NAME is the other half of 183 and is not fixable
-                  here: `assigned_to` is a UUID and nothing joins it to a
-                  profile, so the honest line is the fact of assignment. Naming
-                  the lawyer needs the Phase 1 tables. */}
+                  The NAME half of 183 is resolved server-side now — the GET
+                  route joins `assigned_to` to `profiles.display_name` via a
+                  service-role client (RLS only allows "own row" / admin) and
+                  returns it as `assignedToName`; shown when present, else the
+                  bare fact of assignment. */}
               <span className="flex items-center gap-1.5"><Scales size={13} />{assigneeDisplay}</span>
               {value && (
                 <span className="flex items-center gap-1.5"><MoneyWavy size={13} />{value}</span>
@@ -1032,19 +1095,22 @@ export default function CaseDetailPage() {
                     has no open work — the one thing a lawyer glancing at an
                     overview would act on. On anything but a completed read the
                     figures are withheld and the reason is printed instead. */}
-                <div className={`grid grid-cols-3 gap-2 p-3 rounded-xl ${isDark ? "bg-white/[0.03]" : "bg-slate-50"}`}>
-                  {[
-                    { label: "مكتملة",     value: taskStats.done,       color: "text-emerald-500" },
-                    { label: "قيد التنفيذ", value: taskStats.inprogress, color: "text-blue-500" },
-                    { label: "لم تبدأ",    value: taskStats.todo,        color: "text-slate-400" },
-                  ].map((s, i) => (
-                    <div key={i} className="text-center">
-                      <p className={`text-lg font-bold ${tasksKnown ? s.color : isDark ? "text-zinc-600" : "text-slate-300"}`}>
-                        {tasksKnown ? s.value : "—"}
-                      </p>
-                      <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{s.label}</p>
-                    </div>
-                  ))}
+                <div>
+                  <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>حالة المهام</p>
+                  <div className={`grid grid-cols-3 gap-2 p-3 rounded-xl ${isDark ? "bg-white/[0.03]" : "bg-slate-50"}`}>
+                    {[
+                      { label: "مكتملة",     value: taskStats.done,       color: "text-emerald-500" },
+                      { label: "قيد التنفيذ", value: taskStats.inprogress, color: "text-blue-500" },
+                      { label: "لم تبدأ",    value: taskStats.todo,        color: "text-slate-400" },
+                    ].map((s, i) => (
+                      <div key={i} className="text-center">
+                        <p className={`text-lg font-bold ${tasksKnown ? s.color : isDark ? "text-zinc-600" : "text-slate-300"}`}>
+                          {tasksKnown ? toArabicDigits(s.value) : "—"}
+                        </p>
+                        <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 {!tasksKnown && (
                   <p className={`text-[11px] -mt-2 text-center font-semibold ${
@@ -1288,15 +1354,33 @@ export default function CaseDetailPage() {
                       they live in one place now. */}
                   {countPhraseAr(hearings.length, HEARINGS_COUNT)}
                 </p>
-                {/* Was `disabled title="قريباً"` — the hearings table did not
-                    exist. Phase 1 (2026-09-03) built it; this button opens the
-                    same AddHearingModal the standalone diary uses, with the
-                    case pre-filled via `caseRequestId` so it cannot be typed
-                    wrong or left unlinked. */}
-                <button onClick={() => setShowAddHearing(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22] transition-colors">
-                  <Plus size={12} weight="bold" />إضافة جلسة
-                </button>
+                <div className="flex items-center gap-2">
+                  {/* No sort, no filter, and no link out to the standalone
+                      hearings calendar existed on this tab. The sort here is
+                      the one real dimension the data has (date); the link
+                      opens the same diary this hearing was added through. */}
+                  {hearings.length > 1 && (
+                    <button onClick={() => setHearingsSortDesc(v => !v)}
+                      title={hearingsSortDesc ? "الأحدث أولاً" : "الأقرب أولاً"}
+                      className={`flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-semibold border transition-colors ${isDark ? "border-white/10 text-zinc-400 hover:bg-white/5" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                      <SortAscending size={13} />
+                      {hearingsSortDesc ? "الأحدث أولاً" : "الأقرب أولاً"}
+                    </button>
+                  )}
+                  <Link href="/dashboard/lawyer/hearings" title="فتح تقويم الجلسات العام"
+                    className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-[11px] font-semibold border transition-colors ${isDark ? "border-white/10 text-zinc-400 hover:bg-white/5" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                    <CalendarCheck size={13} />تقويم الجلسات
+                  </Link>
+                  {/* Was `disabled title="قريباً"` — the hearings table did not
+                      exist. Phase 1 (2026-09-03) built it; this button opens the
+                      same AddHearingModal the standalone diary uses, with the
+                      case pre-filled via `caseRequestId` so it cannot be typed
+                      wrong or left unlinked. */}
+                  <button onClick={() => setShowAddHearing(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22] transition-colors">
+                    <Plus size={12} weight="bold" />إضافة جلسة
+                  </button>
+                </div>
               </div>
               {hearingsView === "loading" ? (
                 <div className={`${card} p-10 flex items-center justify-center gap-2`}>
@@ -1322,7 +1406,7 @@ export default function CaseDetailPage() {
                   <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>أضِف أول جلسة لهذه القضية بالزر أعلاه.</p>
                 </div>
               ) : (
-                hearings.map((h, i) => (
+                sortedHearings.map((h, i) => (
                   <motion.div key={i}
                     initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                     className={`${card} p-4 flex items-start gap-4 ${h.status === "upcoming" ? "border-l-4 border-l-royal" : ""}`}>
@@ -1545,8 +1629,22 @@ export default function CaseDetailPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={`text-[13px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{doc.name}</p>
-                      <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{formatFileSize(doc.file_size)} · {formatDate(doc.created_at)}</p>
+                      <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                        {formatFileSize(doc.file_size)} · {formatDate(doc.created_at)}
+                        {doc.uploaderName ? ` · رفعه ${doc.uploaderName}` : ""}
+                      </p>
                     </div>
+                    {/* Always visible — was left to hover-only buttons filling
+                        the same corner, so a short file name left most of the
+                        row's width blank at rest (finding 191). This is also
+                        the honest slice of "category" the row can show: real
+                        `mime_type` data, not an invented taxonomy (finding
+                        190) — uploader now shows too, on the line above, when
+                        the service-role join resolved a name; see the note on
+                        `fileTypeLabel` above. */}
+                    <span className={`hidden sm:inline-block flex-shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg ${isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
+                      {fileTypeLabel(doc.mime_type)}
+                    </span>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => handleDownload(doc)} title="عرض/تحميل"
                         className={`p-2 rounded-xl ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}><Eye size={14} /></button>

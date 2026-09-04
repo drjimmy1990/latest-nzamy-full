@@ -48,7 +48,10 @@ export interface PlatformBlogArticle {
   readTime: string;
   readTimeEn: string;
   views: number;
-  likes: number;
+  /** Real engagement count from a `likes` column — absent for backend-ready
+      rows (no such column exists). The public article page shows nothing
+      rather than a fabricated "0 likes" when this is undefined. */
+  likes?: number;
   featured: boolean;
   status: PlatformContentStatus;
   seoScore: number;

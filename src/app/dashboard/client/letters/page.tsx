@@ -49,7 +49,7 @@ export default function ClientLettersPage() {
     : "bg-white border border-slate-200/70 rounded-2xl shadow-sm";
 
   return (
-    <div className={`max-w-3xl mx-auto py-6 px-4 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
+    <div className={`max-w-5xl mx-auto py-6 px-4 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
 
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
@@ -75,8 +75,11 @@ export default function ClientLettersPage() {
         </div>
       </div>
 
-      {/* Owner ruling س٣ — what this tool is, said before the client uses it. */}
-      <AdvisoryTemplateNotice handoffServiceId="legal-notice" className="mb-5" />
+      {/* Owner ruling س٣ — what this tool is, said before the client uses it.
+          `pendingSelection`: this notice sits above step 1 (نوع الخطاب), before
+          any letter type is chosen, so the lead sentence must not claim an
+          output that has not been produced yet (owner note ١٢٩). */}
+      <AdvisoryTemplateNotice handoffServiceId="legal-notice" className="mb-5" pendingSelection />
 
       {/* Client-specific Letter Workflow */}
       <ClientLetterWorkflow

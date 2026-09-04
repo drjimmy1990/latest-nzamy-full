@@ -32,7 +32,7 @@ export function StatsPanel({ isDark, sessions }: StatsPanelProps) {
   const kpis = [
     { label: "إجمالي التركيز", value: total >= 60 ? `${Math.round(total/60)}س` : `${total}د` },
     { label: "معدل الإتمام",   value: `${rate}%` },
-    { label: "جلسات مكتملة",   value: `${done}` },
+    { label: "فترات مكتملة",   value: `${done}` },
   ];
 
   // ── Bar chart (weekly) ────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ export function StatsPanel({ isDark, sessions }: StatsPanelProps) {
                 <div className="w-3 h-3 rounded-full bg-[#C8A762] shadow-[0_0_8px_rgba(200,167,98,0.6)]" />
                 <span className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>جزئية ({partial})</span>
               </div>
-              <div className={`text-[10px] uppercase tracking-widest mt-2 ${muted}`}>من إجمالي {focus.length} جلسة</div>
+              <div className={`text-[10px] uppercase tracking-widest mt-2 ${muted}`}>من إجمالي {focus.length} فترة</div>
             </div>
           </motion.div>
         )}

@@ -2,12 +2,13 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle, CircleNotch, Crosshair, Info, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil, Warning } from "@phosphor-icons/react";
+import { CheckCircle, CircleNotch, Crosshair, Info, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil, Warning, FrameCorners, TrashSimple, Palette } from "@phosphor-icons/react";
 import {
   EDGE_CONFIG,
   TYPE_CONFIG,
   createCurve,
   createTempCurve,
+  type EdgeType,
   type GraphEdge,
   type GraphNode,
   type NodeType,
@@ -15,6 +16,15 @@ import {
 import { useCaseGraphState } from "./_use-case-graph-state";
 import { SidebarLauncher, AiAnalysisPanel, OverlaysBundle } from "./CaseGraphOverlays";
 import { getCaseGraph, saveCaseGraph } from "@/lib/services/caseGraphService";
+import { toArabicDigits } from "@/lib/services/arabicCount";
+
+/** Arabic labels for EDGE_CONFIG's three link styles — the legend below is the
+ * only place that names them; the model itself only carries colour/dash. */
+const EDGE_TYPE_LABELS: Record<EdgeType, string> = {
+  support: "علاقة داعمة",
+  conflict: "تعارض",
+  neutral: "محايدة",
+};
 
 export default function CaseGraphView({
   isDark,
@@ -50,9 +60,15 @@ export default function CaseGraphView({
     hoveredNodeId, setHoveredNodeId, scale, setScale, canvasRef,
     handleCanvasPointerDown, handlePointerDown, handlePointerMove, handlePointerUp, startDrawingEdge, handleNodePointerUp,
     handleContextMenu, handleNodeContextMenu, handleNodeTextChange, handleEdgeLabelChange,
+    fitToView,
   } = useCaseGraphState({ initialNodes: seedNodes, initialEdges: seedEdges });
 
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+  // No legend existed for the six node-type colours or the three edge-line
+  // styles (EDGE_CONFIG) — a lawyer reading someone else's board had to guess
+  // what a colour meant. Off by default so it does not sit on top of a small
+  // board; a toolbar button opens it.
+  const [showLegend, setShowLegend] = useState(false);
 
   // ── Persistence (Phase 1: public.case_graphs) ───────────────────────────
   // "loading"  — reading the saved graph, nothing on screen is trustworthy yet
@@ -69,6 +85,14 @@ export default function CaseGraphView({
   // immediately re-save the same data it just read, and a case with no saved
   // graph would autosave an empty board the instant the read confirmed that.
   const skipNextAutosave = useRef(false);
+  // Whether the view still needs an automatic fit-to-view. Cleared as soon as
+  // a real saved camera position (viewport.pan/scale) is applied below — an
+  // autosaved board carries the lawyer's own last framing and auto-fit must
+  // never override it. Stays true for a board with no saved viewport at all
+  // (brand new, or saved before autosave started persisting one), so the
+  // effect further down frames it once nodes exist.
+  const needsAutoFit = useRef(true);
+  const didAutoFit = useRef(false);
 
   useEffect(() => {
     if (!caseId) return;
@@ -84,6 +108,7 @@ export default function CaseGraphView({
           const vp = saved.viewport as { pan?: { x: number; y: number }; scale?: number } | null;
           if (vp?.pan) setPan(vp.pan);
           if (typeof vp?.scale === "number") setScale(vp.scale);
+          if (vp?.pan || typeof vp?.scale === "number") needsAutoFit.current = false;
         }
         setLoadState("ready");
       })
@@ -94,6 +119,21 @@ export default function CaseGraphView({
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setNodes/setEdges/setPan/setScale are stable setters from useState/useCaseGraphState
   }, [caseId]);
+
+  // Fit-to-view, once, the first time this board actually has cards on it and
+  // no saved camera position needs preserving (see `needsAutoFit` above). This
+  // is what recovers a card the owner's shot 05 found clipped against the
+  // canvas edge with no way back except manual panning or the fullscreen
+  // toggle. `fitToView` itself, and a matching toolbar button, live in
+  // ./_use-case-graph-state.ts.
+  useEffect(() => {
+    if (didAutoFit.current) return;
+    if (caseId && loadState !== "ready") return;
+    if (!needsAutoFit.current) { didAutoFit.current = true; return; }
+    if (nodes.length === 0) return;
+    didAutoFit.current = true;
+    fitToView();
+  }, [caseId, loadState, nodes.length, fitToView]);
 
   useEffect(() => {
     if (!caseId || loadState !== "ready") return;
@@ -213,6 +253,15 @@ export default function CaseGraphView({
                 </div>
               )}
               <div className={`w-px mx-1 my-1 self-stretch ${isDark ? "bg-white/10" : "bg-zinc-200"}`} />
+              {/* Legend — what the six card colours and three link styles mean.
+                  Nothing explained this before; a board built by someone else
+                  was unreadable at a glance. */}
+              <button onClick={() => setShowLegend(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-colors text-[12px] border ${showLegend ? (isDark ? "border-[#C8A762]/40 bg-[#C8A762]/10 text-[#C8A762]" : "border-[#C8A762]/50 bg-amber-50 text-amber-700") : (isDark ? "border-white/10 text-zinc-300 hover:bg-white/[0.06]" : "border-zinc-200 text-zinc-600 hover:bg-zinc-100")}`}
+                title="دليل ألوان وأيقونات البطاقات والروابط">
+                <Palette size={14} />
+                دليل الرموز
+              </button>
               {/* Was a gold «تحليل AI» primary button that spun «جاري التحليل...»
                   for two seconds and then opened this panel. Nothing analysed
                   anything — see ./_use-case-graph-state.ts. The panel itself is
@@ -232,10 +281,10 @@ export default function CaseGraphView({
                 onClick={() => generateAiDocument(selectedNodeIds.size > 0 ? selectedNodeIds : undefined)}
                 disabled={nodes.length === 0}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-colors text-[12px] border disabled:opacity-40 ${isDark ? "border-blue-500/30 text-blue-400 hover:bg-blue-500/10" : "border-blue-500/40 text-blue-600 hover:bg-blue-50"}`}
-                title={selectedNodeIds.size > 0 ? `ملخص نصي لـ ${selectedNodeIds.size} بطاقات مختارة` : "ملخص نصي لكامل اللوحة"}
+                title={selectedNodeIds.size > 0 ? `ملخص نصي لـ ${toArabicDigits(selectedNodeIds.size)} بطاقات مختارة` : "ملخص نصي لكامل اللوحة"}
               >
                 <Export size={13} />
-                {selectedNodeIds.size > 0 ? `ملخص (${selectedNodeIds.size})` : "ملخص نصي"}
+                {selectedNodeIds.size > 0 ? `ملخص (${toArabicDigits(selectedNodeIds.size)})` : "ملخص نصي"}
               </button>
               <div className={`w-px mx-1 my-1 self-stretch ${isDark ? "bg-white/10" : "bg-zinc-200"}`} />
               {/* Multi-select indicator + Group */}
@@ -247,7 +296,7 @@ export default function CaseGraphView({
                   <>
                     {selectedNodeIds.size > 1 && (
                       <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold ${isDark ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" : "bg-purple-50 text-purple-600 border border-purple-200"}`}>
-                        <Rows size={11} /> {selectedNodeIds.size} محدد
+                        <Rows size={11} /> {toArabicDigits(selectedNodeIds.size)} محدد
                       </div>
                     )}
                     {currentGroupId ? (
@@ -267,8 +316,9 @@ export default function CaseGraphView({
                 );
               })()}
               {selectedNodeId && (
-                <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold ${isDark ? "bg-white/[0.04] text-zinc-400" : "bg-slate-50 text-slate-500"}`}>
-                  <span>Ctrl+C نسخ</span><span className="opacity-40">·</span><span>Del حذف</span>
+                <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold ${isDark ? "bg-white/[0.04] text-zinc-400" : "bg-slate-50 text-slate-500"}`}
+                  title="اختصارات لوحة المفاتيح متاحة على البطاقة المحددة">
+                  <span>📋 نسخ</span><span className="opacity-40">·</span><span>🗑 حذف</span>
                 </div>
               )}
               {/* A «مشاركة» button stood here. It opened a dialog offering a
@@ -281,6 +331,14 @@ export default function CaseGraphView({
                   persisted, so there is nothing a link could point at. Removed
                   rather than relabelled: a lawyer could have read that URL out to a
                   client. */}
+              {/* Reframes every card into view — the recovery for a card dragged
+                  off-frame that fit-to-view also runs once automatically on
+                  load (see the effect above). */}
+              <button onClick={fitToView} disabled={nodes.length === 0}
+                className={`p-2 rounded-xl transition-colors disabled:opacity-30 disabled:pointer-events-none ${isDark ? "hover:bg-white/[0.08] text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"}`}
+                title="تأطير كل البطاقات داخل الشاشة">
+                <FrameCorners size={15} />
+              </button>
               <button onClick={() => setIsFullscreen(f => !f)} className={`p-2 rounded-xl transition-colors ${isDark ? "hover:bg-white/[0.08] text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"}`} title="ملء الشاشة">
                 <Crosshair size={15} />
               </button>
@@ -288,7 +346,7 @@ export default function CaseGraphView({
                 <button onClick={() => setScale(1)}
                   className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-colors ${isDark ? "bg-white/[0.04] text-zinc-400 hover:text-zinc-200" : "bg-zinc-100 text-zinc-500 hover:text-zinc-700"}`}
                   title="إعادة التكبير لـ 100٪">
-                  {Math.round(scale * 100)}٪
+                  {toArabicDigits(Math.round(scale * 100))}٪
                 </button>
               )}
             </div>
@@ -355,7 +413,7 @@ export default function CaseGraphView({
               return (
                 <input
                   key={`label_${edge.id}`}
-                  style={{ position: 'absolute', left: midX - 60, top: midY - 10, color: cnf.color }}
+                  style={{ position: 'absolute', left: midX - 60, top: midY - 10, color: cnf.color, zIndex: 15 }}
                   className={`w-[120px] text-center text-[11px] font-bold bg-transparent outline-none border-b border-transparent hover:border-current focus:border-current ${isDark ? "placeholder-zinc-600" : "placeholder-zinc-400"}`}
                   value={edge.label}
                   onChange={(e) => handleEdgeLabelChange(edge.id, e.target.value)}
@@ -572,10 +630,66 @@ export default function CaseGraphView({
                     <div onPointerDown={e => startDrawingEdge(node.id, e)} className={`absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-3 rounded-full border-2 cursor-crosshair z-30 ${isDark ? "bg-[#C8A762] border-zinc-900" : "bg-[#C8A762] border-white"}`} title="ربط" />
                     <div onPointerDown={e => startDrawingEdge(node.id, e)} className={`absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 rounded-full border-2 cursor-crosshair z-30 ${isDark ? "bg-[#C8A762] border-zinc-900" : "bg-[#C8A762] border-white"}`} title="ربط" />
                   </>)}
+
+                  {/* Visible delete affordance on hover/select — the only way
+                      to remove a card used to be the right-click menu, with no
+                      indicator on the card itself that deletion was possible. */}
+                  {(isHovered || isSelected) && (
+                    <button
+                      onPointerDown={e => e.stopPropagation()}
+                      onClick={e => {
+                        e.stopPropagation();
+                        setNodes(prev => prev.filter(n => n.id !== node.id));
+                        setEdges(prev => prev.filter(ed => ed.from !== node.id && ed.to !== node.id));
+                      }}
+                      title="حذف البطاقة"
+                      className={`absolute -top-2.5 -right-2.5 z-40 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-transform hover:scale-110 ${isDark ? "bg-red-500/90 border-zinc-900 text-white" : "bg-red-500 border-white text-white"}`}
+                    >
+                      <TrashSimple size={10} weight="bold" />
+                    </button>
+                  )}
                 </div>
               );
             })}
           </div> {/* End Infinite Pan Container */}
+
+          {/* Legend — no explanation of the six card colours or three link
+              styles existed anywhere on this board (finding 45). */}
+          {showLegend && (
+            <div className={`absolute bottom-4 start-4 z-20 w-52 rounded-2xl border p-3 shadow-lg ${isDark ? "bg-zinc-900/95 border-white/[0.08]" : "bg-white/95 border-zinc-200"}`}>
+              <p className={`text-[9px] font-bold uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>أنواع البطاقات</p>
+              <div className="space-y-1 mb-3">
+                {(Object.keys(TYPE_CONFIG) as NodeType[]).map(t => {
+                  const conf = TYPE_CONFIG[t];
+                  const Icon = conf.icon;
+                  return (
+                    <div key={t} className="flex items-center gap-2">
+                      <div className={`w-5 h-5 rounded-md flex items-center justify-center border flex-shrink-0 ${conf.bg}`}>
+                        <Icon size={11} weight="duotone" className={conf.text} />
+                      </div>
+                      <span className={`text-[11px] ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{conf.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className={`text-[9px] font-bold uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>أنواع الروابط</p>
+              <div className="space-y-1.5">
+                {(Object.keys(EDGE_CONFIG) as EdgeType[]).map(t => (
+                  <div key={t} className="flex items-center gap-2">
+                    <span
+                      className="w-5 flex-shrink-0"
+                      style={{
+                        borderTopWidth: 2,
+                        borderTopColor: EDGE_CONFIG[t].color,
+                        borderTopStyle: EDGE_CONFIG[t].dash ? "dashed" : "solid",
+                      }}
+                    />
+                    <span className={`text-[11px] ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{EDGE_TYPE_LABELS[t]}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* AI Analysis Result Panel */}
           <AiAnalysisPanel

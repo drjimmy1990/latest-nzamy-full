@@ -294,10 +294,13 @@ export async function GET(
   // non-fatal for the same reason: a failed attachments read currently renders
   // «لا توجد مستندات» on a case that has them, and the honest fix is a field on
   // this envelope, not a 500 that takes the whole page down with it.
+  // .is("deleted_at", null): Phase 6 soft delete — a document in the bin
+  // must not still appear on the request's document list.
   const { data: attachmentsRows, error: attachmentsError } = await supabase
     .from("attachments")
     .select("*")
     .eq("request_id", id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (attachmentsError) {
@@ -308,8 +311,48 @@ export async function GET(
     );
   }
 
+  // Findings 183 (case header: «مُسندة إلى محامٍ» names no one) and 190
+  // (document row: no uploader). Both are the same gap — `assigned_to` and
+  // `attachments.owner_user_id` are UUIDs the RLS-scoped `supabase` client
+  // cannot always resolve to a name: `profiles` SELECT only allows "read own
+  // row" or "admin reads all", so a firm colleague reading a case assigned to
+  // someone else, or a lawyer viewing a document the client uploaded, would
+  // get null. Service-role lookup, same pattern as this route's PATCH
+  // handler (`requesterProfile`, below) — best-effort, batched, never fails
+  // the parent read.
+  const assignedToId = (serviceRequest as Record<string, unknown>).assigned_to as string | null;
+  const uploaderIds = Array.from(
+    new Set(
+      (attachmentsRows ?? [])
+        .map((row) => (row as Record<string, unknown>).owner_user_id)
+        .filter((v): v is string => typeof v === "string"),
+    ),
+  );
+  const nameLookupIds = Array.from(
+    new Set([...(assignedToId ? [assignedToId] : []), ...uploaderIds]),
+  );
+  const namesById: Record<string, string> = {};
+  if (nameLookupIds.length > 0) {
+    try {
+      const svc = await createServiceClient();
+      const { data: nameRows } = await svc
+        .from("profiles")
+        .select("id, display_name")
+        .in("id", nameLookupIds);
+      for (const row of nameRows ?? []) {
+        const r = row as Record<string, unknown>;
+        if (typeof r.id === "string" && typeof r.display_name === "string" && r.display_name.trim()) {
+          namesById[r.id] = r.display_name;
+        }
+      }
+    } catch (e) {
+      console.error("[service-requests GET] name lookup failed:", (e as Error).message);
+    }
+  }
+
   const attachments = (attachmentsRows ?? []).map((row) => {
     const a = row as Record<string, unknown>;
+    const ownerId = typeof a.owner_user_id === "string" ? a.owner_user_id : null;
     return {
       id: a.id,
       name: a.file_name ?? "",
@@ -317,6 +360,7 @@ export async function GET(
       storage_path: a.storage_path ?? "",
       ...(a.mime_type != null ? { mime_type: a.mime_type } : {}),
       created_at: a.created_at ?? null,
+      ...(ownerId && namesById[ownerId] ? { uploaderName: namesById[ownerId] } : {}),
     };
   });
 
@@ -353,6 +397,7 @@ export async function GET(
       ...toWorkflowRequest(sanitizedRequest),
       events: mergedEvents,
       attachments,
+      ...(assignedToId && namesById[assignedToId] ? { assignedToName: namesById[assignedToId] } : {}),
     },
   });
 }

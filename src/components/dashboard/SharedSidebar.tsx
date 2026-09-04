@@ -102,10 +102,10 @@ export default function SharedSidebar() {
         <div className="flex items-center gap-3">
           <Link href="/settings" className="flex items-center gap-3 flex-1 group hover:opacity-80 transition-opacity">
             <div className="w-9 h-9 rounded-xl bg-royal flex items-center justify-center text-white text-sm font-bold flex-shrink-0 group-hover:scale-105 transition-transform">
-              {name?.charAt(0) ?? "م"}
+              {(name || "م").charAt(0)}
             </div>
             <div className="min-w-0">
-              <p className={`text-sm font-bold truncate ${isDark ? "text-white" : "text-slate-800"}`}>{name}</p>
+              <p className={`text-sm font-bold truncate ${isDark ? "text-white" : "text-slate-800"}`}>{name || "مستخدم"}</p>
               <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
                 {/* Show multi-role badge if active_roles exist */}
                 {/* Role label only — the explicit "الإعدادات" nav item below is the
@@ -259,7 +259,7 @@ export default function SharedSidebar() {
       <aside
         className={`
           hidden lg:flex flex-col w-64 fixed top-0 bottom-0 ${isAr ? "right-0" : "left-0"} z-40
-          border-${isAr ? "l" : "r"} pt-[76px]
+          border-${isAr ? "l" : "r"}
           ${isDark
             ? "bg-zinc-950 border-white/[0.06]"
             : "bg-white border-slate-100 shadow-[2px_0_20px_-8px_rgba(0,0,0,0.06)]"
@@ -267,6 +267,24 @@ export default function SharedSidebar() {
         `}
         dir="rtl"
       >
+        {/* Logo header — the `pt-[76px]` this used to sit under reserved the
+            space but never drew anything into it, so the desktop rail (unlike
+            the mobile top bar, which already carries /logo.png) had no brand
+            mark in frame at all (note ٢٠٩). Fills that reserved 76px instead
+            of leaving it blank. */}
+        <Link
+          href={dashboardRoot}
+          className={`flex items-center gap-2.5 px-4 h-[76px] flex-shrink-0 border-b group ${
+            isDark ? "border-white/[0.06]" : "border-slate-100"
+          }`}
+        >
+          <div className="w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center group-hover:scale-105 transition-transform">
+            <Image src="/logo.png" alt="نظامي" width={32} height={32} className="h-8 w-8 object-contain" />
+          </div>
+          <span className={`font-bold text-sm tracking-tight ${isDark ? "text-white" : "text-slate-800"}`}>
+            نظامي
+          </span>
+        </Link>
         {sidebarContent}
       </aside>
 

@@ -665,13 +665,27 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
 
 // ─── Calendar View ─────────────────────────────────────────────────────────────
 function CalendarView({events,isDark,onAddOnDate}:{events:CalEvent[];isDark:boolean;onAddOnDate?:(dateKey:string)=>void}) {
-  const now = new Date();
-  const [calYear,setCalYear] = useState(now.getFullYear());
-  const [calMonth,setCalMonth] = useState(now.getMonth());
-  const [selectedDay,setSelectedDay] = useState<number|null>(now.getDate());
+  // `today`/`calYear`/`calMonth`/`selectedDay` start null and are filled in
+  // from the browser's own clock in the effect below, not read at render
+  // time. This is a client component, but Next.js still renders it once on
+  // the server, and nginx caches that HTML — so a `new Date()` read directly
+  // in the render body freezes "today" (and the day the grid opens on) to
+  // whenever the page was generated, not whenever the lawyer opened it. The
+  // sidebar's Hijri chip hit the identical bug for the identical reason; this
+  // is the same fix HijriDateWidget.tsx already applies (`now`/`viewDate`
+  // null until a `useEffect` reads the real clock post-mount).
+  const [today, setToday] = useState<Date | null>(null);
+  const [calYear, setCalYear] = useState<number | null>(null);
+  const [calMonth, setCalMonth] = useState<number | null>(null);
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
-  const firstDayOfMonth = new Date(calYear,calMonth,1).getDay();
-  const daysInMonth = new Date(calYear,calMonth+1,0).getDate();
+  useEffect(() => {
+    const n = new Date();
+    setToday(n);
+    setCalYear(n.getFullYear());
+    setCalMonth(n.getMonth());
+    setSelectedDay(n.getDate());
+  }, []);
 
   // The `ev.dateSort>=0 && !ev.done` guard that stood here was removed on
   // 2026-08-28. `events` is already `filtered` — the exact set the lawyer's own
@@ -711,24 +725,37 @@ function CalendarView({events,isDark,onAddOnDate}:{events:CalEvent[];isDark:bool
     return {eventsByDay:map,inMonthCount:count};
   },[events,calMonth,calYear]);
 
-  const isToday = (d:number) => d===now.getDate()&&calMonth===now.getMonth()&&calYear===now.getFullYear();
+  const cardCls = isDark?"rounded-2xl border border-white/[0.06] bg-zinc-900/60":"rounded-2xl border border-slate-100 bg-white shadow-sm";
+
+  // Nothing below this line reads the real clock — everything else derives
+  // from `today`/`calYear`/`calMonth`, so the grid cannot render until the
+  // effect above has actually run in the browser.
+  if (calYear === null || calMonth === null || today === null) {
+    return (
+      <div className={`${cardCls} p-10 flex items-center justify-center`}>
+        <CircleNotch size={20} className={`animate-spin ${isDark?"text-zinc-600":"text-slate-300"}`} weight="bold"/>
+      </div>
+    );
+  }
+
+  const firstDayOfMonth = new Date(calYear,calMonth,1).getDay();
+  const daysInMonth = new Date(calYear,calMonth+1,0).getDate();
+  const isToday = (d:number) => d===today.getDate()&&calMonth===today.getMonth()&&calYear===today.getFullYear();
   const selectedDayEvents = selectedDay?(eventsByDay[selectedDay]||[]):[];
   const cells: (number|null)[] = [];
   for(let i=0;i<firstDayOfMonth;i++) cells.push(null);
   for(let d=1;d<=daysInMonth;d++) cells.push(d);
 
-  const cardCls = isDark?"rounded-2xl border border-white/[0.06] bg-zinc-900/60":"rounded-2xl border border-slate-100 bg-white shadow-sm";
-
   return (
     <div className="space-y-4">
       <div className={`${cardCls} p-4`}>
         <div className="flex items-center justify-between mb-4">
-          <button onClick={()=>{if(calMonth===0){setCalYear(y=>y-1);setCalMonth(11);}else setCalMonth(m=>m-1);setSelectedDay(null);}}
+          <button onClick={()=>{if(calMonth===0){setCalYear(y=>(y??0)-1);setCalMonth(11);}else setCalMonth(m=>(m??0)-1);setSelectedDay(null);}}
             className={`p-2 rounded-xl ${isDark?"hover:bg-white/[0.08] text-zinc-400":"hover:bg-slate-100 text-slate-500"}`}>
             <CaretLeft size={15}/>
           </button>
-          <h3 className={`text-[14px] font-bold ${isDark?"text-zinc-200":"text-slate-700"}`}>{AR_MONTHS[calMonth]} {calYear}</h3>
-          <button onClick={()=>{if(calMonth===11){setCalYear(y=>y+1);setCalMonth(0);}else setCalMonth(m=>m+1);setSelectedDay(null);}}
+          <h3 className={`text-[14px] font-bold ${isDark?"text-zinc-200":"text-slate-700"}`}>{AR_MONTHS[calMonth]} {toArabicDigits(calYear)}</h3>
+          <button onClick={()=>{if(calMonth===11){setCalYear(y=>(y??0)+1);setCalMonth(0);}else setCalMonth(m=>(m??0)+1);setSelectedDay(null);}}
             className={`p-2 rounded-xl ${isDark?"hover:bg-white/[0.08] text-zinc-400":"hover:bg-slate-100 text-slate-500"}`}>
             <CaretRight size={15}/>
           </button>
@@ -758,9 +785,9 @@ function CalendarView({events,isDark,onAddOnDate}:{events:CalEvent[];isDark:bool
                 className={`relative flex flex-col items-center py-1.5 px-0.5 rounded-xl transition-all ${
                   isSelected?"bg-[#0B3D2E] text-white":isToday(day)?isDark?"bg-zinc-700 text-zinc-100":"bg-slate-200 text-slate-800":isDark?"hover:bg-zinc-800 text-zinc-300":"hover:bg-slate-100 text-slate-600"
                 }`}>
-                <span className="text-[12px] font-bold">{day}</span>
+                <span className="text-[12px] font-bold">{toArabicDigits(day)}</span>
                 {hijri!==null&&(
-                  <span className={`text-[8px] font-medium leading-none mt-0.5 ${isSelected?"text-white/70":isDark?"text-zinc-600":"text-slate-400"}`}>{hijri}هـ</span>
+                  <span className={`text-[10px] font-medium leading-none mt-0.5 ${isSelected?"text-white/70":isDark?"text-zinc-600":"text-slate-400"}`}>{toArabicDigits(hijri)}هـ</span>
                 )}
                 {dayEvs.length>0&&(
                   <div className="flex gap-0.5 mt-0.5">
@@ -800,11 +827,22 @@ function CalendarView({events,isDark,onAddOnDate}:{events:CalEvent[];isDark:bool
         )}
       </div>
 
+      {/* Gated on `events.length>0`, not just `selectedDayEvents.length===0`.
+          `events` here is `filtered`, the same set the calendar's own
+          in-month notice above already reads — it is empty exactly when the
+          page-level «لا توجد مواعيد مسجّلة» banner (unfiltered diary is
+          empty) or «لا توجد مواعيد مطابقة للفلتر المختار» card (filter
+          excluded everything) is already showing above. Today auto-selects
+          on mount (see the effect above), so on either of those this panel
+          used to render its own «لا توجد مواعيد في هذا اليوم» directly under
+          one of them — the same sentence, said twice, for the same reason. A
+          day picked out of a NON-empty filtered set still gets its own empty
+          message below; only the "nothing at all" case is deduplicated. */}
       <AnimatePresence>
-        {selectedDay&&(
+        {selectedDay&&events.length>0&&(
           <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
             <p className={`text-[11px] font-black uppercase tracking-wider mb-3 px-1 ${isDark?"text-zinc-500":"text-slate-400"}`}>
-              {selectedDay} {AR_MONTHS[calMonth]} — {selectedDayEvents.length>0?`${selectedDayEvents.length} موعد`:"لا توجد مواعيد"}
+              {toArabicDigits(selectedDay)} {AR_MONTHS[calMonth]} — {selectedDayEvents.length>0?`${toArabicDigits(selectedDayEvents.length)} موعد`:"لا توجد مواعيد"}
             </p>
             {selectedDayEvents.length>0?(
               <div className="space-y-3">
@@ -993,10 +1031,10 @@ export default function LawyerHearingsPage() {
     {key:"today" as const,  label:"اليوم"},
     {key:"week" as const,   label:"هذا الأسبوع"},
     {key:"month" as const,  label:"هذا الشهر"},
-    {key:"deadlines" as const, label: countsKnown ? `طعون (${deadlineCount})` : "طعون"},
+    {key:"deadlines" as const, label: countsKnown ? `طعون (${toArabicDigits(deadlineCount)})` : "طعون"},
     {key:"archive" as const,label:"الأرشيف"},
   ];
-  const TYPE_OPTIONS  = [{key:"all" as const,label: countsKnown ? `الكل (${scheduledCount})` : "الكل"},...typeCounts];
+  const TYPE_OPTIONS  = [{key:"all" as const,label: countsKnown ? `الكل (${toArabicDigits(scheduledCount)})` : "الكل"},...typeCounts];
   const URGENCY_OPTIONS = [
     {key:"all" as const,      label:"جميع المستويات"},
     {key:"critical" as const, label:"حرجة",  dot:"bg-red-500"},
@@ -1005,7 +1043,7 @@ export default function LawyerHearingsPage() {
   ];
 
   return (
-    <div className="max-w-[860px] mx-auto space-y-5" dir="rtl">
+    <div className="max-w-[1100px] mx-auto space-y-5" dir="rtl">
 
       {/* Read state. The old banner here said «بيانات تجريبية / لا توجد جلسات
           قادمة» for BOTH a genuinely empty diary and a query that failed —
@@ -1053,7 +1091,7 @@ export default function LawyerHearingsPage() {
           </div>
           <div>
             <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد مواعيد مسجّلة</p>
-            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>ابدأ بإضافة موعد من زر «موعد جديد» أعلاه.</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>ابدأ بإضافة موعد من زر «موعد جديد» أدناه.</p>
           </div>
         </motion.div>
       )}

@@ -96,7 +96,8 @@ function rowToDetail(row: BlogRow): PlatformBlogArticle {
     readTime: formatReadTime(row.read_time, false),
     readTimeEn: formatReadTime(row.read_time, true),
     views: row.views ?? 0,
-    likes: 0,
+    // No `likes` column on the articles table — left undefined rather than a
+    // hardcoded 0 that would render as a fake "0 إعجاب" on every article.
     featured: Boolean(row.featured),
     status: "published",
     seoScore: 0,

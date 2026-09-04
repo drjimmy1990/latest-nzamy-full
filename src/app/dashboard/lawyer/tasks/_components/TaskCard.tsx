@@ -142,8 +142,10 @@ export function TaskCard({
             )}
           </div>
 
-          {/* Priority dot */}
-          <span className={`flex-shrink-0 w-2 h-2 rounded-full ${priority.dot}`} title={priority.label} />
+          {/* Priority dot — dimmed once the task is done, same rule as the
+              title text beside it, so a finished row does not keep flagging
+              an urgency that no longer applies. */}
+          <span className={`flex-shrink-0 w-2 h-2 rounded-full ${priority.dot} ${isDone ? "opacity-40 animate-none" : ""}`} title={priority.label} />
 
           {/* Due */}
           {task.due && (

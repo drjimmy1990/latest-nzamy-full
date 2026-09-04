@@ -12,7 +12,6 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
-import { OnboardingBanner } from "@/components/OnboardingBanner";
 import { CaseCard } from "./_components/CaseCard";
 import { DashboardPageSkeleton } from "./_components/DashboardSkeleton";
 import { getDashboardSummary, getDocuments } from "@/lib/services";
@@ -520,8 +519,19 @@ export default function ClientDashboard() {
       suppressHydrationWarning
     >
 
-      {/* ── Onboarding Welcome (first-visit only) ── */}
-      <OnboardingBanner role="client" name={user.name} isDark={isDark} />
+      {/* Owner note ١٤١ — OnboardingBanner used to render here, first-visit
+          only, directly above the Welcome Hero below: two stacked "welcome"
+          cards with overlapping greetings. Removed rather than merged — the
+          Hero is name-personalized, carries ACTIVE_PHRASE, and is the only
+          greeting a returning client ever sees, so it is the one screen
+          content should not duplicate. It is also the more current of the
+          two: OnboardingBanner's client starter actions still offer «ابحث عن
+          محامٍ» → /dashboard/client/find-lawyer, the exact route this page's
+          own Quick Services comment above (~line 453) documents as dropped
+          under BETA_MONOPOLY_MODE. OnboardingBanner itself is untouched —
+          it has 7 call sites across 3 other dashboards and editing its
+          props/behaviour is a HIGH-risk change this note does not call for;
+          only this page stopped mounting it. */}
 
       {/* ══ Section 1 – Welcome Hero ═══════════════════════════════════════════ */}
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={0}
@@ -699,6 +709,31 @@ export default function ClientDashboard() {
           </Link>
         </motion.div>
         )}
+
+        {/* Owner note ١٤٥ — the grid is 3 columns but the appointment card only
+            renders when NEXT_APPOINTMENT exists; with no next appointment the
+            third column used to sit empty beside the greeting card. This is
+            the honest "nothing scheduled" state, not a fake countdown. */}
+        {!NEXT_APPOINTMENT && (
+        <motion.div variants={fadeUp} initial="hidden" animate="show" custom={1}
+          className={`${card} p-5 flex flex-col items-center justify-center text-center gap-3`}
+        >
+          <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
+            <CalendarBlank size={19} weight="duotone" className="text-amber-500" />
+          </div>
+          <div>
+            <p className={`text-[13px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>لا يوجد موعد قادم</p>
+            <p className={`text-[11px] mt-1 leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>احجز استشارة ليظهر موعدك هنا</p>
+          </div>
+          <Link href="/dashboard/client/services" className="block w-full">
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+              className="w-full flex items-center justify-center gap-1.5 bg-royal/10 text-royal text-[12px] font-bold py-2.5 rounded-xl transition-colors hover:bg-royal/20 cursor-pointer"
+            >
+              <Headset size={13} /> احجز استشارة
+            </motion.div>
+          </Link>
+        </motion.div>
+        )}
       </motion.div>
 
       {/* ══ Section 2 — My Cases ═══════════════════════════════════════════════════ */}
@@ -793,7 +828,7 @@ export default function ClientDashboard() {
                   : "text-[#0B3D2E] border border-[#0B3D2E]/20 bg-[#0B3D2E]/5 hover:bg-[#0B3D2E]/10"
               }`}
             >
-              <Lightning size={12} weight="fill" /> عرض الباقات
+              <Wallet size={12} weight="fill" /> عرض الباقات
             </motion.div>
           </Link>
         </div>

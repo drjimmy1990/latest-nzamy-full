@@ -93,7 +93,7 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
     defaultOpen: false,
     items: [
       { label: "المستشار الذكي",       labelEn: "AI Consultant",      href: "/ai/consult",               icon: "Brain" },
-      { label: "محترف العقود لايت",   labelEn: "Contract Drafter",   href: "/ai/contract-drafter",     icon: "FileText" },
+      { label: "محترف العقود المختصر",   labelEn: "Contract Drafter",   href: "/ai/contract-drafter",     icon: "FileText" },
       { label: "الفاحص الذكي",        labelEn: "Doc Analyzer",       href: "/ai/analyze",              icon: "Scan" },
       { label: "صائغ الخطابات",       labelEn: "Letter Drafter",     href: "/dashboard/client/letters", icon: "PencilLine" },
     ],

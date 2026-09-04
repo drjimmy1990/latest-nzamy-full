@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import {
   Clock, Eye, Share, BookmarkSimple, ArrowRight,
-  Newspaper, ChatCircle, SealCheck, Scales, ThumbsUp,
-  FacebookLogo, TwitterLogo, WhatsappLogo, ArrowLeft,
+  Newspaper, ChatCircle, SealCheck, Scales,
+  FacebookLogo, XLogo, WhatsappLogo, ArrowLeft,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -229,7 +229,6 @@ export default function ArticleView({
   related: PlatformBlogArticle[];
 }) {
   const { isRTL, isDark } = useTheme();
-  const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -335,24 +334,40 @@ export default function ArticleView({
               <RenderContent md={article.content} isDark={isDark} toc={toc} />
             </div>
 
-            {/* Like + Share + Save */}
+            {/* Share + Save */}
+            {/* The like counter used to read `article.likes` — there is no
+                `likes` column on the articles table, so it always rendered a
+                fabricated "0 إعجاب" that a click bumped to "1" locally and
+                lost on refresh. Removed rather than shown fake, matching the
+                author rating/review-count fix above. */}
             <div className={`${card} mb-6`}>
               <div className="flex flex-wrap items-center gap-3">
-                <button onClick={() => setLiked(v => !v)} className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition ${liked ? "bg-[#0B3D2E] text-white border-[#0B3D2E]" : isDark ? "border-[#2d3748] text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
-                  <ThumbsUp size={16} weight={liked ? "fill" : "regular"} />
-                  {article.likes + (liked ? 1 : 0)} {isRTL ? "إعجاب" : "Likes"}
-                </button>
                 <button onClick={() => setSaved(v => !v)} className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition ${saved ? "bg-amber-400/10 text-amber-600 dark:text-amber-400 border-amber-400/30" : isDark ? "border-[#2d3748] text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
                   <BookmarkSimple size={16} weight={saved ? "fill" : "regular"} />
                   {isRTL ? (saved ? "محفوظ" : "حفظ") : (saved ? "Saved" : "Save")}
                 </button>
                 <div className={`flex items-center gap-2 ms-auto ${muted}`}>
                   <span className="text-xs">{isRTL ? "شارك:" : "Share:"}</span>
-                  {[{ Icon: WhatsappLogo, color: "#25d366" }, { Icon: TwitterLogo, color: "#1da1f2" }, { Icon: FacebookLogo, color: "#1877f2" }].map(({ Icon, color }, i) => (
-                    <button key={i} className={`w-8 h-8 rounded-lg flex items-center justify-center transition ${isDark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}>
-                      <Icon size={17} color={color} weight="fill" />
-                    </button>
-                  ))}
+                  {(() => {
+                    const shareTitle = isRTL ? article.title : article.titleEn;
+                    const shareUrl = typeof window !== "undefined" ? window.location.href : "";
+                    const targets = [
+                      { Icon: WhatsappLogo, color: "#25d366", href: `https://wa.me/?text=${encodeURIComponent(`${shareTitle} ${shareUrl}`)}` },
+                      { Icon: XLogo, color: isDark ? "#e7e9ea" : "#0f1419", href: `https://x.com/intent/post?text=${encodeURIComponent(shareTitle)}&url=${encodeURIComponent(shareUrl)}` },
+                      { Icon: FacebookLogo, color: "#1877f2", href: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}` },
+                    ];
+                    return targets.map(({ Icon, color, href }, i) => (
+                      <a
+                        key={i}
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition ${isDark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
+                      >
+                        <Icon size={17} color={color} weight="fill" />
+                      </a>
+                    ));
+                  })()}
                 </div>
               </div>
             </div>
@@ -404,8 +419,12 @@ export default function ArticleView({
               <div className="space-y-3">
                 {related.map((r, i) => (
                   <Link key={i} href={`/blog/${r.slug}`} className="flex items-start gap-3 group">
-                    <div className="w-8 h-8 rounded-lg bg-[#0B3D2E]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Newspaper size={14} color="#0B3D2E" weight="duotone" />
+                    <div className="relative w-8 h-8 rounded-lg bg-[#0B3D2E]/10 flex items-center justify-center flex-shrink-0 mt-0.5 overflow-hidden">
+                      {r.cover ? (
+                        <Image src={r.cover} alt={isRTL ? r.title : r.titleEn} fill sizes="32px" className="object-cover" />
+                      ) : (
+                        <Newspaper size={14} color="#0B3D2E" weight="duotone" />
+                      )}
                     </div>
                     <div>
                       <p className={`text-xs font-medium leading-snug group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition ${isDark ? "text-gray-300" : "text-gray-700"}`}>{isRTL ? r.title : r.titleEn}</p>

@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { HardHat, ArrowRight } from "@phosphor-icons/react";
+import { Sparkle, ArrowRight } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -36,7 +36,7 @@ export default function DashboardComingSoon({
             isDark ? "bg-[#C8A762]/10" : "bg-[#C8A762]/10"
           }`}
         >
-          <HardHat size={40} weight="duotone" className="text-[#C8A762]" />
+          <Sparkle size={40} weight="duotone" className="text-[#C8A762]" />
         </motion.div>
 
         <h1 className={`text-2xl font-bold mb-3 ${tp}`}>{title}</h1>

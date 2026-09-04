@@ -163,7 +163,7 @@ export default function PomodoroPanel({
           >
             <BellRinging size={18} weight="fill" className="text-emerald-500" />
             <p className={`text-[13px] font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
-              {mode === "focus" ? "🦅 جلسة تركيز مكتملة! إنجاز عظيم" : "انتهت الاستراحة — هيا بنا"}
+              {mode === "focus" ? "🦅 فترة تركيز مكتملة! إنجاز عظيم" : "انتهت الاستراحة — هيا بنا"}
             </p>
           </motion.div>
         )}
@@ -279,7 +279,7 @@ export default function PomodoroPanel({
                     style={{ backgroundColor: running ? undefined : color }}
                   >
                     {running ? <Pause size={18} weight="bold" /> : <Play size={18} weight="fill" />}
-                    {running ? "توقف مؤقت" : "ابدأ الجلسة"}
+                    {running ? "توقف مؤقت" : "ابدأ الفترة"}
                   </MagneticButton>
                   
                   <MagneticButton onClick={reset} title="إعادة ضبط"
@@ -313,7 +313,7 @@ export default function PomodoroPanel({
         {/* ── INSIGHTS TAB ────────────────────────────────────────────────────── */}
         {tab === "insights" && (
           <motion.div key="insights" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="space-y-4">
-            <p className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>تحليل ذكي بناءً على جلساتك</p>
+            <p className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>تحليل ذكي بناءً على فتراتك</p>
             <SmartInsights isDark={isDark} sessions={sessions} />
           </motion.div>
         )}
@@ -322,12 +322,12 @@ export default function PomodoroPanel({
         {tab === "log" && (
           <motion.div key="log" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="space-y-3">
             <p className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>
-              سجل الجلسات ({sessions.length})
+              سجل الفترات ({sessions.length})
             </p>
             {sessions.length === 0 ? (
               <div className={`flex flex-col items-center justify-center py-10 rounded-2xl border border-dashed ${isDark ? "border-white/[0.06]" : "border-slate-200"}`}>
                 <ClockCounterClockwise size={24} className={isDark ? "text-zinc-700" : "text-slate-300"} />
-                <p className={`text-[11px] mt-2 ${muted}`}>لا يوجد جلسات محفوظة بعد</p>
+                <p className={`text-[11px] mt-2 ${muted}`}>لا يوجد فترات محفوظة بعد</p>
               </div>
             ) : (
               <div className="max-h-80 space-y-2 overflow-y-auto pr-2 custom-scrollbar">

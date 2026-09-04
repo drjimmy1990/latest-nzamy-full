@@ -725,19 +725,25 @@ export default function ConsultationsPage() {
       </motion.div>
 
       {/* KPIs — withheld while loading/unreadable; a claimed zero over a
-          failed read is how a lawyer misses that a client is waiting. */}
+          failed read is how a lawyer misses that a client is waiting.
+          Three of the four repeat a status the tab strip below already
+          counts, so those three double as tab shortcuts instead of
+          showing the same number twice (note ٢٥٧). */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {([
-          { label: CONSULTATION_STATUS_AR.requested, value: requestedCount, icon: ChatDots, cls: isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600", needsToday: false },
-          { label: CONSULTATION_STATUS_AR.scheduled, value: scheduledCount, icon: CalendarCheck, cls: isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-600", needsToday: false },
-          { label: "اليوم", value: todayCount, icon: Clock, cls: isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]", needsToday: true },
-          { label: CONSULTATION_STATUS_AR.completed, value: completedCount, icon: CheckCircle, cls: isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700", needsToday: false },
+          { label: CONSULTATION_STATUS_AR.requested, value: requestedCount, icon: ChatDots, cls: isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600", needsToday: false, tabKey: "requested" as TabKey | null },
+          { label: CONSULTATION_STATUS_AR.scheduled, value: scheduledCount, icon: CalendarCheck, cls: isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-600", needsToday: false, tabKey: "scheduled" as TabKey | null },
+          { label: "اليوم", value: todayCount, icon: Clock, cls: isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]", needsToday: true, tabKey: null as TabKey | null },
+          { label: CONSULTATION_STATUS_AR.completed, value: completedCount, icon: CheckCircle, cls: isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700", needsToday: false, tabKey: "completed" as TabKey | null },
         ] as const).map((k, i) => {
           const Icon = k.icon;
           const ready = countersReady && (!k.needsToday || todayYMD !== null);
+          const clickable = k.tabKey !== null;
           return (
-            <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-              className={`${card} p-4 flex items-center gap-3`}>
+            <motion.button key={i} type="button" disabled={!clickable}
+              onClick={() => { if (k.tabKey) setTab(k.tabKey); }}
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+              className={`${card} p-4 flex items-center gap-3 text-start w-full ${clickable ? `cursor-pointer transition-colors ${isDark ? "hover:bg-white/[0.04]" : "hover:bg-slate-50"} ${tab === k.tabKey ? "ring-1 ring-royal/40" : ""}` : ""}`}>
               <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${k.cls}`}>
                 <Icon size={16} weight="duotone" />
               </div>
@@ -745,7 +751,7 @@ export default function ConsultationsPage() {
                 <p className={`text-[16px] font-bold font-mono ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{ready ? toArabicDigits(k.value) : "—"}</p>
                 <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{k.label}</p>
               </div>
-            </motion.div>
+            </motion.button>
           );
         })}
       </div>

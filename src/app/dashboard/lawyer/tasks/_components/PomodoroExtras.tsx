@@ -60,7 +60,7 @@ export function RankLevelBadge({
         <div className="space-y-1.5">
           <div className="flex justify-between items-center px-0.5">
             <span className={`text-[10px] font-bold ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-              {total} جلسة
+              {total} فترة
             </span>
             <span className={`text-[9px] font-bold uppercase tracking-widest ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
               {next.name} ← {next.minSessions}
@@ -135,7 +135,7 @@ export function RankLevelBadge({
                       <div className="flex justify-between items-center mb-0.5">
                         <span className="text-[13px] font-bold" style={{ color: lvl.color }}>{lvl.name}</span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-white/5 text-zinc-400" : "bg-slate-200 text-slate-600"}`}>
-                          {lvl.minSessions} جلسة
+                          {lvl.minSessions} فترة
                         </span>
                       </div>
                       <p className={`text-[10px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{lvl.desc}</p>
@@ -162,7 +162,7 @@ export function SmartInsights({
     return (
       <div className={`flex flex-col items-center justify-center py-6 rounded-[1.5rem] border border-dashed ${isDark ? "border-white/[0.06] bg-white/[0.01]" : "border-slate-200 bg-slate-50/50"}`}>
         <p className={`text-[11px] font-bold ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-          أكمل بعض الجلسات لتظهر التحليلات هنا
+          أكمل بعض الفترات لتظهر التحليلات هنا
         </p>
       </div>
     );
@@ -227,7 +227,7 @@ export function ShareButton({
     { key:"name",  label:"الاسم",             value: userName || "محامٍ نظامي",          hidden: false },
     { key:"level", label:"المستوى",            value: `${rank.name} — المستوى ${rank.level}`, hidden: false },
     { key:"total", label:"إجمالي التركيز",     value: `${Math.round(totalMin / 60)} ساعة تركيز`, hidden: false },
-    { key:"count", label:"جلسات مكتملة",       value: `${total} جلسة`,                  hidden: false },
+    { key:"count", label:"فترات مكتملة",       value: `${total} فترة`,                  hidden: false },
   ]);
 
   function toggleHide(key: string) {

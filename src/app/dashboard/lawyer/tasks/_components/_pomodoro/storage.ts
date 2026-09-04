@@ -133,7 +133,7 @@ export function generateInsights(sessions: PomodoroSession[]): SmartInsight[] {
     const rate = Math.round((focusSessions.filter(s => s.completed).length / focusSessions.length) * 100);
     insights.push({
       icon: "✅",
-      title: "معدل إتمام الجلسات",
+      title: "معدل إتمام الفترات",
       value: `${rate}%`,
       sub: rate >= 70 ? "ممتاز! استمر" : "يمكن تحسينه",
       trend: rate >= 70 ? "up" : "down",
@@ -147,7 +147,7 @@ export function generateInsights(sessions: PomodoroSession[]): SmartInsight[] {
       icon: "📊",
       title: "إجمالي تركيزك هذا الأسبوع",
       value: weekTotal >= 60 ? `${Math.round(weekTotal / 60)} ساعة` : `${weekTotal} دقيقة`,
-      sub: `${week.reduce((a, d) => a + d.sessions, 0)} جلسة`,
+      sub: `${week.reduce((a, d) => a + d.sessions, 0)} فترة`,
       trend: "neutral",
     });
   }

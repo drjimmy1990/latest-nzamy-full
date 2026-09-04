@@ -168,7 +168,7 @@ export function OnboardingBanner({ role, name, isDark }: OnboardingBannerProps) 
             }}
           />
 
-          <div className="relative p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="relative p-5 ps-12 flex flex-col sm:flex-row items-start sm:items-center gap-4">
             {/* Icon */}
             <div className="w-11 h-11 rounded-xl bg-[#0B3D2E] flex items-center justify-center flex-shrink-0 shadow-md">
               <Sparkle size={20} weight="duotone" className="text-[#C8A762]" />
@@ -209,7 +209,7 @@ export function OnboardingBanner({ role, name, isDark }: OnboardingBannerProps) 
             <button
               onClick={dismiss}
               aria-label="إغلاق"
-              className={`absolute top-3 left-3 w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${
+              className={`absolute top-3 start-3 w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${
                 isDark ? "text-zinc-600 hover:bg-white/[0.06] hover:text-zinc-300" : "text-slate-300 hover:bg-slate-100 hover:text-slate-600"
               }`}
             >
