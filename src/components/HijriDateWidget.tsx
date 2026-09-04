@@ -159,12 +159,18 @@ export default function HijriDateWidget() {
           65px reflow on every dashboard load: 40px of bare sun icon on the
           server, 105px once the browser filled the date in — measured, not
           estimated. The date pill sits in the sidebar header ABOVE the user
-          card, so that reflow pushed the whole nav on every page. 9.5rem is the
-          common case («الأربعاء ٢٠ ربيع الأول ٢/٩/٢٠٢٦»); the widest possible
-          content («٣٠ جمادى الآخرة») measures 214px and still fits the sidebar's
-          224px inner width, so a long month grows the chip instead of clipping
-          it. */}
-      <button onClick={()=>setOpen(true)} className={`flex min-w-[9.5rem] items-center gap-2 px-3 py-2 rounded-2xl text-[12px] font-semibold transition-all cursor-pointer ${chipBase}`}>
+          card, so that reflow pushed the whole nav on every page.
+          `flex-wrap w-full`: the Hijri half used to omit the year (notes ٦١، ٨٠)
+          — an omission the owner read as the month being ambiguous, not just
+          the year being missing. Once the year is added, the widest content
+          («الأربعاء ٣٠ جمادى الآخرة ١٤٤٨ هـ ٢٦/٨/٢٠٢٦», measured against real
+          Tailwind classes at the sidebar's actual 224px inner width) no longer
+          fits on one line — it did at 214px before the year, it does not after.
+          Wrapping onto a second line (day+Hijri on top, Gregorian below) keeps
+          every digit legible; letting flex-shrink wrap text mid-pill instead
+          (the default without `flex-wrap`) split the month name itself across
+          two lines, which read as broken rather than merely tall. */}
+      <button onClick={()=>setOpen(true)} className={`flex flex-wrap w-full min-w-[9.5rem] items-center gap-2 px-3 py-2 rounded-2xl text-[12px] font-semibold transition-all cursor-pointer ${chipBase}`}>
         <SunDim size={14} weight="duotone" className="text-amber-500 flex-shrink-0"/>
         <span className="hidden sm:block">{dayName}</span>
         {/* `hijriToday &&` is load-bearing, not defensive noise: the chip is the
@@ -172,19 +178,22 @@ export default function HijriDateWidget() {
             a runtime with no Umm al-Qura data would otherwise put «undefined»
             next to the date on every screen in the app. */}
         {(calendarType==="hijri"||calendarType==="both") && hijriToday && (
-          <span className={`px-1.5 py-0.5 rounded-lg text-[10px] font-bold ${isDark?"bg-emerald-500/15 text-emerald-400":"bg-emerald-50 text-emerald-700"}`}>
+          <span className={`px-1.5 py-0.5 rounded-lg text-[10px] font-bold whitespace-nowrap ${isDark?"bg-emerald-500/15 text-emerald-400":"bg-emerald-50 text-emerald-700"}`}>
             {/* THE WHOLE MONTH NAME. This used to be `.split(" ")[0]`, which
                 turned «ربيع الأول» and «ربيع الثاني» — and «جمادى الأولى» and
                 «جمادى الثانية» — into the same two words. Four of the twelve
                 Hijri months are only told apart by the word this dropped, so
                 the pill was ambiguous by a whole month for a third of the year,
                 on a screen lawyers count filing deadlines from. It showed up in
-                ten of the owner's thirty-four screenshots. */}
-            {ar(hijriToday.day)} {hijriToday.monthName}
+                ten of the owner's thirty-four screenshots.
+                AND THE YEAR: the pill named a day and a month with no year next
+                to either, on the one calendar the Gregorian half (below) always
+                carried a year for. Same class of ambiguity, notes ٦١ and ٨٠. */}
+            {ar(hijriToday.day)} {hijriToday.monthName} {ar(hijriToday.year)} هـ
           </span>
         )}
         {(calendarType==="miladi"||calendarType==="both") && now && (
-          <span className={`text-[10px] ${isDark?"text-[#C8A762]":"text-amber-700"}`}>
+          <span className={`text-[10px] whitespace-nowrap ${isDark?"text-[#C8A762]":"text-amber-700"}`}>
             {ar(now.getDate())}/{ar(now.getMonth()+1)}/{ar(now.getFullYear())}
           </span>
         )}

@@ -165,6 +165,11 @@ export interface ServiceRequestAttachment {
   storage_path: string;
   mime_type?: string | null;
   created_at: string;
+  /** Resolved server-side via a service-role profiles lookup (findings 190/183
+   * share the same block: `attachments.owner_user_id` / `assigned_to` are
+   * UUIDs the RLS-scoped client cannot always join to a name). Absent when
+   * the uploader's profile could not be resolved — never guessed. */
+  uploaderName?: string | null;
 }
 
 export interface ServiceRequestDetail {
@@ -186,6 +191,10 @@ export interface ServiceRequestDetail {
   sourcePath: string;
   metadata: Record<string, unknown> | null;
   assignedTo: string | null;
+  /** Resolved server-side via a service-role profiles lookup — see
+   * `ServiceRequestAttachment.uploaderName`. Absent when `assignedTo` is null
+   * or the assignee's profile could not be resolved. */
+  assignedToName?: string | null;
   events: ServiceRequestEvent[];
   attachments: ServiceRequestAttachment[];
 }

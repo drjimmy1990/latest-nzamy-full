@@ -293,7 +293,12 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
           </div>
 
           {/* Body */}
-          <div className="p-5 space-y-4 min-h-[240px] overflow-y-auto">
+          {/* The flags step (item 243) holds five chips and one line of copy —
+              a fraction of what steps 0 and 1 need. Forcing the same
+              min-h-[240px] on it left roughly half the modal body blank
+              underneath the chips, so the height floor only applies to the
+              two data-heavy steps; step 2 sizes to its own content. */}
+          <div className={`p-5 space-y-4 overflow-y-auto ${step === 2 ? "" : "min-h-[240px]"}`}>
             {/* Step 0: Basic info */}
             {step === 0 && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-3">
@@ -340,7 +345,7 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
                     </div>
                     <div>
                       <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>رقم الوكالة (اختياري)</label>
-                      <input value={powerOfAttorneyNo} onChange={e => setPowerOfAttorneyNo(e.target.value)}
+                      <input value={powerOfAttorneyNo} onChange={e => setPowerOfAttorneyNo(e.target.value)} dir="ltr"
                         className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${inputCls}`} />
                     </div>
                   </>
@@ -381,7 +386,7 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
             {step === 1 && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-3">
                 <div>
-                  <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>إجمالي الأتعاب (ريال)</label>
+                  <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>إجمالي الأتعاب (ريال، اختياري)</label>
                   {/* Placeholder was "0", which showed a greyed-out zero in an
                       empty box — the field reading as though it would save 0.
                       It no longer saves anything at all when left blank. */}
@@ -389,7 +394,7 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${inputCls}`} />
                 </div>
                 <div>
-                  <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>المدفوع مقدمًا (ريال)</label>
+                  <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>المدفوع مقدمًا (ريال، اختياري)</label>
                   <input type="number" value={paid} onChange={e => setPaid(e.target.value)} placeholder="اختياري"
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${inputCls}`} />
                 </div>

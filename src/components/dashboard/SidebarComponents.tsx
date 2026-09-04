@@ -81,8 +81,12 @@ export function inferUserTypeFromPath(pathname: string): UserType {
   return null;
 }
 
-// AI section items shown by default in lawyer sidebar; rest are "المزيد"
-const AI_SECTION_DEFAULT_VISIBLE = 9;
+// AI section items shown by default in lawyer sidebar; rest are "المزيد".
+// Raised from 9 to 10 (note ٢٦١): the lawyer's own AI group carries exactly
+// 10 entries, so at 9 a "المزيد" toggle sat under a group that never needed
+// one — one more parallel expand mechanism on a sidebar note ٢٦١ counted
+// four of. Firm's larger 16-item group still collapses past this line.
+const AI_SECTION_DEFAULT_VISIBLE = 10;
 
 // ─── Upgrade nudge badge ──────────────────────────────────────────────────────
 /**
@@ -518,20 +522,21 @@ export function DashboardModeToggle({
             }`}
           >
             {m === "light"
-              ? (isAr ? "لايت" : "Lite")
+              ? (isAr ? "مبسّطة" : "Lite")
               : (isAr ? "كاملة" : "Full")}
           </button>
         ))}
       </div>
-      {mode === "light" && (
-        <p className={`text-[10px] text-center mt-1 mb-1 ${
-          isDark ? "text-zinc-600" : "text-slate-400"
-        }`}>
-          {isAr
-            ? "لايت يعرض أدوات الاستخدام اليومي فقط — كاملة تعرض كل القوائم المتاحة."
-            : "Lite shows daily tools only — Full shows every available menu."}
-        </p>
-      )}
+      {/* Shown regardless of the active mode — with only "full" ever visible
+          by default (shot 19), a reader who never toggles to "light" never
+          saw this line, so the toggle read as unexplained (note ١٦١). */}
+      <p className={`text-[10px] text-center mt-1 mb-1 ${
+        isDark ? "text-zinc-600" : "text-slate-400"
+      }`}>
+        {isAr
+          ? "مبسّطة تعرض أدوات الاستخدام اليومي فقط — كاملة تعرض كل القوائم المتاحة."
+          : "Lite shows daily tools only — Full shows every available menu."}
+      </p>
     </div>
   );
 }

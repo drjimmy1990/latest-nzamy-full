@@ -11,7 +11,7 @@ import {
   Scales, Storefront, Bank, Handshake, Stamp
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { countPhraseAr, countTileAr, type ArabicCountForms } from "@/lib/services/arabicCount";
+import { countPhraseAr, countTileAr, toArabicDigits, type ArabicCountForms } from "@/lib/services/arabicCount";
 
 /** «مستخدم» — shot 07 printed «10 مستخدم», the singular for a count of ten. */
 const USERS_COUNT: ArabicCountForms = {
@@ -218,13 +218,19 @@ const STATUS_CFG: Record<UserStatus, { label: string; color: string; bg: string 
   trial:     { label: "تجربة مجانية", color: "text-blue-500",   bg: "bg-blue-500/10 border-blue-500/20" },
 };
 
-/** Badge label and colour per real tier — `name_ar` from the plan seed. */
-const PLAN_CFG: Record<PlanTier, { label: string; color: string }> = {
-  free: { label: "المجانية",    color: "text-slate-400" },
-  ai:   { label: "الذكية",      color: "text-sky-500" },
-  pro:  { label: "الاحترافية",  color: "text-blue-500" },
-  corp: { label: "المؤسسية",    color: "text-indigo-500" },
-  max:  { label: "الحد الأقصى", color: "text-violet-500" },
+/**
+ * Badge label, colour and pill background per real tier — `name_ar` from the
+ * plan seed. Owner item ٧٢: this badge used to be plain coloured text while
+ * the role and status badges beside it were rounded pills — the exact field
+ * this screen cannot filter on (until the plan control above) was the one
+ * that looked least like a control. `bg` closes that gap.
+ */
+const PLAN_CFG: Record<PlanTier, { label: string; color: string; bg: string }> = {
+  free: { label: "المجانية",    color: "text-slate-400",  bg: "bg-slate-400/10" },
+  ai:   { label: "الذكية",      color: "text-sky-500",    bg: "bg-sky-500/10" },
+  pro:  { label: "الاحترافية",  color: "text-blue-500",   bg: "bg-blue-500/10" },
+  corp: { label: "المؤسسية",    color: "text-indigo-500", bg: "bg-indigo-500/10" },
+  max:  { label: "الحد الأقصى", color: "text-violet-500", bg: "bg-violet-500/10" },
 };
 
 /** Every value the plan control can hold, in the order it lists them. */
@@ -241,15 +247,16 @@ const PLAN_FILTERS: { value: PlanFilter; label: string }[] = [
  * can act on the difference. Zinc, not a gray-* token — globals.css redefines
  * gray-50/100/200 as dark SURFACES.
  */
-function planBadgeFor(user: PlatformUser): { label: string; color: string; title?: string } {
+function planBadgeFor(user: PlatformUser): { label: string; color: string; bg: string; title?: string } {
   const key = planKeyOf(user);
   if (key === NO_PLAN) {
-    return { label: "بدون اشتراك", color: "text-zinc-400", title: "لا يوجد سجل اشتراك لهذا الحساب" };
+    return { label: "بدون اشتراك", color: "text-zinc-400", bg: "bg-zinc-500/10", title: "لا يوجد سجل اشتراك لهذا الحساب" };
   }
   if (key === null) {
     return {
       label: "خطة غير معروفة",
       color: "text-zinc-400",
+      bg: "bg-zinc-500/10",
       title: `قيمة tier غير معروفة: ${String(user.subscription?.tier)}`,
     };
   }
@@ -263,11 +270,16 @@ function UserRow({
   isDark,
   card,
   onUpdate,
+  selected,
+  onToggleSelect,
 }: {
   user: PlatformUser;
   isDark: boolean;
   card: string;
   onUpdate: () => void;
+  /** Owner item ٦٦ — checked state for the bulk-verify selector. */
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
 }) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -335,6 +347,20 @@ function UserRow({
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
       className={`${card} p-4 flex items-center gap-4 hover:border-royal/20 transition-all relative`}>
 
+      {/* Owner item ٦٦ — bulk-verify selector. Only a pending row can be
+          selected: the bulk button below fires the same PATCH the per-row
+          «تحقق» button already sends, once per selected account, and there is
+          nothing to batch on a row that already has no verification to do.
+          A blank spacer keeps every other row's avatar aligned to the same
+          column instead of shifting left by one checkbox width. */}
+      {uStatus === "pending" ? (
+        <input type="checkbox" checked={selected} onChange={() => onToggleSelect(user.id)}
+          aria-label="تحديد للتحقق الجماعي"
+          className="w-4 h-4 flex-shrink-0 rounded border-slate-300 accent-emerald-500 cursor-pointer" />
+      ) : (
+        <span className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+      )}
+
       {/* Avatar — the account-type tile. `title` carries the raw stored value so
           an unknown type is not just flagged but identifiable. */}
       <div title={roleKnown ? role.label : `${role.label}: ${user.user_type}`}
@@ -357,11 +383,11 @@ function UserRow({
           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${status.bg} ${status.color}`}>
             {status.label}
           </span>
-          <span title={plan.title} className={`text-[9px] font-bold ${plan.color}`}>{plan.label}</span>
+          <span title={plan.title} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${plan.bg} ${plan.color}`}>{plan.label}</span>
         </div>
         <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{user.email}</p>
         <div className={`flex items-center gap-3 mt-1 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-          <span><Robot size={9} className="inline me-1" />{user.credit_balance.toLocaleString()} طلب AI</span>
+          <span><Robot size={9} className="inline me-1" />{toArabicDigits(user.credit_balance.toLocaleString())} طلب AI</span>
           <span>انضم: {formatArabicDate(user.created_at)}</span>
         </div>
       </div>
@@ -450,6 +476,17 @@ export default function AdminUsersPage() {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  /**
+   * Owner item ٦٦ — the verification queue's bulk action.
+   *
+   * `selected` holds the ids a checkbox has actually been ticked for
+   * (UserRow only offers one on a pending row), so it can only ever contain
+   * accounts the per-row «تحقق» button could also verify one at a time —
+   * there is no separate bulk-verify endpoint, just this loop of the same
+   * PATCH.
+   */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
   const LIMIT = 20;
 
   const card = isDark
@@ -499,6 +536,12 @@ export default function AdminUsersPage() {
       const json: UsersApiResponse = await res.json();
 
       setUsers(prev => append ? [...prev, ...json.data] : json.data);
+      // A non-append fetch replaces `users` outright (new search, new role
+      // chip, or the refresh a bulk verify triggers) — any id still ticked in
+      // `selected` from the PREVIOUS list may no longer be on screen, or may
+      // no longer even be pending. Left uncleared, «تحقق جماعي» could verify
+      // an account the admin can no longer see and never meant to touch.
+      if (!append) setSelected(new Set());
       setTotal(json.total);
       if (json.counts) setRoleCounts(json.counts);
       setPage(pageNum);
@@ -521,6 +564,49 @@ export default function AdminUsersPage() {
     }, search ? 400 : 0);
     return () => clearTimeout(debounce);
   }, [fetchUsers]);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Owner item ٦٦ — verify every selected account.
+   *
+   * No batch endpoint exists, so this is `Promise.allSettled` over the exact
+   * PATCH the per-row «تحقق» button already sends, one call per selected id.
+   * `allSettled` rather than `all`: one account failing to verify must not
+   * abandon the rest mid-batch.
+   */
+  const handleBulkVerify = useCallback(async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    setBulkLoading(true);
+    try {
+      const results = await Promise.allSettled(
+        ids.map(id =>
+          fetch(`/api/v1/admin/users/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ verified: true }),
+          }).then(res => {
+            if (!res.ok) throw new Error(id);
+          }),
+        ),
+      );
+      const failed = results.filter(r => r.status === "rejected").length;
+      if (failed > 0) {
+        alert(`تعذّر التحقق من ${toArabicDigits(failed)} من أصل ${toArabicDigits(ids.length)} حسابات محدَّدة`);
+      }
+      setSelected(new Set());
+      fetchUsers(1);
+    } finally {
+      setBulkLoading(false);
+    }
+  }, [selected, fetchUsers]);
 
   const stats = {
     total:     total,
@@ -631,7 +717,10 @@ export default function AdminUsersPage() {
               </div>
               <div>
                 <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{k.label}</p>
-                <p className={`text-[18px] font-bold font-mono ${k.color}`}>{k.value}</p>
+                {/* Owner item ٦٨ — these four tiles were the last Western
+                    digits on a page whose header and join dates already write
+                    Arabic-Indic. */}
+                <p className={`text-[18px] font-bold font-mono ${k.color}`}>{countTileAr(k.value)}</p>
               </div>
             </motion.div>
           );
@@ -709,7 +798,7 @@ export default function AdminUsersPage() {
                     text in those goes invisible in dark mode. */}
                 {n !== undefined && n !== null && (
                   <span className={`text-[10px] font-mono ${active ? "text-white/70" : isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                    {n}
+                    {countTileAr(n)}
                   </span>
                 )}
               </button>
@@ -729,7 +818,7 @@ export default function AdminUsersPage() {
         {scopeNotice && (
           <p className={`text-[11px] leading-6 ${isDark ? "text-amber-400/80" : "text-amber-700"}`}>
             تصفية الخطة والحالة — وعدادات «نشط» و«انتظار تحقق» و«موقوف» أعلاه —
-            تُحتسب على الحسابات المحمّلة فقط ({users.length} من {total}).
+            تُحتسب على الحسابات المحمّلة فقط ({countTileAr(users.length)} من {countTileAr(total)}).
             اضغط «تحميل المزيد» لتشمل بقية الحسابات.
           </p>
         )}
@@ -779,10 +868,53 @@ export default function AdminUsersPage() {
                 A half-fix of our own, in the file the fix was made in. */}
             يوجد <strong>{countPhraseAr(stats.pending, USERS_COUNT)}</strong> {stats.pending === 1 ? "ينتظر" : "ينتظرون"} التحقق من الهوية الوظيفية
           </p>
-          <button onClick={() => setStatusFilter("pending")}
-            className="flex-shrink-0 px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-500 text-[11px] font-bold border border-amber-500/20 hover:bg-amber-500/20">
-            عرضهم
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={() => setStatusFilter("pending")}
+              className="px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-500 text-[11px] font-bold border border-amber-500/20 hover:bg-amber-500/20">
+              عرضهم
+            </button>
+            {/* Owner item ٦٦ — the verification queue had no bulk action, only
+                a زر «تحقق» per row. This selects every currently-loaded
+                pending account for the bulk-verify bar below, instead of a
+                separate batch endpoint: the bar fires the same PATCH the
+                per-row button already calls, once per selected account.
+                Same rule this file already applies to `scopeNotice`: with
+                `hasMore` true, «loaded» rows are not the whole queue, so the
+                button says exactly that instead of promising «الكل». */}
+            <button onClick={() => {
+              const pendingIds = users
+                .filter(u => mapStatus(u.subscription?.status, u.verified_at) === "pending")
+                .map(u => u.id);
+              setSelected(new Set(pendingIds));
+              setStatusFilter("pending");
+            }}
+              title={hasMore ? "يحدّد الحسابات المعلَّقة المحمَّلة فقط — اضغط «تحميل المزيد» أولاً لتشمل الباقي" : undefined}
+              className="px-3 py-1.5 rounded-xl bg-royal/10 text-royal text-[11px] font-bold border border-royal/20 hover:bg-royal/20">
+              {hasMore ? "تحديد المُحمَّل للتحقق الجماعي" : "تحديد الكل للتحقق الجماعي"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk verify bar — appears once a checkbox is ticked on a pending
+          row (or via «تحديد الكل» above). Owner item ٦٦: the only action the
+          verification queue offered was one account at a time. */}
+      {selected.size > 0 && (
+        <div className={`${card} p-3 flex items-center justify-between gap-3 border-emerald-500/20 bg-emerald-500/[0.03]`}>
+          <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
+            تم تحديد {countTileAr(selected.size)} {selected.size === 1 ? "حساب" : "حسابات"} للتحقق
+          </p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSelected(new Set())} disabled={bulkLoading}
+              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border disabled:opacity-40 ${isDark ? "border-white/[0.06] text-zinc-400 hover:bg-zinc-800" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+              إلغاء التحديد
+            </button>
+            <button onClick={handleBulkVerify} disabled={bulkLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-500 text-[11px] font-bold border border-emerald-500/20 hover:bg-emerald-500/20 disabled:opacity-40">
+              {bulkLoading ? <SpinnerGap size={12} className="animate-spin" /> : <Check size={12} weight="bold" />}
+              تحقق جماعي ({countTileAr(selected.size)})
+            </button>
+          </div>
         </div>
       )}
 
@@ -834,7 +966,7 @@ export default function AdminUsersPage() {
             <Users size={28} weight="duotone" className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
             <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
               لا يطابق هذه التصفية أي حساب من الحسابات المحمّلة
-              ({users.length} من {total})
+              ({countTileAr(users.length)} من {countTileAr(total)})
             </p>
             {hasMore && (
               <button onClick={() => fetchUsers(page + 1, true)} disabled={loadingMore}
@@ -847,7 +979,8 @@ export default function AdminUsersPage() {
 
         {!loading && !error && visibleUsers.map((u, i) => (
           <motion.div key={u.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-            <UserRow user={u} isDark={isDark} card={card} onUpdate={() => fetchUsers(1, false)} />
+            <UserRow user={u} isDark={isDark} card={card} onUpdate={() => fetchUsers(1, false)}
+              selected={selected.has(u.id)} onToggleSelect={toggleSelect} />
           </motion.div>
         ))}
 
@@ -869,7 +1002,7 @@ export default function AdminUsersPage() {
               ) : (
                 <>
                   <ArrowsDownUp size={13} />
-                  تحميل المزيد ({users.length} من {total})
+                  تحميل المزيد ({countTileAr(users.length)} من {countTileAr(total)})
                 </>
               )}
             </button>

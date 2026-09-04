@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 
 /**
  * Route-segment fallback for /ai/*.
@@ -30,11 +31,17 @@ export default function AILoading() {
   return (
     <div className="min-h-[40vh] flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">
+        {/* Owner note ٩٤ — the rotating gradient blob read as an unfinished
+            placeholder rather than a designed loader. Replaced with the real
+            platform mark (/logo.png, drawn the same way SharedSidebar.tsx
+            draws it) doing a gentle breathing pulse instead of a spin. */}
         <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
-          className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-[#0B3D2E] to-[#C8A762]"
-        />
+          animate={{ opacity: [0.45, 1, 0.45], scale: [0.92, 1, 0.92] }}
+          transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+          className="h-12 w-12 rounded-2xl overflow-hidden flex items-center justify-center"
+        >
+          <Image src="/logo.png" alt="نظامي" width={48} height={48} className="h-12 w-12 object-contain" />
+        </motion.div>
         <p className="text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">
           جارٍ التحميل...
         </p>

@@ -7,7 +7,7 @@ import {
   Archive, ArrowCounterClockwise, Trash,
   Trophy,
   FolderOpen, CalendarBlank, CalendarDot, CalendarCheck, ChartBar, CalendarStar, Timer,
-  Warning, ArrowClockwise, CircleNotch,
+  Warning, ArrowClockwise, CircleNotch, MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import EmptyState from "@/components/ui/EmptyState";
@@ -72,6 +72,9 @@ export default function LawyerTasksPage() {
   const [categoryFilter, setCategoryFilter] = useState<TaskCategory | "all">("all");
   const [priority,  setPriority]  = useState<Priority | "all">("all");
   const [timeRange, setTimeRange] = useState<TimeRange>("all");
+  // Client-side title search — the empty state has claimed a "أو البحث" fallback
+  // since before this filter existed; this makes that claim true.
+  const [search, setSearch] = useState("");
   const [view, setView] = useState<ViewMode>("list");
   const [kanbanGroup, setKanbanGroup] = useState<KanbanGroupBy>("status");
   const [showArchive, setShowArchive] = useState(false);
@@ -206,9 +209,20 @@ export default function LawyerTasksPage() {
         .filter(t => !t.caseId || !archivedCaseIds.has(t.caseId));
 
   const cutoff = timeRangeCutoff(timeRange);
+  // Title search — client-side only, over the tasks already on the board.
+  const searchQuery = search.trim().toLowerCase();
+  const matchesSearch = (t: Task) => !searchQuery || t.title.toLowerCase().includes(searchQuery);
+  // The «priority»/«النوع»/«الموعد» groupings (list and kanban) build their
+  // sections straight off `active`/`archived` rather than through
+  // `kanbanTasks`, so the search has to be applied here too — otherwise
+  // typing in the box only works while grouped by حالة المهمة.
+  const activeVisible = active.filter(matchesSearch);
+  const archivedVisible = archived.filter(matchesSearch);
+
   const filtered = base
     .filter(t => categoryFilter === "all" || t.category === categoryFilter)
     .filter(t => priority === "all" || t.priority === priority)
+    .filter(matchesSearch)
     .filter(t => {
       if (timeRange === "all" || !t.dueDate) return true;
       if (timeRange === "today") return t.dueDate === timeRangeStart;
@@ -224,6 +238,7 @@ export default function LawyerTasksPage() {
       .filter(t => t.status === s)
       .filter(t => categoryFilter === "all" || t.category === categoryFilter)
       .filter(t => priority === "all" || t.priority === priority)
+      .filter(matchesSearch)
       .filter(t => {
         if (timeRange === "all" || !t.dueDate) return true;
         if (timeRange === "today") return t.dueDate === timeRangeStart;
@@ -620,35 +635,45 @@ export default function LawyerTasksPage() {
           The Pomodoro timer above still runs — it just no longer feeds two
           points per session into a fabricated score. */}
 
-      {/* Time Range Bar */}
+      {/* Filters — one wrapping row (search, time range, grouping/archive)
+          instead of separate stacked bars. Time range and grouping share the
+          same pill container style, and the archive toggle now lives inside
+          the grouping pill group with the same active/inactive look as its
+          neighbours (it used to be a detached chip with its own amber
+          highlight). Search is a plain field in the same row — the
+          empty-state text below has always mentioned «البحث»; this is what
+          makes that word true. */}
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}
-        className={`flex gap-1.5 overflow-x-auto pb-1 p-1 rounded-2xl w-fit max-w-full ${isDark ? "bg-zinc-800/60" : "bg-slate-100"}`}>
-        {([
-          { key: "all"     as TimeRange, label: "الكل",          icon: FolderOpen },
-          { key: "today"   as TimeRange, label: "اليوم",         icon: CalendarDot },
-          { key: "week"    as TimeRange, label: "الأسبوع",       icon: CalendarBlank },
-          { key: "month"   as TimeRange, label: "هذا الشهر",    icon: CalendarCheck },
-          { key: "quarter" as TimeRange, label: "هذا الربع",    icon: ChartBar },
-          { key: "year"    as TimeRange, label: "هذه السنة",    icon: CalendarStar },
-        ]).map(t => {
-          const Icon = t.icon;
-          return (
-          <button key={t.key} onClick={() => setTimeRange(t.key)}
-            className={`flex items-center gap-1.5 whitespace-nowrap px-3.5 py-2 rounded-xl text-[11px] font-bold flex-shrink-0 transition-all ${
-              timeRange === t.key
-                ? "bg-[#0B3D2E] text-[#C8A762] shadow-sm"
-                : isDark ? "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.05]" : "text-slate-500 hover:text-slate-700 hover:bg-white"
-            }`}>
-            <Icon size={12} weight={timeRange === t.key ? "fill" : "regular"} />
-            {t.label}
-          </button>
-          );
-        })}
-      </motion.div>
-
-      {/* Group Selector */}
-      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}
         className="flex items-center gap-2 flex-wrap">
+        <div className={`flex items-center gap-2 flex-1 min-w-[200px] px-3 py-2 rounded-xl border ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
+          <MagnifyingGlass size={15} className={isDark ? "text-zinc-500" : "text-slate-400"} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث في عناوين المهام..."
+            className={`flex-1 bg-transparent text-[13px] outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
+        </div>
+        <div className={`flex gap-1.5 overflow-x-auto pb-1 p-1 rounded-2xl w-fit max-w-full ${isDark ? "bg-zinc-800/60" : "bg-slate-100"}`}>
+          {([
+            { key: "all"     as TimeRange, label: "الكل",          icon: FolderOpen },
+            { key: "today"   as TimeRange, label: "اليوم",         icon: CalendarDot },
+            { key: "week"    as TimeRange, label: "الأسبوع",       icon: CalendarBlank },
+            { key: "month"   as TimeRange, label: "هذا الشهر",    icon: CalendarCheck },
+            { key: "quarter" as TimeRange, label: "هذا الربع",    icon: ChartBar },
+            { key: "year"    as TimeRange, label: "هذه السنة",    icon: CalendarStar },
+          ]).map(t => {
+            const Icon = t.icon;
+            return (
+            <button key={t.key} onClick={() => setTimeRange(t.key)}
+              className={`flex items-center gap-1.5 whitespace-nowrap px-3.5 py-2 rounded-xl text-[11px] font-bold flex-shrink-0 transition-all ${
+                timeRange === t.key
+                  ? "bg-[#0B3D2E] text-[#C8A762] shadow-sm"
+                  : isDark ? "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.05]" : "text-slate-500 hover:text-slate-700 hover:bg-white"
+              }`}>
+              <Icon size={12} weight={timeRange === t.key ? "fill" : "regular"} />
+              {t.label}
+            </button>
+            );
+          })}
+        </div>
+
         <div className={`flex gap-1 p-1 rounded-2xl ${isDark?"bg-zinc-800/60":"bg-slate-100"}`}>
           {([
             {k:"status"   as KanbanGroupBy, l:"حالة المهمة"},
@@ -661,17 +686,33 @@ export default function LawyerTasksPage() {
                 kanbanGroup===g.k?isDark?"bg-zinc-700 text-white":"bg-white text-[#0B3D2E] shadow-sm":isDark?"text-zinc-500 hover:text-zinc-300":"text-slate-400 hover:text-slate-600"
               }`}>{g.l}</button>
           ))}
+          {/* A thin divider before Archive — same pill group and active style
+              as the grouping tabs, but visually set apart so it does not
+              read as a fifth grouping option. */}
+          <span className={`w-px h-5 self-center mx-0.5 ${isDark ? "bg-white/10" : "bg-slate-300"}`} />
+          <button onClick={()=>setShowArchive(v=>!v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold flex-shrink-0 transition-all ${
+              showArchive?isDark?"bg-zinc-700 text-white":"bg-white text-[#0B3D2E] shadow-sm":isDark?"text-zinc-500 hover:text-zinc-300":"text-slate-400 hover:text-slate-600"
+            }`}>
+            <Archive size={12}/>
+            {/* Label always, number only when there is a read behind it. */}
+            الأرشيف {countsKnown&&counts.archived>0&&`(${toArabicDigits(counts.archived)})`}
+          </button>
         </div>
-        {/* Archive pill */}
-        <button onClick={()=>setShowArchive(v=>!v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold flex-shrink-0 transition-all ${
-            showArchive?"bg-amber-500 text-white border-amber-500":isDark?"border-white/[0.06] text-zinc-500 hover:text-zinc-300":"border-slate-200 text-slate-500 hover:border-amber-400 hover:text-amber-600"
-          }`}>
-          <Archive size={12}/>
-          {/* Label always, number only when there is a read behind it. */}
-          الأرشيف {countsKnown&&counts.archived>0&&`(${toArabicDigits(counts.archived)})`}
-        </button>
       </motion.div>
+
+      {/* Priority legend — the dot on each row (TaskCard.tsx) previously
+          explained itself only via a hover `title`, invisible on a glance
+          and on touch. */}
+      <div className="flex items-center gap-3 flex-wrap px-1">
+        <span className={`text-[10px] font-bold ${isDark?"text-zinc-600":"text-slate-400"}`}>الأولوية:</span>
+        {(["urgent","high","normal","low"] as Priority[]).map(p=>(
+          <span key={p} className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${PRIORITY_CONFIG[p].dot}`}/>
+            <span className={`text-[10px] font-semibold ${isDark?"text-zinc-500":"text-slate-500"}`}>{PRIORITY_CONFIG[p].label}</span>
+          </span>
+        ))}
+      </div>
 
       {loadState === "loading" && (
         <div className={`${card} p-12 flex flex-col items-center gap-3`}>
@@ -686,29 +727,29 @@ export default function LawyerTasksPage() {
         let sections: GSection[] = [];
 
         if (showArchive) {
-          sections = [{key:"archive",label:"الأرشيف",color:"text-amber-500",tasks:archived}];
+          sections = [{key:"archive",label:"الأرشيف",color:"text-amber-500",tasks:archivedVisible}];
         } else if (kanbanGroup==="status") {
           sections = KANBAN_COLS.map(c=>({key:c.status,label:c.label,color:c.color,tasks:kanbanTasks(c.status)}));
         } else if (kanbanGroup==="priority") {
           sections = [
-            {key:"urgent",label:"عاجل 🔴",color:"text-red-500",   tasks:active.filter(t=>t.priority==="urgent")},
-            {key:"high",  label:"عالية 🟠",color:"text-amber-500", tasks:active.filter(t=>t.priority==="high")},
-            {key:"normal",label:"عادية 🔵",color:"text-blue-500",  tasks:active.filter(t=>t.priority==="normal")},
-            {key:"low",   label:"منخفضة ⚪️",color:"text-slate-400", tasks:active.filter(t=>t.priority==="low")},
+            {key:"urgent",label:"عاجل 🔴",color:"text-red-500",   tasks:activeVisible.filter(t=>t.priority==="urgent")},
+            {key:"high",  label:"عالية 🟠",color:"text-amber-500", tasks:activeVisible.filter(t=>t.priority==="high")},
+            {key:"normal",label:"عادية 🔵",color:"text-blue-500",  tasks:activeVisible.filter(t=>t.priority==="normal")},
+            {key:"low",   label:"منخفضة ⚪️",color:"text-slate-400", tasks:activeVisible.filter(t=>t.priority==="low")},
           ];
         } else if (kanbanGroup==="category") {
           sections = Object.entries(CATEGORY_CONFIG).map(([k,v])=>({
             key:k, label:v.label, color:v.color,
-            tasks:active.filter(t=>t.category===k),
+            tasks:activeVisible.filter(t=>t.category===k),
           }));
         } else {
           const todayStr = today();
           const inDays = (n:number)=>{const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);};
           sections = [
-            {key:"overdue",label:"متأخرة ⚠️",color:"text-red-500",   tasks:active.filter(t=>t.dueDate&&t.dueDate<todayStr&&t.status!=="done")},
-            {key:"today",  label:"اليوم 📌",    color:"text-orange-500",tasks:active.filter(t=>t.dueDate===todayStr)},
-            {key:"week",   label:"هذا الأسبوع",color:"text-amber-500", tasks:active.filter(t=>t.dueDate&&t.dueDate>todayStr&&t.dueDate<=inDays(7))},
-            {key:"later",  label:"لاحقاً",     color:"text-slate-400", tasks:active.filter(t=>!t.dueDate||(t.dueDate>inDays(7)))},
+            {key:"overdue",label:"متأخرة ⚠️",color:"text-red-500",   tasks:activeVisible.filter(t=>t.dueDate&&t.dueDate<todayStr&&t.status!=="done")},
+            {key:"today",  label:"اليوم 📌",    color:"text-orange-500",tasks:activeVisible.filter(t=>t.dueDate===todayStr)},
+            {key:"week",   label:"هذا الأسبوع",color:"text-amber-500", tasks:activeVisible.filter(t=>t.dueDate&&t.dueDate>todayStr&&t.dueDate<=inDays(7))},
+            {key:"later",  label:"لاحقاً",     color:"text-slate-400", tasks:activeVisible.filter(t=>!t.dueDate||(t.dueDate>inDays(7)))},
           ];
         }
 
@@ -766,24 +807,24 @@ export default function LawyerTasksPage() {
                 cols = KANBAN_COLS.map(c=>({key:c.status,label:c.label,color:c.color,colBg:"",tasks:kanbanTasks(c.status)}));
               } else if(kanbanGroup==="priority") {
                 cols = [
-                  {key:"urgent", label:"عاجل 🔴",  color:"text-red-500",    colBg:"", tasks:active.filter(t=>t.priority==="urgent")},
-                  {key:"high",   label:"عالية 🟠", color:"text-amber-500",  colBg:"", tasks:active.filter(t=>t.priority==="high")},
-                  {key:"normal", label:"عادية 🔵",  color:"text-blue-500",   colBg:"", tasks:active.filter(t=>t.priority==="normal")},
-                  {key:"low",    label:"منخفضة ⚪️", color:"text-slate-400",  colBg:"", tasks:active.filter(t=>t.priority==="low")},
+                  {key:"urgent", label:"عاجل 🔴",  color:"text-red-500",    colBg:"", tasks:activeVisible.filter(t=>t.priority==="urgent")},
+                  {key:"high",   label:"عالية 🟠", color:"text-amber-500",  colBg:"", tasks:activeVisible.filter(t=>t.priority==="high")},
+                  {key:"normal", label:"عادية 🔵",  color:"text-blue-500",   colBg:"", tasks:activeVisible.filter(t=>t.priority==="normal")},
+                  {key:"low",    label:"منخفضة ⚪️", color:"text-slate-400",  colBg:"", tasks:activeVisible.filter(t=>t.priority==="low")},
                 ];
               } else if(kanbanGroup==="category") {
                 cols = Object.entries(CATEGORY_CONFIG).map(([k,v])=>({
                   key:k, label:v.label, color:v.color, colBg:"",
-                  tasks:active.filter(t=>t.category===k),
+                  tasks:activeVisible.filter(t=>t.category===k),
                 }));
               } else {
                 const todayStr = new Date().toISOString().slice(0,10);
                 const inDays = (n:number)=>{const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);};
                 cols = [
-                  {key:"overdue", label:"متأخرة ⚠️", color:"text-red-500",   colBg:"", tasks:active.filter(t=>t.dueDate&&t.dueDate<todayStr&&t.status!=="done")},
-                  {key:"today",   label:"اليوم 📌",     color:"text-orange-500",colBg:"", tasks:active.filter(t=>t.dueDate===todayStr)},
-                  {key:"week",    label:"هذا الأسبوع", color:"text-amber-500", colBg:"", tasks:active.filter(t=>t.dueDate&&t.dueDate>todayStr&&t.dueDate<=inDays(7))},
-                  {key:"later",   label:"لاحقاً",      color:"text-slate-400", colBg:"", tasks:active.filter(t=>!t.dueDate||(t.dueDate>inDays(7)))},
+                  {key:"overdue", label:"متأخرة ⚠️", color:"text-red-500",   colBg:"", tasks:activeVisible.filter(t=>t.dueDate&&t.dueDate<todayStr&&t.status!=="done")},
+                  {key:"today",   label:"اليوم 📌",     color:"text-orange-500",colBg:"", tasks:activeVisible.filter(t=>t.dueDate===todayStr)},
+                  {key:"week",    label:"هذا الأسبوع", color:"text-amber-500", colBg:"", tasks:activeVisible.filter(t=>t.dueDate&&t.dueDate>todayStr&&t.dueDate<=inDays(7))},
+                  {key:"later",   label:"لاحقاً",      color:"text-slate-400", colBg:"", tasks:activeVisible.filter(t=>!t.dueDate||(t.dueDate>inDays(7)))},
                 ];
               }
               const isDraggable = kanbanGroup==="status";

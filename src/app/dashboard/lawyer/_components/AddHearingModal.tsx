@@ -168,7 +168,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
       >
         <div className="flex items-center justify-between mb-5">
           <h3 className={`text-[16px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>إضافة موعد / جلسة جديدة</h3>
-          <button onClick={onClose} className={`flex h-7 w-7 items-center justify-center rounded-full ${isDark ? "bg-white/[0.07] text-zinc-400 hover:text-white" : "bg-zinc-100 text-zinc-500 hover:text-black"}`}>
+          <button onClick={onClose} className={`flex h-7 w-7 items-center justify-center rounded-full ${isDark ? "bg-white/[0.12] text-zinc-200 hover:text-white" : "bg-zinc-200 text-zinc-700 hover:text-black"}`}>
             <XCircle size={16} />
           </button>
         </div>

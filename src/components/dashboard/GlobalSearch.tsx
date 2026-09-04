@@ -183,7 +183,11 @@ export function GlobalSearch() {
         <span className="flex-1 text-right text-[12px] font-medium">
           {isAr ? "ابحث عن أداة..." : "Search tools..."}
         </span>
-        <kbd className={`hidden sm:flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded-md ${isDark ? "bg-white/5 text-zinc-600 border border-white/8" : "bg-slate-100 text-slate-400 border border-slate-200"}`}>
+        {/* `dir="ltr"` — the button around this sits in `dir="rtl"`, and without
+            an explicit direction the two spans reordered visually to «K ⌘»
+            (note ١٧٩). The shortcut itself is a Latin-keyboard convention; only
+            its own reading order needs pinning, not the button around it. */}
+        <kbd dir="ltr" className={`hidden sm:flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded-md ${isDark ? "bg-white/5 text-zinc-600 border border-white/8" : "bg-slate-100 text-slate-400 border border-slate-200"}`}>
           <span>⌘</span><span>K</span>
         </kbd>
       </button>

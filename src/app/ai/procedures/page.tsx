@@ -3,11 +3,11 @@
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Gavel, BookOpen, ArrowRight, CaretRight,
+  Gavel, BookOpen, ArrowRight, CaretLeft,
   Clock, CheckCircle, Buildings, Scales, FileText, Warning,
   Info, Shield, Globe, MapPin, Envelope, Phone, ArrowSquareOut,
   ChatCircleDots, ThumbsUp, ThumbsDown, Users, Star, CaretDown,
-  Lightning, Robot, SealCheck, HouseSimple, ArrowLeft,
+  Lightning, Robot, SealCheck, HouseSimple,
   ClipboardText, Sparkle, Question, BookBookmark,
 } from "@phosphor-icons/react";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import { VoiceInput } from "@/components/ui/VoiceInput";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
+import { toArabicDigits } from "@/lib/services/arabicCount";
 
 
 // ─── Types & Imports ─────────────────────────────────────────────────────────
@@ -77,9 +78,9 @@ export default function ProceduresPage() {
               إجراءات · دوائر قضائية
             </p>
           </div>
-          <div className="ms-auto hidden sm:flex gap-1.5">
-            <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[9px] font-bold text-emerald-500">محدّث ٢٠٢٦</span>
-          </div>
+          {/* Owner note ٨٨ — «محدّث ٢٠٢٦» claimed currency for data that carries
+              no update-date field anywhere in _data.tsx. No real date to show,
+              so the badge is removed rather than left asserting one. */}
         </div>
       </motion.div>
 
@@ -542,21 +543,30 @@ export default function ProceduresPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
                 {COURTS_LIST.map((court, i) => {
                   const Icon = court.icon;
+                  const stepCount = PROCEDURE_STEPS[court.id]?.steps.length ?? 0;
+                  const isLastOdd = i === COURTS_LIST.length - 1 && COURTS_LIST.length % 2 === 1;
                   return (
                     <motion.button key={court.id}
                       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                       onClick={() => setSelectedCourt(court.id)}
-                      className={`${card} p-4 flex items-start gap-3 hover:border-[#0B3D2E]/20 transition-all cursor-pointer text-start`}>
+                      className={`${card} p-4 flex items-start gap-3 hover:border-[#0B3D2E]/20 transition-all cursor-pointer text-start ${isLastOdd ? "sm:col-span-2" : ""}`}>
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${court.bg}`}>
                         <Icon size={18} weight="duotone" className={court.color} />
                       </div>
                       <div className="flex-1">
-                        <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{court.name}</p>
-                        <p className={`text-[11px] mt-0.5 flex items-center gap-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                          <ArrowLeft size={10} />عرض الخطوات
+                        <div className="flex items-center gap-1.5">
+                          <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{court.name}</p>
+                          {stepCount > 0 && (
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${isDark ? "bg-zinc-800 text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
+                              {toArabicDigits(stepCount)} خطوات
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                          عرض الخطوات
                         </p>
                       </div>
-                      <CaretRight size={14} className={isDark ? "text-zinc-700" : "text-slate-300"} />
+                      <CaretLeft size={14} className={isDark ? "text-zinc-700" : "text-slate-300"} />
                     </motion.button>
                   );
                 })}

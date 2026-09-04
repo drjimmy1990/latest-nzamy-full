@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import {
+  NODE_H,
+  NODE_W,
   type GraphEdge,
   type GraphNode,
   type NodeGroup,
   type Point,
 } from "./_graph-model";
+import { toArabicDigits } from "@/lib/services/arabicCount";
 
 export function useCaseGraphState({
   initialNodes: seedNodes,
@@ -133,8 +136,8 @@ export function useCaseGraphState({
     }).join("\n\n---\n\n");
 
     const scope = isPartial
-      ? `(${scopedNodes.length} بطاقات مختارة من أصل ${nodes.length})`
-      : `(اللوحة كاملة — ${nodes.length} بطاقة)`;
+      ? `(${toArabicDigits(scopedNodes.length)} بطاقات مختارة من أصل ${toArabicDigits(nodes.length)})`
+      : `(اللوحة كاملة — ${toArabicDigits(nodes.length)} بطاقة)`;
 
     const doc = `# ملخص اللوحة البصرية ${scope}\n\nنسخ نصي لبطاقات اللوحة وروابطها كما كتبتها — ${new Date().toLocaleDateString("ar-SA")}\n\n---\n\n${sections}`;
 
@@ -419,6 +422,46 @@ export function useCaseGraphState({
     setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, label: text } : e));
   };
 
+  /**
+   * Frame every card into view: computes the bounding box of all `nodes`
+   * (falling back to NODE_W/NODE_H for a card with no explicit size) and sets
+   * `pan`/`scale` so the whole box is centred and visible inside the canvas
+   * viewport, with a margin.
+   *
+   * Fixes what the owner's shot 05 caught: a card dragged toward the edge was
+   * clipped by the canvas frame with no way back except manual panning or the
+   * fullscreen toggle — no fit-to-view existed. `CaseGraphView.tsx` calls this
+   * once automatically the first time a board's nodes are ready, and again
+   * from a toolbar button the lawyer can press any time.
+   */
+  const fitToView = useCallback(() => {
+    const el = canvasRef.current;
+    if (!el || nodes.length === 0) return;
+    const MARGIN = 60;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodes.forEach(n => {
+      const w = n.w ?? NODE_W;
+      const h = n.h ?? NODE_H;
+      minX = Math.min(minX, n.pos.x);
+      minY = Math.min(minY, n.pos.y);
+      maxX = Math.max(maxX, n.pos.x + w);
+      maxY = Math.max(maxY, n.pos.y + h);
+    });
+    const boxW = Math.max(1, maxX - minX);
+    const boxH = Math.max(1, maxY - minY);
+    const rect = el.getBoundingClientRect();
+    const availW = Math.max(1, rect.width - MARGIN * 2);
+    const availH = Math.max(1, rect.height - MARGIN * 2);
+    const nextScale = Math.min(1.25, Math.max(0.25, Math.min(availW / boxW, availH / boxH)));
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    setScale(nextScale);
+    setPan({
+      x: rect.width / 2 - centerX * nextScale,
+      y: rect.height / 2 - centerY * nextScale,
+    });
+  }, [nodes]);
+
   return {
     nodes,
     setNodes,
@@ -481,5 +524,6 @@ export function useCaseGraphState({
     handleNodeContextMenu,
     handleNodeTextChange,
     handleEdgeLabelChange,
+    fitToView,
   };
 }

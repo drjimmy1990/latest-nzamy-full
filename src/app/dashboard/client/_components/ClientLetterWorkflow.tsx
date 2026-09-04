@@ -6,11 +6,14 @@ import {
   CheckCircle, DownloadSimple, PencilSimple, PaperPlaneTilt,
   WarningCircle, UserCircle, Buildings, Stamp, ArrowRight,
   NotePencil, Printer, X, Warning, FileText,
+  Money, HandPalm, Prohibit, IdentificationCard, Megaphone, Scales,
+  type Icon,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { useUser } from "@/hooks/useUser";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
+import { toArabicDigits } from "@/lib/services/hijri";
 // The office's one grouping of letters by intent (owner item ١٧). Imported,
 // never re-declared — see CLIENT_LETTER_TYPES below for why the taxonomy is
 // shared while the tiles are not.
@@ -86,11 +89,11 @@ import {
  * tidy a family would re-label the historic orders that carry it.
  */
 const CLIENT_LETTER_TYPES: {
-  id: string; icon: string; label: string; sublabel: string; hint: string; family: string;
+  id: string; icon: Icon; label: string; sublabel: string; hint: string; family: string;
 }[] = [
   {
     id: "demand_money",
-    icon: "💸",
+    icon: Money,
     label: "أطالب بأموال",
     sublabel: "مستحقات · إيجار · تعويض · دَيْن",
     hint: "مثال: إيجار متأخر، راتب لم يُدفع، ضمان لم يُعد",
@@ -98,7 +101,7 @@ const CLIENT_LETTER_TYPES: {
   },
   {
     id: "stop_harm",
-    icon: "🛑",
+    icon: HandPalm,
     label: "أطلب وقف ضرر",
     sublabel: "ضوضاء · بناء مخالف · تعدٍّ على ملكي",
     hint: "مثال: جار يبني على حدود ملكي، ضجيج ليلي متكرر",
@@ -108,7 +111,7 @@ const CLIENT_LETTER_TYPES: {
   },
   {
     id: "cancel_contract",
-    icon: "🚫",
+    icon: Prohibit,
     label: "أفسخ عقداً",
     sublabel: "عقد إيجار · خدمة · اشتراك",
     hint: "مثال: منشأة لم تُسلِّم الخدمة، متجر لم يُرجع المنتج",
@@ -116,7 +119,7 @@ const CLIENT_LETTER_TYPES: {
   },
   {
     id: "get_document",
-    icon: "📄",
+    icon: IdentificationCard,
     label: "أطلب مستنداً",
     sublabel: "صحة وعافية · عمل · تعليم · عقار",
     hint: "مثال: شهادة راتب، خطاب بنك، وثيقة ملكية",
@@ -124,7 +127,7 @@ const CLIENT_LETTER_TYPES: {
   },
   {
     id: "complain_entity",
-    icon: "📢",
+    icon: Megaphone,
     label: "أشكو جهة أو شركة",
     sublabel: "بنك · شركة · خدمة · موظف",
     hint: "مثال: بنك أخطأ في حسابي، شركة اتصالات فصلت خطي",
@@ -132,7 +135,7 @@ const CLIENT_LETTER_TYPES: {
   },
   {
     id: "object_decision",
-    icon: "⚖️",
+    icon: Scales,
     label: "أعترض على قرار",
     sublabel: "غرامة · مخالفة · رفض طلب",
     hint: "مثال: مخالفة بلدية غير مستحقة، رفض مطالبة تأمينية",
@@ -752,7 +755,7 @@ export function ClientLetterWorkflow({ isDark, card, onBack }: ClientLetterWorkf
                   <div className={`flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-black flex-shrink-0 transition-all duration-300 ${
                     isDone ? "bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.3)]" : isActive ? "bg-blue-600 text-white shadow-[0_0_10px_rgba(37,99,235,0.3)]" : isDark ? "bg-zinc-800 text-zinc-500 border border-white/5" : "bg-zinc-100 text-zinc-400 border border-zinc-200"
                   }`}>
-                    {isDone ? <CheckCircle size={16} weight="bold" /> : n}
+                    {isDone ? <CheckCircle size={16} weight="bold" /> : toArabicDigits(n)}
                   </div>
                   <span className={`text-[11px] hidden sm:block truncate font-bold transition-colors duration-300 ${isActive ? tp : ts}`}>{label}</span>
                   {i < 3 && <div className={`flex-1 h-[2px] mx-2 rounded-full transition-colors duration-300 ${isDone ? "bg-emerald-500/50" : isDark ? "bg-white/10" : "bg-zinc-200"}`} />}
@@ -783,7 +786,9 @@ export function ClientLetterWorkflow({ isDark, card, onBack }: ClientLetterWorkf
               <div key={group.id} className="space-y-3">
                 <p className={`text-[11px] font-black tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{group.label}</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {group.tiles.map(lt => (
+                  {group.tiles.map(lt => {
+                    const TileIcon = lt.icon;
+                    return (
                     <motion.button key={lt.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                       onClick={() => setLetterType(lt.id)}
                       className={`flex items-start gap-4 rounded-[1.5rem] border p-5 text-right transition-all duration-300 ${
@@ -791,13 +796,14 @@ export function ClientLetterWorkflow({ isDark, card, onBack }: ClientLetterWorkf
                           ? isDark ? "border-blue-500/50 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.1)]" : "border-blue-400 bg-blue-50 shadow-sm"
                           : isDark ? "border-white/10 hover:border-white/20 hover:bg-white/5" : "border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50"
                       }`}>
-                      <span className="text-3xl flex-shrink-0 mt-1 filter drop-shadow-sm">{lt.icon}</span>
+                      <TileIcon size={28} weight="duotone" className={`flex-shrink-0 mt-1 ${letterType === lt.id ? "text-blue-500" : ts}`} />
                       <div>
                         <p className={`text-[15px] font-black mb-1 transition-colors ${letterType === lt.id ? isDark ? "text-blue-400" : "text-blue-700" : tp}`}>{lt.label}</p>
                         <p className={`text-[12px] font-medium leading-relaxed ${isDark ? (letterType === lt.id ? "text-blue-400/70" : "text-zinc-500") : (letterType === lt.id ? "text-blue-600/70" : "text-zinc-500")}`}>{lt.sublabel}</p>
                       </div>
                     </motion.button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}

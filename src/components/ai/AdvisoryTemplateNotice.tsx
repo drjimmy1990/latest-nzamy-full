@@ -57,10 +57,19 @@ const SPECIALIST_TYPES = ["lawyer", "firm"];
 export default function AdvisoryTemplateNotice({
   handoffServiceId,
   className = "",
+  pendingSelection = false,
 }: {
   /** A `serviceId` from CLIENT_SERVICE_CATALOG — the human service this tool hands off to. */
   handoffServiceId: string;
   className?: string;
+  /**
+   * True on a host that renders this notice before the reader has chosen
+   * WHAT to generate (e.g. letters/page.tsx, above the step-1 type picker).
+   * «المخرج هنا نموذج استرشادي» reads correctly once a draft exists; before
+   * any choice is made there is no "here" yet, so the lead sentence switches
+   * to future tense instead of claiming an output that has not been produced.
+   */
+  pendingSelection?: boolean;
 }) {
   const { isDark } = useTheme();
   const user = useUser();
@@ -92,7 +101,9 @@ export default function AdvisoryTemplateNotice({
             نماذج وقوالب استرشادية فورية
           </p>
           <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-            المخرج هنا نموذج استرشادي يُنتج فوراً ولم يراجعه محامٍ بعد.
+            {pendingSelection
+              ? "بعد اختيارك سيُنتَج نموذج استرشادي فوري لم يراجعه محامٍ بعد."
+              : "المخرج هنا نموذج استرشادي يُنتج فوراً ولم يراجعه محامٍ بعد."}
             {showHumanPath && " لاعتماده للاستخدام الرسمي اطلب تدقيق محامي المكتب."}
             {showSpecialistNote && " مراجعته واعتماده مسؤوليتك المهنية قبل أي استخدام رسمي."}
           </p>

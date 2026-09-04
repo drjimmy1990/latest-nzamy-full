@@ -111,7 +111,7 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
   {
     permission: "ai:contract-drafter",
     href: "/ai/contract-drafter",
-    titleAr: "محترف العقود لايت",
+    titleAr: "محترف العقود المختصر",
     titleEn: "Contract Drafter Lite",
     pointCost: 0,
     betaStatus: "beta-free",

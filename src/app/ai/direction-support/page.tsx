@@ -298,8 +298,10 @@ export default function DirectionSupportPage() {
                 }`} />
               <div className="flex justify-between items-center">
                 <span className={`text-[10px] ${isDark ? "text-zinc-700" : "text-slate-300"}`}>{direction.length} حرف</span>
-                <span className={`text-[10px] ${direction.length < 20 ? "text-red-400" : isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                  {direction.length < 20 ? `${20 - direction.length} حرف إضافي على الأقل` : <span className="flex items-center gap-1"><Check size={12} weight="bold" /> يمكن المتابعة</span>}
+                <span className={`text-[10px] ${direction.length > 0 && direction.length < 20 ? "text-red-400" : isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                  {direction.length < 20
+                    ? (direction.length > 0 ? `${20 - direction.length} حرف إضافي على الأقل` : "٢٠ حرف على الأقل")
+                    : <span className="flex items-center gap-1"><Check size={12} weight="bold" /> يمكن المتابعة</span>}
                 </span>
               </div>
             </div>

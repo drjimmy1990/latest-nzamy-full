@@ -4,7 +4,7 @@ import type { ElementType, MouseEvent as ReactMouseEvent, ReactNode } from "reac
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, useMotionValue } from "framer-motion";
 import {
-  List, X, CaretDown, Scales, Moon, Sun, Globe, Flag,
+  List, X, CaretDown, Scales, Moon, Sun, Globe,
   User, ChartBar, Layout, SignOut, GearSix, Bell,
   Buildings,
 } from "@phosphor-icons/react";
@@ -394,11 +394,14 @@ export default function Navbar() {
             {/* ── Right Controls ── */}
             <div className="hidden items-center gap-2 xl:flex">
 
-              {/* Region badge */}
-              <div className="flex items-center gap-1.5 rounded-lg border border-slate-200/50 px-2.5 py-1.5 dark:border-white/10">
-                <Flag size={14} weight="fill" className="text-emerald-600" />
-                <span className="text-xs font-medium text-ink-muted dark:text-zinc-400">SA</span>
-              </div>
+              {/* The static "SA" + flag badge that used to sit here duplicated
+                  the language toggle right beside it — both read as locale
+                  controls, but the badge did nothing (no menu, no click
+                  handler) and its flag was a generic Phosphor glyph, not
+                  Saudi's (notes ٢٣٤، ٢٣٥). Removed rather than fixing the icon:
+                  the working control (language) already says which market
+                  this is for once toggled to Arabic, and a badge that opens
+                  nothing had no feature to preserve. */}
 
               {/* Lang toggle */}
               <button
@@ -464,9 +467,14 @@ export default function Navbar() {
                 </>
               ) : (
                 <>
+                  {/* A light frame matching the icon buttons beside it — it
+                      used to be bare text sitting right up against the
+                      divider rule, which then read as an orphaned mark rather
+                      than a boundary between two groups of controls (note
+                      ٢٣٧). */}
                   <a
                     href="/login"
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:text-royal dark:text-zinc-400 dark:hover:text-white"
+                    className="rounded-lg border border-slate-200/50 px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:border-white/10 dark:text-zinc-400 dark:hover:text-white"
                   >
                     {isAr ? "دخول" : "Login"}
                   </a>
@@ -521,11 +529,11 @@ export default function Navbar() {
                     </a>
                   ))}
 
-                  {/* Region badge (always visible in mobile menu for feature parity) */}
-                  <div className="flex items-center gap-1.5 rounded-lg border border-slate-200/50 px-2.5 py-1.5 dark:border-white/10 w-fit my-2 mx-4">
-                    <Flag size={14} weight="fill" className="text-emerald-600" />
-                    <span className="text-xs font-medium text-ink-muted dark:text-zinc-400">SA</span>
-                  </div>
+                  {/* The static "SA" + flag badge that used to render here is
+                      gone for the same reason as its desktop twin (notes ٢٣٤،
+                      ٢٣٥): no click handler, and a generic flag glyph rather
+                      than Saudi's. The mobile top bar's own language button
+                      (outside this drawer) is the real, working control. */}
 
                   <div className="mt-4 border-t border-slate-100 pt-4 dark:border-white/10">
                     {isLoggedIn ? (

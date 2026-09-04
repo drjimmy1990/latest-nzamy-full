@@ -952,34 +952,20 @@ export default function CasesPage() {
         </>
       )}
 
-      {/* Stats footer */}
+      {/* Tools footer — was «Stats footer», printing نشطة/انتظار a second time
+          next to these two links. The counts already live in the quick status
+          pills above (and, expanded, in the filter drawer's status chips) —
+          this bar repeated them beside two unrelated tool links in the same
+          strip. The counters are gone from here rather than kept a third
+          place; the links stand alone in their own bar now. */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
-        className={`${card} p-4 flex flex-wrap items-center gap-5`}>
-        {/* Counters only while there is a loaded list behind them. The «طعون»
-            counter that stood here was removed outright: it read `hasDeadline`,
-            which nothing in the repo ever sets, so it was a permanent «0» next to
-            a pulsing red dot — an all-clear on a deadline check that is not
-            performed. Omitted rather than zero-filled. */}
-        {countsKnown && (
-          <>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>نشطة: <strong className="text-emerald-500">{toArabicDigits(counts.active)}</strong></span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
-              <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>انتظار: <strong className="text-amber-500">{toArabicDigits(counts.pending)}</strong></span>
-            </div>
-          </>
-        )}
-        <div className="mr-auto flex gap-3">
-          <Link href="/ai/draft" className="flex items-center gap-1.5 text-[12px] text-royal hover:underline">
-            <ArrowUpRight size={13} />صياغة مذكرة
-          </Link>
-          <Link href="/ai/wargaming" className="flex items-center gap-1.5 text-[12px] text-orange-500 hover:underline">
-            <ArrowUpRight size={13} />محاكي خصم
-          </Link>
-        </div>
+        className={`${card} p-4 flex items-center gap-3`}>
+        <Link href="/ai/draft" className="flex items-center gap-1.5 text-[12px] text-royal hover:underline">
+          <ArrowUpRight size={13} />صياغة مذكرة
+        </Link>
+        <Link href="/ai/wargaming" className="flex items-center gap-1.5 text-[12px] text-orange-500 hover:underline">
+          <ArrowUpRight size={13} />محاكي خصم
+        </Link>
       </motion.div>
       <AnimatePresence>
         {showAddCase && <AddCaseModal onClose={() => setShowAddCase(false)} isDark={isDark} user={{ userId: user.userId, name: user.name, userType: user.userType, tier: user.tier }} />}
