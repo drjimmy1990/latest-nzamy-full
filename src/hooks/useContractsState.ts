@@ -21,7 +21,18 @@ function submitErrorMessageAr(err: unknown): string {
   return "تعذّر إرسال الطلب — حاول مجدداً";
 }
 
-export function useContractsState() {
+/**
+ * `linkedContract` — set by the page when the wizard was opened from an
+ * existing contract's «افحص العقد بالذكاء الاصطناعي» link
+ * (?contract=<id>, read + resolved to a title there via getContract()).
+ * Threaded straight through to both submit paths below so the fulfilment
+ * team's order carries which contract this request is about; the intake
+ * validators (orderIntake.contracts.ts) know nothing of these two fields —
+ * they are merged into the already-validated intake, never sent through
+ * validateContractsIntake, which only ever passes through the fields it
+ * knows about.
+ */
+export function useContractsState(linkedContract?: { id: string; title: string } | null) {
   const [step, setStep] = useState<StepKey>("parties");
   const [processing, setProcessing] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -198,11 +209,15 @@ export function useContractsState() {
         : { data: null };
 
       const contractLabel = CONTRACT_TYPES.find(c => c.id === contractType)?.title;
+      const intake: Record<string, unknown> = {
+        ...(check.value as unknown as Record<string, unknown>),
+        ...(linkedContract ? { contractId: linkedContract.id, contractTitle: linkedContract.title } : {}),
+      };
       const order = await createServiceOrder({
         service: "contracts",
         title: `محترف العقود — ${contractLabel || "صياغة عقد"}`,
         description: contractDesc.slice(0, 200),
-        intake: check.value as unknown as Record<string, unknown>,
+        intake,
         attachments: [],
         requester: {
           name: profile?.display_name ?? undefined,
@@ -251,11 +266,15 @@ export function useContractsState() {
         : { data: null };
 
       const contractLabel = CONTRACT_TYPES.find(c => c.id === contractType)?.title;
+      const intake: Record<string, unknown> = {
+        ...(check.value as unknown as Record<string, unknown>),
+        ...(linkedContract ? { contractId: linkedContract.id, contractTitle: linkedContract.title } : {}),
+      };
       const order = await createServiceOrder({
         service: "contracts",
         title: `محترف العقود — ${contractLabel ? `مراجعة ${contractLabel}` : "مراجعة عقد"}`,
         description: [rPartyFocus, rFears].filter(Boolean).join(" — ").slice(0, 200),
-        intake: check.value as unknown as Record<string, unknown>,
+        intake,
         attachments,
         requester: {
           name: profile?.display_name ?? undefined,

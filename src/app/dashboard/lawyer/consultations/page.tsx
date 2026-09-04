@@ -1,189 +1,125 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ChatDots, Plus, MagnifyingGlass, CalendarCheck,
-  User, CheckCircle, ArrowRight, Video,
-  Phone, ChatCircle, Sparkle, Buildings,
-  X, CaretDown, NotePencil, ArrowClockwise,
-  HouseSimple, Scales,
-  Warning, ArrowLeft,
-  BookOpen, Tray,
+  ChatDots, Plus, CalendarCheck, User, CheckCircle, ArrowRight, Video,
+  Phone, ChatCircle, Sparkle, Buildings, X, NotePencil, ArrowClockwise,
+  HouseSimple, Scales, Warning, ArrowLeft, BookOpen, Tray, FileText,
+  XCircle, Clock,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
-import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createWorkflowId } from "@/lib/workflowStore";
-import type { WorkflowRequest } from "@/lib/workflowStore";
-
-/** Matches CLIENT_REQUESTS_FETCH_LIMIT in src/lib/clientWorkflowRepository.ts,
- *  which exists because every client list was silently capped at the 20 newest
- *  rows. This lawyer-side call site was never updated: it asked for the 20
- *  newest receiver="lawyer" rows and only then filtered to type="consultation",
- *  so a lawyer who had added twenty clients saw zero consultations. */
-const LAWYER_REQUESTS_FETCH_LIMIT = 100;
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-// No "inProgress": nothing sets it. `service_requests.status` has no in-session
-// value and workflowToConsultation below can only ever produce upcoming /
-// completed / cancelled, so a «جارية الآن» bucket could only ever read 0.
-type ConsultStatus = "upcoming" | "completed" | "cancelled";
-type ConsultMode   = "video" | "phone" | "chat" | "inPerson";
-type BookingStep   = "type" | "mode" | "datetime" | "confirm";
-
-interface Consultation {
-  id:          string;
-  client:      string;
-  clientType:  "individual" | "company";
-  topic:       string;
-  /** "" when the booking carries no date/time — the UI omits the line. */
-  date:        string;
-  time:        string;
-  mode:        ConsultMode;
-  status:      ConsultStatus;
-  notes?:      string;
-  /** Minutes, or null when the stored booking has no duration on it. */
-  duration:    number | null;
-}
-
-// ─── UI Config ─────────────────────────────────────────────────────────────────
-
-const MODE_ICONS = { video: Video, phone: Phone, chat: ChatCircle, inPerson: HouseSimple };
-const MODE_LABELS = { video: "فيديو", phone: "هاتف", chat: "دردشة", inPerson: "حضوري" };
-const MODE_COLORS = { video: "text-blue-500 bg-blue-500/10", phone: "text-emerald-500 bg-emerald-500/10", chat: "text-violet-500 bg-violet-500/10", inPerson: "text-amber-500 bg-amber-500/10" };
-
-const STATUS_CONFIG: Record<ConsultStatus, { label: string; color: string }> = {
-  upcoming:   { label: "قادمة",      color: "text-royal bg-royal/10 border-royal/20" },
-  completed:  { label: "مكتملة",    color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" },
-  cancelled:  { label: "ملغية",     color: "text-slate-400 bg-slate-100 border-slate-200" },
-};
-
-// ─── Booking Modal ─────────────────────────────────────────────────────────────
-
-function workflowModeToConsultMode(mode: unknown): ConsultMode {
-  if (mode === "in-person") return "inPerson";
-  if (mode === "text") return "chat";
-  if (mode === "phone") return "phone";
-  return "video";
-}
-
-// Reverse mapping: UI ConsultMode → workflow metadata mode string.
-function consultModeToWorkflowMode(mode: ConsultMode): string {
-  if (mode === "inPerson") return "in-person";
-  if (mode === "chat") return "text";
-  return mode; // "phone" | "video"
-}
-
-/** metadata values are unvalidated jsonb — read them, never substitute. */
-function metaString(v: unknown): string {
-  return typeof v === "string" && v.trim() ? v.trim() : "";
-}
-
-function workflowToConsultation(request: WorkflowRequest): Consultation {
-  const rawDuration = request.metadata?.duration;
-  return {
-    id: request.id,
-    client: request.requester.name || "عميل نظامي",
-    clientType: request.requester.role === "corporate" || request.requester.role === "micro" ? "company" : "individual",
-    topic: request.title,
-    // "" when the booking has no date/time on it. The old code passed the raw
-    // value through String(), so an empty-string date rendered as an empty
-    // slot rather than reaching the «بانتظار التأكيد» fallback beside it.
-    date: metaString(request.metadata?.day),
-    time: metaString(request.metadata?.time),
-    mode: workflowModeToConsultMode(request.metadata?.mode),
-    status: request.status === "cancelled" ? "cancelled" : request.status === "completed" ? "completed" : "upcoming",
-    // The stored duration, not a guess. This used to be
-    // `metadata?.mode === "text" ? 30 : 60`, which printed «٦٠ د» on the card
-    // for a booking the lawyer had explicitly set to 90 or 120 minutes.
-    duration: typeof rawDuration === "number" && Number.isFinite(rawDuration) && rawDuration > 0
-      ? rawDuration
-      : null,
-    notes: request.description,
-  };
-}
+import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
+import { getLawyerConsultations, type LawyerConsultation } from "@/lib/services/lawyerConsultationsService";
+import {
+  CONSULTATION_STATUS_AR, CONSULTATION_MODE_AR, canTransitionConsultation,
+  type ConsultationStatus, type ConsultationMode,
+} from "@/lib/services/consultationVocabulary";
+import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
+import { toArabicDigits } from "@/lib/services/arabicCount";
+import { formatGregorianAr } from "../_components/DeadlineCard";
+import ConsultationActionModal, { type ConsultationAction } from "../_components/consultations/ConsultationActionModal";
 
 /**
- * The moment a booking is actually scheduled for, or null when it carries none.
+ * Lawyer «الاستشارات» — on the real lifecycle (Phase 3,
+ * lawyerConsultationsService / public.consultations), not the
+ * service_requests sieve this page used to run itself: a bare
+ * `receiver === "lawyer"` fetch, filtered to `type === "consultation"` in
+ * the browser, with its own reinvented upcoming/completed/cancelled status
+ * and its own reinvented video/phone/chat/inPerson mode — none of it backed
+ * by a CHECK constraint, so a value here could silently drift from what the
+ * database actually allows. getLawyerConsultations() reads the working
+ * table directly; CONSULTATION_STATUS_AR / CONSULTATION_MODE_AR /
+ * CONSULTATION_TRANSITIONS are the one vocabulary, shared with the detail
+ * page and the action modal — nothing here re-types a label.
  *
- * WHY THIS EXISTS: the «الاستشارة القادمة» panel renders exactly ONE row and
- * calls it the lawyer's next appointment. The array it read was built by a bare
- * `consults.filter(c => c.status === "upcoming")` with NO sort, so the booking
- * it named was whichever row the query happened to return first — an arbitrary
- * consultation, presented under a heading that claims it is the soonest one.
- *
- * WHY THE PARSE IS STRICT rather than `new Date(...)`: `metadata` is
- * unvalidated jsonb, and `new Date` accepts a great deal of nonsense and hands
- * back a plausible-looking instant for it — which here would mean sorting a
- * real appointment behind a garbage one. The only writer of the rows this list
- * reads is BookingModal above: the page queries receiver="lawyer", and the two
- * other consultation writers in the tree (src/hooks/useConsultationForm.ts and
- * dashboard/client/consultation/new/page.tsx) both post
- * receiver="ai_workspace", so neither can appear here. That modal writes `day`
- * from an <input type="date"> ("YYYY-MM-DD") and `time` from an
- * <input type="time"> ("HH:MM"). Anything that is not that shape is reported as
- * "this booking has no date on it" — the same thing the card and the panel
- * already render as «بانتظار التأكيد» — instead of being guessed at.
- *
- * `hasTime` is carried because the two cases cannot be compared the same way: a
- * booking WITH a time has passed once that time has passed, while a booking
- * dated today with NO time has not passed until the day is over. Collapsing
- * them would push every date-only booking made for today into the past at
- * 00:01.
+ * The booking flow itself is unchanged in shape: BookingModal still POSTs a
+ * service_requests row (type "consultation") and the database trigger turns
+ * it into a consultations row. What changed is the mode step, which now
+ * sends one of the four CANONICAL modes instead of a UI-only enum: the old
+ * `phone` UI value was translated to the metadata string "phone", which is
+ * not in the trigger's allowed set ('ai','video','voice','text','in-person')
+ * — so every "phone" consultation was silently stored as "مكتوبة" text.
+ * Sending CONSULTATION_MODE values directly removes the translation layer
+ * that caused that.
  */
-interface Scheduled { at: number; hasTime: boolean }
 
-function scheduledOf(c: Consultation): Scheduled | null {
-  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(c.date.trim());
-  if (!d) return null;
-  const year = Number(d[1]);
-  const month = Number(d[2]);
-  const day = Number(d[3]);
-  // Not anchored at the end: some browsers render <input type="time"> as
-  // "HH:MM:SS". The seconds are ignored, not rejected.
-  const t = /^(\d{1,2}):(\d{2})/.exec(c.time.trim());
-  const hours = t ? Number(t[1]) : 0;
-  const minutes = t ? Number(t[2]) : 0;
-  if (hours > 23 || minutes > 59) return null;
-  const when = new Date(year, month - 1, day, hours, minutes, 0, 0);
-  // Reject a rolled-over date instead of sorting by the wrong day:
-  // new Date(2026, 1, 31) is 3 March, not «31 February».
-  if (when.getFullYear() !== year || when.getMonth() !== month - 1 || when.getDate() !== day) return null;
-  const at = when.getTime();
-  return Number.isFinite(at) ? { at, hasTime: Boolean(t) } : null;
-}
+// ─── Booking modal config ──────────────────────────────────────────────────
 
-/** Local midnight today — the boundary a date-only booking is measured against. */
-function startOfTodayMs(): number {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-}
-
-/** Has this booking's slot not yet passed? Undated bookings are never "ahead". */
-function isStillAhead(c: Consultation): boolean {
-  const s = scheduledOf(c);
-  if (!s) return false;
-  return s.hasTime ? s.at >= Date.now() : s.at >= startOfTodayMs();
-}
+type BookingStep = "type" | "mode" | "datetime" | "confirm";
 
 const CONSULT_TYPES = [
-  { id: "legal-opinion",  label: "رأي قانوني",          icon: Scales },
-  { id: "contract",       label: "مراجعة عقد",           icon: NotePencil },
-  { id: "case-followup",  label: "متابعة قضية",          icon: Scales },
-  { id: "company",        label: "استشارة تأسيس شركة",   icon: Buildings },
-  { id: "general",        label: "استشارة عامة",          icon: ChatDots },
+  { id: "legal-opinion", label: "رأي قانوني", icon: Scales },
+  { id: "contract", label: "مراجعة عقد", icon: NotePencil },
+  { id: "case-followup", label: "متابعة قضية", icon: Scales },
+  { id: "company", label: "استشارة تأسيس شركة", icon: Buildings },
+  { id: "general", label: "استشارة عامة", icon: ChatDots },
 ];
 
 const DURATIONS = [30, 45, 60, 90, 120];
 
+// "ai" is the AI-workspace consultation channel (receiver="ai_workspace"),
+// never something a lawyer books on a client's behalf here.
+const BOOKING_MODES: ConsultationMode[] = ["video", "voice", "text", "in-person"];
+
+const MODE_ICON = {
+  ai: Sparkle,
+  video: Video,
+  voice: Phone,
+  text: ChatCircle,
+  "in-person": HouseSimple,
+};
+
+const MODE_CHIP_CLS: Record<ConsultationMode, string> = {
+  ai: "text-fuchsia-500 bg-fuchsia-500/10",
+  video: "text-blue-500 bg-blue-500/10",
+  voice: "text-emerald-500 bg-emerald-500/10",
+  text: "text-violet-500 bg-violet-500/10",
+  "in-person": "text-amber-500 bg-amber-500/10",
+};
+
+const STATUS_CHIP_CLS: Record<ConsultationStatus, { light: string; dark: string }> = {
+  requested: { light: "bg-amber-50 text-amber-700 border-amber-200", dark: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
+  scheduled: { light: "bg-blue-50 text-blue-600 border-blue-200", dark: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
+  completed: { light: "bg-emerald-50 text-emerald-700 border-emerald-200", dark: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
+  cancelled: { light: "bg-slate-100 text-slate-500 border-slate-200", dark: "bg-white/[0.06] text-zinc-400 border-white/[0.08]" },
+  no_show: { light: "bg-red-50 text-red-600 border-red-200", dark: "bg-red-500/10 text-red-400 border-red-500/20" },
+};
+
+/**
+ * «٢ سبتمبر ٢٠٢٦ · ٠٥:٣٠ م», or just the date when the time cannot be read.
+ * The date half MUST come from the same viewer-local Date the time half uses,
+ * never from slicing the raw ISO characters, or the two halves can disagree
+ * near midnight (slicing would print "yesterday" next to "١:٣٠ ص").
+ */
+function formatScheduledAr(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const dateAr = formatGregorianAr(localDateStr);
+  const time = d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+  return `${dateAr} · ${time}`;
+}
+
+/** The LOCAL calendar day ("YYYY-MM-DD") a stored instant falls on. */
+function localYMD(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// ─── Booking Modal ──────────────────────────────────────────────────────────
+
 function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onClose: () => void; lawyerUserId?: string }) {
   const [step, setStep] = useState<BookingStep>("type");
   const [consultType, setConsultType] = useState("");
-  const [mode, setMode] = useState<ConsultMode | "">("");
+  const [mode, setMode] = useState<ConsultationMode | "">("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [duration, setDuration] = useState(60);
@@ -191,6 +127,39 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Optional client picker (Phase 2 — public.lawyer_clients). Only cards
+  // ("source: 'card'") are offered: a "profile" row has no id in
+  // lawyer_clients yet, so it cannot be linked via lawyerClientId. The
+  // free-text name field below stays the fallback path when nothing is
+  // picked, or while the list is loading/unreadable — same pattern as
+  // AddCaseModal.tsx.
+  const [clientCards, setClientCards] = useState<LawyerClient[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
+  const [clientsUnreadable, setClientsUnreadable] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const read = await getLawyerClients();
+      if (cancelled) return;
+      if (!read.ok) {
+        setClientsUnreadable(true);
+        setClientsLoading(false);
+        return;
+      }
+      setClientCards(read.items.filter((c) => c.source === "card"));
+      setClientsLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  function handleClientPick(id: string) {
+    setSelectedClientId(id);
+    const picked = clientCards.find((c) => c.id === id);
+    if (picked) setClientName(picked.name);
+  }
 
   const steps: BookingStep[] = ["type", "mode", "datetime", "confirm"];
   const stepIdx = steps.indexOf(step);
@@ -203,15 +172,15 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
    * `title: consultLabel || "استشارة قانونية"`, `name: clientName || "عميل"`
    * and, worst of the three, `mode: mode ? … : "video"`. A booking made
    * without touching step 2 was persisted as a video call and read back as one:
-   * «فيديو» on the card, on the «الاستشارة القادمة» panel and in the
-   * توزيع-حسب-الوسيلة counts. That is an invented fact about an appointment
-   * with a real client, not a blank.
+   * «فيديو» on the card and in the mode breakdown. That is an invented fact
+   * about an appointment with a real client, not a blank.
    *
    * Only the three fields that were being substituted are required. The date
-   * and the time deliberately are NOT: they go through as "" and every read
-   * surface already renders that honestly as «بانتظار التأكيد». `duration`
-   * likewise — 60 is preselected in front of the lawyer and repeated on the
-   * confirm summary, so it is a disclosed default, not a substitution.
+   * and the time deliberately are NOT: they go through as "" and the trigger
+   * leaves the consultation "requested" (بانتظار الجدولة) instead of
+   * "scheduled" until a real one is set. `duration` likewise — 60 is
+   * preselected in front of the lawyer and repeated on the confirm summary,
+   * so it is a disclosed default, not a substitution.
    *
    * This gate is client-side; the guard in `handleConfirm` is what actually
    * keeps a substituted value out of the row.
@@ -224,54 +193,36 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
   const blockedReason =
     step === "type" ? missingLabel
       : step === "mode" ? (!mode ? "اختر طريقة الاستشارة للمتابعة." : null)
-        // Unreachable while the two gates above hold — kept so the confirm
-        // button can never be the one that lets an incomplete booking through.
         : step === "confirm" ? (!consultType || !clientName.trim() || !mode
           ? "ارجع وأكمل نوع الاستشارة واسم العميل وطريقة الاستشارة."
           : null)
           : null;
 
-  // L10: persist the consultation as a service_request on confirm.
-  //
-  // Two things were wrong here and both are fixed by going straight to the API.
-  //
-  // 1. FALSE SUCCESS. This used to call createWorkflowRequest(), whose catch is
-  //    `return saveLocal(input)` — a failed POST was swallowed, a row was
-  //    written to localStorage["nzamy_workflow_requests_v1"], and a fully-formed
-  //    object came back, so this function took the success path, fired the
-  //    refresh and closed the modal. The red «تعذّر تأكيد الاستشارة» banner
-  //    below could not fire for any server failure, and the refresh it
-  //    triggered re-read the API, which knew nothing of the local row. The
-  //    lawyer got a closed modal and no appointment. apiMutate throws on any
-  //    non-2xx, so the banner is now reachable and nothing is written locally.
-  //
-  // 2. LEAKED TO EVERY OTHER LAWYER. The row went in with no `assignedTo`, so
-  //    `assigned_to` was NULL. The SELECT policy on service_requests
-  //    (supabase/migrations/20260815_marketplace_excludes_ai_workspace.sql:45-54)
-  //    grants EVERY verified lawyer read access to any row that is
-  //    `assigned_to IS NULL AND status IN ('pending','pending_assignment') AND
-  //    receiver <> 'ai_workspace'` — which is exactly the shape this booking
-  //    created. This list queries receiver="lawyer" + type="consultation" with
-  //    no ownership filter of its own, so another lawyer's consultations page
-  //    would render this one's client name, topic and notes. Setting
-  //    `assignedTo` to the booking lawyer takes the row out of that clause and
-  //    leaves it readable through `assigned_to = auth.uid()` (and through
-  //    `requester_user_id = auth.uid()`, which the route sets from the session).
-  //    This also matches how the rest of the lawyer workspace writes its rows
-  //    — see AddCaseModal.tsx and AddHearingModal.tsx.
   const handleConfirm = async () => {
     setError(null);
     setSubmitting(true);
     try {
       const consultLabel = CONSULT_TYPES.find((t) => t.id === consultType)?.label;
-      // The footer button is disabled without these three, but the gate is
-      // client-side — this is what keeps a substituted value out of the row.
-      // Refusing is the only honest option: a missing type/name/mode has no
-      // correct fill-in, and the three defaults this used to apply
-      // («استشارة قانونية», «عميل», "video") were each read back as fact.
       if (!consultLabel || !clientName.trim() || !mode) {
         throw new Error("أكمل نوع الاستشارة واسم العميل وطريقة الاستشارة قبل التأكيد.");
       }
+
+      const pickedClient = selectedClientId ? clientCards.find((c) => c.id === selectedClientId) ?? null : null;
+      // When a card is picked, carry its contact details into `requester` —
+      // the same jsonb the lawyer/consultations route hydrates clientName/
+      // clientEmail/clientPhone from when there is no platform account to
+      // read a profile off of (see _shared.ts:hydrateConsultations). Blank
+      // fields are simply omitted rather than sent as null.
+      const requester = pickedClient
+        ? {
+            name: pickedClient.name,
+            ...(pickedClient.phone ? { phone: pickedClient.phone } : {}),
+            ...(pickedClient.email ? { email: pickedClient.email } : {}),
+            role: pickedClient.clientType === "company" ? "company" : "individual",
+            tier: "free",
+          }
+        : { name: clientName.trim(), role: "individual", tier: "free" };
+
       const payload = {
         id: createWorkflowId(),
         type: "consultation",
@@ -279,16 +230,12 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
         description: notes || "",
         receiver: "lawyer",
         status: "pending_assignment",
-        requester: { name: clientName.trim(), role: "individual", tier: "free" },
+        requester,
         payment: { amount: 0, status: "not_required" },
         sourcePath: "",
         assignedTo: lawyerUserId ?? null,
-        metadata: {
-          day: date,
-          time,
-          mode: consultModeToWorkflowMode(mode),
-          duration,
-        },
+        metadata: { day: date, time, mode, duration },
+        ...(pickedClient ? { lawyerClientId: pickedClient.id } : {}),
       };
 
       if (!isSupabaseMode) {
@@ -297,9 +244,10 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
         throw new Error("جدولة الاستشارات غير متاحة في هذا الوضع.");
       }
       if (!lawyerUserId) {
-        // Refuse rather than write an unassigned row: see (2) above. An
-        // unresolved session here is rare (the button is deep in a modal), but
-        // the consequence of guessing is another lawyer reading this booking.
+        // Refuse rather than write an unassigned row: an unowned booking is
+        // readable by every other verified lawyer (see the marketplace
+        // browse policy on service_requests). An unresolved session here is
+        // rare, but guessing means another lawyer reading this booking.
         throw new Error("تعذّر التحقق من الجلسة. أعد تحميل الصفحة ثم حاول مرة أخرى.");
       }
 
@@ -313,6 +261,9 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
       setSubmitting(false);
     }
   };
+
+  const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-200 placeholder:text-zinc-600" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400"}`;
+  const labelCls = `block text-[11px] font-semibold mb-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -367,10 +318,32 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
                     );
                   })}
                 </div>
+
+                {!clientsUnreadable && (clientsLoading || clientCards.length > 0) && (
+                  <div>
+                    <label className={labelCls}>اختيار من قائمة الموكّلين (اختياري)</label>
+                    <select
+                      value={selectedClientId}
+                      onChange={(e) => handleClientPick(e.target.value)}
+                      disabled={clientsLoading}
+                      className={inputCls}
+                    >
+                      <option value="">
+                        {clientsLoading ? "جارٍ تحميل الموكّلين..." : "— بدون اختيار (اكتب الاسم يدوياً) —"}
+                      </option>
+                      {clientCards.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
-                  <label className={`block text-[11px] font-semibold mb-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>اسم العميل</label>
-                  <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="اسم العميل أو الجهة..."
-                    className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-200 placeholder:text-zinc-600" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400"}`} />
+                  <label className={labelCls}>اسم العميل</label>
+                  <input value={clientName}
+                    onChange={e => { setClientName(e.target.value); if (selectedClientId) setSelectedClientId(""); }}
+                    placeholder="اسم العميل أو الجهة..."
+                    className={inputCls} />
                 </div>
               </motion.div>
             )}
@@ -380,21 +353,22 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
               <motion.div key="mode" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-3">
                 <p className={`text-[12px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>طريقة الاستشارة</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {(["video", "phone", "chat", "inPerson"] as ConsultMode[]).map(m => {
-                    const Icon = MODE_ICONS[m];
-                    const colors = MODE_COLORS[m];
+                  {BOOKING_MODES.map(m => {
+                    const Icon = MODE_ICON[m];
+                    const active = mode === m;
+                    const chipCls = MODE_CHIP_CLS[m].split(" ");
                     return (
                       <button key={m} onClick={() => setMode(m)}
                         className={`flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${
-                          mode === m
+                          active
                             ? isDark ? "border-[#0B3D2E]/60 bg-[#0B3D2E]/15" : "border-[#0B3D2E]/30 bg-[#0B3D2E]/5"
                             : isDark ? "border-white/[0.06]" : "border-slate-200"
                         }`}>
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${mode === m ? "bg-[#0B3D2E]" : colors.split(" ")[1]}`}>
-                          <Icon size={18} weight="duotone" className={mode === m ? "text-white" : colors.split(" ")[0]} />
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${active ? "bg-[#0B3D2E]" : chipCls[1]}`}>
+                          <Icon size={18} weight="duotone" className={active ? "text-white" : chipCls[0]} />
                         </div>
-                        <span className={`text-[12px] font-bold ${mode === m ? isDark ? "text-zinc-100" : "text-slate-800" : isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                          {MODE_LABELS[m]}
+                        <span className={`text-[12px] font-bold ${active ? isDark ? "text-zinc-100" : "text-slate-800" : isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                          {CONSULTATION_MODE_AR[m]}
                         </span>
                       </button>
                     );
@@ -410,7 +384,7 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
                             ? "bg-[#0B3D2E] text-white border-[#0B3D2E]"
                             : isDark ? "border-white/[0.07] text-zinc-500" : "border-slate-200 text-slate-500"
                         }`}>
-                        {d}د
+                        {toArabicDigits(d)}د
                       </button>
                     ))}
                   </div>
@@ -424,20 +398,18 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
                 <p className={`text-[12px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>الموعد</p>
                 <div className="space-y-3">
                   <div>
-                    <label className={`block text-[11px] font-semibold mb-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>التاريخ</label>
-                    <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                      className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-200" : "border-zinc-200 bg-zinc-50 text-zinc-800"}`} />
+                    <label className={labelCls}>التاريخ</label>
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className={`block text-[11px] font-semibold mb-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>الوقت</label>
-                    <input type="time" value={time} onChange={e => setTime(e.target.value)}
-                      className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-200" : "border-zinc-200 bg-zinc-50 text-zinc-800"}`} />
+                    <label className={labelCls}>الوقت</label>
+                    <input type="time" value={time} onChange={e => setTime(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className={`block text-[11px] font-semibold mb-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>ملاحظات (اختياري)</label>
+                    <label className={labelCls}>ملاحظات (اختياري)</label>
                     <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
                       placeholder="تفاصيل إضافية عن موضوع الاستشارة..."
-                      className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none resize-none ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-200 placeholder:text-zinc-600" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400"}`} />
+                      className={`${inputCls} resize-none`} />
                   </div>
                 </div>
               </motion.div>
@@ -449,12 +421,12 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
                 <p className={`text-[12px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>تأكيد الاستشارة</p>
                 <div className={`${isDark ? "bg-zinc-800 border border-white/[0.06]" : "bg-slate-50 border border-slate-100"} rounded-2xl p-4 space-y-3`}>
                   {[
-                    { label: "العميل",   value: clientName || "غير محدد" },
-                    { label: "النوع",    value: CONSULT_TYPES.find(t => t.id === consultType)?.label ?? "—" },
-                    { label: "الوسيلة", value: mode ? MODE_LABELS[mode] : "—" },
-                    { label: "المدة",    value: `${duration} دقيقة` },
-                    { label: "التاريخ",  value: date || "—" },
-                    { label: "الوقت",    value: time || "—" },
+                    { label: "العميل", value: clientName || "غير محدد" },
+                    { label: "النوع", value: CONSULT_TYPES.find(t => t.id === consultType)?.label ?? "—" },
+                    { label: "الوسيلة", value: mode ? CONSULTATION_MODE_AR[mode] : "—" },
+                    { label: "المدة", value: `${toArabicDigits(duration)} دقيقة` },
+                    { label: "التاريخ", value: date || "—" },
+                    { label: "الوقت", value: time || "—" },
                   ].map(row => (
                     <div key={row.label} className={`flex justify-between text-[12px] pb-2 border-b last:border-0 last:pb-0 ${isDark ? "border-white/[0.04]" : "border-slate-100"}`}>
                       <span className={isDark ? "text-zinc-500" : "text-slate-400"}>{row.label}</span>
@@ -462,15 +434,6 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
                     </div>
                   ))}
                 </div>
-                {/* A gold «بعد انتهاء الجلسة يمكنك توليد ملخص AI وإرساله
-                    للعميل تلقائياً» tip sat here. Neither half exists: there is
-                    no consultation-summary generator (the card's «ملخص AI
-                    للاستشارة» panel was removed in Phase 1 for hanging off an
-                    `aiSummary` no code path sets — see ConsultCard), and there
-                    is no lawyer→client message channel at all
-                    (clients/[id]/page.tsx:436-439). Removed rather than
-                    softened: it was the last thing the lawyer read before
-                    confirming a booking. */}
               </motion.div>
             )}
           </AnimatePresence>
@@ -478,8 +441,6 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
 
         {/* Footer */}
         <div className={`px-5 py-4 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-          {/* The disabled button says why it is disabled. Silently refusing to
-              advance would read as a broken button. */}
           {blockedReason && (
             <p className={`text-[11px] font-semibold mb-2.5 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
               {blockedReason}
@@ -516,236 +477,224 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
   );
 }
 
-// ─── Consultation Card ─────────────────────────────────────────────────────────
+// ─── Consultation card ──────────────────────────────────────────────────────
 
-function ConsultCard({ c, isDark, card }: { c: Consultation; isDark: boolean; card: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const ModeIcon = MODE_ICONS[c.mode];
-  const sc = STATUS_CONFIG[c.status];
-  const modeColors = MODE_COLORS[c.mode].split(" ");
+function quickBtnCls(isDark: boolean, variant: "primary" | "neutral" | "danger"): string {
+  const base = "flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-colors";
+  if (variant === "primary") return `${base} bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22]`;
+  if (variant === "danger") return `${base} ${isDark ? "bg-red-500/10 text-red-400 hover:bg-red-500/20" : "bg-red-50 text-red-600 hover:bg-red-100"}`;
+  return `${base} ${isDark ? "bg-white/[0.06] text-zinc-300 hover:bg-white/[0.1]" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`;
+}
+
+/** Same rule the /opinion route applies: already-completed skips the transition check instead of refusing itself. */
+function canDeliverOpinion(c: LawyerConsultation): boolean {
+  if (c.opinionDeliveredAt) return false;
+  return c.status === "completed" || canTransitionConsultation(c.status, "completed");
+}
+
+function ConsultCard({
+  c, isDark, card, onAction,
+}: {
+  c: LawyerConsultation;
+  isDark: boolean;
+  card: string;
+  onAction: (action: ConsultationAction) => void;
+}) {
+  const ModeIcon = MODE_ICON[c.mode];
+  const chipCls = MODE_CHIP_CLS[c.mode].split(" ");
+  const scheduledAr = formatScheduledAr(c.scheduledAt);
+
+  const showSchedule = canTransitionConsultation(c.status, "scheduled");
+  const showComplete = canTransitionConsultation(c.status, "completed");
+  const showCancel = canTransitionConsultation(c.status, "cancelled");
+  const showOpinion = canDeliverOpinion(c);
+  const showConvert = !c.convertedCaseRequestId;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      <div className={`${card} overflow-hidden transition-all hover:border-royal/20`}>
-        <div className="p-4 flex items-center gap-4">
-          {/* Icon */}
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
-            <ModeIcon size={18} weight="duotone" className={
-              c.status === "upcoming" ? "text-royal" :
-              c.status === "completed" ? "text-emerald-500" :
-              isDark ? "text-zinc-500" : "text-slate-400"
-            } />
-          </div>
-
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-              <p className={`text-[14px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.client}</p>
-              {c.clientType === "company" && (
-                <Buildings size={11} className={isDark ? "text-zinc-600" : "text-slate-400"} />
-              )}
-              <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${sc.color}`}>{sc.label}</span>
-            </div>
-            <div className={`flex items-center gap-2 flex-wrap text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-              <span>{c.topic}</span>
-              <span className="w-1 h-1 rounded-full bg-current opacity-40" />
-              <span className={`px-1.5 py-0.5 rounded-md text-[10px] flex items-center gap-1 ${modeColors[1]} ${modeColors[0]}`}>
-                <ModeIcon size={9} /> {MODE_LABELS[c.mode]}
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${card} p-4 space-y-3`}>
+      <div className="flex items-start gap-3">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${chipCls[1]}`}>
+          <ModeIcon size={18} weight="duotone" className={chipCls[0]} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+            <p className={`text-[14px] font-bold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.clientName}</p>
+            <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${isDark ? STATUS_CHIP_CLS[c.status].dark : STATUS_CHIP_CLS[c.status].light}`}>
+              {CONSULTATION_STATUS_AR[c.status]}
+            </span>
+            {c.opinionDeliveredAt && (
+              <span className={`flex-shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
+                <FileText size={10} /> رأي مُسلَّم
               </span>
-              {c.duration !== null && (
-                <>
-                  <span className="w-1 h-1 rounded-full bg-current opacity-40" />
-                  <span>{c.duration} د</span>
-                </>
-              )}
-            </div>
-            {/* `caseId` was rendered here as «⚖️ {c.caseId}». Nothing ever set
-                it — there is no case link on a consultation row — so the line
-                could not appear. Removed rather than left as a slot waiting for
-                a field that has no writer. */}
-          </div>
-
-          {/* Right side */}
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <div className="text-left">
-              {c.time
-                ? <p className={`text-[13px] font-bold font-mono ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{c.time}</p>
-                : <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>بانتظار التأكيد</p>}
-              {c.date && <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{c.date}</p>}
-            </div>
-            {/* The «بدء» / «دخول» video buttons that used to sit here had no
-                onClick, and nothing to give one: `grep -rn
-                "meetingUrl|meeting_url|jitsi|zoom.us|daily.co|whereby" src`
-                returns nothing. There is no meeting infrastructure in this
-                product, so the buttons are removed rather than wired to a
-                placeholder. */}
-            {/* Gated on the notes themselves, not on the status. The panel
-                below renders on `expanded && c.notes`, so a completed
-                consultation with an empty description — the booking modal
-                writes `description: notes || ""` — gave the lawyer a caret
-                that rotated and revealed nothing. Trimmed, and the panel below
-                is gated on the same expression: the two drifting apart is what
-                made this a defect in the first place. */}
-            {Boolean(c.notes?.trim()) && (
-              <button onClick={() => setExpanded(!expanded)}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center border ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-200 text-slate-400"}`}>
-                <CaretDown size={12} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
-              </button>
             )}
           </div>
-        </div>
-
-        {/* Expanded: the lawyer's own notes (request.description).
-            A «ملخص AI للاستشارة» panel used to live here too, with «إرسال
-            للعميل» and «تصدير PDF» buttons under it. It hung off `aiSummary`,
-            which no code path ever set, so it was unreachable — and there is no
-            consultation-summary generator behind it to reach. Removed. */}
-        <AnimatePresence>
-          {expanded && c.notes?.trim() && (
-            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden">
-              <div className={`px-4 pb-4 pt-0 space-y-3 border-t ${isDark ? "border-white/[0.04]" : "border-slate-50"}`}>
-                <div>
-                  <p className={`text-[10px] font-bold uppercase tracking-wide mb-1.5 mt-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>ملاحظات المحامي</p>
-                  <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{c.notes}</p>
-                </div>
-              </div>
-            </motion.div>
+          <p className={`text-[12.5px] truncate ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{c.title}</p>
+          <div className={`flex items-center gap-2 flex-wrap mt-1.5 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+            <span className={`px-1.5 py-0.5 rounded-md flex items-center gap-1 ${chipCls[1]} ${chipCls[0]}`}>
+              <ModeIcon size={9} /> {CONSULTATION_MODE_AR[c.mode]}
+            </span>
+            {scheduledAr && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-current opacity-40" />
+                <span>{scheduledAr}</span>
+              </>
+            )}
+            {c.durationMinutes !== null && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-current opacity-40" />
+                <span className="flex items-center gap-1"><Clock size={10} /> {toArabicDigits(c.durationMinutes)} د</span>
+              </>
+            )}
+          </div>
+          {c.convertedCaseRequestId && (
+            <Link href={`/dashboard/lawyer/cases/${c.convertedCaseRequestId}`}
+              className={`inline-flex items-center gap-1 mt-1.5 text-[11px] font-bold hover:underline ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>
+              <Scales size={11} /> حُوِّلت إلى قضية
+            </Link>
           )}
-        </AnimatePresence>
+        </div>
+      </div>
+
+      <div className={`flex items-center gap-1.5 flex-wrap pt-2.5 border-t ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
+        {showSchedule && (
+          <button onClick={() => onAction("schedule")} className={quickBtnCls(isDark, "primary")}>
+            <CalendarCheck size={12} /> {c.status === "scheduled" ? "إعادة الجدولة" : "جدولة"}
+          </button>
+        )}
+        {showComplete && (
+          <button onClick={() => onAction("complete")} className={quickBtnCls(isDark, "neutral")}>
+            <CheckCircle size={12} /> إتمام
+          </button>
+        )}
+        {showOpinion && (
+          <button onClick={() => onAction("opinion")} className={quickBtnCls(isDark, "neutral")}>
+            <FileText size={12} /> الرأي القانوني
+          </button>
+        )}
+        {showConvert && (
+          <button onClick={() => onAction("convert")} className={quickBtnCls(isDark, "neutral")}>
+            <Scales size={12} /> تحويل لقضية
+          </button>
+        )}
+        {showCancel && (
+          <button onClick={() => onAction("cancel")} className={quickBtnCls(isDark, "danger")}>
+            <XCircle size={12} /> إلغاء
+          </button>
+        )}
+        <Link href={`/dashboard/lawyer/consultations/${c.id}`}
+          className={`ms-auto flex items-center gap-1 text-[11px] font-bold ${isDark ? "text-zinc-400 hover:text-zinc-200" : "text-slate-500 hover:text-royal"}`}>
+          فتح <ArrowLeft size={11} />
+        </Link>
       </div>
     </motion.div>
   );
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// ─── Tabs / sort ────────────────────────────────────────────────────────────
+
+type TabKey = "all" | "requested" | "scheduled" | "completed" | "cancelled_group";
+
+function matchesTab(c: LawyerConsultation, tab: TabKey): boolean {
+  if (tab === "all") return true;
+  if (tab === "cancelled_group") return c.status === "cancelled" || c.status === "no_show";
+  return c.status === tab;
+}
+
+/**
+ * Scheduled first (soonest slot next), then requested (newest booking
+ * first), then everything else — completed, cancelled, no_show — most
+ * recently touched first. Three separate sort keys because "soonest" only
+ * means something for a row that actually has a slot.
+ */
+function sortConsultations(items: LawyerConsultation[]): LawyerConsultation[] {
+  const scheduled = items.filter((c) => c.status === "scheduled")
+    .slice().sort((a, b) => (a.scheduledAt ?? "").localeCompare(b.scheduledAt ?? ""));
+  const requested = items.filter((c) => c.status === "requested")
+    .slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const rest = items.filter((c) => c.status !== "scheduled" && c.status !== "requested")
+    .slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return [...scheduled, ...requested, ...rest];
+}
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "all", label: "الكل" },
+  { key: "requested", label: CONSULTATION_STATUS_AR.requested },
+  { key: "scheduled", label: CONSULTATION_STATUS_AR.scheduled },
+  { key: "completed", label: CONSULTATION_STATUS_AR.completed },
+  { key: "cancelled_group", label: `${CONSULTATION_STATUS_AR.cancelled} / ${CONSULTATION_STATUS_AR.no_show}` },
+];
+
+// ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function ConsultationsPage() {
   const { isDark } = useTheme();
   const user = useUser();
   const searchParams = useSearchParams();
   // `?book=1` — the deep link the lawyer dashboard's «استشارة جديدة» quick
-  // action used to carry. It was removed there (see dashboard/lawyer/page.tsx)
-  // because this page read neither `useSearchParams` nor a `searchParams` prop,
-  // so the param was inert and the lawyer landed on a plain list holding a URL
-  // that promised an open booking form. The machinery was always here —
-  // `showBooking` and <BookingModal> below — only the reader was missing.
-  //
-  // Called bare, with no Suspense wrapper, matching the established pattern for
-  // statically-prerendered client pages in this tree:
-  // dashboard/client/my-group/page.tsx:154 and
-  // dashboard/client/requests/new/page.tsx:69 both do exactly this in their
-  // default export with no Suspense in the file, in their layout, or in the
-  // root layout. Optional chaining matches those call sites too.
+  // action carries. Called bare, with no Suspense wrapper, matching the
+  // established pattern for statically-prerendered client pages in this
+  // tree (dashboard/client/my-group/page.tsx, dashboard/client/requests/new).
   const bookParam = searchParams?.get("book") ?? null;
-  const [filter, setFilter] = useState<ConsultStatus | "all">("all");
-  const [search, setSearch] = useState("");
-  // Seeded from `?book=1` rather than set from an effect: an effect that calls
-  // setState on mount is a cascading render (react-hooks/set-state-in-effect)
-  // and would paint the list once before the modal appeared. As an INITIAL
-  // value it also cannot re-open the form behind the lawyer — an initialiser is
-  // read on the first render only, so closing the modal is final while the URL
-  // still says book=1.
   const [showBooking, setShowBooking] = useState(bookParam === "1");
-  const [consults, setConsults] = useState<Consultation[]>([]);
+  const [tab, setTab] = useState<TabKey>("all");
+
+  const [consultsRead, setConsultsRead] = useState<ListRead<LawyerConsultation> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [maybeTruncated, setMaybeTruncated] = useState(false);
 
-  const card = isDark
-    ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
-    : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
-
-  // Calls the endpoint directly instead of getWorkflowRequestsByReceiver(),
-  // for two reasons that both end in a lawyer missing an appointment:
-  //   - that wrapper sends no `limit`, so the route's default of 20 applied and
-  //     the type="consultation" filter ran afterwards in the browser. Manually
-  //     added clients, cases, hearings, tasks and invoices all land in the same
-  //     receiver="lawyer" window, so twenty of anything hid every consultation.
-  //   - the route reports a failed query as HTTP 200 with
-  //     `{ data: [], total: 0, degraded: true }`. apiGet does not throw on a
-  //     200, so the wrapper's catch never ran and the page drew the failure as
-  //     «لا توجد استشارات مطابقة».
-  const loadConsultations = useCallback(async () => {
-    if (!isSupabaseMode) {
-      // Demo build: no API routes. Module-level constant → eliminated in prod.
-      setLoading(false);
-      return;
-    }
+  const loadConsultations = useCallback(() => {
     setLoading(true);
-    setLoadError(null);
-    try {
-      const res = await apiGet<{ data: WorkflowRequest[]; total?: number; degraded?: boolean }>(
-        "/api/v1/service-requests",
-        { receiver: "lawyer", limit: LAWYER_REQUESTS_FETCH_LIMIT },
-      );
-      if (res?.degraded) throw new Error("تعذّر تحميل الاستشارات.");
-      const rows = Array.isArray(res?.data) ? res.data : [];
-      setConsults(rows.filter(r => r.type === "consultation").map(workflowToConsultation));
-      // `total` counts every receiver="lawyer" row, not just consultations, so
-      // this can only ever say the list MIGHT be short — never that a specific
-      // consultation is missing.
-      setMaybeTruncated(typeof res?.total === "number" && res.total > rows.length);
-    } catch (e) {
-      console.error("[consultations] load failed:", e);
-      setLoadError("تعذّر تحميل الاستشارات.");
-    } finally {
-      setLoading(false);
-    }
+    getLawyerConsultations({ status: "all", limit: 200 }).then(setConsultsRead).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     loadConsultations();
-    const handler = () => { loadConsultations(); };
+    const handler = () => loadConsultations();
     window.addEventListener("nzamy-workflow-updated", handler);
     return () => window.removeEventListener("nzamy-workflow-updated", handler);
   }, [loadConsultations]);
 
-  const filtered = consults.filter(c => {
-    const matchStatus = filter === "all" || c.status === filter;
-    const matchSearch = !search || c.client.includes(search) || c.topic.includes(search);
-    return matchStatus && matchSearch;
-  });
+  const listState = listViewState(loading, consultsRead);
+  const items = itemsOf(consultsRead);
+  const countersReady = listState === "ready" || listState === "empty";
 
-  // `.filter()` already returns a new array, so the `.sort()` below orders that
-  // copy and never mutates `consults`.
-  //
-  // The ORDER of this array is a factual claim, because the panel below renders
-  // one element of it under «الاستشارة القادمة». Soonest first; bookings with no
-  // usable date sink to the END rather than leading — "no date on it" is not
-  // "the soonest", and floating them to the front is exactly what the unsorted
-  // array did by accident.
-  const upcoming = consults
-    .filter(c => c.status === "upcoming")
-    .sort((a, b) => {
-      const sa = scheduledOf(a);
-      const sb = scheduledOf(b);
-      if (!sa && !sb) return 0;
-      if (!sa) return 1;
-      if (!sb) return -1;
-      return sa.at - sb.at;
-    });
+  // "Today", computed inside an effect rather than at render time or in a
+  // useState initializer — the SSR cached-date trap: a value baked in at
+  // build/prerender time would freeze "اليوم" at whatever day the page was
+  // last rendered on the server, not the viewer's actual day.
+  const [todayYMD, setTodayYMD] = useState<string | null>(null);
+  useEffect(() => {
+    const now = new Date();
+    setTodayYMD(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`);
+  }, []);
 
-  // What the panel shows, and a heading that is TRUE of it.
-  //
-  // Sorting alone does not finish the job: "upcoming" is a STATUS
-  // (workflowToConsultation maps anything not cancelled/completed to it), not a
-  // statement about the calendar, so the soonest row can easily be a booking
-  // from three weeks ago that was never marked completed. Calling that
-  // «الاستشارة القادمة» is the same false claim in a new form, so the panel
-  // takes the first booking whose slot has NOT passed.
-  //
-  // When there is no such booking but there are undated ones, the panel is kept
-  // and RENAMED instead of hidden: a booking awaiting a date is still real and
-  // still pending, it simply is not "the next one". Only when every upcoming
-  // booking is dated in the past does the panel disappear — there is nothing
-  // coming, and the list below still carries every one of those rows.
-  //
-  // The «قادمة» KPI is deliberately NOT touched by any of this: it counts a
-  // status, so it can honestly read ٣ while this panel shows one or none.
-  const nextAhead = upcoming.find(isStillAhead) ?? null;
-  const nextConsult = nextAhead ?? upcoming.find(c => scheduledOf(c) === null) ?? null;
-  const nextConsultHeading = nextAhead ? "الاستشارة القادمة" : "استشارة بانتظار تحديد الموعد";
+  const requestedCount = items.filter((c) => c.status === "requested").length;
+  const scheduledCount = items.filter((c) => c.status === "scheduled").length;
+  const completedCount = items.filter((c) => c.status === "completed").length;
+  const todayCount = todayYMD === null ? 0 : items.filter((c) => c.scheduledAt && localYMD(c.scheduledAt) === todayYMD).length;
+
+  // «الاستشارة القادمة» — the earliest scheduled slot still ahead of now.
+  // "Now" is likewise read inside an effect, never at render time.
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  useEffect(() => { setNowMs(Date.now()); }, []);
+  const nextConsult = useMemo(() => {
+    if (nowMs === null) return null;
+    const ahead = items.filter((c) => c.status === "scheduled" && c.scheduledAt && new Date(c.scheduledAt).getTime() >= nowMs);
+    if (ahead.length === 0) return null;
+    return ahead.slice().sort((a, b) => (a.scheduledAt as string).localeCompare(b.scheduledAt as string))[0];
+  }, [items, nowMs]);
+
+  const rows = sortConsultations(items.filter((c) => matchesTab(c, tab)));
+
+  // ── Action modal — one instance, targeting whichever row/action was picked ──
+  const [actionTarget, setActionTarget] = useState<{ consultation: LawyerConsultation; action: ConsultationAction } | null>(null);
+  function handleActionDone() {
+    setActionTarget(null);
+    loadConsultations();
+  }
+
+  const card = isDark
+    ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
+    : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
   return (
     <div className="max-w-3xl mx-auto space-y-5" dir="rtl">
@@ -755,221 +704,127 @@ export default function ConsultationsPage() {
         {showBooking && <BookingModal isDark={isDark} onClose={() => setShowBooking(false)} lawyerUserId={user.userId} />}
       </AnimatePresence>
 
-      {/* Could-not-read banner — distinct from an empty list, and retryable. */}
-      {loadError && (
-        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50"}`}>
-          <Warning size={18} weight="fill" className="text-red-500 flex-shrink-0" />
-          <div className="flex-1">
-            <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>{loadError}</p>
-            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-red-600/70"}`}>هذه ليست قائمة فارغة — القراءة لم تنجح. لا تعتمد على ما يظهر أدناه.</p>
-          </div>
-          <button onClick={loadConsultations}
-            className="flex items-center gap-1.5 text-[11px] font-bold text-red-500 hover:underline flex-shrink-0">
-            <ArrowClockwise size={13} /> إعادة المحاولة
-          </button>
-        </motion.div>
-      )}
-
-      {/* Possible truncation. `total` counts all receiver="lawyer" rows, so the
-          honest statement is "may be incomplete", not "consultations missing". */}
-      {!loadError && maybeTruncated && (
-        <div className={`rounded-2xl px-4 py-2.5 border flex items-center gap-2 text-[11px] ${isDark ? "border-amber-500/20 bg-amber-500/[0.06] text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-          <Warning size={14} weight="fill" className="flex-shrink-0" />
-          <span>عدد سجلاتك يتجاوز حد القراءة ({LAWYER_REQUESTS_FETCH_LIMIT} سجلاً)، وقد لا تكون هذه القائمة كاملة.</span>
-        </div>
-      )}
-
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className={`text-2xl font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`} style={{ fontFamily: "var(--font-brand)" }}>
-            الاستشارات
-          </h1>
-          {/* The «إجمالي: X ﷼» that used to sit here summed `payment.amount`,
-              which the booking form never collects and always stores as 0 — a
-              money figure with no source, on a platform through which no money
-              has ever moved. */}
-          {/* The KPI grid and the mode breakdown below both withhold their
-              numbers on a failed read; this subtitle did not, so it printed
-              «٠ قادمة · ٠ إجمالاً» over a query that never answered — the one
-              number on the screen still making a claim. Now all three agree. */}
-          <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {loading
-              ? "جارٍ التحميل…"
-              : loadError
-                ? <span className="text-red-500 font-semibold">تعذّرت القراءة — العدد غير معروف</span>
-                : `${upcoming.length} قادمة · ${consults.length} إجمالاً`}
-          </p>
+        <div className="flex items-center gap-2.5">
+          <div className={`flex h-10 w-10 items-center justify-center rounded-2xl flex-shrink-0 ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"}`}>
+            <ChatDots size={20} weight="duotone" />
+          </div>
+          <div>
+            <h1 className={`text-2xl font-bold ${isDark ? "text-white" : "text-slate-800"}`} style={{ fontFamily: "var(--font-brand)" }}>
+              الاستشارات
+            </h1>
+            <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>حجوزاتك واستشارات العملاء المُسندة إليك</p>
+          </div>
         </div>
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
           onClick={() => setShowBooking(true)}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
-          <Plus size={15} weight="bold" /> جدولة استشارة
+          <Plus size={15} weight="bold" /> استشارة جديدة
         </motion.button>
       </motion.div>
 
-      {/* KPIs. «جارية الآن» is gone with the inProgress status that could never
-          be set, and «إجمالي الأتعاب» with the always-zero fee sum.
-          Hidden entirely while loading or after a failed read: «قادمة ٠ ·
-          مكتملة ٠» over a query that never returned is the headline lie on this
-          screen, and a counter has no honest value to show in that state. */}
-      {!loading && !loadError && (
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: "قادمة",   value: upcoming.length,   color: "text-royal",       bg: "bg-royal/10",       icon: CalendarCheck },
-          { label: "مكتملة",  value: consults.filter(c => c.status === "completed").length, color: "text-emerald-500", bg: "bg-emerald-500/10", icon: CheckCircle },
-          { label: "ملغية",   value: consults.filter(c => c.status === "cancelled").length, color: isDark ? "text-zinc-400" : "text-slate-500", bg: isDark ? "bg-white/[0.06]" : "bg-slate-100", icon: X },
-        ].map((k, i) => {
+      {/* KPIs — withheld while loading/unreadable; a claimed zero over a
+          failed read is how a lawyer misses that a client is waiting. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {([
+          { label: CONSULTATION_STATUS_AR.requested, value: requestedCount, icon: ChatDots, cls: isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600", needsToday: false },
+          { label: CONSULTATION_STATUS_AR.scheduled, value: scheduledCount, icon: CalendarCheck, cls: isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-600", needsToday: false },
+          { label: "اليوم", value: todayCount, icon: Clock, cls: isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]", needsToday: true },
+          { label: CONSULTATION_STATUS_AR.completed, value: completedCount, icon: CheckCircle, cls: isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700", needsToday: false },
+        ] as const).map((k, i) => {
           const Icon = k.icon;
+          const ready = countersReady && (!k.needsToday || todayYMD !== null);
           return (
             <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
               className={`${card} p-4 flex items-center gap-3`}>
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${k.bg}`}>
-                <Icon size={17} weight="duotone" className={k.color} />
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${k.cls}`}>
+                <Icon size={16} weight="duotone" />
               </div>
               <div>
+                <p className={`text-[16px] font-bold font-mono ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{ready ? toArabicDigits(k.value) : "—"}</p>
                 <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{k.label}</p>
-                <p className={`text-[16px] font-bold font-mono ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{k.value}</p>
               </div>
             </motion.div>
           );
         })}
       </div>
-      )}
 
-      {/* A «جلسة جارية الآن» panel with an «انضم للجلسة» button used to sit
-          here. It was gated on a status no code path can produce, and its
-          button had no onClick — a live-session panel for a product with no
-          sessions. Removed with the status itself. */}
-
-      {/* Next upcoming. Was `upcoming.length > 0` rendering `upcoming[0]` out of
-          an unsorted array; both the subject and the heading are now chosen
-          above, so this block reads one row and never indexes. */}
-      {!loading && !loadError && nextConsult && (
+      {/* Next scheduled */}
+      {nextConsult && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
           className={`${card} p-5 border-royal/20 bg-royal/[0.03]`}>
           <div className="flex items-center gap-2 mb-3">
             <CalendarCheck size={15} weight="duotone" className="text-royal" />
-            <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{nextConsultHeading}</p>
+            <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>الاستشارة القادمة</p>
           </div>
           <div className="flex items-center gap-4">
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-royal/10" : "bg-royal/5"}`}>
-              {nextConsult.clientType === "company"
-                ? <Buildings size={22} weight="duotone" className="text-royal" />
-                : <User size={22} weight="duotone" className="text-royal" />}
+              <User size={22} weight="duotone" className="text-royal" />
             </div>
-            <div className="flex-1">
-              <p className={`text-[15px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{nextConsult.client}</p>
-              <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                {nextConsult.topic} · {MODE_LABELS[nextConsult.mode]}
-                {nextConsult.duration !== null ? ` · ${nextConsult.duration}د` : ""}
+            <div className="flex-1 min-w-0">
+              <p className={`text-[15px] font-bold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{nextConsult.clientName}</p>
+              <p className={`text-[12px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                {nextConsult.title} · {CONSULTATION_MODE_AR[nextConsult.mode]}
+                {nextConsult.durationMinutes !== null ? ` · ${toArabicDigits(nextConsult.durationMinutes)}د` : ""}
               </p>
             </div>
             <div className="text-left flex-shrink-0">
-              {nextConsult.time
-                ? <p className="text-[14px] font-bold font-mono text-royal">{nextConsult.time}</p>
-                : <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>بانتظار التأكيد</p>}
-              {nextConsult.date && <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{nextConsult.date}</p>}
+              <p className="text-[13px] font-bold text-royal">{formatScheduledAr(nextConsult.scheduledAt)}</p>
             </div>
-            {/* No «بدء» button: there is no meeting to start. See ConsultCard. */}
           </div>
         </motion.div>
       )}
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
-          <MagnifyingGlass size={16} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث..."
-            className={`flex-1 bg-transparent text-sm outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
-        </div>
-        <div className="flex gap-1.5">
-          {(["all", "upcoming", "completed", "cancelled"] as const).map(s => (
-            <button key={s} onClick={() => setFilter(s)}
-              className={`px-3 py-2 rounded-xl border text-[11px] font-semibold flex-shrink-0 transition-all ${filter === s ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20"}`}>
-              {s === "all" ? "الكل" : STATUS_CONFIG[s].label}
-            </button>
-          ))}
-        </div>
+      {/* Tabs */}
+      <div className="flex gap-1.5 flex-wrap">
+        {TABS.map((t) => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={`px-3 py-2 rounded-xl border text-[11px] font-semibold flex-shrink-0 transition-all ${tab === t.key ? "bg-royal text-white border-royal" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20"}`}>
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* Mode breakdown — same reasoning as the KPIs: four zeros is a
-          statement about the lawyer's practice, not about a failed read. */}
-      {!loading && !loadError && consults.length > 0 && (
-      <div className={`${card} p-4`}>
-        <p className={`text-[10px] font-bold uppercase tracking-wide mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>توزيع الاستشارات حسب الوسيلة</p>
-        <div className="grid grid-cols-4 gap-2">
-          {(["video", "phone", "chat", "inPerson"] as ConsultMode[]).map(m => {
-            const count = consults.filter(c => c.mode === m).length;
-            const Icon = MODE_ICONS[m];
-            const colors = MODE_COLORS[m].split(" ");
-            return (
-              <div key={m} className={`flex flex-col items-center gap-1.5 py-3 rounded-xl ${colors[1]}`}>
-                <Icon size={18} weight="duotone" className={colors[0]} />
-                <p className={`text-[16px] font-black ${colors[0]}`}>{count}</p>
-                <p className={`text-[9px] font-bold ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{MODE_LABELS[m]}</p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      )}
-
-      {/* List — three distinct states. «لا توجد استشارات مطابقة» over a failed
-          read is how a lawyer misses an appointment; loading, could-not-read
-          and genuinely-empty now each say what they are. */}
+      {/* List — loading / unreadable / empty / ready are four distinct
+          answers; «لا استشارات مطابقة» over a failed read is how a lawyer
+          misses an appointment. */}
       <div className="space-y-2">
-        {loading ? (
+        {listState === "loading" && (
           <div className={`${card} p-8 flex flex-col items-center gap-3`}>
             <div className="inline-block w-7 h-7 rounded-full border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] animate-spin" />
             <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل الاستشارات…</p>
           </div>
-        ) : loadError ? (
+        )}
+        {listState === "unreadable" && (
           <div className={`${card} p-8 text-center`}>
             <Warning size={28} weight="duotone" className="mx-auto mb-2 text-red-500" />
             <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّر تحميل الاستشارات</p>
-            <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>لم تنجح القراءة — لا يمكن عرض مواعيدك الآن.</p>
+            <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>هذه ليست قائمة فارغة — قد توجد استشارات لم تُقرأ.</p>
             <button onClick={loadConsultations}
               className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-bold text-royal hover:underline">
               <ArrowClockwise size={13} /> إعادة المحاولة
             </button>
           </div>
-        ) : filtered.length === 0 ? (
+        )}
+        {listState === "empty" && (
           <div className={`${card} p-8 text-center`}>
-            <CalendarCheck size={28} weight="duotone" className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
-            <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-              {/* «لم تصلك استشارات بعد» described only INBOUND consultations,
-                  under a page whose primary button is «+ جدولة استشارة» — the
-                  lawyer scheduling one himself. Two directions on one screen,
-                  and the empty state acknowledged only one of them, so a lawyer
-                  who had scheduled nothing was told nothing had arrived.
-                  Which direction this page is FOR is a product question and is
-                  not answered here; the copy simply stops asserting an answer. */}
-              {consults.length === 0 ? "لا توجد استشارات بعد" : "لا توجد استشارات مطابقة"}
-            </p>
+            <ChatDots size={28} weight="duotone" className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+            <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا استشارات بعد — احجز الأولى أو انتظر حجوزات العملاء</p>
           </div>
-        ) : filtered.map(c => (
-          <ConsultCard key={c.id} c={c} isDark={isDark} card={card} />
+        )}
+        {listState === "ready" && rows.length === 0 && (
+          <div className={`${card} p-8 text-center`}>
+            <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا استشارات مطابقة لهذا التصنيف</p>
+          </div>
+        )}
+        {listState === "ready" && rows.map((c) => (
+          <ConsultCard key={c.id} c={c} isDark={isDark} card={card}
+            onAction={(action) => setActionTarget({ consultation: c, action })} />
         ))}
       </div>
 
-      {/* Owner item ١١٢ — this was a yellow apology banner whose whole body was
-          a list of things the platform cannot do. The sentence was true, so it
-          is not deleted; it is demoted to one boundary line under a toolbar of
-          tools that DO exist, which is what a lawyer opening this screen can
-          actually act on.
-
-          Every destination below was checked against the router before it was
-          linked, and each one is already in this lawyer's own sidebar:
-            /laws            → the legal library         (LAWYER_SIDEBAR tail)
-            /precedents      → redirects into that library's principles and
-                               precedents section
-            /ai/collector    → the research collector     (ai:collector)
-            /ai/legal-opinion→ المستشار AI — the one real link the old banner
-                               carried, kept rather than dropped.
-
-          Amber is gone with the apology: nothing here is a warning. */}
+      {/* Preparation tools — unrelated to the data source above, unchanged. */}
       <div className={`p-4 rounded-2xl border space-y-3 ${isDark ? "border-white/[0.07] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
         <div className="flex items-center gap-2">
           <Sparkle size={15} weight="fill" className="text-[#C8A762] flex-shrink-0" />
@@ -980,10 +835,10 @@ export default function ConsultationsPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {([
-            { href: "/laws",             label: "المكتبة القانونية",           sub: "الأنظمة واللوائح النافذة",        icon: BookOpen },
-            { href: "/precedents",       label: "السوابق والمبادئ القضائية", sub: "قسم المبادئ داخل المكتبة",       icon: Scales },
-            { href: "/ai/collector",     label: "المجمّع البحثي",              sub: "اجمع نصوصك ومسوداتك في مكان واحد", icon: Tray },
-            { href: "/ai/legal-opinion", label: "المستشار AI",                  sub: "أداة منفصلة لصياغة رأي قانوني",   icon: Sparkle },
+            { href: "/laws", label: "المكتبة القانونية", sub: "الأنظمة واللوائح النافذة", icon: BookOpen },
+            { href: "/precedents", label: "السوابق والمبادئ القضائية", sub: "قسم المبادئ داخل المكتبة", icon: Scales },
+            { href: "/ai/collector", label: "المجمّع البحثي", sub: "اجمع نصوصك ومسوداتك في مكان واحد", icon: Tray },
+            { href: "/ai/legal-opinion", label: "المستشار AI", sub: "أداة منفصلة لصياغة رأي قانوني", icon: Sparkle },
           ] as const).map(tool => {
             const Icon = tool.icon;
             return (
@@ -1009,6 +864,18 @@ export default function ConsultationsPage() {
           تحضير الاستشارة وتوثيقها يدويان — لا تولّد المنصة ملخصاً للجلسة تلقائياً ولا ترسله للعميل.
         </p>
       </div>
+
+      <AnimatePresence>
+        {actionTarget && (
+          <ConsultationActionModal
+            consultation={actionTarget.consultation}
+            action={actionTarget.action}
+            isDark={isDark}
+            onClose={() => setActionTarget(null)}
+            onDone={handleActionDone}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

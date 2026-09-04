@@ -1,21 +1,33 @@
 "use client";
 
-import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { CaretLeft } from "@phosphor-icons/react";
+import { useTheme } from "@/components/ThemeProvider";
+import ConsultationDetail from "../../_components/consultations/ConsultationDetail";
 
 /**
  * Consultation detail (lawyer view).
  *
- * This page previously rendered a fully mock screen (hardcoded MOCK map,
- * local-only state, setTimeout saveNotes). There is no dedicated
- * consultation-detail backend yet, so — rather than fabricate data — we gate
- * the page behind an honest "قريباً" coming-soon state.
+ * Previously a hard-coded «قريباً» stub (DashboardComingSoon) — Phase 3 gave
+ * this screen a real backend (lawyerConsultationsService, the
+ * /api/v1/lawyer/consultations/* routes), so it now reads and acts on the
+ * real row through ConsultationDetail.
  */
-export default function ConsultationDetailPage({ params: _params }: { params: { id: string } }) {
+export default function ConsultationDetailPage() {
+  const { isDark } = useTheme();
+  const params = useParams();
+  const consultationId = params.id as string;
+
   return (
-    <DashboardComingSoon
-      title="تفاصيل الاستشارة"
-      description="هذه الميزة غير متاحة حالياً وستُفعَّل قريباً. لا توجد بيانات حقيقية لعرضها بعد."
-      backHref="/dashboard/lawyer/consultations"
-    />
+    <div className="max-w-[900px] mx-auto pt-1" dir="rtl">
+      <Link
+        href="/dashboard/lawyer/consultations"
+        className={`inline-flex items-center gap-1 mb-3 text-[12px] font-semibold ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-royal"}`}
+      >
+        <CaretLeft size={12} /> الاستشارات
+      </Link>
+      <ConsultationDetail consultationId={consultationId} isDark={isDark} basePath="/dashboard/lawyer" />
+    </div>
   );
 }

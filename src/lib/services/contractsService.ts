@@ -174,7 +174,8 @@ export type ObligationInput = Omit<ContractObligation, "id" | "contractId" | "cr
   /** Also put it on رادار المهل (default true). */
   createDeadline?: boolean;
 };
-export type PaymentInput = Omit<ContractPayment, "id" | "contractId" | "createdAt" | "updatedAt">;
+/** `position` may be omitted on create — the API appends at the end of the schedule. */
+export type PaymentInput = Omit<ContractPayment, "id" | "contractId" | "createdAt" | "updatedAt" | "position"> & { position?: number };
 
 const BASE = "/api/v1/lawyer/contracts";
 const CLIENT_BASE = "/api/v1/client/contracts";
