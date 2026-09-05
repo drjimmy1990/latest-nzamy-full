@@ -4,7 +4,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RateLimiter, resolveClientIp } from "./rateLimit.ts";
+import { RateLimiter, resolveClientIp, rateLimit, clientIpFrom } from "./rateLimit.ts";
 
 const POLICY = { windowMs: 10_000, max: 3 };
 
@@ -196,4 +196,17 @@ test("resolveClientIp: caps an oversized header value", () => {
   const long = "9".repeat(500);
   const ip = resolveClientIp((name) => (name === "x-real-ip" ? long : null));
   assert.ok(ip.length < 500);
+});
+
+test("compat rateLimit(): allows up to the limit then denies with a positive retryAfterSec", () => {
+  const key = "compat-test:" + Math.random().toString(36).slice(2);
+  for (let i = 0; i < 3; i++) assert.equal(rateLimit(key, { limit: 3, windowMs: 60_000 }).ok, true);
+  const denied = rateLimit(key, { limit: 3, windowMs: 60_000 });
+  assert.equal(denied.ok, false);
+  assert.ok(denied.retryAfterSec >= 1);
+});
+
+test("compat clientIpFrom(): reads x-real-ip first like resolveClientIp", () => {
+  const req = new Request("http://localhost/x", { headers: { "x-forwarded-for": "1.2.3.4, 10.0.0.1", "x-real-ip": "198.51.100.9" } });
+  assert.equal(clientIpFrom(req), "198.51.100.9");
 });

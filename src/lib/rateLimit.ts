@@ -309,3 +309,30 @@ export function resolveClientIp(
   }
   return "unknown";
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Compatibility surface — the call shape used by the route-level callers on
+ * the owner's branch (`rateLimit(key, {limit, windowMs})` + `clientIpFrom`).
+ * Same process-local limiter underneath (one shared instance, bucket
+ * "compat"), so a route that limits by user id and the proxy that limits by
+ * IP never collide on keys.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+export interface RateLimitResult {
+  ok: boolean;
+  /** Seconds the caller should wait before retrying (0 when ok). */
+  retryAfterSec: number;
+}
+
+const compatLimiter = new RateLimiter();
+
+/** Route-level helper: `rateLimit("ai-review:" + ip, { limit: 5, windowMs: 60_000 })`. */
+export function rateLimit(key: string, opts: { limit: number; windowMs: number }): RateLimitResult {
+  const decision = compatLimiter.check("compat", key, { max: opts.limit, windowMs: opts.windowMs });
+  return { ok: decision.allowed, retryAfterSec: decision.allowed ? 0 : decision.retryAfterSeconds };
+}
+
+/** Best-effort client IP for a Request (same header order as `resolveClientIp`). */
+export function clientIpFrom(request: Request): string {
+  return resolveClientIp((name) => request.headers.get(name));
+}
