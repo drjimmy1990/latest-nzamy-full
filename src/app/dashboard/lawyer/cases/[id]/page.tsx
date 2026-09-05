@@ -11,6 +11,7 @@ import {
   MapPin, MoneyWavy, Robot, FolderOpen, Eye, CheckSquare,
   Graph, UsersThree, Circle, DotsThree,
   ArrowsOut, ArrowsIn, Spinner, ArrowClockwise, Timer, SortAscending,
+  Trash,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -57,6 +58,14 @@ import {
   type LawyerTaskStatus,
 } from "@/lib/services/lawyerTasksService";
 import { urgentCaseTasks, nextOpenDeadline } from "@/lib/services/caseOverviewCockpit";
+import {
+  getCaseNotes,
+  addCaseNote,
+  updateCaseNote,
+  deleteCaseNote,
+  type CaseNote,
+  type CaseNoteVisibility,
+} from "@/lib/services/caseNotesService";
 
 /**
  * Arabic counted-noun tables for this page's two tab counters.
@@ -423,6 +432,20 @@ export default function CaseDetailPage() {
   // Optimistic «تمّ / إلغاء» on one row, mirroring رادار المهل's handleRowAction.
   const [deadlineRowBusy, setDeadlineRowBusy] = useState<Record<string, boolean>>({});
   const [deadlineRowError, setDeadlineRowError] = useState<Record<string, string>>({});
+
+  // ── Case notes linked to this case (owner item 65, public.case_notes) ──
+  const [caseNotesRead, setCaseNotesRead] = useState<ListRead<CaseNote> | null>(null);
+  const [caseNotesLoading, setCaseNotesLoading] = useState(true);
+  const [newNoteBody, setNewNoteBody] = useState("");
+  const [newNoteVisibility, setNewNoteVisibility] = useState<CaseNoteVisibility>("private");
+  const [addingNote, setAddingNote] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editNoteBody, setEditNoteBody] = useState("");
+  const [editNoteVisibility, setEditNoteVisibility] = useState<CaseNoteVisibility>("private");
+  const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
+
   const user = useUser();
   // Declared here (not beside loadCaseHearings further down) because the
   // `hearings` useMemo below reads it, and hooks below its own declaration
@@ -517,6 +540,80 @@ export default function CaseDetailPage() {
       }))
       .reverse();
   }, [caseData]);
+
+  // ── Case notes (public.case_notes, this case) ──
+  const loadCaseNotes = useCallback(() => {
+    if (!id) return;
+    setCaseNotesLoading(true);
+    getCaseNotes(id)
+      .then(setCaseNotesRead)
+      .finally(() => setCaseNotesLoading(false));
+  }, [id]);
+
+  useEffect(() => { loadCaseNotes(); }, [loadCaseNotes]);
+
+  const caseNotesView = listViewState(caseNotesLoading, caseNotesRead);
+  const caseNotesItems = itemsOf(caseNotesRead);
+
+  const submitCaseNote = async () => {
+    const body = newNoteBody.trim();
+    if (!body || addingNote) return;
+    setAddingNote(true);
+    setNoteError(null);
+    try {
+      await addCaseNote(id, { body, visibility: newNoteVisibility });
+      setNewNoteBody("");
+      loadCaseNotes();
+    } catch (e) {
+      console.error("[lawyer case detail] addCaseNote failed:", e);
+      setNoteError(e instanceof Error && e.message ? e.message : "تعذّر حفظ الملاحظة.");
+    } finally {
+      setAddingNote(false);
+    }
+  };
+
+  const startEditNote = (note: CaseNote) => {
+    setEditingNoteId(note.id);
+    setEditNoteBody(note.body);
+    setEditNoteVisibility(note.visibility);
+    setNoteError(null);
+  };
+
+  const cancelEditNote = () => {
+    setEditingNoteId(null);
+    setEditNoteBody("");
+  };
+
+  const saveEditNote = async (noteId: string) => {
+    const body = editNoteBody.trim();
+    if (!body) return;
+    setSavingNoteId(noteId);
+    setNoteError(null);
+    try {
+      await updateCaseNote(id, noteId, { body, visibility: editNoteVisibility });
+      setEditingNoteId(null);
+      loadCaseNotes();
+    } catch (e) {
+      console.error("[lawyer case detail] updateCaseNote failed:", e);
+      setNoteError(e instanceof Error && e.message ? e.message : "تعذّر حفظ التعديل.");
+    } finally {
+      setSavingNoteId(null);
+    }
+  };
+
+  const removeCaseNote = async (noteId: string) => {
+    setDeletingNoteId(noteId);
+    setNoteError(null);
+    try {
+      await deleteCaseNote(id, noteId);
+      loadCaseNotes();
+    } catch (e) {
+      console.error("[lawyer case detail] deleteCaseNote failed:", e);
+      setNoteError(e instanceof Error && e.message ? e.message : "تعذّر حذف الملاحظة.");
+    } finally {
+      setDeletingNoteId(null);
+    }
+  };
 
   // ── Derived: documents from attachments ──
   const documents = caseData?.attachments ?? [];
@@ -1233,8 +1330,10 @@ export default function CaseDetailPage() {
 
                 {/* آخر الملاحظات — a peek, not the full log; «الملاحظات» tab
                     has that. Closes the other half of the cockpit the header
-                    card doesn't: this page's own notes, derived from
-                    `caseData.events` the same way the notes tab renders them. */}
+                    card doesn't. Still the EVENT-derived feed specifically
+                    (`caseData.events`, unchanged by owner item 65) — the real
+                    saved public.case_notes rows the tab now also shows have
+                    no cockpit peek of their own yet. */}
                 <div className={`${card} p-5`}>
                   <div className="flex items-center justify-between mb-3">
                     <h2 className={`text-sm font-bold flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
@@ -1862,40 +1961,187 @@ export default function CaseDetailPage() {
 
           {/* ── Notes ── */}
           {activeTab === "notes" && (
-            <div className="space-y-4">
-              {/* The composer that stood here — a textarea plus a disabled
-                  «حفظ الملاحظة · قريباً» — is REMOVED, not disabled: there is
-                  no case-notes table or write route to save into (see the
-                  comment on its old handler, above `handleUpload`). An honest
-                  one-liner replaces it rather than an editable box with
-                  nowhere for its text to go. */}
-              <p className={`text-[11px] text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                لا يمكن حفظ ملاحظة من هذا الملف حالياً.
-              </p>
+            <div className="space-y-5">
+              {/* Real, saved notes — owner item 65: this composer used to be
+                  removed here because there was no case-notes table or write
+                  route to save into. public.case_notes now exists
+                  (20260910_case_notes.sql) and this is that composer. */}
+              <div className={`${card} p-4`}>
+                <div className={`flex flex-col gap-2 p-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02]" : "border-slate-200 bg-slate-50"}`}>
+                  <textarea
+                    value={newNoteBody}
+                    onChange={(e) => setNewNoteBody(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) submitCaseNote(); }}
+                    placeholder="أضف ملاحظة على ملف هذه القضية..."
+                    rows={2}
+                    disabled={addingNote}
+                    className={`w-full bg-transparent text-[12px] outline-none resize-none disabled:opacity-50 ${isDark ? "text-zinc-300 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`}
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1 text-[10px]">
+                      <button type="button" onClick={() => setNewNoteVisibility("private")}
+                        className={`px-2 py-1 rounded-lg font-bold transition-colors ${
+                          newNoteVisibility === "private"
+                            ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
+                            : isDark ? "text-zinc-600" : "text-slate-400"
+                        }`}>خاصة بي</button>
+                      <button type="button" onClick={() => setNewNoteVisibility("firm")}
+                        className={`px-2 py-1 rounded-lg font-bold transition-colors ${
+                          newNoteVisibility === "firm"
+                            ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
+                            : isDark ? "text-zinc-600" : "text-slate-400"
+                        }`}>للمكتب</button>
+                    </div>
+                    <button onClick={submitCaseNote} disabled={!newNoteBody.trim() || addingNote}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
+                      {addingNote ? <Spinner size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />}
+                      {addingNote ? "جارٍ الحفظ..." : "إضافة ملاحظة"}
+                    </button>
+                  </div>
+                </div>
+                <p className={`mt-2 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                  «خاصة بي» لا يراها أحد سواك. «للمكتب» تصل لزملائك النشطين في مكتبك فقط — الموكّل لا يرى أي ملاحظة هنا مطلقاً.
+                </p>
+                {noteError && <p className="mt-2 text-[11px] font-semibold text-red-500">{noteError}</p>}
+              </div>
+
               <div className="space-y-3">
-                {notes.length === 0 ? (
+                {caseNotesView === "loading" ? (
+                  <div className={`${card} p-8 flex items-center justify-center gap-2`}>
+                    <Spinner size={18} className="text-royal animate-spin" />
+                    <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل الملاحظات...</span>
+                  </div>
+                ) : caseNotesView === "unreadable" ? (
+                  <div className={`${card} p-8 flex flex-col items-center justify-center`}>
+                    <Warning size={28} weight="duotone" className="mb-2 text-red-500" />
+                    <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّرت قراءة الملاحظات</p>
+                    <p className={`text-[11px] mt-1 text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                      هذه ليست قائمة فارغة — قد تكون لهذه القضية ملاحظات لم تُقرأ.
+                    </p>
+                    <button onClick={loadCaseNotes} className="mt-2 flex items-center gap-1.5 text-[12px] font-bold text-royal hover:underline">
+                      <ArrowClockwise size={13} /> إعادة المحاولة
+                    </button>
+                  </div>
+                ) : caseNotesItems.length === 0 ? (
                   <div className={`${card} p-8 text-center`}>
                     <ChatDots size={24} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
-                    <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد ملاحظات بعد</p>
+                    <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد ملاحظات محفوظة على هذه القضية بعد</p>
                   </div>
                 ) : (
-                  notes.map((note, i) => (
-                    <motion.div key={i}
-                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+                  caseNotesItems.map((note, i) => (
+                    <motion.div key={note.id} layout
+                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
                       className={`${card} p-4`}>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-xl bg-royal/10 flex items-center justify-center">
-                            <span className="text-[11px] font-bold text-royal">{note.author.charAt(0)}</span>
+                      {editingNoteId === note.id ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editNoteBody}
+                            onChange={(e) => setEditNoteBody(e.target.value)}
+                            rows={2}
+                            className={`w-full rounded-xl border px-3 py-2 text-[12px] outline-none resize-none ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-800"}`}
+                          />
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1 text-[10px]">
+                              <button type="button" onClick={() => setEditNoteVisibility("private")}
+                                className={`px-2 py-1 rounded-lg font-bold transition-colors ${
+                                  editNoteVisibility === "private"
+                                    ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
+                                    : isDark ? "text-zinc-600" : "text-slate-400"
+                                }`}>خاصة بي</button>
+                              <button type="button" onClick={() => setEditNoteVisibility("firm")}
+                                className={`px-2 py-1 rounded-lg font-bold transition-colors ${
+                                  editNoteVisibility === "firm"
+                                    ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
+                                    : isDark ? "text-zinc-600" : "text-slate-400"
+                                }`}>للمكتب</button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button onClick={cancelEditNote}
+                                className={`text-[11px] font-semibold ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>إلغاء</button>
+                              <button onClick={() => saveEditNote(note.id)} disabled={!editNoteBody.trim() || savingNoteId === note.id}
+                                className="px-3 py-1.5 rounded-lg bg-[#0B3D2E] text-[#C8A762] text-[11px] font-bold disabled:opacity-40">
+                                {savingNoteId === note.id ? "جارٍ الحفظ..." : "حفظ"}
+                              </button>
+                            </div>
                           </div>
-                          <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{note.author}</p>
                         </div>
-                        <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{note.date}</p>
-                      </div>
-                      <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{note.text}</p>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between mb-2 gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-7 h-7 rounded-xl bg-royal/10 flex items-center justify-center flex-shrink-0">
+                                {/* بلا اسم لا يوجد حرف أول: أيقونة، لا خانة من المعرّف — نفس قاعدة تبويب «الفريق». */}
+                                {note.authorNameKnown
+                                  ? <span className="text-[11px] font-bold text-royal">{note.authorName.charAt(0)}</span>
+                                  : <User size={13} weight="duotone" className="text-royal" />}
+                              </div>
+                              <p className={`text-[12px] font-semibold truncate ${
+                                note.authorNameKnown
+                                  ? isDark ? "text-zinc-300" : "text-slate-700"
+                                  : isDark ? "text-zinc-500" : "text-slate-400"
+                              }`}>{note.authorName}</p>
+                              <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                note.visibility === "firm"
+                                  ? isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
+                                  : isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-500"
+                              }`}>{note.visibility === "firm" ? "للمكتب" : "خاصة بي"}</span>
+                            </div>
+                            <p className={`flex-shrink-0 text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{formatDate(note.createdAt)}</p>
+                          </div>
+                          <p className={`text-[13px] leading-relaxed whitespace-pre-wrap ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{note.body}</p>
+                          {note.mine && (
+                            <div className={`flex items-center gap-3 mt-2.5 pt-2.5 border-t border-dashed ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+                              <button onClick={() => startEditNote(note)}
+                                className={`flex items-center gap-1 text-[10px] font-bold ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>
+                                <PencilSimple size={11} /> تعديل
+                              </button>
+                              <button onClick={() => removeCaseNote(note.id)} disabled={deletingNoteId === note.id}
+                                className={`flex items-center gap-1 text-[10px] font-bold disabled:opacity-40 ${isDark ? "text-zinc-500 hover:text-red-400" : "text-slate-400 hover:text-red-500"}`}>
+                                <Trash size={11} /> حذف
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </motion.div>
                   ))
                 )}
+              </div>
+
+              {/* ── ملاحظات من سجل الأحداث — a DIFFERENT feed from the real,
+                  saved notes above: this one is derived read-only from
+                  `caseData.events` (case.note* / metadata.text) and existed
+                  before public.case_notes did. Kept under its own label so
+                  the two are never mistaken for one list. ── */}
+              <div className="pt-1">
+                <p className={`text-[11px] font-bold uppercase tracking-wider mb-2.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                  ملاحظات من سجل الأحداث
+                </p>
+                <div className="space-y-3">
+                  {notes.length === 0 ? (
+                    <div className={`${card} p-8 text-center`}>
+                      <ChatDots size={24} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                      <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد ملاحظات في سجل الأحداث</p>
+                    </div>
+                  ) : (
+                    notes.map((note, i) => (
+                      <motion.div key={i}
+                        initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+                        className={`${card} p-4`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-xl bg-royal/10 flex items-center justify-center">
+                              <span className="text-[11px] font-bold text-royal">{note.author.charAt(0)}</span>
+                            </div>
+                            <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{note.author}</p>
+                          </div>
+                          <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{note.date}</p>
+                        </div>
+                        <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{note.text}</p>
+                      </motion.div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           )}

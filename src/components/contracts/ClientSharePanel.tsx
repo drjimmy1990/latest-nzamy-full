@@ -16,6 +16,11 @@ interface Props {
   onGenerate: () => void;
   onCopy: () => void;
   onReset: () => void;
+  /** True while onGenerate()'s real network call is in flight. Optional — a
+   *  caller that does not pass it just never shows a loading state. */
+  generating?: boolean;
+  /** Arabic error from the last failed onGenerate() call, or null. */
+  error?: string | null;
 }
 
 export default function ClientSharePanel({
@@ -23,6 +28,7 @@ export default function ClientSharePanel({
   clientEmail, clientPhone,
   onEmailChange, onPhoneChange,
   onGenerate, onCopy, onReset,
+  generating = false, error = null,
 }: Props) {
   const [codeCopied, setCodeCopied] = useState(false);
 
@@ -102,28 +108,18 @@ export default function ClientSharePanel({
                 placeholder="+966 5X XXX XXXX" className={inputCls} />
             </div>
           </div>
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={onGenerate}
-            className="flex items-center gap-2 rounded-xl bg-[#C8A762] px-4 py-2.5 text-[12px] font-bold text-white w-full justify-center">
-            <Lock size={13} weight="fill" /> إنشاء رابط + باسكود
+          {error && (
+            <div className={`rounded-xl p-3 border mb-3 ${isDark ? "border-red-700/30 bg-red-900/10" : "border-red-200 bg-red-50"}`}>
+              <p className={`text-[11px] leading-relaxed ${isDark ? "text-red-300" : "text-red-700"}`}>{error}</p>
+            </div>
+          )}
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={onGenerate} disabled={generating}
+            className="flex items-center gap-2 rounded-xl bg-[#C8A762] px-4 py-2.5 text-[12px] font-bold text-white w-full justify-center disabled:opacity-60">
+            <Lock size={13} weight="fill" /> {generating ? "جارٍ الإنشاء..." : "إنشاء رابط + باسكود"}
           </motion.button>
         </>
       ) : (
         <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
-          {/*
-           * The link below does not open yet, and the panel has to say so.
-           * `generateShareLink()` mints the token and the passcode in React
-           * state and persists NOTHING: `document_shares` is read by
-           * `api/v1/share/[token]/verify/route.ts:36` and written by no code
-           * path in the repository. So the client who follows this link meets
-           * «الرابط غير موجود». Telling a lawyer to phone a passcode through for
-           * a link that 404s is a worse promise than the one we removed.
-           */}
-          <div className={`rounded-xl p-3 border ${isDark ? "border-amber-700/30 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-            <p className={`text-[11px] leading-relaxed ${isDark ? "text-amber-300" : "text-amber-800"}`}>
-              مشاركة المستندات غير مفعّلة بعد على الخادم — الرابط أدناه لن يفتح لدى العميل.
-              أرسل المستند بقناة أخرى حتى تُفعَّل الخدمة.
-            </p>
-          </div>
           <div className={`rounded-xl p-3 border ${isDark ? "border-emerald-700/30 bg-emerald-900/10" : "border-emerald-200 bg-emerald-50"}`}>
             <p className="text-[10px] text-emerald-500 font-bold mb-1">تم إنشاء الرابط</p>
             <div className="flex items-center gap-2">
@@ -159,6 +155,7 @@ export default function ClientSharePanel({
               <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                 لا تُرسل الباسكود مع الرابط في نفس الرسالة — فالحماية كلها في فصلهما.
                 أرسل الرابط من الأزرار أدناه، وسلّم الباسكود بقناة أخرى (اتصال هاتفي أو رسالة نصية).
+                احفظه الآن — لن يُعرض مرة أخرى بعد مغادرة هذه الصفحة.
               </p>
             </div>
           </div>

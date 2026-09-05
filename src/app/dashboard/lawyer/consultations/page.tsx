@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChatDots, Plus, CalendarCheck, User, CheckCircle, ArrowRight, Video,
@@ -676,12 +676,13 @@ export default function ConsultationsPage() {
   // "Now" is likewise read inside an effect, never at render time.
   const [nowMs, setNowMs] = useState<number | null>(null);
   useEffect(() => { setNowMs(Date.now()); }, []);
-  const nextConsult = useMemo(() => {
-    if (nowMs === null) return null;
+  let nextConsult: LawyerConsultation | null = null;
+  if (nowMs !== null) {
     const ahead = items.filter((c) => c.status === "scheduled" && c.scheduledAt && new Date(c.scheduledAt).getTime() >= nowMs);
-    if (ahead.length === 0) return null;
-    return ahead.slice().sort((a, b) => (a.scheduledAt as string).localeCompare(b.scheduledAt as string))[0];
-  }, [items, nowMs]);
+    if (ahead.length > 0) {
+      nextConsult = ahead.slice().sort((a, b) => (a.scheduledAt as string).localeCompare(b.scheduledAt as string))[0];
+    }
+  }
 
   const rows = sortConsultations(items.filter((c) => matchesTab(c, tab)));
 

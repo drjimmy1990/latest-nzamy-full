@@ -10,6 +10,93 @@ import {
 // this file imports next/server, so nothing could import it to make a claim
 // about who is allowed where. See routeAccess.test.ts for what is pinned.
 import { routeAccessRuleFor, isProtectedApiPath } from "@/lib/auth/routeAccess";
+import {
+  RateLimiter,
+  resolveClientIp,
+  type RateLimitDecision,
+  type RateLimitPolicy,
+} from "@/lib/rateLimit";
+import {
+  isStrictRateLimitedRoute,
+  isGeneralRateLimitedApiPath,
+} from "@/lib/rateLimitRoutes";
+
+// ─── Rate limiting (owner item ١٧٢) ─────────────────────────────────────────
+//
+// Before this, the only rate limiting anywhere in the app was a private,
+// best-effort per-IP throttle inside one route
+// (src/app/api/v1/leads/business-assessment/route.ts) — every other write
+// endpoint, auth-adjacent or not, had none. This section is the first step of
+// `proxy()` (see the call inside the function body) and applies to matching
+// requests only; see src/lib/rateLimit.ts for the limiter itself, what its
+// storage guarantee actually is, and why.
+//
+// Two buckets, both per client IP:
+//   • "strict" — 10 requests per 10 minutes — on four sensitive POST actions
+//     that a script could otherwise hammer: redeeming a share/invite/invitation
+//     token, or spamming the public contact form.
+//   • "general" — 120 requests per minute — on every mutating request
+//     (POST/PUT/PATCH/DELETE) under /api/v1, except /api/v1/cron/* (hit only
+//     by this app's own scheduled job, never a browser) and /api/v1/n8n/*
+//     (hit only by the n8n automation backend, likewise never a browser).
+// A request matching the strict list is checked against BOTH buckets — the
+// strict bucket protects it specifically, the general bucket still counts it
+// toward that IP's overall write budget, exactly as any other mutating
+// /api/v1 call would be.
+const rateLimiter = new RateLimiter();
+
+const STRICT_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 10 };
+const GENERAL_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 120 };
+
+// The actual route tables (which paths/methods match which bucket) live in
+// src/lib/rateLimitRoutes.ts, pure and tested on their own — see that file's
+// header for why, same reasoning as src/lib/auth/routeAccess.ts above.
+
+function rateLimitResponse(decision: RateLimitDecision): NextResponse {
+  const response = NextResponse.json(
+    { error: "طلبات كثيرة — حاول بعد قليل." },
+    { status: 429 },
+  );
+  response.headers.set("Retry-After", String(decision.retryAfterSeconds));
+  return response;
+}
+
+/**
+ * Runs the rate limiter for `req` and returns a 429 response when a matching
+ * bucket is exhausted, or `null` when the request should proceed unchanged —
+ * whether because no bucket applies to it, or because every applicable
+ * bucket still has room.
+ *
+ * FAILS OPEN. Any internal error here (a bug in this function, an unexpected
+ * header shape) must never be the reason a real request is rejected — it is
+ * caught and treated as "no bucket applies", identical to a path this limiter
+ * was never meant to cover.
+ */
+function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null {
+  try {
+    const method = req.method.toUpperCase();
+    const isStrictMatch = isStrictRateLimitedRoute(method, pathname);
+    const isGeneralMatch = isGeneralRateLimitedApiPath(method, pathname);
+
+    if (!isStrictMatch && !isGeneralMatch) return null;
+
+    const ip = resolveClientIp((name) => req.headers.get(name));
+
+    if (isStrictMatch) {
+      const decision = rateLimiter.check("strict", ip, STRICT_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isGeneralMatch) {
+      const decision = rateLimiter.check("general", ip, GENERAL_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Protected route prefixes (require authentication) ─────────────────────────
 const PROTECTED = [
@@ -45,6 +132,13 @@ const isSupabaseMode = BACKEND_MODE === "supabase";
 
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // 0. Rate limiting — first step, before anything else below, and only for
+  //    requests a bucket above actually matches (see applyRateLimit). Every
+  //    other request is unaffected: it returns null immediately and every
+  //    existing behaviour beneath this point runs exactly as it did before.
+  const rateLimited = applyRateLimit(req, pathname);
+  if (rateLimited) return rateLimited;
 
   // 1. Handle deprecated route redirects (permanent 301)
   if (REDIRECTS[pathname]) {

@@ -831,7 +831,16 @@ export default function MyRequestsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-black text-gray-900 dark:text-white">طلباتي</h1>
+          {/* Since the routeAccess change of 27 August a corporate account
+              reaches this same page (routeAccess.ts:55-70). «طلباتي» — first
+              person singular, "MY requests" — reads as an individual account
+              speaking for themself, not as a company. Only the title needs
+              the switch: the subtitle and search placeholder below already
+              use second-person «طلباتك» ("your requests"), which reads fine
+              whichever kind of account owns the requests. */}
+          <h1 className="text-2xl font-black text-gray-900 dark:text-white">
+            {user.userType === "corporate" ? "طلبات منشأتك" : "طلباتي"}
+          </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             متابعة جميع طلباتك وخدماتك القانونية
           </p>

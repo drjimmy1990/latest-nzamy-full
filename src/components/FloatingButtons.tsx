@@ -4,16 +4,14 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, useMotionValue, useTransform, AnimatePresence } from "framer-motion";
 import {
   WhatsappLogo, WarningCircle, X,
-  PaperPlaneRight, Phone, CheckCircle, Stack,
-  Paperclip, FileText
+  PaperPlaneRight, Phone, CheckCircle, Stack, SignIn,
 } from "@phosphor-icons/react";
-import { Image as ImageIcon } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
 import dynamic from "next/dynamic";
 const WhatsAppWidget = dynamic(() => import("./floating/WhatsAppWidget"), { ssr: false });
 import type { UserCategory } from "./floating/types";
 import { useUser } from "@/hooks/useUser";
-import { submitIssueReport, type IssueReport, type AttachedFile } from "@/lib/invitationStore";
+import { submitLibraryIssueReport, type IssueKind } from "@/lib/services/feedbackService";
 import { usePathname } from "next/navigation";
 import { useDraftCart } from "@/hooks/useDraftCart";
 const DraftDrawer = dynamic(() => import("@/components/laws/DraftDrawer").then(m => ({ default: m.DraftDrawer })), { ssr: false });
@@ -22,8 +20,21 @@ const DraftDrawer = dynamic(() => import("@/components/laws/DraftDrawer").then(m
 
 interface ReportConfig {
   pageSlug: string;
-  pageType: IssueReport["pageType"];
+  pageType: "law" | "precedent" | "book" | "order";
 }
+
+// The drawer's own category picker (kept for its more specific, library-page
+// wording) does not share a vocabulary with `IssueKind` — the real backend
+// enum behind `submitLibraryIssueReport`
+// (LIBRARY_ISSUE_KINDS in src/lib/services/feedbackInput.ts). Map the local
+// choice to the closest server kind; "إضافة بيانات" (request new content)
+// has no dedicated kind, so it falls to "other".
+const REPORT_CATEGORY_TO_ISSUE_KIND: Record<"data_error" | "missing_data" | "add_data" | "other", IssueKind> = {
+  data_error:   "wrong_text",
+  missing_data: "missing_article",
+  add_data:     "other",
+  other:        "other",
+};
 
 interface FloatingButtonsProps {
   /** When provided, shows an orange "Report Issue" mini-FAB above the WhatsApp button */
@@ -81,15 +92,21 @@ function ReportDrawer({
   reportConfig: ReportConfig;
 }) {
   const { isDark, isRTL } = useTheme();
+  // Not from useAutoCategory() — that hook deliberately reports false while
+  // the session is still resolving (see its own comment above), which is
+  // right for the always-visible WhatsApp FAB label but wrong here: it would
+  // flash the guest notice at a logged-in user for a frame. Read the session
+  // directly, the same way ReportArticleIssueButton does.
+  const { isLoggedIn } = useUser();
 
   const [category, setCategory]       = useState<"data_error" | "missing_data" | "add_data" | "other" | "">("");
   const [description, setDescription] = useState("");
   const [whatsapp, setWhatsapp]       = useState("");
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [submitting, setSubmitting]   = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted]     = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
-  const canSubmit = category !== "" && description.trim().length >= 5;
+  const canSubmit = isLoggedIn && category !== "" && description.trim().length >= 5 && !submitting;
 
   const categories = [
     {
@@ -114,55 +131,44 @@ function ReportDrawer({
     },
   ];
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    Array.from(files).forEach((file) => {
-      if (file.size > 5 * 1024 * 1024) {
-        alert(isRTL ? "أقصى حجم للملف هو 5 ميجابايت" : "Max file size is 5MB");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const dataUrl = ev.target?.result as string;
-        setAttachedFiles((prev) => [
-          ...prev,
-          {
-            name: file.name,
-            type: file.type,
-            dataUrl,
-            size: file.size,
-          },
-        ]);
-      };
-      reader.readAsDataURL(file);
-    });
-
-    if (fileRef.current) fileRef.current.value = "";
-  }
-
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!canSubmit) return;
-    const firstImg = attachedFiles.find(f => f.type.startsWith("image/"))?.dataUrl;
-    submitIssueReport({
-      pageSlug:         reportConfig.pageSlug,
-      pageType:         reportConfig.pageType,
-      description:      description.trim(),
-      category:         category || undefined,
-      attachedFiles:    attachedFiles,
-      screenshotDataUrl: firstImg,
-      whatsapp:         whatsapp.trim() || undefined,
-    });
-    setSubmitted(true);
-    setTimeout(() => {
-      onClose();
-      setSubmitted(false);
-      setCategory("");
-      setDescription("");
-      setWhatsapp("");
-      setAttachedFiles([]);
-    }, 2500);
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      // library_issue_reports (20260906_phase6_settings_out_of_browser.sql)
+      // has no whatsapp column and no attachment storage — there is nowhere
+      // server-side to put either, so the optional WhatsApp number rides
+      // along inside the description text rather than being silently
+      // dropped (the file-attachment picker this drawer used to offer had
+      // the same problem with no such fallback, so it was removed instead).
+      const whatsappNote = whatsapp.trim();
+      const fullDescription = whatsappNote
+        ? `${description.trim()}\n\nواتساب للتواصل: ${whatsappNote}`
+        : description.trim();
+
+      await submitLibraryIssueReport({
+        lawSlug:     reportConfig.pageSlug,
+        articleRef:  reportConfig.pageType,
+        kind:        REPORT_CATEGORY_TO_ISSUE_KIND[category as "data_error" | "missing_data" | "add_data" | "other"],
+        description: fullDescription,
+      });
+
+      setSubmitted(true);
+      setTimeout(() => {
+        onClose();
+        setSubmitted(false);
+        setCategory("");
+        setDescription("");
+        setWhatsapp("");
+      }, 2500);
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error ? err.message : (isRTL ? "تعذّر إرسال البلاغ، حاول مرة أخرى." : "Could not send the report, please try again."),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const overlay  = isDark ? "bg-zinc-900/60 backdrop-blur-sm" : "bg-black/20 backdrop-blur-sm";
@@ -220,7 +226,23 @@ function ReportDrawer({
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
-              {submitted ? (
+              {!isLoggedIn ? (
+                // Guests can't submit — `user_id` on the row comes from the
+                // session (POST /api/v1/library/issue-reports), so there is
+                // no anonymous report to send. Same gate + copy as
+                // ReportArticleIssueButton's GuestNotice.
+                <div className={`flex items-center gap-2.5 rounded-xl border px-3 py-3 ${isDark ? "border-white/[0.08] bg-white/[0.02]" : "border-zinc-200 bg-zinc-50"}`}>
+                  <SignIn size={16} weight="duotone" className={isDark ? "text-zinc-400" : "text-zinc-500"} />
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                      {isRTL ? "سجّل الدخول لإرسال البلاغ" : "Log in to send the report"}
+                    </p>
+                  </div>
+                  <a href="/login" className="flex-shrink-0 text-[11px] font-bold text-[#C8A762] hover:underline">
+                    {isRTL ? "دخول" : "Log in"}
+                  </a>
+                </div>
+              ) : submitted ? (
                 <motion.div
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
@@ -303,90 +325,6 @@ function ReportDrawer({
                     </div>
                   </div>
 
-                  {/* File Attachments */}
-                  <div>
-                    <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                      {isRTL ? "إرفاق ملفات أو صور (اختياري)" : "Attach Files or Images (optional)"}
-                    </label>
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      multiple
-                      accept="image/*,.pdf,.doc,.docx,.txt"
-                      className="hidden"
-                      onChange={handleFileChange}
-                    />
-                    
-                    <div className="space-y-2">
-                      {/* Attachment trigger button */}
-                      <button
-                        type="button"
-                        onClick={() => fileRef.current?.click()}
-                        className={`w-full h-11 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 text-[12px] font-bold transition-all ${
-                          isDark
-                            ? "border-white/[0.08] text-zinc-400 bg-zinc-800/20 hover:border-orange-500/30 hover:text-orange-400 hover:bg-orange-500/[0.02]"
-                            : "border-zinc-200 text-zinc-500 bg-zinc-50/50 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50/[0.02]"
-                        }`}
-                      >
-                        <Paperclip size={14} className="text-orange-400" />
-                        {isRTL ? "إضافة ملفات وصور..." : "Add files & images..."}
-                      </button>
-
-                      {/* Attached Files List */}
-                      {attachedFiles.length > 0 && (
-                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                          {attachedFiles.map((file, idx) => {
-                            const isImage = file.type.startsWith("image/");
-                            const formattedSize = file.size > 1024 * 1024
-                              ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-                              : `${(file.size / 1024).toFixed(0)} KB`;
-                            
-                            return (
-                              <div
-                                key={idx}
-                                className={`flex items-center justify-between p-2 rounded-xl border text-[11px] ${
-                                  isDark
-                                    ? "bg-zinc-800/40 border-white/[0.05] text-zinc-300"
-                                    : "bg-zinc-50/50 border-zinc-150 text-zinc-700"
-                                }`}
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  {isImage ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={file.dataUrl}
-                                      alt={file.name}
-                                      className="w-7 h-7 rounded-lg object-cover border border-zinc-200 dark:border-zinc-700 flex-shrink-0"
-                                    />
-                                  ) : (
-                                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                                      isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"
-                                    }`}>
-                                      <FileText size={14} />
-                                    </div>
-                                  )}
-                                  <div className="min-w-0 leading-tight">
-                                    <div className="font-semibold truncate max-w-[180px]">{file.name}</div>
-                                    <div className={`text-[9px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{formattedSize}</div>
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))}
-                                  className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
-                                    isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-zinc-200 text-zinc-500"
-                                  }`}
-                                >
-                                  <X size={12} />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
                   {/* WhatsApp */}
                   <div>
                     <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
@@ -403,12 +341,16 @@ function ReportDrawer({
                       {isRTL ? "لنتواصل معك ونُبلغك عند حل المشكلة" : "We'll contact you when the issue is resolved"}
                     </p>
                   </div>
+
+                  {submitError && (
+                    <p className="text-[11px] font-medium text-red-400">{submitError}</p>
+                  )}
                 </>
               )}
             </div>
 
-            {/* Footer */}
-            {!submitted && (
+            {/* Footer — hidden for a guest (no form to submit) and once submitted */}
+            {isLoggedIn && !submitted && (
               <div className={`px-5 py-4 border-t ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
                 <motion.button
                   whileHover={canSubmit ? { scale: 1.01 } : {}}
@@ -424,7 +366,9 @@ function ReportDrawer({
                   }`}
                 >
                   <PaperPlaneRight size={15} weight="fill" className={isRTL ? "rotate-180" : ""} />
-                  {isRTL ? "إرسال البلاغ" : "Submit Report"}
+                  {submitting
+                    ? (isRTL ? "جارٍ الإرسال..." : "Sending...")
+                    : (isRTL ? "إرسال البلاغ" : "Submit Report")}
                 </motion.button>
               </div>
             )}

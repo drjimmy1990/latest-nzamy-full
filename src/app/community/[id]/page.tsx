@@ -18,6 +18,7 @@ import {
 } from "@/lib/services/communityService";
 import { mapCommunityAnswer, type CommunityAnswerLike } from "@/lib/services/communityAnswerMap";
 import { mapCommunityPost, type CommunityPostLike } from "@/lib/services/communityPostMap";
+import ReportContentButton from "@/components/community/ReportContentButton";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -348,18 +349,27 @@ export default function QuestionDetailPage() {
             </div>
           </div>
 
-          {/* Like */}
-          <button
-            onClick={() => handleLike(reply.id, reply.likes)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition ${
-              replyLikes[reply.id] !== undefined
-                ? "bg-[#0B3D2E]/10 border-[#0B3D2E]/30 text-[#0B3D2E] dark:text-[#C8A762]"
-                : isDark ? "border-[#2d3748] text-gray-400 hover:bg-white/5" : "border-gray-200 text-gray-500 hover:bg-gray-50"
-            }`}
-          >
-            <ThumbsUp size={12} weight={replyLikes[reply.id] !== undefined ? "fill" : "regular"} />
-            {likes}
-          </button>
+          {/* Like + Report */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => handleLike(reply.id, reply.likes)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition ${
+                replyLikes[reply.id] !== undefined
+                  ? "bg-[#0B3D2E]/10 border-[#0B3D2E]/30 text-[#0B3D2E] dark:text-[#C8A762]"
+                  : isDark ? "border-[#2d3748] text-gray-400 hover:bg-white/5" : "border-gray-200 text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              <ThumbsUp size={12} weight={replyLikes[reply.id] !== undefined ? "fill" : "regular"} />
+              {likes}
+            </button>
+            <ReportContentButton
+              targetType="answer"
+              targetId={String(reply.id)}
+              isGuest={isGuest}
+              variant="icon"
+              className={`flex items-center justify-center w-8 h-8 rounded-xl border transition ${isDark ? "border-[#2d3748] text-gray-500 hover:text-red-400 hover:bg-white/5" : "border-gray-200 text-gray-400 hover:text-red-600 hover:bg-gray-50"}`}
+            />
+          </div>
         </div>
 
         {/* Text */}
@@ -449,6 +459,13 @@ export default function QuestionDetailPage() {
                     <button className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs ${isDark ? "border-[#2d3748] text-gray-400" : "border-gray-200 text-gray-500"}`}>
                       <Share size={12} /> {isRTL ? "شارك" : "Share"}
                     </button>
+                    {/* `params.id` is the real community_posts.id (uuid) this
+                        page was navigated to — always present on a real post,
+                        even when the fetch that would have populated
+                        `storedQuestion` failed and the mock QUESTION is what's
+                        on screen. Preferred over `question.id`, which is only
+                        ever equal to it when `storedQuestion` loaded. */}
+                    <ReportContentButton targetType="post" targetId={String(params?.id ?? question.id)} isGuest={isGuest} />
                   </div>
                 </div>
               </div>

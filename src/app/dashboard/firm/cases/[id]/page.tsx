@@ -41,6 +41,7 @@ import {
   FileText, ChartLine, Plus, Download, UploadSimple,
   ArrowUpRight, CheckCircle, Warning, Scales,
   CheckSquare, FolderOpen, Eye, Graph, Spinner, ArrowClockwise, Timer,
+  ChatDots, PencilSimple, Trash, User,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -84,10 +85,18 @@ import AddDeadlineModal from "../../../lawyer/_components/AddDeadlineModal";
 import DeadlineCard from "../../../lawyer/_components/DeadlineCard";
 import RecordStageOutcomeModal from "../../../lawyer/_components/RecordStageOutcomeModal";
 import LegalCanvas from "./LegalCanvas";
+import {
+  getCaseNotes,
+  addCaseNote,
+  updateCaseNote,
+  deleteCaseNote,
+  type CaseNote,
+  type CaseNoteVisibility,
+} from "@/lib/services/caseNotesService";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type CaseTab = "overview" | "tasks" | "hearings" | "stages" | "deadlines" | "documents" | "canvas";
+type CaseTab = "overview" | "tasks" | "hearings" | "stages" | "deadlines" | "documents" | "notes" | "canvas";
 type CaseStatus = "active" | "pending" | "suspended" | "closed" | "cancelled";
 type TaskStatus = "todo" | "inprogress" | "done";
 
@@ -125,6 +134,7 @@ const TABS: { id: CaseTab; label: string; icon: React.ElementType }[] = [
   { id: "stages",    label: "درجات التقاضي",  icon: Scales },
   { id: "deadlines", label: "المهل",          icon: Timer },
   { id: "documents", label: "المستندات",      icon: FolderOpen },
+  { id: "notes",     label: "الملاحظات",      icon: ChatDots },
   { id: "canvas",    label: "خريطة القضية",   icon: Graph },
 ];
 
@@ -328,6 +338,19 @@ export default function FirmCaseDetailsPage() {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [fileInputEl, setFileInputEl] = useState<HTMLInputElement | null>(null);
 
+  // ── الملاحظات (owner item 65, public.case_notes, this case) ──
+  const [caseNotesRead, setCaseNotesRead] = useState<ListRead<CaseNote> | null>(null);
+  const [caseNotesLoading, setCaseNotesLoading] = useState(true);
+  const [newNoteBody, setNewNoteBody] = useState("");
+  const [newNoteVisibility, setNewNoteVisibility] = useState<CaseNoteVisibility>("private");
+  const [addingNote, setAddingNote] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editNoteBody, setEditNoteBody] = useState("");
+  const [editNoteVisibility, setEditNoteVisibility] = useState<CaseNoteVisibility>("private");
+  const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     setDetailState("loading");
@@ -525,6 +548,80 @@ export default function FirmCaseDetailsPage() {
       setDeadlineRowBusy((b) => ({ ...b, [deadline.id]: false }));
     }
   }
+
+  // ── الملاحظات ──
+  const loadCaseNotes = useCallback(() => {
+    if (!id) return;
+    setCaseNotesLoading(true);
+    getCaseNotes(id)
+      .then(setCaseNotesRead)
+      .finally(() => setCaseNotesLoading(false));
+  }, [id]);
+
+  useEffect(() => { loadCaseNotes(); }, [loadCaseNotes]);
+
+  const caseNotesView = listViewState(caseNotesLoading, caseNotesRead);
+  const caseNotesItems = itemsOf(caseNotesRead);
+
+  const submitCaseNote = async () => {
+    const body = newNoteBody.trim();
+    if (!body || addingNote) return;
+    setAddingNote(true);
+    setNoteError(null);
+    try {
+      await addCaseNote(id, { body, visibility: newNoteVisibility });
+      setNewNoteBody("");
+      loadCaseNotes();
+    } catch (e) {
+      console.error("[firm case detail] addCaseNote failed:", e);
+      setNoteError(e instanceof Error && e.message ? e.message : "تعذّر حفظ الملاحظة.");
+    } finally {
+      setAddingNote(false);
+    }
+  };
+
+  const startEditNote = (note: CaseNote) => {
+    setEditingNoteId(note.id);
+    setEditNoteBody(note.body);
+    setEditNoteVisibility(note.visibility);
+    setNoteError(null);
+  };
+
+  const cancelEditNote = () => {
+    setEditingNoteId(null);
+    setEditNoteBody("");
+  };
+
+  const saveEditNote = async (noteId: string) => {
+    const body = editNoteBody.trim();
+    if (!body) return;
+    setSavingNoteId(noteId);
+    setNoteError(null);
+    try {
+      await updateCaseNote(id, noteId, { body, visibility: editNoteVisibility });
+      setEditingNoteId(null);
+      loadCaseNotes();
+    } catch (e) {
+      console.error("[firm case detail] updateCaseNote failed:", e);
+      setNoteError(e instanceof Error && e.message ? e.message : "تعذّر حفظ التعديل.");
+    } finally {
+      setSavingNoteId(null);
+    }
+  };
+
+  const removeCaseNote = async (noteId: string) => {
+    setDeletingNoteId(noteId);
+    setNoteError(null);
+    try {
+      await deleteCaseNote(id, noteId);
+      loadCaseNotes();
+    } catch (e) {
+      console.error("[firm case detail] deleteCaseNote failed:", e);
+      setNoteError(e instanceof Error && e.message ? e.message : "تعذّر حذف الملاحظة.");
+    } finally {
+      setDeletingNoteId(null);
+    }
+  };
 
   // ── Documents ──
   const handleUpload = async (file: File) => {
@@ -1127,6 +1224,155 @@ export default function FirmCaseDetailsPage() {
                   </motion.div>
                 ))
               )}
+            </div>
+          )}
+
+          {/* ── الملاحظات — owner item 65: this tab did not exist on the firm
+              case file at all. Same table, same routes, same shape as the
+              lawyer case file's «الملاحظات» tab (public.case_notes). ── */}
+          {activeTab === "notes" && (
+            <div className="space-y-4">
+              <div className={`${card} p-4`}>
+                <div className={`flex flex-col gap-2 p-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02]" : "border-slate-200 bg-slate-50"}`}>
+                  <textarea
+                    value={newNoteBody}
+                    onChange={(e) => setNewNoteBody(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) submitCaseNote(); }}
+                    placeholder="أضف ملاحظة على ملف هذه القضية..."
+                    rows={2}
+                    disabled={addingNote}
+                    className={`w-full bg-transparent text-[12px] outline-none resize-none disabled:opacity-50 ${isDark ? "text-zinc-300 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`}
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1 text-[10px]">
+                      <button type="button" onClick={() => setNewNoteVisibility("private")}
+                        className={`px-2 py-1 rounded-lg font-bold transition-colors ${
+                          newNoteVisibility === "private"
+                            ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
+                            : isDark ? "text-zinc-600" : "text-slate-400"
+                        }`}>خاصة بي</button>
+                      <button type="button" onClick={() => setNewNoteVisibility("firm")}
+                        className={`px-2 py-1 rounded-lg font-bold transition-colors ${
+                          newNoteVisibility === "firm"
+                            ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
+                            : isDark ? "text-zinc-600" : "text-slate-400"
+                        }`}>للمكتب</button>
+                    </div>
+                    <button onClick={submitCaseNote} disabled={!newNoteBody.trim() || addingNote}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
+                      {addingNote ? <Spinner size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />}
+                      {addingNote ? "جارٍ الحفظ..." : "إضافة ملاحظة"}
+                    </button>
+                  </div>
+                </div>
+                <p className={`mt-2 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                  «خاصة بي» لا يراها أحد سواك. «للمكتب» تصل لزملائك النشطين في مكتبك فقط — الموكّل لا يرى أي ملاحظة هنا مطلقاً.
+                </p>
+                {noteError && <p className="mt-2 text-[11px] font-semibold text-red-500">{noteError}</p>}
+              </div>
+
+              <div className="space-y-3">
+                {caseNotesView === "loading" ? (
+                  <div className={`${card} p-8 flex items-center justify-center gap-2`}>
+                    <Spinner size={18} className="text-royal animate-spin" />
+                    <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ تحميل الملاحظات...</span>
+                  </div>
+                ) : caseNotesView === "unreadable" ? (
+                  <div className={`${card} p-8 flex flex-col items-center justify-center`}>
+                    <Warning size={28} weight="duotone" className="mb-2 text-red-500" />
+                    <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>تعذّرت قراءة الملاحظات</p>
+                    <p className={`text-[11px] mt-1 text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                      هذه ليست قائمة فارغة — قد تكون لهذه القضية ملاحظات لم تُقرأ.
+                    </p>
+                    <button onClick={loadCaseNotes} className="mt-2 flex items-center gap-1.5 text-[12px] font-bold text-royal hover:underline">
+                      <ArrowClockwise size={13} /> إعادة المحاولة
+                    </button>
+                  </div>
+                ) : caseNotesItems.length === 0 ? (
+                  <div className={`${card} p-8 text-center`}>
+                    <ChatDots size={24} className={`mx-auto mb-2 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
+                    <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد ملاحظات محفوظة على هذه القضية بعد</p>
+                  </div>
+                ) : (
+                  caseNotesItems.map((note, i) => (
+                    <motion.div key={note.id} layout
+                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
+                      className={`${card} p-4`}>
+                      {editingNoteId === note.id ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editNoteBody}
+                            onChange={(e) => setEditNoteBody(e.target.value)}
+                            rows={2}
+                            className={`w-full rounded-xl border px-3 py-2 text-[12px] outline-none resize-none ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-800"}`}
+                          />
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1 text-[10px]">
+                              <button type="button" onClick={() => setEditNoteVisibility("private")}
+                                className={`px-2 py-1 rounded-lg font-bold transition-colors ${
+                                  editNoteVisibility === "private"
+                                    ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
+                                    : isDark ? "text-zinc-600" : "text-slate-400"
+                                }`}>خاصة بي</button>
+                              <button type="button" onClick={() => setEditNoteVisibility("firm")}
+                                className={`px-2 py-1 rounded-lg font-bold transition-colors ${
+                                  editNoteVisibility === "firm"
+                                    ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
+                                    : isDark ? "text-zinc-600" : "text-slate-400"
+                                }`}>للمكتب</button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button onClick={cancelEditNote}
+                                className={`text-[11px] font-semibold ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>إلغاء</button>
+                              <button onClick={() => saveEditNote(note.id)} disabled={!editNoteBody.trim() || savingNoteId === note.id}
+                                className="px-3 py-1.5 rounded-lg bg-[#0B3D2E] text-[#C8A762] text-[11px] font-bold disabled:opacity-40">
+                                {savingNoteId === note.id ? "جارٍ الحفظ..." : "حفظ"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between mb-2 gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-7 h-7 rounded-xl bg-royal/10 flex items-center justify-center flex-shrink-0">
+                                {/* بلا اسم لا يوجد حرف أول: أيقونة، لا خانة من المعرّف. */}
+                                {note.authorNameKnown
+                                  ? <span className="text-[11px] font-bold text-royal">{note.authorName.charAt(0)}</span>
+                                  : <User size={13} weight="duotone" className="text-royal" />}
+                              </div>
+                              <p className={`text-[12px] font-semibold truncate ${
+                                note.authorNameKnown
+                                  ? isDark ? "text-zinc-300" : "text-slate-700"
+                                  : isDark ? "text-zinc-500" : "text-slate-400"
+                              }`}>{note.authorName}</p>
+                              <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                note.visibility === "firm"
+                                  ? isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
+                                  : isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-500"
+                              }`}>{note.visibility === "firm" ? "للمكتب" : "خاصة بي"}</span>
+                            </div>
+                            <p className={`flex-shrink-0 text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{formatDate(note.createdAt)}</p>
+                          </div>
+                          <p className={`text-[13px] leading-relaxed whitespace-pre-wrap ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{note.body}</p>
+                          {note.mine && (
+                            <div className={`flex items-center gap-3 mt-2.5 pt-2.5 border-t border-dashed ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+                              <button onClick={() => startEditNote(note)}
+                                className={`flex items-center gap-1 text-[10px] font-bold ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>
+                                <PencilSimple size={11} /> تعديل
+                              </button>
+                              <button onClick={() => removeCaseNote(note.id)} disabled={deletingNoteId === note.id}
+                                className={`flex items-center gap-1 text-[10px] font-bold disabled:opacity-40 ${isDark ? "text-zinc-500 hover:text-red-400" : "text-slate-400 hover:text-red-500"}`}>
+                                <Trash size={11} /> حذف
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </motion.div>
+                  ))
+                )}
+              </div>
             </div>
           )}
 

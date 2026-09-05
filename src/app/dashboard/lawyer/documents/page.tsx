@@ -6,7 +6,7 @@ import {
   FolderOpen, MagnifyingGlass, UploadSimple,
   Download, Eye, CalendarBlank,
   GridFour, List,
-  Warning, Info, ArrowClockwise, Trash, ShieldWarning,
+  Warning, Info, ArrowClockwise, Trash, ShieldWarning, ShareNetwork,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import {
@@ -22,6 +22,7 @@ import type { Document } from "@/lib/services/documentService";
 import { partitionUploadFiles } from "@/lib/services/fileValidation";
 import { isSupabaseMode } from "@/lib/services/api";
 import { DocumentsTrashPanel } from "@/components/documents/DocumentsTrashPanel";
+import ShareDocumentModal from "@/components/documents/ShareDocumentModal";
 import {
   confirmDeleteToBinAr, holdFailureAr, holdReasonTooLongAr,
   MAX_HOLD_REASON_LEN,
@@ -107,6 +108,11 @@ export default function DocumentsPage() {
   const [uploadError,   setUploadError]   = useState<string | null>(null);
   const [actionError,   setActionError]   = useState<string | null>(null);
   const [busyDocId,     setBusyDocId]     = useState<string | null>(null);
+  // «مشاركة برابط» — owner item 174. The doc being shared, or null when the
+  // modal is closed. Only ever set to a row from `filteredDocs` (the live
+  // list), so a trashed row can never reach it — the bin renders through
+  // DocumentsTrashPanel below, which has no share action at all.
+  const [shareTarget,   setShareTarget]   = useState<Doc | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -386,6 +392,19 @@ export default function DocumentsPage() {
         className={`p-2 rounded-xl disabled:opacity-40 ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
         <Download size={14} />
       </button>
+      {/* Demo mode has no `document_shares` row behind it and no
+          /share/<token> page reads it either — the action is hidden rather
+          than shown disabled, same convention the upload control on this
+          page already uses. */}
+      {isSupabaseMode && (
+        <button
+          onClick={() => setShareTarget(doc)}
+          disabled={busyDocId === doc.id}
+          title="مشاركة برابط"
+          className={`p-2 rounded-xl disabled:opacity-40 ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
+          <ShareNetwork size={14} />
+        </button>
+      )}
       <button
         onClick={() => handleToggleHold(doc)}
         disabled={busyDocId === doc.id}
@@ -737,6 +756,16 @@ export default function DocumentsPage() {
         <div className={`${card} p-5`}>
           <DocumentsTrashPanel isDark={isDark} onRestored={() => { void loadDocs(); }} showHeader={false} />
         </div>
+      )}
+
+      {shareTarget && (
+        <ShareDocumentModal
+          key={shareTarget.id}
+          isDark={isDark}
+          attachmentId={shareTarget.id}
+          documentName={shareTarget.name}
+          onClose={() => setShareTarget(null)}
+        />
       )}
     </div>
   );

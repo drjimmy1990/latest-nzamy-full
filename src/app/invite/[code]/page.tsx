@@ -6,24 +6,25 @@
  * Landing page for invited colleagues.
  * URL: /invite/NZM-INV-XXXX
  *
- * Validates the invite code and shows a welcome screen with
- * the trial details. After clicking "Register", the code is
- * stored and carried through the registration flow.
+ * Validates the invite code through GET /api/v1/invite/[code] (no session
+ * needed — the invitee has not registered yet) and shows a welcome screen
+ * with the trial details. "Accept" goes through the real, session-required
+ * POST /api/v1/invite/[code]/accept, which grants the entitlement.
  * ─────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   BookOpen, Gift, CheckCircle, ArrowLeft, ArrowRight,
-  Clock, Sparkle, Lock, MagnifyingGlass, Gavel,
+  Clock, Sparkle, Lock, WarningCircle, ArrowClockwise, MagnifyingGlass, Gavel,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { validateInviteCode, acceptInvitation, getInvitationByCode, getLawyerLicense } from "@/lib/invitationStore";
+import { trialLengthLabel } from "@/lib/services/inviteTrialLabel";
 
 // ── Features included in trial ────────────────────────────────────────────
 
@@ -34,37 +35,76 @@ const TRIAL_FEATURES = [
   { icon: Clock,           ar: "تحديثات يومية فور صدور الأنظمة",         en: "Daily updates the moment laws are issued" },
 ];
 
+// ── Server response shape (GET /api/v1/invite/[code]) ─────────────────────
+
+interface InviteLookupResponse {
+  valid: boolean;
+  trialDays?: number;
+  tier?: string | null;
+  expiresAt?: string | null;
+  inviterName?: string | null;
+  reason?: string;
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function InvitePage() {
   const { isDark, isRTL } = useTheme();
   const params = useParams();
-  const code   = typeof params?.code === "string" ? params.code.toUpperCase() : "";
+  // The raw code is the lookup key — invitations.code is a case-sensitive
+  // `text` column and both this route and the accept route do an exact
+  // `.eq("code", ...)`. Uppercasing it (as the old regex-mock era did, for
+  // a case-insensitive comparison it also owned) would silently mismatch a
+  // real lowercase/mixed-case code. Uppercase only for the human-readable
+  // "كود الدعوة" line below.
+  const code = typeof params?.code === "string" ? params.code : "";
+  const displayCode = code.toUpperCase();
 
-  const [valid, setValid]       = useState<boolean | null>(null);
+  // Three real states, not two: a failed lookup (network/server error) is
+  // NOT the same as a code the server actually rejected — collapsing them
+  // both into "invalid" tells an invitee their real link is dead when the
+  // truth is the server (or their connection) hiccuped.
+  const [status, setStatus] = useState<"loading" | "valid" | "invalid" | "error">("loading");
+  const [invalidReason, setInvalidReason] = useState<string | null>(null);
   const [trialDays, setTrialDays] = useState(30);
   const [accepted, setAccepted] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
-  const [recipientName, setRecipientName] = useState<string | null>(null);
-  const [licenseNumber, setLicenseNumber] = useState<string | null>(null);
+  const [inviterName, setInviterName] = useState<string | null>(null);
 
   const Arrow = isRTL ? ArrowLeft : ArrowRight;
 
-  useEffect(() => {
-    if (!code) { setValid(false); return; }
-    const result = validateInviteCode(code);
-    setValid(result.valid);
-    setTrialDays(result.trialDays);
+  const runLookup = useCallback(async () => {
+    if (!code) { setStatus("invalid"); setInvalidReason(null); return; }
+    setStatus("loading");
+    try {
+      const res = await fetch(`/api/v1/invite/${encodeURIComponent(code)}`);
+      const json = (await res.json().catch(() => ({}))) as InviteLookupResponse;
 
-    const inv = getInvitationByCode(code);
-    if (inv && inv.recipientPhone) {
-      const name = (inv as any).recipientName || "";
-      setRecipientName(name);
-      const license = getLawyerLicense(inv.recipientPhone, name);
-      setLicenseNumber(license);
+      // A 5xx is the SERVER failing, not the code being invalid — keep those
+      // apart so a Supabase hiccup doesn't tell the invitee their link is dead.
+      if (res.status >= 500) {
+        setStatus("error");
+        return;
+      }
+
+      if (!json.valid) {
+        setStatus("invalid");
+        setInvalidReason(json.reason ?? null);
+        return;
+      }
+
+      setStatus("valid");
+      setTrialDays(typeof json.trialDays === "number" && json.trialDays > 0 ? json.trialDays : 30);
+      setInviterName(json.inviterName ?? null);
+    } catch {
+      setStatus("error");
     }
   }, [code]);
+
+  useEffect(() => {
+    runLookup();
+  }, [runLookup]);
 
   async function handleAccept() {
     if (accepting) return;
@@ -91,8 +131,6 @@ export default function InvitePage() {
         return;
       }
 
-      // Keep the local store in sync for the demo/display path.
-      acceptInvitation(code, trialDays);
       setAccepted(true);
     } catch {
       setAcceptError(
@@ -103,14 +141,8 @@ export default function InvitePage() {
     }
   }
 
-  const trialLabel = (days: number, ar: boolean) => {
-    if (days === 30) return ar ? "شهر كامل"    : "1 full month";
-    if (days === 60) return ar ? "شهرين كاملين" : "2 full months";
-    return ar ? "3 أشهر كاملة" : "3 full months";
-  };
-
   // Loading
-  if (valid === null) {
+  if (status === "loading") {
     return (
       <div className={`min-h-screen flex items-center justify-center ${isDark ? "bg-[#0c0f12]" : "bg-zinc-50"}`}>
         <div className="w-8 h-8 rounded-full border-2 border-[#0B3D2E] border-t-transparent animate-spin" />
@@ -118,8 +150,42 @@ export default function InvitePage() {
     );
   }
 
+  // Couldn't verify — a server/network failure, NOT the same as an invalid
+  // code. Offers a retry instead of asserting the invite is dead.
+  if (status === "error") {
+    return (
+      <div dir={isRTL ? "rtl" : "ltr"} className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-zinc-50 text-zinc-900"}`}>
+        <Navbar />
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className={`rounded-3xl border p-8 text-center max-w-sm ${isDark ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-zinc-100 shadow-lg"}`}>
+            <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-5">
+              <WarningCircle size={28} className="text-amber-500" />
+            </div>
+            <h1 className={`text-xl font-bold mb-2 ${isDark ? "text-white" : "text-zinc-900"}`}>
+              {isRTL ? "تعذّر التحقق من الدعوة" : "Couldn't verify the invitation"}
+            </h1>
+            <p className={`text-sm mb-6 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+              {isRTL
+                ? "حدث خطأ أثناء التحقق من رابط الدعوة. حاول مرة أخرى."
+                : "Something went wrong while verifying this invitation link. Please try again."}
+            </p>
+            <button
+              type="button"
+              onClick={runLookup}
+              className="inline-flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-[#0B3D2E] text-white text-sm font-bold"
+            >
+              <ArrowClockwise size={16} weight="bold" />
+              {isRTL ? "إعادة المحاولة" : "Try again"}
+            </button>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
   // Invalid code
-  if (!valid) {
+  if (status === "invalid") {
     return (
       <div dir={isRTL ? "rtl" : "ltr"} className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-zinc-50 text-zinc-900"}`}>
         <Navbar />
@@ -133,7 +199,7 @@ export default function InvitePage() {
             </h1>
             <p className={`text-sm mb-6 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
               {isRTL
-                ? "هذا الرابط غير صالح أو منتهي الصلاحية. تواصل مع الشخص الذي أرسل لك الدعوة."
+                ? (invalidReason ?? "هذا الرابط غير صالح أو منتهي الصلاحية. تواصل مع الشخص الذي أرسل لك الدعوة.")
                 : "This link is invalid or expired. Please contact the person who sent you the invitation."}
             </p>
             <Link
@@ -174,14 +240,16 @@ export default function InvitePage() {
                   <Gift size={24} weight="fill" className="text-[#C8A762]" />
                 </div>
                 <h1 className="text-xl font-bold mb-1">
-                  {recipientName
-                    ? (isRTL ? `أهلاً بك زميلنا ${recipientName}!` : `Welcome, Colleague ${recipientName}!`)
-                    : (isRTL ? "تم دعوتك للمكتبة القانونية!" : "You've Been Invited to the Legal Library!")}
+                  {isRTL ? "تم دعوتك للمكتبة القانونية!" : "You've Been Invited to the Legal Library!"}
                 </h1>
                 <p className="text-white/70 text-sm leading-relaxed">
-                  {isRTL
-                    ? `أحد زملائك القانونيين يدعوك للاستفادة من المكتبة القانونية في منصة نظامي مجاناً.${licenseNumber ? ` تم التحقق من هويتك المهنية كعضو مرخص برقم ترخيص: ${licenseNumber}.` : ""}`
-                    : `A legal colleague is inviting you to access the Legal Library on Nezamy for free.${licenseNumber ? ` Your professional license (${licenseNumber}) has been verified.` : ""}`}
+                  {inviterName
+                    ? (isRTL
+                        ? `${inviterName} يدعوك للاستفادة من المكتبة القانونية في منصة نظامي مجاناً.`
+                        : `${inviterName} is inviting you to access the Legal Library on Nezamy for free.`)
+                    : (isRTL
+                        ? "أحد زملائك القانونيين يدعوك للاستفادة من المكتبة القانونية في منصة نظامي مجاناً."
+                        : "A legal colleague is inviting you to access the Legal Library on Nezamy for free.")}
                 </p>
               </div>
             </div>
@@ -196,8 +264,8 @@ export default function InvitePage() {
                   <div>
                     <p className={`text-[14px] font-bold ${isDark ? "text-[#C8A762]" : "text-amber-800"}`}>
                       {isRTL
-                        ? `وصول مجاني لمدة ${trialLabel(trialDays, true)}`
-                        : `Free access for ${trialLabel(trialDays, false)}`}
+                        ? `وصول مجاني لمدة ${trialLengthLabel(trialDays, true)}`
+                        : `Free access for ${trialLengthLabel(trialDays, false)}`}
                     </p>
                     <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-amber-700/70"}`}>
                       {isRTL ? "بدون بطاقة ائتمانية · لا التزام" : "No credit card · No commitment"}
@@ -222,8 +290,8 @@ export default function InvitePage() {
                     </p>
                     <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
                       {isRTL
-                        ? `سجّل الآن للاستفادة من ${trialLabel(trialDays, true)} كاملة`
-                        : `Register now to enjoy ${trialLabel(trialDays, false)} of full access`}
+                        ? `سجّل الآن للاستفادة من ${trialLengthLabel(trialDays, true)} كاملة`
+                        : `Register now to enjoy ${trialLengthLabel(trialDays, false)} of full access`}
                     </p>
                   </div>
                   <Link
@@ -286,8 +354,8 @@ export default function InvitePage() {
 
                   <p className={`text-center text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
                     {isRTL
-                      ? `التجربة مجانية لمدة ${trialLabel(trialDays, true)} — لا يتطلب بطاقة ائتمان`
-                      : `Free trial for ${trialLabel(trialDays, false)} — no credit card required`}
+                      ? `التجربة مجانية لمدة ${trialLengthLabel(trialDays, true)} — لا يتطلب بطاقة ائتمان`
+                      : `Free trial for ${trialLengthLabel(trialDays, false)} — no credit card required`}
                   </p>
                 </>
               )}
@@ -296,7 +364,7 @@ export default function InvitePage() {
 
           {/* Code display */}
           <p className={`text-center text-[11px] mt-4 font-mono ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-            {isRTL ? `كود الدعوة: ${code}` : `Invite code: ${code}`}
+            {isRTL ? `كود الدعوة: ${displayCode}` : `Invite code: ${displayCode}`}
           </p>
         </div>
       </div>
