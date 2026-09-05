@@ -58,6 +58,7 @@ const NAV = [
       { href: "/dashboard/admin/library-issue-reports", icon: Flag,   label: "بلاغات المكتبة" },
       { href: "/dashboard/admin/content/articles",  icon: Article,    label: "المدونة القانونية" },
       { href: "/dashboard/admin/community/moderation", icon: Flag, label: "إشراف المجتمع" },
+      { href: "/dashboard/admin/community/reports", icon: Flag, label: "بلاغات المجتمع" },
       { href: "/dashboard/admin/marketplace/orders",icon: Storefront, label: "طلبات السوق" },
       { href: "/dashboard/admin/features",          icon: ToggleRight,label: "Feature Flags" },
     ],

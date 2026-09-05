@@ -1,18 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
+import { sha256Hex } from "@/lib/services/shareSecrets";
 
 /**
- * POST /api/v1/share/[token]/verify — Server-side passcode verification for a
- * secure document share link. Fixes the client-only "any 6 digits" hole: the
- * passcode is compared against the stored value on the server (service-role,
- * since document_shares has no public select policy).
+ * POST /api/v1/share/[token]/verify — owner item 174. Looked up by
+ * `token_hash` (never by the plaintext `token` column — that column is no
+ * longer written for new shares) and compares the submitted passcode's hash
+ * against `passcode_hash` in constant time. Service-role throughout:
+ * document_shares has no public select policy, on purpose — passcode
+ * verification must not be doable by a plain RLS-scoped read.
+ *
+ * On success this mints a 300-second signed URL for the shared storage
+ * object and returns it — the caller (src/app/share/[token]/page.tsx) opens
+ * that URL directly rather than being handed a document_id to fetch itself,
+ * since an anonymous share-link visitor has no RLS session to fetch with.
  *
  * Responses:
- *   404 { error } — no share row for this token
+ *   404 { error } — no share row for this token, or its document was never
+ *        attached to a storage object
  *   410 { error } — link has expired
  *   401 { error } — passcode mismatch
- *   200 { success: true, data: { title, document_id } } — verified (or the
- *        stored passcode is null → open link)
+ *   500 { error } — the storage sign step itself failed
+ *   200 { success: true, data: { title, url } } — verified (or the stored
+ *        passcode_hash is null → open link)
  */
 export async function POST(
   request: NextRequest,
@@ -20,6 +31,9 @@ export async function POST(
 ) {
   try {
     const { token } = await params;
+    if (typeof token !== "string" || token.trim().length === 0) {
+      return NextResponse.json({ error: "الرابط غير موجود" }, { status: 404 });
+    }
 
     let passcode = "";
     try {
@@ -34,8 +48,8 @@ export async function POST(
     const supabase = await createServiceClient();
     const { data: share, error } = await supabase
       .from("document_shares")
-      .select("token, document_id, title, passcode, expires_at")
-      .eq("token", token)
+      .select("document_path, title, passcode_hash, expires_at")
+      .eq("token_hash", sha256Hex(token))
       .maybeSingle();
 
     if (error) {
@@ -55,10 +69,17 @@ export async function POST(
       }
     }
 
-    // Passcode check. A null stored passcode means the link is open.
-    const storedPasscode = share.passcode;
-    if (storedPasscode != null && storedPasscode !== "") {
-      if (passcode !== storedPasscode) {
+    // Passcode check. A null stored hash means the link is open. Both sides
+    // of the compare are our own sha256Hex() output (64 lowercase hex chars)
+    // so the lengths always match once we reach timingSafeEqual — the length
+    // guard is still there because timingSafeEqual THROWS on a length
+    // mismatch instead of returning false.
+    const storedHash = share.passcode_hash as string | null;
+    if (storedHash) {
+      const submittedHash = Buffer.from(sha256Hex(passcode), "utf8");
+      const stored = Buffer.from(storedHash, "utf8");
+      const matches = submittedHash.length === stored.length && timingSafeEqual(submittedHash, stored);
+      if (!matches) {
         return NextResponse.json(
           { error: "الرجاء إدخال باسكود صحيح مكون من 6 أرقام" },
           { status: 401 },
@@ -66,11 +87,25 @@ export async function POST(
       }
     }
 
+    const documentPath = share.document_path as string | null;
+    if (!documentPath) {
+      return NextResponse.json({ error: "لا يوجد مستند مرتبط بهذا الرابط" }, { status: 404 });
+    }
+
+    const { data: signed, error: signError } = await supabase.storage
+      .from("documents")
+      .createSignedUrl(documentPath, 300);
+
+    if (signError || !signed?.signedUrl) {
+      console.error("[share verify POST] createSignedUrl failed:", signError?.message);
+      return NextResponse.json({ error: "تعذر فتح المستند" }, { status: 500 });
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         title: share.title ?? null,
-        document_id: share.document_id ?? null,
+        url: signed.signedUrl,
       },
     });
   } catch (err) {

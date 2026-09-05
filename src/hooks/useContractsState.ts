@@ -5,6 +5,7 @@ import { validateContractsIntake, partyIsNamed } from "@/lib/services/orderIntak
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
+import { createShare } from "@/lib/services/shareService";
 
 /**
  * Map a thrown submitOrder error to Arabic user-facing copy. Mirrors
@@ -77,6 +78,8 @@ export function useContractsState(linkedContract?: { id: string; title: string }
   const [linkCopied, setLinkCopied] = useState(false);
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
+  const [shareGenerating, setShareGenerating] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   // Review Mode States
   const [rPartyFocus, setRPartyFocus] = useState("");
@@ -102,11 +105,39 @@ export function useContractsState(linkedContract?: { id: string; title: string }
   const [submitting, setSubmitting] = useState(false);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
 
-  function generateShareLink() {
-    const token = Math.random().toString(36).substring(2, 10).toUpperCase();
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    setShareLink(`https://nzamy.sa/share/${token}`);
-    setSharePasscode(code);
+  /**
+   * Owner item 174 — this used to mint a `Math.random()` token + 6-digit code
+   * straight into React state and persist nothing, so every link it produced
+   * 404'd at POST /api/v1/share/[token]/verify (document_shares had no
+   * writer). Now it asks the real backend (shareService.createShare) for a
+   * share row, which is why it is async and can fail.
+   *
+   * There is no dedicated "which document" input on this hook's ClientSharePanel
+   * (`onGenerate: () => void`, called by src/components/contracts/steps/draft/
+   * StepApproval.tsx and .../review/StepRReport.tsx — not this task's files),
+   * so this shares the first uploaded review-mode attachment. Draft mode never
+   * collects one, so it sets an honest error instead of minting a link to
+   * nothing.
+   */
+  async function generateShareLink() {
+    setShareError(null);
+    const attachment = attachments[0];
+    if (!attachment) {
+      setShareError("لا يوجد مستند مرفوع لمشاركته — أرفق ملفاً أولاً.");
+      return;
+    }
+    setShareGenerating(true);
+    try {
+      const result = await createShare({ attachmentId: attachment.documentId, withPasscode: true });
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      setShareLink(`${origin}${result.url}`);
+      setSharePasscode(result.passcode);
+    } catch (err) {
+      console.error("[useContractsState] generateShareLink failed:", err);
+      setShareError(err instanceof Error ? err.message : "تعذّر إنشاء رابط المشاركة");
+    } finally {
+      setShareGenerating(false);
+    }
   }
 
   async function startBPSearch() {
@@ -320,7 +351,7 @@ export function useContractsState(linkedContract?: { id: string; title: string }
     contractDesc, setContractDesc, courtType, setCourtType,
     clauses, setClauses, clauseEdits, setClauseEdits, newClause, setNewClause, additionalClauses, setAdditionalClauses,
     bpSearching, setBpSearching, bpDone, setBpDone, appliedBP, setAppliedBP, skipBP, setSkipBP, deepSearch, setDeepSearch, startBPSearch,
-    shareLink, setShareLink, sharePasscode, setSharePasscode, linkCopied, setLinkCopied, clientEmail, setClientEmail, clientPhone, setClientPhone, generateShareLink,
+    shareLink, setShareLink, sharePasscode, setSharePasscode, linkCopied, setLinkCopied, clientEmail, setClientEmail, clientPhone, setClientPhone, generateShareLink, shareGenerating, shareError,
     rPartyFocus, setRPartyFocus, rFears, setRFears, rOtherParty, setROtherParty, rClauseDecisions, setRClauseDecisions,
     paraEdits, setParaEdits, generalEdits, setGeneralEdits,
     submitting, submitErrors, submitOrder,

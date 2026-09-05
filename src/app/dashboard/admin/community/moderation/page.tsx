@@ -13,6 +13,12 @@ import {
 import { motion } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
 import type { CommunityModerationItem, CommunityModerationStatus } from "@/types/adminBackendReady";
+import { toArabicDigits } from "@/lib/services/arabicCount";
+
+// Additive, real field the GET route now returns per post (see its own header
+// comment) — not on `CommunityModerationItem` itself (out of this page's
+// ownership), so it is carried as a local widening rather than an edit there.
+type ModerationRow = CommunityModerationItem & { reportCount?: number };
 
 const STATUS_LABEL: Record<CommunityModerationStatus, string> = {
   pending: "بانتظار المراجعة",
@@ -58,6 +64,7 @@ const INITIAL_REPORTS: CommunityModerationItem[] = [
 interface ModerationApiItem extends CommunityModerationItem {
   category?: string;
   visibility?: string;
+  reportCount?: number;
 }
 
 // The page's decision buttons pass UI statuses (approved/rejected/escalated).
@@ -71,7 +78,7 @@ const STATUS_TO_ACTION: Record<CommunityModerationStatus, string> = {
 
 export default function AdminCommunityModerationPage() {
   const { isDark } = useTheme();
-  const [reports, setReports] = useState<CommunityModerationItem[]>(INITIAL_REPORTS);
+  const [reports, setReports] = useState<ModerationRow[]>(INITIAL_REPORTS);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("جاري تحميل طابور الإشراف...");
 
@@ -97,6 +104,7 @@ export default function AdminCommunityModerationPage() {
               assignedModerator: row.assignedModerator,
               status: row.status,
               createdAt: row.createdAt,
+              reportCount: row.reportCount,
             })),
           );
           setToast("طابور الإشراف متصل بقاعدة البيانات. القرارات تُحفظ على المنشور مباشرة.");
@@ -213,7 +221,17 @@ export default function AdminCommunityModerationPage() {
                 <p className={`text-xs font-mono mb-1 ${muted}`}>{item.id} · {item.createdAt}</p>
                 <h2 className={`font-black ${isDark ? "text-white" : "text-gray-900"}`}>{item.postTitle}</h2>
               </div>
-              <StatusBadge status={item.status} />
+              <div className="flex items-center gap-2">
+                {!!item.reportCount && item.reportCount > 0 && (
+                  <span
+                    title="عدد البلاغات الفعلية على هذا المنشور (community_reports)"
+                    className={`text-[11px] px-2 py-1 rounded-full font-bold whitespace-nowrap ${isDark ? "bg-rose-500/10 text-rose-300" : "bg-rose-50 text-rose-700"}`}
+                  >
+                    {toArabicDigits(item.reportCount)} بلاغ
+                  </span>
+                )}
+                <StatusBadge status={item.status} />
+              </div>
             </div>
             <div className={`p-3 rounded-xl ${isDark ? "bg-white/[0.03]" : "bg-gray-50"}`}>
               <p className={`text-xs font-bold mb-1 ${muted}`}>سبب البلاغ</p>

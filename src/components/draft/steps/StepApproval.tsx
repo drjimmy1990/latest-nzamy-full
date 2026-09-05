@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { NajizOptimizerModal } from "@/components/draft/NajizOptimizerModal";
 import { MOCK_DRAFT } from "@/components/draft/draftConstants";
+import { createShare } from "@/lib/services/shareService";
 
 interface StepApprovalProps {
   isDark: boolean;
@@ -25,6 +26,14 @@ interface StepApprovalProps {
   setShareLink: (v: string | null) => void;
   setSharePasscode: (v: string | null) => void;
   generateShareLink: () => void;
+  /**
+   * attachments.id (bigserial) of the document each client row's "إنشاء رابط"
+   * shares — owner item 174. This component has no caller yet (unreferenced,
+   * see draftConstants.ts's CLIENT_VISIBLE_STEPS comment), so there is no
+   * live wiring to test this against; optional, and every row shows an
+   * honest Arabic error instead of a link when it is absent.
+   */
+  attachmentId?: string;
 }
 
 // ─── AI memo summary ──────────────────────────────────────────────────────────
@@ -49,10 +58,15 @@ interface ClientEntry {
   link: string | null;
   passcode: string | null;
   linkCopied: boolean;
+  generating: boolean;
+  error: string | null;
 }
 
 function makeClient(id: number): ClientEntry {
-  return { id, name: "", email: "", phone: "", note: "", noteMode: "none", link: null, passcode: null, linkCopied: false };
+  return {
+    id, name: "", email: "", phone: "", note: "", noteMode: "none",
+    link: null, passcode: null, linkCopied: false, generating: false, error: null,
+  };
 }
 
 // ─── Single client row ────────────────────────────────────────────────────────
@@ -197,25 +211,19 @@ function ClientRow({
 
         {/* Generate link */}
         {!client.link ? (
-          <motion.button whileTap={{ scale: 0.97 }} onClick={onGenerate}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#C8A762] px-4 py-2 text-[11px] font-bold text-white">
-            <Lock size={11} weight="fill" />إنشاء رابط + باسكود
-          </motion.button>
+          <>
+            {client.error && (
+              <div className={`rounded-xl p-2.5 border mb-2 ${isDark ? "border-red-700/30 bg-red-900/10" : "border-red-200 bg-red-50"}`}>
+                <p className={`text-[10px] leading-relaxed ${isDark ? "text-red-300" : "text-red-700"}`}>{client.error}</p>
+              </div>
+            )}
+            <motion.button whileTap={{ scale: 0.97 }} onClick={onGenerate} disabled={client.generating}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#C8A762] px-4 py-2 text-[11px] font-bold text-white disabled:opacity-60">
+              <Lock size={11} weight="fill" />{client.generating ? "جارٍ الإنشاء..." : "إنشاء رابط + باسكود"}
+            </motion.button>
+          </>
         ) : (
           <div className="space-y-2">
-            {/*
-             * Same disclosure as ClientSharePanel, same reason: `generateForClient`
-             * mints link + passcode in React state and persists nothing, and
-             * `document_shares` has no writer anywhere in the repository — so the
-             * client meets «الرابط غير موجود». The passcode-separation guidance
-             * below is correct practice and stays; what must not stand is the
-             * implication that the link works today.
-             */}
-            <div className={`rounded-xl p-2.5 border ${isDark ? "border-amber-700/30 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-              <p className={`text-[10px] leading-relaxed ${isDark ? "text-amber-300" : "text-amber-800"}`}>
-                مشاركة المذكرة غير مفعّلة بعد على الخادم — الرابط لن يفتح لدى العميل.
-              </p>
-            </div>
             <div className={`rounded-xl p-2.5 border flex items-center gap-2 ${isDark ? "border-emerald-700/25 bg-emerald-900/8" : "border-emerald-200 bg-emerald-50"}`}>
               <CheckCircle size={11} weight="fill" className="text-emerald-500 flex-shrink-0" />
               <code className={`flex-1 text-[10px] font-mono truncate ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{client.link}</code>
@@ -243,6 +251,7 @@ function ClientRow({
                 <p className={`text-[10px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                   لا تُرسل الباسكود مع الرابط في نفس الرسالة — فالحماية كلها في فصلهما.
                   سلّمه بقناة أخرى (اتصال هاتفي أو رسالة نصية).
+                  احفظه الآن — لن يُعرض مرة أخرى بعد مغادرة هذه الصفحة.
                 </p>
               </div>
             </div>
@@ -272,7 +281,7 @@ function ClientRow({
 export function StepApproval({
   isDark, shareLink, sharePasscode, linkCopied, setLinkCopied,
   clientEmail, setClientEmail, clientPhone, setClientPhone,
-  setShareLink, setSharePasscode, generateShareLink,
+  setShareLink, setSharePasscode, generateShareLink, attachmentId,
 }: StepApprovalProps) {
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
 
@@ -295,10 +304,29 @@ export function StepApproval({
   function updateClient(id: number, fields: Partial<ClientEntry>) {
     setClients(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
   }
-  function generateForClient(id: number) {
-    const token = Math.random().toString(36).substring(2, 10).toUpperCase();
-    const code  = String(Math.floor(100000 + Math.random() * 900000));
-    updateClient(id, { link: `https://nzamy.sa/share/${token}`, passcode: code });
+  // Owner item 174 — this used to mint a Math.random() token + 6-digit code
+  // straight into this row's state and persist nothing (document_shares had
+  // no writer, so the link 404'd at verify). `attachmentId` is not yet wired
+  // by any caller (this component is unreferenced — see the prop's own
+  // comment), so a row asked to generate before one exists gets an honest
+  // error instead of a link to nothing.
+  async function generateForClient(id: number) {
+    updateClient(id, { error: null });
+    if (!attachmentId) {
+      updateClient(id, { error: "لا يوجد مستند لمشاركته — لم تُرفق المذكرة بعد." });
+      return;
+    }
+    updateClient(id, { generating: true });
+    try {
+      const result = await createShare({ attachmentId, withPasscode: true });
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      updateClient(id, { link: `${origin}${result.url}`, passcode: result.passcode, generating: false });
+    } catch (err) {
+      updateClient(id, {
+        error: err instanceof Error ? err.message : "تعذّر إنشاء رابط المشاركة",
+        generating: false,
+      });
+    }
   }
 
   function startRec() { setRecording(true); setRecSeconds(0); timerRef.current = setInterval(() => setRecSeconds(s => s + 1), 1000); }

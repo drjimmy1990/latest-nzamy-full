@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main, owner-edits]
+  pull_request:
+    branches: [main, owner-edits]
+
+jobs:
+  test:
+    name: type-check, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Unit tests
+        run: npm run test:unit
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run lint` runs plain `eslint .` (see eslint.config.mjs at the repo
+      # root). ESLint's own exit-code rule already gives us "fail only on
+      # errors": with no --max-warnings flag, ESLint exits 1 only when at
+      # least one rule fires at severity "error"; any number of "warn"
+      # findings leaves the exit code at 0. `--max-warnings=-1` is not a real
+      # flag (the only valid values are non-negative integers, and 0 means
+      # "zero warnings allowed" — the opposite of what we want), and setting
+      # `--max-warnings 10000` would just be a very large ceiling on top of
+      # the same default behaviour — it adds a second failure mode (a
+      # warning-count regression) that this task doesn't ask for and that
+      # would make CI flaky as the warning count drifts on an unrelated PR.
+      # So we deliberately run the bare script and rely on ESLint's default
+      # semantics rather than bolting on --max-warnings.
+      #
+      # NOTE for the owner: this currently means CI's lint job is red on a
+      # plain `main` checkout — `eslint.config.mjs` leaves
+      # `react-hooks/preserve-manual-memoization` at its eslint-config-next
+      # default of "error", and 7 pre-existing findings across
+      # `src/app/dashboard/firm/contracts/page.tsx`,
+      # `src/app/dashboard/lawyer/consultations/page.tsx` and
+      # `src/app/dashboard/lawyer/contracts/page.tsx` trip it today. That
+      # config file and those pages are not owned by this task (only ci.yml
+      # and package.json's `engines` are), so they were left untouched;
+      # fixing the 7 findings or demoting that one rule to "warn" in
+      # eslint.config.mjs is a separate, small follow-up.
+      #
+      # This job runs standalone (not `needs` by `build` below) so that one
+      # unrelated lint regression can never make the optional build job
+      # unreachable — see the `check-secrets`/`build` comment for why that
+      # matters. `next build` runs its own ESLint pass by default too, so if
+      # the 7 findings above are still open when `build` actually executes
+      # (i.e. once the repo/org secrets are configured), that build will hit
+      # the same pre-existing errors — again out of scope for this task.
+      - name: Lint
+        run: npm run lint
+
+  check-secrets:
+    name: check optional-build secrets
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.check.outputs.ok }}
+    steps:
+      # The `secrets` context is only readable at certain locations in a
+      # workflow (job `env`, step `env`/`if`, step `run`) — NOT at
+      # `jobs.<job_id>.if`. Referencing `secrets.*` directly in the `build`
+      # job's own `if:` (as an earlier version of this file did) is invalid
+      # at that scope and surfaces as "Unrecognized named-value: secrets"
+      # regardless of whether the secrets are actually configured — the
+      # opposite of the intended silent-skip behaviour. So the check runs
+      # here, in a step (where `secrets` IS valid), and the boolean result is
+      # published as a job output; `build` below reads that output through
+      # `needs`, which — unlike `secrets` — IS valid in a job-level `if:`.
+      - id: check
+        run: echo "ok=${{ secrets.NEXT_PUBLIC_SUPABASE_URL != '' && secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' }}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build (optional — needs Supabase secrets)
+    needs: [test, check-secrets]
+    runs-on: ubuntu-latest
+    if: needs.check-secrets.outputs.ok == 'true'
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build

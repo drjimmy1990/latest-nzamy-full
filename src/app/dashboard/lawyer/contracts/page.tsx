@@ -10,7 +10,7 @@
  * local status buttons, no client-only draft that vanishes on reload.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
@@ -93,21 +93,16 @@ export default function LawyerContractsPage() {
   const draftCount = items.filter((c) => c.status === "draft").length;
   const expiringSoonCount = items.filter((c) => contractExpiryState(c.endsOn) === "expiring_soon").length;
 
-  const statusCounts = useMemo(() => {
-    const m = new Map<ContractStatus, number>();
-    for (const s of CONTRACT_STATUSES) m.set(s, 0);
-    for (const c of items) m.set(c.status, (m.get(c.status) ?? 0) + 1);
-    return m;
-  }, [items]);
+  const statusCounts = new Map<ContractStatus, number>();
+  for (const s of CONTRACT_STATUSES) statusCounts.set(s, 0);
+  for (const c of items) statusCounts.set(c.status, (statusCounts.get(c.status) ?? 0) + 1);
 
-  const filtered = useMemo(() => {
-    const q = search.trim();
-    return items.filter((c) => {
-      const matchStatus = statusFilter === "all" || c.status === statusFilter;
-      const matchSearch = !q || c.title.includes(q) || (c.counterpartyName ?? "").includes(q);
-      return matchStatus && matchSearch;
-    });
-  }, [items, statusFilter, search]);
+  const filteredSearch = search.trim();
+  const filtered = items.filter((c) => {
+    const matchStatus = statusFilter === "all" || c.status === statusFilter;
+    const matchSearch = !filteredSearch || c.title.includes(filteredSearch) || (c.counterpartyName ?? "").includes(filteredSearch);
+    return matchStatus && matchSearch;
+  });
 
   // `truncationNoticeAr` was deliberately NOT used here: its wording («استخدم
   // البحث للوصول إلى الباقي») is only true when search reaches every row on
