@@ -4,6 +4,7 @@ import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import type { FirmRole } from "@/types/firmBackendReady";
 import { FIRM_TEAM_VIEW_ROLES, resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
+import { escapeLikePattern } from "@/lib/services/likePattern";
 
 /**
  * /api/v1/firm/members — Phase 2 (خطة_البناء_الكاملة §6, migration
@@ -200,10 +201,15 @@ export async function POST(request: NextRequest) {
     }
 
     const service = await createServiceClient();
+    // PostgREST maps `*` to `%` and hands the rest to SQL ILIKE, where `%` and
+    // `_` are wildcards. An e-mail address is a literal: neutralise all of them so
+    // an owner cannot enumerate other accounts with a pattern (review MUST FIX 1).
+    const emailPattern = escapeLikePattern(email.trim());
+
     const { data: account, error: accountError } = await service
       .from("profiles")
       .select("id, display_name, email, user_type")
-      .ilike("email", email.trim())
+      .ilike("email", emailPattern)
       .in("user_type", ["lawyer", "individual"])
       .maybeSingle();
 

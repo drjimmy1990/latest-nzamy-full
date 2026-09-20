@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * GET /api/v1/admin/stats — Real admin dashboard KPIs
@@ -22,7 +23,8 @@ export async function GET() {
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json(
       { error: "غير مصرح — يرجى تسجيل الدخول" },
       { status: 401 },

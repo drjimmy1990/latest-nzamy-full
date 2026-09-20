@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { randomUUID } from "crypto";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * POST /api/v1/groups/[id]/invite — Generate (or return) the group's invite
@@ -22,7 +23,8 @@ export async function POST(
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

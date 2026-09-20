@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import {
   canClaimAccountType,
   sectorRowValuesFor,
@@ -268,7 +269,8 @@ export async function POST(request: NextRequest) {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+    if (!user) {
       return NextResponse.json({ error: AR.unauthorized }, { status: 401 });
     }
 

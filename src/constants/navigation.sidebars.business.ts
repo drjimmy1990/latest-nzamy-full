@@ -19,6 +19,7 @@ import type { SidebarGroup } from "./navigation.types";
 //   الدوائر والإيميلات    → business/circuits-emails/page.tsx:25   INITIAL_CIRCUITS
 //   الأقسام               → business/departments/page.tsx:43       MOCK_DEPTS
 //   إدارة الفريق           → business/team/page.tsx:72             MEMBERS (+ a fake invite link, :141)
+//                              — RE-ADDED 2026-09-20, see the note below
 //   لوحة المهام            → business/kanban/page.tsx:67           MOCK_CARDS
 //   عقود الموظفين         → business/employee-contracts/page.tsx:34  CONTRACTS
 //   التقارير               → business/reports/page.tsx:14          DEPT_REPORTS / MONTHLY_TREND
@@ -62,12 +63,25 @@ import type { SidebarGroup } from "./navigation.types";
 // /dashboard/business/documents was built. Re-adding the link is all that is
 // needed to re-open the route, because VISIBLE_BUSINESS_ROUTES below is
 // derived from this array rather than maintained beside it.
+//
+// «إدارة الفريق» came BACK on 2026-09-20 (WP-6 B-5/B-6, owner decision Q7) for
+// the same reason and only for it: the page no longer renders MEMBERS — four
+// invented people and a fake `https://nezamy.sa/invite/x7k2m9p` link — it
+// reads and writes `public.business_members` through /api/v1/business/members.
+// The route re-opens simply by being listed here; nothing else is needed, and
+// nothing else was re-added. labelEn "Team" is already in
+// CORP_ROLE_ALLOWED_ITEMS for `owner` and `hr_manager`
+// (navigation.sidebars.ts:293,297), which is the right audience: the API and
+// RLS allow an active member to READ the roster and only the owner to change
+// it, and the page hides its write controls on the server's own `canManage`.
 export const CORPORATE_SIDEBAR: SidebarGroup[] = [
   {
     items: [
       { label: "نظرة عامة", labelEn: "Overview", href: "/dashboard/business", icon: "SquaresFour" },
       // Owner item ٨ — «ارفع وثائق المنشأة مرة واحدة وأرفقها بنقرة».
       { label: "خزنة وثائق المنشأة", labelEn: "Company Documents", href: "/dashboard/business/documents", icon: "FolderOpen" },
+      // WP-6 B-5/B-6 — a real roster over public.business_members.
+      { label: "إدارة الفريق", labelEn: "Team", href: "/dashboard/business/team", icon: "UsersThree" },
     ],
   },
   {

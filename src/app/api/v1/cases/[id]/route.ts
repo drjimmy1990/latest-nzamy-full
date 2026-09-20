@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * GET /api/v1/cases/[id] — Get case detail with related attachments
@@ -14,7 +15,8 @@ export async function GET(
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

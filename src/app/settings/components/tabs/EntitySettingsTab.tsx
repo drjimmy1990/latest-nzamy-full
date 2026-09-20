@@ -9,77 +9,20 @@ import { entityProfileTableFor } from "@/lib/services/profileSettingsFields";
 import { LEGAL_REP_CAPACITIES } from "@/app/register/client/components/_corporateIdentity";
 import { EmptyPanel, LocalActionStatus, SectionTitle } from "./_shared";
 
+import {
+  entitySettingsFieldsFor,
+  identityFieldsFor,
+  splitEntityTabValues,
+  type FieldDef,
+} from "./_entitySettingsFields";
+import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
+
 // ── Field definitions per entity type ──────────────────────────────────
 //
-// Two different storage targets, per task S1:
-//   • corporate  → the four REAL business_profiles columns added by
-//     20260826_corporate_identity_persisted.sql (company_name_ar, cr_number,
-//     legal_rep_name, legal_rep_capacity). No other field is added here —
-//     that IS the whole real column set, and a fifth invented field would be
-//     exactly the "placeholder-only trick" this tab is being fixed to drop.
-//   • firm / micro / government / ngo → `entitySettings`
-//     (<table>.metadata.settings), a generic jsonb bag any well-formed key
-//     may live in. Every key below was chosen to NAME NOTHING that already
-//     has a real column on that entity's table (firm_profiles.name_ar /
-//     license_number / license_expiry; government_profiles.entity_name_ar;
-//     ngo_profiles.org_name_ar; micro_profiles.business_name) — editing one
-//     of THOSE through a jsonb key would silently diverge from the value
-//     every other screen reads, which is a worse lie than the placeholder
-//     inputs it replaces. So this tab does not offer an "official name" or
-//     "license number" field for those four types at all; only contact/
-//     registration data with no column anywhere.
-interface FieldDef {
-  key: string;
-  label: string;
-  placeholder: string;
-  type?: string;
-  span?: 2;
-}
-
-const CORPORATE_FIELDS: FieldDef[] = [
-  { key: "companyName", label: "اسم الشركة الرسمي", placeholder: "شركة البناء المتقدمة المحدودة" },
-  { key: "crNumber", label: "رقم السجل التجاري", placeholder: "1010XXXXXX" },
-  { key: "legalRepName", label: "اسم الممثل النظامي", placeholder: "عبدالعزيز محمد القرني" },
-  // legalRepCapacity renders as a <select>, not this generic input list —
-  // see the dedicated block in the corporate branch below.
-];
-
-const ENTITY_SETTINGS_FIELDS: Record<string, FieldDef[]> = {
-  firm: [
-    { key: "crNumber", label: "رقم السجل التجاري", placeholder: "4030XXXXXX" },
-    { key: "vatNumber", label: "الرقم الضريبي (VAT)", placeholder: "3XXXXXXXXXXXXXXX" },
-    { key: "address", label: "العنوان الرسمي", placeholder: "حي الملقا، طريق الأمير محمد بن سلمان", span: 2 },
-    { key: "city", label: "المدينة", placeholder: "الرياض" },
-    { key: "phone", label: "الرقم الموحد", placeholder: "920XXXXXXX" },
-    { key: "email", label: "البريد الإلكتروني الرسمي", placeholder: "info@nezamy.sa" },
-    { key: "website", label: "الموقع الإلكتروني", placeholder: "https://nezamy.sa" },
-    { key: "specialties", label: "التخصصات الرئيسية", placeholder: "قانون تجاري، منازعات، ملكية فكرية", span: 2 },
-    { key: "description", label: "نبذة عن المكتب", placeholder: "مكتب محاماة متخصص في القضايا التجارية والملكية الفكرية", span: 2 },
-  ],
-  micro: [
-    { key: "crNumber", label: "رقم السجل التجاري", placeholder: "4650XXXXXX" },
-    { key: "address", label: "العنوان", placeholder: "حي النسيم، الرياض", span: 2 },
-    { key: "phone", label: "رقم التواصل", placeholder: "05X XXX XXXX" },
-    { key: "email", label: "البريد الإلكتروني", placeholder: "khaled@mybiz.sa" },
-  ],
-  government: [
-    { key: "address", label: "العنوان الرسمي", placeholder: "حي المعذر، الرياض", span: 2 },
-    { key: "phone", label: "رقم التواصل", placeholder: "1950" },
-    { key: "email", label: "البريد الإلكتروني الرسمي", placeholder: "info@moj.gov.sa" },
-  ],
-  ngo: [
-    { key: "address", label: "العنوان", placeholder: "حي الورود، الرياض", span: 2 },
-    { key: "phone", label: "الرقم الموحد", placeholder: "920XXXXXXX" },
-    { key: "email", label: "البريد الإلكتروني", placeholder: "info@huquq.org.sa" },
-    { key: "website", label: "الموقع الإلكتروني", placeholder: "https://huquq.org.sa" },
-  ],
-};
-
-// A stable (module-level, never-recreated) empty array — so `fields` below
-// keeps one identity across renders even for an unmapped userType, and a
-// `useEffect` depending on it never sees a "changed" reference it did not
-// actually change (react-hooks/exhaustive-deps flags a fresh `?? []` here).
-const EMPTY_FIELDS: FieldDef[] = [];
+// Moved to ./_entitySettingsFields.ts (WP-6 B-1) so the two-arm split can be
+// unit-tested without importing this React component. Read that file's header
+// for which key goes to which PATCH target, and why corporate now renders
+// BOTH arms instead of only the real-column one.
 
 const ENTITY_LABEL: Record<string, string> = {
   firm: "بيانات المكتب",
@@ -90,9 +33,20 @@ const ENTITY_LABEL: Record<string, string> = {
 };
 
 // ── The server envelope (GET/PATCH /api/v1/profile) — only what this tab reads ──
+type BusinessProfileScope = "owner" | "member" | "none";
+
 interface ProfileServerRow {
   entitySettings: Record<string, unknown> | null;
   businessProfile: Record<string, unknown> | null;
+  /**
+   * Corporate only (WP-6 B-3). «you may not edit this» and «nothing is saved
+   * yet» used to arrive here as the same value — a null businessProfile — so
+   * a member was shown four blank inputs with Save enabled over a PATCH that
+   * could only ever fail. An older deploy of the route omits the key; that
+   * reads as `undefined` and is treated as "owner", which is exactly the
+   * behaviour this tab had before the key existed.
+   */
+  businessProfileScope?: BusinessProfileScope;
   // `true` when the route's entity-table sub-read failed — the request still
   // answered 200 because `profiles` itself was read fine (route.ts's GET
   // docstring). Optional so an older deploy of the route (which did not send
@@ -118,7 +72,11 @@ function arabicEntityError(err: unknown): string {
 export function EntitySettingsTab() {
   const { userType, loading, isLoggedIn } = useUser();
   const isCorporate = userType === "corporate";
-  const fields = isCorporate ? CORPORATE_FIELDS : ENTITY_SETTINGS_FIELDS[userType ?? ""] ?? EMPTY_FIELDS;
+  // BOTH arms, not either/or (WP-6 B-1). `identityFields` are the real
+  // business_profiles columns (corporate only); `settingsFields` are the jsonb
+  // bag every mapped entity type — corporate included since B-1 — shares.
+  const identityFields = identityFieldsFor(userType ?? "");
+  const settingsFields = entitySettingsFieldsFor(userType ?? "");
   const hasEntity = isCorporate || Boolean(entityProfileTableFor(userType ?? ""));
 
   const [values, setValues] = useState<Record<string, string>>({});
@@ -128,6 +86,23 @@ export function EntitySettingsTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [scope, setScope] = useState<BusinessProfileScope>("owner");
+
+  // The bag's `phone` key is a Saudi mobile for every entity type — the server
+  // normalises it to E.164 and 400s anything else (validateEntitySettingsPatch).
+  // Checking it here too is what turns that 400 into a message beside the field
+  // instead of a red banner after a round trip.
+  const phoneInBag = settingsFields.some((f) => f.key === "phone");
+  const phoneRaw = values.phone ?? "";
+  const phoneResult = normalizeSaudiMobile(phoneRaw);
+  const phoneInvalid = phoneInBag && phoneRaw.trim() !== "" && !phoneResult.ok;
+
+  // WP-6 B-2 — owner-only writes (plan §5 Q2). A member reads the company's
+  // real data and is TOLD who may change it, instead of being handed an
+  // editable form whose Save can only ever 403.
+  const readOnly = scope === "member";
+  const noBusinessRow = isCorporate && scope === "none";
 
   useEffect(() => {
     if (loading || !hasEntity) return;
@@ -152,20 +127,22 @@ export function EntitySettingsTab() {
       try {
         const res = await apiGet<ProfileServerRow>("/api/v1/profile");
         if (cancelled) return;
-        if (isCorporate) {
+        setScope(res.businessProfileScope ?? "owner");
+        const next: Record<string, string> = {};
+        if (identityFields.length > 0) {
           const bp = res.businessProfile ?? {};
-          setValues({
-            companyName: toText(bp.company_name_ar),
-            crNumber: toText(bp.cr_number),
-            legalRepName: toText(bp.legal_rep_name),
-          });
+          next.companyName = toText(bp.company_name_ar);
+          next.crNumber = toText(bp.cr_number);
+          next.legalRepName = toText(bp.legal_rep_name);
+          // Both columns are NOT NULL with a default, so an absent value here
+          // means the row was not read — not that the company answered "no".
+          next.serviceModel = toText(bp.service_model);
+          next.hasLegalDept = bp.has_legal_dept === true ? "true" : "false";
           setLegalRepCapacity(toText(bp.legal_rep_capacity));
-        } else {
-          const es = res.entitySettings ?? {};
-          const next: Record<string, string> = {};
-          for (const f of fields) next[f.key] = toText(es[f.key]);
-          setValues(next);
         }
+        const es = res.entitySettings ?? {};
+        for (const f of settingsFields) next[f.key] = toText(es[f.key]);
+        setValues(next);
 
         // A 200 response is not proof the entity-table read behind it
         // succeeded. The route reports a failed sub-read as
@@ -193,9 +170,10 @@ export function EntitySettingsTab() {
     return () => {
       cancelled = true;
     };
-  }, [loading, isLoggedIn, userType, isCorporate, hasEntity, fields]);
+  }, [loading, isLoggedIn, userType, isCorporate, hasEntity, identityFields, settingsFields]);
 
   const handleChange = (key: string, value: string) => {
+    if (key === "phone") setPhoneTouched(true);
     setValues((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -209,32 +187,31 @@ export function EntitySettingsTab() {
       return;
     }
 
+    // Refused before the request, not after: a 400 on the phone would abort
+    // the WHOLE patch — including the address and the CR number the user also
+    // just typed — so the field is fixed first.
+    if (phoneInvalid) {
+      setPhoneTouched(true);
+      setError(saudiMobileMessage(phoneResult));
+      return;
+    }
+
     setSaving(true);
     try {
-      if (isCorporate) {
-        const businessProfile: Record<string, unknown> = {};
-        const name = (values.companyName ?? "").trim();
-        // company_name_ar is NOT NULL — omit rather than send a blank that
-        // would 400, matching ProfileTab's displayName/phone omission rule.
-        if (name) businessProfile.company_name_ar = name;
-        const cr = (values.crNumber ?? "").trim();
-        businessProfile.cr_number = cr === "" ? null : cr;
-        const repName = (values.legalRepName ?? "").trim();
-        businessProfile.legal_rep_name = repName === "" ? null : repName;
-        businessProfile.legal_rep_capacity = legalRepCapacity === "" ? null : legalRepCapacity;
-
-        if (Object.keys(businessProfile).length > 0) {
-          await apiMutate("/api/v1/profile", "PATCH", { businessProfile });
-        }
-      } else {
-        const entitySettings: Record<string, string | null> = {};
-        for (const f of fields) {
-          const trimmed = (values[f.key] ?? "").trim();
-          entitySettings[f.key] = trimmed === "" ? null : trimmed;
-        }
-        if (Object.keys(entitySettings).length > 0) {
-          await apiMutate("/api/v1/profile", "PATCH", { entitySettings });
-        }
+      // ONE PATCH carrying both keys. The route validates and applies them
+      // independently (its `entitySettings` and `businessProfile` arms), so a
+      // company's identity columns and its contact bag are saved by the same
+      // «حفظ التغييرات» rather than by two requests that can half-succeed.
+      const { businessProfile, entitySettings } = splitEntityTabValues(
+        userType ?? "",
+        values,
+        legalRepCapacity,
+      );
+      const body: Record<string, unknown> = {};
+      if (businessProfile && Object.keys(businessProfile).length > 0) body.businessProfile = businessProfile;
+      if (entitySettings && Object.keys(entitySettings).length > 0) body.entitySettings = entitySettings;
+      if (Object.keys(body).length > 0) {
+        await apiMutate("/api/v1/profile", "PATCH", body);
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -245,12 +222,98 @@ export function EntitySettingsTab() {
     }
   };
 
+  const controlClass =
+    "w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-dark-card text-zinc-800 dark:text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-royal/30 focus:border-royal dark:focus:border-[#C8A762] transition-colors disabled:cursor-not-allowed disabled:bg-zinc-50 dark:disabled:bg-white/[0.02] disabled:text-zinc-500";
+
+  const renderField = (field: FieldDef) => {
+    if (field.control === "select") {
+      return (
+        <div key={field.key} className={field.span === 2 ? "sm:col-span-2" : ""}>
+          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
+            {field.label}
+          </label>
+          <select
+            value={values[field.key] ?? ""}
+            onChange={(e) => handleChange(field.key, e.target.value)}
+            disabled={readOnly}
+            className={controlClass}
+          >
+            <option value="">— غير محدّد —</option>
+            {(field.options ?? []).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      );
+    }
+
+    if (field.control === "toggle") {
+      const on = values[field.key] === "true";
+      return (
+        <div key={field.key} className={field.span === 2 ? "sm:col-span-2" : ""}>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 dark:border-white/[0.08] px-4 py-2.5">
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{field.label}</span>
+            <input
+              type="checkbox"
+              checked={on}
+              disabled={readOnly}
+              onChange={(e) => handleChange(field.key, e.target.checked ? "true" : "false")}
+              className="h-4 w-4 accent-royal disabled:cursor-not-allowed"
+            />
+          </label>
+        </div>
+      );
+    }
+
+    const isPhone = field.key === "phone";
+    const showPhoneError = isPhone && phoneTouched && phoneInvalid;
+    return (
+      <div key={field.key} className={field.span === 2 ? "sm:col-span-2" : ""}>
+        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
+          {field.label}
+        </label>
+        <input
+          type={field.type ?? (isPhone ? "tel" : "text")}
+          {...(isPhone ? { inputMode: "numeric" as const, dir: "ltr" as const } : {})}
+          placeholder={readOnly ? "" : field.placeholder}
+          value={values[field.key] ?? ""}
+          onChange={(e) => handleChange(field.key, e.target.value)}
+          disabled={readOnly}
+          aria-invalid={showPhoneError || undefined}
+          className={`w-full px-4 py-2.5 rounded-xl border bg-white dark:bg-dark-card text-zinc-800 dark:text-zinc-200 text-sm placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-royal/30 focus:border-royal dark:focus:border-[#C8A762] transition-colors disabled:cursor-not-allowed disabled:bg-zinc-50 dark:disabled:bg-white/[0.02] disabled:text-zinc-500 ${
+            showPhoneError
+              ? "border-rose-400 dark:border-rose-500/60"
+              : "border-gray-200 dark:border-white/[0.08]"
+          }`}
+        />
+        {showPhoneError && (
+          <p className="mt-1.5 text-xs text-rose-600 dark:text-rose-400">{saudiMobileMessage(phoneResult)}</p>
+        )}
+      </div>
+    );
+  };
+
   if (!hasEntity) {
     return (
       <EmptyPanel
         icon={<Buildings size={28} />}
         title="لا توجد بيانات كيان لهذا الحساب"
         description="هذه الصفحة مخصّصة لحسابات المكاتب والشركات والمنشآت والجهات — لا تنطبق على نوع حسابك الحالي."
+      />
+    );
+  }
+
+  // Corporate, but the server found neither an owned company row nor an active
+  // membership. A blank editable form here would invite the user to fill in a
+  // company that has no row to save it to.
+  if (noBusinessRow && ready && !loadFailed) {
+    return (
+      <EmptyPanel
+        icon={<Buildings size={28} />}
+        title="لا توجد شركة مرتبطة بهذا الحساب"
+        description="لم نجد شركة يملكها هذا الحساب ولا عضوية نشطة في شركة. تواصل مع مالك حساب الشركة لإضافتك عضواً، أو مع فريق نظامي إن كنت المالك."
       />
     );
   }
@@ -269,22 +332,11 @@ export function EntitySettingsTab() {
             <p className="text-[11px] text-zinc-400 dark:text-zinc-500">رفع شعار الكيان غير متاح بعد</p>
           </div>
 
-          {/* Fields grid */}
+          {/* Fields grid — the real-column arm first, then the jsonb bag.
+              A corporate account renders BOTH (WP-6 B-1); every other entity
+              type has an empty identity arm and only renders the bag. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {fields.map((field) => (
-              <div key={field.key} className={field.span === 2 ? "sm:col-span-2" : ""}>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                  {field.label}
-                </label>
-                <input
-                  type={field.type ?? "text"}
-                  placeholder={field.placeholder}
-                  value={values[field.key] ?? ""}
-                  onChange={(e) => handleChange(field.key, e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-dark-card text-zinc-800 dark:text-zinc-200 text-sm placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-royal/30 focus:border-royal dark:focus:border-[#C8A762] transition-colors"
-                />
-              </div>
-            ))}
+            {identityFields.map(renderField)}
 
             {/* legal_rep_capacity — a CHECK-constrained column, so a free-text
                 input could send a value the database would reject; the
@@ -297,7 +349,8 @@ export function EntitySettingsTab() {
                 <select
                   value={legalRepCapacity}
                   onChange={(e) => setLegalRepCapacity(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-dark-card text-zinc-800 dark:text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-royal/30 focus:border-royal dark:focus:border-[#C8A762] transition-colors"
+                  disabled={readOnly}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-dark-card text-zinc-800 dark:text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-royal/30 focus:border-royal dark:focus:border-[#C8A762] transition-colors disabled:cursor-not-allowed disabled:bg-zinc-50 dark:disabled:bg-white/[0.02] disabled:text-zinc-500"
                 >
                   <option value="">— غير محدّد —</option>
                   {LEGAL_REP_CAPACITIES.map((c) => (
@@ -308,9 +361,18 @@ export function EntitySettingsTab() {
                 </select>
               </div>
             )}
+
+            {settingsFields.map(renderField)}
           </div>
         </div>
       </div>
+
+      {readOnly && (
+        <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-600 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-zinc-300">
+          <Buildings size={15} weight="fill" />
+          هذه البيانات يعدّلها مالك الحساب فقط
+        </div>
+      )}
 
       {error && (
         <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
@@ -323,7 +385,10 @@ export function EntitySettingsTab() {
         message="تم تطبيق التغييرات في هذا المتصفح فقط — لا يوجد حساب محفوظ في وضع العرض."
       />
 
-      {/* Save */}
+      {/* Save — not rendered at all for a member: a disabled button would
+          still read as «you could save if you tried harder», and the PATCH
+          behind it answers 403 «تعديل بيانات الشركة متاح لمالك الحساب فقط». */}
+      {!readOnly && (
       <motion.button
         whileTap={{ scale: 0.98, y: 1 }}
         onClick={handleSave}
@@ -337,6 +402,7 @@ export function EntitySettingsTab() {
         ) : null}
         {saving ? "جاري الحفظ..." : saved ? "تم الحفظ" : "حفظ التغييرات"}
       </motion.button>
+      )}
     </div>
   );
 }

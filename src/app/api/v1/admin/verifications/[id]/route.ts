@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { dispatchVerificationToN8n } from "@/lib/n8n/dispatch";
 import { recordNotification } from "@/lib/notify";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * PATCH /api/v1/admin/verifications/[id] — Approve or reject a verification
@@ -24,7 +25,8 @@ export async function PATCH(
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
   }
 

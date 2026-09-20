@@ -31,9 +31,9 @@ import { StepIndicator, Step1, Step2, Step3, Step4, Step5 } from "./components/S
 import { setDemoSession, getPermissions } from "@/hooks/useUser";
 import type { UserSession, UserType } from "@/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
-import { normalizeSaudiMobile } from "@/lib/services/saudiMobile";
+import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
 
-const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
+import { BACKEND_MODE } from "@/lib/runtimeMode";
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function RegisterProviderPage() {
@@ -220,7 +220,7 @@ export default function RegisterProviderPage() {
     if (step === 2) return !!(formData.licenseNumber && formData.experience && formData.city);
     if (step === 3) {
       const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email || "");
-      return emailValid && normalizeSaudiMobile(formData.phone) !== null && (formData.password?.length ?? 0) >= 8;
+      return emailValid && normalizeSaudiMobile(formData.phone).ok && (formData.password?.length ?? 0) >= 8;
     }
     if (step === 4) return !!selectedPlan;
     return true;
@@ -391,12 +391,13 @@ export default function RegisterProviderPage() {
                           setAuthError(null);
                           try {
                             const supabase = createClient();
-                            const normalizedPhone = normalizeSaudiMobile(formData.phone);
-                            if (!normalizedPhone) {
-                              setAuthError(isAr ? "رقم الجوال غير صحيح" : "Invalid mobile number");
+                            const phoneResult = normalizeSaudiMobile(formData.phone);
+                            if (!phoneResult.ok) {
+                              setAuthError(isAr ? saudiMobileMessage(phoneResult) : "Invalid mobile number");
                               setAuthLoading(false);
                               return;
                             }
+                            const normalizedPhone = phoneResult.e164;
                             const { error } = await supabase.auth.signUp({
                               email: formData.email,
                               password: formData.password,

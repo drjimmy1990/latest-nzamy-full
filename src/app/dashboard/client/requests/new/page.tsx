@@ -5,9 +5,10 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, CheckCircle, FileText, UploadSimple,
-  Receipt, Paperclip, CaretLeft, PaperPlaneTilt, Info, X
+  Receipt, Paperclip, CaretLeft, PaperPlaneTilt, Info, X, Buildings
 } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
+import { businessIntakeNoticeAr } from "@/lib/services/businessOverview";
 import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 import { useTheme } from "@/components/ThemeProvider";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
@@ -202,10 +203,24 @@ export default function NewRequestWizard() {
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">موضوع الطلب الأساسي</label>
+              {/* maxLength={200} MIRRORS THE SERVER. The intake validator refuses
+                  a title longer than 200 characters (serviceRequestIntake, WP-4
+                  item 8 of the profiles completion plan), and this field is the
+                  only writer of it on this page — `subject` is sent as `title`
+                  at :123 and again inside `metadata.intake` at :173. Clamping it
+                  where it is typed stops the refusal from landing after the
+                  client has uploaded their attachments and pressed send, which
+                  is the one moment a 400 costs them real work.
+                  NO COUNTER OR HINT: nothing else on this form carries one — the
+                  description textarea below included — and
+                  src/components/reviews/ReviewForm.tsx:170 sets maxLength the
+                  same bare way. If a counter is ever wanted here it belongs on
+                  every field of the step, not on this one alone. */}
               <input
                 type="text"
                 value={subject}
                 onChange={e => setSubject(e.target.value)}
+                maxLength={200}
                 placeholder="مثال: مراجعة عقد شراكة تجارية"
                 className="w-full bg-white dark:bg-[#161b22] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#0B3D2E] focus:ring-1 focus:ring-[#0B3D2E] outline-none transition-all dark:text-white"
               />
@@ -294,6 +309,21 @@ export default function NewRequestWizard() {
       case 2:
         return (
           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
+
+            {/* WP-6 B-10. Attaching this request to the company used to be
+                entirely implicit (the source path, or user_type === corporate),
+                and this form lives under /dashboard/client, so the person
+                filling it in had no way to know whether they were filing on
+                their own behalf or their employer's — which decides who else
+                can read it afterwards. The submit payload already says
+                `entityScope: "business"` explicitly; this says the same thing
+                to the person pressing the button. */}
+            {user.businessMembership && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold leading-relaxed text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 flex items-start gap-2">
+                <Buildings size={16} weight="fill" className="flex-shrink-0 mt-0.5 text-[#0B3D2E] dark:text-[#C8A762]" />
+                <span>{businessIntakeNoticeAr(user.businessMembership.entityName)}</span>
+              </div>
+            )}
 
             {/* الإرسال مجاني — يقدّر الفريق السعر النهائي بعد القراءة. لا يوجد
                 أي خصم أو محفظة أو بطاقة في هذه الصفحة لأن أياً منها لا يُنفَّذ

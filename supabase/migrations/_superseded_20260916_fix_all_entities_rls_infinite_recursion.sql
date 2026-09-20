@@ -1,3 +1,15 @@
+-- ============================================================================
+-- SUPERSEDED — DO NOT APPLY.
+-- Superseded by 20260921_03_entity_rls_recursion_fix.sql.
+-- Why: (1) CREATE OR REPLACE FUNCTION cannot rename an input parameter — the
+--      20260903 helpers use p_firm/p_business/p_gov/p_ngo, this file redeclares
+--      them as *_id => ERROR 42P13 and the whole begin/commit block rolls back;
+--      (2) DROP POLICY IF EXISTS targets names that never existed, so the
+--      recursive 20260616 policies would survive even if (1) were fixed.
+-- Evidence: docs/audits/2026-09-20-profiles-uat/01-rls-audit.md §4
+-- Leading underscore = excluded from `supabase db push` (same as _verify.sql).
+-- ============================================================================
+
 -- ==============================================================================
 -- Migration: Fix 42P17 Infinite Recursion across ALL Multi-Member Entities
 -- Date: 2026-09-16

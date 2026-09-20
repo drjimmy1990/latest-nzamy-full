@@ -7,8 +7,10 @@ import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { checkOrderIntake, intakeErrorMessageAr } from "@/lib/services/intakeGuard";
+import { validateServiceRequestCreate } from "@/lib/services/serviceRequestIntake";
 import { resolveServiceRequestEntityScope } from "@/lib/auth/serviceRequestEntityScope";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 async function resolveActiveEntityIds(supabase: SupabaseClient, userId: string) {
   const [firmResult, businessResult, ownedFirmResult, ownedBusinessResult] = await Promise.all([
@@ -122,7 +124,8 @@ export async function GET(request: NextRequest) {
       error: authError,
     } = await supabase.auth.getUser();
 
-    if (authError || !user) {
+    if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -249,7 +252,8 @@ export async function POST(request: NextRequest) {
       error: authError,
     } = await supabase.auth.getUser();
 
-    if (authError || !user) {
+    if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -257,6 +261,21 @@ export async function POST(request: NextRequest) {
 
     // Support both wrapped { request: {...} } and flat payloads
     const requestData = body.request ?? body;
+
+    // UAT-LIVE-CASE-001 — shape contract for the row's OWN columns, before
+    // anything is read, charged or written. Distinct from checkOrderIntake
+    // below, which validates `metadata.intake` for the four AI services only
+    // and passes every other caller through: this route took `title` verbatim
+    // into a `text not null` column with no emptiness or length check, so an
+    // untitled case persisted and the one form that could produce it invented
+    // a title instead of refusing. Placed here rather than immediately before
+    // the insert so a malformed body cannot first trip the payment-gateway
+    // gate, the entity-scope resolution or the lawyer_clients lookup and come
+    // back with an unrelated reason. See src/lib/services/serviceRequestIntake.ts.
+    const shape = validateServiceRequestCreate(requestData);
+    if (!shape.ok) {
+      return NextResponse.json({ error: shape.error }, { status: shape.status });
+    }
 
     // B12 — payment-gateway gate: if a paid request is being created, ensure the
     // payments gateway is enabled. Free requests (amount === 0 / not_required)
@@ -406,10 +425,9 @@ export async function POST(request: NextRequest) {
     // has no right to attach a case to that card, whether it exists at all or
     // belongs to someone else.
     let lawyerClientId: string | null = null;
-    const requestedLawyerClientId =
-      typeof requestData.lawyerClientId === "string" && requestData.lawyerClientId.trim()
-        ? requestData.lawyerClientId.trim()
-        : null;
+    // Already shape-checked (present ⇒ a uuid) by validateServiceRequestCreate
+    // above; what is left here is the ownership check, which needs the database.
+    const requestedLawyerClientId = shape.value.lawyerClientId;
     if (requestedLawyerClientId) {
       const { data: clientRow, error: clientLookupError } = await supabase
         .from("lawyer_clients")
@@ -444,15 +462,15 @@ export async function POST(request: NextRequest) {
       .from("service_requests")
       .insert({
         id: requestData.id ?? crypto.randomUUID(),
-        title: requestData.title,
-        description: requestData.description ?? '',
-        type: requestData.type ?? 'service',
+        title: shape.value.title,
+        description: shape.value.description,
+        type: shape.value.type,
         status,
         requester_user_id: user.id,
         source_path: requestData.sourcePath ?? requestData.source_path ?? '',
         assigned_to: requestData.assignedTo ?? requestData.assigned_to ?? null,
-        receiver: requestData.receiver ?? 'lawyer',
-        requester: requestData.requester ?? {},
+        receiver: shape.value.receiver,
+        requester: shape.value.requester,
         payment: persistedPayment,
         metadata: requestData.metadata ?? {},
         // Phase 2 columns, sent ONLY when they carry a value. Both exist on

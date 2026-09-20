@@ -6,6 +6,7 @@ import {
   toCompanyIdentityFields,
   vaultDocumentsPhraseAr,
   countVaultDocuments,
+  businessIntakeNoticeAr,
 } from "./businessOverview.ts";
 
 // Every invisible character in this file is written as a \uXXXX escape, never
@@ -301,4 +302,36 @@ test("the count uses the SAME boolean the vault page filters with", () => {
   // Stated as the equivalence itself, so a future edit to either side has to
   // break this rather than merely look different.
   assert.equal(countVaultDocuments(docs), docs.filter((d) => !d.request_id).length);
+});
+
+// ── businessIntakeNoticeAr (WP-6 B-10) ──────────────────────────────────────
+
+test("the intake notice names the company when the name is usable", () => {
+  assert.equal(
+    businessIntakeNoticeAr("شركة البناء المتقدمة المحدودة"),
+    "سيُقدَّم هذا الطلب باسم شركة البناء المتقدمة المحدودة",
+  );
+});
+
+test("a registration placeholder is never printed as a company name", () => {
+  // Same list accountDisplayName refuses — «شركة جديدة» is what the signup
+  // trigger wrote into company_name_ar for every corporate account created
+  // before 20260826.
+  for (const placeholder of ["شركة جديدة", "New Company", "جهة جديدة", "عميل نظامي", "مستخدم جديد"]) {
+    assert.equal(
+      businessIntakeNoticeAr(placeholder),
+      "سيُقدَّم هذا الطلب باسم منشأتك المسجَّلة، لا باسمك الشخصي",
+      placeholder,
+    );
+  }
+});
+
+test("an absent, blank or e-mail-shaped name still states that this is not a personal request", () => {
+  for (const bad of ["", "   ", null, undefined, 42, "ceo@example.sa"]) {
+    assert.equal(
+      businessIntakeNoticeAr(bad),
+      "سيُقدَّم هذا الطلب باسم منشأتك المسجَّلة، لا باسمك الشخصي",
+      String(bad),
+    );
+  }
 });

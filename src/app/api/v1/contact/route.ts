@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { validateContactPayload } from "./_validate";
 
 /**
  * POST /api/v1/contact — Public contact / partner intake.
@@ -8,6 +9,14 @@ import { createServiceClient } from "@/lib/supabase/server";
  * into public.contact_messages via the service-role client (the table has a
  * public insert policy too, but we use service-role so the write never depends
  * on the caller's session and to keep the payload shape locked server-side).
+ *
+ * Contract (UAT-CONTACT-001) — enforced by `validateContactPayload` in
+ * `./_validate.ts`:
+ *   `email` and `message` required · `email` must match the shared e-mail regex
+ *   · `phone` OPTIONAL, but a non-empty value must be a Saudi mobile and is
+ *   stored/forwarded as E.164 (`+9665XXXXXXXX`), never as typed · `name` ≤ 120,
+ *   `subject` ≤ 200, `message` ≤ 5000 characters (after trimming).
+ *   400 { error: "<Arabic>" } on any failure · 200 { success: true } otherwise.
  *
  * Best-effort: after a successful insert, if N8N_WEBHOOK_BASE_URL is set, POSTs
  * the message to `${base}/contact` for the notification workflow. That call is
@@ -26,34 +35,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const name = typeof body.name === "string" ? body.name.trim() : "";
-    const email = typeof body.email === "string" ? body.email.trim() : "";
-    const phone = typeof body.phone === "string" ? body.phone.trim() : "";
-    const subject = typeof body.subject === "string" ? body.subject.trim() : "";
-    const message = typeof body.message === "string" ? body.message.trim() : "";
-    const kind = body.kind === "partner" ? "partner" : "contact";
-
-    // Validate required fields.
-    if (!email || !message) {
-      return NextResponse.json(
-        { error: "البريد الإلكتروني والرسالة مطلوبان" },
-        { status: 400 },
-      );
+    // Required fields, e-mail shape, optional-but-well-formed Saudi mobile and
+    // the length caps all live in `_validate.ts` so they can be unit-tested
+    // without a request object. UAT-CONTACT-001.
+    const validation = validateContactPayload(body);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-
-    // Minimal email sanity check.
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return NextResponse.json(
-        { error: "البريد الإلكتروني غير صحيح" },
-        { status: 400 },
-      );
-    }
+    const { name, email, phoneE164, subject, message, kind } = validation.value;
 
     const supabase = await createServiceClient();
     const { error } = await supabase.from("contact_messages").insert({
       name: name || null,
       email,
-      phone: phone || null,
+      phone: phoneE164,
       subject: subject || null,
       message,
       kind,
@@ -86,7 +81,7 @@ export async function POST(request: NextRequest) {
           body: JSON.stringify({
             name: name || null,
             email,
-            phone: phone || null,
+            phone: phoneE164,
             subject: subject || null,
             message,
             kind,

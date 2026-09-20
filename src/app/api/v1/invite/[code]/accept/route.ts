@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { grantEntitlement } from "@/lib/entitlements";
 import type { ServerTier } from "@/lib/access-control";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * POST /api/v1/invite/[code]/accept — Accept a colleague/trial invitation.
@@ -41,7 +42,8 @@ export async function POST(
       data: { user },
       error: authError,
     } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

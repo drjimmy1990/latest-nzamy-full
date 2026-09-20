@@ -551,7 +551,23 @@ export default function LawyerProfileEditPage() {
           is live — see that state's own comment. Hidden, not disabled: an
           editable field that silently cannot save is worse than one that is
           not there yet.
+
+          WP-4 G7 — but hidden SILENTLY was its own problem. A lawyer on a
+          database that never got 20260907 opened this form, found no رابط and
+          no مؤهلات, and had nothing to tell him whether the fields had been
+          removed, were still being built, or were missing because of his
+          deploy. The line below names the cause and the fix, once, where the
+          sections would have been. Gated on `loaded` too: `newFieldsAvailable`
+          is also false before the first read answers and whenever the read
+          fails or finds no professional row — all three of which already have
+          their own banner above, and none of which is a missing migration.
         */}
+        {loaded && !newFieldsAvailable && (
+          <p className={`text-[11px] leading-relaxed rounded-xl border p-3 ${isDark ? "border-amber-500/20 bg-amber-900/10 text-zinc-400" : "border-amber-200 bg-amber-50 text-amber-700/80"}`}>
+            حقول الملف المهني (الرابط، النبذة، المؤهلات) تحتاج تشغيل ترحيل 20260907 على هذه القاعدة.
+          </p>
+        )}
+
         {newFieldsAvailable && <>
         <div>
           <label className={label}>سطر تعريفي</label>
@@ -617,6 +633,8 @@ export default function LawyerProfileEditPage() {
             <input value={form.bar_association} onChange={(e) => set("bar_association", e.target.value)} className={input} placeholder="الهيئة السعودية للمحامين" /></div>
         </div>
 
+        {/* Second half of the same Phase-7 gate — the notice for a database
+            without 20260907 is rendered once, above, not repeated here. */}
         {newFieldsAvailable && <>
         <div>
           <div className="flex items-center justify-between mb-1">

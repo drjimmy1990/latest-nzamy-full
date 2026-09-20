@@ -35,6 +35,16 @@ export interface LawyerAiTool {
   betaStatus: LawyerAiBetaStatus;
   sidebarPlacement: LawyerAiSidebarPlacement;
   adminPricingKey: string;
+  /**
+   * The page behind `href` renders DashboardComingSoon — it has no backend
+   * yet. The tool KEEPS its row here (its permission, its point cost and its
+   * admin pricing key are all real and the page must stay reachable to say
+   * «قريباً»), but `getLawyerAiBadge` refuses to price it on the hub: a
+   * «١٠٠ نقطة» pill over a page that cannot answer is the same false promise
+   * a «جديد» nav badge is, which is what src/lib/services/navComingSoon.test.ts
+   * exists to stop.
+   */
+  comingSoon?: true;
 }
 
 export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
@@ -197,6 +207,12 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     betaStatus: "priced",
     sidebarPlacement: "more-tools",
     adminPricingKey: "lawyer.ai.direction_support",
+    // UAT-LIVE-AI-001 — every نص/سابقة this page returned was a module
+    // constant; it now renders DashboardComingSoon. The row stays so the
+    // permission keeps existing (without it `ai/layout.tsx` would refuse the
+    // lawyer the «قريباً» page itself) and so the admin pricing screen keeps
+    // its key — only the hub badge stops claiming a price.
+    comingSoon: true,
   },
   {
     permission: "ai:legal-translate",
@@ -277,6 +293,9 @@ export const LAWYER_AI_TOOL_BY_PERMISSION = Object.fromEntries(
 ) as Record<LawyerAiPermission, LawyerAiTool>;
 
 export function getLawyerAiBadge(tool: LawyerAiTool, lang: "ar" | "en") {
+  // Checked FIRST, before any price: a tool with no working page is not
+  // "100 points", it is not available. See `comingSoon` on LawyerAiTool.
+  if (tool.comingSoon) return lang === "ar" ? "قريباً" : "Coming soon";
   if (tool.betaStatus === "beta-free") return lang === "ar" ? "بيتا مجاني" : "Beta free";
   if (tool.betaStatus === "free") return lang === "ar" ? "مجاني" : "Free";
   return lang === "ar" ? `${tool.pointCost} نقطة` : `${tool.pointCost} pts`;

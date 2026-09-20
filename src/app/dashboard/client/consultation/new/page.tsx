@@ -6,12 +6,13 @@ import {
   Robot, SealCheck, ArrowRight, ArrowLeft,
   Check, Warning, Sparkle,
   Info, CheckCircle,
-  Paperclip, X, Lightning, Clock, FileText,
+  Paperclip, X, Lightning, Clock, FileText, Buildings,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { businessIntakeNoticeAr } from "@/lib/services/businessOverview";
 import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
 import type { ClientServiceCatalogItem } from "@/constants/clientServiceCatalog";
@@ -1018,6 +1019,23 @@ export default function NewConsultationPage() {
           {/* ── Step 3: Review + Send ── */}
           {step === 3 && (
             <motion.div key="s3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+
+              {/* WP-6 B-10. This form lives under /dashboard/client, and the
+                  company attachment used to be entirely implicit (the source
+                  path, or user_type === corporate), so the person filling it
+                  in could not tell whether they were filing on their own
+                  behalf or their employer's — which decides who else can read
+                  it afterwards. The submit payload says
+                  `entityScope: "business"` explicitly; this says the same
+                  thing to the person pressing the button. */}
+              {user.businessMembership && (
+                <div className={`flex items-start gap-2.5 p-3.5 rounded-xl mb-3 text-[12px] font-semibold leading-relaxed ${
+                  isDark ? "bg-white/5 border border-white/10 text-zinc-300" : "bg-slate-50 border border-slate-200 text-slate-700"
+                }`}>
+                  <Buildings size={15} weight="fill" className="flex-shrink-0 mt-0.5 text-[#0B3D2E] dark:text-[#C8A762]" />
+                  <span>{businessIntakeNoticeAr(user.businessMembership.entityName)}</span>
+                </div>
+              )}
 
               {/* What replaced PlanBadge. Nothing here states whether the client
                   has an allowance left, because nothing on the platform knows —

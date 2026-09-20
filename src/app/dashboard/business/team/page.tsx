@@ -1,191 +1,243 @@
 "use client";
 
+/**
+ * Company team roster — rewritten for WP-6 B-5/B-6 (plan §5 Q7 = yes).
+ *
+ * ── WHAT THIS PAGE WAS ───────────────────────────────────────────────────
+ * 651 lines of client-side fiction, and unreachable on top of that:
+ *   • MEMBERS — four invented people (نورة الزهراني / فهد السبيعي / ريم
+ *     القحطاني / سلمى الدوسري) with fabricated e-mails, +966 5x phone
+ *     numbers, case counts and join dates, identical for every company.
+ *   • INITIAL_INVITES — two pending invitations with «daysLeft» counters.
+ *   • InviteModal — «إرسال الدعوة» called `setSent(true)` and printed a
+ *     hardcoded invite URL `https://nezamy.sa/invite/x7k2m9p`. No network
+ *     call of any kind.
+ *   • «إزالة العضو», «تعديل البيانات» and the PowerModal's «تأكيد وتفعيل»
+ *     were buttons with no `onClick` at all.
+ *   • a stats row summing the fabricated `cases` / `completedCases`.
+ *
+ * ── WHAT IT IS NOW ───────────────────────────────────────────────────────
+ * The real roster: `public.business_members` through
+ * `/api/v1/business/members` (GET, POST) and
+ * `/api/v1/business/members/[memberId]` (PATCH) — see
+ * `@/lib/services/businessMembersService`. A member is a real account
+ * (`business_members.user_id`), not a person the company merely describes.
+ *
+ * Deliberately minimal. Everything the old page showed that nothing backs is
+ * gone rather than re-mocked, and has no replacement here:
+ *   • case counts / completed cases — nothing links a case to a member.
+ *   • phone — `business_members` has no phone column and this roster does not
+ *     read `profiles.phone`.
+ *   • «تفعيل صلاحيات محامي» (the PowerModal) — there is no lawyer-powers
+ *     grant anywhere in the schema. This is also where
+ *     `can("team-legal-department")` used to be read; the company's real
+ *     `has_legal_dept` column is now set from «إعدادات الكيان» (WP-6 B-4)
+ *     and no control on this page depends on it.
+ *   • pending invitations — there is no invite e-mail and no acceptance
+ *     screen, so an added member is `active` immediately (exactly what
+ *     /api/v1/firm/members does) and there is no «بانتظار القبول» list to
+ *     show. `team_invitations` exists in the schema, unused.
+ *   • a seat counter — nothing counts seats; see `seatPolicy` in
+ *     src/constants/settingsReadiness.ts.
+ *
+ * ── NAMES AND E-MAILS MAY BE ABSENT, AND THE PAGE SAYS SO ────────────────
+ * The route resolves the other members' names through a server-only
+ * projection of `profiles` taken AFTER RLS has proved the caller belongs to
+ * this company — `/api/v1/firm/members`'s long-standing pattern, see the
+ * route's header. So a name normally arrives. `displayName: null` still
+ * happens when that projection itself fails, and it still renders as
+ * «الاسم غير متاح» — «we could not read this» — never as a dash that would
+ * pass for an empty name.
+ *
+ * ── WHO CAN DO WHAT ──────────────────────────────────────────────────────
+ * `canManage` comes from the SERVER (`GET …/members` → `canManage`), which
+ * sets it only for the company owner. The write controls are hidden rather
+ * than shown-and-then-403'd, and the API + RLS refuse regardless.
+ */
+
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState } from "react";
-import Link from "next/link";
 import {
-  UsersThree, Plus, ArrowLeft, MagnifyingGlass,
-  DotsThree, Pencil, Trash, SealCheck,
-  EnvelopeSimple, Phone,
-  Scales, ChartBar, Crown,
-  X, Check, Briefcase, IdentificationCard, ShieldCheck, ArrowRight, Buildings
+  Users, Plus, MagnifyingGlass, Envelope, CheckCircle, Warning,
+  X, UserPlus, CaretDown, Crown, PauseCircle, PlayCircle, Trash,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { useAdminSettings } from "@/hooks/useAdminSettings";
-import { useUser } from "@/hooks/useUser";
-import { useSubscription } from "@/hooks/useSubscription";
+import EmptyState from "@/components/ui/EmptyState";
+import {
+  getBusinessMembers, addBusinessMember, updateBusinessMember,
+  type BusinessMember, type BusinessRole, type BusinessMemberStatus,
+} from "@/lib/services/businessMembersService";
+import { BUSINESS_ROLE_LABEL } from "@/lib/auth/businessMembershipAccess";
+import { CORPORATE_INVITE_ROLES } from "@/constants/settingsReadiness";
+import { type ListRead, listViewState, itemsOf } from "@/lib/services/listRead";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// The eight invitable roles, straight from the settings policy so the tab and
+// this page can never offer different ones. `owner` is not among them: that
+// row is derived from business_profiles.owner_user_id by the
+// ensure_business_owner_membership trigger.
+const ROLE_OPTIONS: { value: BusinessRole; label: string }[] = CORPORATE_INVITE_ROLES.map((r) => ({
+  value: r.value as BusinessRole,
+  label: r.label,
+}));
 
-type UserType = "corporate" | "lawyer";
-type MemberRole = "owner" | "legal_manager" | "legal_staff" | "department_head" | "hr_manager" | "finance_manager" | "seconded" | "employee" | "compliance_officer";
-type MemberStatus = "active" | "busy" | "offline";
+const STATUS_STYLE: Record<BusinessMemberStatus, { label: string; dot: string; text: string }> = {
+  active: { label: "نشط", dot: "bg-emerald-400", text: "text-emerald-500" },
+  invited: { label: "بانتظار القبول", dot: "bg-amber-400", text: "text-amber-500" },
+  suspended: { label: "معلَّق", dot: "bg-orange-400", text: "text-orange-500" },
+  removed: { label: "مُزال", dot: "bg-zinc-400", text: "text-zinc-500" },
+};
 
-interface TeamMember {
-  id: string;
-  nameAr: string;
-  role: MemberRole;
-  dept: string;
-  status: MemberStatus;
-  cases: number;
-  completedCases: number;
-  joinDate: string;
-  email: string;
-  phone: string;
-  initials: string;
-  gradient: string;
-  verified: boolean;
-  hasLawyerPowers?: boolean; // For Corporate internal counsel
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+  } catch {
+    return String(iso);
+  }
 }
 
-// ─── Context-Aware Configuration ───────────────────────────────────────────────
+// ─── Add member ─────────────────────────────────────────────────────────────
 
-const FIRM_ROLES: Record<MemberRole, { ar: string; color: string }> = {
-  owner:              { ar: "مدير الشركة",                color: "text-[#C8A762] bg-[#C8A762]/15 border-[#C8A762]/30" },
-  legal_manager:      { ar: "رئيس الشؤون القانونية",   color: "text-[#0B3D2E] bg-[#0B3D2E]/10 border-[#0B3D2E]/25 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-700/30" },
-  legal_staff:        { ar: "أخصائي قانوني",           color: "text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-900/20 dark:border-blue-700/30" },
-  department_head:    { ar: "رئيس قسم",                  color: "text-purple-600 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-900/20 dark:border-purple-700/30" },
-  hr_manager:         { ar: "مدير موارد بشرية",        color: "text-fuchsia-600 bg-fuchsia-50 border-fuchsia-200 dark:text-fuchsia-400 dark:bg-fuchsia-900/20 dark:border-fuchsia-700/30" },
-  finance_manager:    { ar: "مدير مالي",               color: "text-amber-600 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-700/30" },
-  compliance_officer: { ar: "مسؤول الامتثال",          color: "text-orange-600 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-900/20 dark:border-orange-700/30" },
-  seconded:           { ar: "مستشار منتدب",             color: "text-sky-600 bg-sky-50 border-sky-200 dark:text-sky-400 dark:bg-sky-900/20 dark:border-sky-700/30" },
-  employee:           { ar: "موظف عام",                 color: "text-zinc-600 bg-zinc-100 border-zinc-200 dark:text-zinc-400 dark:bg-zinc-800 dark:border-zinc-700" },
-};
-
-const CORP_ROLES: Record<MemberRole, { ar: string; color: string }> = {
-  owner:              { ar: "مدير الشركة",                color: "text-[#C8A762] bg-[#C8A762]/15 border-[#C8A762]/30" },
-  legal_manager:      { ar: "رئيس الشؤون القانونية",   color: "text-[#0B3D2E] bg-[#0B3D2E]/10 border-[#0B3D2E]/25 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-700/30" },
-  legal_staff:        { ar: "أخصائي قانوني",           color: "text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-900/20 dark:border-blue-700/30" },
-  department_head:    { ar: "رئيس قسم",                  color: "text-purple-600 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-900/20 dark:border-purple-700/30" },
-  hr_manager:         { ar: "مدير موارد بشرية",        color: "text-fuchsia-600 bg-fuchsia-50 border-fuchsia-200 dark:text-fuchsia-400 dark:bg-fuchsia-900/20 dark:border-fuchsia-700/30" },
-  finance_manager:    { ar: "مدير مالي",               color: "text-amber-600 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-700/30" },
-  compliance_officer: { ar: "مسؤول الامتثال",          color: "text-orange-600 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-900/20 dark:border-orange-700/30" },
-  seconded:           { ar: "مستشار منتدب",             color: "text-sky-600 bg-sky-50 border-sky-200 dark:text-sky-400 dark:bg-sky-900/20 dark:border-sky-700/30" },
-  employee:           { ar: "موظف عام",                 color: "text-zinc-600 bg-zinc-100 border-zinc-200 dark:text-zinc-400 dark:bg-zinc-800 dark:border-zinc-700" },
-};
-
-const STATUS_STYLE: Record<MemberStatus, { dot: string; label: string }> = {
-  active:  { dot: "bg-emerald-500", label: "نشط" },
-  busy:    { dot: "bg-amber-500",   label: "مشغول" },
-  offline: { dot: "bg-zinc-400",   label: "غائب" },
-};
-
-const MEMBERS: TeamMember[] = [
-  {
-    id: "1", nameAr: "نورة الزهراني", role: "legal_manager", dept: "الشؤون القانونية",
-    status: "active", cases: 7, completedCases: 39, joinDate: "يناير ٢٠٢٤",
-    email: "n.zahrani@example.sa", phone: "+966 50 847 1928",
-    initials: "نز", gradient: "from-[#0B3D2E] to-[#1a6b50]", verified: true, hasLawyerPowers: true
-  },
-  {
-    id: "2", nameAr: "فهد السبيعي", role: "legal_staff", dept: "المشتريات",
-    status: "busy", cases: 5, completedCases: 28, joinDate: "مارس ٢٠٢٤",
-    email: "f.subaie@example.sa", phone: "+966 55 312 7491",
-    initials: "فس", gradient: "from-blue-700 to-blue-500", verified: true, hasLawyerPowers: false
-  },
-  {
-    id: "3", nameAr: "ريم القحطاني", role: "hr_manager", dept: "الموارد البشرية",
-    status: "active", cases: 2, completedCases: 11, joinDate: "نوفمبر ٢٠٢٥",
-    email: "r.qahtani@example.sa", phone: "+966 56 204 8837",
-    initials: "رق", gradient: "from-fuchsia-600 to-fuchsia-400", verified: false,
-  },
-  {
-    id: "4", nameAr: "سلمى الدوسري", role: "finance_manager", dept: "المالية",
-    status: "offline", cases: 0, completedCases: 15, joinDate: "يونيو ٢٠٢٤",
-    email: "s.dosari@example.sa", phone: "+966 50 091 5362",
-    initials: "سد", gradient: "from-amber-600 to-amber-400", verified: true, hasLawyerPowers: false
-  },
-];
-
-// ─── Pending Invites mock ─────────────────────────────────────────────────────
-const INITIAL_INVITES = [
-  { id: "inv-1", name: "عبدالله الشريف", email: "a.sharif@arabian-co.sa",  role: "أخصائي قانوني",  daysLeft: 5 },
-  { id: "inv-2", name: "لينا المطيري",   email: "l.mutairi@arabian-co.sa", role: "مستشار داخلي", daysLeft: 1 },
-];
-
-// ─── Invite Modal ─────────────────────────────────────────────────────────────
-
-function InviteModal({ onClose, isDark, userType }: { onClose: () => void; isDark: boolean; userType: UserType }) {
-  const [name, setName] = useState("");
+function AddMemberModal({
+  isDark,
+  onClose,
+  onAdd,
+}: {
+  isDark: boolean;
+  onClose: () => void;
+  onAdd: (input: { email: string; role: BusinessRole }) => Promise<void>;
+}) {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("");
-  const [sent, setSent] = useState(false);
-  const activeRoles = userType === "corporate" ? CORP_ROLES : FIRM_ROLES;
+  const [role, setRole] = useState<BusinessRole>(ROLE_OPTIONS[0]?.value ?? "employee");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
+
+  const inputCls = `w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition-colors ${
+    isDark
+      ? "bg-zinc-800 border-white/[0.08] text-zinc-100 placeholder:text-zinc-600 focus:border-royal/50"
+      : "bg-zinc-50 border-zinc-200 text-zinc-800 placeholder:text-zinc-400 focus:border-royal/60"
+  }`;
+  const labelCls = `block text-[11px] font-bold mb-1 ${isDark ? "text-zinc-400" : "text-zinc-500"}`;
+
+  const handleSubmit = async () => {
+    setError("");
+    if (!email.trim()) {
+      setError("يرجى إدخال البريد الإلكتروني.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onAdd({ email: email.trim(), role });
+      setSubmitted(true);
+      setTimeout(onClose, 1100);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذّرت إضافة العضو.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-[4px]"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onClose}
     >
       <motion.div
-        initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.9, opacity: 0, y: 20 }}
-        transition={{ type: "spring", stiffness: 300, damping: 25 }}
-        className={`w-full max-w-md rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-zinc-200"}`}
+        initial={{ opacity: 0, y: 40, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.97 }}
+        transition={{ type: "spring", stiffness: 300, damping: 28 }}
+        onClick={(e) => e.stopPropagation()}
+        className={`w-full max-w-md rounded-3xl shadow-2xl overflow-hidden ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-zinc-100"}`}
       >
-        <div className="flex items-center justify-between mb-5">
-          <h3 className={`text-[16px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>دعوة عضو جديد</h3>
-          <button onClick={onClose} className={`flex h-7 w-7 items-center justify-center rounded-full ${isDark ? "bg-white/[0.07] text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
-            <X size={14} />
+        <div className={`flex items-center justify-between px-6 py-5 border-b ${isDark ? "border-white/[0.07]" : "border-zinc-100"}`}>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#0B3D2E]/10 flex items-center justify-center">
+              <UserPlus size={17} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
+            </div>
+            <div>
+              <h2 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>إضافة عضو</h2>
+              {/* Not «دعوة»: no e-mail is sent and there is nothing to accept. */}
+              <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                يجب أن يملك الشخص حساباً على المنصّة بهذا البريد بالفعل
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${isDark ? "hover:bg-white/[0.07] text-zinc-500" : "hover:bg-zinc-100 text-zinc-400"}`}
+          >
+            <X size={15} />
           </button>
         </div>
 
-        {sent ? (
-          <div className="text-center py-6">
-            <div className="h-14 w-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-3">
-              <Check size={24} weight="bold" className="text-emerald-600" />
+        {submitted ? (
+          <div className="p-10 text-center">
+            <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
+              <CheckCircle size={32} weight="fill" className="text-emerald-500" />
             </div>
-            <p className={`font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>تم إرسال الدعوة!</p>
-            <p className={`text-sm mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>سيتلقى {name || email} رابط تفعيل الحساب</p>
-            <div className={`mt-3 mx-auto w-fit flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] ${isDark ? "border-white/[0.06] bg-zinc-800 text-zinc-400" : "border-zinc-200 bg-zinc-50 text-zinc-500"}`}>
-              <span className="font-mono font-bold select-all">https://nezamy.sa/invite/x7k2m9p</span>
-            </div>
-            <button onClick={onClose} className="mt-4 text-[13px] text-[#C8A762] hover:underline">إغلاق</button>
+            <p className={`font-bold text-[15px] ${isDark ? "text-white" : "text-zinc-800"}`}>تمت الإضافة</p>
+            <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>أصبح العضو نشطاً في فريق الشركة.</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="p-6 space-y-4">
             <div>
-              <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الاسم</label>
-              <div className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 ${isDark ? "border-white/[0.08] bg-zinc-800" : "border-zinc-200 bg-zinc-50"}`}>
-                <input
-                  type="text" value={name} onChange={e => setName(e.target.value)}
-                  placeholder="اسم الموظف"
-                  className={`flex-1 bg-transparent text-[14px] outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-zinc-800 placeholder:text-zinc-400"}`}
-                />
+              <label className={labelCls}>البريد الإلكتروني <span className="text-red-400">*</span></label>
+              <input
+                type="email"
+                dir="ltr"
+                className={inputCls}
+                placeholder="example@company.sa"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={submitting}
+              />
+            </div>
+
+            <div>
+              <label className={labelCls}>الدور <span className="text-red-400">*</span></label>
+              <div className="relative">
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as BusinessRole)}
+                  className={`${inputCls} appearance-none cursor-pointer`}
+                  disabled={submitting}
+                >
+                  {ROLE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <CaretDown size={13} className="absolute top-1/2 left-3 -translate-y-1/2 pointer-events-none text-zinc-400" />
               </div>
             </div>
-            <div>
-              <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>البريد الإلكتروني</label>
-              <div className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 ${isDark ? "border-white/[0.08] bg-zinc-800" : "border-zinc-200 bg-zinc-50"}`}>
-                <EnvelopeSimple size={15} className={isDark ? "text-zinc-500" : "text-zinc-400"} />
-                <input
-                  type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  placeholder="employee@company.sa"
-                  className={`flex-1 bg-transparent text-[14px] outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-zinc-800 placeholder:text-zinc-400"}`}
-                />
-              </div>
-            </div>
-            <div>
-              <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الدور المقترح</label>
-              <select
-                value={role} onChange={e => setRole(e.target.value)}
-                className={`w-full rounded-xl border px-3 py-2.5 text-[14px] outline-none ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200" : "border-zinc-200 bg-zinc-50 text-zinc-800"}`}
+
+            {error && (
+              <p className="text-[12px] text-red-400 flex items-center gap-1">
+                <Warning size={12} /> {error}
+              </p>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <motion.button
+                whileHover={{ scale: submitting ? 1 : 1.02 }} whileTap={{ scale: submitting ? 1 : 0.97 }}
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-[#0B3D2E] text-white font-bold text-[13px] hover:bg-[#0d5238] transition-colors cursor-pointer shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <option value="">— اختر الدور —</option>
-                {Object.entries(activeRoles).map(([k, r]) => (
-                  <option key={k} value={k}>{r.ar}</option>
-                ))}
-              </select>
+                <UserPlus size={15} /> {submitting ? "جارٍ الإضافة…" : "إضافة العضو"}
+              </motion.button>
+              <button
+                onClick={onClose}
+                disabled={submitting}
+                className={`px-4 py-3 rounded-xl font-bold text-[13px] cursor-pointer transition-colors ${isDark ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"}`}
+              >
+                إلغاء
+              </button>
             </div>
-            <motion.button
-              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-              onClick={() => { if (email && role) setSent(true); }}
-              disabled={!email || !role}
-              className="w-full rounded-xl bg-[#0B3D2E] py-2.5 text-[14px] font-bold text-white shadow-md hover:bg-[#0d4c38] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              إرسال الدعوة
-            </motion.button>
           </div>
         )}
       </motion.div>
@@ -193,458 +245,325 @@ function InviteModal({ onClose, isDark, userType }: { onClose: () => void; isDar
   );
 }
 
-// ─── Power Activation Modal (Corporate Only) ───────────────────────────────────
+// ─── Member card ────────────────────────────────────────────────────────────
 
-function PowerModal({ onClose, isDark, memberName }: { onClose: () => void; isDark: boolean; memberName: string }) {
+function MemberCard({
+  m,
+  isDark,
+  card,
+  canManage,
+  onChangeRole,
+  onSetStatus,
+}: {
+  m: BusinessMember;
+  isDark: boolean;
+  card: string;
+  canManage: boolean;
+  onChangeRole: (memberId: string, role: BusinessRole) => Promise<void>;
+  onSetStatus: (memberId: string, next: "active" | "suspended" | "removed") => Promise<void>;
+}) {
+  const status = STATUS_STYLE[m.status] ?? STATUS_STYLE.active;
+  const [busy, setBusy] = useState(false);
+  const [rowError, setRowError] = useState("");
+  const [confirmRemove, setConfirmRemove] = useState(false);
+
+  const run = async (fn: () => Promise<void>, fallback: string) => {
+    setBusy(true);
+    setRowError("");
+    try {
+      await fn();
+    } catch (err) {
+      setRowError(err instanceof Error ? err.message : fallback);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0 }}
-        className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl border ${isDark ? "bg-zinc-900 border-[#C8A762]/30" : "bg-white border-[#C8A762]"}`}
-      >
-        <div className="flex justify-center mb-4">
-          <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#111111] to-[#222222] border-2 border-[#C8A762] flex items-center justify-center shadow-lg">
-            <ShieldCheck size={26} weight="fill" className="text-[#C8A762]" />
+    <div className={`${card} p-5`}>
+      <div className="flex items-center gap-3 mb-3">
+        <div className="relative">
+          <div className="w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-white text-sm bg-royal">
+            {(m.displayName ?? "").charAt(0) || "؟"}
+          </div>
+          <span className={`absolute -bottom-0.5 -left-0.5 w-3 h-3 rounded-full border-2 ${isDark ? "border-zinc-900" : "border-white"} ${status.dot}`} />
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            {/* null = the joined profiles row was not readable, which is not
+                the same as an empty name. See the file header. */}
+            <p className={`text-[14px] font-bold truncate ${m.displayName ? (isDark ? "text-zinc-100" : "text-slate-800") : "text-zinc-400"}`}>
+              {m.displayName ?? "الاسم غير متاح"}
+            </p>
+            {m.isOwner && <Crown size={13} weight="fill" className="text-[#C8A762] flex-shrink-0" />}
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-royal/10 text-royal">
+              {BUSINESS_ROLE_LABEL[m.role] ?? m.role}
+            </span>
+            <span className={`text-[10px] font-semibold ${status.text}`}>
+              {m.isOwner ? "مالك الحساب" : status.label}
+            </span>
           </div>
         </div>
-        <h3 className={`text-center text-lg font-bold mb-2 ${isDark ? "text-white" : "text-zinc-900"}`}>تفعيل صلاحيات المحامي</h3>
-        <p className={`text-center text-[12px] leading-relaxed mb-6 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-          تمنح هذه الخاصية للمستشار الداخلي ({memberName}) صلاحيات المحامين الكاملة على منصة نظامي مثل الوصول للمجتمع المغلق، وجراف القضايا المتقدم.
+      </div>
+
+      <div className={`flex items-center gap-1 text-[11px] mb-3 pb-3 border-b truncate ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
+        <Envelope size={10} className="flex-shrink-0" />
+        <span dir="ltr" className="truncate">{m.email ?? "البريد غير متاح"}</span>
+      </div>
+
+      <p className={`text-[11px] mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+        عضو منذ {formatDate(m.acceptedAt ?? m.createdAt)}
+      </p>
+
+      {rowError && (
+        <p className="text-[11px] text-red-400 flex items-center gap-1 mb-2">
+          <Warning size={11} /> {rowError}
         </p>
+      )}
 
-        <div className="space-y-3 mb-6">
-          <div>
-            <label className={`block text-[11px] font-bold mb-1 ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>رقم الترخيص المهني</label>
-            <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${isDark ? "border-white/[0.08] bg-zinc-800" : "border-zinc-200 bg-zinc-50"}`}>
-              <IdentificationCard size={14} className="text-[#C8A762]" />
-              <input type="text" placeholder="مثال: ٤٤/١٢٣" className="bg-transparent text-sm w-full outline-none" />
+      {/* Never on the owner's own row — the API refuses it too (403). */}
+      {canManage && !m.isOwner && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <select
+                value={m.role}
+                onChange={(e) => {
+                  const next = e.target.value as BusinessRole;
+                  if (next === m.role) return;
+                  run(() => onChangeRole(m.id, next), "تعذّر تغيير الدور.");
+                }}
+                disabled={busy}
+                className={`w-full appearance-none cursor-pointer rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold outline-none disabled:opacity-60 ${
+                  isDark ? "bg-zinc-800 border-white/[0.08] text-zinc-200" : "bg-zinc-50 border-zinc-200 text-zinc-700"
+                }`}
+              >
+                {ROLE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <CaretDown size={11} className="absolute top-1/2 left-2 -translate-y-1/2 pointer-events-none text-zinc-400" />
             </div>
+            {m.status !== "removed" && (
+              <button
+                onClick={() => run(
+                  () => onSetStatus(m.id, m.status === "suspended" ? "active" : "suspended"),
+                  "تعذّر تغيير الحالة.",
+                )}
+                disabled={busy}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                  m.status === "suspended"
+                    ? "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                    : "bg-orange-500/10 text-orange-500 hover:bg-orange-500/20"
+                }`}
+              >
+                {m.status === "suspended" ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
+                {m.status === "suspended" ? "تفعيل" : "تعليق"}
+              </button>
+            )}
           </div>
-          
-          <div className={`rounded-xl p-3 border text-[11px] flex items-start gap-2 ${isDark ? "border-amber-500/20 bg-amber-500/10 text-amber-500" : "border-amber-200 bg-amber-50 text-amber-600"}`}>
-            <Crown size={14} className="flex-shrink-0 mt-0.5" />
-            <p><strong>تنبيه:</strong> تفعيل هذا الخيار يتطلب وجود اشتراك Pro/Max فعّال لحساب شركتكم.</p>
-          </div>
-        </div>
 
-        <div className="flex gap-2">
-          <button className="flex-1 rounded-xl bg-[#C8A762] py-2 text-sm font-bold text-white hover:bg-[#b09153] transition-colors">
-            تأكيد وتفعيل
-          </button>
-          <button onClick={onClose} className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${isDark ? "bg-white/[0.05] text-zinc-300 hover:bg-white/[0.1]" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}>
-            إلغاء
-          </button>
+          {m.status !== "removed" && (
+            confirmRemove ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => run(() => onSetStatus(m.id, "removed"), "تعذّرت إزالة العضو.")}
+                  disabled={busy}
+                  className="flex-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-red-500/10 text-red-500 hover:bg-red-500/20 cursor-pointer disabled:opacity-60"
+                >
+                  تأكيد الإزالة
+                </button>
+                <button
+                  onClick={() => setConfirmRemove(false)}
+                  disabled={busy}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}
+                >
+                  تراجع
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmRemove(true)}
+                disabled={busy}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${isDark ? "text-zinc-500 hover:text-red-400" : "text-zinc-400 hover:text-red-500"}`}
+              >
+                <Trash size={12} /> إزالة من الفريق
+              </button>
+            )
+          )}
         </div>
-      </motion.div>
-    </motion.div>
+      )}
+    </div>
   );
 }
 
-// ─── Main Page ─────────────────────────────────────────────────────────────────
-
-import { RoleGuard } from "@/components/dashboard/RoleGuard";
-import { SubscriptionGuard } from "@/components/dashboard/SubscriptionGuard";
+// ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function BusinessTeamPage() {
   const { isDark } = useTheme();
-  const session = useUser();
-  const businessRole = session.businessRole ?? "employee";
-  const { currentCompanyFeatures, mounted, updateCompanyFeatures } = useAdminSettings();
-  const { can } = useSubscription();
 
-  // States
-  const [userType, setUserType] = useState<UserType>("corporate");
   const [search, setSearch] = useState("");
-  const [showInvite, setShowInvite] = useState(false);
-  const [activeMenu, setActiveMenu] = useState<string | null>(null);
-  const [pendingInvites, setPendingInvites] = useState(INITIAL_INVITES);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [read, setRead] = useState<ListRead<BusinessMember> | null>(null);
+  const [canManage, setCanManage] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  // Power activation setup
-  const [powerTarget, setPowerTarget] = useState<string | null>(null);
-
-  // K2/K3: Dynamic External Legal Dept state
-  const [hasInternalLegal, setHasInternalLegal] = useState(true);
+  const loadMembers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await getBusinessMembers();
+      setRead(result.list);
+      setCanManage(result.canManage);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (mounted) setHasInternalLegal(currentCompanyFeatures.hasInternalLegal);
-  }, [mounted, currentCompanyFeatures.hasInternalLegal]);
+    loadMembers();
+  }, [loadMembers, reloadKey]);
+
+  const viewState = listViewState(loading, read);
+  const members = itemsOf(read);
 
   const card = isDark
-    ? "bg-zinc-900 border border-white/[0.06] rounded-2xl"
-    : "bg-white border border-zinc-200/70 rounded-2xl";
+    ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
+    : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
-  // Was: `hasInternalLegal ? MEMBERS : MEMBERS.filter(...)` — read the
-  // localStorage-backed admin flag directly, so a viewer could flip it in
-  // production. can("team-legal-department") routes the decision through
-  // resolveFeatureAccess: production decides on tier alone, demo mode still
-  // honours hasInternalLegal (see featureAccess.ts).
-  const currentMembers = can("team-legal-department")
-    ? MEMBERS
-    : MEMBERS.filter(m => m.role !== "legal_manager" && m.role !== "legal_staff");
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter(
+      (m) => (m.displayName ?? "").toLowerCase().includes(q) || (m.email ?? "").toLowerCase().includes(q),
+    );
+  }, [members, search]);
 
-  const filtered = currentMembers.filter(m =>
-    m.nameAr.includes(search) || m.dept.includes(search)
-  );
-
-  const fadeUp = {
-    hidden: { opacity: 0, y: 14 },
-    show: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.07, duration: 0.35, ease: "easeOut" as const } }),
+  const handleAdd = async (input: { email: string; role: BusinessRole }) => {
+    await addBusinessMember(input);
+    setReloadKey((k) => k + 1);
   };
 
-  const activeRolesMap = userType === "corporate" ? CORP_ROLES : FIRM_ROLES;
-  const canConfigureStructure = session.userType === "admin" || businessRole === "owner" || businessRole === "legal_manager";
-  const canInviteMembers = session.userType === "admin" || ["owner", "legal_manager", "hr_manager"].includes(businessRole);
-  const canActivateLawyerPowers = session.userType === "admin" || ["owner", "legal_manager"].includes(businessRole);
-  const canManageMember = (member: TeamMember) => {
-    if (session.userType === "admin" || businessRole === "owner") return true;
-    if (businessRole === "legal_manager") return ["legal_staff", "seconded", "department_head", "employee", "compliance_officer"].includes(member.role);
-    if (businessRole === "hr_manager") return ["employee", "department_head", "hr_manager"].includes(member.role);
-    return false;
+  const patchRow = (memberId: string, updated: BusinessMember) =>
+    setRead((prev) =>
+      prev && prev.ok ? { ...prev, items: prev.items.map((m) => (m.id === memberId ? updated : m)) } : prev,
+    );
+
+  const handleChangeRole = async (memberId: string, role: BusinessRole) => {
+    patchRow(memberId, await updateBusinessMember(memberId, { role }));
+  };
+
+  const handleSetStatus = async (memberId: string, next: "active" | "suspended" | "removed") => {
+    patchRow(memberId, await updateBusinessMember(memberId, { status: next }));
   };
 
   return (
-    <RoleGuard allowedRoles={["owner", "legal_manager", "hr_manager"]}>
-    <SubscriptionGuard featureKey="team-manage">
-    <div className={`p-5 md:p-8 space-y-6 max-w-7xl mx-auto ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
-
-      {/* Header */}
-      <motion.div variants={fadeUp} initial="hidden" animate="show" custom={0}
-        className="flex items-center justify-between gap-4 flex-wrap">
+    <div className="max-w-[1200px] mx-auto space-y-5" dir="rtl">
+      <motion.div
+        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+      >
         <div>
-          <div className="flex items-center gap-1 mb-1">
-            <Link href="/dashboard/business" className={`text-[13px] ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"}`}>
-              لوحة التحكم
-            </Link>
-            <ArrowLeft size={12} className={isDark ? "text-zinc-700" : "text-zinc-300"} />
-          </div>
-          <h1 className={`text-2xl font-bold tracking-tight flex items-center gap-3 ${isDark ? "text-white" : "text-zinc-900"}`}>
-            {userType === "corporate" ? "إدارة الفريق" : "إدارة فريق المكتب"}
-            
-            {canConfigureStructure && (
-            <div className="flex gap-2">
-              <select
-                value={userType}
-                onChange={(e) => setUserType(e.target.value as UserType)}
-                className={`text-[11px] font-bold rounded-lg px-2 py-1 outline-none border ${isDark ? "bg-zinc-800 border-zinc-700 text-zinc-300" : "bg-white border-zinc-200 text-zinc-600"}`}
-              >
-                <option value="corporate">وضع الشركات</option>
-                <option value="lawyer">وضع مكتب المحاماة</option>
-              </select>
-
-              {userType === "corporate" && (
-                <select
-                  value={hasInternalLegal ? "internal" : "external"}
-                  onChange={(e) => {
-                    const next = e.target.value === "internal";
-                    setHasInternalLegal(next);
-                    updateCompanyFeatures(currentCompanyFeatures.companyId, { hasInternalLegal: next });
-                  }}
-                  className={`text-[11px] font-bold rounded-lg px-2 py-1 outline-none border ${isDark ? "bg-zinc-800 border-zinc-700 text-zinc-300" : "bg-white border-zinc-200 text-zinc-600"}`}
-                >
-                  <option value="internal">قانونية داخلية</option>
-                  <option value="external">قانونية خارجية</option>
-                </select>
-              )}
-            </div>
-            )}
+          <h1 className={`text-2xl font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`} style={{ fontFamily: "var(--font-brand)" }}>
+            فريق الشركة
           </h1>
-          <p className={`text-sm mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            {currentMembers.length} أعضاء · يتم تكييف المسميات تلقائياً حسب نوع حسابك
+          {/* No counter until the list is actually readable — an «٠ أعضاء»
+              printed over a failed read is the defect listRead.ts exists for. */}
+          <p className={`text-sm ${viewState === "unreadable" ? "text-red-500 font-semibold" : isDark ? "text-zinc-500" : "text-slate-400"}`}>
+            {viewState === "loading"
+              ? "جاري تحميل الفريق…"
+              : viewState === "unreadable"
+                ? "تعذّر تحميل الفريق"
+                : canManage
+                  ? "أعضاء شركتك المسجّلون على المنصّة."
+                  : "أعضاء شركتك المسجّلون على المنصّة — الإدارة متاحة لمالك الحساب فقط."}
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
-          {/* Search */}
-          <div className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 ${isDark ? "border-white/[0.08] bg-zinc-800/60" : "border-zinc-200 bg-zinc-50"}`}>
-            <MagnifyingGlass size={14} className={isDark ? "text-zinc-500" : "text-zinc-400"} />
-            <input
-              value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="بحث عن عضو..."
-              className={`bg-transparent text-[13px] outline-none w-40 ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-zinc-700 placeholder:text-zinc-400"}`}
-            />
-          </div>
-          {canInviteMembers && (
-            <motion.button
-              whileHover={{ scale: 1.04, y: -1 }} whileTap={{ scale: 0.97 }}
-              onClick={() => setShowInvite(true)}
-              className="flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-[13px] font-bold text-white shadow-md relative overflow-hidden group"
-            >
-              <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
-              <Plus size={15} weight="bold" className="relative z-10" />
-              <span className="relative z-10">دعوة عضو</span>
-            </motion.button>
-          )}
-        </div>
+        {canManage && (
+          <motion.button
+            whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors cursor-pointer shadow-md"
+          >
+            <Plus size={15} weight="bold" />
+            إضافة عضو
+          </motion.button>
+        )}
       </motion.div>
 
-      {/* ── Stats row (Context Aware) ─────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { icon: UsersThree, label: "إجمالي الفريق", value: currentMembers.length, color: "text-[#0B3D2E]" },
-          { icon: Scales, label: userType === "corporate" ? "طلبات وإجراءات نشطة" : "قضايا نشطة", value: currentMembers.reduce((a, m) => a + m.cases, 0), color: "text-blue-600" },
-          { icon: ChartBar, label: userType === "corporate" ? "عقود وطلبات منجزة" : "قضايا منجزة", value: currentMembers.reduce((a, m) => a + m.completedCases, 0), color: "text-emerald-600" },
-          { icon: Crown, label: userType === "corporate" ? "مدراء إدارات" : "شركاء مسجلون", value: currentMembers.filter(m => m.role === "department_head" || m.role === "legal_manager").length, color: "text-[#C8A762]" },
-        ].map((s, i) => {
-          const Icon = s.icon;
-          return (
-            <motion.div key={i} variants={fadeUp} initial="hidden" animate="show" custom={i + 1}
-              className={`${card} flex items-center gap-3 px-4 py-4 shadow-sm group hover:-translate-y-0.5 transition-transform`}>
-              <div className={`p-2 rounded-xl transition-colors ${isDark ? "bg-white/[0.04] group-hover:bg-white/[0.08]" : "bg-zinc-50 group-hover:bg-zinc-100"}`}>
-                <Icon size={20} className={s.color} weight="duotone" />
-              </div>
-              <div>
-                <p className={`font-mono text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{s.value.toString().padStart(2, "٠")}</p>
-                <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{s.label}</p>
-              </div>
+      {viewState === "ready" && members.length > 0 && (
+        <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
+          <MagnifyingGlass size={16} className={isDark ? "text-zinc-500" : "text-slate-400"} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="بحث بالاسم أو البريد..."
+            className={`flex-1 bg-transparent text-sm outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`}
+          />
+        </div>
+      )}
+
+      {/* Four states kept apart: loading, unreadable, empty, ready. */}
+      {viewState === "loading" ? (
+        <div className={`${card} p-4 space-y-2`}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className={`h-16 rounded-2xl animate-pulse ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`} />
+          ))}
+        </div>
+      ) : viewState === "unreadable" ? (
+        <div className={`${card} p-6 text-center space-y-3`}>
+          <Warning size={26} weight="duotone" className="mx-auto text-red-500" />
+          <p className={`text-[14px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>تعذّرت قراءة فريق الشركة</p>
+          <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+            لم يستجب الخادم لطلب القائمة. هذه ليست قائمة فارغة — قد يكون للشركة أعضاء لم تُقرأ بياناتهم بعد.
+          </p>
+          <button
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors cursor-pointer"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      ) : filtered.length === 0 ? (
+        members.length === 0 ? (
+          <EmptyState
+            icon={<Users />}
+            title="لا يوجد أعضاء بعد"
+            description="أضِف زملاءك المسجَّلين على المنصّة إلى فريق الشركة."
+            action={canManage ? { label: "إضافة عضو", onClick: () => setShowAddModal(true) } : undefined}
+          />
+        ) : (
+          <EmptyState
+            icon={<Users />}
+            title="لا توجد نتائج مطابقة"
+            description="لم يُعثر على أعضاء يطابقون البحث الحالي."
+            action={{ label: "إعادة ضبط البحث", onClick: () => setSearch("") }}
+          />
+        )
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {filtered.map((m, i) => (
+            <motion.div key={m.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
+              <MemberCard
+                m={m}
+                isDark={isDark}
+                card={card}
+                canManage={canManage}
+                onChangeRole={handleChangeRole}
+                onSetStatus={handleSetStatus}
+              />
             </motion.div>
-          );
-        })}
-      </div>
-
-      {/* ── K2/K3: External Legal Dept Alert / Marketplace Pipeline ───────────── */}
-      {/* Same gate as currentMembers above — was reading the local mirror of
-          currentCompanyFeatures.hasInternalLegal directly. */}
-      {!can("team-legal-department") && userType === "corporate" && (
-        <motion.div variants={fadeUp} initial="hidden" animate="show" custom={1.5}
-          className={`relative overflow-hidden rounded-2xl border p-6 ${isDark ? "border-[#C8A762]/30 bg-gradient-to-l from-[#C8A762]/10 to-transparent" : "border-[#C8A762] bg-gradient-to-l from-[#C8A762]/10 to-white shadow-sm"}`}
-        >
-          <div className="absolute start-4 top-1/2 -translate-y-1/2 opacity-[0.06] pointer-events-none">
-            <Buildings size={120} weight="fill" />
-          </div>
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
-            <div className="flex gap-4 items-start">
-              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#0B3D2E] to-[#1a6b4e] flex items-center justify-center shrink-0 shadow-md">
-                <Briefcase size={24} className="text-[#C8A762]" weight="duotone" />
-              </div>
-              <div>
-                <h3 className={`text-lg font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>الإدارة القانونية مفوضة خارجياً</h3>
-                <p className={`text-sm mt-1 max-w-xl ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                  الهيكل التنظيمي يعكس عدم وجود إدارة قانونية داخلية. جميع طلبات الأقسام (الموارد البشرية، المشتريات، الخ) يتم توجيهها تلقائياً إلى المستشار المنتدب أو مكتب المحاماة الخارجي.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-3 shrink-0">
-              <Link href="/dashboard/business/marketplace">
-                <button className={`px-4 py-2 text-sm font-bold rounded-xl transition-colors ${isDark ? "bg-white/[0.05] hover:bg-white/[0.1] text-white" : "bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700"}`}>
-                  استكشف المكاتب
-                </button>
-              </Link>
-              <Link href="/dashboard/business/seconded-counsel">
-                <button className="px-4 py-2 text-sm font-bold rounded-xl bg-[#0B3D2E] text-white shadow-md hover:bg-[#0a3328] transition-colors">
-                  إدارة المستشار المنتدب
-                </button>
-              </Link>
-            </div>
-          </div>
-        </motion.div>
+          ))}
+        </div>
       )}
 
-      {/* ── Pending Invites Section ───────────────────────────────────────────── */}
-      {pendingInvites.length > 0 && (
-        <motion.div variants={fadeUp} initial="hidden" animate="show" custom={2}
-          className={`rounded-2xl border overflow-hidden ${isDark ? "border-amber-500/20 bg-amber-500/5" : "border-amber-200 bg-amber-50/60"}`}
-        >
-          <div className={`flex items-center justify-between px-5 py-3 border-b ${isDark ? "border-amber-500/10" : "border-amber-100"}`}>
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-              <span className={`text-[12px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-                دعوات معلقة ({pendingInvites.length})
-              </span>
-            </div>
-            <span className={`text-[10px] ${isDark ? "text-amber-600" : "text-amber-500"}`}>
-              صالحة لـ ٧ أيام
-            </span>
-          </div>
-          <div className={`divide-y ${isDark ? "divide-amber-500/10" : "divide-amber-100"}`}>
-            {pendingInvites.map(inv => (
-              <div key={inv.id} className="flex items-center gap-4 px-5 py-3">
-                <div className="flex-1 min-w-0">
-                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{inv.name}</p>
-                  <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{inv.email}</p>
-                </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isDark ? "bg-white/[0.05] text-zinc-400" : "bg-white text-zinc-500"} border ${isDark ? "border-white/[0.06]" : "border-zinc-200"}`}>
-                  {inv.role}
-                </span>
-                <span className={`text-[10px] font-bold font-mono ${inv.daysLeft <= 1 ? "text-red-500" : "text-amber-500"}`}>
-                  {inv.daysLeft}د
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    title="إعادة إرسال"
-                    className={`flex h-7 w-7 items-center justify-center rounded-lg text-[11px] transition-colors ${isDark ? "bg-white/[0.05] hover:bg-white/[0.1] text-zinc-400" : "bg-white hover:bg-zinc-50 text-zinc-500 border border-zinc-200"}`}
-                  >
-                    <EnvelopeSimple size={13} />
-                  </button>
-                  <button
-                    title="إلغاء الدعوة"
-                    onClick={() => setPendingInvites(p => p.filter(x => x.id !== inv.id))}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors text-red-400 hover:bg-red-500/10"
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* ── Member cards ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        <AnimatePresence>
-          {filtered.map((member, i) => {
-            const roleStyle = activeRolesMap[member.role];
-            const statusStyle = STATUS_STYLE[member.status];
-            const completionRate = Math.round((member.completedCases / (member.completedCases + member.cases + 1)) * 100);
-
-            return (
-              <motion.div
-                key={member.id}
-                layout
-                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ delay: i * 0.05, duration: 0.3 }}
-                className={`${card} shadow-sm relative overflow-hidden`}
-              >
-                {/* Gradient accent top */}
-                <div className={`h-1.5 w-full bg-gradient-to-r ${member.gradient}`} />
-
-                <div className="p-5">
-                  <div className="flex items-start gap-3 mb-4">
-                    {/* Avatar */}
-                    <div className="relative flex-shrink-0">
-                      <div className={`h-12 w-12 rounded-2xl bg-gradient-to-br ${member.gradient} flex items-center justify-center shadow-md`}>
-                        <span className="text-white font-bold text-[15px]">{member.initials}</span>
-                      </div>
-                      <span className={`absolute -bottom-0.5 -end-0.5 h-3 w-3 rounded-full border-2 ${isDark ? "border-zinc-900" : "border-white"} ${statusStyle.dot}`} />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <Link href={`/dashboard/business/team/${member.id}`} className={`text-[14px] font-bold truncate hover:underline underline-offset-2 ${isDark ? "text-white" : "text-zinc-900"}`}>
-                          {member.nameAr}
-                        </Link>
-                        {member.verified && <span title="موثق"><SealCheck size={14} weight="fill" className="text-[#C8A762] flex-shrink-0" /></span>}
-                        {member.hasLawyerPowers && <span title="صلاحيات محامي مفعلة"><ShieldCheck size={14} weight="fill" className="text-blue-500 flex-shrink-0" /></span>}
-                      </div>
-                      <span className={`inline-flex mt-1 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${roleStyle.color}`}>
-                        {roleStyle.ar}
-                      </span>
-                    </div>
-
-                    {/* Actions menu */}
-                    <div className="relative flex-shrink-0">
-                      {canManageMember(member) && (
-                        <button
-                          onClick={() => setActiveMenu(activeMenu === member.id ? null : member.id)}
-                          className={`flex h-7 w-7 items-center justify-center rounded-lg ${isDark ? "hover:bg-white/[0.07] text-zinc-500" : "hover:bg-zinc-100 text-zinc-400"}`}
-                        >
-                          <DotsThree size={16} weight="bold" />
-                        </button>
-                      )}
-                      <AnimatePresence>
-                        {activeMenu === member.id && canManageMember(member) && (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.9, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.9, y: -4 }}
-                            className={`absolute start-0 top-9 z-10 w-48 rounded-xl shadow-xl py-1 text-[13px] border ${isDark ? "bg-zinc-800 border-white/[0.08]" : "bg-white border-zinc-200"}`}
-                          >
-                            <Link href={`/dashboard/business/team/${member.id}`} className={`flex w-full items-center gap-2.5 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-white/[0.05] ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                              <ArrowRight size={13} /> عرض الملف التفصيلي
-                            </Link>
-                            <button className={`flex w-full items-center gap-2.5 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-white/[0.05] ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                              <Pencil size={13} /> تعديل البيانات
-                            </button>
-                            
-                            {/* Corporate Lawyer Power Toggle — for legal_staff/seconded with lawyer credentials */}
-                            {canActivateLawyerPowers && userType === "corporate" && (member.role === "legal_staff" || member.role === "seconded") && !member.hasLawyerPowers && (
-                              <button onClick={() => { setActiveMenu(null); setPowerTarget(member.nameAr); }} className={`flex w-full items-center gap-2.5 px-3 py-2 text-[#C8A762] hover:bg-[#C8A762]/10`}>
-                                <ShieldCheck size={13} /> تفعيل صلاحيات محامي
-                              </button>
-                            )}
-
-                            <button className="flex w-full items-center gap-2.5 px-3 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
-                              <Trash size={13} /> إزالة العضو
-                            </button>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  </div>
-
-                  {/* Info */}
-                  <div className={`space-y-1.5 mb-4 text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                    <div className="flex items-center gap-1.5">
-                      <Briefcase size={13} />
-                      <span>{member.dept}</span>
-                      <span className={`ms-auto flex items-center gap-1 ${statusStyle.dot === "bg-emerald-500" ? "text-emerald-500" : statusStyle.dot === "bg-amber-500" ? "text-amber-500" : isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${statusStyle.dot}`} />
-                        {statusStyle.label}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <EnvelopeSimple size={13} />
-                      <span className="truncate">{member.email}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Phone size={13} />
-                      <span>{member.phone}</span>
-                    </div>
-                  </div>
-
-                  {/* Context Aware Stats Footer */}
-                  <div className={`flex items-center gap-3 text-[11px] border-t pt-3 ${isDark ? "border-white/[0.05]" : "border-zinc-100"}`}>
-                    <div className="flex-1">
-                      <p className={`mb-1 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{userType === "corporate" ? "في الانتظار" : "قضايا نشطة"}</p>
-                      <p className={`font-mono font-bold text-[15px] ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{member.cases}</p>
-                    </div>
-                    <div className="flex-1">
-                      <p className={`mb-1 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{userType === "corporate" ? "تم المعالجة" : "منجزة"}</p>
-                      <p className={`font-mono font-bold text-[15px] text-emerald-500`}>{member.completedCases}</p>
-                    </div>
-                    <div className="flex-1">
-                      <p className={`mb-1 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>الكفاءة</p>
-                      <div className="flex items-center gap-1.5">
-                        <div className={`h-1 flex-1 rounded-full ${isDark ? "bg-white/[0.06]" : "bg-zinc-100"}`}>
-                          <motion.div
-                            initial={{ width: 0 }} animate={{ width: `${completionRate}%` }}
-                            transition={{ delay: 0.4, duration: 0.7 }}
-                            className={`h-full rounded-full bg-gradient-to-r ${member.gradient}`}
-                          />
-                        </div>
-                        <span className={`font-mono font-bold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{completionRate}٪</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* View Profile CTA */}
-                  <Link
-                    href={`/dashboard/business/team/${member.id}`}
-                    className={`mt-3 flex items-center justify-center gap-1.5 w-full rounded-xl py-2 text-[12px] font-bold transition-colors border ${
-                      isDark
-                        ? "border-white/[0.06] text-zinc-400 hover:bg-white/[0.04] hover:text-emerald-300"
-                        : "border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-[#0B3D2E]"
-                    }`}
-                  >
-                    عرض الملف التفصيلي <ArrowRight size={12} />
-                  </Link>
-                </div>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-      </div>
-
-      {/* Modals */}
       <AnimatePresence>
-        {showInvite && canInviteMembers && <InviteModal onClose={() => setShowInvite(false)} isDark={isDark} userType={userType} />}
-        {powerTarget && <PowerModal onClose={() => setPowerTarget(null)} isDark={isDark} memberName={powerTarget} />}
+        {showAddModal && canManage && (
+          <AddMemberModal isDark={isDark} onClose={() => setShowAddModal(false)} onAdd={handleAdd} />
+        )}
       </AnimatePresence>
     </div>
-    </SubscriptionGuard>
-    </RoleGuard>
   );
 }

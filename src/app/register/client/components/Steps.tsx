@@ -23,6 +23,12 @@ import {
 import { ClientType, Step } from "../types";
 import { clientTypes } from "../data";
 import { LEGAL_REP_CAPACITIES, crNumberHint } from "./_corporateIdentity";
+import { normalizeSaudiMobile, sanitizePhoneDigits, saudiMobileMessage } from "@/lib/services/saudiMobile";
+
+// UAT-REG-001 — same regex the page-level canNext() and
+// register/provider/page.tsx:222 use, so the inline hint and the «التالي»
+// button never disagree.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function StepIndicator({ step, total }: { step: Step; total: number }) {
   return (
@@ -134,6 +140,13 @@ export function Step2({
   const isGov = clientType === "government";
   const isNGO = clientType === "ngo";
   const inputCls = "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
+  // UAT-REG-001 — «التالي» was merely disabled, with nothing on screen saying
+  // why. Same pattern as register/provider/components/Steps.tsx:276,305-315.
+  const emailTouched = Boolean(data.email);
+  const emailValid = EMAIL_RE.test((data.email || "").trim());
+  const phoneTouched = Boolean(data.phone);
+  const phoneResult = normalizeSaudiMobile(data.phone);
+  const phoneValid = phoneResult.ok;
   const GOV_ROLES = isAr
     ? [{ v: "judge", l: "قاضٍ" }, { v: "prosecutor", l: "عضو نيابة" }, { v: "officer", l: "ضابط" }, { v: "gov_counsel", l: "مستشار قانوني" }]
     : [{ v: "judge", l: "Judge" }, { v: "prosecutor", l: "Prosecutor" }, { v: "officer", l: "Officer" }, { v: "gov_counsel", l: "Legal Counsel" }];
@@ -334,12 +347,19 @@ export function Step2({
             <input
               type="email"
               dir="ltr"
+              autoComplete="email"
               placeholder="example@email.com"
               value={data.email || ""}
               onChange={(e) => onChange("email", e.target.value)}
-              className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
+              aria-invalid={emailTouched && !emailValid}
+              className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"} ${emailTouched && !emailValid ? "border-red-400 dark:border-red-500/60" : ""}`}
             />
           </div>
+          <p className={`mt-1.5 text-xs ${emailTouched && !emailValid ? "text-red-600 dark:text-red-400" : "text-ink-faint dark:text-gray-500"}`}>
+            {emailTouched && !emailValid
+              ? (isAr ? "البريد الإلكتروني غير صحيح — مثال: name@example.com" : "Invalid email address — e.g. name@example.com")
+              : (isAr ? "يُستخدم لتسجيل الدخول وإشعارات الحساب" : "Used to sign in and for account notices")}
+          </p>
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
@@ -349,13 +369,21 @@ export function Step2({
             <Phone size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
             <input
               type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
               dir="ltr"
               placeholder="05XXXXXXXX"
               value={data.phone || ""}
-              onChange={(e) => onChange("phone", e.target.value)}
-              className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
+              onChange={(e) => onChange("phone", sanitizePhoneDigits(e.target.value))}
+              aria-invalid={phoneTouched && !phoneValid}
+              className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"} ${phoneTouched && !phoneValid ? "border-red-400 dark:border-red-500/60" : ""}`}
             />
           </div>
+          <p className={`mt-1.5 text-xs ${phoneTouched && !phoneValid ? "text-red-600 dark:text-red-400" : "text-ink-faint dark:text-gray-500"}`}>
+            {phoneTouched && !phoneValid
+              ? (isAr ? saudiMobileMessage(phoneResult) : "Invalid mobile number — e.g. 0512345678")
+              : (isAr ? "أرقام فقط، ويُحفظ بصيغة دولية صحيحة" : "Digits only; stored in valid international format")}
+          </p>
         </div>
         {/* Country */}
         <div>

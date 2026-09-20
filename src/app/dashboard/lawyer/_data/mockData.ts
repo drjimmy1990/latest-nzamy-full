@@ -102,7 +102,11 @@ export const ACTIVITY_TIMELINE: ActivityItem[] = [
 export const AI_QUICK: AiQuickItem[] = [
   { href: "/ai/draft",               label: "الصائغ القانوني",   icon: PencilSimple, desc: "مذكرات + لوائح",          badge: "الأكثر استخداماً", hot: true },
   { href: "/ai/contracts",           label: "محترف العقود",      icon: FileText,     desc: "صياغة + مراجعة العقود" },
-  { href: "/ai/direction-support",   label: "داعم الاتجاه",      icon: Compass,      desc: "نصوص نظامية داعمة",      badge: "جديد" },
+  // UAT-LIVE-AI-001 — was badged «جديد» over a page whose every result was a
+  // module constant. /ai/direction-support now renders DashboardComingSoon, so
+  // the tile says «قريباً», the same badge the sidebars use and the one
+  // src/lib/services/navComingSoon.test.ts enforces for such a page.
+  { href: "/ai/direction-support",   label: "داعم الاتجاه",      icon: Compass,      desc: "نصوص نظامية داعمة",      badge: "قريباً" },
   { href: "/ai/wargaming",           label: "محاكي الخصم",       icon: Sword,        desc: "محاكاة المرافعة" },
   { href: "/ai/analyze-strength",   label: "محلل قوة الموقف",  icon: ChartLine,    desc: "تحليل فرص النجاح" },
   { href: "/ai/secretary",           label: "السكرتير الذكي",    icon: Headset,      desc: "تقارير + جدول يومي" },

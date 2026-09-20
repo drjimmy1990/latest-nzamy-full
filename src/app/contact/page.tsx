@@ -21,6 +21,7 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
+import { normalizeSaudiMobile, sanitizePhoneDigits, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import Link from "next/link";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -42,6 +43,13 @@ export default function ContactPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const Arrow = isRTL ? ArrowLeft : ArrowRight;
+  // UAT-CONTACT-001 — mirrors the server check in
+  // src/app/api/v1/contact/_validate.ts, so an unusable number is caught
+  // here instead of coming back as a 400 banner. The field is required on
+  // this form, so an empty value is invalid too.
+  const phoneTouched = Boolean(form.phone);
+  const phoneResult = normalizeSaudiMobile(form.phone);
+  const phoneValid = phoneResult.ok;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -254,12 +262,20 @@ export default function ContactPage() {
                         <input
                           required
                           type="tel"
+                          inputMode="numeric"
+                          autoComplete="tel"
                           value={form.phone}
-                          onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                          placeholder="+966 5x xxx xxxx"
-                          className={inputClass}
+                          onChange={e => setForm(f => ({ ...f, phone: sanitizePhoneDigits(e.target.value) }))}
+                          placeholder="05XXXXXXXX"
+                          aria-invalid={phoneTouched && !phoneValid}
+                          className={`${inputClass} ${phoneTouched && !phoneValid ? "border-red-400 dark:border-red-500/60" : ""}`}
                           dir="ltr"
                         />
+                        <p className={`mt-1.5 text-xs ${phoneTouched && !phoneValid ? "text-red-600 dark:text-red-400" : isDark ? "text-gray-500" : "text-slate-400"}`}>
+                          {phoneTouched && !phoneValid
+                            ? (isRTL ? saudiMobileMessage(phoneResult) : "Invalid mobile number — e.g. 0512345678")
+                            : (isRTL ? "أرقام فقط، ويُحفظ بصيغة دولية صحيحة" : "Digits only; stored in valid international format")}
+                        </p>
                       </div>
                     </div>
 
@@ -311,7 +327,7 @@ export default function ContactPage() {
 
                     <button
                       type="submit"
-                      disabled={loading}
+                      disabled={loading || !phoneValid}
                       className="flex w-full items-center justify-center gap-2 rounded-xl bg-royal py-4 font-semibold text-white transition hover:bg-royal/90 disabled:opacity-60"
                     >
                       {loading ? (

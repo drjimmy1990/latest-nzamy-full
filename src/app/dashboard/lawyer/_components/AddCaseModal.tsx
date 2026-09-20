@@ -6,7 +6,7 @@ import { CheckCircle, XCircle } from "@phosphor-icons/react";
 import { createWorkflowRequest } from "@/lib/services/workflowService";
 import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createWorkflowId } from "@/lib/workflowStore";
-import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
+import { createLawyerClient, getLawyerClients, type ClientType, type LawyerClient } from "@/lib/services/lawyerClientsService";
 import type { UserType, UserTier } from "@/hooks/useUser";
 
 interface Props {
@@ -44,15 +44,26 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
   const [priority, setPriority] = useState<Priority>("normal");
   const [description, setDescription] = useState("");
 
-  // Optional client picker (Phase 2 — public.lawyer_clients). Only cards
+  // Client picker (Phase 2 — public.lawyer_clients). Only cards
   // ("source: 'card'") are offered: a "profile" row has no id in
-  // lawyer_clients yet, so it cannot be linked via lawyerClientId. The
-  // free-text name field above stays the fallback path when nothing is
-  // picked, or while the list is loading/unreadable.
+  // lawyer_clients yet, so it cannot be linked via lawyerClientId.
+  //
+  // UAT-LIVE-CASE-001 — the free-text name is no longer a "fallback path".
+  // It used to mean «no card», and the case was then saved with the typed
+  // name dropped into the `requester` jsonb and `lawyer_client_id` left null:
+  // a موكل the platform has no record of, invisible to /dashboard/lawyer/
+  // clients, to the client file, and to every count that joins on that
+  // column. Typing a name now MAKES a card (handleSave below), so a case
+  // always names a موكل that exists. `clientType` is what the cards API
+  // requires to create one (api/v1/lawyer/clients/route.ts:377-379).
   const [clientCards, setClientCards] = useState<LawyerClient[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
   const [clientsUnreadable, setClientsUnreadable] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState("");
+  const [clientType, setClientType] = useState<ClientType>("individual");
+  // Set when this save created the card, so the success screen can say so
+  // rather than letting a new row appear in «الموكّلون» unannounced.
+  const [createdCardName, setCreatedCardName] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,6 +103,9 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
     </button>
   );
 
+  /** True when step 1 is answerable — the same rule «التالي» and Save both use. */
+  const step1Complete = Boolean(clientName.trim()) && Boolean(title.trim());
+
   async function handleSave() {
     // See the `user` prop doc: an unowned row is a lost case AND a row other
     // lawyers can read. Refuse rather than write one.
@@ -99,20 +113,64 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
       setError("تعذّر تحديد حسابك. أعد تحميل الصفحة ثم حاول مرة أخرى.");
       return;
     }
+    // UAT-LIVE-CASE-001 — re-checked at submit, not only at step 1. The step-1
+    // gate is one `disabled` attribute on one button; this is the state the row
+    // is actually built from. The two used to disagree and the payload settled
+    // it by inventing values.
+    const clientNameTrimmed = clientName.trim();
+    const titleTrimmed = title.trim();
+    if (!clientNameTrimmed || !titleTrimmed) {
+      setError("يرجى إدخال اسم الموكل وعنوان القضية قبل الحفظ.");
+      setStep(1);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
+      // A case must name a موكل the platform has a record of. When the lawyer
+      // typed a name instead of picking a card, the card is created first and
+      // the case is linked to it — so `lawyer_client_id` is always set and
+      // «الموكّلون», the client file and every linked count see this case.
+      //
+      // Demo mode is excluded because there is no cards API there at all
+      // (createLawyerClient throws by design, lawyerClientsService.ts:146-147);
+      // that branch keeps the local store, which is its real backend.
+      let lawyerClientId = selectedClientId;
+      if (!lawyerClientId && isSupabaseMode) {
+        try {
+          const card = await createLawyerClient({ name: clientNameTrimmed, clientType });
+          lawyerClientId = card.id;
+          // Reflect it locally so going «رجوع» shows the card selected rather
+          // than offering to create a second one with the same name.
+          setClientCards((prev) => (prev.some((c) => c.id === card.id) ? prev : [...prev, card]));
+          setSelectedClientId(card.id);
+          setCreatedCardName(card.name);
+        } catch (cardErr) {
+          console.error("[AddCaseModal] client card creation failed:", cardErr);
+          setError(
+            cardErr instanceof Error && cardErr.message
+              ? `تعذّر إنشاء بطاقة الموكّل: ${cardErr.message}`
+              : "تعذّر إنشاء بطاقة الموكّل. تحقّق من الاتصال ثم أعد المحاولة.",
+          );
+          setSaving(false);
+          return;
+        }
+      }
+
       const id = createWorkflowId();
       const payload = {
         id,
         type: "service" as const,
-        title: title.trim() || `قضية — ${clientName.trim() || "عميل نظامي"}`,
+        title: titleTrimmed,
         description: description.trim(),
         receiver: "lawyer" as const,
         status: "pending_assignment" as const,
         requester: {
           userId: user.userId,
-          name: clientName.trim() || user.name || "عميل نظامي",
+          // The موكل's own name, and now always one that a `lawyer_clients`
+          // row carries too — never `user.name` (the LAWYER) or the literal
+          // «عميل نظامي», which is what this line used to fall back to.
+          name: clientNameTrimmed,
           role: user.userType ?? "lawyer",
           tier: user.tier ?? "free",
         },
@@ -120,7 +178,7 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
         sourcePath: "",
         metadata: { court, priority, assignee },
         assignedTo: user.userId,
-        ...(selectedClientId ? { lawyerClientId: selectedClientId } : {}),
+        ...(lawyerClientId ? { lawyerClientId } : {}),
       };
 
       // Same reason as AddHearingModal: createWorkflowRequest() swallows a
@@ -174,7 +232,10 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
               <CheckCircle size={28} weight="fill" className="text-emerald-500" />
             </div>
             <p className={`font-bold text-[16px] ${isDark ? "text-white" : "text-zinc-900"}`}>تم إضافة القضية بنجاح!</p>
-            <p className={`text-[12px] mt-1 mb-4 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>تم إدراجها في قائمة قضاياك النشطة.</p>
+            <p className={`text-[12px] mt-1 mb-4 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+              تم إدراجها في قائمة قضاياك النشطة.
+              {createdCardName && ` وأُنشئت بطاقة موكّل باسم «${createdCardName}» وربطت بها القضية.`}
+            </p>
             <button onClick={onClose} className="rounded-xl px-5 py-2 text-[13px] font-bold bg-[#0B3D2E] text-white">إغلاق</button>
           </div>
         ) : (
@@ -188,7 +249,7 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
               <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
                 {!clientsUnreadable && (clientsLoading || clientCards.length > 0) && (
                   <div>
-                    <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>اختيار من قائمة الموكّلين (اختياري)</label>
+                    <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>اختيار من قائمة الموكّلين</label>
                     <select
                       value={selectedClientId}
                       onChange={e => handleClientPick(e.target.value)}
@@ -196,7 +257,7 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                       className={inputCls}
                     >
                       <option value="">
-                        {clientsLoading ? "جارٍ تحميل الموكّلين..." : "— بدون اختيار (اكتب الاسم يدوياً) —"}
+                        {clientsLoading ? "جارٍ تحميل الموكّلين..." : "— موكّل جديد (اكتب الاسم أدناه) —"}
                       </option>
                       {clientCards.map(c => (
                         <option key={c.id} value={c.id}>{c.name}</option>
@@ -214,6 +275,26 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                     className={inputCls}
                   />
                 </div>
+                {/*
+                  Only when the lawyer is naming a NEW موكل: the card that will
+                  be created needs a type, because `lawyer_clients.client_type`
+                  is `not null check (client_type in ('individual','company'))`
+                  (20260903_phase2…:139-140) and the route requires it. Hidden
+                  once a card is picked — that card already has its own type.
+                  Hidden in demo mode too, where no card is created at all.
+                */}
+                {isSupabaseMode && !selectedClientId && clientName.trim() !== "" && (
+                  <div>
+                    <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>نوع الموكّل</label>
+                    <select value={clientType} onChange={e => setClientType(e.target.value as ClientType)} className={inputCls}>
+                      <option value="individual">فرد</option>
+                      <option value="company">شركة</option>
+                    </select>
+                    <p className={`text-[11px] mt-1.5 ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                      ستُنشأ بطاقة موكّل بهذا الاسم عند الحفظ، وتُربط بها القضية.
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>عنوان القضية</label>
                   <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="مثال: مطالبة مالية - مؤسسة العليان" className={inputCls} />
@@ -226,10 +307,24 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                     <option>المحكمة العمالية</option>
                   </select>
                 </div>
+                {/*
+                  UAT-LIVE-CASE-001 — a REAL `disabled`, not only the disabled
+                  LOOK. This button was styled grey and unclickable-looking
+                  while staying fully clickable; the click handler set an error
+                  and returned, so the form read as broken rather than as
+                  incomplete, and keyboard/Enter submission bypassed the
+                  styling entirely. The error line is kept for the case the
+                  attribute cannot cover — a submit triggered any other way —
+                  but it is no longer the only thing standing between an empty
+                  field and step 2.
+                */}
                 <button
                   type="button"
+                  disabled={!step1Complete}
+                  aria-disabled={!step1Complete}
+                  title={step1Complete ? undefined : "أدخل اسم الموكل وعنوان القضية للمتابعة"}
                   onClick={() => {
-                    if (!clientName.trim() || !title.trim()) {
+                    if (!step1Complete) {
                       setError("يرجى إدخال اسم الموكل وعنوان القضية للمتابعة.");
                       return;
                     }
@@ -237,7 +332,7 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                     setStep(2);
                   }}
                   className={`w-full rounded-xl py-2.5 text-[13px] font-bold text-white mt-2 transition-colors ${
-                    !clientName.trim() || !title.trim()
+                    !step1Complete
                       ? "bg-zinc-600/70 cursor-not-allowed text-zinc-300"
                       : "bg-[#0B3D2E] hover:bg-[#0B3D2E]/90"
                   }`}
@@ -269,7 +364,12 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                 </div>
                 <div className="flex gap-2 mt-4">
                   <button onClick={() => setStep(1)} className={`flex-1 rounded-xl py-2.5 text-[13px] font-bold ${isDark ? "bg-white/[0.08] text-zinc-300" : "bg-slate-100 text-slate-600"}`}>رجوع</button>
-                  <button onClick={handleSave} disabled={saving} className="flex-1 rounded-xl bg-[#0B3D2E] text-[#C8A762] py-2.5 text-[13px] font-bold disabled:opacity-50">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving || !step1Complete}
+                    title={step1Complete ? undefined : "أدخل اسم الموكل وعنوان القضية في الخطوة السابقة"}
+                    className="flex-1 rounded-xl bg-[#0B3D2E] text-[#C8A762] py-2.5 text-[13px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     {saving ? "جارٍ الحفظ..." : "حفظ واعتماد"}
                   </button>
                 </div>

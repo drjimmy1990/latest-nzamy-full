@@ -6,7 +6,11 @@
  * • Shows a search trigger button in the Sidebar (below nav groups)
  * • Opens a full-overlay modal with:
  *   1. Tools section (matched from current user's sidebar nav)  ← immediate, frontend-only
- *   2. My Content section (cases, documents, etc.)             ← placeholder until backend
+ *   2. My Content section — the signed-in account's OWN documents and service
+ *      requests, read live through documentService/serviceOrders with a real
+ *      three-state read (loading / «تعذّرت القراءة» + retry / empty). It used
+ *      to be a hardcoded mock array, identical for every account and
+ *      linking to a fixture — UAT-GHOST-001, owner decision ٤.
  * • Supports Ctrl+K / ⌘+K shortcut as bonus
  * • RTL-aware, dark/light mode aware
  */
@@ -19,6 +23,7 @@ import {
   MagnifyingGlass, X, ArrowElbowDownLeft, Robot,
   FolderOpen, Gavel, FileText, Clock, Lightning,
   Sparkle, ArrowUpRight, Database,
+  WarningCircle, CircleNotch, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { getSidebarByUserType, type SidebarItem } from "@/constants/navigation";
@@ -26,6 +31,13 @@ import { useUser } from "@/hooks/useUser";
 import { usePathname } from "next/navigation";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
 import { isSharedClientIntakePath } from "@/lib/auth/routeAccess";
+import { getDocuments, type Document } from "@/lib/services/documentService";
+import { listMyServiceOrders } from "@/lib/services/serviceOrders";
+import {
+  resolveDocumentsHref, mapDocumentsToContent, mapServiceOrdersToContent,
+  matchPersonalContent, summarisePersonalReads,
+  type PersonalContentItem, type PersonalContentKind, type PersonalReadResult,
+} from "@/lib/services/globalSearchContent";
 
 // ─── Infer user type from path (same as SharedSidebar) ────────────────────────
 function inferUserTypeFromPath(pathname: string) {
@@ -41,12 +53,17 @@ function inferUserTypeFromPath(pathname: string) {
   return null;
 }
 
-// ─── Mock personal content (placeholder until backend) ────────────────────────
-const MOCK_CONTENT = [
-  { type: "case",     label: "قضية الشركة المتحدة ضد محمد العمري",  sub: "قضية تجارية • نشطة",   href: "/dashboard/client/cases/1" },
-  { type: "doc",      label: "عقد الإيجار — شقة الرياض",             sub: "مستند • آخر تعديل أمس", href: "/dashboard/client/documents/2" },
-  { type: "consult",  label: "استشارة قانونية — حقوق العمال",         sub: "استشارة • مكتملة",      href: "/dashboard/client/consultations/3" },
-];
+// ─── UAT-GHOST-001: what stood here ──────────────────────────────────────────
+// A module-level array of three invented rows — «قضية الشركة
+// المتحدة ضد محمد العمري», «عقد الإيجار — شقة الرياض», «استشارة قانونية —
+// حقوق العمال» — rendered under «من محتواك الشخصي» identically for every
+// signed-in account, each linking to a /dashboard/client/{cases,documents,
+// consultations}/{1,2,3} fixture. Owner decision ٤ («الرابط المباشر لا يرسم
+// fixture … build الإنتاج لا يحمل mock قابلاً للوصول») is why it is deleted
+// rather than hidden behind a flag: a flag still ships the strings.
+//
+// Its replacement is entirely in src/lib/services/globalSearchContent.ts
+// (pure, unit-tested) plus the two reads wired below.
 
 // ─── Flatten all sidebar items into a searchable list ─────────────────────────
 function extractTools(groups: ReturnType<typeof getSidebarByUserType>, hasClientGroup: boolean): SidebarItem[] {
@@ -75,11 +92,10 @@ function Highlight({ text, query }: { text: string; query: string }) {
 }
 
 // ─── Content type icon ────────────────────────────────────────────────────────
-function ContentTypeIcon({ type }: { type: string }) {
+function ContentTypeIcon({ type }: { type: PersonalContentKind }) {
   const cls = "flex-shrink-0";
-  if (type === "case")    return <Gavel    size={16} weight="duotone" className={`${cls} text-amber-400`}/>;
   if (type === "doc")     return <FileText size={16} weight="duotone" className={`${cls} text-blue-400`}/>;
-  if (type === "consult") return <Robot    size={16} weight="duotone" className={`${cls} text-purple-400`}/>;
+  if (type === "request") return <Gavel    size={16} weight="duotone" className={`${cls} text-amber-400`}/>;
   return <FolderOpen size={16} weight="duotone" className={`${cls} text-zinc-400`}/>;
 }
 
@@ -97,6 +113,17 @@ export function GlobalSearch() {
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // ── «من محتواك الشخصي» read state ─────────────────────────────────────────
+  // Starts at "loading", never at "ready": a read that has not happened yet
+  // asserts nothing, and «لا توجد نتائج في محتواك» on the first paint is a
+  // false statement about someone else's files.
+  const [contentState, setContentState] = useState<"loading" | "ready" | "unreadable">("loading");
+  const [personalItems, setPersonalItems] = useState<PersonalContentItem[]>([]);
+  /** True when one of the two sources answered and the other did not. */
+  const [partialRead, setPartialRead] = useState(false);
+  /** Guards against an older open's response landing after a newer one. */
+  const loadTokenRef = useRef(0);
+
   // Resolve user type
   const pathUserType = inferUserTypeFromPath(pathname);
   const isBusinessIntake =
@@ -108,6 +135,59 @@ export function GlobalSearch() {
   const groups = getSidebarByUserType(userType, dashboardMode, subRole, active_roles ?? [], governmentRole, businessRole, affiliation?.role, isDemoBypass, country);
   const allTools = extractTools(groups, hasClientGroup);
 
+  // ── The account's own content ─────────────────────────────────────────────
+  // The vault page is taken from THIS user's own sidebar, so a document row
+  // can never open another profile's dashboard, and a dashboard that has no
+  // vault page contributes no document rows rather than dead links.
+  const documentsHref = resolveDocumentsHref(allTools);
+
+  // Both reads are scoped to the caller AT THE SERVER: GET /api/v1/documents
+  // selects `attachments` with `.eq("owner_user_id", user.id)`, and
+  // GET /api/v1/service-requests is RLS-scoped plus `requester_user_id.eq(uid)`.
+  // Nothing on this side filters by account, so nothing on this side can
+  // forget to — which is what makes the two-account proof a property of the
+  // endpoints rather than of this component.
+  //
+  // Promise.allSettled, not Promise.all: one unreadable source must not erase
+  // the other's real rows. Every ATTEMPTED read failing is «تعذّرت القراءة»;
+  // one failing shows what was read plus an honest note. A failed source hands
+  // summarisePersonalReads an `ok: false` read with no rows, so a failure
+  // cannot become «لا توجد نتائج» — the substitution src/lib/services/listRead.ts exists to
+  // prevent, applied across two independent reads instead of one.
+  //
+  // The documents read is SKIPPED on a dashboard with no documents page
+  // (provider, admin, government, ngo): it is never pushed into `reads`, so
+  // it cannot be counted as a source that failed, and no row is rendered with
+  // nowhere to go.
+  const loadPersonalContent = useCallback(async () => {
+    const token = ++loadTokenRef.current;
+    setContentState("loading");
+    const docsRead: Promise<Document[]> = documentsHref ? getDocuments() : Promise.resolve([]);
+    const [docs, orders] = await Promise.allSettled([docsRead, listMyServiceOrders()]);
+    // A newer open already superseded this read — drop it rather than let it
+    // overwrite fresher state.
+    if (token !== loadTokenRef.current) return;
+    const reads: PersonalReadResult[] = [];
+    // Pushed only when it was actually asked for: summarisePersonalReads
+    // counts ATTEMPTED reads, and a source nobody asked must not be counted
+    // as one that answered.
+    if (documentsHref) {
+      reads.push({
+        ok: docs.status === "fulfilled",
+        items: docs.status === "fulfilled" ? mapDocumentsToContent(docs.value, documentsHref) : [],
+      });
+    }
+    reads.push({
+      ok: orders.status === "fulfilled",
+      items: orders.status === "fulfilled" ? mapServiceOrdersToContent(orders.value) : [],
+    });
+
+    const summary = summarisePersonalReads(reads);
+    setPersonalItems(summary.items);
+    setPartialRead(summary.partial);
+    setContentState(summary.unreadable ? "unreadable" : "ready");
+  }, [documentsHref]);
+
   // Filter tools
   const matchedTools = query.trim()
     ? allTools.filter(t =>
@@ -116,10 +196,9 @@ export function GlobalSearch() {
       )
     : allTools.slice(0, 6); // show first 6 as "recent" when no query
 
-  // Filter mock content
-  const matchedContent = query.trim()
-    ? MOCK_CONTENT.filter(c => c.label.toLowerCase().includes(query.toLowerCase()))
-    : [];
+  // The account's own rows matching the query — at most MAX_PERSONAL_MATCHES,
+  // and none at all for an empty query (see globalSearchContent.ts).
+  const matchedContent = matchPersonalContent(personalItems, query);
 
   const totalResults = matchedTools.length + matchedContent.length;
 
@@ -133,6 +212,15 @@ export function GlobalSearch() {
       setQuery("");
     }
   }, [open]);
+
+  // ── Read the account's own content when the palette opens ──────────────────
+  // On every open, not once per mount: the palette is how someone looks for a
+  // file they just uploaded or a request they just submitted, and a cached
+  // list would answer «لا توجد نتائج في محتواك» about a row that exists. Two
+  // idempotent GETs is the price.
+  useEffect(() => {
+    if (open) void loadPersonalContent();
+  }, [open, loadPersonalContent]);
 
   // Ctrl+K shortcut
   useEffect(() => {
@@ -168,6 +256,28 @@ export function GlobalSearch() {
   const sectionLabel = isDark ? "text-zinc-600" : "text-slate-400";
   const resultHover  = isDark ? "hover:bg-white/5" : "hover:bg-slate-50";
   const resultActive = isDark ? "bg-white/8" : "bg-slate-100";
+  const contentBoxBg = isDark ? "bg-white/3 border border-white/5" : "bg-slate-50 border border-slate-100";
+  const retryBtn     = isDark ? "bg-white/5 text-zinc-300 hover:bg-white/10" : "bg-slate-100 text-slate-600 hover:bg-slate-200";
+
+  /**
+   * One source read, the other not. The rows on screen are real, so they stay;
+   * what would be dishonest is letting the list imply it is complete.
+   */
+  const partialReadNote = partialRead ? (
+    <div className="flex flex-wrap items-center justify-center gap-2 px-4 pt-2 pb-1">
+      <WarningCircle size={12} weight="duotone" className="text-amber-500"/>
+      <span className={`text-[10px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+        {isAr ? "تعذّرت قراءة جزء من محتواك" : "Part of your content could not be read"}
+      </span>
+      <button
+        type="button"
+        onClick={() => { void loadPersonalContent(); }}
+        className={`text-[10px] font-bold underline ${isDark ? "text-zinc-300" : "text-slate-600"}`}
+      >
+        {isAr ? "إعادة المحاولة" : "Retry"}
+      </button>
+    </div>
+  ) : null;
 
   return (
     <>
@@ -294,45 +404,75 @@ export function GlobalSearch() {
                       </span>
                     </div>
 
-                    {matchedContent.length > 0 ? (
-                      matchedContent.map((item, i) => {
-                        const globalIdx = matchedTools.length + i;
-                        const isActive = cursor === globalIdx;
-                        return (
-                          <Link
-                            key={item.href}
-                            href={item.href}
-                            onClick={() => setOpen(false)}
-                            className={`flex items-center gap-3 px-4 py-3 transition-colors ${resultHover} ${isActive ? resultActive : ""}`}
-                          >
-                            <div className={`h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0 shadow-inner ${isDark ? "bg-white/5 border border-white/8" : "bg-slate-50 border border-slate-200"}`}>
-                              <ContentTypeIcon type={item.type}/>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-[13px] font-bold truncate ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-                                <Highlight text={item.label} query={query}/>
-                              </p>
-                              <p className={`text-[10px] truncate ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{item.sub}</p>
-                            </div>
-                            <ArrowUpRight size={14} className={`flex-shrink-0 ${isDark ? "text-zinc-600" : "text-slate-300"}`}/>
-                          </Link>
-                        );
-                      })
+                    {/* THREE-STATE READ — «لم نقرأ بعد», «تعذّرت القراءة» and «لا
+                        توجد نتائج» are three different facts and each says its
+                        own sentence. What was here before said all three at
+                        once, underneath three invented rows: «قضاياك ومستنداتك
+                        ستظهر هنا» / «متاح بعد ربط قاعدة البيانات». */}
+                    {contentState === "loading" ? (
+                      <div className={`flex items-center justify-center gap-2 py-6 px-4 mx-4 mb-2 rounded-2xl ${contentBoxBg}`}>
+                        <CircleNotch size={16} weight="bold" className={`animate-spin ${isDark ? "text-zinc-500" : "text-slate-400"}`}/>
+                        <p className={`text-[12px] font-bold ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                          {isAr ? "جارٍ قراءة محتواك…" : "Reading your content…"}
+                        </p>
+                      </div>
+                    ) : contentState === "unreadable" ? (
+                      <div className={`flex flex-col items-center justify-center py-6 px-4 mx-4 mb-2 rounded-2xl ${contentBoxBg}`}>
+                        <WarningCircle size={20} weight="duotone" className="text-amber-500 mb-2"/>
+                        <p className={`text-[12px] font-bold mb-2 ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
+                          {isAr ? "تعذّرت القراءة" : "Could not read your content"}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => { void loadPersonalContent(); }}
+                          className={`flex items-center gap-1 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors ${retryBtn}`}
+                        >
+                          <ArrowClockwise size={12} weight="bold"/>
+                          {isAr ? "إعادة المحاولة" : "Retry"}
+                        </button>
+                      </div>
+                    ) : matchedContent.length > 0 ? (
+                      <>
+                        {matchedContent.map((item, i) => {
+                          const globalIdx = matchedTools.length + i;
+                          const isActive = cursor === globalIdx;
+                          return (
+                            <Link
+                              /* `item.key`, not `item.href`: every document row
+                                 points at the one vault page, so hrefs repeat
+                                 and would collide as React keys. */
+                              key={item.key}
+                              href={item.href}
+                              onClick={() => setOpen(false)}
+                              className={`flex items-center gap-3 px-4 py-3 transition-colors ${resultHover} ${isActive ? resultActive : ""}`}
+                            >
+                              <div className={`h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0 shadow-inner ${isDark ? "bg-white/5 border border-white/8" : "bg-slate-50 border border-slate-200"}`}>
+                                <ContentTypeIcon type={item.type}/>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-[13px] font-bold truncate ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                                  <Highlight text={item.label} query={query}/>
+                                </p>
+                                <p className={`text-[10px] truncate ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{item.sub}</p>
+                              </div>
+                              <ArrowUpRight size={14} className={`flex-shrink-0 ${isDark ? "text-zinc-600" : "text-slate-300"}`}/>
+                            </Link>
+                          );
+                        })}
+                        {partialReadNote}
+                      </>
                     ) : (
-                      /* Placeholder state */
-                      <div className={`flex flex-col items-center justify-center py-6 px-4 mx-4 mb-2 rounded-2xl ${isDark ? "bg-white/3 border border-white/5" : "bg-slate-50 border border-slate-100"}`}>
+                      <div className={`flex flex-col items-center justify-center py-6 px-4 mx-4 mb-2 rounded-2xl ${contentBoxBg}`}>
                         <div className={`h-10 w-10 rounded-xl flex items-center justify-center mb-3 ${isDark ? "bg-white/5" : "bg-slate-100"}`}>
                           <Database size={18} className={isDark ? "text-zinc-600" : "text-slate-400"} weight="duotone"/>
                         </div>
-                        <p className={`text-[12px] font-bold mb-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                        <p className={`text-[12px] font-bold ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
                           {query
                             ? (isAr ? "لا توجد نتائج في محتواك" : "No matching content")
-                            : (isAr ? "قضاياك ومستنداتك ستظهر هنا" : "Your cases & docs will appear here")
+                            : (isAr ? "ابحث في مستنداتك وطلباتك" : "Search your documents & requests")
                           }
                         </p>
-                        <p className={`text-[10px] text-center ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
-                          {isAr ? "متاح بعد ربط قاعدة البيانات" : "Available after database connection"}
-                        </p>
+                        {partialReadNote}
                       </div>
                     )}
                   </div>

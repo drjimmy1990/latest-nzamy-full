@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * GET /api/library/folders — List user's smart folders
@@ -12,7 +13,8 @@ export async function GET() {
     
     // Get current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -55,7 +57,8 @@ export async function POST(request: Request) {
     const supabase = await createClient();
     
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -95,7 +98,8 @@ export async function PATCH(request: Request) {
     const supabase = await createClient();
     
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -141,7 +145,8 @@ export async function DELETE(request: Request) {
     const supabase = await createClient();
     
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

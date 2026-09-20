@@ -26,15 +26,19 @@ const test = (name: string, fn: () => void) => {
 
 // ── the visible set ──────────────────────────────────────────────────────────
 
-// The vault joined the root on 26 August (owner item ٨). The list is pinned
+// The vault joined the root on 26 August (owner item ٨); «إدارة الفريق» joined
+// on 2026-09-20 (WP-6 B-5/B-6) once the page stopped rendering MEMBERS — four
+// invented people and a fake invite URL — and started reading and writing
+// public.business_members through /api/v1/business/members. The list is pinned
 // rather than merely counted so that re-opening a corporate route is always a
 // deliberate edit here — every entry on it is a section a corporate account can
 // reach, and the whole point of the 26 August ruling was that most of them
 // could not honestly be.
-test('only the dashboard root and the document vault are linked under /dashboard/business', () => {
+test('only the dashboard root, the document vault and the real team page are linked under /dashboard/business', () => {
   assert.deepEqual(VISIBLE_BUSINESS_ROUTES, [
     '/dashboard/business',
     '/dashboard/business/documents',
+    '/dashboard/business/team',
   ]);
 });
 
@@ -45,6 +49,10 @@ test('the corporate sidebar links to nothing that renders fabricated data', () =
     // Real: /dashboard/business/documents lists the account's own uploads and
     // nothing else — there is no mock row anywhere in it.
     '/dashboard/business/documents',
+    // Real since WP-6 B-5: public.business_members via /api/v1/business/members.
+    // Nothing on the page is fabricated — a name the caller may not read shows
+    // as «الاسم غير متاح», not as a dash or an invented person.
+    '/dashboard/business/team',
     // 2026-08-27 — the shared intake (owner س٢: «الشركة تستخدم نفس النموذج»).
     // These are /dashboard/client/* on purpose; routeAccess.ts opens exactly
     // these three subtrees to a corporate account and nothing else.
@@ -64,7 +72,11 @@ test('the intake links do NOT re-open any /dashboard/business section', () => {
   for (const href of ['/dashboard/client/services', '/dashboard/client/requests', '/dashboard/client/consultation']) {
     assert.equal(VISIBLE_BUSINESS_ROUTES.includes(href), false, href);
   }
-  assert.deepEqual(VISIBLE_BUSINESS_ROUTES, ['/dashboard/business', '/dashboard/business/documents']);
+  assert.deepEqual(VISIBLE_BUSINESS_ROUTES, [
+    '/dashboard/business',
+    '/dashboard/business/documents',
+    '/dashboard/business/team',
+  ]);
 });
 
 test('the vault and its sub-pages are reachable, its look-alikes are not', () => {
@@ -79,6 +91,16 @@ test('the vault and its sub-pages are reachable, its look-alikes are not', () =>
 
 test('the overview itself is reachable', () => {
   assert.equal(isVisibleBusinessRoute('/dashboard/business'), true);
+});
+
+// WP-6 B-6. The team page moved OUT of the hidden list below — deliberately,
+// and only because it now has a real roster behind it. Every other section
+// listed there is still fabricated or still has no backend.
+test('the real team page is reachable and its look-alikes are not', () => {
+  assert.equal(isVisibleBusinessRoute('/dashboard/business/team'), true);
+  assert.equal(isVisibleBusinessRoute('/dashboard/business/team?q=a'), true);
+  assert.equal(isVisibleBusinessRoute('/dashboard/business/teams'), false);
+  assert.equal(isVisibleBusinessRoute('/dashboard/business/team-legacy'), false);
 });
 
 test('a trailing slash, a query and a hash do not change the answer', () => {
@@ -98,7 +120,6 @@ test('every hidden section is refused, including its sub-pages', () => {
     '/dashboard/business/cases/abc-123',
     '/dashboard/business/departments',
     '/dashboard/business/departments/hr',
-    '/dashboard/business/team',
     '/dashboard/business/reports',
     '/dashboard/business/wallet',
     '/dashboard/business/employee-contracts',
@@ -187,7 +208,6 @@ test('every hidden business section is still refused', () => {
     '/dashboard/business/kanban',
     '/dashboard/business/cases',
     '/dashboard/business/cases/abc-123',
-    '/dashboard/business/team',
     '/dashboard/business/wallet',
     '/dashboard/business/reports',
     '/dashboard/business/reviews/new',
@@ -197,13 +217,17 @@ test('every hidden business section is still refused', () => {
   }
 });
 
-test('the two visible business routes are not refused', () => {
+test('the three visible business routes are not refused', () => {
   for (const visible of [
     '/dashboard/business',
     '/dashboard/business/',
     '/dashboard/business?mode=service',
     '/dashboard/business/documents',
     '/dashboard/business/documents/42',
+    // WP-6 B-6 — a real roster, so the layout must render it rather than
+    // answering «هذا القسم قيد الإعداد» over the company's own members.
+    '/dashboard/business/team',
+    '/dashboard/business/team?q=a',
   ]) {
     assert.equal(isHiddenBusinessSection(visible), false, visible);
   }

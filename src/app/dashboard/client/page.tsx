@@ -8,7 +8,7 @@ import {
   ArrowClockwise, ArrowLeft, Clock, ChatCircle,
   FileText, Wallet, Shield,
   Headset, Users, PencilSimple,
-  Package, Lightning, WarningCircle,
+  Package, Lightning, WarningCircle, UserCircle,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -233,8 +233,15 @@ export default function ClientDashboard() {
   const { isDark } = useTheme();
   const user = useUser();
   const [aiInput, setAiInput] = useState("");
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  /**
+   * The summary read, in the same three-state shape the documents card below
+   * uses. It was a `summary: DashboardSummary | null` that could never be
+   * null in practice — see the effect.
+   */
+  const [summaryRead, setSummaryRead] = useState<ListRead<DashboardSummary> | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Bumped by the summary banner's retry; the summary effect refetches when it moves. */
+  const [summaryAttempt, setSummaryAttempt] = useState(0);
   /**
    * The documents card's read, in the shared three-state shape
    * (`ListRead` + `listViewState()`, src/lib/services/listRead.ts). It was a
@@ -247,31 +254,43 @@ export default function ClientDashboard() {
   /** Bumped by the card's retry; the documents effect refetches when it moves. */
   const [docsAttempt, setDocsAttempt] = useState(0);
 
+  // THE FIXTURE FALLBACK IS GONE FROM THE SERVICE AND THIS IS THE OTHER HALF.
+  // getDashboardSummary() used to end in `catch { return { ...DEMO_SUMMARY } }`
+  // (src/lib/services/dashboardService.ts), so a failed request arrived here as
+  // a fully-formed object with `activeCases: []`, `communityPreview: []`,
+  // `nextAppointment: null` and a `subscription` reading «مجانية» — «قضاياي»
+  // silently disappeared for a client who has cases and nothing on screen said
+  // why. It now returns a ListRead that carries its own failure, and the banner
+  // at the top of the page says «تعذّرت قراءة ملخص لوحتك» and offers a retry
+  // instead of the page asserting an absence it never read.
   useEffect(() => {
-    // `.catch(console.error)` IS DEAD CODE AND IS LEFT AS A BACKSTOP, not
-    // because it does anything. getDashboardSummary() cannot reject: its own
-    // body ends in `catch { return { ...DEMO_SUMMARY } }`
-    // (src/lib/services/dashboardService.ts:71).
-    //
-    // THAT FALLBACK IS A DEFECT THIS PAGE CANNOT FIX FROM HERE, and it is worth
-    // naming precisely. A failed summary request arrives at this component as a
-    // fully-formed object with `activeCases: []`, `communityPreview: []`,
-    // `nextAppointment: null` and a `subscription` reading «مجانية» — so the
-    // «قضاياي» section silently disappears for a client who has cases, and the
-    // welcome line stops mentioning them. It is not a false sentence on screen
-    // (the plan card below already refuses to name a plan for exactly this
-    // reason, and «قضاياي» hides rather than printing «٠»), but it is an
-    // absence asserted where an unreadable state is the truth, and no signal
-    // reaches this file to tell the two apart. Sniffing for the fixture — the
-    // missing `activeCasesTotal`, say — would be inventing an oracle out of an
-    // optional field. dashboardService.ts is not this change's file; making
-    // getDashboardSummary() throw, or return a read that carries its failure,
-    // is reported as a follow-up.
+    let cancelled = false;
     getDashboardSummary()
-      .then(setSummary)
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .then((read) => { if (!cancelled) setSummaryRead(read); })
+      .catch((e) => {
+        // getDashboardSummary() does not reject — it answers listFailed(). This
+        // stays as a backstop for a throw from outside its try (an import-time
+        // failure, say), and it lands on the same unreadable branch rather than
+        // leaving the page in its loading state forever.
+        if (cancelled) return;
+        console.error("[client dashboard] summary fetch failed:", e);
+        setSummaryRead(listFailed<DashboardSummary>());
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [summaryAttempt]);
+
+  const retrySummary = useCallback(() => {
+    setLoading(true);
+    setSummaryRead(null);
+    setSummaryAttempt((n) => n + 1);
   }, []);
+
+  // Three states, one spelling — the same listViewState() the documents card
+  // uses. `summary` is the single row the read carries, or null on every branch
+  // but 'ready', so no derived value below can be computed from a fixture.
+  const summaryView = listViewState(loading, summaryRead);
+  const summary = itemsOf(summaryRead)[0] ?? null;
 
   // The documents card reads the same source the /dashboard/client/documents
   // page reads. getDocuments() THROWS on failure rather than returning [] (see
@@ -506,7 +525,14 @@ export default function ClientDashboard() {
     },
   ];
 
-  if (loading || !summary) return <DashboardPageSkeleton />;
+  // LOADING IS THE ONLY STATE THAT STILL RETURNS THE SKELETON. `!summary` was
+  // in this condition as well, and it was harmless only because the service
+  // could not fail; now that an unreadable summary really is null, keeping it
+  // would have parked those clients on a skeleton that never resolves — a
+  // spinner with nothing behind it is its own false statement. The unreadable
+  // case renders the page with the banner at the top of the return below, and
+  // every card fed by the summary already shows nothing rather than zero.
+  if (summaryView === "loading") return <DashboardPageSkeleton />;
 
   const card = isDark
     ? "bg-zinc-900 border border-white/[0.07] rounded-2xl"
@@ -518,6 +544,36 @@ export default function ClientDashboard() {
       dir="rtl"
       suppressHydrationWarning
     >
+
+      {/* ══ The summary could not be read ════════════════════════════
+          NOT a silent fall-through to empty cards. /api/v1/dashboard/summary is
+          what feeds «قضاياي», «موعدك القادم» and the plan card, and when it
+          cannot be read all three fall silent — silence a client reads as
+          «ليس لديك شيء». Same three-state contract, same wording and the
+          same in-place retry as the documents card further down: re-asking one
+          question must not throw away the answers that did arrive. */}
+      {summaryView === "unreadable" && (
+        <div className={`flex items-start gap-2 rounded-2xl p-4 text-[12px] ${
+          isDark
+            ? "bg-amber-900/20 border border-amber-700/30 text-amber-300"
+            : "bg-amber-50 border border-amber-200 text-amber-700"
+        }`}>
+          <WarningCircle size={16} weight="fill" className="flex-shrink-0 mt-0.5" />
+          <span className="flex-1 leading-6">
+            تعذّرت قراءة ملخص لوحتك — قضاياك ومواعيدك وباقتك غير معروضة الآن، وهذا لا يعني أنها غير موجودة.
+          </span>
+          <button
+            type="button"
+            onClick={retrySummary}
+            className={`flex-shrink-0 inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold ${
+              isDark ? "border-amber-700/40 hover:bg-amber-900/30" : "border-amber-300 hover:bg-amber-100"
+            }`}
+          >
+            <ArrowClockwise size={12} weight="bold" />
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
 
       {/* Owner note ١٤١ — OnboardingBanner used to render here, first-visit
           only, directly above the Welcome Hero below: two stacked "welcome"
@@ -616,6 +672,31 @@ export default function ClientDashboard() {
                 >
                   <Robot size={16} weight="fill" />
                   اسأل نظامي AI
+                </motion.div>
+              </Link>
+              {/* THE ONLY ENTRY POINT TO THE PROFILE FROM THIS PAGE (WP-5 C-3).
+                  An individual has no /dashboard/client/profile — their profile
+                  is edited at /settings → «الملف الشخصي» — and until now the
+                  shared sidebar was the only way in; the landing page itself
+                  offered none. `?tab=profile` is read by
+                  src/app/settings/page.tsx, which ignores an id the account's
+                  role cannot see rather than opening a blank tab.
+
+                  QUIETER THAN THE TWO BUTTONS BESIDE IT, on purpose: this is
+                  navigation to a settings form, not one of the two actions the
+                  hero exists to offer.
+
+                  NO AVATAR CONTROL HERE. There is no Storage/API wiring behind
+                  an upload (ProfileTab.tsx says so where the avatar tile is),
+                  and a second button that only apologises is worse than its
+                  absence. */}
+              <Link href="/settings?tab=profile">
+                <motion.div
+                  whileHover={{ scale: 1.04, y: -1 }} whileTap={{ scale: 0.97 }}
+                  className="flex items-center gap-2 text-emerald-100/75 hover:text-white font-semibold px-3 py-2.5 rounded-xl text-sm cursor-pointer transition-colors"
+                >
+                  <UserCircle size={16} weight="fill" />
+                  الملف الشخصي
                 </motion.div>
               </Link>
             </div>

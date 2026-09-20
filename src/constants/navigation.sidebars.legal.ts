@@ -95,7 +95,10 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       { label: "الحاسبة القانونية",  labelEn: "Legal Calculator",  href: "/ai/fee-calculator",   icon: "Calculator" },
       { label: "منقح ناجز",          labelEn: "Najiz Optimizer",   href: "/ai/najiz-optimizer",  icon: "Broom" },
       // ٢: دوري أو عند الحاجة
-      { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",       badge: "جديد", divider: true },
+      // UAT-LIVE-AI-001 — badge «جديد» → «قريباً»: /ai/direction-support renders
+      // DashboardComingSoon now (its results were module constants), and a nav
+      // entry is a promise about the page under it.
+      { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",       badge: "قريباً", divider: true },
       { label: "المترجم القانوني",  labelEn: "Legal Translator",  href: "/ai/legal-translate",  icon: "Translate",     badge: "جديد" },
       { label: "المفرّغ الذكي",      labelEn: "Transcriber",       href: "/ai/transcriber",      icon: "Microphone" },
       { label: "المقارن الذكي",      labelEn: "Smart Comparator",  href: "/ai/compare",          icon: "ArrowsLeftRight", badge: "جديد" },
@@ -333,7 +336,8 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",         badge: "جديد" },
+      // badge «جديد» → «قريباً» — same reason as the lawyer sidebar above.
+      { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",         badge: "قريباً" },
       { label: "المترجم القانوني",  labelEn: "Legal Translator",   href: "/ai/legal-translate",   icon: "Translate",       badge: "جديد" },
       { label: "المفرّغ الذكي",      labelEn: "Transcriber",        href: "/ai/transcriber",       icon: "Microphone" },
       { label: "المقارن الذكي",      labelEn: "Smart Comparator",   href: "/ai/compare",           icon: "ArrowsLeftRight", badge: "جديد" },

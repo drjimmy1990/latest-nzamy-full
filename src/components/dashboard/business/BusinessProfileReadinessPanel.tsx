@@ -227,12 +227,25 @@ export function BusinessProfileReadinessPanel({ compact = false }: BusinessProfi
       {state === "ready" && shown.length === 0 && (
         <div className={`mt-4 rounded-xl border p-3 text-[12px] leading-relaxed ${soft} ${muted}`}>
           <p>لم تُسجَّل بيانات هذه المنشأة بعد — لا الاسم التجاري ولا رقم السجل التجاري ولا الممثل النظامي.</p>
-          {/* One honest route out, and it is a page that really submits (POST
-              /api/v1/contact). There is no corporate profile editor to link to;
-              inventing a «تعديل البيانات» button here would be a dead control
-              of exactly the kind this pass removed. */}
+          {/* WP-6 B-7. This used to say «There is no corporate profile editor
+              to link to» and offer /contact as the only way out. That stopped
+              being true when the S1 task shipped «إعدادات الكيان»:
+              /settings?tab=entity writes company_name_ar, cr_number,
+              legal_rep_name and legal_rep_capacity to the real
+              business_profiles columns through PATCH /api/v1/profile, and
+              since WP-6 B-1 the address and contact number as well. Sending a
+              company to a contact form to correct data it can edit itself was
+              the same kind of dead end the rest of this pass removed.
+              /contact stays as the SECONDARY route — it really submits (POST
+              /api/v1/contact) and is the right one when the row itself is
+              missing or the caller is not the owner, both of which this
+              empty state can be. */}
           <p className="mt-1">
             لتسجيلها أو تصحيحها{" "}
+            <Link href="/settings?tab=entity" className="font-bold text-[#C8A762] hover:underline">
+              افتح إعدادات الكيان
+            </Link>
+            ، أو{" "}
             <Link href="/contact" className="font-bold text-[#C8A762] hover:underline">
               تواصل مع فريق نظامي
             </Link>

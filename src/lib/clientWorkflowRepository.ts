@@ -1,6 +1,7 @@
 "use client";
 
 import { listOk, listFailed, type ListRead } from "@/lib/services/listRead";
+import { isSupabaseMode } from "@/lib/runtimeMode";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 
 type WorkflowRequestInput = Omit<WorkflowRequest, "createdAt" | "auditTrail"> & {
@@ -14,7 +15,19 @@ type WorkflowListOptions = {
 };
 
 const STORAGE_KEY = "nzamy_workflow_requests_v1";
-const BACKEND_ENABLED = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND === "supabase";
+
+// A seventh independent reading of NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND, and the
+// one the audit's list of five did not name. Spelled `=== "supabase"`, an UNSET
+// variable made this false, so every client request list, create and update in
+// the modules below silently used localStorage instead of
+// /api/v1/service-requests — the same class of failure as the other six
+// (docs/audits/2026-09-20-profiles-uat/02-auth-session-audit.md, H2).
+// src/lib/runtimeMode.ts is the single derivation now: unset ⇒ supabase.
+//
+// No `typeof window` guard here, unlike api.ts and useUser: the false branch is
+// what touches localStorage, and defaulting to the API path is what keeps this
+// module safe to evaluate during SSR.
+const BACKEND_ENABLED = isSupabaseMode;
 
 /**
  * How many rows the client request lists ask the server for.

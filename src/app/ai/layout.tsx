@@ -19,6 +19,8 @@ import ProviderDashboardLayout from "@/app/dashboard/provider/layout";
  *   1. Session-based (user.userType — highest priority, prevents sidebar bleeding)
  *   2. Path-based inference for unresolved sessions
  *      (/ai/corp/* → Business, /ai/gov/* → Government, etc.)
+ *   2b. Logged-out escape → render the page unwrapped; src/proxy.ts does the
+ *       redirecting for the protected /ai/* prefixes
  *   3. Last-dashboard stamp (nzamy_last_dashboard from localStorage) ← [U6] fix
  *   4. Fallback → BusinessDashboardLayout
  *
@@ -107,6 +109,23 @@ export default function AILayout({ children }: { children: React.ReactNode }) {
     return <MicroDashboardLayout>{children}</MicroDashboardLayout>;
   }
 
+  // ── 2b. LOGGED-OUT ESCAPE ────────────────────────────────────────────────
+  // Moved UP from the FALLBACK section below — UAT-LIVE-AI-001, and §5 of
+  // docs/audits/2026-09-20-profiles-uat/02-auth-session-audit.md. It used to
+  // sit after the LAWYER_AI_PREFIXES block, so a GUEST opening
+  // /ai/direction-support — a path in that list — was wrapped in
+  // <LawyerDashboardLayout>, whose
+  // <UserTypeGuard allowedTypes={["lawyer","firm","provider","admin"]}> then
+  // refused them with «صلاحيات غير كافية». A visitor with no session is not a
+  // permissions problem: they get the page unwrapped, and src/proxy.ts — which
+  // lists /ai/direction-support among its protected page prefixes — is what
+  // sends them to /login. The last-dashboard stamp below is skipped for them
+  // too, on purpose: a stale localStorage value must not hand a logged-out
+  // visitor dashboard chrome.
+  if (!user.isLoggedIn) {
+    return <>{children}</>;
+  }
+
   // Lawyer-facing AI tools that have no /ai/<role>/ prefix → lawyer sidebar, so a
   // fresh-session / new-tab open (before user.userType resolves) doesn't fall
   // through to the Business default. Only genuinely lawyer-exclusive tools here
@@ -144,8 +163,7 @@ export default function AILayout({ children }: { children: React.ReactNode }) {
   }
 
   // ── 4. FALLBACK ──────────────────────────────────────────────────────────
-  if (!user.isLoggedIn) {
-    return <>{children}</>;
-  }
+  // The logged-out escape that used to stand here is now step 2b above, so
+  // everything that reaches this line is signed in.
   return <BusinessDashboardLayout>{children}</BusinessDashboardLayout>;
 }

@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, XCircle } from "@phosphor-icons/react";
+import { Buildings, CheckCircle, XCircle } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
+import { businessIntakeNoticeAr } from "@/lib/services/businessOverview";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
 
 /**
@@ -122,6 +123,18 @@ export default function AddCaseModal({ onClose, isDark, onCaseAdded }: Props) {
         status: "pending_assignment",
         payment: { amount: 0, status: "not_required" },
         sourcePath: "/dashboard/business",
+        // WP-6 B-10 — EXPLICIT, not inferred. `resolveServiceRequestEntityScope`
+        // does support an explicit scope and validates it against a membership
+        // the server has already proven, but nothing in the product ever sent
+        // one: attachment rested entirely on this `sourcePath` string matching
+        // `/dashboard/business`. Rename or move this modal and every request
+        // filed from it silently becomes a PERSONAL request with no
+        // business_id — invisible to the rest of the company
+        // (20260914's `business members read business service requests`).
+        // Sent only when the session actually HAS a business membership, so
+        // the server's `unauthorized_scope` 403 can never be triggered by a
+        // client that simply guessed wrong.
+        ...(user.businessMembership ? { entityScope: "business" as const } : {}),
         // The cast mirrors the client form's (see its comment): the declared
         // `Record<string, string | number | boolean | null>` on
         // WorkflowRequest.metadata is stale rather than load-bearing — the
@@ -304,6 +317,16 @@ export default function AddCaseModal({ onClose, isDark, onCaseAdded }: Props) {
                       ))}
                     </div>
                   </div>
+                  {/* WP-6 B-10 — who this request is filed by. The company
+                      attachment is decided server-side from a proven
+                      membership; this is the person pressing the button being
+                      told which it is. */}
+                  {user.businessMembership && (
+                    <div className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[12px] font-semibold leading-relaxed ${isDark ? "border-white/10 bg-white/5 text-zinc-300" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                      <Buildings size={14} weight="fill" className="mt-0.5 flex-shrink-0 text-[#0B3D2E] dark:text-[#C8A762]" />
+                      <span>{businessIntakeNoticeAr(user.businessMembership.entityName)}</span>
+                    </div>
+                  )}
                   {/* A failed POST must say so on the same screen as the
                       button that failed. Without this the catch above would
                       be silent and the client would press «حفظ واعتماد»

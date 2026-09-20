@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { normalizeSaudiMobile, sanitizePhoneDigits } from "@/lib/services/saudiMobile";
+import { normalizeSaudiMobile, sanitizePhoneDigits, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import {
   Check,
   EnvelopeSimple,
@@ -273,7 +273,8 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
 export function Step3({ isAr, data, onChange }: { isAr: boolean; data: Record<string, string>; onChange: (k: string, v: string) => void }) {
   const [show, setShow] = useState(false);
   const phoneTouched = Boolean(data.phone);
-  const phoneValid = normalizeSaudiMobile(data.phone) !== null;
+  const phoneResult = normalizeSaudiMobile(data.phone);
+  const phoneValid = phoneResult.ok;
 
   return (
     <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
@@ -309,7 +310,7 @@ export function Step3({ isAr, data, onChange }: { isAr: boolean; data: Record<st
           </div>
           <p className={`mt-1.5 text-xs ${phoneTouched && !phoneValid ? "text-red-600 dark:text-red-400" : "text-ink-faint dark:text-gray-500"}`}>
             {phoneTouched && !phoneValid
-              ? (isAr ? "رقم الجوال غير صحيح — مثال: 0512345678" : "Invalid mobile number — e.g. 0512345678")
+              ? (isAr ? saudiMobileMessage(phoneResult) : "Invalid mobile number — e.g. 0512345678")
               : (isAr ? "أرقام فقط، ويُحفظ بصيغة دولية صحيحة" : "Digits only; stored in valid international format")}
           </p>
         </div>

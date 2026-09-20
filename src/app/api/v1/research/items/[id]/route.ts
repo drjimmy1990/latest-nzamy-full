@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isValidUuid, validateTitle, dbErrorResponse } from "../_shared";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * /api/v1/research/items/[id] — one `research_items` row, addressed on its
@@ -25,7 +26,8 @@ export async function PATCH(
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
   }
 
@@ -101,7 +103,8 @@ export async function DELETE(
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
   }
 

@@ -15,8 +15,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { LAWYER_AI_PERMISSION_KEYS } from "@/constants/lawyerAiCatalog";
 import { isDbUserType } from "@/lib/auth/userTypes";
+import { mergeMembershipReads } from "@/lib/auth/entityMembership";
 import type { ActiveEntityMemberships } from "@/lib/auth/entityMembership";
 import { createClient } from "@/lib/supabase/client";
+import {
+  isSupabaseMode as isSupabaseBackend,
+  BACKEND_MODE as RESOLVED_BACKEND_MODE,
+} from "@/lib/runtimeMode";
 import type { User } from "@supabase/supabase-js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -103,10 +108,43 @@ export interface Affiliation {
   role:        AffiliationRole;              // دوره داخل الكيان
 }
 
+/**
+ * What the `profiles` read for THIS signed-in user actually said.
+ *
+ * Absent (undefined) for a guest — a visitor with no session has no profile
+ * state, and conflating the two is exactly what UserTypeGuard has to tell apart.
+ *   ok           → a row with a recognised `user_type` (or one carried forward
+ *                  from the previous successful read for this same user).
+ *   missing      → the query succeeded and there is no usable type: no row, or
+ *                  a row whose `user_type` is null/empty. The account exists in
+ *                  Auth but its profile is incomplete.
+ *   unavailable  → the query itself failed. Says nothing about the user.
+ */
+export type ProfileState = "ok" | "missing" | "unavailable";
+
+/**
+ * How much the session knows about this user's ENTITY memberships — WP-6
+ * B-8/B-9. Kept apart from ProfileState because the two answer different
+ * questions and can disagree: `profiles.user_type` can read fine while the
+ * `business_members` policy throws.
+ *
+ *   ok           all four membership reads answered.
+ *   degraded     at least one failed, so `businessRole` / `affiliation` may be
+ *                an UNDERCOUNT. A permission check that denies by default must
+ *                be able to say so rather than behave as if the user simply
+ *                has no role.
+ *   unavailable  every read failed; the session knows nothing about memberships.
+ */
+export type MembershipState = "ok" | "degraded" | "unavailable";
+
 export interface UserSession {
   isLoggedIn:    boolean;
   userId?:       string;
   userType:      UserType;
+  /** See ProfileState. Undefined for a guest. */
+  profileState?: ProfileState;
+  /** See MembershipState. Undefined for a guest. */
+  membershipState?: MembershipState;
   subRole:       SubRole;
   name:          string;
   avatar?:       string;
@@ -403,11 +441,16 @@ export function getPermissions(userType: UserType, tier: UserTier): UserPermissi
 }
 
 // ─── Runtime backend mode ────────────────────────────────────────────────────
-const BACKEND_MODE =
-  typeof window !== "undefined"
-    ? (process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo")
-    : "demo";
-const isSupabaseMode = BACKEND_MODE === "supabase";
+// Was a local `?? "demo"` derivation (the file header's "avoid an import cycle"
+// note predates runtimeMode.ts being import-free — it imports nothing, so there
+// is no cycle to avoid). An unset variable used to make every dashboard trust a
+// localStorage blob for "logged in"; it now resolves to supabase. See
+// docs/audits/2026-09-20-profiles-uat/02-auth-session-audit.md §4 and H2.
+//
+// The `typeof window` guard stays: SSR has no browser session to read, and the
+// demo path below is browser-only by construction (localStorage + cookies).
+const BACKEND_MODE = typeof window !== "undefined" ? RESOLVED_BACKEND_MODE : "demo";
+const isSupabaseMode = typeof window !== "undefined" && isSupabaseBackend;
 
 // ─── ⚠️ DEMO BLOCK START — DELETE BEFORE PRODUCTION ─────────────────────────
 
@@ -534,8 +577,9 @@ export interface UseUserReturn extends UserSession {
  *
  * `missing` and `unavailable` are kept apart on purpose. `missing` means the
  * query succeeded and came back with no usable type — no row at all, or a row
- * whose `user_type` is null or empty. Either way that is a data problem, and the
- * `"individual"` fallback below is what keeps the session renderable through it.
+ * whose `user_type` is null or empty. Either way that is a data problem, and it
+ * now surfaces as `userType: null` + `profileState: "missing"` rather than as a
+ * silent demotion to `"individual"` (see mapSupabaseUser).
  * `unavailable` means the query itself failed — offline, RLS error, timeout — and
  * says nothing whatever about who the user is. It must never look like an answer.
  */
@@ -545,7 +589,7 @@ type ProfileTypeRead =
   | { status: "unavailable" };
 
 type EntityMembershipRead =
-  | { status: "found"; memberships: ActiveEntityMemberships }
+  | { status: "found"; memberships: ActiveEntityMemberships; degraded: boolean }
   | { status: "unavailable" };
 
 function relationName(value: unknown, field: string): string {
@@ -589,45 +633,80 @@ async function readEntityMemberships(
         .maybeSingle(),
     ]);
 
-    if (firmResult.error || businessResult.error || ownedFirmResult.error || ownedBusinessResult.error) {
-      return { status: "unavailable" };
+    // WP-6 B-8. Each read is now evaluated INDEPENDENTLY — mirroring
+    // `resolveActiveEntityIds` (src/app/api/v1/service-requests/route.ts),
+    // which logs each error and nulls only the failing query. This function
+    // used to collapse all four on any one error, so a recursive
+    // `business_members` policy (42P17, UAT-TEAM-001) discarded the caller's
+    // own `business_profiles` row, read successfully from a different table
+    // under a different policy, and threw an owner out of their own dashboard
+    // on a cold load. The merge itself lives in `mergeMembershipReads` so
+    // every combination of the four is unit-tested without a database.
+    for (const [label, result] of [
+      ["firm_members", firmResult],
+      ["business_members", businessResult],
+      ["firm_profiles", ownedFirmResult],
+      ["business_profiles", ownedBusinessResult],
+    ] as const) {
+      if (result.error) {
+        console.error(`[useUser] ${label} membership lookup failed:`, result.error.message, result.error.code);
+      }
     }
 
-    const memberships: ActiveEntityMemberships = {};
     const firm = firmResult.data as Record<string, unknown> | null;
     const ownedFirm = ownedFirmResult.data as Record<string, unknown> | null;
-    if (firm && typeof firm.firm_id === "string" && typeof firm.role === "string") {
-      memberships.firm = {
-        entityId: firm.firm_id,
-        entityName: relationName(firm.firm_profiles, "name_ar"),
-        role: firm.role,
-      };
-    } else if (ownedFirm && typeof ownedFirm.id === "string") {
-      memberships.firm = {
-        entityId: ownedFirm.id,
-        entityName: typeof ownedFirm.name_ar === "string" ? ownedFirm.name_ar : "",
-        role: "managing_partner",
-      };
-    }
-
     const business = businessResult.data as Record<string, unknown> | null;
     const ownedBusiness = ownedBusinessResult.data as Record<string, unknown> | null;
-    if (business && typeof business.business_id === "string" && typeof business.role === "string") {
-      memberships.business = {
-        entityId: business.business_id,
-        entityName: relationName(business.business_profiles, "company_name_ar"),
-        role: business.role,
-      };
-    } else if (ownedBusiness && typeof ownedBusiness.id === "string") {
-      memberships.business = {
-        entityId: ownedBusiness.id,
-        entityName: typeof ownedBusiness.company_name_ar === "string" ? ownedBusiness.company_name_ar : "",
-        role: "owner",
-      };
-    }
 
-    return { status: "found", memberships };
+    return mergeMembershipReads({
+      firmMember: {
+        failed: Boolean(firmResult.error),
+        summary:
+          firm && typeof firm.firm_id === "string" && typeof firm.role === "string"
+            ? {
+                entityId: firm.firm_id,
+                entityName: relationName(firm.firm_profiles, "name_ar"),
+                role: firm.role,
+              }
+            : null,
+      },
+      ownedFirm: {
+        failed: Boolean(ownedFirmResult.error),
+        summary:
+          ownedFirm && typeof ownedFirm.id === "string"
+            ? {
+                entityId: ownedFirm.id,
+                entityName: typeof ownedFirm.name_ar === "string" ? ownedFirm.name_ar : "",
+                role: "managing_partner",
+              }
+            : null,
+      },
+      businessMember: {
+        failed: Boolean(businessResult.error),
+        summary:
+          business && typeof business.business_id === "string" && typeof business.role === "string"
+            ? {
+                entityId: business.business_id,
+                entityName: relationName(business.business_profiles, "company_name_ar"),
+                role: business.role,
+              }
+            : null,
+      },
+      ownedBusiness: {
+        failed: Boolean(ownedBusinessResult.error),
+        summary:
+          ownedBusiness && typeof ownedBusiness.id === "string"
+            ? {
+                entityId: ownedBusiness.id,
+                entityName:
+                  typeof ownedBusiness.company_name_ar === "string" ? ownedBusiness.company_name_ar : "",
+                role: "owner",
+              }
+            : null,
+      },
+    });
   } catch {
+    // A THROW is different from a per-query error: nothing was read at all.
     return { status: "unavailable" };
   }
 }
@@ -679,6 +758,8 @@ function mapSupabaseUser(
   user: User | null,
   resolvedUserType: string | null,
   memberships: ActiveEntityMemberships = {},
+  profileState: ProfileState = "ok",
+  membershipState: MembershipState = "ok",
 ): UserSession {
   if (!user) return GUEST_SESSION;
 
@@ -686,10 +767,26 @@ function mapSupabaseUser(
   // profiles.user_type is the only trusted browser role. user_metadata is
   // writable by the account holder, so it must never create an admin or entity
   // session when the profile read is unavailable.
+  //
+  // `missing` no longer falls back to "individual". That fallback is what
+  // turned a real lawyer whose row could not be resolved into a client account,
+  // at which point <UserTypeGuard> refused them their own dashboard with
+  // «صلاحيات غير كافية» — UAT-LIVE-AI-001, and the "client-side demotion" of
+  // docs/audits/2026-09-20-profiles-uat/02-auth-session-audit.md §4. A profile
+  // that is absent or typeless is an INCOMPLETE PROFILE, not a different
+  // account type, and the session now says so: userType stays null and
+  // `profileState: "missing"` carries the reason, which UserTypeGuard renders
+  // as «ملفك غير مكتمل» with a link to /onboarding.
+  //
+  // `unavailable` is untouched: applyUser carries the previously resolved type
+  // forward for this same signed-in user, so only a first load with the network
+  // already down reaches the "individual" fallback.
   const userType: UserType =
-    resolvedUserType !== null && isDbUserType(resolvedUserType)
-      ? resolvedUserType
-      : "individual";
+    profileState === "missing"
+      ? null
+      : resolvedUserType !== null && isDbUserType(resolvedUserType)
+        ? resolvedUserType
+        : "individual";
 
   const tier = (meta.tier ?? "free") as UserTier;
   const subRole = (meta.sub_role ?? meta.provider_sub_role ?? null) as SubRole;
@@ -698,6 +795,8 @@ function mapSupabaseUser(
     isLoggedIn:    true,
     userId:        user.id,
     userType,
+    profileState,
+    membershipState,
     subRole,
     name:          meta.display_name ?? meta.full_name ?? user.email ?? "",
     avatar:        meta.avatar_url,
@@ -791,10 +890,36 @@ export function useUser(): UseUserReturn {
               }
             : {};
 
+        // A carried type means the previous, successful read still stands for
+        // this same user, so the session is "ok" — not "unavailable".
+        const profileState: ProfileState =
+          read.status === "found" || carried !== null
+            ? "ok"
+            : read.status === "missing"
+              ? "missing"
+              : "unavailable";
+
+        // WP-6 B-9. «you have no role» and «we could not read your role» are
+        // different answers, and the settings policy now denies by default, so
+        // the session has to carry which one this is. `degraded` means at
+        // least one of the four membership reads failed, so businessRole /
+        // affiliation may be an undercount; a carried-forward previous session
+        // is likewise not a fresh answer.
+        const membershipState: MembershipState =
+          membershipRead.status === "found"
+            ? membershipRead.degraded
+              ? "degraded"
+              : "ok"
+            : Object.keys(carriedMemberships).length > 0
+              ? "degraded"
+              : "unavailable";
+
         return mapSupabaseUser(
           authUser,
           read.status === "found" ? read.userType : carried,
           membershipRead.status === "found" ? membershipRead.memberships : carriedMemberships,
+          profileState,
+          membershipState,
         );
       });
 

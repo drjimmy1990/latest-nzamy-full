@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { documentsDbErrorResponse, isValidAttachmentId } from "../_shared";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * DELETE /api/v1/documents/[id] — soft delete by default; permanent with
@@ -41,7 +42,8 @@ export async function DELETE(
       error: authError,
     } = await supabase.auth.getUser();
 
-    if (authError || !user) {
+    if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+    if (!user) {
       return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
     }
 

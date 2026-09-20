@@ -27,7 +27,13 @@ import {
 // here without updating 20260826_corporate_identity_persisted.sql breaks the
 // signup trigger silently.
 import { normalizeCrNumber, isLegalRepCapacity } from "@/app/register/client/components/_corporateIdentity";
-import { normalizeSaudiMobile } from "@/lib/services/saudiMobile";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { profilePhoneDecision } from "./_phone";
+import {
+  resolveBusinessProfileScope,
+  canWriteBusinessProfile,
+  type BusinessProfileScope,
+} from "@/lib/auth/businessProfileScope";
 
 // ─── Arabic error copy ────────────────────────────────────────────────────────
 // Every message this route can return reaches a user: the lawyer profile
@@ -43,7 +49,8 @@ const AR = {
   // problem. See the PGRST116 branch below.
   readFailed: "حدث خطأ أثناء قراءة بياناتك من الخادم.",
   noFields: "لا توجد حقول صالحة للتحديث.",
-  badPhone: "رقم الجوال غير صحيح. أدخل رقم جوال سعودي يبدأ بـ 05 — مثال: 0512345678",
+  // badPhone used to live here. The message is now per-reason and comes from
+  // saudiMobileMessage() via ./_phone.ts — appendix 03 §(a).
   badOnboardingFlag: "قيمة حالة إكمال الإعداد غير صالحة.",
   lawyerFieldsOnly: "هذه الحقول متاحة لحسابات المحامين فقط.",
   saveFailed: "تعذّر حفظ التعديلات. حاول مرة أخرى.",
@@ -57,6 +64,10 @@ const AR = {
   noEntityForType: "لا توجد بيانات كيان مرتبطة بنوع حسابك.",
   entityRowMissing: "لم نعثر على بيانات الكيان الخاصة بحسابك.",
   businessFieldsOnly: "هذه الحقول متاحة للحسابات التجارية فقط.",
+  // WP-6 B-2. A member's PATCH used to match zero rows and leave here as
+  // AR.saveFailed/500 — «تعذّر حفظ التعديلات. حاول مرة أخرى.» over a request
+  // that will never succeed no matter how many times they try.
+  businessOwnerOnly: "تعديل بيانات الشركة متاح لمالك الحساب فقط.",
 } as const;
 
 /** lawyer_profiles.headline_ar — checked in code, not just at the column (item 130). */
@@ -79,9 +90,85 @@ function entityOwnerColumn(table: string): "owner_user_id" | "user_id" {
 }
 
 /**
+ * The caller's relationship to a company row: owner, active member, or
+ * neither — WP-6 B-2/B-3.
+ *
+ * Both reads go through the RLS-scoped client. RLS is the authority for what
+ * may be READ (20260921_03's `business_members` SELECT policy admits the
+ * caller's own row, a co-member's, the owner's and an admin's); the
+ * `owner_user_id` comparison here is what decides who may WRITE, and it is
+ * what lets this route answer a member with a specific Arabic 403 instead of
+ * the generic save failure a zero-row UPDATE used to produce.
+ *
+ * Shaped after `resolveActiveEntityIds`
+ * (src/app/api/v1/service-requests/route.ts:14-92): two independent reads,
+ * each error logged and carried as a flag rather than collapsing the pair.
+ * The decision itself lives in the pure `resolveBusinessProfileScope` so it
+ * can be tested without a database.
+ */
+async function resolveBusinessScope(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<{ scope: BusinessProfileScope; businessId: string | null; readFailed: boolean }> {
+  const [owned, membership] = await Promise.all([
+    supabase
+      .from("business_profiles")
+      .select("id")
+      .eq("owner_user_id", userId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("business_members")
+      .select("business_id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (owned.error) {
+    console.error("[api/v1/profile] owned business lookup failed:", owned.error.message, owned.error.code);
+  }
+  if (membership.error) {
+    console.error(
+      "[api/v1/profile] business membership lookup failed:",
+      membership.error.message,
+      membership.error.code,
+    );
+  }
+
+  return resolveBusinessProfileScope({
+    ownedId: (owned.data?.id as string | undefined) ?? null,
+    ownedFailed: Boolean(owned.error),
+    memberId: (membership.data?.business_id as string | undefined) ?? null,
+    memberFailed: Boolean(membership.error),
+  });
+}
+
+/**
  * GET /api/v1/profile — Get current user's profile
  *
- * 200 body: `{ profile, roleProfile, roleProfileReadFailed, subscription }`.
+ * 200 body: `{ profile, roleProfile, roleProfileReadFailed, subscription,
+ * entitySettings }`, plus `{ businessProfile, businessProfileScope }` for a
+ * corporate account only.
+ *
+ * ── `businessProfileScope` (WP-6 B-3) ──────────────────────────────────────
+ * `"owner" | "member" | "none"`. The caller owns the company row, is an
+ * ACTIVE member of one, or neither. Corporate accounts only — no other
+ * account type has a business_profiles row to be scoped against, and the key
+ * is omitted rather than sent as "none" so an existing reader that
+ * destructures `{ profile, roleProfile }` is unaffected.
+ *
+ * It exists because a member's read used to be indistinguishable from an
+ * empty company: the row was fetched `.eq("owner_user_id", user.id)`, which
+ * returns zero rows (not an error) for anyone but the owner, so
+ * `businessProfile` came back null with `roleProfileReadFailed` false and
+ * EntitySettingsTab rendered a blank, editable form. `"member"` now means
+ * «this is the company's real data and you may not change it»; `"none"` means
+ * «there is no company on this account»; a FAILED read is reported through
+ * the existing `roleProfileReadFailed` marker and never as `"none"`.
+ * Members read through the RLS client — the `business_profiles` SELECT policy
+ * (20260921_03) is what admits them, not a service-role bypass.
  *
  * `roleProfileReadFailed` exists because `roleProfile: null` used to mean two
  * incompatible things. supabase-js does NOT throw when a read fails — a
@@ -121,7 +208,8 @@ export async function GET() {
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json({ error: AR.unauthorized }, { status: 401 });
   }
 
@@ -215,38 +303,69 @@ export async function GET() {
   // `owner_user_id` for those four).
   let entitySettings: Record<string, unknown> = {};
   let businessProfile: Record<string, unknown> | null = null;
+  // "owner" | "member" | "none" — emitted for corporate only (WP-6 B-3). It
+  // is what lets EntitySettingsTab tell «you may not edit this» apart from
+  // «nothing is saved yet»; before it, both were a null businessProfile.
+  let businessProfileScope: BusinessProfileScope = "none";
   const entityTable = entityProfileTableFor(profile.user_type);
   if (entityTable === "provider_profiles" || entityTable === "micro_profiles") {
     entitySettings = readEntitySettings((roleProfile as { metadata?: unknown } | null)?.metadata);
-  } else if (entityTable) {
-    const ownerCol = entityOwnerColumn(entityTable);
-    const selectCols =
-      entityTable === "business_profiles"
-        ? "metadata, company_name_ar, cr_number, legal_rep_name, legal_rep_capacity"
-        : "metadata";
-    const { data, error } = await supabase
-      .from(entityTable)
-      .select(selectCols)
-      .eq(ownerCol, user.id)
-      .maybeSingle();
-    if (error) {
-      roleReadFailed(entityTable, error.message, error.code);
-    } else if (data) {
-      entitySettings = readEntitySettings((data as { metadata?: unknown }).metadata);
-      if (entityTable === "business_profiles") {
+  } else if (entityTable === "business_profiles") {
+    // Corporate is the one entity type with a members table the product now
+    // writes, so the row is resolved by SCOPE (owner first, then an active
+    // membership) rather than by owner_user_id alone — a member used to read
+    // zero rows and be shown a blank form with Save enabled (appendix 05 §3).
+    const resolved = await resolveBusinessScope(supabase, user.id);
+    businessProfileScope = resolved.scope;
+    if (resolved.readFailed) {
+      // Reuses the envelope's existing marker, which the tab already honours
+      // by disabling Save: an unreadable row must never look like an empty one.
+      roleProfileReadFailed = true;
+    }
+    if (resolved.businessId) {
+      const { data, error } = await supabase
+        .from("business_profiles")
+        .select(
+          "metadata, company_name_ar, cr_number, legal_rep_name, legal_rep_capacity, service_model, has_legal_dept",
+        )
+        .eq("id", resolved.businessId)
+        .maybeSingle();
+      if (error) {
+        roleReadFailed("business_profiles", error.message, error.code);
+      } else if (data) {
+        entitySettings = readEntitySettings((data as { metadata?: unknown }).metadata);
         const row = data as {
           company_name_ar?: unknown;
           cr_number?: unknown;
           legal_rep_name?: unknown;
           legal_rep_capacity?: unknown;
+          service_model?: unknown;
+          has_legal_dept?: unknown;
         };
         businessProfile = {
           company_name_ar: row.company_name_ar ?? null,
           cr_number: row.cr_number ?? null,
           legal_rep_name: row.legal_rep_name ?? null,
           legal_rep_capacity: row.legal_rep_capacity ?? null,
+          // WP-6 B-4 — both are NOT NULL with a default ('internal' / false)
+          // since 20260603 and nothing has ever read them. `?? null` stays so
+          // a row read before the columns existed does not emit `undefined`.
+          service_model: row.service_model ?? null,
+          has_legal_dept: row.has_legal_dept ?? null,
         };
       }
+    }
+  } else if (entityTable) {
+    const ownerCol = entityOwnerColumn(entityTable);
+    const { data, error } = await supabase
+      .from(entityTable)
+      .select("metadata")
+      .eq(ownerCol, user.id)
+      .maybeSingle();
+    if (error) {
+      roleReadFailed(entityTable, error.message, error.code);
+    } else if (data) {
+      entitySettings = readEntitySettings((data as { metadata?: unknown }).metadata);
     }
   }
 
@@ -276,7 +395,7 @@ export async function GET() {
     roleProfileReadFailed,
     subscription,
     entitySettings,
-    ...(profile.user_type === "corporate" ? { businessProfile } : {}),
+    ...(profile.user_type === "corporate" ? { businessProfile, businessProfileScope } : {}),
   });
 }
 
@@ -290,7 +409,8 @@ export async function PATCH(request: Request) {
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json({ error: AR.unauthorized }, { status: 401 });
   }
 
@@ -368,13 +488,16 @@ export async function PATCH(request: Request) {
   // write had already run.
   const lawyerOnlyFields = lawyerFields.filter((f) => !profileFields.includes(f));
 
-  if ("phone" in body) {
-    const normalized = normalizeSaudiMobile(body.phone);
-    if (!normalized) {
-      return NextResponse.json({ error: AR.badPhone }, { status: 400 });
-    }
-    // Store one shape, whatever was typed.
-    body.phone = normalized;
+  // The decision itself is pure and lives in ./_phone.ts so it can be tested
+  // without a Request or a session; see ./route.test.ts. The 400 now carries
+  // the specific reason (empty / letters / length / prefix) instead of one
+  // catch-all string — appendix 03 §(a).
+  const phoneDecision = profilePhoneDecision(body);
+  if (phoneDecision.action === "reject") {
+    return NextResponse.json({ error: phoneDecision.message }, { status: 400 });
+  }
+  if (phoneDecision.action === "store") {
+    body.phone = phoneDecision.e164;
   }
 
   if ("onboarding_completed" in body && typeof body.onboarding_completed !== "boolean") {
@@ -566,6 +689,36 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: AR.businessFieldsOnly }, { status: 403 });
   }
 
+  // ─── WP-6 B-2: writing a company's row is the OWNER's, once, up front ────
+  //
+  // Both write arms a corporate account can reach — the real columns
+  // (`businessProfile`) and the jsonb bag (`entitySettings`, whose entity
+  // table for this type IS business_profiles) — are owner-only per plan §5
+  // Q2. Resolved before either write so a member's request leaves nothing
+  // half-written, and answered with a specific 403 rather than the zero-row
+  // UPDATE's generic 500 (AR.saveFailed) or the bag arm's 404
+  // (AR.entityRowMissing), neither of which told the truth.
+  //
+  // RLS refuses a member's write regardless — this check exists so the REASON
+  // reaches the user in Arabic, not so the database can be trusted less.
+  const touchesBusinessRow =
+    baseProfile.user_type === "corporate" &&
+    (businessProfilePatch !== null || entitySettingsPatch !== null);
+  if (touchesBusinessRow) {
+    const resolved = await resolveBusinessScope(supabase, user.id);
+    if (resolved.readFailed) {
+      // We could not establish who the caller is. Refusing the write is the
+      // only safe answer; claiming they are not the owner would be a guess.
+      return NextResponse.json({ error: AR.saveFailed }, { status: 500 });
+    }
+    if (!canWriteBusinessProfile(resolved.scope)) {
+      return NextResponse.json(
+        { error: resolved.scope === "member" ? AR.businessOwnerOnly : AR.entityRowMissing },
+        { status: resolved.scope === "member" ? 403 : 404 },
+      );
+    }
+  }
+
   let profile = null;
   if (Object.keys(profileUpdates).length > 0) {
     const { data, error } = await supabase
@@ -613,6 +766,10 @@ export async function PATCH(request: Request) {
   if (entitySettingsPatch !== null) {
     const entityTable = entityProfileTableFor(baseProfile.user_type)!; // guarded above
     const ownerCol = entityOwnerColumn(entityTable);
+    // Still keyed by the owner column, for corporate too: the owner gate above
+    // has already established that a business_profiles row with
+    // `owner_user_id = user.id` exists, so this filter and the resolved id name
+    // the same row — and a member never gets here at all.
     const { data: entityRow, error: entityReadErr } = await supabase
       .from(entityTable)
       .select("metadata")
@@ -653,7 +810,9 @@ export async function PATCH(request: Request) {
       .from("business_profiles")
       .update(businessProfilePatch)
       .eq("owner_user_id", user.id)
-      .select("company_name_ar, cr_number, legal_rep_name, legal_rep_capacity")
+      .select(
+        "company_name_ar, cr_number, legal_rep_name, legal_rep_capacity, service_model, has_legal_dept",
+      )
       .single();
     if (error) {
       console.error("[api/v1/profile] business_profiles update failed:", error.message);

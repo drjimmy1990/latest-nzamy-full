@@ -21,6 +21,7 @@ import {
   readProfileFieldValue,
   isReadOnlyProfileField,
 } from "@/lib/services/profileFormTransform";
+import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import { LocalActionStatus, SectionTitle } from "./_shared";
 
 // ── The server envelope (GET/PATCH /api/v1/profile) — only the fields this tab reads ──
@@ -82,6 +83,10 @@ export function ProfileTab() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
+  // Per-field pre-flight errors, keyed by field key. Separate from `error`,
+  // which is the server's answer: a number that cannot possibly be stored
+  // should be said next to the field, not as a banner after a round trip.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Developer switcher state — demo mode only; its JSX below is gated by
   // isDemoUiEnabled (a build-time constant, dead-code-eliminated from a
@@ -191,11 +196,32 @@ export function ProfileTab() {
 
   const handleChange = (key: string, value: string) => {
     setFormValues((prev) => ({ ...prev, [key]: value }));
+    // Typing is the user answering the complaint — drop it on the first
+    // keystroke rather than leaving a stale red line under a corrected field.
+    setFieldErrors((prev) => (key in prev ? { ...prev, [key]: "" } : prev));
   };
 
   const handleSave = () => {
     if (saving) return;
     setError(null);
+    setFieldErrors({});
+
+    // Pre-flight, UAT-REG-002 / appendix 03 §(a). PATCH /api/v1/profile
+    // refuses an unusable number with a 400 and the same message, and the
+    // column itself now refuses it too (profiles_phone_e164_saudi_mobile,
+    // supabase/migrations/20260921_04_profiles_phone_e164_check.sql) — there
+    // is no reason to spend a round trip discovering that, or to show it as a
+    // banner when it belongs under the field. A blank phone is NOT checked
+    // here: `OMIT_WHEN_EMPTY_KEYS` (profileFormTransform.ts:37) drops it from
+    // the body, so it is "leave it alone", not "store an empty number".
+    const typedPhone = (formValues.phone ?? "").trim();
+    if (typedPhone !== "") {
+      const parsed = normalizeSaudiMobile(typedPhone);
+      if (!parsed.ok) {
+        setFieldErrors({ phone: saudiMobileMessage(parsed) });
+        return;
+      }
+    }
 
     if (!isSupabaseMode) {
       // Demo mode: local-only, exactly as before — confined here so it can
@@ -307,6 +333,7 @@ export function ProfileTab() {
             {fields.map((field) => {
               const val = formValues[field.key] ?? "";
               const readOnly = isReadOnlyProfileField(field);
+              const fieldError = fieldErrors[field.key] ?? "";
 
               return (
                 <div key={field.key} className={field.span === 2 ? "sm:col-span-2" : ""}>
@@ -331,12 +358,22 @@ export function ProfileTab() {
                       maxLength={field.maxLength}
                       disabled={readOnly}
                       onChange={(e) => handleChange(field.key, e.target.value)}
-                      className="w-full px-5 py-3 rounded-2xl border border-slate-200/60 dark:border-white/[0.06] bg-white/50 dark:bg-white/[0.02] text-zinc-800 dark:text-zinc-200 text-sm placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0B3D2E]/20 transition-all shadow-inner disabled:opacity-60 disabled:cursor-not-allowed"
+                      aria-invalid={Boolean(fieldError)}
+                      className={`w-full px-5 py-3 rounded-2xl border bg-white/50 dark:bg-white/[0.02] text-zinc-800 dark:text-zinc-200 text-sm placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0B3D2E]/20 transition-all shadow-inner disabled:opacity-60 disabled:cursor-not-allowed ${
+                        fieldError
+                          ? "border-rose-400 dark:border-rose-500/60"
+                          : "border-slate-200/60 dark:border-white/[0.06]"
+                      }`}
                     />
                   )}
                   {readOnly && (
                     <p className="mt-1 text-[11px] text-zinc-400 dark:text-zinc-500">
                       {field.key === "email" ? "البريد الإلكتروني مرتبط بحساب الدخول ولا يُعدَّل من هنا." : "يُعرض للاطلاع فقط ولا يُعدَّل من هذه الصفحة حالياً."}
+                    </p>
+                  )}
+                  {fieldError && (
+                    <p className="mt-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                      {fieldError}
                     </p>
                   )}
                 </div>

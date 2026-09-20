@@ -27,11 +27,10 @@ import { useTheme } from "@/components/ThemeProvider";
 import { authenticateTest, TEST_ACCOUNTS, TEST_PASSWORD } from "@/lib/test-credentials";
 import { setDemoSession, useUser } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
+import { isDbUserType } from "@/lib/auth/userTypes";
 import { createClient } from "@/lib/supabase/client";
-import { isDemoUiEnabled } from "@/lib/runtimeMode";
-import { normalizeSaudiMobile } from "@/lib/services/saudiMobile";
-
-const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
+import { isDemoUiEnabled, BACKEND_MODE } from "@/lib/runtimeMode";
+import { saudiMobileOrNull } from "@/lib/services/saudiMobile";
 
 const t = {
   ar: {
@@ -177,7 +176,7 @@ export default function LoginPage() {
     try {
       // ── Supabase Mode: Real authentication ──────────────────────────────────
       if (BACKEND_MODE === "supabase") {
-        const phone = inputMode === "phone" ? normalizeSaudiMobile(identifier) : null;
+        const phone = inputMode === "phone" ? saudiMobileOrNull(identifier) : null;
         const credentials = inputMode === "email"
           ? { email: identifier.trim(), password: password.trim() }
           : phone
@@ -195,16 +194,66 @@ export default function LoginPage() {
           return;
         }
 
-        // Fetch the user_type from the profiles table as the source of truth
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("user_type")
-          .eq("id", data.user.id)
-          .single();
+        // ── Handshake: does the SERVER see this session? ──────────────────
+        //
+        // signInWithPassword succeeded in the BROWSER. That is not the same as
+        // the server having accepted the cookies, and the old code never
+        // checked: it read `profiles` with the browser client and called
+        // `router.push(dest)` — a client-side transition, so the first thing
+        // that ever asked the server was a page that then bounced the user to
+        // /login. GET /api/v1/auth/session asks the server directly, with this
+        // request's own cookies, and answers 200 / 401 / 503.
+        // (docs/audits/2026-09-20-profiles-uat/02-auth-session-audit.md §4, H3.)
+        const handshake = await fetch("/api/v1/auth/session", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
 
-        const userType = profile?.user_type ?? "individual";
-        const dest = getDashboardRoute(userType);
-        router.push(dest);
+        if (handshake.status === 503) {
+          setError(
+            isAr
+              ? "تعذّر تأكيد الجلسة مع الخادم — تحقق من الاتصال ثم أعد المحاولة"
+              : "Could not confirm the session with the server — check your connection and try again",
+          );
+          return;
+        }
+
+        if (!handshake.ok) {
+          // 401: the browser holds a session the server will not accept. Log the
+          // cookie NAMES only — never a value — so the shape of the failure is
+          // visible without putting a token in a console or a bug report.
+          console.warn(
+            "[login] server did not accept the session; cookie names present:",
+            document.cookie
+              .split(";")
+              .map((c) => c.split("=")[0].trim())
+              .filter(Boolean),
+          );
+          setError(
+            isAr
+              ? "تم تسجيل الدخول لكن الخادم لم يستلم الجلسة — أعد المحاولة، وإن تكرر ذلك أبلغ الدعم"
+              : "Signed in, but the server did not receive the session — try again, and report it to support if it persists",
+          );
+          return;
+        }
+
+        // The server's own answer is the source of truth for the destination:
+        // it read `profiles` through the RLS client and reports `null` rather
+        // than guessing a type (see src/lib/auth/sessionResponse.ts). This used to be
+        // `profile?.user_type ?? "individual"`, which sent a lawyer whose row
+        // could not be read to the CLIENT dashboard — the same demotion
+        // UAT-LIVE-AI-001 is about. A signed-in account with no usable type has
+        // an incomplete profile, and /onboarding is where that belongs.
+        const session = (await handshake.json()) as { userType?: string | null };
+        const dest =
+          typeof session.userType === "string" && isDbUserType(session.userType)
+            ? getDashboardRoute(session.userType)
+            : "/onboarding";
+
+        // A FULL document load, not router.push: the next request has to reach
+        // the server carrying the cookies so SSR and src/proxy.ts see the same
+        // session the handshake just confirmed.
+        window.location.assign(dest);
         return;
       }
 

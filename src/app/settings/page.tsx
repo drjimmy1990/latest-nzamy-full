@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   UserCircle,
@@ -22,6 +22,7 @@ import {
   Calendar,
   Scales,
   FileText,
+  Warning,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -109,6 +110,42 @@ export default function SettingsPage() {
     }
   }, [activeTab, tabIds, tabs]);
 
+  // ـ?tab=<id> — DEEP LINK INTO ONE TAB.
+  //
+  // This page had no query handling at all, so every link into it landed on
+  // whatever `tabs[0]` happened to be for that account and a `?tab=` in the
+  // href was decorative. /dashboard/client now links here by name
+  // («الملف الشخصي» → /settings?tab=profile, WP-5 C-3; the business readiness
+  // panel → /settings?tab=entity, WP-6 B-7), and a link that
+  // silently ignores what it asked for is the kind of half-wiring this pass
+  // exists to remove.
+  //
+  // window.location.search, NOT useSearchParams(): that hook forces this
+  // statically rendered page under a Suspense boundary (the wrapper
+  // src/app/marketplace/page.tsx:386-391 and src/app/ai/contracts/page.tsx:435-441
+  // carry for exactly that reason), which is a far bigger change than one deep
+  // link needs. Read after mount, so there is no server/client mismatch.
+  //
+  // APPLIED ONCE, AND ONLY TO A TAB THIS ACCOUNT CAN ACTUALLY SEE. `tabs`
+  // comes from useUser() through useSettingsTabs(), which fills in after the
+  // first paint, so the requested id has to be allowed to arrive late — hence
+  // the ref rather than a `[]` dependency. An id this role has no tab for is
+  // ignored and the effect above keeps tabs[0]; it is never forced onto a tab
+  // the role policy hides.
+  const requestedTabApplied = useRef(false);
+  useEffect(() => {
+    if (requestedTabApplied.current) return;
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    if (!requested) {
+      requestedTabApplied.current = true;
+      return;
+    }
+    const match = tabs.find((tab) => tab.id === requested);
+    if (!match) return;
+    requestedTabApplied.current = true;
+    setActiveTab(match.id);
+  }, [tabIds, tabs]);
+
   const handleLogout = () => {
     logout();
     router.push("/auth/login");
@@ -131,6 +168,23 @@ export default function SettingsPage() {
         >
           {isRTL ? "الإعدادات" : "Settings"}
         </motion.h1>
+
+        {/* WP-6 B-9. The corporate role predicates now DENY when the role is
+            unknown (they used to default to «owner», i.e. full manager). A
+            silent denial over a role we never managed to read is the mirror
+            image of that fail-open, so the reason is stated instead of the
+            tabs simply being absent. `roleUnavailable` is set only when the
+            session's membership reads were degraded or failed — not when the
+            account genuinely holds no entity role. */}
+        {policy.roleUnavailable && (
+          <div className="mb-6 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-6 font-semibold text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+            <Warning size={15} weight="fill" className="mt-0.5 shrink-0" />
+            <span>
+              تعذّر قراءة دورك داخل الشركة، لذلك لا تظهر هنا إلا الإعدادات الشخصية. هذه ليست قائمة صلاحياتك
+              النهائية — أعد تحميل الصفحة، وإن تكرر الأمر تواصل مع مالك حساب الشركة أو فريق نظامي.
+            </span>
+          </div>
+        )}
 
         {policy.personalOnlyNotice && (
           <div className="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs leading-6 text-sky-800 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200">

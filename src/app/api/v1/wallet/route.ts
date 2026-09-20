@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 // ─── Shape mappers ──────────────────────────────────────────────────────────
 // wallet_transactions.kind CHECK: credit | debit | pending | reversal
@@ -137,7 +138,8 @@ const BALANCE_SCAN_MAX = 1000;
 export async function GET() {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // TWO reads, not one, and the split is by what each column is FOR.
   //

@@ -28,14 +28,14 @@ import { StepIndicator, Step1, Step2, Step3, Step4 } from "./components/Steps";
 import { setDemoSession, getPermissions } from "@/hooks/useUser";
 import type { UserSession, UserType } from "@/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
-import { normalizeSaudiMobile } from "@/lib/services/saudiMobile";
+import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import {
   isCorporateIdentityComplete,
   corporateSignupMetadata,
   microSignupMetadata,
 } from "./components/_corporateIdentity";
 
-const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
+import { BACKEND_MODE } from "@/lib/runtimeMode";
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
@@ -66,10 +66,21 @@ export default function RegisterClientPage() {
 
   const handleChange = (key: string, val: string) => setFormData((d) => ({ ...d, [key]: val }));
 
+  // UAT-REG-001. Same shape as register/provider/page.tsx:222 — the truthy-only
+  // `formData.email` check that used to live below let `not-an-email` walk from
+  // step 2 to step 3 and reach `supabase.auth.signUp`.
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
   const canNext = () => {
     if (step === 1) return clientType !== null;
     if (step === 2) {
-      if (!(formData.email && normalizeSaudiMobile(formData.phone))) return false;
+      if (!EMAIL_RE.test((formData.email || "").trim())) return false;
+      if (!normalizeSaudiMobile(formData.phone).ok) return false;
+      // UAT-REG-001. An individual could reach step 3 — and the database — with
+      // no name at all; Step2 asks for both halves, so both are required.
+      if (clientType === "individual" && !((formData.firstName || "").trim() && (formData.lastName || "").trim())) return false;
+      if (clientType === "government" && !(formData.entityName || "").trim()) return false;
+      if (clientType === "ngo" && !(formData.ngoName || "").trim()) return false;
       // Owner ruling §3ج. Before this gate, «التالي» advanced with every
       // corporate field blank — which is how a company row reaches the
       // database carrying nothing but the «شركة جديدة» placeholder.
@@ -266,11 +277,12 @@ export default function RegisterClientPage() {
                             // handle_new_user() reads it from metadata — see
                             // supabase/migrations/20260827_signup_contact_fields.sql,
                             // WITHOUT WHICH THIS KEY IS STILL IGNORED.
-                            const phoneE164 = normalizeSaudiMobile(formData.phone);
-                            if (!phoneE164) {
-                              setAuthError(isAr ? "رقم الجوال غير صحيح" : "Invalid mobile number");
+                            const phoneResult = normalizeSaudiMobile(formData.phone);
+                            if (!phoneResult.ok) {
+                              setAuthError(isAr ? saudiMobileMessage(phoneResult) : "Invalid mobile number");
                               return;
                             }
+                            const phoneE164 = phoneResult.e164;
                             const { error } = await supabase.auth.signUp({
                               email: formData.email,
                               password: formData.password,

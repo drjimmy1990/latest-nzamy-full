@@ -10,6 +10,8 @@ import {
 // this file imports next/server, so nothing could import it to make a claim
 // about who is allowed where. See routeAccess.test.ts for what is pinned.
 import { routeAccessRuleFor, isProtectedApiPath } from "@/lib/auth/routeAccess";
+import { resolveAuthOutcome, AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
+import { isSupabaseMode, isDemoMode } from "@/lib/runtimeMode";
 import {
   RateLimiter,
   resolveClientIp,
@@ -20,6 +22,7 @@ import {
   isStrictRateLimitedRoute,
   isGeneralRateLimitedApiPath,
 } from "@/lib/rateLimitRoutes";
+import { hasValidSaudiMobile } from "@/lib/services/saudiMobile";
 
 // ─── Rate limiting (owner item ١٧٢) ─────────────────────────────────────────
 //
@@ -128,8 +131,27 @@ const REDIRECTS: Record<string, string> = {
 };
 
 // ─── Backend mode check ────────────────────────────────────────────────────────
-const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
-const isSupabaseMode = BACKEND_MODE === "supabase";
+// Was `process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo"` — one of five
+// independent copies of that default. An unset variable therefore sent this
+// file down the legacy cookie-name branch at the bottom, which looks for
+// `nzamy_session` / `nzamy_demo_role`; a real Supabase login sets
+// `sb-<ref>-auth-token*`, so every signed-in user was redirected to
+// `/login?from=<path>` — the exact string in the UAT evidence. See
+// docs/audits/2026-09-20-profiles-uat/02-auth-session-audit.md hypothesis H2.
+// src/lib/runtimeMode.ts is now the only derivation: unset ⇒ "supabase",
+// "demo" only outside production, anything else throws at module load.
+
+// The edge runtime does not run src/instrumentation.ts (`register()` fires only
+// where NEXT_RUNTIME === "nodejs"), so without this line a misconfigured
+// production deploy would reach this file with no startup assertion having run
+// at all. Module scope: it throws when the first request loads the proxy, not
+// silently on the thousandth.
+if (process.env.NODE_ENV === "production" && !isSupabaseMode) {
+  throw new Error(
+    '[proxy] NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND must resolve to "supabase" in production — ' +
+      "refusing to serve the legacy cookie-name auth branch.",
+  );
+}
 
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -171,7 +193,22 @@ export default async function proxy(req: NextRequest) {
     );
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
+
+    // getUser() is a network round trip. Collapsing its transport failures into
+    // `!user` is what turned an egress/TLS fault into a 401 across the app
+    // (UAT-LIVE-SESSION-001): 503 says "ask again", 401 says "you are signed
+    // out", and only one of those is true here.
+    if (resolveAuthOutcome(user, authError) === "unavailable") {
+      console.error("[auth] getUser transport failure (API branch)", {
+        pathname,
+        name: authError?.name,
+        status: authError?.status,
+        message: authError?.message,
+      });
+      return NextResponse.json({ error: AUTH_UNAVAILABLE_AR }, { status: 503 });
+    }
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     return apiResponse;
   }
@@ -243,7 +280,26 @@ export default async function proxy(req: NextRequest) {
 
   // ─── Supabase Mode: Real auth ──────────────────────────────────────────────
   if (isSupabaseMode) {
-    let supabaseResponse = NextResponse.next({ request: req });
+    // Next gives a server layout no way to ask which URL it is rendering, so
+    // the pathname is stamped on the REQUEST here and read back with
+    // `headers()` in src/components/auth/ServerSessionGate.tsx — that is how
+    // /dashboard and /settings build `?from=<path>` when they redirect an
+    // anonymous visitor to /login. Only PROTECTED pages reach this line, so no
+    // public request carries it.
+    //
+    // `nextWithPathname()` replaces the bare `NextResponse.next({ request: req })`
+    // this branch used at three points. It is the same forward: `{ request: req }`
+    // reads `req.headers`, and `req.cookies.set()` in `setAll` below updates
+    // that same Cookie header, so building `new Headers(req.headers)` at the
+    // moment of the call captures exactly the cookies the old form did. The
+    // @supabase/ssr double-write pattern itself is untouched.
+    const nextWithPathname = () => {
+      const requestHeaders = new Headers(req.headers);
+      requestHeaders.set("x-nzamy-pathname", pathname);
+      return NextResponse.next({ request: { headers: requestHeaders } });
+    };
+
+    let supabaseResponse = nextWithPathname();
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -257,7 +313,7 @@ export default async function proxy(req: NextRequest) {
             cookiesToSet.forEach(({ name, value }) =>
               req.cookies.set(name, value),
             );
-            supabaseResponse = NextResponse.next({ request: req });
+            supabaseResponse = nextWithPathname();
             cookiesToSet.forEach(({ name, value, options }) =>
               supabaseResponse.cookies.set(name, value, options),
             );
@@ -269,7 +325,32 @@ export default async function proxy(req: NextRequest) {
     // Refresh the session token
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
+
+    // The session check never completed — a TLS/DNS/egress fault, not a
+    // statement about this visitor. Signing a real user out over a dropped
+    // packet is the defect this branch exists to stop, and it is the same
+    // fail-open choice already made for the `profiles` read below (see the
+    // long note above `if (profileError) return supabaseResponse;`) — except
+    // that this one is LOGGED, and it marks the response so a downstream
+    // server component can say so rather than guess.
+    //
+    // What it does not weaken: nothing downstream trusts this pass-through.
+    // The /dashboard and /settings server gates re-run getUser() on their own
+    // request, assertRole()/requireAdmin() re-read `profiles` on theirs, and
+    // RLS is what actually keeps one account's rows away from another.
+    if (resolveAuthOutcome(user, authError) === "unavailable") {
+      console.error("[auth] getUser transport failure (page branch)", {
+        pathname,
+        name: authError?.name,
+        status: authError?.status,
+        message: authError?.message,
+      });
+      const degraded = nextWithPathname();
+      degraded.headers.set("x-nzamy-auth", "unavailable");
+      return degraded;
+    }
 
     // Not authenticated → redirect to login
     if (!user) {
@@ -407,9 +488,10 @@ export default async function proxy(req: NextRequest) {
       needsOnboarding({
         userType: profile?.user_type,
         onboardingCompleted: profile?.onboarding_completed,
-        // Trimmed, not merely truthy: a phone of "" or "   " is exactly as
-        // unreachable as a NULL one.
-        hasPhone: (profile?.phone ?? "").trim() !== "",
+        // Format-aware, not merely non-blank: "" and "   " are unreachable,
+        // and so is `letters-and-email@example.test`, which is what the row
+        // the UAT wrote actually held. UAT-REG-002 / appendix 03 §5.
+        hasPhone: hasValidSaudiMobile(profile?.phone),
       })
     ) {
       const url = req.nextUrl.clone();
@@ -484,6 +566,17 @@ export default async function proxy(req: NextRequest) {
   }
 
   // ─── Demo Mode: Cookie-based auth (legacy) ────────────────────────────────
+  //
+  // Reachable ONLY when runtimeMode resolved an explicit "demo" outside
+  // production (isDemoMode). Before, it was the fall-through for "the env var
+  // is not exactly 'supabase'", which an unset variable satisfied — and since
+  // it recognises only `nzamy_session` / `nzamy_demo_role`, never the
+  // `sb-<ref>-auth-token*` cookies a real login writes, it bounced genuinely
+  // signed-in users to /login (UAT-LIVE-SESSION-001, hypothesis H2). The
+  // Supabase path above is now the default and the only production path; the
+  // guard below makes that structural rather than conventional.
+  if (!isDemoMode) return NextResponse.next();
+
   const isAuthenticated =
     req.cookies.has("nzamy_session") || req.cookies.has("nzamy_demo_role");
 

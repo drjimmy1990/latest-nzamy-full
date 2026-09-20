@@ -306,3 +306,31 @@ export function countVaultDocuments(docs: unknown): number | null {
   }
   return count;
 }
+
+/**
+ * The line an intake form shows a corporate account above «إرسال»:
+ * «سيُقدَّم هذا الطلب باسم <اسم الشركة>» — WP-6 B-10.
+ *
+ * WHY IT EXISTS. Attaching a request to a company was entirely IMPLICIT
+ * (`serviceRequestEntityScope.ts`: the source path, or `user_type ===
+ * "corporate"`), and the three forms a company files through are all under
+ * `/dashboard/client/*`. So the person filling one in had no way to know
+ * whether they were about to file on their own behalf or their employer's —
+ * a difference that decides who else can read the request afterwards
+ * (`business members read business service requests`, 20260914).
+ *
+ * WHY IT GOES THROUGH accountDisplayName. The name comes from
+ * `business_profiles.company_name_ar`, which is NOT NULL and which the signup
+ * trigger filled with «شركة جديدة» for every corporate account created before
+ * 20260826. Printing that back as «سيُقدَّم هذا الطلب باسم شركة جديدة» would
+ * be the placeholder-wearing-the-clothes-of-a-fact defect this module exists
+ * to prevent. When the name is not usable the sentence still states the fact
+ * that matters — that this is not a personal request — and simply does not
+ * name the company.
+ */
+export function businessIntakeNoticeAr(entityName: unknown): string {
+  const name = accountDisplayName(entityName);
+  return name
+    ? `سيُقدَّم هذا الطلب باسم ${name}`
+    : "سيُقدَّم هذا الطلب باسم منشأتك المسجَّلة، لا باسمك الشخصي";
+}

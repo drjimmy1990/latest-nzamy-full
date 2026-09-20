@@ -1,8 +1,41 @@
 import type { UserSession } from "@/hooks/useUser";
 import type { SettingsTabId } from "@/types/settingsBackendReady";
 
+/**
+ * The amber notice on the «صلاحياتي» tab — ONE render site, and it is the
+ * only thing this constant is: `RoleScopeTab.tsx:40`
+ * (`grep -rn "SETTINGS_BACKEND_READY_MESSAGE" src`). InvoiceTab and
+ * SignatureTab pass <BackendReadyNotice> their own wording and never read this.
+ *
+ * WHAT IT USED TO SAY AND WHY THAT BECAME FALSE. It read
+ * «محلي وجاهز للباك إند: لا يوجد حفظ خادمي أو إرسال بريد أو RBAC إنتاجي
+ * في هذه المرحلة.» — a blanket claim over the whole of /settings, written for a
+ * developer and left standing after the tabs under it grew real backends:
+ * ProfileTab and ProfessionTab PATCH /api/v1/profile, EntitySettingsTab writes
+ * `business_profiles` + `metadata.settings` through the same route, and
+ * Security/Notifications/Privacy PUT /api/v1/settings. A client who reads
+ * «لا يوجد حفظ خادمي» and therefore does not bother saving their phone
+ * number is being misled by a banner, which is the same class of defect as a
+ * mock drawn as data.
+ *
+ * IT IS NARROWED, NOT DELETED, because its first clause is still true and is
+ * this tab's real disclosure: `getSettingsRolePolicy()` below computes the role
+ * label and every capability flag in the browser from `user_type`/`sub_role` —
+ * there is no server-side permission store to read, and nothing on that tab
+ * changes anything.
+ *
+ * The two tabs named in it are the ones that still store nothing a user types:
+ * «التوقيع والختم» (no signature storage at all) and «الفواتير» (fields that
+ * are format hints only). Both say so themselves as well. The remaining tabs
+ * — الامتثال، التفويض، المدفوعات، الخطة والحدود، دعوة الأصدقاء — accept no
+ * input to lose (EmptyPanel), and «الفريق والدعوات» reads the real
+ * firm_members roster and links out for every write. If either named tab gets a
+ * backend, take it out of this sentence — do not widen the claim again.
+ */
 export const SETTINGS_BACKEND_READY_MESSAGE =
-  "محلي وجاهز للباك إند: لا يوجد حفظ خادمي أو إرسال بريد أو RBAC إنتاجي في هذه المرحلة.";
+  "ما تراه هنا من دور وصلاحيات تحسبه الواجهة من نوع حسابك، لا من نظام صلاحيات على الخادم، " +
+  "ولا يُعدَّل من هذه الصفحة. أما التبويبات التي تقبل التعديل فتُحفظ تغييراتها على الخادم فعلاً، " +
+  "عدا «التوقيع والختم» و«الفواتير» فلا يُحفظ منهما شيء.";
 
 export interface SettingsRoleOption {
   value: string;
@@ -55,6 +88,13 @@ export interface SettingsRolePolicy {
   seatPolicy?: SettingsSeatPolicy;
   inviteRoles: SettingsRoleOption[];
   personalOnlyNotice?: string;
+  /**
+   * True when a permission below is `false` because the session could not READ
+   * this account's entity role, not because the account does not have it —
+   * WP-6 B-9. The screen must say so; a silent denial over an unread role is
+   * the mirror image of the fail-open this replaced.
+   */
+  roleUnavailable?: boolean;
 }
 
 const ALWAYS_SIMPLE: SettingsTabId[] = ["profile", "security", "notifications", "privacy", "help"];
@@ -75,9 +115,21 @@ const FIRM_INVITE_ROLES: SettingsRoleOption[] = [
   { value: "finance_manager", label: "مدير مالي", scope: "entity", seatType: "member" },
 ];
 
-const CORPORATE_INVITE_ROLES: SettingsRoleOption[] = [
+// The EIGHT invitable roles of the `business_members` role CHECK
+// (20260603_phase1_002_entities.sql:303-307) — the ninth, `owner`, is set by
+// the ensure_business_owner_membership trigger from
+// business_profiles.owner_user_id and is not something a person is invited as.
+//
+// `compliance_officer` and `seconded` were missing until WP-6 B-5 even though
+// isCorporateComplianceManager() below branches on the first and the team page
+// renders labels for both. With POST /api/v1/business/members now validating
+// against the same eight, a role absent from this list was a role the product
+// admitted existed and offered no way to assign.
+export const CORPORATE_INVITE_ROLES: SettingsRoleOption[] = [
   { value: "legal_manager", label: "مدير الشؤون القانونية", scope: "entity", seatType: "professional" },
   { value: "legal_staff", label: "أخصائي قانوني", scope: "department", seatType: "professional" },
+  { value: "compliance_officer", label: "مسؤول الامتثال", scope: "entity", seatType: "professional" },
+  { value: "seconded", label: "مستشار منتدب", scope: "case", seatType: "professional" },
   { value: "department_head", label: "مدير قسم", scope: "department", seatType: "member" },
   { value: "hr_manager", label: "مدير موارد بشرية", scope: "department", seatType: "member" },
   { value: "finance_manager", label: "مدير مالي", scope: "entity", seatType: "member" },
@@ -117,20 +169,36 @@ function isFirmBillingManager(role?: string): boolean {
   return ["managing_partner", "partner", "finance_manager", "office_admin"].includes(role);
 }
 
+// ── Corporate role predicates — DENY BY DEFAULT (WP-6 B-9) ─────────────────
+//
+// All three used to read `role ?? "owner"`, so a corporate account whose
+// `businessRole` was unknown was treated as the company OWNER and shown
+// «إعدادات الكيان», «الفريق», billing and compliance. `businessRole` is
+// `memberships.business?.role ?? meta.business_role` (useUser.ts) and NO
+// signup writes that metadata key, so "unknown" was not an edge case: it was
+// every corporate account whose membership read had failed — precisely the
+// 42P17 population of UAT-TEAM-001, fail-open in exactly the wrong direction.
+//
+// An unknown role is now DENIED. The pairing that makes that safe is WP-6 B-8:
+// a real owner gets `role: "owner"` from the owned-`business_profiles`
+// fallback, which survives a failing `business_members` read instead of being
+// discarded with it. And when the reads were only partial, `roleUnavailable`
+// below says so out loud rather than letting the denial read as «you have no
+// permissions».
 function isCorporateEntityManager(role?: string): boolean {
-  return ["owner", "legal_manager", "hr_manager"].includes(role ?? "owner");
+  return role ? ["owner", "legal_manager", "hr_manager"].includes(role) : false;
 }
 
 function isCorporateBillingManager(role?: string): boolean {
-  return ["owner", "finance_manager"].includes(role ?? "owner");
+  return role ? ["owner", "finance_manager"].includes(role) : false;
 }
 
 function isCorporateComplianceManager(role?: string): boolean {
-  return ["owner", "legal_manager", "compliance_officer"].includes(role ?? "owner");
+  return role ? ["owner", "legal_manager", "compliance_officer"].includes(role) : false;
 }
 
 export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
-  const { userType, tier, subRole, businessRole, governmentRole, affiliation } = user;
+  const { userType, tier, subRole, businessRole, governmentRole, affiliation, membershipState } = user;
   const affiliationRole = affiliation?.role;
 
   if (userType === "admin") {
@@ -263,7 +331,12 @@ export function getSettingsRolePolicy(user: UserSession): SettingsRolePolicy {
     const canManageEntity = isCorporateEntityManager(businessRole);
     const canManageBilling = isCorporateBillingManager(businessRole);
     const canManageCompliance = isCorporateComplianceManager(businessRole);
+    // The denial above is honest only if the reason reaches the user. A role
+    // we never managed to read is not the same fact as a role that grants
+    // nothing — see MembershipState in src/hooks/useUser.ts.
+    const roleUnavailable = !businessRole && membershipState !== undefined && membershipState !== "ok";
     return {
+      roleUnavailable,
       roleLabel: "موظف شركة تجارية",
       entityLabel: "شركة تجارية",
       canManageEntity,

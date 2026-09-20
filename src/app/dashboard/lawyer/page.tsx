@@ -58,7 +58,8 @@ import {
   type LawyerDashboardSummary,
   type LawyerDashboardHearing,
 } from "@/lib/services/lawyerDashboardService";
-import { isSupabaseMode } from "@/lib/services/api";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
+import { buildPublicProfileUrl, canShareProfile as mayShareProfile, copyToClipboard } from "@/lib/services/publicProfileLink";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { orderReference } from "@/lib/services/orderReference";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
@@ -198,47 +199,6 @@ function shortRequestRef(requestId: string | undefined): string {
   return requestId ? `طلب ${orderReference(requestId)}` : "—";
 }
 
-/**
- * Copy `text` to the clipboard, reporting whether it actually landed there.
- *
- * Two tiers, because `navigator.clipboard` is unavailable on insecure origins
- * (plain http, which is how the dashboard is reached on the office LAN) and
- * rejects outright when the permission is denied. The textarea +
- * `execCommand("copy")` tier still works in those cases; it is deprecated but
- * not removed, and it returns a boolean we must honour rather than assume.
- *
- * The caller shows a success tick ONLY on `true` — a silent failure that still
- * ticked would send the lawyer off to paste an empty clipboard.
- */
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // Insecure origin, denied permission, or an unfocused document — fall through.
-  }
-  try {
-    const field = document.createElement("textarea");
-    field.value = text;
-    field.setAttribute("readonly", "");
-    // Off-screen rather than hidden: `display:none` / `visibility:hidden`
-    // elements cannot be selected, so the copy would silently do nothing.
-    field.style.position = "fixed";
-    field.style.top = "-1000px";
-    field.style.opacity = "0";
-    document.body.appendChild(field);
-    field.select();
-    field.setSelectionRange(0, text.length);
-    const copied = document.execCommand("copy");
-    document.body.removeChild(field);
-    return copied;
-  } catch {
-    return false;
-  }
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LawyerDashboardPage() {
@@ -260,6 +220,13 @@ export default function LawyerDashboardPage() {
   // the URL is shown in a selectable field for the lawyer to copy by hand.
   const [shareState, setShareState] = useState<"idle" | "copied" | "manual">("idle");
   const [profileUrl, setProfileUrl] = useState("");
+  // The lawyer's Phase-7 `lawyer_profiles.slug`, or "" while it is unknown.
+  // This page does not otherwise read `lawyer_profiles` — the dashboard
+  // summary comes from `service_requests` — so the slug is fetched on its own,
+  // once, from GET /api/v1/profile. A failed read is not an error state here:
+  // it leaves the slug empty and `buildPublicProfileUrl` falls back to the
+  // user id, which is exactly what this button used to hand out unconditionally.
+  const [profileSlug, setProfileSlug] = useState("");
 
   // Fetch real dashboard data, and re-fetch whenever a workflow item is
   // added/changed (the add-case / add-task modals dispatch nzamy-workflow-updated).
@@ -304,23 +271,25 @@ export default function LawyerDashboardPage() {
     return () => window.removeEventListener("nzamy-workflow-updated", handler);
   }, [loadSummary]);
 
-  // ─── Public profile link ──────────────────────────────────────────────────
+  // ─── Public profile link (WP-4 G4) ────────────────────────────────────────
   //
-  // The public profile lives at /lawyers/[slug], but `[slug]` is a misnomer:
-  // there is no slug column on `profiles` or on `lawyer_profiles`, and every
-  // real call site addresses that page by the profile id — the client's
-  // find-lawyer list links `/lawyers/${l.id}`, and the route behind it,
-  // /api/v1/lawyers/[id], filters `profiles.id`. So the per-user value is
-  // `useUser().userId` (= profiles.id = auth user id), NOT a name-shaped slug.
+  // The gate, the URL rule and the clipboard now live in
+  // src/lib/services/publicProfileLink.ts, shared with
+  // /dashboard/lawyer/profile's «مشاركة» button. Read `canShareProfile` and
+  // `buildPublicProfileUrl` there for the two conditions that have to hold
+  // before this link may be handed out.
   //
-  // Two conditions have to hold before the link is safe to hand out, and BOTH
-  // are currently false for at least some sessions:
-  //   1. There is a signed-in id at all. Guests and every demo account resolve
-  //      to a session with no `userId`, so there is nothing per-user to link.
-  //   2. The public directory is open. Under BETA_MONOPOLY_MODE the whole
-  //      /lawyers subtree redirects to /services/lawyers (see
-  //      src/app/lawyers/layout.tsx), so the copied link would land the
-  //      recipient on the firm's intake page instead of this lawyer.
+  // What this paragraph used to say, and what was wrong with it: «`[slug]` is
+  // a misnomer: there is no slug column on `profiles` or on `lawyer_profiles`
+  // … so the per-user value is `useUser().userId`, NOT a name-shaped slug».
+  // That stopped being true when
+  // supabase/migrations/20260907_phase7_profile_services_reviews.sql:46 added
+  // `lawyer_profiles.slug` (unique, CHECK-constrained, editable at
+  // /dashboard/lawyer/profile/edit). The comment stayed, and so did the code
+  // under it: this button kept copying `/lawyers/${userId}` — a UUID — while
+  // the profile page's twin already preferred the slug. Hence the shared
+  // module, and hence the fetch below: the slug is a `lawyer_profiles` column
+  // and this page reads nothing else from that table.
   //
   // ⚠️ A third condition is not — and cannot be — gated from here, and it is
   // the one that would bite first. This paragraph used to read: «the profile
@@ -345,7 +314,7 @@ export default function LawyerDashboardPage() {
   // screen lists BETA_MONOPOLY_MODE but holds it in a local array with no
   // persistence, and no platform_settings row backs it — its own teardown note
   // says removal «لا تتم من الواجهة فقط».
-  const canShareProfile = Boolean(userId) && !BETA_MONOPOLY_MODE;
+  const canShareProfile = mayShareProfile(userId, BETA_MONOPOLY_MODE);
   // Monopoly mode is tested FIRST because it is the reason that applies to
   // everyone today. Ordering it after the id check would tell a demo lawyer —
   // which is how this dashboard is actually tested, demo sessions carry no
@@ -354,13 +323,32 @@ export default function LawyerDashboardPage() {
     ? "صفحة الملف العام غير متاحة حالياً — دليل المحامين غير مفتوح للنشر بعد"
     : "سجّل الدخول بحسابك المهني لمشاركة رابط ملفك العام";
 
+  // One read of GET /api/v1/profile, only for `roleProfile.slug`. Deliberately
+  // silent on failure and on a missing row: the fallback is the user id, which
+  // is what this button handed out before the slug column existed, so a failed
+  // read degrades to the old behaviour instead of disabling the button or
+  // putting a second error banner on a dashboard that already has one.
+  useEffect(() => {
+    if (!isSupabaseMode || !userId || userType !== "lawyer") return;
+    let cancelled = false;
+    apiGet<{ roleProfile?: { slug?: string | null } | null }>("/api/v1/profile")
+      .then((res) => {
+        if (cancelled) return;
+        setProfileSlug(res.roleProfile?.slug?.trim() || "");
+      })
+      .catch((err: unknown) => {
+        console.warn("[lawyer dashboard] public profile slug unavailable:", err);
+      });
+    return () => { cancelled = true; };
+  }, [userId, userType]);
+
   const handleShareProfile = useCallback(async () => {
-    if (!canShareProfile) return;
-    const url = `${window.location.origin}/lawyers/${userId}`;
+    if (!canShareProfile || !userId) return;
+    const url = buildPublicProfileUrl(window.location.origin, profileSlug, userId);
     setProfileUrl(url);
     // No tick unless the copy is confirmed; otherwise fall back to manual.
     setShareState((await copyToClipboard(url)) ? "copied" : "manual");
-  }, [canShareProfile, userId]);
+  }, [canShareProfile, userId, profileSlug]);
 
   // Let the «تم نسخ الرابط ✓» state lapse on its own, and cancel the timer on
   // unmount so it cannot fire against a gone component.

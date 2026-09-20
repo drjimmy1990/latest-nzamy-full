@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { isAuthUnavailable, authUnavailableResponse } from '@/lib/auth/apiAuth';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 
 type Ok = { ok: true; user: User; userType: string; supabase: SupabaseClient };
@@ -23,7 +24,13 @@ export async function assertRole(allowed?: string[]): Promise<Ok | Err> {
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  // A transport failure is not a signed-out caller: answering 401 here is what
+  // made an egress/TLS fault read as a session fault (UAT-LIVE-SESSION-001).
+  if (isAuthUnavailable(user, authError)) {
+    return { ok: false, response: authUnavailableResponse() };
+  }
+
+  if (!user) {
     return {
       ok: false,
       response: NextResponse.json(

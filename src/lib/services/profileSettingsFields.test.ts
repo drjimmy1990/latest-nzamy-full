@@ -33,3 +33,22 @@ test("a firm member's role and department go to the entity settings slot", () =>
   assert.equal(entityProfileTableFor("firm"), "firm_profiles");
   assert.equal(entityProfileTableFor("individual"), null);
 });
+
+test("owner ك‏١.1 — «الجنسية» is offered to a lawyer and lands on public.profiles", () => {
+  const spec = profileFieldsFor("lawyer").find((f) => f.key === "nationality");
+  assert.ok(spec, "a lawyer must be offered الجنسية");
+  assert.equal(spec.label, "الجنسية");
+  assert.equal(spec.target, "profile");
+  const s = splitProfileForm("lawyer", { nationality: "سعودي", licenseNumber: "44/123" });
+  assert.deepEqual(s.profile, { nationality: "سعودي" });
+  assert.deepEqual(s.lawyer, { license_number: "44/123" });
+});
+
+test("owner decision Q3 — الجنسية is lawyer + individual only, never an entity type", () => {
+  for (const type of ["individual", "lawyer"]) {
+    assert.ok(profileFieldsFor(type).some((f) => f.key === "nationality"), type);
+  }
+  for (const type of ["firm", "corporate", "micro", "government", "ngo", "provider", "admin"]) {
+    assert.equal(profileFieldsFor(type).some((f) => f.key === "nationality"), false, type);
+  }
+});

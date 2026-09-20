@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import type { LawyerService } from "@/lib/services/lawyerServicesService";
 import type { Review, ReviewStats } from "@/lib/services/reviewsService";
 import type { EducationEntry } from "@/lib/services/lawyerProfileFields";
+import { redactAnonymousReview, requestIdsForEnrichment } from "../../reviews/_redact";
 
 /**
  * GET /api/v1/lawyers/[id] — one lawyer's PUBLIC profile.
@@ -128,7 +129,12 @@ async function hydrateReviews(
   if (rows.length === 0) return [];
 
   const reviewerIds = [...new Set(rows.filter((r) => !r.is_anonymous).map((r) => r.reviewer_id))];
-  const requestIds = [...new Set(rows.map((r) => r.request_id).filter((v): v is string => !!v))];
+  // Anonymous rows excluded — same rule, same module, as /api/v1/reviews
+  // (../../reviews/_redact.ts). This route had the identical defect: it
+  // withheld `reviewerName` and `requestId` from an anonymous review and then
+  // resolved that very request's title into `serviceTitleAr`, which
+  // /lawyers/[slug] prints as «عن: …» directly under «عميل».
+  const requestIds = requestIdsForEnrichment(rows);
 
   const [namesRes, requestsRes] = await Promise.all([
     reviewerIds.length > 0
@@ -152,25 +158,30 @@ async function hydrateReviews(
     requestTitles.set(r.id, metaTitle || r.title || "");
   }
 
-  return rows.map((r) => ({
-    id: r.id,
-    lawyerUserId,
-    reviewerName: r.is_anonymous ? null : names.get(r.reviewer_id) ?? null,
-    isAnonymous: r.is_anonymous,
-    // Anonymity means anonymous to the reviewed lawyer too: the request id
-    // is exactly what lets them look the reviewer up in their own dashboard
-    // (service_requests.requester_user_id), so it is withheld the same way
-    // reviewerName is above. serviceTitleAr still resolves off the raw row
-    // (r.request_id, not this field), so hiding the id costs nothing else.
-    requestId: r.is_anonymous ? null : r.request_id,
-    serviceTitleAr: r.request_id ? requestTitles.get(r.request_id) || null : null,
-    rating: r.rating,
-    title: r.title,
-    body: r.body,
-    response: r.response,
-    responseAt: r.response_at,
-    createdAt: r.created_at,
-  }));
+  return rows.map((r) => {
+    // Anonymity means anonymous to the reviewed lawyer too, across all three
+    // identity-bearing fields at once — see ../../reviews/_redact.ts for why
+    // `serviceTitleAr` belongs in that set and not outside it.
+    const redacted = redactAnonymousReview(
+      r,
+      names.get(r.reviewer_id) ?? null,
+      r.request_id ? requestTitles.get(r.request_id) || null : null,
+    );
+    return {
+      id: r.id,
+      lawyerUserId,
+      reviewerName: redacted.reviewerName,
+      isAnonymous: r.is_anonymous,
+      requestId: redacted.requestId,
+      serviceTitleAr: redacted.serviceTitleAr,
+      rating: r.rating,
+      title: r.title,
+      body: r.body,
+      response: r.response,
+      responseAt: r.response_at,
+      createdAt: r.created_at,
+    };
+  });
 }
 
 export async function GET(

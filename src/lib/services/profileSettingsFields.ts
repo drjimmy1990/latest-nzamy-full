@@ -41,6 +41,15 @@ export const PROFILE_FIELDS_BY_TYPE: Record<string, ProfileFieldSpec[]> = {
     { key: "nationality", label: "الجنسية", placeholder: "سعودي", type: "text", target: "profile", maxLength: 60 },
   ],
   lawyer: [
+    // owner ك‏١.1 — «الجنسية» for a lawyer too. Same `public.profiles.nationality`
+    // column the individual field above writes (20260906_phase6:124), already
+    // allow-listed and format-validated by PATCH /api/v1/profile
+    // (route.ts:333, :463-466), so this is a field spec only — no route, no
+    // migration. Owner decision Q3 scopes it to lawyer + individual: firm,
+    // corporate, micro, government, ngo and provider deliberately do NOT get
+    // it, because a nationality is a person's, and those tabs describe the
+    // signed-in member's role inside an entity, not the entity itself.
+    { key: "nationality",     label: "الجنسية", placeholder: "سعودي", type: "text", target: "profile", maxLength: 60 },
     { key: "licenseNumber",   column: "license_number",    label: "رقم ترخيص المحاماة",   placeholder: "44/XXXXX", type: "text", target: "lawyer", maxLength: 40 },
     { key: "licenseIssuedOn", column: "license_issued_on", label: "تاريخ إصدار الترخيص",  placeholder: "", type: "date", target: "lawyer" },
     { key: "licenseExpiry",   column: "license_expiry",    label: "تاريخ انتهاء الترخيص", placeholder: "", type: "date", target: "lawyer" },

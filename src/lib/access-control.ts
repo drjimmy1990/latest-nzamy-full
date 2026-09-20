@@ -15,6 +15,8 @@ import {
   type PaymentGatewayState,
   type PaymentGatewayStatus,
 } from "@/lib/paymentGatewayPolicy";
+import { isAuthUnavailable } from "@/lib/auth/apiAuth";
+import { AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
 
 export type { PaymentGatewayState, PaymentGatewayStatus } from "@/lib/paymentGatewayPolicy";
 
@@ -110,7 +112,14 @@ export async function requireAdmin(): Promise<AdminCheckResult> {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  // 503, not 401: every caller re-serves `error`/`status` verbatim, so a
+  // transport failure has to be distinguishable from "not signed in" here or
+  // it reaches the browser as a sign-out (UAT-LIVE-SESSION-001).
+  if (isAuthUnavailable(user, authError)) {
+    return { isAdmin: false, userId: null, error: AUTH_UNAVAILABLE_AR, status: 503 };
+  }
+
+  if (!user) {
     return { isAdmin: false, userId: null, error: "غير مصرح — يرجى تسجيل الدخول", status: 401 };
   }
 

@@ -23,6 +23,7 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { normalizeSaudiMobile, sanitizePhoneDigits, saudiMobileMessage } from "@/lib/services/saudiMobile";
 
 const partnerTypes = [
   {
@@ -107,6 +108,11 @@ export default function PartnersPage() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // UAT-CONTACT-001 — mirrors src/app/api/v1/contact/_validate.ts. The phone
+  // is optional on this form, so only a non-empty unusable value is an error.
+  const phoneTouched = Boolean(form.phone);
+  const phoneResult = normalizeSaudiMobile(form.phone);
+  const phoneValid = !form.phone || phoneResult.ok;
 
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -435,12 +441,20 @@ export default function PartnersPage() {
                     </label>
                     <input
                       type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel"
                       value={form.phone}
-                      onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                      placeholder="+966 5x xxx xxxx"
-                      className={partnerInputClass}
+                      onChange={e => setForm(f => ({ ...f, phone: sanitizePhoneDigits(e.target.value) }))}
+                      placeholder="05XXXXXXXX"
+                      aria-invalid={phoneTouched && !phoneValid}
+                      className={`${partnerInputClass} ${phoneTouched && !phoneValid ? "border-red-400 dark:border-red-500/60" : ""}`}
                       dir="ltr"
                     />
+                    <p className={`mt-1.5 text-xs ${phoneTouched && !phoneValid ? "text-red-600 dark:text-red-400" : "text-ink-muted dark:text-gray-500"}`}>
+                      {phoneTouched && !phoneValid
+                        ? (isAr ? saudiMobileMessage(phoneResult) : "Invalid mobile number — e.g. 0512345678")
+                        : (isAr ? "اختياري — أرقام فقط" : "Optional — digits only")}
+                    </p>
                   </div>
                 </div>
 
@@ -475,7 +489,7 @@ export default function PartnersPage() {
 
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || !phoneValid}
                   className="flex w-full items-center justify-center gap-2 rounded-2xl bg-royal py-4 text-sm font-semibold text-white transition hover:bg-royal-light disabled:opacity-60"
                 >
                   {loading ? (
