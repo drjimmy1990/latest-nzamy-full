@@ -149,7 +149,7 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
         </div>
         <div className={`flex-1 ${textStart}`}>
           <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{isRTL ? "مساعد المكتبة — نظامي AI" : "Library Assistant — Nezamy AI"}</p>
-          <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{isRTL ? "اسأل عن أي مادة أو استخرج نصوصاً محددة من النظام" : "Ask about any article or extract specific legal text"}</p>
+          <p className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{isRTL ? "اسأل عن أي مادة أو استخرج نصوصاً محددة من النظام" : "Ask about any article or extract specific legal text"}</p>
         </div>
         {open ? <CaretUp size={12} className={isDark ? "text-zinc-600" : "text-slate-400"} /> : <CaretDown size={12} className={isDark ? "text-zinc-600" : "text-slate-400"} />}
       </button>
@@ -159,7 +159,7 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
             <div className={`border-t ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
               {msgs.length === 0 && (
                 <div className="p-3">
-                  <p className={`text-[10px] font-bold mb-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{isRTL ? "أوامر سريعة:" : "Quick prompts:"}</p>
+                  <p className={`text-[10px] font-bold mb-2 ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{isRTL ? "أوامر سريعة:" : "Quick prompts:"}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {quickPrompts.map((p, i) => (
                       <button key={i} onClick={() => handleSend(p)}

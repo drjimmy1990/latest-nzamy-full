@@ -9,6 +9,14 @@
  */
 
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { isExplicitlyFreeLibraryItem, type LibraryFreeItemType } from "@/lib/library-item-access";
+import {
+  resolvePaymentGatewayState,
+  type PaymentGatewayState,
+  type PaymentGatewayStatus,
+} from "@/lib/paymentGatewayPolicy";
+
+export type { PaymentGatewayState, PaymentGatewayStatus } from "@/lib/paymentGatewayPolicy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,9 +157,10 @@ export async function checkAccess(
 
 export async function checkLibraryAccess(
   userId: string | null,
-  lawSlug: string,
+  itemId: string,
   articleIndex: number,
-  contentType: "laws" | "decrees" | "principles" | "feqh" | "books" | "precedents" = "laws",
+  contentType: LibraryFreeItemType = "laws",
+  options: { includeExplicitFreeItem?: boolean } = {},
 ): Promise<LibraryAccessResult> {
   const adminClient = await createServiceClient();
 
@@ -179,14 +188,18 @@ export async function checkLibraryAccess(
     (settingsMap.library_free_law_overrides as { overrides?: Record<string, number> })?.overrides ?? {};
 
   // Per-content-type "always free" slugs/ids written by the admin "free items" toggle.
-  // Shape: { laws: string[], decrees: string[], principles: string[], feqh: string[], books?: string[], precedents?: string[] }
+  // `principles` is the canonical key for judicial-principle IDs.
   const freeItemsMap = (settingsMap.library_free_items as Record<string, string[]>) ?? {};
-  const freeItemsForType: string[] = Array.isArray(freeItemsMap[contentType]) ? freeItemsMap[contentType] : [];
 
-  // 2. Check if law is whitelisted (always free).
-  //    library_whitelisted_laws is law-slug-keyed (backward compat); library_free_items
-  //    is per-content-type. Merge both so the admin toggle actually unlocks content.
-  const isWhitelisted = whitelistedSlugs.includes(lawSlug) || freeItemsForType.includes(lawSlug);
+  // 2. Check an exact item's explicit entitlement.  The law whitelist is
+  // law-only; a colliding non-law id must remain locked.  A collection route
+  // can disable this item check while it computes its existing first-N policy.
+  const isWhitelisted = options.includeExplicitFreeItem !== false && isExplicitlyFreeLibraryItem({
+    contentType,
+    itemId,
+    freeItemsByType: freeItemsMap,
+    whitelistedLawSlugs: whitelistedSlugs,
+  });
   if (isWhitelisted) {
     return {
       allowed: true,
@@ -211,7 +224,7 @@ export async function checkLibraryAccess(
   }
 
   // 5. Check free limit (per-law override or global default)
-  const freeLimit = overrides[lawSlug] ?? globalFreeLimit;
+  const freeLimit = overrides[itemId] ?? globalFreeLimit;
   const allowed = articleIndex < freeLimit; // 0-indexed
 
   return {
@@ -316,32 +329,22 @@ export async function checkCreditBalance(
 // call-sites block submit. "test" runs the stub adapter; "live" is reserved for
 // the future real provider.
 
-export type PaymentGatewayStatus = "disabled" | "test" | "live";
-
-export interface PaymentGatewayState {
-  status: PaymentGatewayStatus;
-  provider: string | null;
-  /** True when payments are NOT available (status === "disabled"). */
-  disabled: boolean;
-}
-
 export async function getPaymentGatewayStatus(): Promise<PaymentGatewayState> {
   const adminClient = await createServiceClient();
-  const { data: setting } = await adminClient
+  const { data: setting, error } = await adminClient
     .from("platform_settings")
     .select("value")
     .eq("key", "payments_gateway")
     .maybeSingle();
 
-  const value = (setting?.value as { status?: string; provider?: string | null }) ?? {};
-  const status = (value.status as PaymentGatewayStatus) ?? "disabled";
-  const provider = value.provider ?? null;
+  if (error) {
+    console.error("[payments_gateway] setting read failed; gateway remains disabled", error.message);
+  }
 
-  return {
-    status,
-    provider,
-    disabled: status === "disabled",
-  };
+  return resolvePaymentGatewayState(error ? null : setting?.value, {
+    deploymentEnvironment: process.env.NZAMY_DEPLOYMENT_ENV,
+    allowStubPayments: process.env.NZAMY_ALLOW_STUB_PAYMENTS === "true",
+  });
 }
 
 // ─── Legal library open/close switch ──────────────────────────────────────────

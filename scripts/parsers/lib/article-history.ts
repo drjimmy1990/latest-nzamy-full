@@ -60,7 +60,64 @@ export interface HistoryResult {
   unparsed: string[];
   /** Historic executive-regulation blocks — real content, but not article history. */
   regulationBlocks: string[];
+  /**
+   * ب-114 (2026-08-21): `<details>` blocks whose <summary> matches
+   * LIVE_ANNEX_SUMMARY_ALLOWLIST — CURRENT live content (schedules, a
+   * requirements-guide appendix) that was wrapped in <details> for display
+   * collapsing only, not because it is historical. Confirmed by corpus scan:
+   * 26 such blocks across "أنظمة ولوائح", e.g. the narcotics-schedule tables
+   * in نظام مكافحة المخدرات. Deliberately an ALLOWLIST, not a general
+   * emoji/keyword rule — council-reviewed (Codex + Antigravity): a summary
+   * heuristic alone risks misclassifying a genuinely-repealed table as live,
+   * or hiding a genuine live annex with different wording. Any block matching
+   * BEFORE_TEXT_LABELS in its body is still routed to `entries` regardless of
+   * summary — historical evidence in the body always wins.
+   */
+  liveAnnexes: Array<{ summary: string; content: string }>;
+  /**
+   * Bilingual regulations (2026-08-21, e-waste / insurance-policy files):
+   * a `<details>` block whose <summary> announces an English translation of
+   * this SAME article (e.g. "🇬🇧 English text — Article One: Definitions"),
+   * body confirmed >70% Latin characters. Populated only when EXACTLY ONE
+   * such block exists in the article — a second one, or a body that fails the
+   * Latin-ratio check, is quarantined into `unparsed` instead of guessed at
+   * (council review: Codex + Antigravity, ambiguity must never silently pick
+   * the first match). Never indexed into the Arabic `fts` column. Arabic
+   * remains authoritative per Art. 1 of the Basic Law of Governance; this is
+   * a courtesy translation, not a second original.
+   */
+  englishText?: string;
 }
+
+/**
+ * Exact <summary> strings confirmed (2026-08-21 corpus scan + manual content
+ * read) to introduce CURRENT, non-historical reference content: the four
+ * narcotics/precursor/plant schedule tables (نظام مكافحة المخدرات) and the
+ * SFDA conformity-assessment-body requirements guide (11 sections, appearing
+ * in both the merged law and its standalone regulation file). Excludes one
+ * unrelated 27th block (a SDAIA document-control metadata table) that is not
+ * article content at all and correctly stays quarantined.
+ * Match is exact and case-sensitive on purpose: an allowlist is only as safe
+ * as its specificity — do not loosen to a substring/keyword test without
+ * re-running the corpus scan to prove zero false positives (Codex review).
+ */
+const LIVE_ANNEX_SUMMARY_ALLOWLIST = new Set<string>([
+  "🎨 الملحق الفني التفصيلي لشهادات المنح وتقارير التفتيش (4-1 من الدليل)",
+  "📄 البنود التفصيلية للاستعانة بجهات خارجية (2-2 من الدليل)",
+  "📊 الجدول الأول: المواد المخدرة",
+  "📊 الجدول الثالث: السلائف الكيميائية",
+  "📊 الجدول الثاني: المؤثرات العقلية",
+  "📊 الجدول الرابع: النباتات والبذور المحظورة",
+  "📊 جدول المستندات المطلوبة للرخصة (2-6 من الدليل)",
+  "📝 إجراءات التجديد والتحديث والتقييم الدوري من دليل المتطلبات (2-9 و 2-10 من الدليل)",
+  "📝 الغرض من دليل متطلبات التعيين",
+  "📝 تعاريف إضافية من دليل المتطلبات",
+  "📝 تفصيل مجالات الرخصة واشتراطاتها حسب كل مجال (2-3 و 2-4 من الدليل)",
+  "📝 تفصيل مجالات رخصة نشاط الاختبار من دليل المتطلبات (2-7 من الدليل)",
+  "📝 ضوابط تفصيلية من دليل المتطلبات (2-1 اشتراطات عامة)",
+  "📝 متطلبات إضافية لنشاط الاختبار من دليل المتطلبات (2-8 من الدليل)",
+  "📝 نطاق تطبيق دليل متطلبات التعيين",
+]);
 
 // ── Labels whose following content IS the superseded statutory text ──────────
 // Ordered longest-first so a specific label wins over a shorter prefix of it.
@@ -72,12 +129,37 @@ const BEFORE_TEXT_LABELS = [
   "ونصها الأصلي قبل التعديل",
   "النص قبل التعديلين",
   "ونصها قبل الإلغاء",
+  "ونصه قبل الإلغاء",
   "ونصها قبل التعديل",
   "النص قبل الإلغاء",
   "النص قبل التعديل",
   "النص السابق",
   "نصها قبل التعديل",
   "نصها قبل الإلغاء",
+  // Discovered 2026-08-20 (ب-117): a full-article "before" quote introduced by
+  // naming which historical version it is, rather than by "قبل التعديل/الإلغاء" —
+  // e.g. "النص الأصلي للمادة (الصادر عام 1438هـ):" or "النص الأصلي عند صدور النظام
+  // (1423هـ):". Matched by prefix like every other entry here.
+  "النص الأصلي",
+  // Discovered 2026-08-20 (ب-117): a sub-paragraph deletion, distinct from a
+  // whole-article "before" quote — e.g. "نص الفقرة (1) المحذوفة:" or "نص
+  // الفقرات الفرعية المحذوفة:". Grammatical number varies (فقرة/فقرات/فقرتين);
+  // each form listed explicitly, matching this file's existing convention.
+  "نص الفقرة",
+  "نص الفقرات",
+  "نص الفقرتين",
+  // Discovered 2026-08-21 (ب-119): the four entries above were added without
+  // their و-conjunction sibling, unlike every older entry in this list (e.g.
+  // "نصها قبل التعديل" / "ونصها قبل التعديل" are both listed). A label
+  // following a preceding reference sentence routinely takes the "و" form —
+  // e.g. "...بموجب المرسوم... **ونص الفقرة (5) قبل هذا التعديل:**" — and
+  // classifyLabel() matches by strict prefix, so the bare form never matches
+  // it. Confirmed missing this pair specifically emptied نظام القضاء المادة
+  // الأولى (two full paragraph histories lost).
+  "ونص الفقرة",
+  "ونص الفقرات",
+  "ونص الفقرتين",
+  "والنص الأصلي",
 ];
 
 // ── Labels whose following content is a citation or change description ──────
@@ -138,8 +220,34 @@ const UNBOLDED_BEFORE_RE =
 const REFERENCE_NOTICE_RE =
   /^(اضيفت|عدلت|الغيت|حذفت|اضيف|عدل|الغي|استبدلت|نقلت)\b/;
 
-/** Summary wording that marks the block as holding a previous/historic version. */
-const HISTORIC_SUMMARY_RE = /الإصدارات\s+السابقة|التعديلات\s+والإلغاءات|نص\s+تاريخي|قبل\s+الإلغاء|قبل\s+التعديل/;
+/**
+ * Summary wording that marks the block as holding a previous/historic version.
+ * "حاشية"/"حواشي" (footnote/footnotes) and "النص السابق" added 2026-08-21
+ * (ب-114 corpus scan): 35 of 62 unrecognised-historical blocks in أنظمة ولوائح
+ * used "📜 حاشية المادة"/"📜 حواشي المادة" or a close variant as their summary —
+ * real footnote/annotation content, quarantined for want of this one phrase.
+ */
+const HISTORIC_SUMMARY_RE =
+  /الإصدارات\s+السابقة|التعديلات\s+والإلغاءات|نص\s+تاريخي|قبل\s+الإلغاء|قبل\s+التعديل|النص\s+السابق|حاشي[ةه]|حواشي/;
+
+/**
+ * Bilingual courtesy-translation blocks (2026-08-21): a <summary> announcing
+ * an English rendering of THIS article, e.g. "🇬🇧 English text — Article One:
+ * Definitions". Deliberately a loose phrase match — unlike
+ * LIVE_ANNEX_SUMMARY_ALLOWLIST this is gated by a content check (see
+ * isPredominantlyLatin below), not relied on alone, so it can generalise
+ * beyond a hand-verified list without the false-positive risk that made an
+ * allowlist necessary there (council review: Codex + Antigravity).
+ */
+const ENGLISH_TEXT_SUMMARY_RE = /english\s*text/i;
+
+/** True when >70% of the letters (Latin or Arabic) in `s` are Latin. */
+function isPredominantlyLatin(s: string): boolean {
+  const letters = s.match(/[A-Za-z؀-ۿ]/g);
+  if (!letters || letters.length === 0) return false;
+  const latin = letters.filter((c) => /[A-Za-z]/.test(c)).length;
+  return latin / letters.length > 0.7;
+}
 
 /**
  * Labels routinely carry a qualifier the canonical form does not, e.g.
@@ -191,19 +299,30 @@ function inferKind(label: string): HistoryEntry["kind"] {
 
 const DETAILS_RE = /<details[^>]*>([\s\S]*?)<\/details>/g;
 const SUMMARY_RE = /<summary>([\s\S]*?)<\/summary>/;
-/** A bolded label, optionally preceded by a quote marker and/or an emoji. */
-const LABEL_RE = /^[ \t]*>?[ \t]*(?:[^\S\n]*\S{1,3}[^\S\n]*)?\*\*([^*\n]{2,80}?)\*\*[ \t]*/gm;
+/**
+ * A bolded label, optionally preceded by a quote marker and/or an emoji.
+ * Upper bound raised from 80 to 300 on 2026-08-20 (ب-117): labels routinely
+ * carry a long parenthetical qualifier — e.g. "النص قبل التعديل (نهاية شروط
+ * البند "أولاً"؛ لم تكن الفقرة الخاصة بشكل الشركة المساهمة موجودة، وبقية أحكام
+ * المادة لم تتغير):" — that exceeded 80 characters and made the whole label
+ * invisible to this regex, silently dropping the text that followed it.
+ */
+const LABEL_RE = /^[ \t]*>?[ \t]*(?:[^\S\n]*\S{1,3}[^\S\n]*)?\*\*([^*\n]{2,300}?)\*\*[ \t]*/gm;
 
 /**
  * Extract every historical text version from an article body.
  *
  * @param articleBody raw body between ARTICLE_START and ARTICLE_END, already
  *                    newline-normalised.
+ * @param articleStatus the article's own lifecycle status, when known — used
+ *                       only for the repealed-content fallback below.
  */
-export function extractArticleHistory(articleBody: string): HistoryResult {
+export function extractArticleHistory(articleBody: string, articleStatus?: string): HistoryResult {
   const entries: HistoryEntry[] = [];
   const unparsed: string[] = [];
   const regulationBlocks: string[] = [];
+  const liveAnnexes: Array<{ summary: string; content: string }> = [];
+  const englishBlocks: Array<{ whole: string; plain: string }> = [];
 
   DETAILS_RE.lastIndex = 0;
   let d: RegExpExecArray | null;
@@ -235,16 +354,23 @@ export function extractArticleHistory(articleBody: string): HistoryResult {
       labels.push({ raw: lm[1], start: lm.index, end: lm.index + lm[0].length });
     }
 
-    let recognised = 0;
     let capturedFromLabel = false;
 
     for (let i = 0; i < labels.length; i++) {
       const kindOfLabel = classifyLabel(labels[i].raw);
       if (kindOfLabel === "other") continue;
-      recognised++;
       if (kindOfLabel !== "before") continue;
 
-      const sliceEnd = i + 1 < labels.length ? labels[i + 1].start : body.length;
+      // The next RECOGNISED label ends this one's captured span. An
+      // "other"-classified match in between is not a second label — most often
+      // it is the superseded text's own bolded opening clause (a common Arabic
+      // drafting convention: bolding the chapeau before a numbered list) — so
+      // skip past it rather than let it prematurely truncate the capture.
+      // Discovered 2026-08-20 (ب-117) via a live run that returned an empty
+      // `entries[]` for an article whose full prior text was visibly present.
+      let j = i + 1;
+      while (j < labels.length && classifyLabel(labels[j].raw) === "other") j++;
+      const sliceEnd = j < labels.length ? labels[j].start : body.length;
       const raw = body.slice(labels[i].end, sliceEnd);
       // Drop any HTML comment anchors that sit inside the captured span.
       const text = unquote(raw.replace(/<!--[\s\S]*?-->/g, ""));
@@ -261,11 +387,19 @@ export function extractArticleHistory(articleBody: string): HistoryResult {
       });
     }
 
-    if (capturedFromLabel || recognised > 0) continue;
+    if (capturedFromLabel) continue;
 
     // ── Fallbacks, in descending order of explicitness ──────────────────────
-    // Reached only when the block carries no recognised BOLDED label. Each step
-    // requires a positive signal in the source; none infers text from silence.
+    // Reached whenever no "before" label yielded captured text — even if a
+    // DIFFERENT label in the same block classified as "reference" (e.g. a bare
+    // "🔄 تعديل:" notice). Until 2026-08-21 this was gated on `recognised > 0`
+    // (any recognised label at all, "reference" included), which skipped this
+    // whole chain — including the HISTORIC_SUMMARY_RE check below — whenever a
+    // block mixed a reference notice with an unrecognised "before" quote right
+    // next to it (ب-119). A reference-only label carries no text worth losing;
+    // only a captured "before" label does, and that is what capturedFromLabel
+    // already tracks. Each step below requires a positive signal in the
+    // source; none infers text from silence.
     const plain = unquote(body.replace(/<!--[\s\S]*?-->/g, ""));
 
     if (!plain) continue; // decorative/empty block — nothing to record or lose
@@ -289,7 +423,31 @@ export function extractArticleHistory(articleBody: string): HistoryResult {
     //     Understood, but contains no prior wording — nothing to quarantine.
     if (REFERENCE_NOTICE_RE.test(stripTashkeel(plain))) continue;
 
-    // (3) The <summary> itself declares the block holds a previous or historic
+    // (3) ب-114: <summary> is on the hand-verified live-annex allowlist — this
+    // block is CURRENT reference content (a schedule/requirements-guide
+    // section), not history, collapsed into <details> for display only. Only
+    // reached once (1) and (2) above have already ruled out any historical
+    // phrasing in the body itself — an allowlist hit never overrides real
+    // evidence of superseded text (council review: body evidence always wins).
+    if (LIVE_ANNEX_SUMMARY_ALLOWLIST.has(summary)) {
+      liveAnnexes.push({ summary, content: plain });
+      continue;
+    }
+
+    // (3b) Bilingual courtesy translation: <summary> names it an English
+    // rendering AND the body is confirmed >70% Latin — both signals required
+    // together (council review), since the phrase alone is too weak and the
+    // content check alone could misfire on an incidental Latin quotation.
+    // Collected rather than pushed straight to `entries`/`liveAnnexes`: an
+    // article with more than one such block is ambiguous (which one is
+    // really this article's translation?) and must be quarantined below,
+    // never silently resolved by picking the first match.
+    if (ENGLISH_TEXT_SUMMARY_RE.test(summary) && isPredominantlyLatin(plain)) {
+      englishBlocks.push({ whole: whole.trim(), plain });
+      continue;
+    }
+
+    // (4) The <summary> itself declares the block holds a previous or historic
     //     version, and the body is prose rather than a citation. The document
     //     states what the content is; taking it at its word is reading the
     //     structure, not guessing. Provenance records that the summary — not a
@@ -304,11 +462,44 @@ export function extractArticleHistory(articleBody: string): HistoryResult {
       continue;
     }
 
+    // (5) 2026-08-21 (تعاميم audit): the article's own anchor already declares
+    // it REPEALED, and nothing above recognised this block — no "before"
+    // label, no live-annex/English match, no historic-summary keyword. A
+    // repealed article's live text is legitimately empty; unlike an active
+    // article, unclassified substantive content here is overwhelmingly the
+    // article's own former wording kept "لأغراض الأرشفة القانونية" (verified
+    // against a real example: التنظيم الأساس للجنة الوطنية للتحول الرقمي,
+    // 7/7 articles). Matches this field's own documented contract in
+    // ParsedArticle.original_text: "For a REPEALED article this is usually
+    // the entire substantive content." Never applied to active/amended
+    // articles (council review: Codex + Antigravity — false-positive risk
+    // for a genuinely-repealed article is low and strictly less harmful than
+    // quarantining real archived text where no reader will ever see it).
+    if (articleStatus === "repealed" && !isUnavailableMarker(plain)) {
+      entries.push({
+        original_text: plain,
+        label: summary ? `«${normalizeLabel(summary)}» (أرشيف إلغاء)` : "نص تاريخي (ملغاة)",
+        source_summary: summary,
+        kind: "repealed",
+      });
+      continue;
+    }
+
     // Nothing matched — preserve verbatim for human review, and count it.
     unparsed.push(whole.trim());
   }
 
-  return { entries, unparsed, regulationBlocks };
+  // Exactly one candidate: accept it. Two or more: which one is genuinely
+  // this article's translation is now ambiguous, so quarantine all of them
+  // verbatim instead of guessing by picking the first (council review).
+  let englishText: string | undefined;
+  if (englishBlocks.length === 1) {
+    englishText = englishBlocks[0].plain;
+  } else if (englishBlocks.length > 1) {
+    for (const b of englishBlocks) unparsed.push(b.whole);
+  }
+
+  return { entries, unparsed, regulationBlocks, liveAnnexes, englishText };
 }
 
 /**
@@ -320,6 +511,25 @@ export function extractArticleHistory(articleBody: string): HistoryResult {
  */
 export function stripDetails(s: string): string {
   return s.replace(/<details[^>]*>[\s\S]*?<\/details>/g, "");
+}
+
+/**
+ * ب-114 (2026-08-21): unwrap the block(s) whose `<summary>` matches
+ * LIVE_ANNEX_SUMMARY_ALLOWLIST, replacing the whole `<details>…</details>`
+ * with its own content as a heading + body — CURRENT reference material
+ * (e.g. the narcotics-schedule tables) that was collapsed into `<details>`
+ * for display only, not because it is history. Everything else is left
+ * untouched for `stripDetails()` to remove as before. Call BEFORE
+ * `stripDetails()` in the cleaning chain so the unwrapped content survives it.
+ */
+export function unwrapLiveAnnexes(s: string): string {
+  return s.replace(/<details[^>]*>([\s\S]*?)<\/details>/g, (whole, inner: string) => {
+    const summary = (inner.match(SUMMARY_RE)?.[1] ?? "").trim();
+    if (!LIVE_ANNEX_SUMMARY_ALLOWLIST.has(summary)) return whole;
+    const content = unquote(inner.replace(SUMMARY_RE, "").replace(/<!--[\s\S]*?-->/g, "")).trim();
+    const heading = normalizeLabel(summary);
+    return `\n\n#### ${heading}\n\n${content}\n\n`;
+  });
 }
 
 /**
@@ -366,6 +576,16 @@ export function stripArticleHeading(body: string, numberText: string): string {
     candidates.push(new RegExp(`^\\s*(?:${nouns})\\s+${esc(nt)}\\s*[:：\\-–]?\\s*`));
     candidates.push(new RegExp(`^\\s*${esc(nt)}\\s*[:：\\-–]?\\s*`));
   }
+  // ك-05 (2026-08-24): "المادة (4)" — a parenthesized digit (Western or
+  // Eastern-Indic) directly after the noun. Unlike the colon-gated fallback
+  // below, this needs no colon to be unambiguous: real article text never
+  // starts "<noun> (<digits>)" verbatim, so it's safe to strip without the
+  // delimiter that the generic fallback requires. Confirmed corpus-wide
+  // before writing this: 115 files / ~1,000+ articles carry this heading
+  // shape with no trailing colon (e.g. "### المادة (4) `[معدّلة]`", "### المادة
+  // (2)", "### المادة (1) (النطاق والهدف)") — the label was leaking verbatim
+  // into the seeded article text for all of them under the old candidate set.
+  candidates.push(new RegExp(`^\\s*(?:${nouns})\\s*\\([0-9\\u0660-\\u0669]+\\)\\s*`));
   // Fallback: a generic "المادة <arabic ordinal words>:" label, only when it is
   // clearly delimited by a colon — without that delimiter we cannot tell label
   // from text, and we leave the line alone.

@@ -25,6 +25,7 @@ import { getSidebarByUserType, type SidebarItem } from "@/constants/navigation";
 import { useUser } from "@/hooks/useUser";
 import { usePathname } from "next/navigation";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
+import { isSharedClientIntakePath } from "@/lib/auth/routeAccess";
 
 // ─── Infer user type from path (same as SharedSidebar) ────────────────────────
 function inferUserTypeFromPath(pathname: string) {
@@ -85,7 +86,7 @@ function ContentTypeIcon({ type }: { type: string }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function GlobalSearch() {
   const { isDark, lang } = useTheme();
-  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, affiliation, isDemoBypass, dashboardMode, country } = useUser();
+  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, businessMembership, affiliation, isDemoBypass, dashboardMode, country } = useUser();
   const pathname = usePathname() ?? "/";
   const isAr = lang === "ar";
   const router = useRouter();
@@ -98,7 +99,10 @@ export function GlobalSearch() {
 
   // Resolve user type
   const pathUserType = inferUserTypeFromPath(pathname);
-  const userType = pathUserType ?? sessionUserType;
+  const isBusinessIntake =
+    isSharedClientIntakePath(pathname) &&
+    (sessionUserType === "corporate" || !!businessMembership);
+  const userType = isBusinessIntake ? "corporate" : pathUserType ?? sessionUserType;
 
   // Gather all tools for this user
   const groups = getSidebarByUserType(userType, dashboardMode, subRole, active_roles ?? [], governmentRole, businessRole, affiliation?.role, isDemoBypass, country);

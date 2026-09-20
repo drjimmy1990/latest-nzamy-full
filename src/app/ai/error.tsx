@@ -12,7 +12,7 @@ export default function AIError({
   reset: () => void;
 }) {
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-zinc-50 dark:bg-zinc-950">
+    <div className="min-h-[100dvh] flex items-center justify-center p-6 bg-zinc-50 dark:bg-zinc-950">
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}

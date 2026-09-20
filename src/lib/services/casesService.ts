@@ -172,6 +172,18 @@ export interface ServiceRequestAttachment {
   uploaderName?: string | null;
 }
 
+export interface ServiceRequestHearing {
+  id: string;
+  title: string;
+  kind: string;
+  hearingDate: string;
+  hearingTime: string | null;
+  location: string;
+  courtName: string;
+  urgency: string;
+  status: string;
+}
+
 export interface ServiceRequestDetail {
   id: string;
   createdAt: string | null;
@@ -197,6 +209,7 @@ export interface ServiceRequestDetail {
   assignedToName?: string | null;
   events: ServiceRequestEvent[];
   attachments: ServiceRequestAttachment[];
+  hearings: ServiceRequestHearing[];
 }
 
 export async function getServiceRequestDetail(
@@ -253,6 +266,7 @@ function mapLocalWorkflowRequest(r: WorkflowRequest): ServiceRequestDetail {
       metadata: null,
     })),
     attachments: [],
+    hearings: [],
   };
 }
 

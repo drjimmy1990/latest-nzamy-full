@@ -237,6 +237,9 @@ export default function SecurityPage() {
         <motion.div key="scr" initial={{opacity:0}} animate={{opacity:1}} className="space-y-4">
           <div className={`${card} p-5`}>
             <p className={`text-[12px] font-bold mb-4 ${isDark?"text-white":"text-slate-800"}`}>عناوين IP المحظورة</p>
+            {/* No scroll container at all here, so this 6-column table leaked
+                horizontal scroll onto the whole page on a phone. */}
+            <div className="overflow-x-auto">
             <table className="w-full text-right">
               <thead><tr className={`border-b ${isDark?"border-white/[0.06]":"border-slate-100"}`}>
                 {["IP","الطلبات","الدولة","النوع","تاريخ الحظر",""].map(h=>(
@@ -262,6 +265,7 @@ export default function SecurityPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </motion.div>
       )}

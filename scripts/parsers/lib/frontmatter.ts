@@ -40,17 +40,34 @@ export interface FrontmatterResult {
   warnings: string[];
 }
 
-/** Repairs + extracts the raw frontmatter block. Shared by both parse paths. */
-function extractBlock(raw: string): { yamlStr: string; body: string } | null {
-  // Strip BOM.
-  let src = raw.replace(/^﻿/, "");
-  // Repair a closing fence glued to the last line (e.g. `total_articles: 0---`
-  // with no newline before it) — a real defect in the corpus.
-  src = src.replace(/^(---\s*\r?\n[\s\S]*?\S)[ \t]*---\s*(\r?\n|$)/m, "$1\n---\n");
+/** Extract the raw YAML block without treating an indented `---` inside a block scalar as a fence. */
+function extractBlock(raw: string): { yamlStr: string; body: string; repairWarning?: string } | null {
+  const src = raw.replace(/^\uFEFF/, "");
+  const opening = src.match(/^---[ \t]*\r?\n/);
+  if (!opening) return null;
+  const rest = src.slice(opening[0].length);
+  const closing = /^---[ \t]*(?:\r?\n|$)/m.exec(rest);
 
-  const match = src.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
-  if (!match) return null;
-  return { yamlStr: match[1], body: src.slice(match[0].length) };
+  // A known source defect glued the closing fence to a numeric total_articles
+  // value (`total_articles: 0---`). Repair only that unambiguous pattern and
+  // only before the first real fence. The old broad regex also matched the
+  // trailing `---` of an indented review_reason paragraph, silently moving
+  // later type/status fields into the document body.
+  const glued = /^(total_articles:[ \t]*\d+)[ \t]*---[ \t]*(?:\r?\n|$)/m.exec(rest);
+  if (glued && (!closing || glued.index < closing.index)) {
+    return {
+      yamlStr: rest.slice(0, glued.index) + glued[1],
+      body: rest.slice(glued.index + glued[0].length).replace(/^\s*/, ""),
+      repairWarning: "repaired a closing fence glued to total_articles",
+    };
+  }
+  if (!closing) return null;
+  return {
+    yamlStr: rest.slice(0, closing.index),
+    // Preserve the previous parser's body offset for unaffected files: its
+    // closing-fence regex consumed whitespace after the fence as well.
+    body: rest.slice(closing.index + closing[0].length).replace(/^\s*/, ""),
+  };
 }
 
 /**
@@ -84,9 +101,15 @@ function legacyLineParse(yamlStr: string): Record<string, unknown> {
 export function parseFrontmatter(raw: string, sourcePath = "<unknown>"): FrontmatterResult {
   const warnings: string[] = [];
   const block = extractBlock(raw);
-  if (!block) return { meta: {}, body: raw, warnings };
+  if (!block) {
+    if (/^(?:\uFEFF)?---[ \t]*\r?\n/.test(raw)) {
+      warnings.push(`${sourcePath}: opening YAML fence has no closing fence — frontmatter not parsed.`);
+    }
+    return { meta: {}, body: raw, warnings };
+  }
 
   const { yamlStr, body } = block;
+  if (block.repairWarning) warnings.push(`${sourcePath}: ${block.repairWarning}.`);
 
   let loaded: unknown;
   try {

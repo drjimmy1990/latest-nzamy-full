@@ -126,7 +126,11 @@ export default function MarketplaceTab() {
 
       {/* Table */}
       <div className={`${card} overflow-hidden`}>
-        <table className="w-full text-right">
+        {/* overflow-hidden on the card keeps its rounded corners; the table
+            needs its own x-scroller or 8-9 columns are simply cut off on a
+            phone with no way to reach them. */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-right">
           <thead>
             <tr className="border-b border-white/[0.06]">
               {["الطلب", "العميل", "الخدمة", "المزود", "القيمة", "العمولة", "الحالة", "تاريخ", "إجراءات"].map((h) => (
@@ -221,6 +225,7 @@ export default function MarketplaceTab() {
             })}
           </tbody>
         </table>
+        </div>
         {loading && <div className="py-12 text-center text-zinc-500">جاري التحميل...</div>}
         {!loading && filtered.length === 0 && (
           <div className="py-12 text-center">

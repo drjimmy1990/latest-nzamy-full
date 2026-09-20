@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import type { FirmRole } from "@/types/firmBackendReady";
+import { FIRM_TEAM_VIEW_ROLES, resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
 
 /**
  * /api/v1/firm/members — Phase 2 (خطة_البناء_الكاملة §6, migration
@@ -100,23 +101,26 @@ async function resolveOwnFirm(supabase: SupabaseClient, userId: string) {
  */
 export async function GET(_request: NextRequest) {
   try {
-    const auth = await assertRole(["firm"]);
+    const auth = await assertRole();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 
-    const { data: firm, error: firmError } = await resolveOwnFirm(supabase, user.id);
+    const { data: callerFirm, error: firmError } = await resolveCallerFirm(supabase, user.id);
     if (firmError) {
       console.error("[firm/members GET] firm_profiles lookup failed:", firmError.message, firmError.code);
       return NextResponse.json({ error: "تعذّر تحميل فريق المكتب." }, { status: 500 });
     }
-    if (!firm) {
+    if (!callerFirm) {
       return NextResponse.json({ error: "لا يوجد مكتب مرتبط بهذا الحساب." }, { status: 404 });
+    }
+    if (auth.userType !== "admin" && !FIRM_TEAM_VIEW_ROLES.has(callerFirm.role)) {
+      return NextResponse.json({ error: "غير مصرح — صلاحيات غير كافية" }, { status: 403 });
     }
 
     const { data: rows, error: membersError, count } = await supabase
       .from("firm_members")
       .select("id, firm_id, user_id, role, status, accepted_at, created_at", { count: "exact" })
-      .eq("firm_id", firm.id);
+      .eq("firm_id", callerFirm.id);
 
     if (membersError) {
       console.error("[firm/members GET] firm_members query failed:", membersError.message, membersError.code);
@@ -148,7 +152,7 @@ export async function GET(_request: NextRequest) {
       return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0;
     });
 
-    const data = sorted.map(row => toDto(row, profileById.get(row.user_id), firm.owner_user_id));
+    const data = sorted.map(row => toDto(row, profileById.get(row.user_id), callerFirm.ownerUserId));
     return NextResponse.json({ data, total: count ?? data.length });
   } catch (err) {
     console.error("[firm/members GET] Unexpected error:", err);
@@ -200,7 +204,7 @@ export async function POST(request: NextRequest) {
       .from("profiles")
       .select("id, display_name, email, user_type")
       .ilike("email", email.trim())
-      .eq("user_type", "lawyer")
+      .in("user_type", ["lawyer", "individual"])
       .maybeSingle();
 
     if (accountError) {
@@ -208,7 +212,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "تعذّر إضافة العضو." }, { status: 500 });
     }
     if (!account) {
-      return NextResponse.json({ error: "لا يوجد حساب محامٍ بهذا البريد على المنصّة." }, { status: 404 });
+      return NextResponse.json({ error: "لا يوجد حساب مهني مؤهل بهذا البريد على المنصّة." }, { status: 404 });
     }
 
     const { data, error } = await supabase
@@ -225,7 +229,7 @@ export async function POST(request: NextRequest) {
 
     if (error || !data) {
       if (error?.code === "23505") {
-        return NextResponse.json({ error: "هذا المحامي عضو في المكتب مسبقاً." }, { status: 409 });
+        return NextResponse.json({ error: "هذا المستخدم عضو في المكتب مسبقاً." }, { status: 409 });
       }
       if (error?.code === "23514") {
         return NextResponse.json(

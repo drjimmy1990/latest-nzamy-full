@@ -29,8 +29,17 @@ export function VoiceInput({
 }: VoiceInputProps) {
   const { isDark } = useTheme();
   const [state, setState] = useState<VoiceState>("idle");
+  const [supported, setSupported] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
+
+  // Detect speech-recognition support once, on mount (client-only API)
+  useEffect(() => {
+    const SpeechRecognitionCtor =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    setSupported(!!SpeechRecognitionCtor);
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -43,10 +52,7 @@ export function VoiceInput({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-    if (!SpeechRecognitionCtor) {
-      alert("المتصفح لا يدعم التعرف على الكلام. جرب Chrome أو Edge.");
-      return;
-    }
+    if (!SpeechRecognitionCtor) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const recognition: any = new SpeechRecognitionCtor();
@@ -76,6 +82,10 @@ export function VoiceInput({
     recognitionRef.current?.stop();
     setState("idle");
   }, []);
+
+  // Speech recognition unsupported (e.g. Firefox/Safari) — degrade gracefully
+  // by not rendering the mic button at all, rather than alerting on click.
+  if (!supported) return null;
 
   const isListening = state === "listening";
 

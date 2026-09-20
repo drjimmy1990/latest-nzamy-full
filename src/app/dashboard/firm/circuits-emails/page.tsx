@@ -24,6 +24,10 @@ interface CircuitEntry {
   }[];
 }
 
+// ⚠️ تنبيه صارم موجه للمبرمج (قرار المالك المعتمد):
+// المصفوفة CIRCUITS أدناه هي مجرد عينة تجريبية أولية (٨ جهات فقط).
+// الدليل المعتمد الكامل يحتوي على ٢,١٩٢ دائرة قضائية مع إيميلاتها وأرقامها واختصاصاتها،
+// ويلزم توريده كاملاً من الأرشيف وتفريغه في قاعدة البيانات وربطه بالواجهة بدلاً من البيانات الثابتة.
 const CIRCUITS: CircuitEntry[] = [
   {
     id: "c1", name: "المحكمة التجارية بالرياض", city: "الرياض", type: "محكمة",
@@ -143,9 +147,9 @@ function CircuitCard({ circuit, isDark, card }: { circuit: CircuitEntry; isDark:
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div className="flex items-center gap-2">
                   <Phone size={12} className="text-emerald-500 shrink-0" />
-                  <a href={`tel:${dept.phone}`} className={`text-[11px] font-mono hover:text-emerald-500 transition-colors ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
+                  <span className={`text-[11px] font-mono ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
                     {dept.phone}
-                  </a>
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Envelope size={12} className="text-blue-500 shrink-0" />
@@ -205,6 +209,21 @@ export default function CircuitsEmailsPage() {
           أرقام وإيميلات الدوائر القضائية والهيئات — قابل للبحث والتصفية
         </p>
       </motion.div>
+
+      {/* تنبيه توريد الدليل كاملاً للمبرمج وفريق العمل */}
+      <div className={`p-4 rounded-2xl border flex items-start gap-3 ${
+        isDark ? "bg-amber-950/20 border-amber-800/30 text-amber-300" : "bg-amber-50 border-amber-200 text-amber-900"
+      }`}>
+        <Scales size={20} className="text-amber-500 shrink-0 mt-0.5" weight="duotone" />
+        <div className="space-y-1 text-[12px] leading-relaxed">
+          <p className="font-bold">
+            تنبيه استيراد الدليل القضائي الكامل (2,192 دائرة قضائية):
+          </p>
+          <p className={isDark ? "text-amber-300/80" : "text-amber-800/90"}>
+            البيانات المعروضة حالياً تمثل عينة تجريبية أولية ({CIRCUITS.length} جهات). تنبيه صارم موجه للمبرمج لتوريد وتفريغ دليل الدوائر القضائية المعتمد كاملاً من الأرشيف (2,192 دائرة قضائية وإيميلاتها وهواتفها) وربطه بواجهة البحث وقاعدة البيانات.
+          </p>
+        </div>
+      </div>
 
       {/* Search + Filters */}
       <div className={`${card} p-4 space-y-3`}>

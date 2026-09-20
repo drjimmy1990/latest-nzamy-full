@@ -1,0 +1,42 @@
+{
+  "id": "sa.nezamy.app",
+  "name": "نظامي — منصة الخدمات القانونية",
+  "short_name": "نظامي",
+  "description": "منصة قانونية سعودية متكاملة: مكتبة الأنظمة واللوائح، السوابق القضائية، أدوات الذكاء الاصطناعي القانونية، وإدارة القضايا والاستشارات.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B3D2E",
+  "theme_color": "#0B3D2E",
+  "categories": ["business", "productivity", "reference"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-384.png", "sizes": "384x384", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "مكتبة الأنظمة",
+      "short_name": "الأنظمة",
+      "url": "/laws",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "الأدوات الذكية",
+      "short_name": "الذكاء",
+      "url": "/ai",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "لوحة التحكم",
+      "short_name": "لوحتي",
+      "url": "/dashboard",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

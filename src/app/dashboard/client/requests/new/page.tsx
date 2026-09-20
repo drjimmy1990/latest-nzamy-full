@@ -138,6 +138,7 @@ export default function NewRequestWizard() {
         status: "pending_assignment",
         payment: { amount: 0, status: "not_required" },
         sourcePath: "/dashboard/client/requests/new",
+        ...(user.businessMembership ? { entityScope: "business" as const } : {}),
         // The cast is deliberate and narrow. `WorkflowRequest.metadata` is
         // still typed `Record<string, string | number | boolean | null>`, but
         // that type is stale rather than load-bearing: POST

@@ -186,7 +186,7 @@ export default function AddCaseModal({ onClose, isDark, onCaseAdded }: Props) {
         initial={{ scale: 0.95, opacity: 0, y: 10 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.95, opacity: 0, y: -10 }}
-        className={`w-full max-w-md rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
+        className={`w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
         dir="rtl"
       >
         <div className="flex items-center justify-between mb-5">

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { normalizeArabic } from "@/utils/normalizeArabic";
 import {
@@ -18,13 +17,9 @@ import {
   DEMO_PRINCIPLES,
   DEMO_PRECEDENTS,
   DEMO_ORDERS,
-  PRINCIPLE_SOURCES,
   DEMO_FEQH_BOOKS,
   DEMO_PRECEDENTS_COLLECTIONS,
   ORDER_ISSUERS,
-  type DemoPrinciple,
-  type DemoPrecedent,
-  type DemoOrder,
   type PrincipleSourceId,
 } from "./demo-data-access";
 import { isSupabaseMode } from "@/lib/services/api";
@@ -33,6 +28,7 @@ import SmartFolders from "./components/SmartFolders";
 import { MyNotesSection } from "./components/MyNotesSection";
 import { GamificationCard } from "./components/GamificationCard";
 import LegislativeUpdates from "./components/LegislativeUpdates";
+import EnactmentCountdownWidget from "./components/EnactmentCountdownWidget";
 
 import {
   type Cat,
@@ -44,7 +40,6 @@ import {
   CONTENT_TYPES,
   PLACEHOLDERS,
   PLACEHOLDERS_EN,
-  catTotalCount,
   MAIN_CATEGORIES,
   OTHER_CATEGORIES,
   matchesFeqhCategory,
@@ -59,11 +54,24 @@ import { LawsTabContent } from "./components/LawsTabContent";
 import { FeqhTabContent } from "./components/FeqhTabContent";
 import { ISSUER_MAP } from "./components/ListItems";
 
+// Keep these request values aligned with POST /api/library/search's
+// ARTICLE_SEARCH_STATUSES. They describe an article, never the parent law.
+const ARTICLE_STATUS_FILTER_OPTIONS = [
+  { value: "active", ar: "سارية", en: "Active" },
+  { value: "amended", ar: "معدلة", en: "Amended" },
+  { value: "repealed", ar: "ملغاة", en: "Repealed" },
+  { value: "suspended", ar: "موقوفة", en: "Suspended" },
+  { value: "added", ar: "مضافة", en: "Added" },
+  { value: "merged", ar: "مدمجة", en: "Merged" },
+  { value: "status_undeclared", ar: "لم يُتحقّق من الحالة", en: "Status not verified" },
+] as const;
+
+type ArticleStatusFilter = (typeof ARTICLE_STATUS_FILTER_OPTIONS)[number]["value"];
+
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 export default function LegalLibraryPage() {
   const { isRTL, isDark } = useTheme();
   const { isLoggedIn }    = useUser();
-  const router = useRouter();
 
   // --- Database-backed state variables ---
   const [dbLaws, setDbLaws] = useState<any[]>([]);
@@ -87,7 +95,12 @@ export default function LegalLibraryPage() {
   const [searchResults, setSearchResults] = useState<Record<string, any[]> | null>(null);
   const [searchCounts, setSearchCounts] = useState<Record<string, number>>({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [articleStatusFilter, setArticleStatusFilter] = useState<ArticleStatusFilter | "">("");
+  const [articleStatusFilterNotice, setArticleStatusFilterNotice] = useState("");
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const searchRequestIdRef = useRef(0);
 
   // — Core filters —
   const [search,         setSearch]         = useState("");
@@ -159,45 +172,90 @@ export default function LegalLibraryPage() {
   // Debounced server-side search
   const fetchSearchResults = useCallback(async (q: string, type: ContentType, cat: string) => {
     if (q.trim().length < 2) {
+      searchRequestIdRef.current += 1;
+      searchAbortRef.current?.abort();
+      searchAbortRef.current = null;
       setSearchResults(null);
       setSearchCounts({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
+      setSearchError(null);
+      setSearchLoading(false);
       return;
     }
+    // Category is a laws/orders API filter. Keep a persisted or stale category
+    // from silently widening an all, precedents, or feqh text search.
+    const section = type === 'all' ? 'all' : type;
+    if (cat !== 'all' && section !== 'laws' && section !== 'orders') {
+      searchRequestIdRef.current += 1;
+      searchAbortRef.current?.abort();
+      searchAbortRef.current = null;
+      setSearchResults(null);
+      setSearchCounts({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
+      setSearchLoading(false);
+      setSearchError(isRTL
+        ? "مرشح التصنيف يطبّق على الأنظمة والأوامر فقط؛ لم يُنفذ البحث."
+        : "The category filter applies only to laws and orders; the search was not sent.");
+      return;
+    }
+
+    const requestId = searchRequestIdRef.current + 1;
+    searchRequestIdRef.current = requestId;
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+    setSearchError(null);
     setSearchLoading(true);
     try {
-      // Map activeType to search section
-      const section = type === 'all' ? 'all' : type;
       const filters: Record<string, string> = {};
       if (cat !== 'all') filters.category = cat;
-      if (precTrack !== 'all') filters.track = precTrack;
-      if (precSource !== 'all') filters.source = precSource;
-      if (orderIssuer !== 'all') filters.issuer = orderIssuer;
+      if (section === 'precedents' && precTrack !== 'all') filters.track = precTrack;
+      if (section === 'precedents' && precSource !== 'all') filters.source = precSource;
+      if (section === 'orders' && orderIssuer !== 'all') filters.issuer = orderIssuer;
+      if (section === 'laws' && articleStatusFilter) filters.status = articleStatusFilter;
 
       const res = await fetch('/api/library/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({ query: q.trim(), section, filters, limit: 50 }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        // Group results by section if 'all', otherwise use flat results
-        if (section === 'all') {
-          const grouped: Record<string, any[]> = { laws: [], precedents: [], orders: [], feqh: [] };
-          (data.results || []).forEach((r: any) => {
-            if (grouped[r.section]) grouped[r.section].push(r);
-          });
-          setSearchResults(grouped);
-        } else {
-          setSearchResults({ [section]: data.results || [] });
+      if (!res.ok) {
+        if (requestId === searchRequestIdRef.current) {
+          setSearchResults(null);
+          setSearchCounts({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
+          setSearchError(isRTL
+            ? `تعذر تنفيذ البحث (HTTP ${res.status}). لم تُعرض نتائج بديلة.`
+            : `Search failed (HTTP ${res.status}). No fallback results were shown.`);
         }
-        setSearchCounts(data.counts || { laws: 0, precedents: 0, orders: 0, feqh: 0 });
+        return;
       }
+      const data = await res.json();
+      if (requestId !== searchRequestIdRef.current) return;
+      // Group results by section if 'all', otherwise use flat results
+      if (section === 'all') {
+        const grouped: Record<string, any[]> = { laws: [], precedents: [], orders: [], feqh: [] };
+        (data.results || []).forEach((r: any) => {
+          if (grouped[r.section]) grouped[r.section].push(r);
+        });
+        setSearchResults(grouped);
+      } else {
+        setSearchResults({ [section]: data.results || [] });
+      }
+      setSearchCounts(data.counts || { laws: 0, precedents: 0, orders: 0, feqh: 0 });
     } catch (e) {
-      console.error('[Search] API error:', e);
+      if ((e as { name?: string }).name !== 'AbortError') {
+        console.error('[Search] API error:', e);
+        if (requestId === searchRequestIdRef.current) {
+          setSearchResults(null);
+          setSearchCounts({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
+          setSearchError(isRTL
+            ? "تعذر تنفيذ البحث بسبب خطأ في الاتصال. لم تُعرض نتائج بديلة."
+            : "Search failed because of a connection error. No fallback results were shown.");
+        }
+      }
     } finally {
-      setSearchLoading(false);
+      if (requestId === searchRequestIdRef.current) setSearchLoading(false);
     }
-  }, [precTrack, precSource, orderIssuer]);
+  }, [precTrack, precSource, orderIssuer, articleStatusFilter, isRTL]);
 
   // Trigger autocomplete + search with 300ms debounce
   useEffect(() => {
@@ -208,6 +266,18 @@ export default function LegalLibraryPage() {
 
     // Debounced server-side search
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (search.trim().length >= 2) {
+      searchRequestIdRef.current += 1;
+      searchAbortRef.current?.abort();
+      searchAbortRef.current = null;
+      setSearchResults(null);
+      setSearchCounts({ laws: 0, precedents: 0, orders: 0, feqh: 0 });
+      setSearchError(null);
+      setSearchLoading(true);
+    } else {
+      setSearchError(null);
+      setSearchLoading(false);
+    }
     searchTimerRef.current = setTimeout(() => {
       fetchSearchResults(search, activeType, activeCat);
     }, 300);
@@ -217,6 +287,10 @@ export default function LegalLibraryPage() {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
   }, [search, activeType, activeCat, fetchAutocomplete, fetchSearchResults]);
+
+  useEffect(() => () => {
+    searchAbortRef.current?.abort();
+  }, []);
 
   const isLoadedRef = useRef(false);
 
@@ -353,10 +427,22 @@ export default function LegalLibraryPage() {
     docSubType,
     showSidebars
   ]);
+  const isSearchActive = search.trim().length >= 2;
+  const isArticleStatusFilterInScope = activeType === "laws" && search.trim().length >= 2;
+
+  // A status filter must never survive outside a law-text search invisibly.
+  useEffect(() => {
+    if (isArticleStatusFilterInScope || !articleStatusFilter) return;
+    setArticleStatusFilter("");
+    setArticleStatusFilterNotice(isRTL
+      ? "أزيل مرشح حالة المادة لأن البحث لم يعد مقتصرًا على الأنظمة."
+      : "The article-status filter was cleared because the search is no longer limited to laws.");
+  }, [isArticleStatusFilterInScope, articleStatusFilter, isRTL]);
+
   if (!mounted) return null;
 
   // ─── Load More function for pagination ──────────────────────────────────────
-  const isSearchActive = search.trim().length >= 2 && searchResults !== null;
+
   const loadMore = async (sectionKey: string) => {
     const sectionMap: Record<string, { setter: (fn: (prev: any[]) => any[]) => void; dbKey: string }> = {
       laws:        { setter: setDbLaws, dbKey: 'laws' },
@@ -667,15 +753,16 @@ export default function LegalLibraryPage() {
 
   // ─── Filter: Laws ─────────────────────────────────────────────────────────────
   // When search is active, use server-side results; otherwise filter locally
-  const filteredLaws = isSearchActive && searchResults?.laws
-    ? searchResults.laws.map((r: any) => ({
+  const filteredLaws = isSearchActive
+    ? (searchResults?.laws ?? []).map((r: any) => ({
         id: r.meta?.lawSlug || r.id,
         slug: r.meta?.lawSlug || r.id,
         title: r.title,
         titleEn: '',
         desc: r.snippet || '',
         descEn: '',
-        free: true,
+        // Preserve the server's per-result entitlement: a locked hit is not free.
+        free: !r.locked,
         progress: 100,
         articlesCount: 0,
         chaptersCount: 0,
@@ -683,6 +770,8 @@ export default function LegalLibraryPage() {
         cat: r.meta?.sectionCode || 'SA-00',
         type: 'laws',
         subType: 'basic',
+        // Search returns an article hit; this is deliberately not the parent law's status.
+        articleStatus: r.meta?.status,
         _isSearchResult: true,
       }))
     : lawsList.filter(s => {
@@ -694,8 +783,8 @@ export default function LegalLibraryPage() {
       });
 
   // ─── Filter: Principles ───────────────────────────────────────────────────────
-  const filteredPrinciples = isSearchActive && searchResults?.precedents
-    ? searchResults.precedents.map((r: any) => ({
+  const filteredPrinciples = isSearchActive
+    ? (searchResults?.precedents ?? []).map((r: any) => ({
         id: String(r.id),
         sourceId: r.meta?.collectionSlug || 'supreme',
         source: r.meta?.court || 'المحكمة العليا',
@@ -744,15 +833,19 @@ export default function LegalLibraryPage() {
       }))
     : (isSupabaseMode ? [] : DEMO_PRECEDENTS_COLLECTIONS)) as any[];
 
-  const filteredCollections = collectionsList.filter((col: any) => {
-    const inTrack = precTrack === "all" || col.track === precTrack;
-    const inQ = !nq || normalizeArabic(col.title).includes(nq) || normalizeArabic(col.court).includes(nq) || normalizeArabic(col.desc || "").includes(nq);
-    return inTrack && inQ;
-  });
+  // Collections have no standalone API search results, so do not show local
+  // collections beside a pending, failed, or text-search response.
+  const filteredCollections = isSearchActive
+    ? [] as any[]
+    : collectionsList.filter((col: any) => {
+        const inTrack = precTrack === "all" || col.track === precTrack;
+        const inQ = !nq || normalizeArabic(col.title).includes(nq) || normalizeArabic(col.court).includes(nq) || normalizeArabic(col.desc || "").includes(nq);
+        return inTrack && inQ;
+      });
 
   // ─── Filter: Orders ───────────────────────────────────────────────────────────
-  const filteredOrders = isSearchActive && searchResults?.orders
-    ? searchResults.orders.map((r: any) => ({
+  const filteredOrders = isSearchActive
+    ? (searchResults?.orders ?? []).map((r: any) => ({
         id: String(r.id),
         title: r.title,
         type: r.meta?.type || 'circular',
@@ -774,8 +867,8 @@ export default function LegalLibraryPage() {
       });
 
   // ─── Filter: Feqh Books ──────────────────────────────────────────────────────
-  const filteredFeqhBooks = isSearchActive && searchResults?.feqh
-    ? searchResults.feqh.map((r: any) => ({
+  const filteredFeqhBooks = isSearchActive
+    ? (searchResults?.feqh ?? []).map((r: any) => ({
         id: String(r.id),
         slug: r.meta?.bookSlug || r.id,
         title: r.title,
@@ -832,7 +925,13 @@ export default function LegalLibraryPage() {
       <Navbar />
 
       {/* ── Invitation Banner (subscribers only) ───────────────────────── */}
-      <div className="max-w-6xl mx-auto px-4 pt-4">
+      {/* pt-32 clears the fixed z-50 Navbar (~80-140px incl. safe-area-inset on
+          notched phones) — this is the first in-flow element on the page, and it
+          previously only had pt-4, so whenever the banner rendered (active
+          subscribers with pending invitations) it was drawn partly underneath the
+          fixed navbar. pt-32 matches the convention already used by the sibling
+          /laws/[slug], /laws/orders/[slug] and /laws/civil-procedure pages. */}
+      <div className="max-w-6xl mx-auto px-4 pt-32">
         <InvitationBanner />
       </div>
 
@@ -892,6 +991,10 @@ export default function LegalLibraryPage() {
 
           {/* ── Library Mode — all existing content below ─────────────────── */}
           {libraryMode === "library" && (<>
+
+          <div className="mb-6">
+            <EnactmentCountdownWidget isDark={isDark} isRTL={isRTL} />
+          </div>
 
           {/* Search Bar */}
           <div className="mb-6 flex flex-col md:flex-row gap-3">
@@ -1273,7 +1376,7 @@ export default function LegalLibraryPage() {
                     )}
 
                     {/* Search results banner */}
-                    {isSearchActive && !searchLoading && (
+                    {isSearchActive && !searchLoading && !searchError && (
                       <div className={`flex items-center justify-between py-3 px-4 mb-4 rounded-xl border text-sm ${
                         isDark ? "bg-[#0B3D2E]/10 border-[#0B3D2E]/30 text-[#C8A762]" : "bg-[#0B3D2E]/5 border-[#0B3D2E]/20 text-[#0B3D2E]"
                       }`}>
@@ -1285,13 +1388,59 @@ export default function LegalLibraryPage() {
                           }
                         </div>
                         <button
-                          onClick={() => { setSearch(''); setSearchResults(null); }}
+                          onClick={() => { setSearch(''); setSearchResults(null); setSearchCounts({ laws: 0, precedents: 0, orders: 0, feqh: 0 }); setSearchError(null); }}
                           className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                             isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-[#0B3D2E]/10 hover:bg-[#0B3D2E]/20 text-[#0B3D2E]"
                           }`}
                         >
                           {isRTL ? "مسح البحث" : "Clear Search"}
                         </button>
+                      </div>
+                    )}
+
+                    {searchError && (
+                      <div role="alert" aria-live="assertive" className={`mb-4 rounded-xl border px-4 py-3 text-sm font-medium ${
+                        isDark ? "bg-red-950/20 border-red-500/30 text-red-200" : "bg-red-50 border-red-200 text-red-900"
+                      }`}>
+                        {searchError}
+                      </div>
+                    )}
+
+                    {isArticleStatusFilterInScope && (
+                      <div className={`mb-4 flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl border px-4 py-3 ${
+                        isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"
+                      }`}>
+                        <label htmlFor="law-search-article-status" className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                          {isRTL ? "حالة المادة" : "Article status"}
+                        </label>
+                        <select
+                          id="law-search-article-status"
+                          value={articleStatusFilter}
+                          onChange={(event) => {
+                            setArticleStatusFilter(event.target.value as ArticleStatusFilter | "");
+                            setArticleStatusFilterNotice("");
+                            setSearchError(null);
+                            setSearchResults(null);
+                          }}
+                          className={`min-w-52 rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[#C8A762]/50 ${
+                            isDark ? "border-[#2d3748] bg-[#0c0f12] text-white" : "border-gray-300 bg-white text-gray-800"
+                          }`}
+                        >
+                          <option value="">{isRTL ? "كل حالات المواد" : "All article statuses"}</option>
+                          {ARTICLE_STATUS_FILTER_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {isRTL ? option.ar : option.en}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {articleStatusFilterNotice && (
+                      <div role="status" aria-live="polite" className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+                        isDark ? "bg-amber-950/20 border-amber-500/30 text-amber-200" : "bg-amber-50 border-amber-200 text-amber-900"
+                      }`}>
+                        {articleStatusFilterNotice}
                       </div>
                     )}
 

@@ -1,10 +1,21 @@
 "use client";
 
-import Link from "next/link";
 import {
   Stack, BookOpen, Scroll, CalendarBlank, Buildings, Tag, FolderSimple, Lock, Crown
 } from "@phosphor-icons/react";
 import type { LawSystem, LawArticle } from "../data";
+import { lawStatusPresentation } from "../law-status";
+
+// ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx — يحافظ على
+// سلوك عرض الشارة/الاسم المدموج بلا تغيير، بمصدر بيانات جديد فقط.
+function getMergedReg(a: LawArticle): { ref: string; text: string } | null {
+  if (!a.regulations || a.regulations.length === 0) return null;
+  const distinctRefs = Array.from(new Set(a.regulations.map((r) => r.ref || "").filter(Boolean)));
+  return {
+    ref: distinctRefs.join(", "),
+    text: a.regulations.map((r) => r.text || "").join("\n\n"),
+  };
+}
 
 interface SidebarPanelProps {
   isDark: boolean;
@@ -50,6 +61,61 @@ export default function SidebarPanel({
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
   const textStart = isRTL ? "text-right" : "text-left";
 
+  const renderLawStatus = () => {
+    const status = lawStatusPresentation(law.law_status);
+    const dotColor = status.tone === "effective" ? "bg-emerald-500"
+      : status.tone === "repealed" ? "bg-red-500"
+      : status.tone === "caution" ? "bg-amber-500" : "bg-slate-400";
+    const textColor = status.tone === "effective" ? (isDark ? "text-emerald-400" : "text-emerald-600")
+      : status.tone === "repealed" ? "text-red-500"
+      : status.tone === "caution" ? "text-amber-500" : (isDark ? "text-zinc-400" : "text-slate-500");
+    return (
+      <div className="flex items-start gap-1.5 pt-1" data-law-status={law.law_status ?? "status_undeclared"}>
+        <span className={`w-1.5 h-1.5 mt-1 rounded-full flex-shrink-0 ${dotColor}`} />
+        <span className={`text-[9px] font-bold ${textColor}`}>{isRTL ? status.labelAr : status.labelEn}</span>
+      </div>
+    );
+  };
+
+  const renderParentLaw = () => {
+    const sourceName = String(law.parentLaw || "").trim();
+    const resolvedName = String(law.parentLawLink?.title || "").trim();
+    const displayName = sourceName || resolvedName;
+    const enablingArticle = String(law.enablingArticle || "").trim();
+    if (!displayName && !enablingArticle) return null;
+
+    const nameNode = displayName && law.parentLawLink?.slug ? (
+      <a
+        href={`/laws/${encodeURIComponent(law.parentLawLink.slug)}`}
+        className="font-bold text-[#C8A762] hover:underline"
+      >
+        {displayName}
+      </a>
+    ) : displayName ? (
+      <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{displayName}</span>
+    ) : null;
+
+    return (
+      <div
+        className="flex gap-1.5 items-start border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5"
+        data-parent-law-id={law.parentLawId || undefined}
+      >
+        <Stack size={10} className="mt-0.5 flex-shrink-0 text-[#C8A762]" />
+        <div className="min-w-0">
+          <p className={`text-[8px] uppercase tracking-wider ${muted}`}>
+            {isRTL ? "ينفّذ النظام / الأداة الأصلية" : "Implements parent instrument"}
+          </p>
+          {nameNode && <p className="text-[10px] leading-tight break-words">{nameNode}</p>}
+          {enablingArticle && (
+            <p className={`text-[9px] leading-tight mt-1 ${muted}`}>
+              {isRTL ? `استناداً إلى ${enablingArticle}` : `Enabled by ${enablingArticle}`}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderValue = (val: string) => {
     const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
     const parts = [];
@@ -85,7 +151,7 @@ export default function SidebarPanel({
 
   const getFieldIcon = (key: string) => {
     if (key.includes("نوع") || key.includes("تصنيف") || key.includes("التصنيف")) return <Tag size={10} className={muted} />;
-    if (key.includes("حالة") || key.includes("سريان") || key.includes("نفاذ")) return <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1 flex-shrink-0" />;
+    if (key.includes("حالة") || key.includes("سريان") || key.includes("نفاذ")) return <span className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1 flex-shrink-0" />;
     if (key.includes("أداة") || key.includes("مرسوم") || key.includes("قرار") || key.includes("أمر")) return <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
     if (key.includes("تاريخ") || key.includes("نشر") || key.includes("إصدار")) return <CalendarBlank size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
     if (key.includes("مصدر") || key.includes("بوابة") || key.includes("رابط")) return <BookOpen size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
@@ -161,6 +227,9 @@ export default function SidebarPanel({
                 </div>
               );
             })()}
+
+            {renderParentLaw()}
+            {renderLawStatus()}
 
             {/* زر حفظ في مجلداتي */}
             <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">
@@ -304,21 +373,9 @@ export default function SidebarPanel({
             </div>
           )}
 
-          {/* حالة النظام */}
-          <div className="flex items-center gap-1.5 pt-1">
-            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-              (lawMeta.law_status ?? "active") === "active" ? "bg-emerald-500" :
-              lawMeta.law_status === "repealed" ? "bg-red-500" : "bg-amber-500"
-            }`} />
-            <span className={`text-[9px] font-bold ${
-              (lawMeta.law_status ?? "active") === "active" ? (isDark ? "text-emerald-400" : "text-emerald-600") :
-              lawMeta.law_status === "repealed" ? "text-red-500" : "text-amber-500"
-            }`}>
-              {(lawMeta.law_status ?? "active") === "active" ? (isRTL ? "ساري" : "Active") :
-               lawMeta.law_status === "repealed" ? (isRTL ? "ملغى" : "Repealed") :
-               (isRTL ? "معلّق" : "Suspended")}
-            </span>
-          </div>
+          {/* حالة الأداة من البيانات الحية، لا خريطة lawMeta اليدوية. */}
+          {renderParentLaw()}
+          {renderLawStatus()}
 
           <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">
             <button
@@ -377,7 +434,7 @@ export default function SidebarPanel({
             (() => {
               const regArticles = law.chapters
                 .flatMap(ch => ch.articles)
-                .filter(a => a.executiveReg);
+                .filter(a => a.regulations && a.regulations.length > 0);
               const visibleRegArts = filteredArticles
                 ? regArticles.filter(a => filteredArticles.some(f => f.id === a.id))
                 : regArticles;
@@ -405,7 +462,7 @@ export default function SidebarPanel({
                     } ${a.status === "repealed" ? "line-through opacity-50" : ""}`}
                   >
                     {!a.free && <Lock size={9} className="flex-shrink-0" />}
-                    <span className="truncate flex-1 font-medium">{a.executiveReg?.ref}</span>
+                    <span className="truncate flex-1 font-medium">{getMergedReg(a)?.ref}</span>
                     {hasRegInCart && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
                   </button>
                 );
@@ -433,7 +490,7 @@ export default function SidebarPanel({
               >
                 {!a.free && <Lock size={9} className="flex-shrink-0" />}
                 <span className="truncate flex-1">{a.num}</span>
-                {a.executiveReg && <span className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-600" : "text-slate-400"}`}>ل</span>}
+                {!!(a.regulations && a.regulations.length > 0) && <span className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-500" : "text-slate-400"}`}>ل</span>}
                 {cartMap.has(a.id) && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
               </button>
             ))
@@ -459,10 +516,10 @@ export default function SidebarPanel({
                   >
                     {!a.free && <Lock size={9} className="flex-shrink-0" />}
                     <span className="truncate flex-1">{a.num}</span>
-                    {a.executiveReg && (
+                    {!!(a.regulations && a.regulations.length > 0) && (
                       <span title={isRTL ? "يحتوي لائحة تنفيذية" : "Has executive regulation"}
                         className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${
-                          activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-600" : "text-slate-400"
+                          activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-500" : "text-slate-400"
                         }`}>ل</span>
                     )}
                     {cartMap.has(a.id) && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}

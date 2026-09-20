@@ -25,7 +25,7 @@ export function normalizeArabic(text: string): string {
  * normalizeDigits — Converts Arabic-Indic digits to Western
  * Re-exported from existing utility for composition.
  */
-export { normalizeDigits } from './normalizeDigits';
+export { normalizeDigits } from './normalizeDigits.ts';
 
 /**
  * normalizeSearch — Full normalization for search queries
@@ -127,81 +127,232 @@ export interface ParsedSearchQuery {
   plainTerms: string[];
 }
 
+export class SearchQuerySyntaxError extends SyntaxError {
+  readonly code = 'invalid_search_syntax';
+  readonly index: number;
+
+  constructor(message: string, index: number) {
+    super(`${message} (at index ${index})`);
+    this.name = 'SearchQuerySyntaxError';
+    this.index = index;
+  }
+}
+
+type SearchQueryToken =
+  | { kind: 'operand'; tsquery: string; plain: string }
+  | { kind: 'and' | 'or' };
+
+const SEARCH_DIGIT = /[0-9٠-٩۰-۹]/;
+
+/** Quote one lexeme for PostgreSQL's tsquery input grammar. */
+function quoteTsqueryLexeme(lexeme: string): string {
+  // Backslash is the tsquery escape character. Escape it before apostrophes so
+  // user text can never close the quoted lexeme and inject tsquery operators.
+  return `'${lexeme.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+function isLiteralSlash(input: string, index: number, termStart: number): boolean {
+  const previous = input[index - 1] ?? '';
+  const next = input[index + 1] ?? '';
+
+  // Dates such as 1444/10/20 are one search term, not three OR branches.
+  if (SEARCH_DIGIT.test(previous) && SEARCH_DIGIT.test(next)) return true;
+
+  // A royal-decree reference such as م/14 (including Arabic/Persian digits)
+  // is likewise data. Limit the exception to the exact compact prefix so a
+  // normal expression such as نظام/لائحة remains an OR expression.
+  return input.slice(termStart, index) === 'م' && SEARCH_DIGIT.test(next);
+}
+
 export function parseSearchQuery(query: string): ParsedSearchQuery {
   const raw = query.trim();
-  const plainTerms: string[] = [];
-  
+
   if (!raw) {
     return { raw, tsquery: '', plainTerms: [] };
   }
-  
-  // Extract exact phrases first
-  const phrases: string[] = [];
-  let processed = raw.replace(/"([^"]+)"/g, (_match, phrase) => {
-    phrases.push(phrase);
-    plainTerms.push(phrase);
-    return `__PHRASE_${phrases.length - 1}__`;
-  });
-  
-  // Split by operators
-  const parts = processed.split(/\s+/);
-  const tsqueryParts: string[] = [];
-  
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    
-    // Check if it's a phrase placeholder
-    const phraseMatch = part.match(/^__PHRASE_(\d+)__$/);
-    if (phraseMatch) {
-      const phrase = phrases[parseInt(phraseMatch[1])];
-      // PostgreSQL phraseto_tsquery equivalent
-      const phraseWords = normalizeSearch(phrase).split(/\s+/).filter(Boolean);
-      tsqueryParts.push(phraseWords.map(w => `'${w}'`).join(' <-> '));
-      continue;
-    }
-    
-    // Handle operators
-    if (part === '+' || part === '/') continue; // Operators handled by context
-    
-    // NOT operator (- prefix)
-    if (part.startsWith('-') && part.length > 1) {
-      const term = normalizeSearch(part.slice(1));
-      if (term) {
-        tsqueryParts.push(`!('${term}')`);
-        plainTerms.push(part.slice(1));
-      }
-      continue;
-    }
-    
-    // Wildcard (* suffix)
-    const isWildcard = part.endsWith('*');
-    const cleanPart = isWildcard ? part.slice(0, -1) : part;
-    const normalized = normalizeSearch(cleanPart);
-    
-    if (!normalized) continue;
-    
-    plainTerms.push(cleanPart);
-    
-    // Check what operator connects this to the next term
-    const nextPart = parts[i + 1];
-    const operator = nextPart === '/' ? ' | ' : ' & '; // Default is AND
-    
-    if (isWildcard) {
-      tsqueryParts.push(`'${normalized}':*`);
-    } else {
-      tsqueryParts.push(`'${normalized}'`);
-    }
-    
-    // Add operator if not last term and next is not an operator
-    if (i < parts.length - 1 && nextPart !== '+' && nextPart !== '/') {
-      tsqueryParts.push(operator);
-    }
+
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(raw)) {
+    throw new SearchQuerySyntaxError('Control characters are not allowed', 0);
   }
-  
+
+  const tokens: SearchQueryToken[] = [];
+  let index = 0;
+
+  const fail = (message: string, at = index): never => {
+    throw new SearchQuerySyntaxError(message, at);
+  };
+
+  const pushOperand = (operand: Extract<SearchQueryToken, { kind: 'operand' }>) => {
+    if (tokens.at(-1)?.kind === 'operand') tokens.push({ kind: 'and' });
+    tokens.push(operand);
+  };
+
+  const pushBinaryOperator = (kind: 'and' | 'or', at: number) => {
+    if (tokens.length === 0 || tokens.at(-1)?.kind !== 'operand') {
+      fail(`Operator ${kind === 'and' ? '+' : '/'} is missing a left operand`, at);
+    }
+    tokens.push({ kind });
+  };
+
+  const parsePhrase = (): Extract<SearchQueryToken, { kind: 'operand' }> => {
+    const phraseStart = index;
+    index += 1; // opening quote
+    let phrase = '';
+    let closed = false;
+
+    while (index < raw.length) {
+      const character = raw[index];
+      if (character === '"') {
+        index += 1;
+        closed = true;
+        break;
+      }
+      if (character === '\\') {
+        const escaped = raw[index + 1];
+        if (escaped !== '"' && escaped !== '\\') {
+          fail('Only quote and backslash may be escaped inside a phrase', index);
+        }
+        phrase += escaped;
+        index += 2;
+        continue;
+      }
+      phrase += character;
+      index += 1;
+    }
+
+    if (!closed) fail('Unterminated quoted phrase', phraseStart);
+    if (index < raw.length && !/\s/.test(raw[index]) && raw[index] !== '+' && raw[index] !== '/') {
+      fail('A quoted phrase must be followed by whitespace or an operator', index);
+    }
+
+    // The stored FTS vectors use `library.arabic (copy = simple)` on the
+    // original source text. Do not apply normalizeSearch here: folding alef,
+    // taa marbuta, alif maqsura or digit forms on the query alone would create
+    // lexemes that do not exist in that index. A future normalization change
+    // must rebuild both the generated vectors and this emitter together.
+    const words = phrase.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) fail('Quoted phrase cannot be empty', phraseStart);
+
+    return {
+      kind: 'operand',
+      tsquery: words.map(quoteTsqueryLexeme).join(' <-> '),
+      plain: phrase,
+    };
+  };
+
+  const parseTerm = (): Extract<SearchQueryToken, { kind: 'operand' }> => {
+    const termStart = index;
+
+    while (index < raw.length) {
+      const character = raw[index];
+      if (/\s/.test(character) || character === '+') break;
+      if (character === '/' && !isLiteralSlash(raw, index, termStart)) break;
+      if (character === '"') fail('A quote may only start a quoted phrase', index);
+      if (character === '\\') fail('Backslash escapes are only valid inside quoted phrases', index);
+      index += 1;
+    }
+
+    const sourceTerm = raw.slice(termStart, index);
+    if (!sourceTerm) fail('Expected a search term', termStart);
+
+    const starIndex = sourceTerm.indexOf('*');
+    const wildcard = sourceTerm.endsWith('*');
+    if (starIndex !== -1 && (!wildcard || starIndex !== sourceTerm.length - 1)) {
+      fail('Wildcard * is allowed only once at the end of a term', termStart + starIndex);
+    }
+
+    const plain = wildcard ? sourceTerm.slice(0, -1) : sourceTerm;
+    if (!plain.trim()) fail('Wildcard * must follow a search term', termStart);
+
+    return {
+      kind: 'operand',
+      tsquery: `${quoteTsqueryLexeme(plain)}${wildcard ? ':*' : ''}`,
+      plain,
+    };
+  };
+
+  let positiveOperands = 0;
+  const parseOperand = (negated: boolean) => {
+    const operand = raw[index] === '"' ? parsePhrase() : parseTerm();
+    if (!negated) positiveOperands += 1;
+    pushOperand({
+      ...operand,
+      tsquery: negated ? `!(${operand.tsquery})` : operand.tsquery,
+    });
+  };
+
+  while (index < raw.length) {
+    while (index < raw.length && /\s/.test(raw[index])) index += 1;
+    if (index >= raw.length) break;
+
+    const character = raw[index];
+    if (character === '+') {
+      pushBinaryOperator('and', index);
+      index += 1;
+      continue;
+    }
+    if (character === '/') {
+      pushBinaryOperator('or', index);
+      index += 1;
+      continue;
+    }
+    if (character === '-') {
+      const negationIndex = index;
+      index += 1;
+      if (index >= raw.length || /\s/.test(raw[index]) || ['+', '/', '-'].includes(raw[index])) {
+        fail('Negation - must be attached to a term or quoted phrase', negationIndex);
+      }
+      parseOperand(true);
+      continue;
+    }
+
+    parseOperand(false);
+  }
+
+  if (tokens.at(-1)?.kind !== 'operand') {
+    fail('Search query cannot end with an operator', raw.length - 1);
+  }
+  if (positiveOperands === 0) {
+    fail('Search query must contain at least one positive term', 0);
+  }
+
+  // Build an explicit expression tree: AND binds more tightly than OR.
+  // Parenthesizing the emitted tsquery keeps that contract independent of
+  // PostgreSQL operator-precedence changes or future token transformations.
+  let tokenIndex = 0;
+  const parseAtom = (): string => {
+    const token = tokens[tokenIndex];
+    if (!token || token.kind !== 'operand') {
+      return fail('Expected a search term', raw.length);
+    }
+    tokenIndex += 1;
+    return token.tsquery;
+  };
+  const parseAndExpression = (): string => {
+    let expression = parseAtom();
+    while (tokens[tokenIndex]?.kind === 'and') {
+      tokenIndex += 1;
+      expression = `(${expression} & ${parseAtom()})`;
+    }
+    return expression;
+  };
+  const parseOrExpression = (): string => {
+    let expression = parseAndExpression();
+    while (tokens[tokenIndex]?.kind === 'or') {
+      tokenIndex += 1;
+      expression = `(${expression} | ${parseAndExpression()})`;
+    }
+    return expression;
+  };
+  const tsquery = parseOrExpression();
+  if (tokenIndex !== tokens.length) fail('Invalid search expression', raw.length);
+
   return {
     raw,
-    tsquery: tsqueryParts.join(' '),
-    plainTerms,
+    tsquery,
+    plainTerms: tokens
+      .filter((token): token is Extract<SearchQueryToken, { kind: 'operand' }> => token.kind === 'operand')
+      .map((token) => token.plain),
   };
 }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { libraryGate } from '@/lib/library-gate';
+import { rateLimit, clientIpFrom } from '@/lib/rateLimit';
 
 /**
  * POST /api/ai/library-chat
@@ -22,6 +23,15 @@ export async function POST(request: Request) {
   const gate = await libraryGate();
   if (gate) return gate;
 
+  const ip = clientIpFrom(request);
+  const rl = rateLimit(`ai:library-chat:${ip}`, { limit: 20, windowMs: 60_000 });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "طلبات كثيرة خلال وقت قصير — حاول مجدداً بعد قليل" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
+
   try {
     if (!N8N_LIBRARY_CHAT_WEBHOOK_URL) {
       return NextResponse.json(
@@ -40,6 +50,13 @@ export async function POST(request: Request) {
     if (!message) {
       return NextResponse.json(
         { error: 'message is required' },
+        { status: 400 }
+      );
+    }
+
+    if (typeof message === 'string' && message.length > 4000) {
+      return NextResponse.json(
+        { error: 'الرسالة طويلة جداً — الحد الأقصى 4000 حرف' },
         { status: 400 }
       );
     }

@@ -127,7 +127,7 @@ export function AiLandingPage() {
   }, [queryIndex]);
 
   return (
-    <div className={`min-h-screen ${isDark ? "bg-dark-bg" : "bg-slate-50"}`} dir={isRTL ? "rtl" : "ltr"}>
+    <div className={`min-h-[100dvh] ${isDark ? "bg-dark-bg" : "bg-slate-50"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
       {/* ── 1. Hero ──────────────────────────────────────────────────────────── */}
@@ -612,7 +612,7 @@ function AiHubDashboard() {
   });
 
   return (
-    <div className={`p-6 md:p-10 max-w-[1200px] mx-auto min-h-screen`} dir={isRTL ? "rtl" : "ltr"}>
+    <div className={`p-6 md:p-10 max-w-[1200px] mx-auto min-h-[100dvh]`} dir={isRTL ? "rtl" : "ltr"}>
       <div className="mb-10 text-center">
         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="mx-auto w-16 h-16 bg-[#C8A762]/10 text-[#C8A762] rounded-2xl flex items-center justify-center mb-4">
           <Brain size={32} weight="fill" />

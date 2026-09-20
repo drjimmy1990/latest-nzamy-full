@@ -8,7 +8,7 @@ import {
   PencilSimple, Scales, ArrowsClockwise, FilePdf, FileDoc,
   Image, X, CheckCircle, Gavel, Users, Buildings,
   ChatCircle, Suitcase, Question, ShieldCheck, HeartStraight,
-  Handshake, Briefcase, UserFocus, Scroll, Megaphone,
+  Handshake, UserFocus, Megaphone,
   HouseLine,
 } from "@phosphor-icons/react";
 import Link from "next/link";
@@ -406,7 +406,7 @@ export default function TranscriberPage() {
                 )}
               </div>
               <p className={`text-center text-[10px] pb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`}>
-                Whisper AI للتفريغ الصوتي · Gemini للاستخلاص القانوني
+                تقنيات تفريغ واستخلاص ذكية — قيد التفعيل
               </p>
             </div>
 

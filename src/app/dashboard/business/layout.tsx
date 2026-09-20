@@ -118,7 +118,7 @@ export default function BusinessDashboardLayout({
 
         <SharedSidebar />
 
-        <main className="lg:mr-64 pt-[60px] lg:pt-0 min-h-[100dvh]">
+        <div className="print-main lg:mr-64 pt-[calc(env(safe-area-inset-top)+60px)] lg:pt-0 min-h-[100dvh]">
 
           {/* ── Service Mode indicator ── */}
           {mode === "service" && (
@@ -141,7 +141,7 @@ export default function BusinessDashboardLayout({
               </EntityRouteGuard>
             )}
           </div>
-        </main>
+        </div>
 
               </div>
     </UserTypeGuard>

@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Briefcase, Envelope, MagnifyingGlass, Copy, ArrowLeft, CheckCircle, Warning, ThumbsUp, ThumbsDown, PencilSimple } from "@phosphor-icons/react";
+import { Briefcase, Envelope, MagnifyingGlass, Copy, ArrowLeft, CheckCircle, Warning, ThumbsUp, ThumbsDown, PencilSimple, ShieldCheck, Scales } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { SubscriptionGuard } from "@/components/dashboard/SubscriptionGuard";
 import Link from "next/link";
@@ -22,6 +22,10 @@ interface CircuitEmail {
   systemSource?: string;
 }
 
+// ⚠️ تنبيه صارم موجه للمبرمج (قرار المالك المعتمد):
+// المصفوفة INITIAL_CIRCUITS أدناه هي مجرد عينة تجريبية أولية (٤ دوائر فقط).
+// الدليل المعتمد الكامل يحتوي على ٢,١٩٢ دائرة قضائية مع إيميلاتها وأرقامها واختصاصاتها،
+// ويلزم توريده كاملاً من الأرشيف وتفريغه في قاعدة البيانات وربطه بالواجهة بدلاً من البيانات الثابتة.
 const INITIAL_CIRCUITS: CircuitEmail[] = [
   { 
     id: 1, region: "الرياض", court: "المحكمة التجارية", name: "الدائرة التجارية الأولى", 
@@ -79,6 +83,21 @@ export default function CircuitsEmailsPage() {
             دليل إيميلات الدوائر (تحديث جماعي)
           </h1>
           <p className={isDark ? "text-zinc-400" : "text-zinc-600"}>تأكد من صحة إيميلات الدوائر مبنياً على تجارب المحامين الميدانية ومصادر النظام.</p>
+        </div>
+      </div>
+
+      {/* تنبيه توريد الدليل كاملاً للمبرمج وفريق العمل */}
+      <div className={`p-4 rounded-2xl border flex items-start gap-3 ${
+        isDark ? "bg-amber-950/20 border-amber-800/30 text-amber-300" : "bg-amber-50 border-amber-200 text-amber-900"
+      }`}>
+        <Scales size={20} className="text-amber-500 shrink-0 mt-0.5" weight="duotone" />
+        <div className="space-y-1 text-[12px] leading-relaxed">
+          <p className="font-bold">
+            تنبيه استيراد الدليل القضائي الكامل (2,192 دائرة قضائية):
+          </p>
+          <p className={isDark ? "text-amber-300/80" : "text-amber-800/90"}>
+            البيانات المعروضة حالياً تمثل عينة تجريبية أولية ({circuits.length} دوائر). تنبيه صارم موجه للمبرمج لتوريد وتفريغ دليل الدوائر القضائية المعتمد كاملاً من الأرشيف (2,192 دائرة قضائية وإيميلاتها وهواتفها) وربطه بواجهة البحث وقاعدة البيانات.
+          </p>
         </div>
       </div>
 
@@ -212,6 +231,3 @@ export default function CircuitsEmailsPage() {
     </SubscriptionGuard>
   );
 }
-
-// Additional imports for Shields
-import { ShieldCheck } from "@phosphor-icons/react";

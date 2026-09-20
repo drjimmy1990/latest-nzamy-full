@@ -16,6 +16,7 @@ import {
 } from "@phosphor-icons/react";
 import { LAW_DOC_TYPES, type DocSubType, getDocAnchorPrefix } from "@/constants/lawsLibraryData";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
+import { articleStatusNotice } from "../data";
 import {
   PrincipleCard,
   PrincipleRow,
@@ -149,6 +150,10 @@ export function LawsTabContent({
             <AnimatePresence mode="popLayout">
               {filteredLaws.map((sys, idx) => {
                 const isUnlocked = sys.free || hasLibraryAccess;
+                // API search rows describe an article; never substitute the parent law status here.
+                const searchArticleStatusNotice = sys._isSearchResult && sys.articleStatus === "status_undeclared"
+                  ? articleStatusNotice(sys.articleStatus, isRTL)
+                  : null;
                 return (
                 <motion.div
                   key={sys.id}
@@ -243,6 +248,11 @@ export function LawsTabContent({
                             </span>
                           );
                         })}
+                        {searchArticleStatusNotice && (
+                          <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                            {isRTL ? `حالة المادة: ${searchArticleStatusNotice}` : `Article status: ${searchArticleStatusNotice}`}
+                          </span>
+                        )}
                       </div>
 
                       {/* Expandable Abstract Description */}
@@ -351,6 +361,11 @@ export function LawsTabContent({
                               </span>
                             );
                           })}
+                          {searchArticleStatusNotice && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                              {isRTL ? `حالة المادة: ${searchArticleStatusNotice}` : `Article status: ${searchArticleStatusNotice}`}
+                            </span>
+                          )}
                           {sys.issuing_instrument && (
                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${isDark ? "bg-[#C8A762]/10 border-[#C8A762]/20 text-[#C8A762]" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
                               {sys.issuing_instrument}

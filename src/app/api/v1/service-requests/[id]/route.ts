@@ -9,7 +9,6 @@ import { canRequesterCancel } from "@/lib/services/orderTransitions";
 import {
   evaluateOrderEditability,
   validateEditedDescription,
-  appendEditHistory,
 } from "@/lib/services/orderEditGate";
 
 /* ── سياسة التعديلات: ٤٨ ساعة / تعديلان ──────────────────────────────────────
@@ -533,50 +532,69 @@ export async function PATCH(
       );
     }
 
-    const nowIso = new Date().toISOString();
+    // The revision object below is LOCAL, display-only data for the
+    // notification text further down — it is not what actually gets
+    // written. The write itself, and every check above it (ownership,
+    // receiver, delivered/window/quota), is re-run from a fresh read INSIDE
+    // `request_service_order_revision()`
+    // (supabase/migrations/20260917_service_request_client_actions_rpc.sql)
+    // — that migration's own header explains why: this route's checks were
+    // the ONLY enforcement of the 48h/2-revision policy, and
+    // `service_requests`' RLS UPDATE policy has no awareness of either, so
+    // a direct PostgREST call (from native, or a hand-rolled fetch) could
+    // always skip this file entirely. The RPC is now the only thing that
+    // can write `metadata` on this table at all (see the migration's
+    // column-level REVOKE) and re-implements the SAME compare-and-swap on
+    // `status = 'completed'` this route used to do directly, so two
+    // concurrent requests still cannot spend the same budget slot.
     const revision: OrderRevision = {
-      requestedAt: nowIso,
+      requestedAt: new Date().toISOString(),
       notes,
-      // 1-based, so it reads as the client sees it («تعديل ٢ من ٢») and so a
-      // truncated/absent array can never produce index 0.
       index: revisions.length + 1,
     };
 
-    // Compare-and-swap on `status`. Two clicks landing together would both
-    // read `revisions.length === 0` above and both write index 1, spending one
-    // budget slot on two requests; the `.eq("status", "completed")` makes the
-    // second update match zero rows, because the first already moved the order
-    // to `in_review`. `maybeSingle()` rather than `single()` so that case comes
-    // back as a null row to answer, not a thrown PostgREST error.
-    //
-    // The whole `metadata` object is written back, not just `revisions`:
-    // PostgREST replaces a JSONB column wholesale, so spreading `metadata`
-    // preserves `deliverable`, `intake`, `attachments` — and `internalNotes`,
-    // the team's private note, which must survive this write untouched (it is
-    // stripped on the way OUT, in GET and in the response below, never
-    // deleted from the row).
-    const { data: updated, error: updateError } = await supabase
-      .from("service_requests")
-      .update({
-        // Deliberately an EXISTING status value. A dedicated
-        // `revision_requested` status would need a CHECK-constraint migration
-        // on service_requests.status, and every status-filtered consumer
-        // (admin queue, timelines, ORDER_STATUS_AR) would have to learn it.
-        // `in_review` is what the admin claim already writes, so the order
-        // reappears in the admin queue exactly where an unfinished order
-        // belongs; `metadata.revisions` is what tells the team it is a
-        // revision rather than a first pass.
-        status: "in_review",
-        metadata: { ...metadata, revisions: [...revisions, revision] },
-        updated_at: nowIso,
-      })
-      .eq("id", id)
-      .eq("status", "completed")
-      .select()
-      .maybeSingle();
+    const { data: updated, error: updateError } = await supabase.rpc(
+      "request_service_order_revision",
+      { p_request_id: id, p_notes: notes },
+    );
 
     if (updateError) {
-      console.error("[service-requests PATCH] revision update failed:", updateError.message);
+      const reason = updateError.message;
+
+      // `not_owner` is 403 (an authorization failure); every other reason
+      // token the RPC can raise is a 409/400 state conflict the client can
+      // see explained on the page — same split the removed inline checks
+      // used, same Arabic copy.
+      if (reason === "not_owner") {
+        console.error(
+          `[service-requests PATCH] revision refused (not requester): order=${id} caller=${user.id}`,
+        );
+        return NextResponse.json(
+          { error: "غير مسموح بطلب تعديل على هذا الطلب.", reason: "not_owner" },
+          { status: 403 },
+        );
+      }
+      const known: Record<string, { error: string; status: number }> = {
+        not_found: { error: "الطلب غير موجود", status: 404 },
+        not_applicable: { error: "سياسة التعديلات لا تنطبق على هذا الطلب.", status: 409 },
+        not_delivered: { error: "لا يمكن طلب تعديل قبل تسليم المستند من فريق نظامي.", status: 409 },
+        window_expired: {
+          error: `انتهت مهلة التعديلات المجانية (${REVISION_WINDOW_HOURS} ساعة من التسليم). يمكنك فتح تذكرة دعم.`,
+          status: 409,
+        },
+        quota_exhausted: {
+          error: `استُهلك الحد الأقصى للتعديلات المجانية (${REVISION_LIMIT}). يمكنك فتح تذكرة دعم.`,
+          status: 409,
+        },
+        empty_notes: { error: "اكتب ملاحظات التعديل المطلوب.", status: 400 },
+        notes_too_long: { error: "ملاحظات التعديل طويلة جداً (الحد ٢٠٠٠ حرف).", status: 400 },
+        conflict: { error: "تغيّرت حالة الطلب. حدّث الصفحة ثم حاول مرة أخرى.", status: 409 },
+      };
+      const mapped = known[reason];
+      if (mapped) {
+        return NextResponse.json({ error: mapped.error, reason }, { status: mapped.status });
+      }
+      console.error("[service-requests PATCH] revision update failed:", reason);
       return NextResponse.json(
         { error: "تعذّر تسجيل طلب التعديل. حاول مرة أخرى.", reason: "write_failed" },
         { status: 500 },
@@ -737,23 +755,50 @@ export async function PATCH(
       return NextResponse.json({ success: true, unchanged: true });
     }
 
-    const nowIso = new Date().toISOString();
-    const metadata = (existing.metadata ?? {}) as Record<string, unknown>;
-    const { data: updated, error: updateError } = await supabase
-      .from("service_requests")
-      .update({
-        description: validated.value,
-        // The previous text is kept, not overwritten. This is a law office —
-        // what the client originally asked for has to stay answerable after
-        // he has changed what he asked for.
-        metadata: { ...metadata, editHistory: appendEditHistory(metadata, previous, nowIso) },
-        updated_at: nowIso,
-      })
-      .eq("id", id)
-      .select()
-      .single();
+    // `evaluateOrderEditability`/`validateEditedDescription` above still run
+    // first for the fast, friendly path — but the actual write, and every
+    // one of these same checks, is re-run from a fresh read INSIDE
+    // `edit_service_request_description()`
+    // (supabase/migrations/20260917_service_request_client_actions_rpc.sql).
+    // That migration's own header explains why: `description`/`metadata`
+    // are off `ALLOWED_PATCH_FIELDS` precisely because RLS lets any
+    // participant write them directly, and this route's own gate was the
+    // ONLY thing that ever stopped that — a fact its own comment already
+    // stated. The RPC is now the only path that CAN write either column
+    // (see the migration's column-level REVOKE), so a direct PostgREST call
+    // bypassing this route entirely hits the same wall this route does.
+    const { data: updated, error: updateError } = await supabase.rpc(
+      "edit_service_request_description",
+      { p_request_id: id, p_new_description: validated.value },
+    );
 
     if (updateError) {
+      const reason = updateError.message;
+      if (reason === "not_owner" || reason === "not_pending" || reason === "already_assigned" || reason === "already_delivered") {
+        // Same messages `evaluateOrderEditability` already produced — the
+        // RPC re-derives the identical gate from a fresh read, so a caller
+        // who raced past the pre-check above (the order moved on between
+        // the two reads) still gets the exact same Arabic explanation.
+        const messages: Record<string, string> = {
+          not_owner: "لا يمكن تعديل طلب لم تقدّمه بنفسك.",
+          not_pending: "بدأ العمل على هذا الطلب — لم يعد التعديل متاحاً. تواصل مع الفريق لأي إضافة.",
+          already_assigned: "استلم الفريق هذا الطلب — لم يعد التعديل متاحاً. تواصل مع الفريق لأي إضافة.",
+          already_delivered: "تم تسليم هذا الطلب. استخدم «طلب تعديل» على المستند المسلَّم.",
+        };
+        return NextResponse.json(
+          { error: messages[reason], reason },
+          { status: reason === "not_owner" ? 403 : 409 },
+        );
+      }
+      if (reason === "not_found") {
+        return NextResponse.json({ error: "الطلب غير موجود" }, { status: 404 });
+      }
+      if (reason === "invalid_description") {
+        // Should not happen — `validateEditedDescription` above already
+        // confirmed `validated.ok`, so this is the RPC's own defense-in-depth
+        // re-validation refusing something the pre-check missed.
+        return NextResponse.json({ error: "تفاصيل الطلب مطلوبة." }, { status: 400 });
+      }
       // Was `{ error: updateError.message }` — a raw PostgREST string, in
       // English, on a branch whose only caller ECHOES the body onto the screen:
       // OrderEditPanel.tsx:64 renders `body.error` and falls back to Arabic
@@ -762,11 +807,7 @@ export async function PATCH(
       // and of the validator and never of this line. Arabic on screen, the
       // machine cause in the log — same shape as the revision branch's
       // write_failed above.
-      console.error(
-        "[service-requests PATCH] edit_details update failed:",
-        updateError.message,
-        updateError.code,
-      );
+      console.error("[service-requests PATCH] edit_details update failed:", reason);
       return NextResponse.json(
         { error: "تعذّر حفظ التعديل. حاول مرة أخرى.", reason: "write_failed" },
         { status: 500 },
@@ -970,6 +1011,19 @@ export async function PATCH(
     }
   }
 
+  // This plain `.update(patch)` is unchanged for the isAssignee/isAdmin
+  // transitions above — those legitimately write `status` to values other
+  // than 'cancelled' and must keep working exactly as before. The
+  // `isRequester && targetStatus === "cancelled"` case above is now ALSO
+  // backed by `enforce_requester_cancel_lock()`
+  // (supabase/migrations/20260917_service_request_client_actions_rpc.sql),
+  // a trigger that fires on every `status` write regardless of code path —
+  // so even if the `permitted` check above ever had a bug that let an
+  // illegitimate requester-cancel through, the database itself refuses it.
+  // That migration's own header explains why a trigger, not a column
+  // REVOKE, is what `status` specifically needed (unlike `description`/
+  // `metadata` further up this file, which the RPCs there made the ONLY
+  // writable path for).
   const { data, error } = await supabase
     .from("service_requests")
     .update(patch)
@@ -978,6 +1032,17 @@ export async function PATCH(
     .single();
 
   if (error) {
+    // The trigger's own refusal surfaces here as an ordinary Postgres error
+    // with this exact message — translate it to the same 409 the removed
+    // pre-check would have produced, rather than a raw 500. This should
+    // never actually fire for a caller the `permitted` check above already
+    // approved; it exists for the case where it disagrees with the trigger.
+    if (error.message === "conflict") {
+      return NextResponse.json(
+        { error: "لا يمكن إلغاء هذا الطلب في وضعه الحالي.", reason: "conflict" },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

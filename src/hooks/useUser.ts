@@ -15,6 +15,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { LAWYER_AI_PERMISSION_KEYS } from "@/constants/lawyerAiCatalog";
 import { isDbUserType } from "@/lib/auth/userTypes";
+import type { ActiveEntityMemberships } from "@/lib/auth/entityMembership";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
@@ -117,11 +118,21 @@ export interface UserSession {
   businessType?:       string;
   providerSpecialties?: string[];  // فئات الخدمات المتاحة لمزود الخدمة
   affiliation?:  Affiliation;      // محامي تحت كيان معنوي
+  firmMembership?: {
+    entityId: string;
+    entityName: string;
+    role: AffiliationRole;
+  };
   // ─── حقول الجهة الحكومية ───────────────────────────────
   governmentRole?:  GovernmentRole;   // القاضي / عضو النيابة / الضابط / المستشار
   officerSpecialty?: OfficerSpecialty; // تخصص الضابط إذا كان governmentRole = "officer"
   // ─── حقول الشركة التجارية ──────────────────────────────
   businessRole?:   BusinessRole;      // دور الموظف داخل الشركة
+  businessMembership?: {
+    entityId: string;
+    entityName: string;
+    role: BusinessRole;
+  };
   // ─── الأدوار المتعددة (Multi-Role) ─────────────────────
   /**
    * active_roles: أدوار إضافية مفعّلة للمستخدم.
@@ -533,6 +544,94 @@ type ProfileTypeRead =
   | { status: "missing" }
   | { status: "unavailable" };
 
+type EntityMembershipRead =
+  | { status: "found"; memberships: ActiveEntityMemberships }
+  | { status: "unavailable" };
+
+function relationName(value: unknown, field: string): string {
+  const row = Array.isArray(value) ? value[0] : value;
+  if (!row || typeof row !== "object") return "";
+  const name = (row as Record<string, unknown>)[field];
+  return typeof name === "string" ? name : "";
+}
+
+async function readEntityMemberships(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<EntityMembershipRead> {
+  try {
+    const [firmResult, businessResult, ownedFirmResult, ownedBusinessResult] = await Promise.all([
+      supabase
+        .from("firm_members")
+        .select("firm_id, role, firm_profiles(name_ar)")
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("business_members")
+        .select("business_id, role, business_profiles(company_name_ar)")
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("firm_profiles")
+        .select("id, name_ar")
+        .eq("owner_user_id", userId)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("business_profiles")
+        .select("id, company_name_ar")
+        .eq("owner_user_id", userId)
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    if (firmResult.error || businessResult.error || ownedFirmResult.error || ownedBusinessResult.error) {
+      return { status: "unavailable" };
+    }
+
+    const memberships: ActiveEntityMemberships = {};
+    const firm = firmResult.data as Record<string, unknown> | null;
+    const ownedFirm = ownedFirmResult.data as Record<string, unknown> | null;
+    if (firm && typeof firm.firm_id === "string" && typeof firm.role === "string") {
+      memberships.firm = {
+        entityId: firm.firm_id,
+        entityName: relationName(firm.firm_profiles, "name_ar"),
+        role: firm.role,
+      };
+    } else if (ownedFirm && typeof ownedFirm.id === "string") {
+      memberships.firm = {
+        entityId: ownedFirm.id,
+        entityName: typeof ownedFirm.name_ar === "string" ? ownedFirm.name_ar : "",
+        role: "managing_partner",
+      };
+    }
+
+    const business = businessResult.data as Record<string, unknown> | null;
+    const ownedBusiness = ownedBusinessResult.data as Record<string, unknown> | null;
+    if (business && typeof business.business_id === "string" && typeof business.role === "string") {
+      memberships.business = {
+        entityId: business.business_id,
+        entityName: relationName(business.business_profiles, "company_name_ar"),
+        role: business.role,
+      };
+    } else if (ownedBusiness && typeof ownedBusiness.id === "string") {
+      memberships.business = {
+        entityId: ownedBusiness.id,
+        entityName: typeof ownedBusiness.company_name_ar === "string" ? ownedBusiness.company_name_ar : "",
+        role: "owner",
+      };
+    }
+
+    return { status: "found", memberships };
+  } catch {
+    return { status: "unavailable" };
+  }
+}
+
 /**
  * Reads `profiles.user_type` for one user through the RLS-scoped browser
  * client. The row is reachable only because of the "users read own profile"
@@ -576,53 +675,24 @@ async function readProfileUserType(
  * Everything else below — tier, sub-role, credits, display mode, affiliation
  * and the sector fields — still comes from `user_metadata`, unchanged.
  */
-function mapSupabaseUser(user: User | null, resolvedUserType: string | null): UserSession {
+function mapSupabaseUser(
+  user: User | null,
+  resolvedUserType: string | null,
+  memberships: ActiveEntityMemberships = {},
+): UserSession {
   if (!user) return GUEST_SESSION;
 
   const meta = user.user_metadata ?? {};
-  const metaUserType: unknown = meta.user_type;
-
-  // Order of preference:
-  //   1. profiles.user_type — the same column the server already authorizes on
-  //      (src/lib/auth/assertRole.ts:37). Reading it here is what stops the
-  //      browser and the server from disagreeing about who someone is.
-  //   2. user_metadata.user_type — a second copy of the same value. This is
-  //      NOT a legacy-only path and it is NOT something an OAuth account
-  //      necessarily lacks. Google itself writes no `user_type`, but this
-  //      application writes one, on two live paths: the email signup's
-  //      `signUp` `options.data` (src/app/register/client/page.tsx:236, and
-  //      the matching `signUp` block in src/app/register/provider/page.tsx),
-  //      and the onboarding wizard's closing `supabase.auth.updateUser`
-  //      mirror in src/app/onboarding/page.tsx — a path an OAuth account
-  //      does reach, because onboarding is where a Google user states their
-  //      type. Treat this branch as live code, not as an archive.
-  //      It is read only when `profiles` could not answer, and `profiles`
-  //      wins whenever the two disagree. That is deliberate: nothing in this
-  //      codebase authorizes on `user_metadata` — `assertRole` reads
-  //      `profiles` (assertRole.ts:36-40) and so does `requireAdmin`
-  //      (src/lib/access-control.ts:109-113) — so a type that exists only in
-  //      metadata is a claim no server would honour, and rendering it would
-  //      put the browser back into the split-brain state this hook is fixing.
-  //      The value is also not guaranteed to be one of the nine DB types: the
-  //      onboarding picker's ids are picker ids, not column values (`company`
-  //      there is `corporate` in the CHECK constraint). Hence `isDbUserType`
-  //      rather than a cast — an unrecognised metadata value falls through to
-  //      the branch below instead of being trusted.
-  //   3. "individual" — NOT a sensible guess about who this person is. It is
-  //      here so that a user with neither a profiles row nor metadata still
-  //      renders a logged-in session instead of pushing a null user_type
-  //      through every consumer of this hook. Someone who lands on this branch
-  //      is quite likely not an individual at all; the onboarding gate, not
-  //      this line, is what is meant to establish their real type.
+  // profiles.user_type is the only trusted browser role. user_metadata is
+  // writable by the account holder, so it must never create an admin or entity
+  // session when the profile read is unavailable.
   const userType: UserType =
     resolvedUserType !== null && isDbUserType(resolvedUserType)
       ? resolvedUserType
-      : typeof metaUserType === "string" && isDbUserType(metaUserType)
-        ? metaUserType
-        : "individual";
+      : "individual";
 
   const tier = (meta.tier ?? "free") as UserTier;
-  const subRole = (meta.sub_role ?? null) as SubRole;
+  const subRole = (meta.sub_role ?? meta.provider_sub_role ?? null) as SubRole;
 
   return {
     isLoggedIn:    true,
@@ -638,10 +708,18 @@ function mapSupabaseUser(user: User | null, resolvedUserType: string | null): Us
     permissions:   getPermissions(userType, tier),
     businessType:       meta.business_type,
     providerSpecialties: meta.provider_specialties,
-    affiliation:   meta.affiliation,
+    affiliation: memberships.firm
+      ? {
+          entityName: memberships.firm.entityName,
+          entityType: "firm",
+          role: memberships.firm.role as AffiliationRole,
+        }
+      : undefined,
+    firmMembership: memberships.firm as UserSession["firmMembership"],
     governmentRole:     meta.government_role,
     officerSpecialty:    meta.officer_specialty,
-    businessRole:       meta.business_role,
+    businessRole: (memberships.business?.role ?? meta.business_role) as BusinessRole | undefined,
+    businessMembership: memberships.business as UserSession["businessMembership"],
     active_roles:       meta.active_roles,
     country:       meta.country_code ?? "SA",
   };
@@ -683,7 +761,10 @@ export function useUser(): UseUserReturn {
       authUser: User,
       eventId: number,
     ) => {
-      const read = await readProfileUserType(supabase, authUser.id);
+      const [read, membershipRead] = await Promise.all([
+        readProfileUserType(supabase, authUser.id),
+        readEntityMemberships(supabase, authUser.id),
+      ]);
       // Superseded or unmounted: drop this result and leave `loading` alone —
       // whichever event overtook this one is responsible for releasing it.
       if (cancelled || eventId !== latestEvent) return;
@@ -702,9 +783,18 @@ export function useUser(): UseUserReturn {
             ? prev.userType
             : null;
 
+        const carriedMemberships: ActiveEntityMemberships =
+          membershipRead.status === "unavailable" && prev.isLoggedIn && prev.userId === authUser.id
+            ? {
+                ...(prev.firmMembership ? { firm: prev.firmMembership } : {}),
+                ...(prev.businessMembership ? { business: prev.businessMembership } : {}),
+              }
+            : {};
+
         return mapSupabaseUser(
           authUser,
           read.status === "found" ? read.userType : carried,
+          membershipRead.status === "found" ? membershipRead.memberships : carriedMemberships,
         );
       });
 

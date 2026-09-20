@@ -461,7 +461,7 @@ export default function ForgotPasswordPage() {
         {/* ── Form panel ── */}
         <div className="flex flex-1 flex-col">
           {/* Top bar */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-dark-border md:px-8">
+          <div className="safe-top flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-dark-border md:px-8">
             <a href="/" className="flex items-center gap-2 md:hidden">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-royal text-white">
                 <Scales weight="bold" size={18} />

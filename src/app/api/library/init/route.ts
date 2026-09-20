@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getLibraryAccessForUser } from "@/lib/access-control";
 import { libraryGate } from "@/lib/library-gate";
+import { isFreeLibraryItem } from "@/lib/library-item-access";
 
 export async function GET(request: Request) {
   const gate = await libraryGate();
@@ -32,7 +33,6 @@ export async function GET(request: Request) {
     userId = null;
   }
   const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
-  const freeItems = (type: string): string[] => (freeItemsByType[type] as string[]) ?? [];
 
   // Strip large body fields from a locked row so the list never leaks paid text.
   const stripFields = (row: Record<string, unknown>, fields: string[]) => {
@@ -153,19 +153,19 @@ export async function GET(request: Request) {
     const lawsRows = laws.data as unknown as Record<string, unknown>[];
     laws.data = lawsRows.map((row) => {
       const slug = row.slug as string;
-      const isFree = hasFullAccess || whitelistedSlugs.includes(slug) || freeItems("laws").includes(slug);
+      const isFree = isFreeLibraryItem({ contentType: "laws", itemId: slug, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
       return { ...(isFree ? row : stripFields({ ...row }, ["preamble", "description", "article_status_summary"])), free: isFree, locked: !isFree };
     }) as any;
 
     const decreesRows = decrees.data as unknown as Record<string, unknown>[];
     decrees.data = decreesRows.map((row) => {
-      const isFree = hasFullAccess || freeItems("decrees").includes(row.id as string);
+      const isFree = hasFullAccess || ((freeItemsByType.decrees as string[]) ?? []).includes(row.id as string);
       return { ...(isFree ? row : stripFields({ ...row }, ["summary_brief", "content", "text"])), free: isFree, locked: !isFree };
     }) as any;
 
     const principlesRows = principles.data as unknown as Record<string, unknown>[];
     principles.data = principlesRows.map((row) => {
-      const isFree = hasFullAccess || freeItems("precedents").includes(row.id as string);
+      const isFree = isFreeLibraryItem({ contentType: "principles", itemId: row.id as string, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
       const out = isFree ? { ...row } : stripFields({ ...row }, ["text"]);
       return { ...out, free: isFree, locked: !isFree };
     }) as any;

@@ -15,7 +15,6 @@ import { useUser, logout } from "@/hooks/useUser";
 import { getNavByUserType, getDashboardRoute, getRoleLabel, type NavItem } from "@/constants/navigation";
 import Link from "next/link";
 import { useNotifications } from "@/hooks/useNotifications";
-import type { Notification } from "@/lib/services/notificationService";
 
 // ─── Icon resolver (phosphor icon names → components) ─────────────────────────
 const ICON_MAP = PhosphorIcons as unknown as Record<string, ElementType>;
@@ -102,7 +101,7 @@ function NotificationsBell({ isAr }: { isAr: boolean }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.96 }}
             transition={{ type: "spring", stiffness: 300, damping: 25 }}
-            className={`absolute top-full mt-2 w-80 rounded-2xl border border-slate-200/60 bg-white shadow-[0_20px_40px_-15px_rgba(0,0,0,0.12)] z-50 overflow-hidden dark:border-white/10 dark:bg-zinc-900 ${isAr ? "left-0" : "right-0"}`}
+            className={`absolute top-full mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-slate-200/60 bg-white shadow-[0_20px_40px_-15px_rgba(0,0,0,0.12)] z-50 overflow-hidden dark:border-white/10 dark:bg-zinc-900 ${isAr ? "left-0" : "right-0"}`}
             dir={isAr ? "rtl" : "ltr"}
           >
             {/* Header */}
@@ -292,10 +291,13 @@ function NavDropdown({ items, isAr }: { items: NavItem[]; isAr: boolean }) {
 // ─── Main Navbar ──────────────────────────────────────────────────────────────
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Which nav parent is expanded in the mobile drawer. The desktop menu
+  // opens on hover, which a touch screen cannot do — see the drawer below.
+  const [mobileSection, setMobileSection] = useState<string | null>(null);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const { theme, lang, toggleTheme, toggleLang } = useTheme();
-  const { isLoggedIn, userType, name, credits, creditsMax, affiliation } = useUser();
+  const { isLoggedIn, userType, name, affiliation } = useUser();
   const isAr = lang === "ar";
 
   // ── Select proper nav based on userType ──
@@ -327,7 +329,7 @@ export default function Navbar() {
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ type: "spring", stiffness: 80, damping: 20 }}
-      className="fixed top-0 right-0 left-0 z-50"
+      className="fixed top-0 right-0 left-0 z-50 safe-top"
     >
       <div className="mx-auto max-w-[1400px] px-4 pt-4">
         <div className="rounded-[1.25rem] border border-white/60 bg-white/80 px-6 py-3 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-dark-card/90">
@@ -519,15 +521,85 @@ export default function Navbar() {
                 className="overflow-hidden xl:hidden"
               >
                 <div className="border-t border-slate-100 pt-4 pb-2 dark:border-white/10">
-                  {ACTIVE_NAV.map((link) => (
-                    <a
-                      key={link.label}
-                      href={link.href}
-                      className="block rounded-xl px-4 py-3 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white"
-                    >
-                      {isAr ? link.label : link.labelEn}
-                    </a>
-                  ))}
+                  {/* This list used to render `link.href` for EVERY entry and
+                      ignore `link.children` entirely. The desktop nav opens a
+                      child menu on `onMouseEnter` — an event a touch screen
+                      never fires — so on a phone the parent was just a link to
+                      its own placeholder href. For «المعرفة القانونية» that
+                      href is "#knowledge", an anchor that exists nowhere in the
+                      document, which left five real pages — the legal library,
+                      the community, the blog, Nzamy Media and the academy —
+                      with no route to them from a phone at all.
+
+                      Parents now expand in place. `#`-prefixed hrefs are
+                      placeholders for a menu, never destinations. */}
+                  {ACTIVE_NAV.map((link) => {
+                    const hasChildren = !!link.children?.length;
+                    const isPlaceholder = link.href.startsWith("#");
+                    const expanded = mobileSection === link.label;
+
+                    if (!hasChildren) {
+                      return (
+                        <a
+                          key={link.label}
+                          href={link.href}
+                          className="block rounded-xl px-4 py-3 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white"
+                        >
+                          {isAr ? link.label : link.labelEn}
+                        </a>
+                      );
+                    }
+
+                    return (
+                      <div key={link.label}>
+                        <button
+                          type="button"
+                          onClick={() => setMobileSection(expanded ? null : link.label)}
+                          aria-expanded={expanded}
+                          /* min-h-[44px] is Apple's minimum touch target; the
+                             plain <a> rows above compute to 44px from py-3 plus
+                             the text line box, and this keeps parity. */
+                          className="flex w-full min-h-[44px] items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white"
+                        >
+                          <span>{isAr ? link.label : link.labelEn}</span>
+                          <CaretDown
+                            size={14}
+                            weight="bold"
+                            className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
+                          />
+                        </button>
+
+                        {expanded && (
+                          <div className={`${isAr ? "pr-4" : "pl-4"} pb-1`}>
+                            {/* The parent itself is only navigable when it has
+                                a real destination of its own. */}
+                            {!isPlaceholder && (
+                              <a
+                                href={link.href}
+                                className="block min-h-[44px] rounded-xl px-4 py-2.5 text-[13px] font-medium text-ink-muted/80 hover:bg-royal/5 hover:text-royal dark:text-zinc-500 dark:hover:text-white"
+                              >
+                                {isAr ? `عرض الكل — ${link.label}` : `View all — ${link.labelEn}`}
+                              </a>
+                            )}
+                            {link.children!.map((child) => (
+                              <a
+                                key={child.label}
+                                href={child.href}
+                                className="flex min-h-[44px] items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium text-ink-muted/80 transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-500 dark:hover:text-white"
+                              >
+                                <span>{isAr ? child.label : child.labelEn}</span>
+                                {child.badge && (
+                                  <span className="rounded-md bg-gold/15 px-1.5 py-0.5 text-[10px] font-bold text-gold">
+                                    {child.badge}
+                                  </span>
+                                )}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
 
                   {/* The static "SA" + flag badge that used to render here is
                       gone for the same reason as its desktop twin (notes ٢٣٤،

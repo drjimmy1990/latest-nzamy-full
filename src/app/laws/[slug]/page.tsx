@@ -4,11 +4,11 @@ import { useState, useCallback, useEffect, useRef, useMemo, Suspense } from "rea
 import { useParams, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer
+  ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
+  ListBullets, X
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
@@ -17,6 +17,7 @@ import { getPreferences, patchPreferences, type RecentSession } from "@/lib/serv
 import { recordLawOpened, type ReadingActivity } from "@/lib/services/readingActivityStats";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 import type { LawArticle, LawSystem } from "../data";
+import { lawStatusForDetail } from "../law-status";
 import { getLawMeta, fetchLawMetadata, SECTION_COLORS } from "../law-metadata-map";
 import type { LawMetaEntry } from "../law-metadata-map";
 import { PaywallModal } from "../components/PaywallModal";
@@ -66,6 +67,12 @@ function LawSystemPageContent() {
 
   const [showPaywall, setShowPaywall] = useState(false);
   const [showCart,    setShowCart]    = useState(false);
+  /* The article index and the quick-jump search live in an `aside` that is
+     `hidden lg:block` with no mobile counterpart, so a phone reader — the
+     commonest way anyone reads a law — lost the only means of navigating
+     between articles. This opens the same panel as a bottom sheet below
+     lg; the desktop aside is untouched. */
+  const [showIndexSheet, setShowIndexSheet] = useState(false);
   const [activeId,    setActiveId]    = useState<string>("art-1");
   const [explainArticle, setExplainArticle] = useState<LawArticle | null>(null);
   // Starts empty. This used to default to the bundled COMPANIES_LAW, which meant
@@ -153,6 +160,16 @@ function LawSystemPageContent() {
           issuanceDecree: data.issuanceDecree || '',
           issuanceDate: data.issuanceDate || '',
           source: data.source || '',
+          // ك-02 (2026-08-23): whitelist mapping — omitting a field here
+          // silently discards it (see the `originalText` note below this
+          // block from an earlier incident of the same kind).
+          law_status: lawStatusForDetail(data.law_status),
+          parentLawId: data.parentLawId || '',
+          parentLaw: data.parentLaw || '',
+          enablingArticle: data.enablingArticle || '',
+          parentLawLink: data.parentLawLink && typeof data.parentLawLink.slug === 'string'
+            ? { slug: data.parentLawLink.slug, title: data.parentLawLink.title || data.parentLaw || '' }
+            : null,
           preamble: data.preamble || '',
           chapters: (data.chapters || []).map((ch: { title: string; articles: LawArticle[] }) => ({
             title: ch.title,
@@ -164,7 +181,10 @@ function LawSystemPageContent() {
               number: a.number,
               numberText: a.numberText,
               title: a.title || '',
-              status: a.status || 'active',
+              // Detail API already normalizes article status. Keep this client
+              // boundary fail-closed as well: a malformed empty payload must
+              // not render as evidence that the article is active.
+              status: a.status || 'status_undeclared',
               free: a.free ?? true,
               text: a.text || '',
               // This mapping is a whitelist: anything omitted here is silently
@@ -175,6 +195,7 @@ function LawSystemPageContent() {
               originalText: a.originalText,
               historicRegulationText: a.historicRegulationText,
               executiveReg: a.executiveReg,
+              regulations: a.regulations,
               amendments: a.amendments,
               instrument: a.instrument,
             })),
@@ -183,6 +204,7 @@ function LawSystemPageContent() {
           metadata_card: data.metadata_card || null,
           appendices: data.appendices || null,
           regulationPreamble: data.regulationPreamble || '',
+          regulationInstruments: data.regulationInstruments || [],
         } as LawSystem);
       } catch (err) {
         console.error('[LawReader] Failed to load law:', err);
@@ -304,13 +326,32 @@ function LawSystemPageContent() {
     };
   }, [slug, law]);
 
+  // ك-13: `executiveReg` كان الشكل الوحيد القديم (مادة واحدة = كتلة لائحة
+  // مدموجة واحدة). `regulations[]` (مصفوفة، مادة لائحة واحدة لكل عنصر مع
+  // regNum حقيقي) هو المصدر الحيّ الآن — route.ts ما زال يبني executiveReg
+  // بدمج نفس المصفوفة (ref مُفرَّق بفاصلة، text مدموج بسطرين فارغين) لأجل
+  // مستهلكين لم يُرحَّلوا بعد؛ هذه الدالة تُعيد بناء نفس الدمج محلياً بدل
+  // القراءة من executiveReg، فتحافظ حرفياً على سلوك كل الاستدلالات أدناه
+  // (extractRegFullName/extractRegNum) بلا أي تغيير بمنطقها الداخلي.
+  const getMergedReg = (art: any): { ref: string; text: string } | null => {
+    if (!art.regulations || art.regulations.length === 0) return null;
+    const distinctRefs = Array.from(
+      new Set(art.regulations.map((r: any) => String(r.ref || "")).filter(Boolean)),
+    );
+    return {
+      ref: distinctRefs.join(", "),
+      text: art.regulations.map((r: any) => String(r.text || "")).join("\n\n"),
+    };
+  };
+
   // ── كشف أسماء اللوائح المتعددة في النظام الواحد ──────────────────────────
   // ── كشف الأسماء الكاملة للتشريعات الفرعية (لوائح/قواعد/ضوابط/تعليمات) ──
   const extractRegFullName = (art: any): string => {
-    // 1) إذا كانت المادة مدمجة ولها executiveReg
-    if (art.executiveReg) {
-      const ref = (art.executiveReg.ref || "").trim();
-      const text = (art.executiveReg.text || "").trim();
+    // 1) إذا كانت المادة مدمجة ولها لائحة (regulations[])
+    const mergedReg = getMergedReg(art);
+    if (mergedReg) {
+      const ref = mergedReg.ref.trim();
+      const text = mergedReg.text.trim();
 
       // محاولة استخراج الاسم من أول خط عريض في متن نص اللائحة (وهي الطريقة الأدق والأسلم للوائح المدمجة)
       const boldMatch = text.match(/^\s*\*\*(.+?):\*\*/) || text.match(/^\s*\*\*(.+?)\*\*/);
@@ -372,7 +413,7 @@ function LawSystemPageContent() {
     if (!law?.chapters) return [];
     for (const ch of law.chapters) {
       for (const art of ch.articles) {
-        if (art.executiveReg || art.instrument === "لائحة" || art.instrument === "ملحق") {
+        if ((art.regulations && art.regulations.length > 0) || art.instrument === "لائحة" || art.instrument === "ملحق") {
           const regName = extractRegFullName(art);
           if (regName && regName !== "النظام الأساسي") {
             names.add(regName);
@@ -432,24 +473,28 @@ function LawSystemPageContent() {
       s.replace(/[أإآا]/g, "ا").replace(/[ةه]/g, "ه").replace(/[يى]/g, "ي").toLowerCase();
     const nq = normalize(q);
     return allArticles.filter(a => {
+      const mergedReg = getMergedReg(a);
       const haystack = normalize([
         a.num,
         a.title ?? "",
         a.text,
-        a.executiveReg?.text ?? "",
-        a.executiveReg?.ref  ?? "",
+        mergedReg?.text ?? "",
+        mergedReg?.ref  ?? "",
         a.id,
       ].join(" "));
       return haystack.includes(nq);
     });
   })();
 
-  const getOrCreateEntry = useCallback((a: LawArticle): CartEntry => ({
-    articleId: a.id, articleNum: a.num, articleTitle: a.title, articleText: a.text,
-    lawName: law?.title ?? "", lawSlug: law?.slug ?? slug,
-    execReg: a.executiveReg ? { ref: a.executiveReg.ref, text: a.executiveReg.text } : undefined,
-    principles: [], precedents: [], isArticleAdded: false, isExecRegAdded: false,
-  }), [law?.title, law?.slug, slug]);
+  const getOrCreateEntry = useCallback((a: LawArticle): CartEntry => {
+    const mergedReg = getMergedReg(a);
+    return {
+      articleId: a.id, articleNum: a.num, articleTitle: a.title, articleText: a.text,
+      lawName: law?.title ?? "", lawSlug: law?.slug ?? slug,
+      execReg: mergedReg ? { ref: mergedReg.ref, text: mergedReg.text } : undefined,
+      principles: [], precedents: [], isArticleAdded: false, isExecRegAdded: false,
+    };
+  }, [law?.title, law?.slug, slug]);
 
   const addArticle = useCallback((a: LawArticle) => {
     setCart(prev => {
@@ -533,14 +578,14 @@ function LawSystemPageContent() {
     return (
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
         <Navbar />
-        <main className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
+        <div className="print-main flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4 text-center">
             <div className="w-12 h-12 rounded-full border-4 border-t-[#0B3D2E] border-slate-200 dark:border-white/10 animate-spin" />
             <p className={`text-sm font-bold ${isDark ? "text-gray-400" : "text-gray-600"}`}>
               {isRTL ? "جاري تحميل تفاصيل التشريع..." : "Loading law details..."}
             </p>
           </div>
-        </main>
+        </div>
         <Footer />
       </div>
     );
@@ -555,7 +600,7 @@ function LawSystemPageContent() {
     return (
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
         <Navbar />
-        <main className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
+        <div className="print-main flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4 text-center max-w-md p-6 rounded-2xl border border-red-500/20 bg-red-500/5">
             <Scales size={48} className="text-red-500" />
             <h2 className="text-lg font-black">{isRTL ? "عذراً، لم نتمكن من العثور على هذا التشريع" : "Law Not Found"}</h2>
@@ -568,7 +613,7 @@ function LawSystemPageContent() {
               {isRTL ? "العودة إلى المكتبة القانونية" : "Back to Legal Library"}
             </Link>
           </div>
-        </main>
+        </div>
         <Footer />
       </div>
     );
@@ -578,7 +623,7 @@ function LawSystemPageContent() {
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <main className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24">
+      <div className="print-main flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24">
 
         <div className="h-6" />
 
@@ -757,7 +802,7 @@ function LawSystemPageContent() {
                 >
                   {isRTL ? "النظام فقط" : "Law Only"}
                 </button>
-                {law.chapters.some(ch => ch.articles.some(a => a.executiveReg)) && (
+                {law.chapters.some(ch => ch.articles.some(a => a.regulations && a.regulations.length > 0)) && (
                   <button
                     onClick={() => setViewMode("regulation")}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -809,9 +854,70 @@ function LawSystemPageContent() {
                   </div>
                 ))}
               </div>
+            ) : viewMode === "regulation" && (law as any).regulationInstruments?.length > 0 ? (
+              // ── العرض المسطَّح الجديد "اللائحة وحدها" ──────────────────────
+              // مبني من law.regulationInstruments (محسوب مسبقاً من الخادم:
+              // مجمَّع بـref، مرتَّب بـsort_key، ومُستبعَد منه is_secondary_display)
+              // بدل محاولة استنتاج الترتيب من نص/ref كل مادة نظامية بتخمين هش.
+              // راجع 00_عقل_القوانين/13_دليل_المبرمج/02_عقد_اللوائح_المدمجة_والبذر.md §1-3-د.
+              <div className="space-y-4">
+                {(() => {
+                  const instruments = (law as any).regulationInstruments as Array<{
+                    ref: string;
+                    articles: { regNum: string | null; text: string; status: string; systemArticleNumber: string | null }[];
+                  }>;
+                  const visible = selectedRegName
+                    ? instruments.filter((i) => i.ref === selectedRegName)
+                    : instruments;
+
+                  return (
+                    <>
+                      {instruments.length > 1 && (
+                        <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+                          <button
+                            onClick={() => setSelectedRegName(null)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                              selectedRegName === null
+                                ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white shadow-sm"
+                                : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                            }`}
+                          >
+                            {isRTL ? "الكل" : "All"}
+                          </button>
+                          {instruments.map((inst) => (
+                            <button
+                              key={inst.ref}
+                              onClick={() => setSelectedRegName(inst.ref)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                selectedRegName === inst.ref
+                                  ? isDark ? "bg-[#C8A762] text-[#0B3D2E]" : "bg-amber-100 text-amber-800 border border-amber-300"
+                                  : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                              }`}
+                            >
+                              {inst.ref}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {visible.map((inst) => (
+                        <div key={inst.ref} className="space-y-3">
+                          {inst.articles.map((a, i) => (
+                            <div
+                              key={`${inst.ref}-${a.regNum ?? i}`}
+                              className={`rounded-xl border p-4 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}
+                            >
+                              <MD text={a.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </>
+                  );
+                })()}
+              </div>
             ) : viewMode === "regulation" ? (
               <div className="space-y-4">
-                {/* ── اختيار اللائحة عند تعدد اللوائح ── */}
+                {/* ── اختيار اللائحة عند تعدد اللوائح (نمط تراجعي: بيانات قديمة بلا regulationInstruments) ── */}
                 {availableRegNames.length > 1 && (
                   <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
                     <button
@@ -922,11 +1028,26 @@ function LawSystemPageContent() {
                     return 9_999;
                   };
 
-                  // ── استخراج رقم مادة اللائحة من حقل text أو من الترقيم اللفظي المباشر ──
+                  // ── استخراج رقم مادة اللائحة: regNum الحقيقي أولاً (ك-13، مصدر
+                  // موثوق من article_regulations.reg_num)، ثم الاستدلال النصي
+                  // القديم كشبكة أمان فقط حين regNum غائب/فارغ ──
+                  const parseRegNumString = (raw: string): number | null => {
+                    const slash = raw.match(/(\d+)\s*\/\s*(\d+)/);
+                    if (slash) return parseInt(slash[1], 10) * 1000 + parseInt(slash[2], 10);
+                    const plain = raw.match(/\d+/);
+                    if (plain) return parseInt(plain[0], 10) * 1000;
+                    return null;
+                  };
                   const extractRegNum = (art: any): number => {
-                    if (art.executiveReg) {
-                      const text = art.executiveReg.text || "";
-                      const ref  = art.executiveReg.ref  || "";
+                    const realRegNum = art.regulations?.[0]?.regNum;
+                    if (realRegNum) {
+                      const parsed = parseRegNumString(String(realRegNum));
+                      if (parsed !== null) return parsed;
+                    }
+                    const mergedReg = getMergedReg(art);
+                    if (mergedReg) {
+                      const text = mergedReg.text || "";
+                      const ref  = mergedReg.ref  || "";
                       // أولاً: نمط (X/Y) في التكست — مثل المادة (1/3) → أولوية X*1000+Y
                       const slashMatch = text.match(/#*\s*\u0627\u0644\u0645\u0627\u062f\u0629\s*\((\d+)\/(\d+)\)/);
                       if (slashMatch) return parseInt(slashMatch[1], 10) * 1000 + parseInt(slashMatch[2], 10);
@@ -964,7 +1085,7 @@ function LawSystemPageContent() {
 
                   const regArticles = law.chapters
                     .flatMap(ch => ch.articles)
-                    .filter(a => a.executiveReg || a.instrument === "لائحة" || a.instrument === "ملحق")
+                    .filter(a => (a.regulations && a.regulations.length > 0) || a.instrument === "لائحة" || a.instrument === "ملحق")
                     // ── فلترة اللائحة المختارة
                     .filter(a => {
                       if (!selectedRegName) return true;
@@ -1127,15 +1248,89 @@ function LawSystemPageContent() {
           )}
 
         </div>
-      </main>
+      </div>
 
       <Footer />
 
-      <FloatingButtons
-        reportConfig={{ pageSlug: slug, pageType: "law" }}
-        cartCount={cart.length}
-        onCartClick={() => setShowCart(true)}
-      />
+      {/* The global <FloatingButtons /> in app/layout.tsx already covers this
+          page: it derives the same reportConfig from the pathname
+          (FloatingButtons.tsx:489-496), reads the same shared useDraftCart, and
+          owns its own DraftDrawer. A second instance here rendered a second FAB
+          and was hidden after paint by a MutationObserver watching the whole
+          document — both copies were visible until it ran. Removing the cause
+          removes the workaround. */}
+
+      {/* ── Mobile article index — the phone counterpart of the lg-only aside ──
+          Renders the SAME SidebarPanel, in the same two modes, so the index and
+          the quick-jump search stay one implementation. lg:hidden throughout:
+          the desktop reader keeps its sticky sidebar exactly as before. */}
+      {!isReadingMode && (
+        <button
+          type="button"
+          onClick={() => setShowIndexSheet(true)}
+          aria-label={isRTL ? "فهرس المواد والبحث" : "Article index and search"}
+          className={`lg:hidden fixed bottom-20 ${isRTL ? "right-6" : "left-6"} z-40 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg safe-bottom print:hidden ${isDark ? "bg-zinc-800 text-white border border-white/10" : "bg-white text-[#0B3D2E] border border-slate-200"}`}
+        >
+          <ListBullets size={22} weight="bold" />
+        </button>
+      )}
+
+      <AnimatePresence>
+        {showIndexSheet && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setShowIndexSheet(false)}
+              className="lg:hidden fixed inset-0 z-[10000] bg-black/50 backdrop-blur-[2px] print:hidden"
+            />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 320, damping: 32 }}
+              className={`lg:hidden fixed inset-x-0 bottom-0 z-[10001] max-h-[85dvh] overflow-y-auto overscroll-contain rounded-t-3xl safe-bottom print:hidden ${isDark ? "bg-zinc-950" : "bg-white"}`}
+              dir={isRTL ? "rtl" : "ltr"}
+            >
+              <div className={`sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b ${isDark ? "bg-zinc-950 border-white/10" : "bg-white border-slate-200"}`}>
+                <span className={`text-sm font-bold ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
+                  {isRTL ? "فهرس المواد" : "Article index"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowIndexSheet(false)}
+                  aria-label={isRTL ? "إغلاق" : "Close"}
+                  className={`flex h-11 w-11 items-center justify-center rounded-xl ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}
+                >
+                  <X size={18} weight="bold" />
+                </button>
+              </div>
+              <div
+                className="p-3 space-y-3"
+                /* Choosing an article should take you to it, not leave the sheet
+                   covering the text you just jumped to. */
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest("a,button")) setShowIndexSheet(false);
+                }}
+              >
+                <SidebarPanel
+                  isDark={isDark} isRTL={isRTL} law={law} lawMeta={lawMeta}
+                  sectionColors={sectionColors} activeId={activeId} setActiveId={setActiveId}
+                  jumpQuery={jumpQuery} setJumpQuery={setJumpQuery}
+                  filteredArticles={filteredArticles} cartMap={cartMap} isScrolling={isScrolling}
+                  setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
+                  userType={userType} mode="identity" viewMode={viewMode as any}
+                />
+                <SidebarPanel
+                  isDark={isDark} isRTL={isRTL} law={law} lawMeta={lawMeta}
+                  sectionColors={sectionColors} activeId={activeId} setActiveId={setActiveId}
+                  jumpQuery={jumpQuery} setJumpQuery={setJumpQuery}
+                  filteredArticles={filteredArticles} cartMap={cartMap} isScrolling={isScrolling}
+                  setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
+                  userType={userType} mode="index" viewMode={viewMode as any}
+                />
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showCart && (

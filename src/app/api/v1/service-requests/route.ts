@@ -7,6 +7,88 @@ import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { checkOrderIntake, intakeErrorMessageAr } from "@/lib/services/intakeGuard";
+import { resolveServiceRequestEntityScope } from "@/lib/auth/serviceRequestEntityScope";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+async function resolveActiveEntityIds(supabase: SupabaseClient, userId: string) {
+  const [firmResult, businessResult, ownedFirmResult, ownedBusinessResult] = await Promise.all([
+    supabase
+      .from("firm_members")
+      .select("firm_id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("business_members")
+      .select("business_id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("firm_profiles")
+      .select("id")
+      .eq("owner_user_id", userId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("business_profiles")
+      .select("id")
+      .eq("owner_user_id", userId)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (firmResult.error) {
+    console.error(
+      "[service-requests] firm membership lookup failed:",
+      firmResult.error.message,
+      firmResult.error.code,
+    );
+  }
+  if (businessResult.error) {
+    console.error(
+      "[service-requests] business membership lookup failed:",
+      businessResult.error.message,
+      businessResult.error.code,
+    );
+  }
+  if (ownedFirmResult.error) {
+    console.error(
+      "[service-requests] owned firm lookup failed:",
+      ownedFirmResult.error.message,
+      ownedFirmResult.error.code,
+    );
+  }
+  if (ownedBusinessResult.error) {
+    console.error(
+      "[service-requests] owned business lookup failed:",
+      ownedBusinessResult.error.message,
+      ownedBusinessResult.error.code,
+    );
+  }
+
+  const memberFirmId = !firmResult.error
+    ? (firmResult.data?.firm_id as string | undefined) ?? null
+    : null;
+  const memberBusinessId = !businessResult.error
+    ? (businessResult.data?.business_id as string | undefined) ?? null
+    : null;
+
+  return {
+    firmId:
+      memberFirmId ??
+      (!ownedFirmResult.error
+        ? (ownedFirmResult.data?.id as string | undefined) ?? null
+        : null),
+    businessId:
+      memberBusinessId ??
+      (!ownedBusinessResult.error
+        ? (ownedBusinessResult.data?.id as string | undefined) ?? null
+        : null),
+  };
+}
 
 /**
  * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
@@ -60,8 +142,28 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
+    // When filtering by receiver, also include rows the current user created
+    // themselves (requester_user_id = auth.uid()), so a lawyer who adds their
+    // own cases via AddCaseModal can see them in /dashboard/lawyer/cases.
+    // Without this OR, cases with receiver = "lawyer" that were inserted by
+    // the lawyer's own uid were invisible: the RLS allowed them but the
+    // query's WHERE receiver = ? alone matched, yet the page got back 0 rows
+    // because RLS then added AND (requester_user_id = uid OR assigned_to = uid)
+    // correctly — the real root was the INSERT writing requester_user_id from
+    // auth (correct), but GetByReceiver never scoped to the user's own uid.
     if (receiver) {
-      query = query.eq("receiver", receiver);
+      query = query.or(
+        `receiver.eq.${receiver},requester_user_id.eq.${user.id}`
+      );
+    } else {
+      const entityIds = await resolveActiveEntityIds(supabase, user.id);
+      // Entity rows are protected by RLS. Adding the old personal WHERE here
+      // would remove colleagues' rows after RLS had correctly admitted them.
+      if (!entityIds.firmId && !entityIds.businessId) {
+        query = query.or(
+          `requester_user_id.eq.${user.id},assigned_to.eq.${user.id}`
+        );
+      }
     }
 
     if (requesterUserId) {
@@ -172,14 +274,32 @@ export async function POST(request: NextRequest) {
     const isPaidRequest =
       payment && typeof payment === "object" && Number(payment.amount) > 0;
 
+    let persistedPayment = {
+      amount: 0,
+      currency: "SAR",
+      status: "not_required",
+      provider: null as string | null,
+    };
+
     if (isPaidRequest) {
       const gateway = await getPaymentGatewayStatus();
-      if (gateway.status === "disabled") {
+      if (gateway.disabled) {
         return NextResponse.json(
           { error: "الدفع غير متاح حالياً" },
           { status: 402 },
         );
       }
+
+      // Never trust provider/status/currency supplied by the browser. The only
+      // currently supported paid mode is the explicitly enabled staging stub,
+      // and even there every positive amount remains pending until a future
+      // signed provider webhook implements confirmation.
+      persistedPayment = {
+        amount: Number(payment.amount),
+        currency: "SAR",
+        status: "pending",
+        provider: gateway.provider,
+      };
     }
 
     // Server-side intake contract. The four AI wizards each validate before
@@ -225,34 +345,59 @@ export async function POST(request: NextRequest) {
     ]);
     const requestedStatus =
       typeof requestData.status === "string" ? requestData.status : undefined;
-    const status =
+    let status =
       requestedStatus && CREATE_STATUS_ALLOWLIST.has(requestedStatus)
         ? requestedStatus
         : "pending_assignment";
 
-    // Phase 2 (20260903_phase2_clients_and_firm_membership.sql) — firm_id is
-    // ALWAYS resolved server-side from the creator's own active firm_members
-    // row, never trusted from the body: a client-supplied firm_id would let a
-    // requester plant their case inside a firm they don't belong to, which the
-    // new "firm members read firm service requests" SELECT policy would then
-    // hand straight to every one of that firm's colleagues. Solo lawyers (and
-    // anyone else with no active membership) keep firm_id = null, exactly the
-    // pre-Phase-2 behaviour.
-    const { data: membership, error: membershipError } = await supabase
-      .from("firm_members")
-      .select("firm_id")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .limit(1)
-      .maybeSingle();
-    if (membershipError) {
+    // A client can never confirm its own payment. All paid requests remain
+    // pending until a future signed, idempotent provider webhook exists.
+    if (isPaidRequest) {
+      status = "pending_payment";
+    }
+
+    // Entity ownership is resolved from active member/owner rows only. The
+    // client may request a *kind* of entity context but can never supply an id.
+    // resolveServiceRequestEntityScope then selects at most one side, so a
+    // seconded lawyer who belongs to both a firm and a company never exposes a
+    // single request to both teams.
+    const [entityIds, actorProfileResult] = await Promise.all([
+      resolveActiveEntityIds(supabase, user.id),
+      supabase
+        .from("profiles")
+        .select("id, display_name, user_type")
+        .eq("id", user.id)
+        .maybeSingle(),
+    ]);
+    if (actorProfileResult.error) {
       console.error(
-        "[service-requests POST] firm_members lookup failed:",
-        membershipError.message,
-        membershipError.code,
+        "[service-requests POST] actor profile lookup failed:",
+        actorProfileResult.error.message,
+        actorProfileResult.error.code,
       );
     }
-    const firmId = membership?.firm_id ?? null;
+    const actorProfile = actorProfileResult.error ? null : actorProfileResult.data;
+    const entityScope = resolveServiceRequestEntityScope({
+      ...entityIds,
+      requestedScope: requestData.entityScope ?? requestData.entity_scope,
+      sourcePath: requestData.sourcePath ?? requestData.source_path,
+      userType:
+        actorProfile && typeof actorProfile.user_type === "string"
+          ? actorProfile.user_type
+          : null,
+    });
+    if (entityScope.error) {
+      return NextResponse.json(
+        {
+          error:
+            entityScope.error === "invalid_scope"
+              ? "سياق الجهة غير صالح."
+              : "لا تملك عضوية نشطة في الجهة المطلوبة.",
+        },
+        { status: entityScope.error === "invalid_scope" ? 400 : 403 },
+      );
+    }
+    const { firmId, businessId } = entityScope;
 
     // Optional link to a lawyer_clients card (رقم الموكّل). Only ever written
     // when the RLS client can itself read that row — this is the ownership
@@ -291,8 +436,8 @@ export async function POST(request: NextRequest) {
     // Only include columns that exist in the service_requests table:
     // id, requester_user_id, type, title, description, requester, receiver,
     // assigned_to, status, payment, source_path, metadata, created_at,
-    // updated_at, firm_id (Phase 2 — creator's active firm_members row, never
-    // from the body), lawyer_client_id (Phase 2 — optional, only after the
+    // updated_at, firm_id / business_id (resolved from active membership,
+    // never from the body), lawyer_client_id (optional, only after the
     // read-permission check above)
     // B1 — service_requests.id is text PK with NO default; always supply one.
     const { data: serviceRequest, error: reqError } = await supabase
@@ -308,7 +453,7 @@ export async function POST(request: NextRequest) {
         assigned_to: requestData.assignedTo ?? requestData.assigned_to ?? null,
         receiver: requestData.receiver ?? 'lawyer',
         requester: requestData.requester ?? {},
-        payment: requestData.payment ?? { amount: 0, status: "not_required" },
+        payment: persistedPayment,
         metadata: requestData.metadata ?? {},
         // Phase 2 columns, sent ONLY when they carry a value. Both exist on
         // production only after migration 20260903_phase2 has been run; a solo
@@ -319,6 +464,7 @@ export async function POST(request: NextRequest) {
         // only exist once the migration is in, so the extra columns are only
         // ever sent to a database that has them.
         ...(firmId ? { firm_id: firmId } : {}),
+        ...(businessId ? { business_id: businessId } : {}),
         ...(lawyerClientId ? { lawyer_client_id: lawyerClientId } : {}),
       })
       .select()
@@ -440,11 +586,6 @@ export async function POST(request: NextRequest) {
     // Best-effort push to n8n (inert unless N8N_WEBHOOK_BASE_URL is set) so the
     // "new request" notification workflow (/new-request) fires. Never breaks the create.
     try {
-      const { data: actorProfile } = await supabase
-        .from("profiles")
-        .select("id, display_name, user_type")
-        .eq("id", user.id)
-        .single();
       await dispatchToN8n(
         RequestEvent.SERVICE_REQUEST_CREATED,
         buildWebhookPayload({
@@ -459,10 +600,15 @@ export async function POST(request: NextRequest) {
     }
 
     // In-app confirmation notification to the requester (best-effort).
+    const notifTitle = status === "pending_payment" ? "طلبك بانتظار إتمام السداد" : "تم استلام طلبك";
+    const notifBody = status === "pending_payment"
+      ? `طلبك «${serviceRequest.title ?? ""}» تم إنشاؤه وبانتظار استكمال عملية الدفع.`
+      : `طلبك «${serviceRequest.title ?? ""}» قيد المعالجة وسنعلمك بأي تحديث.`;
+
     await recordNotification({
       userId: user.id,
-      title: "تم استلام طلبك",
-      body: `طلبك «${serviceRequest.title ?? ""}» قيد المعالجة وسنعلمك بأي تحديث.`,
+      title: notifTitle,
+      body: notifBody,
       href: "/dashboard",
     });
 
@@ -478,13 +624,12 @@ export async function POST(request: NextRequest) {
         const { error: payError } = await adminClient.from("payments").insert({
           id: crypto.randomUUID(),
           request_id: serviceRequest.id,
-          provider: payment.provider ?? "stub",
-          amount: payment.amount,
-          currency: payment.currency ?? "SAR",
-          status: payment.status ?? "pending",
+          provider: persistedPayment.provider,
+          amount: persistedPayment.amount,
+          currency: persistedPayment.currency,
+          status: "pending",
           metadata: {
             payer_user_id: user.id,
-            ...(payment.metadata ?? {}),
           },
         });
         if (payError) {

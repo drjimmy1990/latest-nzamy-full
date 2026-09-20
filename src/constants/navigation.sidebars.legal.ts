@@ -14,8 +14,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     title: "الجلسات والقضايا", titleEn: "Hearings & Cases",
     collapsible: false,
     items: [
-      { label: "الجلسات والمواعيد",    labelEn: "Hearings & Appointments",       href: "/dashboard/lawyer/hearings",  icon: "CalendarCheck" },
-      { label: "رادار المهل",         labelEn: "Deadline Radar", href: "/dashboard/lawyer/deadlines", icon: "Timer" },
+      { label: "الجلسات والمهل القضائية", labelEn: "Hearings & Deadlines", href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
       { label: "جميع القضايا",       labelEn: "All Cases",      href: "/dashboard/lawyer/cases",     icon: "Gavel" },
       { label: "مهامي",              labelEn: "My Tasks",       href: "/dashboard/lawyer/tasks",     icon: "CheckSquare" },
       { label: "سجل النشاط",        labelEn: "Activity Log",   href: "/dashboard/lawyer/activity",  icon: "ClockCounterClockwise" },
@@ -30,7 +29,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     items: [
       // ١: الخطوة صفر — فهم الملف أولاً
       { label: "الموجز القضائي",           labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",     icon: "Scan",         badge: "جديد" },
-      { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/quick-answer",  icon: "ChatCircle",   badge: "جديد" },
+      { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/assistant",  icon: "ChatCircle",   badge: "جديد" },
       // ٢: الصياغة — العمل اليومي الأكثر تكراراً
       { label: "الصائغ القانوني",  labelEn: "Legal Drafter",            href: "/ai/draft",         icon: "PencilSimple", divider: true },
       { label: "المجمّع البحثي",   labelEn: "Research Collector",       href: "/ai/collector",    icon: "Tray",         badge: "جديد" },
@@ -60,10 +59,11 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
   {
     title: "العقود والمستندات", titleEn: "Contracts & Docs",
     collapsible: true,
-    defaultOpen: false,
+    defaultOpen: true,
     items: [
       { label: "مدير العقود",    labelEn: "Contracts",       href: "/dashboard/lawyer/contracts", icon: "FileText" },
       { label: "المستندات",      labelEn: "Documents",        href: "/dashboard/lawyer/documents", icon: "FolderOpen" },
+      { label: "الخزنة",         labelEn: "The Vault",        href: "/ai/vault",                    icon: "Vault" },
       // «الأرشيف الموحّد» stood here. An earlier round downgraded its badge
       // from «جديد» to «قريباً» — honest about the pill, but the entry still
       // spent a line of the sidebar on a 12-line DashboardComingSoon template.
@@ -88,7 +88,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
   {
     title: "أدوات إضافية", titleEn: "More Tools",
     collapsible: true,
-    defaultOpen: false,
+    defaultOpen: true,
     items: [
       // ١: مهام يومية متكررة
       { label: "المرشد القضائي",    labelEn: "Court Guide",       href: "/ai/procedures",       icon: "MapTrifold" },
@@ -178,8 +178,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
   {
     title: "الجلسات والقضايا", titleEn: "Hearings & Cases",
     items: [
-      { label: "الجلسات والمواعيد", labelEn: "Hearings & Appointments",  href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
-      { label: "رادار المهل",       labelEn: "Deadline Radar", href: "/dashboard/lawyer/deadlines", icon: "Timer" },
+      { label: "الجلسات والمهل القضائية", labelEn: "Hearings & Deadlines", href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
       { label: "جميع القضايا",   labelEn: "All Cases", href: "/dashboard/lawyer/cases",    icon: "Gavel" },
       { label: "مهامي",          labelEn: "My Tasks",  href: "/dashboard/lawyer/tasks",    icon: "CheckSquare" },
     ],
@@ -190,7 +189,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
     defaultOpen: true,
     items: [
       { label: "الموجز القضائي",           labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",     icon: "Scan",         badge: "جديد" },
-      { label: "سؤال قانوني سريع",  labelEn: "Quick Q&A",       href: "/ai/quick-answer",  icon: "ChatCircle",   badge: "جديد" },
+      { label: "سؤال قانوني سريع",  labelEn: "Quick Q&A",       href: "/ai/assistant",  icon: "ChatCircle",   badge: "جديد" },
       { label: "الصائغ القانوني",   labelEn: "Legal Drafter",   href: "/ai/draft",         icon: "PencilSimple", divider: true },
       { label: "محترف العقود",      labelEn: "Contract Pro",    href: "/ai/contracts",     icon: "FileText" },
       { label: "الرأي الفصل",       labelEn: "Legal Opinion",   href: "/ai/legal-opinion", icon: "Lightbulb" },

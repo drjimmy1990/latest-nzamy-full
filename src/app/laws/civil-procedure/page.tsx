@@ -132,8 +132,8 @@ function ArticleCard({ article, isDark, isRTL }: { article: ArticleData; isDark:
             </h4>
           </div>
           <div className="space-y-3 ms-2">
-            {article.executiveRegulations.map((reg) => (
-              <div key={reg.num} className="flex gap-3 items-start">
+            {article.executiveRegulations.map((reg, regIdx) => (
+              <div key={`${regIdx}-${reg.num}`} className="flex gap-3 items-start">
                 <span className={`text-xs font-bold mt-1 shrink-0 px-1.5 py-0.5 rounded-md ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-[#C8A762]/20 text-[#0B3D2E]"}`}>
                   {reg.num}
                 </span>
@@ -231,9 +231,14 @@ export default function CivilProcedureLawPage() {
               id: idCounter++,
               numTitle: a.num || `المادة ${idCounter - 1}`,
               currentText: a.text || "",
-              executiveRegulations: a.executiveReg
-                ? [{ num: a.executiveReg.ref || "", text: a.executiveReg.text || "" }]
-                : [],
+              // ك-13: كانت executiveReg تدمج كل اللوائح بعنصر واحد، فهذه الواجهة
+              // (المصمَّمة أصلاً لعرض عدة عناصر منفصلة، راجع .map أدناه) لم تُظهر
+              // فعلياً أكثر من عنصر واحد قط. regulations[] يُظهر كل لائحة فعلياً
+              // بعددها الحقيقي regNum بدل ref المدموج.
+              executiveRegulations: (a.regulations || []).map((r: any) => ({
+                num: r.regNum || r.ref || "",
+                text: r.text || "",
+              })),
               amendment: a.amendments && a.amendments.length > 0
                 ? {
                     source: a.amendments[0].source || "",

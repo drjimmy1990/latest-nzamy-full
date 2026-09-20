@@ -159,7 +159,7 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
         initial={{ scale: 0.95, opacity: 0, y: 10 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.95, opacity: 0, y: -10 }}
-        className={`w-full max-w-md rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
+        className={`w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
       >
         <div className="flex items-center justify-between mb-5">
           <h3 className={`text-[16px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>إضافة قضية جديدة</h3>
@@ -226,7 +226,24 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                     <option>المحكمة العمالية</option>
                   </select>
                 </div>
-                <button onClick={() => setStep(2)} className="w-full rounded-xl bg-[#0B3D2E] py-2.5 text-[13px] font-bold text-white mt-2">التالي</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!clientName.trim() || !title.trim()) {
+                      setError("يرجى إدخال اسم الموكل وعنوان القضية للمتابعة.");
+                      return;
+                    }
+                    setError(null);
+                    setStep(2);
+                  }}
+                  className={`w-full rounded-xl py-2.5 text-[13px] font-bold text-white mt-2 transition-colors ${
+                    !clientName.trim() || !title.trim()
+                      ? "bg-zinc-600/70 cursor-not-allowed text-zinc-300"
+                      : "bg-[#0B3D2E] hover:bg-[#0B3D2E]/90"
+                  }`}
+                >
+                  التالي
+                </button>
               </motion.div>
             )}
             {step === 2 && (

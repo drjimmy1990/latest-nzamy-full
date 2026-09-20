@@ -33,7 +33,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "٥٬٠٠٠ نقطة (تدفع ٢٬٥٠٠ وتستلم ٥٬٠٠٠)",
           "مذكرة ثانية مجانية بعد أول شحن",
-          "المكتبة الكاملة: ٥٠ نقطة/شهر",
+          "🎁 المكتبة القانونية الكاملة: مشمولة مجاناً (٦ أشهر)",
           "سؤال سريع (٢٠ نقطة) + ترجمة قانونية (٥٠ نقطة)",
           "صلاحية ٦ أشهر",
         ],
@@ -49,7 +49,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "١٢٬٥٠٠ نقطة (تدفع ٥٬٠٠٠ وتستلم ١٢٬٥٠٠)",
-          "المكتبة الكاملة: ٥٠ نقطة/شهر",
+          "🎁 المكتبة القانونية الكاملة: مشمولة مجاناً (٦ أشهر)",
           "السكرتير الذكي + راصد التشريعات",
           "صياغة من نموذج + الأرشيف السحابي",
           "صلاحية ٦ أشهر",
@@ -66,7 +66,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "٣٠٬٠٠٠ نقطة (تدفع ١٠٬٠٠٠ وتستلم ٣٠٬٠٠٠)",
-          "المكتبة الكاملة: ٥٠ نقطة/شهر",
+          "🎁 المكتبة القانونية الكاملة: مشمولة مجاناً (١٢ شهراً)",
           "السكرتير الذكي + راصد التشريعات",
           "صياغة من نموذج + الأرشيف السحابي",
           "صلاحية ١٢ شهراً",
@@ -102,7 +102,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "5,000 points (pay 2,500 receive 5,000)",
           "2nd free brief after first top-up",
-          "Full Library: 50 pts/month",
+          "🎁 Full Legal Library: Included Free (6 Months)",
           "Quick question (20 pts) + Legal translation (50 pts)",
           "6-month validity",
         ],
@@ -118,7 +118,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "12,500 points (pay 5,000 receive 12,500)",
-          "Full Library: 50 pts/month",
+          "🎁 Full Legal Library: Included Free (6 Months)",
           "Smart Secretary + Legislation Monitor",
           "Template drafting + Cloud Archive",
           "6-month validity",
@@ -138,7 +138,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
           "Reply brief = SAR 167 | Appeal = SAR 333",
           "Cassation = SAR 500 | Due Diligence = SAR 1,667",
           "Simple contract = SAR 167 | Detailed = SAR 333",
-          "Full Library: 50 pts/month",
+          "🎁 Full Legal Library: Included Free (12 Months)",
           "Smart Secretary + Legislation Monitor",
           "Template drafting + Cloud Archive",
         ],
@@ -295,7 +295,7 @@ export const comparisonLawyers: { ar: ComparisonCategory[]; en: ComparisonCatego
     { category: "الأدوات والمزايا", icon: Brain, rows: [
       { feature: "مذكرة مجانية عند التسجيل","lawyer-free": true,        "lawyer-basic": true,       "lawyer-advanced": true,     "lawyer-elite": true,     "lawyer-royal": true },
       { feature: "مذكرة ثانية مجانية",       "lawyer-free": false,       "lawyer-basic": true,       "lawyer-advanced": true,     "lawyer-elite": true,     "lawyer-royal": true },
-      { feature: "المكتبة الكاملة",          "lawyer-free": "مرافعات+إثبات","lawyer-basic":"٥٠ نقطة/شهر","lawyer-advanced":"٥٠ نقطة/شهر","lawyer-elite":"٥٠ نقطة/شهر","lawyer-royal":"٥٠ نقطة/شهر" },
+      { feature: "المكتبة الكاملة",          "lawyer-free": "مرافعات+إثبات","lawyer-basic":"٥٠ نقطة/شهر","lawyer-advanced":"مجاناً بالكامل ✅","lawyer-elite":"مجاناً بالكامل ✅","lawyer-royal":"مجاناً بالكامل ✅" },
       { feature: "Kanban + تقويم + سوق",     "lawyer-free": false,       "lawyer-basic": "رصيد ≥ ٥٠٠","lawyer-advanced": "رصيد ≥ ٥٠٠","lawyer-elite": "رصيد ≥ ٥٠٠","lawyer-royal": "رصيد ≥ ٥٠٠" },
     ]},
     { category: "الفريق والدعم", icon: Users, rows: [
@@ -320,7 +320,7 @@ export const comparisonLawyers: { ar: ComparisonCategory[]; en: ComparisonCatego
     { category: "Features", icon: Brain, rows: [
       { feature: "Free brief on signup",      "lawyer-free": true,  "lawyer-basic": true,  "lawyer-advanced": true,  "lawyer-elite": true,  "lawyer-royal": true },
       { feature: "2nd free brief after top-up","lawyer-free": false, "lawyer-basic": true,  "lawyer-advanced": true,  "lawyer-elite": true,  "lawyer-royal": true },
-      { feature: "Full legal library",        "lawyer-free": "Basic laws","lawyer-basic":"50 pts/mo","lawyer-advanced":"50 pts/mo","lawyer-elite":"50 pts/mo","lawyer-royal":"50 pts/mo" },
+      { feature: "Full legal library",        "lawyer-free": "Basic laws","lawyer-basic":"50 pts/mo","lawyer-advanced":"Included free ✅","lawyer-elite":"Included free ✅","lawyer-royal":"Included free ✅" },
       { feature: "Kanban + calendar + market","lawyer-free": false, "lawyer-basic": "≥500 balance","lawyer-advanced":"≥500 balance","lawyer-elite":"≥500 balance","lawyer-royal":"≥500 balance" },
     ]},
     { category: "Team & Support", icon: Users, rows: [

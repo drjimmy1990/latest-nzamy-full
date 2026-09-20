@@ -18,10 +18,10 @@
   --color-dark-bg: #0c0f12;
   --color-dark-card: #161b22;
   --color-dark-border: rgba(255, 255, 255, 0.08);
-  --font-brand: "Cairo", "Outfit", "Geist", sans-serif;
-  --font-body: "IBM Plex Sans Arabic", "Readex Pro", "Geist", sans-serif;
-  --font-heading: "Cairo", "Outfit", "Geist", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-brand: var(--font-cairo), "Cairo", "Outfit", "Geist", sans-serif;
+  --font-body: var(--font-ibm-plex-sans-arabic), "IBM Plex Sans Arabic", "Readex Pro", "Geist", sans-serif;
+  --font-heading: var(--font-cairo), "Cairo", "Outfit", "Geist", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
   --font-serif: "Outfit", "Geist", serif;
 }
 
@@ -348,8 +348,16 @@ html[dir="rtl"] .text-left {
     display: none !important;
   }
 
-  /* Reset layout margins for full-width print */
-  main {
+  /* Reset layout margins for full-width print.
+     `.print-main` is here because the inner <main> elements this rule was
+     written for became <div>s: the root layout already wraps every page in
+     <main id="main-content">, so a second one inside it produced nested
+     landmarks that VoiceOver and TalkBack cannot navigate. Renaming the tag
+     alone would have silently unhooked them from this reset and left the
+     pt-32 / pt-[60px] clearance in printed output — on exactly the pages that
+     call window.print(): a law article, a lawyer profile, a consultation. */
+  main,
+  .print-main {
     margin: 0 !important;
     padding: 0 !important;
     max-width: 100% !important;
@@ -398,6 +406,66 @@ html[dir="rtl"] .text-left {
   .print-watermark-item,
   .print-watermark-item * {
     color: rgba(120, 120, 120, 0.15) !important;
+  }
+}
+
+/* ─── Mobile safe areas (notch / gesture bar) ─────────────────────────── */
+@supports (padding: env(safe-area-inset-top)) {
+  .safe-top { padding-top: env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+/* ─── Arabic heading metrics ──────────────────────────────────────────────
+   Cairo and IBM Plex Sans Arabic carry far deeper descenders (ي ج ح خ ع غ م
+   ن ق س ص) and higher ascenders than the Latin faces Tailwind's scale was
+   tuned for. `leading-none` (line-height: 1) therefore clips the glyph, which
+   is what cut the tails off "الذكي" / "القانوني" / "أنت…" on the live site.
+
+   These rules restore a safe minimum for *headings in RTL only*. The selector
+   is (0,2,1) so it outranks the (0,1,0) utility without !important, and it is
+   scoped to h1–h3 so numeric readouts (font-mono counters, KPI tiles) and the
+   small badges that legitimately want leading-none are untouched. LTR/English
+   keeps Tailwind's original metrics.
+
+   DELIBERATELY CAPPED AT 1023px (below Tailwind's `lg`). The same clipping is
+   present on desktop — a 72px hero heading on a 72px line box clips exactly as
+   a 36px one does — but raising the line box there grows the hero by ~76px and
+   reflows a layout that was signed off as-is. The desktop fix is a separate,
+   visible design change and is not smuggled in under a mobile bug fix. */
+/* `screen` is load-bearing, not decoration. A print viewport is sized to the
+   paper — roughly 794px for A4 at 96dpi — so a bare `(max-width: 1023px)`
+   matches while printing and would have pushed this phone-only line-height
+   onto every printed law article and lawyer profile. Caught in council review
+   by Antigravity; the media type is what keeps the fix on screens. */
+@media screen and (max-width: 1023px) {
+  [dir="rtl"] :is(h1, h2, h3).leading-none,
+  [dir="rtl"] :is(h1, h2, h3) .leading-none,
+  [dir="rtl"] :is(h1, h2, h3).leading-tight,
+  [dir="rtl"] :is(h1, h2, h3) .leading-tight {
+    line-height: 1.35;
+  }
+
+  /* Arabic is a cursive, connected script: negative tracking crowds the joins
+     and reads as a rendering fault. Neutralise it on RTL headings only — Latin
+     headings and any English toggle keep the designed tightening. */
+  [dir="rtl"] :is(h1, h2, h3):is(.tracking-tighter, .tracking-tight),
+  [dir="rtl"] :is(h1, h2, h3) :is(.tracking-tighter, .tracking-tight) {
+    letter-spacing: normal;
+  }
+}
+
+/* ─── iOS input zoom guard ────────────────────────────────────────────────
+   Mobile Safari and WKWebView zoom the whole page when a focused text field
+   computes below 16px, and never zoom back out — the login fields are
+   `text-sm` (14px), so tapping "البريد الإلكتروني" shifted the entire layout.
+   Raise only text-entry controls, only on touch phones, so the desktop design
+   is untouched. Checkboxes, radios and buttons are excluded: they carry no
+   text cursor and are not zoom triggers. */
+@media screen and (hover: none) and (pointer: coarse) and (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px;
   }
 }
 

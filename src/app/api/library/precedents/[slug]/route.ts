@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { checkLibraryAccess } from '@/lib/access-control';
+import { checkLibraryAccess, getLibraryAccessForUser } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
+import { isFreeLibraryItem } from '@/lib/library-item-access';
 
 /**
  * GET /api/library/precedents/[slug]
@@ -38,10 +39,13 @@ export async function GET(
     // principle by its own enumeration index below. (Probing at index 0 and
     // treating access.allowed as a document-level gate unlocked the whole
     // collection for guests — the bug.)
-    const probe = await checkLibraryAccess(userId, slug, 0, "principles");
-    const isWhitelisted = probe.isWhitelisted;
+    // The collection is only a container. Its ID must not stand in for a
+    // principle ID in library_free_items.principles, so retain first-N policy
+    // while evaluating explicit free access for every principle below.
+    const probe = await checkLibraryAccess(userId, slug, 0, "principles", { includeExplicitFreeItem: false });
+    const { hasFullAccess, freeItemsByType, whitelistedSlugs } = await getLibraryAccessForUser(userId);
+    const isWhitelisted = false;
     const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
-    const hasFullAccess = freeLimit === -1 || isWhitelisted;
 
     // Fetch principles with paragraphs
     const { data: principles } = await supabase
@@ -52,7 +56,8 @@ export async function GET(
         principle_paragraphs (*)
       `)
       .eq('collection_id', slug)
-      .order('order_index', { ascending: true });
+      .order('order_index', { ascending: true })
+      .order('id', { ascending: true });
 
     // Format response matching frontend interface
     const response = {
@@ -71,10 +76,17 @@ export async function GET(
         isWhitelisted,
         freeLimit,
         hasFullAccess,
-        totalItems: principles?.length ?? 0,
+      totalItems: principles?.length ?? 0,
       },
       principles: (principles || []).map((p: Record<string, unknown>, idx: number) => {
-        const isLocked = !hasFullAccess && freeLimit !== -1 && idx >= freeLimit;
+        const isFree = isFreeLibraryItem({
+          contentType: 'principles',
+          itemId: p.id as string,
+          hasFullAccess,
+          freeItemsByType,
+          whitelistedLawSlugs: whitelistedSlugs,
+        });
+        const isLocked = !isFree && idx >= freeLimit;
         const paragraphs = p.principle_paragraphs as Record<string, unknown>[];
         const truncate = (val: unknown, len: number) =>
           typeof val === 'string'

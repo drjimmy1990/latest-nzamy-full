@@ -233,7 +233,7 @@ export function SidebarLink({
           }
         }}
         className={`
-          group relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all duration-150
+          group relative flex items-center gap-2.5 rounded-xl px-3 py-1.5 text-[13px] transition-all duration-150
           ${isActive && !isLocked
             ? isDark
               ? "bg-white/[0.07] text-white font-medium"
@@ -515,7 +515,7 @@ export function DashboardModeToggle({
           <button
             key={m}
             onClick={() => onModeChange(m)}
-            className={`flex-1 py-2 transition-all ${
+            className={`flex-1 py-1.5 transition-all ${
               mode === m
                 ? isDark ? "bg-white/[0.08] text-white" : "bg-royal text-white"
                 : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"

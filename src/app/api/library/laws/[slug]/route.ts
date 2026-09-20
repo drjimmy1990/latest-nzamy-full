@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { checkLibraryAccess } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
+import { lawStatusForDetail } from '@/app/laws/law-status';
+import { resolveParentLawLink, type ParentLawCandidate } from './_resolve-parent-law';
 
 /**
  * GET /api/library/laws/[slug]
@@ -43,6 +45,29 @@ export async function GET(
       );
     }
 
+    // parent_law_id is an INSTRUMENTS_REGISTRY instrument id, not a BOE
+    // law_guid. Limit to two rows because the resolver needs only to prove
+    // uniqueness; on ambiguity it deliberately returns no hyperlink.
+    let parentLawLink: { slug: string; title: string } | null = null;
+    const parentInstrumentId = String(law.parent_law_id || '').trim();
+    if (parentInstrumentId) {
+      const { data: parentCandidates, error: parentError } = await supabase
+        .schema('library')
+        .from('laws')
+        .select('slug,title,status,type,instrument_id')
+        .eq('instrument_id', parentInstrumentId)
+        .limit(2);
+      if (parentError) {
+        console.warn('[Laws API] Parent-law lookup failed closed:', parentError.message);
+      } else {
+        parentLawLink = resolveParentLawLink(
+          slug,
+          parentInstrumentId,
+          parentCandidates as ParentLawCandidate[] | null,
+        );
+      }
+    }
+
     // Fetch chapters
     const { data: chapters } = await supabase
       .schema('library')
@@ -57,7 +82,8 @@ export async function GET(
       .from('articles')
       .select(`
         *,
-        article_amendments (*)
+        article_amendments (*),
+        article_regulations (*)
       `)
       .eq('law_slug', slug)
       .order('order_index', { ascending: true });
@@ -96,10 +122,42 @@ export async function GET(
     let preamble = law.preamble || '';
     let regulationPreamble = '';
     if (preamble.includes('\n***\n')) {
+      // ب-88: the standard file template bakes in multiple decorative `***`
+      // separators before the first ARTICLE_START/CHAPTER_START anchor (after
+      // the AI-summary block, the info card, the H1...), so `split` can return
+      // 3-7 parts, not just 2. Rejoining everything past the first split keeps
+      // it all in regulationPreamble instead of silently dropping parts[2:].
       const parts = preamble.split('\n***\n');
       preamble = parts[0].trim();
-      regulationPreamble = parts[1].trim();
+      regulationPreamble = parts.slice(1).join('\n***\n').trim();
     }
+
+    // ── Build the flat "اللائحة وحدها" view — one sorted list per secondary
+    // instrument (`ref`), spanning every نظام article, with dual-linked
+    // duplicates (is_secondary_display) excluded so each article appears once.
+    // See 00_عقل_القوانين/13_دليل_المبرمج/02_عقد_اللوائح_المدمجة_والبذر.md §1-3-د.
+    const regulationsByRef = new Map<string, Record<string, unknown>[]>();
+    articles?.forEach((article: Record<string, unknown>) => {
+      const regRows = (article.article_regulations as Record<string, unknown>[]) || [];
+      regRows.forEach((r) => {
+        if (r.is_secondary_display === true) return;
+        const ref = String(r.ref || '');
+        if (!ref) return;
+        if (!regulationsByRef.has(ref)) regulationsByRef.set(ref, []);
+        regulationsByRef.get(ref)!.push(r);
+      });
+    });
+    const regulationInstruments = Array.from(regulationsByRef.entries()).map(([ref, rows]) => ({
+      ref,
+      articles: [...rows]
+        .sort((a, b) => String(a.sort_key || '99999').localeCompare(String(b.sort_key || '99999')))
+        .map((r) => ({
+          regNum: r.reg_num ?? null,
+          text: r.text || '',
+          status: articleStatusForDetail(r.status),
+          systemArticleNumber: r.system_article_number ?? null,
+        })),
+    }));
 
     // Build the response in the LawSystem format the frontend expects
     const lawSystem = {
@@ -114,8 +172,21 @@ export async function GET(
       issuanceDecree: law.issuing_instrument || '',
       issuanceDate: law.issue_date_hijri || '',
       source: law.boe_source_url || '',
+      // ك-02 (2026-08-23): library.laws.status is fetched (select('*') above)
+      // but was never copied into this response object, so the frontend's
+      // "cancelled/active" badge always fell back to a hardcoded static map
+      // (law-metadata-map.ts) that hand-lists "active" on every entry.
+      law_status: lawStatusForDetail(law.status),
+      parentLawId: parentInstrumentId,
+      parentLaw: law.parent_law || '',
+      enablingArticle: law.enabling_article || '',
+      parentLawLink: parentLawLink
+        ? { slug: parentLawLink.slug, title: parentLawLink.title }
+        : null,
       preamble: preamble,
       regulationPreamble: regulationPreamble,
+      // Flat per-instrument view for the "اللائحة وحدها" tab — see build above.
+      regulationInstruments,
       // Paywall metadata for frontend
       paywall: {
         isWhitelisted,
@@ -152,6 +223,20 @@ export async function GET(
 
 /** Preview length granted to a locked article's body text, in characters. */
 const LOCKED_PREVIEW_CHARS = 100;
+
+const ARTICLE_DETAIL_STATUSES = new Set([
+  'active', 'amended', 'repealed', 'suspended', 'added', 'merged', 'status_undeclared',
+]);
+
+/** Detail API boundary: absence is unknown, and a malformed stored token fails closed. */
+export function articleStatusForDetail(rawValue: unknown): string {
+  const status = rawValue == null ? '' : String(rawValue).trim();
+  if (status === '') return 'status_undeclared';
+  if (!ARTICLE_DETAIL_STATUSES.has(status)) {
+    throw new Error(`unknown article status "${status}" in law detail response`);
+  }
+  return status;
+}
 
 /**
  * Separate, looser cap for a locked article's TITLE.
@@ -197,7 +282,7 @@ function formatArticleWithPaywall(
     // (longest measured: 531 chars), which would otherwise walk straight past
     // the body preview below.
     title: isLocked ? preview(article.title, LOCKED_TITLE_CHARS) : (article.title || ''),
-    status: article.status || 'active',
+    status: articleStatusForDetail(article.status),
     free: !isLocked,
     locked: isLocked,
     instrument: article.instrument || '',
@@ -226,12 +311,41 @@ function formatArticleWithPaywall(
     result.historicRegulationText = article.historic_regulation_text;
   }
 
-  // Add executive regulation if present (only for unlocked articles)
-  if (!isLocked && article.executive_reg_text) {
-    result.executiveReg = {
-      ref: article.executive_reg_ref || '',
-      text: article.executive_reg_text,
-    };
+  // Add executive regulation if present (only for unlocked articles).
+  //
+  // `regulations` is the NEW array form (one entry per regulation article,
+  // individually sortable by regNum, carrying isSecondaryDisplay for dedup) —
+  // the frontend should migrate to this. Until it does, `executiveReg` is
+  // ALWAYS also populated (merged ref/text, mirroring the old
+  // join(", ")/join("\n\n") shape from executive_reg_text/executive_reg_ref)
+  // so every existing render path keeps working unchanged. Do not remove
+  // `executiveReg` until the frontend reads `regulations` everywhere it
+  // currently reads `executiveReg` (see §1-3 of
+  // 00_عقل_القوانين/13_دليل_المبرمج/02_عقد_اللوائح_المدمجة_والبذر.md).
+  if (!isLocked) {
+    const regRows = (article.article_regulations as Record<string, unknown>[]) || [];
+    if (regRows.length > 0) {
+      const sorted = [...regRows].sort((a, b) =>
+        String(a.sort_key || '99999').localeCompare(String(b.sort_key || '99999'))
+      );
+      result.regulations = sorted.map((r) => ({
+        ref: r.ref || '',
+        regNum: r.reg_num ?? null,
+        text: r.text || '',
+        status: articleStatusForDetail(r.status),
+        isSecondaryDisplay: r.is_secondary_display === true,
+      }));
+      const distinctRefs = Array.from(new Set(sorted.map((r) => String(r.ref || '')).filter(Boolean)));
+      result.executiveReg = {
+        ref: distinctRefs.join(', '),
+        text: sorted.map((r) => String(r.text || '')).join('\n\n'),
+      };
+    } else if (article.executive_reg_text) {
+      result.executiveReg = {
+        ref: article.executive_reg_ref || '',
+        text: article.executive_reg_text,
+      };
+    }
   }
 
   // Add amendments if present (only for unlocked articles)

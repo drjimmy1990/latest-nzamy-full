@@ -32,9 +32,10 @@ interface TimelineEvent {
 
 interface CaseData {
   id: string; title: string; caseNo: string; court: string;
-  stage: CaseStage; progress: number; urgent: boolean;
+  stage: CaseStage; urgent: boolean;
   lawyer: { name: string; type: string; phone: string; rating: number };
   nextSession?: { date: string; time: string; location: string };
+  hearings: { id: string; title: string; date: string; time: string; location: string; status: string }[];
   fee: { total: number; paid: number };
   timeline: TimelineEvent[];
   documents: { name: string; date: string; type: string }[];
@@ -110,16 +111,16 @@ function toCaseData(r: ServiceRequestDetail): CaseData {
   const now = Date.now();
 
   // Hearings
-  const rawHearings = Array.isArray(meta.hearings) ? meta.hearings : [];
+  const rawHearings = Array.isArray(r.hearings) ? r.hearings : [];
   const upcoming = rawHearings
-    .map((h: any) => ({ h, ts: h.date ? new Date(h.date).getTime() : NaN }))
+    .map((h) => ({ h, ts: h.hearingDate ? new Date(h.hearingDate).getTime() : NaN }))
     .filter((x: any) => !isNaN(x.ts) && x.ts >= now)
     .sort((a: any, b: any) => a.ts - b.ts)[0];
 
   const nextSession = upcoming
     ? {
-        date: formatDate(upcoming.h.date),
-        time: String(upcoming.h.time ?? "—"),
+        date: formatDate(upcoming.h.hearingDate),
+        time: String(upcoming.h.hearingTime ?? "—"),
         location: String(upcoming.h.location ?? "—"),
       }
     : undefined;
@@ -161,7 +162,6 @@ function toCaseData(r: ServiceRequestDetail): CaseData {
     caseNo: orderReference(r.id) || r.id,
     court: String(meta.court ?? "—"),
     stage: mapStage(r.status),
-    progress: 0,
     urgent,
     lawyer: {
       name: r.assignedTo ?? "—",
@@ -170,6 +170,14 @@ function toCaseData(r: ServiceRequestDetail): CaseData {
       rating: 0,
     },
     nextSession,
+    hearings: rawHearings.map((hearing) => ({
+      id: hearing.id,
+      title: hearing.title,
+      date: formatDate(hearing.hearingDate),
+      time: hearing.hearingTime ?? "—",
+      location: hearing.courtName || hearing.location || "—",
+      status: hearing.status,
+    })),
     fee: { total: amount, paid },
     timeline,
     documents,
@@ -293,14 +301,6 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
             })}
           </div>
 
-          {/* Progress bar — progress not yet available from backend (0%) */}
-          <div className={`h-1.5 rounded-full overflow-hidden mb-1 ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-            <motion.div className="h-full rounded-full bg-gradient-to-l from-emerald-400 to-[#0B3D2E]"
-              initial={{ width:0 }} animate={{ width: `${data.progress}%` }}
-              transition={{ duration:0.9, ease:"easeOut", delay:0.2 }} />
-          </div>
-          <p className={`text-[9px] text-left ${sm}`}>{data.progress}% مكتمل</p>
-
           {/* Lawyer */}
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 mt-3 ${isDark ? "bg-white/[0.03]" : "bg-slate-50"}`}>
             <div className="flex items-center gap-2.5">
@@ -334,6 +334,44 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
               </p>
             </div>
             <span className="text-[9px] font-bold bg-amber-400/20 text-amber-600 dark:text-amber-300 px-2 py-0.5 rounded-full">تذكير مُفعّل</span>
+          </div>
+        )}
+      </motion.div>
+
+      {/* Real hearings linked to this case. Lawyer-only notes/minutes are not
+          part of the API projection and therefore cannot leak into this view. */}
+      <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.06 }}
+        className={`${card} p-4`}>
+        <div className="flex items-center gap-2 mb-3">
+          <CalendarCheck size={14} className="text-amber-500" />
+          <h2 className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>الجلسات والمواعيد</h2>
+          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${isDark ? "bg-white/[0.05] text-zinc-500" : "bg-slate-100 text-slate-500"}`}>
+            {data.hearings.length}
+          </span>
+        </div>
+        {data.hearings.length === 0 ? (
+          <p className={`text-center text-[11px] py-4 ${sm}`}>لا توجد جلسات مرتبطة بهذه القضية بعد</p>
+        ) : (
+          <div className="space-y-2">
+            {data.hearings.map((hearing) => (
+              <div key={hearing.id} className={`rounded-xl px-3 py-2.5 ${isDark ? "bg-white/[0.03]" : "bg-slate-50"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{hearing.title}</p>
+                    <p className={`mt-1 text-[10px] ${sm}`}>{hearing.date} — {hearing.time} · {hearing.location}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                    hearing.status === "cancelled"
+                      ? "bg-red-500/10 text-red-500"
+                      : hearing.status === "held"
+                        ? "bg-emerald-500/10 text-emerald-500"
+                        : "bg-amber-500/10 text-amber-500"
+                  }`}>
+                    {hearing.status === "cancelled" ? "ملغاة" : hearing.status === "held" ? "عُقدت" : "مجدولة"}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </motion.div>

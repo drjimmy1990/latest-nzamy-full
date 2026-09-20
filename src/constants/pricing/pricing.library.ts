@@ -35,7 +35,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "خصم ٥٠٪ لفترة الإطلاق",
       pricingFormulaLabel: "حساب لمستخدم واحد (١ مقعد)",
       cta: "اشترك الآن",
-      ctaHref: "/subscribe?plan=lib-q1",
+      ctaHref: "/laws/subscribe?plan=lib-q1",
       highlighted: false,
       color: "border-blue-200/60",
       features: {
@@ -66,7 +66,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "خصم ٥٠٪ لفترة الإطلاق",
       pricingFormulaLabel: "حساب لمستخدم واحد (١ مقعد)",
       cta: "اشترك الآن",
-      ctaHref: "/subscribe?plan=lib-q2",
+      ctaHref: "/laws/subscribe?plan=lib-q2",
       highlighted: true,
       color: "border-royal/20",
       features: {
@@ -99,7 +99,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "خصم ٥٠٪ لفترة الإطلاق",
       pricingFormulaLabel: "حساب لمستخدم واحد (١ مقعد)",
       cta: "اشترك الآن",
-      ctaHref: "/subscribe?plan=lib-annual",
+      ctaHref: "/laws/subscribe?plan=lib-annual",
       highlighted: false,
       color: "border-gold/20",
       features: {
@@ -136,7 +136,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "50% launch discount",
       pricingFormulaLabel: "1 user account (1 seat)",
       cta: "Subscribe Now",
-      ctaHref: "/subscribe?plan=lib-q1",
+      ctaHref: "/laws/subscribe?plan=lib-q1",
       highlighted: false,
       color: "border-blue-200/60",
       features: {
@@ -167,7 +167,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "50% launch discount",
       pricingFormulaLabel: "1 user account (1 seat)",
       cta: "Subscribe Now",
-      ctaHref: "/subscribe?plan=lib-q2",
+      ctaHref: "/laws/subscribe?plan=lib-q2",
       highlighted: true,
       color: "border-royal/20",
       features: {
@@ -200,7 +200,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "50% launch discount",
       pricingFormulaLabel: "1 user account (1 seat)",
       cta: "Subscribe Now",
-      ctaHref: "/subscribe?plan=lib-annual",
+      ctaHref: "/laws/subscribe?plan=lib-annual",
       highlighted: false,
       color: "border-gold/20",
       features: {
@@ -240,7 +240,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "٣ دعوات للزملاء",
       pricingFormulaLabel: "متاح لـ ١ إلى ٥ مستخدمين (مقاعد)",
       cta: "اشترك الآن",
-      ctaHref: "/subscribe?plan=lib-firm-small",
+      ctaHref: "/contact?type=firm-library",
       highlighted: false,
       color: "border-blue-200/60",
       features: {
@@ -272,7 +272,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "٣ دعوات للزملاء",
       pricingFormulaLabel: "متاح لـ ٦ إلى ٢٠ مستخدماً (مقاعد)",
       cta: "اشترك الآن",
-      ctaHref: "/subscribe?plan=lib-firm-medium",
+      ctaHref: "/contact?type=firm-library",
       highlighted: true,
       color: "border-royal/20",
       features: {
@@ -304,7 +304,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "٣ دعوات للزملاء",
       pricingFormulaLabel: "متاح لـ ٢١ إلى ٥٠ مستخدماً (مقاعد)",
       cta: "اشترك الآن",
-      ctaHref: "/subscribe?plan=lib-firm-large",
+      ctaHref: "/contact?type=firm-library",
       highlighted: false,
       color: "border-gold/20",
       features: {
@@ -369,7 +369,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "3 colleague invites",
       pricingFormulaLabel: "For 1 to 5 users (seats)",
       cta: "Subscribe Now",
-      ctaHref: "/subscribe?plan=lib-firm-small",
+      ctaHref: "/contact?type=firm-library",
       highlighted: false,
       color: "border-blue-200/60",
       features: {
@@ -401,7 +401,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "3 colleague invites",
       pricingFormulaLabel: "For 6 to 20 users (seats)",
       cta: "Subscribe Now",
-      ctaHref: "/subscribe?plan=lib-firm-medium",
+      ctaHref: "/contact?type=firm-library",
       highlighted: true,
       color: "border-royal/20",
       features: {
@@ -433,7 +433,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       bonusLabel: "3 colleague invites",
       pricingFormulaLabel: "For 21 to 50 users (seats)",
       cta: "Subscribe Now",
-      ctaHref: "/subscribe?plan=lib-firm-large",
+      ctaHref: "/contact?type=firm-library",
       highlighted: false,
       color: "border-gold/20",
       features: {

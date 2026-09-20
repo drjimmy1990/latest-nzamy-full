@@ -138,7 +138,10 @@ export function getPlanList(
     government:  isAr ? plansGovernment.ar   : plansGovernment.en,
     providers:   isAr ? plansProviders.ar   : plansProviders.en,
   };
-  return map[audience] ?? map.individuals;
+  // Hidden plans remain as product proposals, but must never be rendered as
+  // purchasable offers until their legal copy, server-side catalogue,
+  // checkout, entitlement workflow, and acceptance evidence are approved.
+  return (map[audience] ?? map.individuals).filter((plan) => !plan.isBetaHidden);
 }
 
 export function getComparisonList(audience: AudienceTab, isAr: boolean): ComparisonCategory[] {

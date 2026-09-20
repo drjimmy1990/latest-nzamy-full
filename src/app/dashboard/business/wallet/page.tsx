@@ -164,7 +164,9 @@ export default function BusinessWalletPage() {
                   </button>
                 </div>
                 
-                <div className="p-2 flex-1 overflow-y-auto">
+                {/* overflow-y-auto alone let the vertical list scroll while the
+                    table's own columns still ran off the side of a phone. */}
+                <div className="p-2 flex-1 overflow-y-auto overflow-x-auto">
                   <table className="w-full text-sm text-left">
                     <thead className={`text-xs uppercase bg-transparent ${muted} ${isRTL ? "text-right" : "text-left"}`}>
                       <tr>

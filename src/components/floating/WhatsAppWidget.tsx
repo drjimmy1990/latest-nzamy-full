@@ -503,7 +503,12 @@ export default function WhatsAppWidget({
           role="dialog"
           aria-modal="true"
           aria-label="مساعد نظامي — اختر خدمتك القانونية"
-          className={`fixed ${bottomPos} ${panelSide} z-[9998] w-[340px] rounded-[2rem] shadow-[0_20px_40px_-15px_rgba(0,0,0,0.15)] border overflow-hidden
+          // w-[340px] was a hard width against a 24px edge offset: 340+24 = 364
+          // inside a 320px viewport, so the panel ran 44px off-screen on the
+          // smallest supported phone. min() keeps the designed width wherever
+          // it fits and clamps it to the viewport minus both offsets when it
+          // does not.
+          className={`fixed ${bottomPos} ${panelSide} z-[9998] w-[min(340px,calc(100vw-3rem))] rounded-[2rem] shadow-[0_20px_40px_-15px_rgba(0,0,0,0.15)] border overflow-hidden
             bg-white/95 dark:bg-[#09090b]/85 backdrop-blur-2xl border-white/50 dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-black/5 dark:ring-white/5`}
           dir={isRTL ? "rtl" : "ltr"}
         >

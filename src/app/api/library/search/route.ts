@@ -1,35 +1,28 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getLibraryAccessForUser } from '@/lib/access-control';
-import { parseSearchQuery, normalizeSearch, LIBRARY_FTS_CONFIG } from '@/utils/normalizeArabic';
+import {
+  parseSearchQuery,
+  SearchQuerySyntaxError,
+  LIBRARY_FTS_CONFIG,
+} from '@/utils/normalizeArabic';
 import { libraryGate } from '@/lib/library-gate';
+import { validateSearchRequest } from './filters';
+import { truncateWithHighlight } from './snippet';
+import { isFreeLibraryItem } from '@/lib/library-item-access';
 
 /**
  * POST /api/library/search
  * Central search endpoint for the Legal Library.
- * Searches across all 4 sections with operator support.
+ * Searches across all 4 sections.
  */
 
-interface SearchRequest {
-  query: string;
-  section: 'all' | 'laws' | 'precedents' | 'orders' | 'feqh';
-  filters?: {
-    category?: string;    // SA-XX category code
-    track?: string;       // ordinary / admin / semi
-    source?: string;      // sourceId for principles
-    issuer?: string;      // decree issuer
-    year?: number;        // Hijri year
-    status?: string;      // active / amended / repealed
-    type?: string;        // royal / cabinet / circular
-    dateFrom?: string;    // Hijri date from
-    dateTo?: string;      // Hijri date to
-    lawType?: string;     // نظام / لائحة / etc
-    court?: string;       // court name
-    legalBranch?: string; // legal branch code
-  };
-  sort?: 'relevance' | 'date-desc' | 'date-asc' | 'alpha';
-  page?: number;
-  limit?: number;
+/** Keep section failures opaque and fail closed: never return partial search data. */
+function searchUnavailableResponse(status = 503) {
+  return NextResponse.json(
+    { error: 'Search temporarily unavailable', code: 'search_unavailable' },
+    { status },
+  );
 }
 
 export async function POST(request: Request) {
@@ -37,8 +30,14 @@ export async function POST(request: Request) {
   if (gate) return gate;
 
   try {
-    const body: SearchRequest = await request.json();
-    const { query, section = 'all', filters = {}, sort = 'relevance', page = 1, limit = 10 } = body;
+    const requestValidation = validateSearchRequest(await request.json());
+    if (!requestValidation.ok) {
+      return NextResponse.json(
+        { error: requestValidation.error, code: requestValidation.code },
+        { status: 400 },
+      );
+    }
+    const { query, section, filters, page, limit } = requestValidation.request;
 
     if (!query || query.trim().length < 2) {
       return NextResponse.json(
@@ -47,8 +46,24 @@ export async function POST(request: Request) {
       );
     }
 
+    let parsed;
+    try {
+      parsed = parseSearchQuery(query);
+    } catch (error) {
+      if (error instanceof SearchQuerySyntaxError) {
+        return NextResponse.json(
+          {
+            error: 'Invalid search syntax',
+            code: error.code,
+            index: error.index,
+          },
+          { status: 400 },
+        );
+      }
+      throw error;
+    }
+
     const supabase = await createClient();
-    const parsed = parseSearchQuery(query);
     const offset = (page - 1) * limit;
 
     // ── Paywall: read optional session + library access (guests → free tier).
@@ -67,16 +82,13 @@ export async function POST(request: Request) {
     const snippetLen = (isFree: boolean) => (isFree ? 200 : 100);
 
     // Full-text search uses the generated `fts` tsvector columns (GIN-indexed)
-    // defined in 20260626_legal_library_schema.sql, built with
-    // `to_tsvector('library.arabic', ...)`. The query is tokenized with
-    // LIBRARY_FTS_CONFIG, which produces the same lexemes as that config while
-    // remaining expressible in a PostgREST filter — passing 'library.arabic'
-    // itself is a parse error and was returning zero results for every search.
-    // See the constant's own comment for the measurements.
-    // Tokens preserve original Arabic forms, so the RAW query is passed here,
-    // not the normalizeSearch-processed one; normalizeSearch is still applied
-    // below for snippet highlighting.
-    const ftsQuery = parsed.raw;
+    // defined in 20260626_legal_library_schema.sql. `parseSearchQuery` emits a
+    // quoted, operator-safe PostgreSQL tsquery. Omitting `type` is deliberate:
+    // supabase-js then sends the raw `fts` operator; `type: 'plain'` would call
+    // plainto_tsquery and silently turn +, /, -, phrases and prefix operators
+    // back into a bag of words. LIBRARY_FTS_CONFIG remains `simple`, matching
+    // the lexemes stored by the schema-qualified `library.arabic` config.
+    const ftsQuery = parsed.tsquery;
 
     // Collect results from each section
     const results: Record<string, unknown[]> = { laws: [], precedents: [], orders: [], feqh: [] };
@@ -110,7 +122,7 @@ export async function POST(request: Request) {
             .schema('library')
             .from('articles')
             .select(LAW_COLUMNS(withHistory), { count: 'exact' })
-            .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' });
+            .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG });
 
           // Apply filters
           if (filters.category) q = q.eq('laws.section_code', filters.category);
@@ -133,14 +145,19 @@ export async function POST(request: Request) {
           console.warn('[Search] laws query failed with original_text — retrying without it. Apply migration 20260729_article_history_columns.sql to remove this round-trip. Cause:', lawError);
           ({ data: lawResults, count: lawCount, error: lawError } = await runLawQuery(false));
         }
-        // Surfaced, not swallowed. A silent `if (!error)` is what hid the
-        // PGRST100 text-search-config failure: every query errored, every
-        // section returned [], and the endpoint answered 200 with 0 results.
-        if (lawError) console.error('[Search] laws query failed:', lawError);
-        if (!lawError && lawResults) {
+        // The fallback is exhausted: do not turn a failed required section
+        // into a successful empty or partial search response.
+        if (lawError) {
+          console.error('[Search] laws query failed:', lawError);
+          return searchUnavailableResponse();
+        }
+        if (!Array.isArray(lawResults)) {
+          console.error('[Search] laws query returned invalid data');
+          return searchUnavailableResponse();
+        }
           results.laws = lawResults.map((r: Record<string, unknown>) => {
             const lawSlug = r.law_slug as string;
-            const isFree = hasFullAccess || whitelistedSlugs.includes(lawSlug) || freeItems('laws').includes(lawSlug);
+            const isFree = isFreeLibraryItem({ contentType: 'laws', itemId: lawSlug, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
             return {
               id: r.id,
               section: 'laws',
@@ -164,9 +181,9 @@ export async function POST(request: Request) {
             };
           });
           counts.laws = lawCount || 0;
-        }
       } catch (e) {
         console.error('[Search] Laws error:', e);
+        return searchUnavailableResponse();
       }
     }
 
@@ -181,7 +198,7 @@ export async function POST(request: Request) {
             decision_number, year_hijri,
             judicial_collections!inner ( id, title, court, track, source_id )
           `, { count: 'exact' })
-          .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' });
+          .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG });
 
         if (filters.track) {
           precQuery = precQuery.eq('judicial_collections.track', filters.track);
@@ -203,13 +220,16 @@ export async function POST(request: Request) {
         }
 
         const { data: precResults, count: precCount, error: precError } = await precQuery;
-        // Surfaced, not swallowed. A silent `if (!error)` is what hid the
-        // PGRST100 text-search-config failure: every query errored, every
-        // section returned [], and the endpoint answered 200 with 0 results.
-        if (precError) console.error('[Search] precedents query failed:', precError);
-        if (!precError && precResults) {
+        if (precError) {
+          console.error('[Search] precedents query failed:', precError);
+          return searchUnavailableResponse();
+        }
+        if (!Array.isArray(precResults)) {
+          console.error('[Search] precedents query returned invalid data');
+          return searchUnavailableResponse();
+        }
           results.precedents = precResults.map((r: Record<string, unknown>) => {
-            const isFree = hasFullAccess || freeItems('precedents').includes(r.id as string);
+            const isFree = isFreeLibraryItem({ contentType: 'principles', itemId: r.id as string, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
             return {
               id: r.id,
               section: 'precedents',
@@ -226,9 +246,9 @@ export async function POST(request: Request) {
             };
           });
           counts.precedents = precCount || 0;
-        }
       } catch (e) {
         console.error('[Search] Precedents error:', e);
+        return searchUnavailableResponse();
       }
     }
 
@@ -239,7 +259,7 @@ export async function POST(request: Request) {
           .schema('library')
           .from('decrees_circulars')
           .select('id, title, type, issuer, ref, date, summary_brief, category, hashtags', { count: 'exact' })
-          .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' });
+          .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG });
 
         if (filters.issuer) {
           orderQuery = orderQuery.eq('issuer', filters.issuer);
@@ -258,19 +278,22 @@ export async function POST(request: Request) {
         }
 
         const { data: orderResults, count: orderCount, error: orderError } = await orderQuery;
-        // Surfaced, not swallowed. A silent `if (!error)` is what hid the
-        // PGRST100 text-search-config failure: every query errored, every
-        // section returned [], and the endpoint answered 200 with 0 results.
-        if (orderError) console.error('[Search] orders query failed:', orderError);
-        if (!orderError && orderResults) {
+        if (orderError) {
+          console.error('[Search] orders query failed:', orderError);
+          return searchUnavailableResponse();
+        }
+        if (!Array.isArray(orderResults)) {
+          console.error('[Search] orders query returned invalid data');
+          return searchUnavailableResponse();
+        }
           results.orders = orderResults.map((r: Record<string, unknown>) => {
-            const isFree = hasFullAccess || freeItems('orders').includes(r.id as string);
+            const isFree = isFreeLibraryItem({ contentType: 'decrees', itemId: r.id as string, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
             const brief = r.summary_brief as string || '';
             return {
               id: r.id,
               section: 'orders',
               title: r.title,
-              snippet: isFree ? brief : brief.slice(0, 100) + (brief.length > 100 ? '...' : ''),
+              snippet: truncateWithHighlight(brief, parsed.plainTerms, snippetLen(isFree)),
               locked: !isFree,
               meta: {
                 type: r.type,
@@ -282,9 +305,9 @@ export async function POST(request: Request) {
             };
           });
           counts.orders = orderCount || 0;
-        }
       } catch (e) {
         console.error('[Search] Orders error:', e);
+        return searchUnavailableResponse();
       }
     }
 
@@ -304,7 +327,7 @@ export async function POST(request: Request) {
               )
             )
           `, { count: 'exact' })
-          .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' });
+          .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG });
 
         if (section === 'feqh') {
           feqhQuery = feqhQuery.range(offset, offset + limit - 1);
@@ -313,11 +336,14 @@ export async function POST(request: Request) {
         }
 
         const { data: feqhResults, count: feqhCount, error: feqhError } = await feqhQuery;
-        // Surfaced, not swallowed. A silent `if (!error)` is what hid the
-        // PGRST100 text-search-config failure: every query errored, every
-        // section returned [], and the endpoint answered 200 with 0 results.
-        if (feqhError) console.error('[Search] feqh query failed:', feqhError);
-        if (!feqhError && feqhResults) {
+        if (feqhError) {
+          console.error('[Search] feqh query failed:', feqhError);
+          return searchUnavailableResponse();
+        }
+        if (!Array.isArray(feqhResults)) {
+          console.error('[Search] feqh query returned invalid data');
+          return searchUnavailableResponse();
+        }
           results.feqh = feqhResults.map((r: Record<string, unknown>) => {
             const section = r.feqh_sections as Record<string, unknown>;
             const chapter = section?.feqh_chapters as Record<string, unknown>;
@@ -339,9 +365,9 @@ export async function POST(request: Request) {
             };
           });
           counts.feqh = feqhCount || 0;
-        }
       } catch (e) {
         console.error('[Search] Feqh error:', e);
+        return searchUnavailableResponse();
       }
     }
 
@@ -359,36 +385,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error('[Search] Unexpected error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return searchUnavailableResponse(500);
   }
 }
 
-/** Truncate text around the first match, preserving word boundaries.
- *  Matching is done on normalized text (أ→ا, ة→ه, ى→ي, digits) so that a query
- *  for `الإثبات` centers the snippet on stored `الاثبات`. Slice indices map
- *  back to the original text because normalization is 1:1 per character. */
-function truncateWithHighlight(text: string | null, terms: string[], maxLength: number): string {
-  if (!text) return '';
-  if (!terms.length) return text.slice(0, maxLength);
-
-  const normText = normalizeSearch(text);
-  const firstTerm = normalizeSearch(terms[0]);
-  const matchIndex = normText.indexOf(firstTerm);
-
-  if (matchIndex === -1) return text.slice(0, maxLength) + (text.length > maxLength ? '...' : '');
-
-  // Center the snippet around the match.
-  // Normalization is character-by-character 1:1, so normText indices map
-  // directly back to original-text indices.
-  const contextBefore = Math.max(0, matchIndex - Math.floor(maxLength / 3));
-  const contextAfter = Math.min(text.length, matchIndex + firstTerm.length + Math.floor(maxLength * 2 / 3));
-
-  let snippet = text.slice(contextBefore, contextAfter);
-  if (contextBefore > 0) snippet = '...' + snippet;
-  if (contextAfter < text.length) snippet = snippet + '...';
-
-  return snippet;
-}

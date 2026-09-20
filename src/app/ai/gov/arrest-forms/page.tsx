@@ -22,7 +22,7 @@ export default function ArrestFormsPage() {
   const isValid = form.target.length > 2 && form.reason.length > 5;
   const DRAFT = `${form.type}\n\nالسلطة المصدرة: ${form.authority || "النيابة العامة / رئاسة أمن الدولة"}\nالرقم المرجعي: ARR-${Date.now().toString().slice(-6)}\nالتاريخ: ${new Date().toLocaleDateString("ar-SA")}\n\nالموجَّه إليه: قوات الأمن المختصة\n\nيُأذن بموجب هذا ${form.type} بشأن:\nالاسم / العنوان: ${form.target}\nالموقع: ${form.address || "..."}\n\nالسبب الإجرائي: ${form.reason}\n\nيُراعى تطبيق المادة ٤٠ من نظام الإجراءات الجزائية.\n\nالمسؤول المُصدر: _______________ التوقيع: _______________`;
   return (
-    <div className={`${bg} min-h-screen`} dir="rtl">
+    <div className={`${bg} min-h-[100dvh]`} dir="rtl">
       <div className="max-w-3xl mx-auto p-4 md:p-8 space-y-6">
         <div className="flex items-center gap-3">
           <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDark ? "bg-sky-500/10" : "bg-sky-50"}`}><LockKey size={22} weight="duotone" className={isDark ? "text-sky-400" : "text-sky-600"} /></div>

@@ -36,6 +36,26 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, (value: unknown) => string | nul
     }
     return null;
   },
+  payments_gateway: (value) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return 'قيمة payments_gateway يجب أن تكون كائناً بالشكل: {"status":"disabled","provider":null}';
+    }
+
+    const { status, provider } = value as { status?: unknown; provider?: unknown };
+    if (status === "disabled" && (provider === null || provider === undefined)) {
+      return null;
+    }
+
+    const deploymentEnvironment = process.env.NZAMY_DEPLOYMENT_ENV?.toLowerCase();
+    const stubAllowed =
+      process.env.NZAMY_ALLOW_STUB_PAYMENTS === "true" &&
+      (deploymentEnvironment === "local" || deploymentEnvironment === "staging");
+    if (status === "test" && provider === "stub" && stubAllowed) {
+      return null;
+    }
+
+    return "بوابة الدفع مغلقة افتراضياً؛ test/stub يتطلب بيئة local أو staging وإذن خادمي صريح، وlive غير مدعوم بعد";
+  },
 };
 
 /**

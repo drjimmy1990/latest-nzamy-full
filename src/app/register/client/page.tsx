@@ -28,6 +28,7 @@ import { StepIndicator, Step1, Step2, Step3, Step4 } from "./components/Steps";
 import { setDemoSession, getPermissions } from "@/hooks/useUser";
 import type { UserSession, UserType } from "@/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
+import { normalizeSaudiMobile } from "@/lib/services/saudiMobile";
 import {
   isCorporateIdentityComplete,
   corporateSignupMetadata,
@@ -68,7 +69,7 @@ export default function RegisterClientPage() {
   const canNext = () => {
     if (step === 1) return clientType !== null;
     if (step === 2) {
-      if (!(formData.email && formData.phone)) return false;
+      if (!(formData.email && normalizeSaudiMobile(formData.phone))) return false;
       // Owner ruling §3ج. Before this gate, «التالي» advanced with every
       // corporate field blank — which is how a company row reaches the
       // database carrying nothing but the «شركة جديدة» placeholder.
@@ -156,7 +157,7 @@ export default function RegisterClientPage() {
         {/* ── Form panel ── */}
         <div className="flex flex-1 flex-col">
           {/* Top bar */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-dark-border md:px-8">
+          <div className="safe-top flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-dark-border md:px-8">
             <a href="/" className="flex items-center gap-2 md:hidden">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-royal text-white">
                 <Scales weight="bold" size={18} />
@@ -265,9 +266,11 @@ export default function RegisterClientPage() {
                             // handle_new_user() reads it from metadata — see
                             // supabase/migrations/20260827_signup_contact_fields.sql,
                             // WITHOUT WHICH THIS KEY IS STILL IGNORED.
-                            const phoneE164 = formData.phone
-                              ? `+${formData.countryCode || "966"}${formData.phone.replace(/\D/g, "")}`
-                              : null;
+                            const phoneE164 = normalizeSaudiMobile(formData.phone);
+                            if (!phoneE164) {
+                              setAuthError(isAr ? "رقم الجوال غير صحيح" : "Invalid mobile number");
+                              return;
+                            }
                             const { error } = await supabase.auth.signUp({
                               email: formData.email,
                               password: formData.password,

@@ -37,7 +37,7 @@ export default function ContractReviewerPage() {
     ...ISSUES.map((issue) => `- ${issue.pass ? "مطابق" : "يحتاج تعديل"}: ${issue.text}${issue.note ? ` — ${issue.note}` : ""}`),
   ].join("\n");
   return (
-    <div className={`${bg} min-h-screen`} dir="rtl">
+    <div className={`${bg} min-h-[100dvh]`} dir="rtl">
       <div className="max-w-3xl mx-auto p-4 md:p-8 space-y-6">
         <div className="flex items-center gap-3">
           <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDark ? "bg-teal-500/10" : "bg-teal-50"}`}><FileText size={22} weight="duotone" className={isDark ? "text-teal-400" : "text-teal-600"} /></div>

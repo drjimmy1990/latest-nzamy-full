@@ -2,13 +2,16 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import {
-  PaperPlaneTilt, Microphone, Robot, User, Sparkle,
-  Lightning, Books, Paperclip, X, CaretDown,
-  ClockCountdown, MagicWand, Warning, Copy, ThumbsUp, ThumbsDown,
+  PaperPlaneTilt, Microphone, Robot, User,
+  Lightning, Books,
+  MagicWand, Warning, Copy, ThumbsUp, ThumbsDown,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { VoiceInput } from "@/components/ui/VoiceInput";
+import { useUser } from "@/hooks/useUser";
 import EscalationFlow from "@/components/EscalationFlow";
 import AdvisoryTemplateNotice from "@/components/ai/AdvisoryTemplateNotice";
 
@@ -53,7 +56,7 @@ function detectLegalArea(text: string): string | undefined {
 
 // ─── Mock AI response generator ──────────────────────────────────────────
 
-function getMockResponse(question: string): { text: string; sources: string[] } {
+function getMockResponse(): { text: string; sources: string[] } {
   return {
     text: `بناءً على نظام العمل السعودي وأحدث لوائحه التنفيذية، إليك الإجابة التفصيلية حول سؤالك:\n\n**أولاً: الإطار النظامي**\nيُعدّ هذا الموضوع من المسائل التي تناولها نظام العمل الصادر بالمرسوم الملكي رقم م/51 بتاريخ 1426/8/23هـ، في المواد من (73) إلى (81) منه.\n\n**ثانياً: الشروط والضوابط**\n• يجب توافر ثلاثة عناصر أساسية: الركن المادي، والركن المعنوي، والإضرار بالطرف الآخر.\n• تُقدَّر الأضرار من قِبل المحكمة العمالية وفق ملابسات كل قضية.\n• مدة التقادم: لا تُسمع الدعوى بعد مرور 12 شهراً من تاريخ انتهاء العقد.\n\n**ثالثاً: توصيتي**\nيُنصح بتوثيق جميع المراسلات وجمع الإثباتات قبل رفع الدعوى. هل تودّ أن أساعدك في صياغة مذكرة مبدئية؟`,
     sources: ["نظام العمل م/51 • المادة 77", "لائحة العمل التنفيذية • الباب الخامس", "قرار وزارة الموارد البشرية رقم 4786"],
@@ -166,6 +169,8 @@ function AIMessageBubble({ msg, isDark, isLatest }: { msg: Message; isDark: bool
 export default function AIConsultPage() {
   const { isDark, lang } = useTheme();
   const isRTL = lang === "ar";
+  const router = useRouter();
+  const { userType } = useUser();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "sys-1",
@@ -185,6 +190,13 @@ export default function AIConsultPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
+  // Lawyers get a dedicated advanced assistant — keep them off the client-facing consult chat.
+  useEffect(() => {
+    if (userType === "lawyer") {
+      router.replace("/ai/assistant");
+    }
+  }, [userType, router]);
+
   function now() {
     const d = new Date();
     return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -201,7 +213,7 @@ export default function AIConsultPage() {
 
     await new Promise(r => setTimeout(r, 1800));
 
-    const { text: aiText, sources } = getMockResponse(q);
+    const { text: aiText, sources } = getMockResponse();
     const aiMsg: Message = {
       id: (Date.now() + 1).toString(),
       role: "ai",
@@ -221,8 +233,25 @@ export default function AIConsultPage() {
   const bg = isDark ? "bg-zinc-950" : "bg-zinc-50/50";
   const hasMessages = messages.some(m => m.role !== "system");
 
+  // Redirect is in-flight — render nothing to avoid a flash of the client chat UI.
+  if (userType === "lawyer") return null;
+
   return (
-    <div className={`flex flex-col h-[100dvh] md:h-[100dvh] ${bg}`} dir={isRTL ? "rtl" : "ltr"}>
+    /* AILayout wraps this page in a dashboard layout whose <main> carries
+       pt-[calc(env(safe-area-inset-top)+60px)] for the mobile header, plus an
+       inner p-4 (md:p-6). A flat 100dvh therefore started ~76px down the
+       screen and ran that much past the bottom, carrying the composer — send,
+       mic, attach — off the visible area entirely with no way to scroll to it.
+       Each breakpoint now subtracts exactly what its own layout added.
+       lg: is left as it was: there the header is hidden (lg:pt-0), and
+       changing desktop is not in scope for a phone bug. */
+    <div
+      className={`flex flex-col ${bg}
+        h-[calc(100dvh-env(safe-area-inset-top)-60px-2rem)]
+        md:h-[calc(100dvh-env(safe-area-inset-top)-60px-3rem)]
+        lg:h-[100dvh]`}
+      dir={isRTL ? "rtl" : "ltr"}
+    >
 
       {/* ── Header ────────────────────────────────────────────────────────────── */}
       <div className={`flex-shrink-0 flex items-center justify-between px-5 py-3.5 border-b ${isDark ? "border-white/[0.06]" : "border-zinc-200"}`}>
@@ -358,10 +387,11 @@ export default function AIConsultPage() {
       {/* ── Input ─────────────────────────────────────────────────────────────── */}
       <div className={`flex-shrink-0 border-t px-4 pb-4 pt-3 ${isDark ? "border-white/[0.06]" : "border-zinc-200"}`}>
         <div className={`flex items-end gap-2 rounded-2xl border px-3 py-2 ${isDark ? "border-white/[0.08] bg-zinc-900/80 focus-within:border-[#C8A762]/40" : "border-zinc-200 bg-white focus-within:border-[#0B3D2E]/40 shadow-sm"}`}>
-          <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-            className={`flex-shrink-0 p-1 ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"}`}>
-            <Paperclip size={17} />
-          </motion.button>
+          {/* The paperclip that used to sit here had no onClick and no upload
+              path behind it on this route — a dead affordance of exactly the
+              kind the owner ledger flags elsewhere. Removed rather than left
+              looking usable; it comes back when there is something to attach
+              to. */}
 
           <textarea
             ref={textareaRef}
@@ -374,10 +404,18 @@ export default function AIConsultPage() {
             style={{ maxHeight: "140px" }}
           />
 
-          <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-            className={`flex-shrink-0 p-1 ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"}`}>
-            <Microphone size={17} />
-          </motion.button>
+          {/* Was a Microphone glyph with no handler. VoiceInput is the real
+              component behind dictation in 23 other places in this codebase,
+              and it returns null where SpeechRecognition is unavailable — so
+              inside the Capacitor WebView the control disappears instead of
+              pretending to listen. */}
+          <div className="flex-shrink-0">
+            <VoiceInput
+              onTranscript={(text) => setInput((prev) => (prev ? prev + " " + text : text))}
+              lang={isRTL ? "ar-SA" : "en-US"}
+              compact
+            />
+          </div>
 
           <motion.button
             whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}

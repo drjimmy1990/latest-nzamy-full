@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
 import { bucketFirmMemberWorkload, type FirmMemberWorkloadCounts } from "@/lib/services/firmMemberWorkload";
+import { FIRM_TEAM_VIEW_ROLES, resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
 
 /**
  * /api/v1/firm/members/workload — sibling of `../route.ts` and
@@ -46,15 +46,6 @@ function saudiToday(): string {
   }).format(new Date());
 }
 
-/** Duplicated from `../route.ts` on purpose — see that file's own copy. */
-async function resolveOwnFirm(supabase: SupabaseClient, userId: string) {
-  return supabase
-    .from("firm_profiles")
-    .select("id, owner_user_id")
-    .eq("owner_user_id", userId)
-    .maybeSingle();
-}
-
 // Same order of magnitude as `/api/v1/lawyer/tasks`'s own cap
 // (`Math.min(limitParam, 1000)`) — chosen to stay under PostgREST's
 // `db-max-rows`, which truncates a `.limit()` above it SILENTLY (no error,
@@ -67,17 +58,20 @@ const ROW_LIMIT = 1000;
 
 export async function GET(_request: NextRequest) {
   try {
-    const auth = await assertRole(["firm"]);
+    const auth = await assertRole();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 
-    const { data: firm, error: firmError } = await resolveOwnFirm(supabase, user.id);
+    const { data: firm, error: firmError } = await resolveCallerFirm(supabase, user.id);
     if (firmError) {
       console.error("[firm/members/workload GET] firm_profiles lookup failed:", firmError.message, firmError.code);
       return NextResponse.json({ error: "تعذّر تحميل أعباء عمل الفريق." }, { status: 500 });
     }
     if (!firm) {
       return NextResponse.json({ error: "لا يوجد مكتب مرتبط بهذا الحساب." }, { status: 404 });
+    }
+    if (auth.userType !== "admin" && !FIRM_TEAM_VIEW_ROLES.has(firm.role)) {
+      return NextResponse.json({ error: "غير مصرح — صلاحيات غير كافية" }, { status: 403 });
     }
 
     const { data: memberRows, error: membersError } = await supabase

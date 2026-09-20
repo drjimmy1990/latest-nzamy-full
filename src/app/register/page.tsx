@@ -274,7 +274,7 @@ export default function RegisterPage() {
         initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="sticky top-0 z-40 border-b border-slate-200/60 dark:border-dark-border bg-white/80 dark:bg-dark-card/80 backdrop-blur-lg"
+        className="safe-top sticky top-0 z-40 border-b border-slate-200/60 dark:border-dark-border bg-white/80 dark:bg-dark-card/80 backdrop-blur-lg"
       >
         <div className="mx-auto max-w-5xl px-5 py-3.5 flex items-center justify-between">
           {/* Logo */}

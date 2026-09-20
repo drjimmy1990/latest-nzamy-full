@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Eye,
@@ -28,6 +29,7 @@ import { setDemoSession, useUser } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isDemoUiEnabled } from "@/lib/runtimeMode";
+import { normalizeSaudiMobile } from "@/lib/services/saudiMobile";
 
 const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
 
@@ -95,8 +97,8 @@ const t = {
     feat1: "Advanced AI legal assistance",
     feat2: "Full data security & encryption",
     feat3: "Verified & vetted lawyers",
-    stat1Label: "Legal Services",
-    stat1Value: "370+",
+    stat1Label: "Laws & regulations",
+    stat1Value: "386",
     stat2Label: "Support",
     stat2Value: "24/7",
     stat3Label: "Secure",
@@ -175,13 +177,18 @@ export default function LoginPage() {
     try {
       // ── Supabase Mode: Real authentication ──────────────────────────────────
       if (BACKEND_MODE === "supabase") {
+        const phone = inputMode === "phone" ? normalizeSaudiMobile(identifier) : null;
+        const credentials = inputMode === "email"
+          ? { email: identifier.trim(), password: password.trim() }
+          : phone
+            ? { phone, password: password.trim() }
+            : null;
+        if (!credentials) {
+          setError(isAr ? "أدخل رقم جوال سعودي صحيح" : "Enter a valid Saudi mobile number");
+          return;
+        }
         const supabase = createClient();
-        const { data, error: authError } = await supabase.auth.signInWithPassword({
-          ...(inputMode === "email"
-            ? { email: identifier.trim() }
-            : { phone: identifier.trim() }),
-          password: password.trim(),
-        });
+        const { data, error: authError } = await supabase.auth.signInWithPassword(credentials);
 
         if (authError || !data.user) {
           setError(isAr ? "بيانات الدخول غير صحيحة" : "Invalid credentials");
@@ -195,7 +202,7 @@ export default function LoginPage() {
           .eq("id", data.user.id)
           .single();
 
-        const userType = profile?.user_type ?? data.user.user_metadata?.user_type ?? "individual";
+        const userType = profile?.user_type ?? "individual";
         const dest = getDashboardRoute(userType);
         router.push(dest);
         return;
@@ -292,8 +299,8 @@ export default function LoginPage() {
             className="relative z-10 flex items-center justify-between"
           >
             <a href="/" className="flex items-center gap-3 group">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white backdrop-blur-sm border border-white/20 group-hover:bg-white/20 transition-colors">
-                <Scales weight="bold" size={22} />
+              <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-white/10 p-1 text-white backdrop-blur-sm transition-colors group-hover:bg-white/20">
+                <Image src="/logo.png" alt={txt.logo} width={44} height={44} className="h-full w-full object-contain" priority />
               </div>
               <span className="font-brand text-2xl font-bold tracking-tight text-white">
                 {txt.logo}
@@ -395,10 +402,10 @@ export default function LoginPage() {
         {/* ── RIGHT FORM PANEL ── */}
         <div className="flex flex-1 flex-col min-h-screen">
           {/* Mobile header */}
-          <div className="flex items-center justify-between px-5 py-4 md:hidden border-b border-slate-200 dark:border-dark-border">
+          <div className="safe-top flex items-center justify-between px-5 py-4 md:hidden border-b border-slate-200 dark:border-dark-border">
             <a href="/" className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-royal text-white">
-                <Scales weight="bold" size={18} />
+              <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-royal p-1 text-white">
+                <Image src="/logo.png" alt={txt.logo} width={36} height={36} className="h-full w-full object-contain" priority />
               </div>
               <span className="font-brand text-xl font-bold text-royal">{txt.logo}</span>
             </a>
@@ -518,6 +525,14 @@ export default function LoginPage() {
                       onChange={(e) => setIdentifier(e.target.value)}
                       placeholder={inputMode === "email" ? txt.emailPlaceholder : txt.phonePlaceholder}
                       dir={inputMode === "phone" ? "ltr" : dir}
+                      // Without these the phone tab still opens a full QWERTY
+                      // keyboard on iOS, and password managers cannot see the
+                      // field at all.
+                      autoComplete={inputMode === "email" ? "email" : "tel"}
+                      inputMode={inputMode === "email" ? "email" : "tel"}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
                     />
                   </div>
@@ -545,6 +560,10 @@ export default function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={txt.passwordPlaceholder}
+                      autoComplete="current-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-10" : "pl-10 pr-10"}`}
                     />
                     <button
@@ -624,7 +643,8 @@ export default function LoginPage() {
                 </div>
               </motion.div>
 
-              {/* Google button */}
+              {/* Google button: only render it when this environment has an auth backend. */}
+              {BACKEND_MODE === "supabase" && (
               <motion.div variants={itemVariants} className="mb-6">
                 <motion.button
                   whileHover={{ scale: 1.015, boxShadow: "0 4px 20px -4px rgba(0,0,0,0.12)" }}
@@ -637,6 +657,7 @@ export default function LoginPage() {
                   <span>{txt.google}</span>
                 </motion.button>
               </motion.div>
+              )}
 
               {/* Register link */}
               <motion.div variants={itemVariants} className="text-center">

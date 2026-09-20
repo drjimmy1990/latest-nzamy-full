@@ -7,6 +7,7 @@ import {
   CaretRight, Scales, Trash,
   PencilSimple, Plus, X, Note,
 } from "@phosphor-icons/react";
+
 import Link from "next/link";
 import { PRIORITY_CONFIG, CATEGORY_CONFIG } from "../_data";
 import type { Task, TaskStatus } from "../_types";

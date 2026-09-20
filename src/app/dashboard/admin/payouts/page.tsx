@@ -163,7 +163,11 @@ export default function PayoutsPage() {
 
       {/* Table */}
       <div className={`${card} overflow-hidden`}>
-        <table className="w-full text-right">
+        {/* overflow-hidden on the card keeps its rounded corners; the table
+            needs its own x-scroller or 8-9 columns are simply cut off on a
+            phone with no way to reach them. */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-right">
           <thead><tr className={`border-b ${isDark?"border-white/[0.06]":"border-slate-100"}`}>
             <th className="px-4 py-3 w-8"></th>
             {["الرقم","المزود","المبلغ","البنك","IBAN","الحالة","التاريخ","إجراء"].map(h=>(
@@ -206,6 +210,7 @@ export default function PayoutsPage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

@@ -41,7 +41,7 @@ export default function JurisdictionAnalyzerPage() {
     ...RESULT.checks.map((check) => `- ${check.pass ? "متحقق" : "تنبيه"}: ${check.label} — ${check.note}`),
   ].join("\n");
   return (
-    <div className={`${bg} min-h-screen`} dir="rtl">
+    <div className={`${bg} min-h-[100dvh]`} dir="rtl">
       <div className="max-w-3xl mx-auto p-4 md:p-8 space-y-6">
         <div className="flex items-center gap-3">
           <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDark ? "bg-indigo-500/10" : "bg-indigo-50"}`}>

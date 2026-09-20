@@ -77,21 +77,43 @@ const DUAL_HEADERS: Record<string, { title: string; subtitle: string; footer: st
   }
 };
 
+// ─── اللغات المدعومة فعلياً — قائمة صريحة، بلا افتراض صامت للفرنسية ─────────────
+// TRANSLATIONS/DUAL_HEADERS above only cover these three dictionaries. Any other
+// requested language must NOT silently render mislabeled French text.
+type ParaDict = Record<string, { title: string; body: string }>;
+type HeaderMeta = { title: string; subtitle: string; footer: string };
+
+const SUPPORTED_CUSTOM_LANGS: { test: (norm: string) => boolean; dict: ParaDict; header: HeaderMeta }[] = [
+  { test: n => n.includes("فرنس") || n.includes("French"), dict: TRANSLATIONS["الفرنسية"], header: DUAL_HEADERS["الفرنسية"] },
+  { test: n => n.includes("ألمان") || n.includes("German"), dict: TRANSLATIONS["الألمانية"], header: DUAL_HEADERS["الألمانية"] },
+  { test: n => n.includes("هند") || n.includes("Hindi"), dict: TRANSLATIONS["الهندية"], header: DUAL_HEADERS["الهندية"] },
+];
+
 // ─── دالة استخراج النص المترجم المناسب ────────────────────────────────────────
-function getTranslationForLang(langName: string) {
+// Returns null for any unsupported language — callers must render an honest
+// "not yet supported" state instead of guessing.
+function getTranslationForLang(langName: string): ParaDict | null {
   const norm = (langName || "").trim();
-  if (norm.includes("فرنس") || norm.includes("French")) return TRANSLATIONS["الفرنسية"];
-  if (norm.includes("ألمان") || norm.includes("German")) return TRANSLATIONS["الألمانية"];
-  if (norm.includes("هند") || norm.includes("Hindi")) return TRANSLATIONS["الهندية"];
-  return TRANSLATIONS["الفرنسية"]; // افتراضي فرنسي لمظهر عالي الجودة
+  return SUPPORTED_CUSTOM_LANGS.find(l => l.test(norm))?.dict ?? null;
 }
 
-function getHeaderForLang(langName: string) {
+function getHeaderForLang(langName: string): HeaderMeta | null {
   const norm = (langName || "").trim();
-  if (norm.includes("فرنس") || norm.includes("French")) return DUAL_HEADERS["الفرنسية"];
-  if (norm.includes("ألمان") || norm.includes("German")) return DUAL_HEADERS["الألمانية"];
-  if (norm.includes("هند") || norm.includes("Hindi")) return DUAL_HEADERS["الهندية"];
-  return DUAL_HEADERS["الفرنسية"];
+  return SUPPORTED_CUSTOM_LANGS.find(l => l.test(norm))?.header ?? null;
+}
+
+// Honest placeholder shown instead of mislabeled French for unsupported languages
+function unsupportedHeaderMeta(langName: string): HeaderMeta {
+  return {
+    title: "—",
+    subtitle: `الترجمة إلى ${langName || "هذه اللغة"} قيد التفعيل`,
+    footer: "النسخة العربية هي المرجع",
+  };
+}
+
+function resolveTrans(dict: ParaDict | null, langName: string, para: { id: string; title: string; body: string }) {
+  if (dict) return dict[para.id] || para;
+  return { title: "—", body: `الترجمة إلى ${langName || "هذه اللغة"} قيد التفعيل — النسخة العربية هي المرجع.` };
 }
 
 // ─── مكوّن محرر البنود ثنائي العمود المتقابل المطور ────────────────────────────────
@@ -161,9 +183,9 @@ export function BilingualParagraphEditor({
         </AnimatePresence>
 
         {editNote && (
-          <div className={`mt-3 flex items-center gap-1 text-[10px] ${isDark ? "text-amber-400" : "text-amber-600"}`}>
-            <PencilLine size={10} />
-            <span>تم إضافة تعديل على هذا البند الثنائي</span>
+          <div className={`mt-3 rounded-lg border-r-2 px-2.5 py-1.5 text-[11px] leading-relaxed flex items-start gap-1.5 ${isDark ? "border-amber-400 bg-amber-900/10 text-amber-300" : "border-amber-500 bg-amber-50 text-amber-800"}`}>
+            <PencilLine size={11} className="flex-shrink-0 mt-0.5" />
+            <span>🖊 تعديل مطلوب: {editNote}</span>
           </div>
         )}
       </div>
@@ -205,7 +227,7 @@ export function BilingualParagraphEditor({
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   className={`flex items-center gap-1 text-[10px] ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
                   <CheckCircle size={11} weight="fill" />
-                  تم حفظ التعديل المقترح — سيُطبَّق بالتوازن في النسخة النهائية
+                  تم إلحاق تعديلك بالبند أعلاه
                 </motion.div>
               )}
             </div>
@@ -228,7 +250,6 @@ export function StepDrafting({
   contractLanguage,
   customLanguageName,
   customLanguageLayout,
-  customLanguageBase
 }: StepDraftingProps) {
   const card = isDark ? "bg-zinc-900 border border-white/[0.07] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const inputCls = `w-full rounded-xl border px-4 py-2.5 text-[13px] outline-none ${isDark
@@ -236,9 +257,9 @@ export function StepDrafting({
       : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400"
     }`;
 
-  // تحضير الترجمة المخصصة
+  // تحضير الترجمة المخصصة — dict قد تكون null إن كانت اللغة غير مدعومة بعد
   const dict = getTranslationForLang(customLanguageName);
-  const headerMeta = getHeaderForLang(customLanguageName);
+  const headerMeta = getHeaderForLang(customLanguageName) ?? unsupportedHeaderMeta(customLanguageName);
 
   // دالة النسخ الحكيمة
   const handleCopy = () => {
@@ -250,7 +271,7 @@ export function StepDrafting({
           `رقم: [   ] / ١٤٤٧هـ  ·  ${headerMeta.subtitle}\n\n` +
           `======================================================\n\n` +
           CONTRACT_PARAGRAPHS.map(p => {
-            const trans = dict[p.id] || p;
+            const trans = resolveTrans(dict, customLanguageName, p);
             return `[العربية - ${p.title}]\n${p.body}\n\n[${customLanguageName || "اللغة الأجنبية"} - ${trans.title}]\n${trans.body}`;
           }).join("\n\n──────────────────────────────────────────────────────\n\n") +
           `\n\nالتوقيع: الطرف الأول: ______________ · الطرف الثاني: ______________\n` +
@@ -259,7 +280,7 @@ export function StepDrafting({
         text = `${headerMeta.title}\n` +
           `${headerMeta.subtitle}\n\n` +
           CONTRACT_PARAGRAPHS.map(p => {
-            const trans = dict[p.id] || p;
+            const trans = resolveTrans(dict, customLanguageName, p);
             return `${trans.title}\n${trans.body}`;
           }).join("\n\n") +
           `\n\n${headerMeta.footer}`;
@@ -345,7 +366,7 @@ export function StepDrafting({
         <div className="space-y-2">
           {CONTRACT_PARAGRAPHS.map((para) => {
             if (contractLanguage === "custom" && customLanguageLayout === "dual") {
-              const trans = dict[para.id] || para;
+              const trans = resolveTrans(dict, customLanguageName, para);
               return (
                 <BilingualParagraphEditor
                   key={para.id}
@@ -358,7 +379,7 @@ export function StepDrafting({
                 />
               );
             } else if (contractLanguage === "custom" && customLanguageLayout === "single") {
-              const trans = dict[para.id] || para;
+              const trans = resolveTrans(dict, customLanguageName, para);
               return (
                 <ParagraphEditor
                   key={para.id}

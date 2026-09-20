@@ -90,6 +90,9 @@ const nextConfig: NextConfig = {
    */
   async redirects() {
     return [
+      // رادار المهل أصبح تبويباً داخل مساحة الجلسات والمواعيد الموحدة.
+      { source: "/dashboard/lawyer/deadlines", destination: "/dashboard/lawyer/hearings?tab=deadlines", permanent: true },
+
       // ── Owner ١١٨ + ١١٩ — الأرشيف الموحّد ──────────────────────────────
       // The page was a «قريباً» template: no shared archive store exists. The
       // documents vault is the real store of the same material.

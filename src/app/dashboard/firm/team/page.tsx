@@ -375,11 +375,8 @@ function MemberCard({ m, isDark, card, onChangeRole, onToggleStatus }: MemberCar
 export default function FirmTeamPage() {
   const { isDark } = useTheme();
   const user = useUser();
-  // This page is reached by the firm ACCOUNT itself (UserTypeGuard on
-  // /dashboard/firm/layout.tsx), never by a lawyer with an `affiliation` to
-  // one — and the API only lets the firm OWNER (`firm_profiles.owner_user_id`)
-  // read or write this roster, an admin session always excepted. So management
-  // controls follow the same two user types the route itself accepts.
+  // Active office_admin / hr_manager members may read this roster. Mutations
+  // remain owner-only at the API/RLS boundary, so controls stay hidden for them.
   const canManage = user.userType === "firm" || user.userType === "admin";
 
   const [search, setSearch] = useState("");

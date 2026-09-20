@@ -1,15 +1,17 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
-  Gear, Robot, SlidersHorizontal, PencilSimple,
+  Robot, SlidersHorizontal, PencilSimple,
   CheckCircle, Sparkle, PlusCircle, X,
-  Notebook, Scales, Buildings,
+  Notebook, Scales,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+const SETTINGS_STORAGE_KEY = "nzamy-ai-settings";
 
 export default function AISettingsPage() {
   const { isDark } = useTheme();
@@ -25,7 +27,29 @@ export default function AISettingsPage() {
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
 
+  // Load previously saved settings on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.style === "string") setStyle(parsed.style);
+      if (typeof parsed.specialization === "string") setSpecialization(parsed.specialization);
+      if (typeof parsed.instructions === "string") setInstructions(parsed.instructions);
+      if (Array.isArray(parsed.templates)) {
+        setTemplates(parsed.templates.filter((t: unknown): t is string => typeof t === "string"));
+      }
+    } catch {
+      // corrupted/unavailable storage — keep defaults
+    }
+  }, []);
+
   function save() {
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ style, specialization, instructions, templates }));
+    } catch {
+      // localStorage unavailable (private mode / quota) — the toast below still confirms the in-session save
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   }
@@ -49,7 +73,7 @@ export default function AISettingsPage() {
         <div className="flex items-start gap-2.5">
           <Robot size={15} className="flex-shrink-0 mt-0.5 text-[#C8A762]" />
           <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-            نظامي AI يقرأ هذه التعليمات قبل كل تفاعل — الاستشارة والصياغة والبحث ستعكس أسلوبك وتخصصك تلقائياً.
+            ستُطبَّق هذه التعليمات على أدوات نظامي AI عند تفعيلها.
           </p>
         </div>
       </div>

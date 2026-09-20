@@ -14,9 +14,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <UserTypeGuard allowedTypes={["admin"]}>
       <div className="flex h-[100dvh] overflow-hidden bg-[#0a0a0f]" dir="rtl" suppressHydrationWarning>
         <AdminSidebar />
-        <main className="flex-1 overflow-y-auto">
+        {/* AdminSidebar now renders a fixed lg:hidden top bar (56px + notch).
+            lg:pt-0 leaves the desktop console exactly as it was. */}
+        <div className="print-main flex-1 overflow-y-auto pt-[calc(env(safe-area-inset-top)+56px)] lg:pt-0">
           {children}
-        </main>
+        </div>
       </div>
     </UserTypeGuard>
   );

@@ -73,8 +73,13 @@ function drawShareCard(
   const w = canvas.width;
   const h = canvas.height;
 
-  // Premium Font Family
-  const fontFam = "Cairo, Tajawal, system-ui, -apple-system, sans-serif";
+  // Premium Font Family — next/font scopes the real Cairo family behind the
+  // --font-cairo variable, so resolve it at draw time; canvas cannot read CSS vars.
+  const cairoResolved =
+    typeof document !== "undefined"
+      ? getComputedStyle(document.documentElement).getPropertyValue("--font-cairo").trim()
+      : "";
+  const fontFam = `${cairoResolved ? `${cairoResolved}, ` : ""}Cairo, Tajawal, system-ui, -apple-system, sans-serif`;
 
   // 1. Draw Royal Green Gradient background
   const grad = ctx.createLinearGradient(0, 0, 0, h);

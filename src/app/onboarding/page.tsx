@@ -30,6 +30,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { createClient } from "@/lib/supabase/client";
+import { normalizeSaudiMobile } from "@/lib/services/saudiMobile";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import {
   buildNotificationPreferences,
@@ -226,39 +227,6 @@ function notifCopy(cat: NotifCategory, userType: UserType, isAr: boolean) {
   // `getWizardCategories` can return is listed above, and a new one showing its
   // Arabic label in English mode is a far smaller failure than a blank row.
   return en ? { label: en.label, desc: en.desc } : { label: cat.label, desc: cat.description };
-}
-
-// ── Phone ─────────────────────────────────────────────────────────────────────
-
-/**
- * Arabic-Indic (٠١٢…) and Extended Arabic-Indic (۰۱۲…) digits → ASCII, so a
- * number typed on an Arabic keyboard is not rejected as malformed.
- */
-function toAsciiDigits(value: string): string {
-  return value.replace(/[\u0660-\u0669\u06f0-\u06f9]/g, (d) => {
-    const code = d.charCodeAt(0);
-    const base = code >= 0x06f0 ? 0x06f0 : 0x0660;
-    return String(code - base);
-  });
-}
-
-/**
- * A Saudi mobile in E.164 (`+9665XXXXXXXX`), or `null` when the input is not
- * one. Accepts `05…`, `5…`, `966…`, `00966…` and `+966…`, with spaces, dashes
- * and Arabic-Indic digits.
- *
- * NOTE: this is a deliberate duplicate of the same function in
- * src/app/api/v1/profile/route.ts. The server is what actually guards the
- * column; this copy exists so the wizard can refuse before it submits, and the
- * two must stay identical. If a third caller appears, extract them into one
- * module.
- */
-function normalizeSaudiMobile(raw: string): string | null {
-  let v = toAsciiDigits(raw).replace(/[\s()\u200e\u200f-]/g, "");
-  if (v.startsWith("00966")) v = `+${v.slice(2)}`;
-  else if (v.startsWith("966")) v = `+${v}`;
-  else if (/^0?5\d{8}$/.test(v)) v = `+966${v.replace(/^0/, "")}`;
-  return /^\+9665\d{8}$/.test(v) ? v : null;
 }
 
 // ── Errors ────────────────────────────────────────────────────────────────────

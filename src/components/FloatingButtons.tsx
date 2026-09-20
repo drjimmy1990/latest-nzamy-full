@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { motion, useMotionValue, useTransform, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   WhatsappLogo, WarningCircle, X,
   PaperPlaneRight, Phone, CheckCircle, Stack, SignIn,
@@ -415,26 +415,36 @@ function isLegalItemDetailPage(pathname: string | null): boolean {
   return false;
 }
 
-/**
- * The one surface the support FAB must not render on.
+/** Dashboard actions must remain unobstructed by the public support/order FAB. */
+const FAB_SUPPRESSED_PREFIXES = ["/dashboard"] as const;
+
+/*
+ * Auth routes, added 2026-09-16 for owner-ledger item ١٦٨.
  *
- * The first draft of this fix suppressed it across `/dashboard`, `/settings`
- * and `/ai` — every authenticated screen. That was wrong, and the call graph
- * is what said so: `FloatingButtons → CreateClient` is a real execution flow.
- * The widget is not a marketing badge on a signed-in screen; `WhatsAppWidget`
- * takes `isLoggedIn`, skips the account-type step for a known user, greets them
- * by name, and can open a service request. Hiding it product-wide would have
- * deleted an ordering path to fix a stacking bug.
+ * Kept SEPARATE from the list above, and applied as a `lg:` visibility class
+ * rather than an early return, because the two cases are not the same problem.
+ * Dashboard actions must stay unobstructed at any width, so the component is
+ * not mounted there at all. On an auth screen the button is only
+ * a problem at phone width, where it lands squarely on top of the «سجّل مجاناً»
+ * link that /login exists to surface — at desktop width it sits in empty
+ * margin and harms nothing. Suppressing it outright would have changed the
+ * desktop site to fix a phone bug.
  *
- * So the suppression is one route subtree — the ADMIN console — and it is there
- * for a reason positioning cannot fix: `/dashboard/admin` is staff-facing, a
- * "request a legal service" CTA has no audience on it, and shot 07 shows the
- * button physically covering a user row's «تحقق» button and its overflow menu.
- *
- * The other complaints in the owner's screenshots are about STACKING, not
- * presence, and are fixed by the z-index below rather than by deletion.
+ * `/auth` covers the OAuth callback subtree.
  */
-const FAB_SUPPRESSED_PREFIXES = ["/dashboard/admin"] as const;
+const FAB_MOBILE_SUPPRESSED_PREFIXES = [
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/auth",
+] as const;
+
+export function isFabMobileSuppressedPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return FAB_MOBILE_SUPPRESSED_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
 
 export function isFabSuppressedPath(pathname: string | null): boolean {
   if (!pathname) return false;
@@ -496,12 +506,13 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   const { category: autoCategory, isLoggedIn, loading: categoryLoading } = useAutoCategory();
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const [isPrimaryInstance, setIsPrimaryInstance] = useState(true);
   const [waOpen,     setWaOpen]     = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [aiModeActive, setAiModeActive] = useState(false);
   const [userCategory, setUserCategory] = useState<UserCategory>(null);
   const effectiveUserCategory = userCategory ?? autoCategory;
+  // Admins manage the platform, not client relationships — the WhatsApp FAB is noise for them.
+  const isAdmin = effectiveUserCategory === "admin";
 
   // A category picked manually (guest chooser, or an earlier session) must
   // not survive the guest→logged-in transition — once the real session
@@ -534,22 +545,6 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   }, []);
   useEffect(() => { setAiModeActive(false); }, [pathname]);
 
-  useEffect(() => {
-    const refreshPrimaryInstance = () => {
-      const isInsideMain = rootRef.current ? document.getElementById("main-content")?.contains(rootRef.current) : false;
-      if (isInsideMain) {
-        setIsPrimaryInstance(true);
-      } else {
-        const hasLocalInstance = document.querySelector('#main-content [data-nzamy-floating-root="true"]') !== null;
-        setIsPrimaryInstance(!hasLocalInstance);
-      }
-    };
-    refreshPrimaryInstance();
-    const observer = new MutationObserver(refreshPrimaryInstance);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
   const waBtnSide   = isRTL ? "left-6" : "right-6";
   const waPanelSide = isRTL ? "left-6" : "right-6";
   const panelBottom = "bottom-24 md:bottom-20";
@@ -573,10 +568,11 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
 
   return (
-    <div ref={rootRef} data-nzamy-floating-root="true" className={`${isPrimaryInstance && !aiModeActive ? "" : "hidden"} print:hidden`}>
-      {/* WhatsApp Panel — withheld while the session is still resolving, so a
-          logged-in user can never be shown the guest category chooser first. */}
-      {!categoryLoading && (
+    <div ref={rootRef} data-nzamy-floating-root="true" className={`${aiModeActive ? "hidden" : ""} print:hidden`}>
+      {/* WhatsApp Panel — hidden for admins (owner-edits), and withheld while the
+          session is still resolving, so a logged-in user can never be shown the
+          guest category chooser first (main). */}
+      {!isAdmin && !categoryLoading && (
         <WhatsAppWidget
           open={waOpen} onClose={closeWa}
           bottomPos={panelBottom} panelSide={waPanelSide}
@@ -605,7 +601,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
           is matrix row 168's complaint in its most severe form.
           40 is above page content and below every overlay, which is the only
           band a persistent FAB belongs in. */}
-      <div className={`fixed bottom-20 md:bottom-6 ${waBtnSide} z-40 flex flex-col items-center gap-2.5 print:hidden`}>
+      <div className={`fixed bottom-20 md:bottom-6 ${waBtnSide} z-40 ${isFabMobileSuppressedPath(pathname) ? "hidden lg:flex" : "flex"} flex-col items-center gap-2.5 print:hidden safe-bottom`}>
 
         {/* ── Orange Report mini-FAB (only on library pages) ── */}
         {reportConfig && (
@@ -645,40 +641,42 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
           </AnimatePresence>
         )}
 
-        {/* ── Green WhatsApp main FAB ── */}
-        <div className="relative group">
-          {/* Tooltip */}
-          <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold shadow-lg border border-white/10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">
-            {buttonTooltip}
+        {/* ── Green WhatsApp main FAB (hidden for admins) ── */}
+        {!isAdmin && (
+          <div className="relative group">
+            {/* Tooltip */}
+            <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold shadow-lg border border-white/10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">
+              {buttonTooltip}
+            </div>
+
+            {/* Pulse ring */}
+            {!waOpen && (
+              <motion.span
+                className="absolute inset-0 rounded-full bg-[#25D366] pointer-events-none"
+                animate={{ scale: [1, 1.4], opacity: [0.5, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeOut" }}
+              />
+            )}
+
+            <button
+              onClick={() => { waOpen ? closeWa() : openWa(); setReportOpen(false); }}
+              className={`relative w-14 h-14 rounded-full shadow-[0_8px_20px_rgba(37,211,102,0.3)] flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95
+                ${waOpen
+                  ? "bg-[#25D366] dark:bg-[#1fad55] ring-2 ring-white ring-offset-2"
+                  : "bg-[#25D366] hover:bg-[#1ebe5d] dark:bg-[#1fad55] dark:hover:bg-[#1a9e4d]"
+                }`}
+              aria-label={buttonTooltip}
+            >
+              <WhatsappLogo size={28} weight="fill" className="text-white drop-shadow-md" />
+            </button>
           </div>
-
-          {/* Pulse ring */}
-          {!waOpen && (
-            <motion.span
-              className="absolute inset-0 rounded-full bg-[#25D366] pointer-events-none"
-              animate={{ scale: [1, 1.4], opacity: [0.5, 0] }}
-              transition={{ duration: 3, repeat: Infinity, ease: "easeOut" }}
-            />
-          )}
-
-          <button
-            onClick={() => { waOpen ? closeWa() : openWa(); setReportOpen(false); }}
-            className={`relative w-14 h-14 rounded-full shadow-[0_8px_20px_rgba(37,211,102,0.3)] flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95
-              ${waOpen
-                ? "bg-[#25D366] dark:bg-[#1fad55] ring-2 ring-white ring-offset-2"
-                : "bg-[#25D366] hover:bg-[#1ebe5d] dark:bg-[#1fad55] dark:hover:bg-[#1a9e4d]"
-              }`}
-            aria-label={buttonTooltip}
-          >
-            <WhatsappLogo size={28} weight="fill" className="text-white drop-shadow-md" />
-          </button>
-        </div>
+        )}
 
       </div>
 
       {/* ── Floating Draft Cart FAB (Restricted to legal item detail pages) ── */}
       {showDraftFab && (
-        <div className={`fixed bottom-20 md:bottom-6 ${isRTL ? "left-[88px]" : "right-[88px]"} z-40 print:hidden`}>
+        <div className={`fixed bottom-20 md:bottom-6 ${isRTL ? "left-[88px]" : "right-[88px]"} z-40 print:hidden safe-bottom`}>
           <div className="relative group">
             {/* Tooltip */}
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold shadow-lg border border-white/10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">

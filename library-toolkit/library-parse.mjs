@@ -4,15 +4,15 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Orchestrates the four TypeScript parsers under scripts/parsers/.
  * Each parser reads raw .md files from the library content root and writes
- * JSON to library-toolkit/output/.
+ * JSON to a fresh, explicit output directory outside the repo and input.
  *
  * USAGE  (from project root)
- *   npm run library:parse -- --input ./content/library
- *   npm run library:parse -- --input ./content/library --type laws
- *   node library-toolkit/library-parse.mjs --input ./content/library --type decrees
+ *   npm run library:parse -- --input ./content/library --output /safe/new-dir
+ *   npm run library:parse -- --input ./content/library --output /safe/new-dir --type laws
  *
  * Required:
  *   --input <path>    Path to the library content root directory
+ *   --output <path>   Fresh output directory outside the repo and input
  *
  * Optional:
  *   --type <type>     Parse only one type: laws | decrees | precedents | feqh
@@ -22,28 +22,40 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
+import { assertFreshExternalOutput, protectedPackageRoot } from "./safe-output-path.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const OUTPUT_DIR = path.join(__dirname, "output");
 
 // ── Parse CLI args ─────────────────────────────────────────────────────────
-function getArg(name) {
-  const flag = process.argv.find((a) => a.startsWith(`--${name}`));
-  if (!flag) return null;
-  if (flag.includes("=")) return flag.split("=").slice(1).join("=");
-  const idx = process.argv.indexOf(flag);
-  return process.argv[idx + 1] || null;
+const args = process.argv.slice(2);
+const options = new Map();
+for (let i = 0; i < args.length; i++) {
+  const flag = args[i];
+  if (!["--input", "--output", "--type"].includes(flag) || options.has(flag)) {
+    console.error(`✗ Unknown or duplicate argument: ${flag}`);
+    process.exit(2);
+  }
+  const value = args[++i];
+  if (!value || value.startsWith("--")) {
+    console.error(`✗ Missing value for ${flag}`);
+    process.exit(2);
+  }
+  options.set(flag, value);
 }
+const INPUT = options.get("--input");
+const OUTPUT_RAW = options.get("--output");
+const OUTPUT_DIR = OUTPUT_RAW ? path.resolve(OUTPUT_RAW) : null;
+const TYPE = options.get("--type");
 
-const INPUT = getArg("input");
-const TYPE = getArg("type");
-
-if (!INPUT) {
-  console.error("\n✗ Missing required --input <path> (path to library content root).");
-  console.error("  Example: npm run library:parse -- --input ./content/library");
-  process.exit(1);
+if (!INPUT || !OUTPUT_DIR) {
+  console.error("\n✗ Required: --input <library-root> --output <fresh-dir-outside-repo>.");
+  process.exit(2);
+}
+if (!path.isAbsolute(OUTPUT_RAW)) {
+  console.error("\n✗ --output must be an absolute path outside the developer package.");
+  process.exit(2);
 }
 
 const VALID_TYPES = ["laws", "decrees", "precedents", "feqh"];
@@ -61,29 +73,42 @@ const ARABIC_DIRS = {
 };
 
 // The 4 Arabic category folders may sit directly under --input OR nested under
-// "نماذج هيكل الأقسام الرئيسية/" (the 2026-07-15 layout). Resolve to the
-// category folder if found at either level; else fall back to inputRoot so the
-// recursive parser still runs (rather than silently mixing categories).
+// "نماذج هيكل الأقسام الرئيسية/". A single-category input may itself be the
+// category root; if another category is present, refuse the fallback to avoid
+// silently mixing types.
 const NESTED_TIER = "نماذج هيكل الأقسام الرئيسية";
 function resolveCategoryRoot(inputRoot, type) {
   const direct = path.join(inputRoot, ARABIC_DIRS[type]);
   if (fs.existsSync(direct)) return direct;
   const nested = path.join(inputRoot, NESTED_TIER, ARABIC_DIRS[type]);
   if (fs.existsSync(nested)) return nested;
+  const otherTypes = Object.entries(ARABIC_DIRS).filter(([t]) => t !== type)
+    .filter(([, dir]) => fs.existsSync(path.join(inputRoot, dir)) || fs.existsSync(path.join(inputRoot, NESTED_TIER, dir)));
+  if (otherTypes.length > 0) {
+    throw new Error(`Category ${type} missing while other categories exist; refusing mixed-type fallback.`);
+  }
   return inputRoot;
 }
 
 function main() {
   const inputRoot = path.resolve(ROOT, INPUT);
-  if (!fs.existsSync(inputRoot)) {
+  if (!fs.existsSync(inputRoot) || !fs.statSync(inputRoot).isDirectory()) {
     console.error(`\n✗ Input directory not found: ${inputRoot}`);
     process.exit(1);
   }
-
-  // Ensure output directory exists
-  if (!fs.existsSync(OUTPUT_DIR)) {
-    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  try { assertFreshExternalOutput(OUTPUT_DIR, [protectedPackageRoot(ROOT), inputRoot]); }
+  catch (error) {
+    console.error(`\n✗ ${error.message}`);
+    process.exit(2);
   }
+
+  const tsx = path.join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
+  if (!fs.existsSync(tsx)) {
+    console.error("\n✗ Local tsx missing; run npm ci first.");
+    process.exit(2);
+  }
+
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
   const types = TYPE ? [TYPE] : VALID_TYPES;
 
@@ -102,7 +127,9 @@ function main() {
 
     // Resolve the category folder (direct child or nested under the
     // "نماذج هيكل الأقسام الرئيسية/" tier) so --input test/library-last works.
-    const parserInput = resolveCategoryRoot(inputRoot, type);
+    let parserInput;
+    try { parserInput = resolveCategoryRoot(inputRoot, type); }
+    catch (error) { console.error(`  ✗ ${error.message}`); failed++; continue; }
     console.log(`  Input path: ${parserInput}`);
 
     const parserScript = path.join(ROOT, "scripts", "parsers", `parse-${type}.ts`);
@@ -112,15 +139,16 @@ function main() {
       continue;
     }
 
-    const cmd = `npx tsx "${parserScript}" --input "${parserInput}" --output "${OUTPUT_DIR}"`;
-    console.log(`  Running: ${cmd}`);
+    const commandArgs = [parserScript, "--input", parserInput, "--output", OUTPUT_DIR];
+    console.log(`  Running local tsx: ${parserScript}`);
 
     try {
-      execSync(cmd, { cwd: ROOT, stdio: "inherit" });
+      const result = spawnSync(process.execPath, [tsx, ...commandArgs], { cwd: ROOT, stdio: "inherit", shell: false });
+      if (result.error || result.status !== 0) throw result.error || new Error(`exit ${result.status}`);
       console.log(`  ✔ ${type} parsed successfully`);
       success++;
     } catch (e) {
-      console.error(`  ✗ ${type} parser failed (exit code ${e.status})`);
+      console.error(`  ✗ ${type} parser failed (${e.message})`);
       failed++;
     }
   }

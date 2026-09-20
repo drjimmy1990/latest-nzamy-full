@@ -36,10 +36,10 @@ export default function ClientDashboardLayout({
       <div className="min-h-[100dvh] bg-surface dark:bg-dark-bg" dir="rtl" suppressHydrationWarning>
         {/* SharedSidebar renders its own mobile top-header (60px) + desktop sidebar + mobile drawer */}
         <SharedSidebar />
-        {/* pt-[60px] on mobile matches SharedSidebar mobile header; lg:pt-0 on desktop (sidebar is side-mounted) */}
-        <main className="lg:mr-64 pt-[60px] lg:pt-0 min-h-[100dvh]">
+        {/* pt-[calc(env(safe-area-inset-top)+60px)] on mobile matches SharedSidebar mobile header; lg:pt-0 on desktop (sidebar is side-mounted) */}
+        <div className="print-main lg:mr-64 pt-[calc(env(safe-area-inset-top)+60px)] lg:pt-0 min-h-[100dvh]">
           <div className="p-4 md:p-6">{children}</div>
-        </main>
+        </div>
           </div>
     </UserTypeGuard>
   );

@@ -6,7 +6,7 @@ import {
   MagnifyingGlass,
   CaretDown,
   ChatCircle,
-  Phone,
+  WhatsappLogo,
   EnvelopeSimple,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
@@ -390,11 +390,13 @@ export default function FAQPage() {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <a
-                href="tel:+966555979607"
+                href="https://wa.me/966560655552"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-2 bg-royal text-white px-6 py-3 rounded-xl font-medium text-sm hover:bg-[#0a3328] transition-colors"
               >
-                <Phone size={18} />
-                {isRTL ? "اتصل بنا" : "Call Us"}
+                <WhatsappLogo size={18} weight="fill" />
+                {isRTL ? "تواصل معنا عبر واتساب" : "Message us on WhatsApp"}
               </a>
               <a
                 href="mailto:support@nezamy.sa"

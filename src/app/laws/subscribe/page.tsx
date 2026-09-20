@@ -394,7 +394,7 @@ export default function LawsSubscribePage() {
                         {yearly ? plan.priceYearly : plan.price}
                       </span>
                       {!(yearly ? plan.priceYearly : plan.price).includes("/") && (
-                        <span className={`text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+                        <span className="text-[11px] text-zinc-400">
                           {yearly ? t.perYear : t.perMonth}
                         </span>
                       )}

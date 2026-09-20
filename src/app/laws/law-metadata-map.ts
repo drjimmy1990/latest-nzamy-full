@@ -232,7 +232,7 @@ export async function fetchLawMetadata(slug: string): Promise<LawMetaEntry> {
         if (ch.articles) {
           totalArticles += ch.articles.length;
           for (const a of ch.articles) {
-            if (a.executiveReg) hasExecReg = true;
+            if (a.regulations && a.regulations.length > 0) hasExecReg = true;
           }
         }
       }
@@ -256,7 +256,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "evidence-law": {
     document_type: "نظام",
     section_code: "00",
-    section_name: "القسم الإجرائي والقضائي",
+    section_name: "الإجرائي والقضائي",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/43) وتاريخ 1443/6/26هـ",
     has_executive_reg: false,
@@ -274,7 +274,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "civil-procedure-law": {
     document_type: "نظام",
     section_code: "00",
-    section_name: "القسم الإجرائي والقضائي",
+    section_name: "الإجرائي والقضائي",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: true,
     total_articles: 314,
@@ -293,7 +293,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "administrative-procedures-law": {
     document_type: "نظام",
     section_code: "00",
-    section_name: "القسم الإجرائي والقضائي",
+    section_name: "الإجرائي والقضائي",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     law_status: "active",
@@ -302,7 +302,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "execution-law": {
     document_type: "نظام_ولائحة",
     section_code: "00",
-    section_name: "القسم الإجرائي والقضائي",
+    section_name: "الإجرائي والقضائي",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: true,
     law_status: "active",
@@ -311,7 +311,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "court-costs-law": {
     document_type: "نظام_ولائحة",
     section_code: "00",
-    section_name: "القسم الإجرائي والقضائي",
+    section_name: "الإجرائي والقضائي",
     issuing_authority: "وزير العدل",
     has_executive_reg: true,
     law_status: "active",
@@ -320,7 +320,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "lawyering-law": {
     document_type: "نظام_ولائحة",
     section_code: "00",
-    section_name: "القسم الإجرائي والقضائي",
+    section_name: "الإجرائي والقضائي",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/38) وتاريخ 1422/7/28هـ",
     has_executive_reg: true,
@@ -331,7 +331,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "procedures-law": {
     document_type: "نظام",
     section_code: "01",
-    section_name: "القسم الجنائي والعقوبات",
+    section_name: "الجنائي والعقوبات",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/39) وتاريخ 1422/7/28هـ",
     has_executive_reg: false,
@@ -341,7 +341,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "قرار-النائب-العام-بشأن-الجرائم-الكبيرة-الموجبة-للتوقيف-ومذكرته-الإيضاحية": {
     document_type: "قرار",
     section_code: "01",
-    section_name: "القسم الجنائي والعقوبات",
+    section_name: "الجنائي والعقوبات",
     issuing_authority: "النائب العام",
     has_executive_reg: false,
     law_status: "active",
@@ -350,7 +350,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "مكافحة-الرشوة": {
     document_type: "نظام",
     section_code: "01",
-    section_name: "القسم الجنائي والعقوبات",
+    section_name: "الجنائي والعقوبات",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     law_status: "active",
@@ -359,7 +359,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "anti-narcotics-law": {
     document_type: "نظام",
     section_code: "01",
-    section_name: "القسم الجنائي والعقوبات",
+    section_name: "الجنائي والعقوبات",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: true,
     law_status: "active",
@@ -368,7 +368,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "الأسلحة-والذخائر": {
     document_type: "نظام",
     section_code: "01",
-    section_name: "القسم الجنائي والعقوبات",
+    section_name: "الجنائي والعقوبات",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     law_status: "active",
@@ -377,7 +377,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "هيئة-الرقابة-ومكافحة-الفساد": {
     document_type: "نظام",
     section_code: "01",
-    section_name: "القسم الجنائي والعقوبات",
+    section_name: "الجنائي والعقوبات",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     law_status: "active",
@@ -386,7 +386,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "الانضباط-الوظيفي": {
     document_type: "نظام",
     section_code: "02",
-    section_name: "القسم الإداري والخدمة المدنية",
+    section_name: "الإداري والخدمة المدنية",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     law_status: "active",
@@ -396,7 +396,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "الهيئة-العامة-للولاية-على-أموال-القاصرين-ومن-في-حكمهم": {
     document_type: "نظام_ولائحة",
     section_code: "03",
-    section_name: "القسم المدني والأحوال الشخصية",
+    section_name: "المدني والأحوال الشخصية",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: true,
     law_status: "active",
@@ -405,7 +405,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "civil-transactions-law": {
     document_type: "نظام",
     section_code: "03",
-    section_name: "القسم المدني والأحوال الشخصية",
+    section_name: "المدني والأحوال الشخصية",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/191) وتاريخ 1444/11/29هـ",
     has_executive_reg: false,
@@ -425,7 +425,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "companies-law": {
     document_type: "نظام_ولائحة",
     section_code: "04",
-    section_name: "القسم التجاري والشركات",
+    section_name: "التجاري والشركات",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/132) وتاريخ 1443/12/1هـ",
     issuanceDate: "1/12/1443هـ",
@@ -450,7 +450,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "commercial-law": {
     document_type: "نظام_ولائحة",
     section_code: "04",
-    section_name: "القسم التجاري والشركات",
+    section_name: "التجاري والشركات",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: true,
     law_status: "active",
@@ -459,7 +459,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "competition-law": {
     document_type: "نظام",
     section_code: "04",
-    section_name: "القسم التجاري والشركات",
+    section_name: "التجاري والشركات",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     law_status: "active",
@@ -468,7 +468,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "الامتياز-التجاري": {
     document_type: "نظام",
     section_code: "04",
-    section_name: "القسم التجاري والشركات",
+    section_name: "التجاري والشركات",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     law_status: "active",
@@ -478,7 +478,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "labor-law": {
     document_type: "نظام_ولائحة",
     section_code: "06",
-    section_name: "القسم العمالي والتأمينات",
+    section_name: "العمل والتأمينات",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/51) وتاريخ 1426/8/23هـ",
     latestAmendmentDecree: "مرسوم ملكي (م/44) وتاريخ 1446/2/8هـ",
@@ -492,7 +492,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "real-estate-law": {
     document_type: "نظام",
     section_code: "07",
-    section_name: "القسم العقاري والبناء",
+    section_name: "العقاري والبناء والمقاولات",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     law_status: "active",
@@ -501,7 +501,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "استئجار-الدولة-للعقار": {
     document_type: "نظام",
     section_code: "07",
-    section_name: "القسم العقاري والبناء",
+    section_name: "العقاري والبناء والمقاولات",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     law_status: "active",
@@ -510,7 +510,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "نزع-ملكية-العقارات-للمنفعة-العامة": {
     document_type: "نظام",
     section_code: "07",
-    section_name: "القسم العقاري والبناء",
+    section_name: "العقاري والبناء والمقاولات",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     law_status: "active",
@@ -519,7 +519,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "رسوم-الأراضي-البيضاء-والعقارات-الشاغرة": {
     document_type: "نظام",
     section_code: "07",
-    section_name: "القسم العقاري والبناء",
+    section_name: "العقاري والبناء والمقاولات",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     law_status: "active",
@@ -528,8 +528,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   // ━━━ البيانات والتقنية (05 / 08+) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   "data-protection-law": {
     document_type: "نظام",
-    section_code: "05",
-    section_name: "قسم حماية البيانات والتقنية",
+    section_code: "12",
+    section_name: "التقنية والاتصالات والفضاء",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/19) وتاريخ 1443/2/9هـ",
     has_executive_reg: false,
@@ -569,7 +569,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "rawd-al-murbi": {
     section_code: "99",
-    section_name: "الكتب الفقهية والقانونية",
+    section_name: "المبادئ القضائية والتطبيقات",
     issuing_authority: "الشيخ منصور البهوتي",
     law_status: "active",
     related_systems: [
@@ -583,8 +583,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "ord-01": {
     document_type: "قرار",
-    section_code: "07",
-    section_name: "القسم العقاري والبناء",
+    section_code: "04",
+    section_name: "التجاري والشركات",
     issuing_authority: "الديوان الملكي",
     law_status: "active",
     related_systems: [
@@ -599,7 +599,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "ord-05": {
     document_type: "تعميم",
     section_code: "07",
-    section_name: "القسم العقاري والبناء",
+    section_name: "العقاري والبناء والمقاولات",
     issuing_authority: "الهيئة العامة للعقار",
     law_status: "active",
     related_systems: [
@@ -612,8 +612,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   } as LawMetaEntry,
 
   "prec-moj-01": {
-    section_code: "98",
-    section_name: "المبادئ القضائية",
+    section_code: "99",
+    section_name: "المبادئ القضائية والتطبيقات",
     issuing_authority: "المحكمة العليا",
     law_status: "active",
     related_systems: [
@@ -626,8 +626,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   } as LawMetaEntry,
 
   "prec-01": {
-    section_code: "98",
-    section_name: "المبادئ القضائية",
+    section_code: "99",
+    section_name: "المبادئ القضائية والتطبيقات",
     issuing_authority: "المحكمة العليا",
     law_status: "active",
     related_systems: [
@@ -640,8 +640,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   } as LawMetaEntry,
 
   "4dfa9563-100f-488a-bc25-ac6000addc7b": {
-    section_code: "18",
-    section_name: "الثقافة والرياضة والشباب",
+    section_code: "21",
+    section_name: "الرياضة والشباب",
     issuing_authority: "مجلس الوزراء",
     law_status: "active",
     related_systems: [
@@ -651,7 +651,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "64bb9b3c-4c52-464a-b356-b1e9008cffc3": {
     section_code: "06",
-    section_name: "العمل والتأمينات الاجتماعية",
+    section_name: "العمل والتأمينات",
     issuing_authority: "الملك",
     law_status: "active",
     related_systems: [
@@ -693,7 +693,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "law-trademarks": {
     document_type: "نظام_ولائحة",
     section_code: "05",
-    section_name: "الملكية الفكرية والتقنية",
+    section_name: "الملكية الفكرية",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/21) وتاريخ 1423/8/28هـ",
     has_executive_reg: true,
@@ -703,8 +703,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "law-civil-aviation": {
     document_type: "نظام_ولائحة",
-    section_code: "10",
-    section_name: "النقل والمواصلات",
+    section_code: "13",
+    section_name: "النقل والخدمات اللوجستية",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/44) وتاريخ 1426/10/29هـ",
     has_executive_reg: true,
@@ -717,8 +717,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "law-personal-data-protection": {
     document_type: "نظام_ولائحة",
-    section_code: "05",
-    section_name: "الملكية الفكرية والتقنية",
+    section_code: "12",
+    section_name: "التقنية والاتصالات والفضاء",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/19) وتاريخ 1443/2/9هـ",
     has_executive_reg: true,
@@ -742,8 +742,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "law-antiquities-museums": {
     document_type: "نظام_ولائحة",
-    section_code: "18",
-    section_name: "الثقافة والرياضة والشباب",
+    section_code: "27",
+    section_name: "الثقافة والترفيه",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/26) وتاريخ 1394/6/23هـ",
     has_executive_reg: true,
@@ -753,8 +753,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "law-arbitration": {
     document_type: "نظام_ولائحة",
-    section_code: "00",
-    section_name: "القسم الإجرائي والقضائي",
+    section_code: "28",
+    section_name: "التحكيم وتسوية النزاعات",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/34) وتاريخ 1433/6/24هـ",
     has_executive_reg: true,
@@ -767,8 +767,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "law-audiovisual-media": {
     document_type: "نظام_ولائحة",
-    section_code: "19",
-    section_name: "الإعلام والاتصالات",
+    section_code: "15",
+    section_name: "الإعلام والنشر",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/40) وتاريخ 1440/3/7هـ",
     has_executive_reg: true,
@@ -778,8 +778,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "law-basic-governance": {
     document_type: "نظام",
-    section_code: "02",
-    section_name: "الإداري والخدمة المدنية",
+    section_code: "17",
+    section_name: "الدستوري والسيادي",
     issuing_authority: "الملك",
     issuanceDecree: "المرسوم الملكي رقم (أ/90) وتاريخ 1412/8/27هـ",
     has_executive_reg: false,
@@ -789,8 +789,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "law-car-syndicate-1372": {
     document_type: "نظام",
-    section_code: "10",
-    section_name: "النقل والمواصلات",
+    section_code: "13",
+    section_name: "النقل والخدمات اللوجستية",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: false,
     total_articles: 64,
@@ -800,7 +800,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "law-criminal-procedures": {
     document_type: "نظام",
     section_code: "01",
-    section_name: "القسم الجنائي والعقوبات",
+    section_name: "الجنائي والعقوبات",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/39) وتاريخ 1422/7/28هـ",
     has_executive_reg: false,
@@ -824,8 +824,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "law-fodder": {
     document_type: "نظام_ولائحة",
-    section_code: "14",
-    section_name: "الزراعة والبيئة والموارد الطبيعية",
+    section_code: "18",
+    section_name: "الغذائي والزراعي والحيواني",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: true,
     total_articles: 39,
@@ -834,8 +834,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "law-health-insurance": {
     document_type: "نظام_ولائحة",
-    section_code: "16",
-    section_name: "الصحة والدواء",
+    section_code: "10",
+    section_name: "الصحي والدوائي",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/10) وتاريخ 1420/8/1هـ",
     has_executive_reg: true,
@@ -908,7 +908,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "law-real-estate-brokerage": {
     document_type: "نظام_ولائحة",
     section_code: "07",
-    section_name: "العقاري والبناء",
+    section_name: "العقاري والبناء والمقاولات",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/22) وتاريخ 1440/6/17هـ",
     has_executive_reg: true,
@@ -931,7 +931,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "law-tourism": {
     document_type: "نظام_ولائحة",
-    section_code: "12",
+    section_code: "25",
     section_name: "السياحة والضيافة",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/8) وتاريخ 1441/2/28هـ",
@@ -942,8 +942,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "law-water": {
     document_type: "نظام_ولائحة",
-    section_code: "14",
-    section_name: "الزراعة والبيئة والموارد الطبيعية",
+    section_code: "11",
+    section_name: "البيئة والمياه",
     issuing_authority: "مجلس الوزراء",
     issuanceDecree: "مرسوم ملكي رقم (م/6) وتاريخ 1441/2/28هـ",
     has_executive_reg: true,
@@ -954,7 +954,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   "order-royal-9437": {
     document_type: "أمر سامي",
     section_code: "00",
-    section_name: "القسم الإجرائي والقضائي",
+    section_name: "الإجرائي والقضائي",
     issuing_authority: "الديوان الملكي",
     issuanceDecree: "أمر سامي رقم (9437) وتاريخ 1439/2/26هـ",
     has_executive_reg: false,
@@ -977,8 +977,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "reg-electricity-energy-ministry": {
     document_type: "لائحة",
-    section_code: "13",
-    section_name: "الطاقة والمياه والبيئة",
+    section_code: "14",
+    section_name: "الطاقة",
     issuing_authority: "وزارة الطاقة",
     has_executive_reg: false,
     total_articles: 35,
@@ -987,7 +987,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "reg-national-elearning-center": {
     document_type: "لائحة",
-    section_code: "17",
+    section_code: "20",
     section_name: "التعليم والتدريب",
     issuing_authority: "وزارة التعليم",
     has_executive_reg: false,

@@ -158,7 +158,7 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
         {cart.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 gap-2">
             <BookOpen size={32} className={isDark ? "text-zinc-700" : "text-slate-300"} />
-            <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+            <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>
               {isRTL ? "لم تُضف أي مواد بعد — تنتقل بين الأنظمة وتجمع ما تحتاجه" : "No articles yet — browse laws and collect what you need"}
             </p>
           </div>
@@ -317,7 +317,7 @@ function DraftItem({ e, isSelected, onToggle, onRemove, isDark, isRTL }: { e: Ca
 
       {/* ─ article text preview ─ */}
       {e.isArticleAdded && (
-        <p className={`px-3 pb-2 text-[10px] line-clamp-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{e.articleText.split("\n")[0]}</p>
+        <p className={`px-3 pb-2 text-[10px] line-clamp-1 ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{e.articleText.split("\n")[0]}</p>
       )}
 
       {/* ─ exec reg row ─ */}

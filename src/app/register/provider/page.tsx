@@ -31,6 +31,7 @@ import { StepIndicator, Step1, Step2, Step3, Step4, Step5 } from "./components/S
 import { setDemoSession, getPermissions } from "@/hooks/useUser";
 import type { UserSession, UserType } from "@/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
+import { normalizeSaudiMobile } from "@/lib/services/saudiMobile";
 
 const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
 
@@ -217,7 +218,10 @@ export default function RegisterProviderPage() {
     // completes locally for all five roles.
     if (step === 1) return providerType !== null && (BACKEND_MODE !== "supabase" || emailSignUpWorks);
     if (step === 2) return !!(formData.licenseNumber && formData.experience && formData.city);
-    if (step === 3) return !!(formData.email && formData.phone && formData.password && formData.password.length >= 8);
+    if (step === 3) {
+      const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email || "");
+      return emailValid && normalizeSaudiMobile(formData.phone) !== null && (formData.password?.length ?? 0) >= 8;
+    }
     if (step === 4) return !!selectedPlan;
     return true;
   };
@@ -387,10 +391,15 @@ export default function RegisterProviderPage() {
                           setAuthError(null);
                           try {
                             const supabase = createClient();
+                            const normalizedPhone = normalizeSaudiMobile(formData.phone);
+                            if (!normalizedPhone) {
+                              setAuthError(isAr ? "رقم الجوال غير صحيح" : "Invalid mobile number");
+                              setAuthLoading(false);
+                              return;
+                            }
                             const { error } = await supabase.auth.signUp({
                               email: formData.email,
                               password: formData.password,
-                              phone: formData.phone ? `+${formData.countryCode || "966"}${formData.phone}` : undefined,
                               options: {
                                 data: {
                                   user_type: userType,
@@ -398,6 +407,7 @@ export default function RegisterProviderPage() {
                                   full_name: displayName,
                                   tier,
                                   sub_role: subRole,
+                                  phone: normalizedPhone,
                                   country_code: formData.country || "SA",
                                   city: formData.city || null,
                                   credit_balance: 0,

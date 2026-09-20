@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Gavel, BookOpen, ArrowRight, CaretLeft,
   Clock, CheckCircle, Buildings, Scales, FileText, Warning,
-  Info, Shield, Globe, MapPin, Envelope, Phone, ArrowSquareOut,
+  Info, Shield, Globe, MapPin, Envelope, ArrowSquareOut,
   ChatCircleDots, ThumbsUp, ThumbsDown, Users, Star, CaretDown,
   Lightning, Robot, SealCheck, HouseSimple,
   ClipboardText, Sparkle, Question, BookBookmark,
@@ -211,7 +211,6 @@ export default function ProceduresPage() {
                         <div className="grid grid-cols-2 gap-2">
                           {[
                             { icon: Envelope, label: "البريد", value: answer.circuitData.email },
-                            { icon: Phone, label: "الهاتف", value: answer.circuitData.phone },
                             { icon: MapPin, label: "الموقع", value: answer.circuitData.floor },
                             { icon: Globe, label: "ناجز", value: answer.circuitData.najizCode },
                           ].map((item, i) => (
@@ -341,13 +340,6 @@ export default function ProceduresPage() {
                                   className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border transition-colors ${isDark ? "border-white/[0.06] hover:border-blue-500/30 text-zinc-500 hover:text-blue-400" : "border-slate-100 hover:border-blue-200 text-slate-500 hover:text-blue-600"}`}>
                                   <Envelope size={11} className="text-blue-500 flex-shrink-0" />
                                   <span className="truncate">{circuit.email.split("@")[0]}</span>
-                                </a>
-                              )}
-                              {circuit.phone && (
-                                <a href={`tel:${circuit.phone}`}
-                                  className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
-                                  <Phone size={11} className="text-emerald-500 flex-shrink-0" />
-                                  {circuit.phone}
                                 </a>
                               )}
                               {circuit.floor && (

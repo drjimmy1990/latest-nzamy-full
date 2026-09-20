@@ -25,6 +25,7 @@ import { SidebarFeatureRequest } from "@/components/FeatureRequestBanner";
 import HijriDateWidget from "@/components/HijriDateWidget";
 import UpgradeModal from "@/components/UpgradeModal";
 import { GlobalSearch } from "@/components/dashboard/GlobalSearch";
+import { isSharedClientIntakePath } from "@/lib/auth/routeAccess";
 
 import {
   inferUserTypeFromPath,
@@ -38,7 +39,7 @@ export default function SharedSidebar() {
   const {
     userType: sessionUserType, subRole, name, credits, creditsMax,
     dashboardMode, active_roles, governmentRole, businessRole,
-    affiliation, isDemoBypass, country, loading, isLoggedIn
+    affiliation, businessMembership, isDemoBypass, country, loading, isLoggedIn
   } = useUser();
 
   // Whether the two inputs `useSubscription().can()` reads have settled.
@@ -118,7 +119,10 @@ export default function SharedSidebar() {
 
   // Infer user type from URL path first — session userType is fallback.
   const pathUserType = inferUserTypeFromPath(pathname);
-  const userType = pathUserType ?? sessionUserType;
+  const isBusinessIntake =
+    isSharedClientIntakePath(pathname) &&
+    (sessionUserType === "corporate" || !!businessMembership);
+  const userType = isBusinessIntake ? "corporate" : pathUserType ?? sessionUserType;
 
   const groups = getSidebarByUserType(
     userType, mode, subRole, active_roles ?? [],
@@ -134,23 +138,26 @@ export default function SharedSidebar() {
   if (!groups.length) return null;
 
   const sidebarContent = (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex min-h-0 flex-col h-full overflow-hidden">
 
       {/* User header */}
-      <div className={`px-4 pt-5 pb-4 border-b ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+      <div className={`px-4 py-3 border-b ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
         {/* Date chip — above name with breathing room */}
-        <div className="mb-3">
+        <div className="mb-1.5 text-[11px] leading-none">
           <HijriDateWidget />
         </div>
         <div className="flex items-center gap-3">
           <Link href="/settings" className="flex items-center gap-3 flex-1 group hover:opacity-80 transition-opacity">
-            <div className="w-9 h-9 rounded-xl bg-royal flex items-center justify-center text-white text-sm font-bold flex-shrink-0 group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-xl bg-royal flex items-center justify-center text-white text-xs font-bold flex-shrink-0 group-hover:scale-105 transition-transform">
               {(name || "م").charAt(0)}
             </div>
             <div className="min-w-0">
               <p className={`text-sm font-bold truncate ${isDark ? "text-white" : "text-slate-800"}`}>{name || "مستخدم"}</p>
               <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
                 {/* Show multi-role badge if active_roles exist */}
+                {/* Role label only — the explicit "الإعدادات" nav item below is the
+                    single Settings entry point; repeating the word here read as
+                    a duplicate "Settings" link to users. */}
                 {active_roles && active_roles.length > 0
                   ? (<span className="text-[#C8A762]">
                       {active_roles.map(r =>
@@ -159,9 +166,9 @@ export default function SharedSidebar() {
                         r === "arbitrator" ? "محكّم" : r
                       ).join(" + ")}
                       {" • "}
-                      {userType ? (isAr ? `إعدادات ${getRoleLabel(userType, true)}` : `${getRoleLabel(userType, false)} Settings`) : ""}
+                      {userType ? getRoleLabel(userType, isAr) : ""}
                     </span>)
-                  : userType ? (isAr ? `إعدادات ${getRoleLabel(userType, true)}` : `${getRoleLabel(userType, false)} Settings`) : ""
+                  : userType ? getRoleLabel(userType, isAr) : ""
                 }
               </p>
             </div>
@@ -177,7 +184,7 @@ export default function SharedSidebar() {
 
       {/* Mode toggle (lawyer/firm only) */}
       {showModeToggle && (
-        <div className="pt-3">
+        <div className="pt-1.5">
           <DashboardModeToggle isAr={isAr} mode={mode} onModeChange={handleModeChange} />
         </div>
       )}
@@ -190,7 +197,7 @@ export default function SharedSidebar() {
           (shots 16, 18, 19, 21, 26). The padding lets the final item scroll
           clear of the boundary; the seam itself is drawn as a border on the
           search block so it reads as a divider rather than a cut. */}
-      <div className="flex-1 overflow-y-auto py-3 pb-8 px-2 scrollbar-thin">
+      <div className="flex-1 min-h-0 overflow-y-auto py-2 pb-8 px-2 scrollbar-thin">
         {groups.map((group, i) => (
           <SidebarSection
             key={i}
@@ -238,7 +245,7 @@ export default function SharedSidebar() {
       {/* Mobile Top Header */}
       <header
         className={`
-          lg:hidden fixed top-0 right-0 left-0 z-[45] h-[60px]
+          lg:hidden fixed top-0 right-0 left-0 z-[45] min-h-[60px] safe-top
           flex items-center justify-between px-4
           ${isDark
             ? "bg-zinc-950 border-b border-white/[0.06] shadow-sm"
@@ -314,7 +321,7 @@ export default function SharedSidebar() {
             of leaving it blank. */}
         <Link
           href={dashboardRoot}
-          className={`flex items-center gap-2.5 px-4 h-[76px] flex-shrink-0 border-b group ${
+          className={`flex items-center gap-2.5 px-4 h-14 flex-shrink-0 border-b group ${
             isDark ? "border-white/[0.06]" : "border-slate-100"
           }`}
         >

@@ -7,7 +7,6 @@ import {
   Envelope,
   MapPin,
   Clock,
-  Phone,
   ArrowLeft,
   ArrowRight,
   TwitterLogo,
@@ -121,14 +120,6 @@ export default function ContactPage() {
                   sub: isRTL ? "رد خلال دقائق" : "Reply within minutes",
                   color: "bg-green-500/10 text-green-500",
                   href: "https://wa.me/966560655552",
-                },
-                {
-                  icon: Phone,
-                  title: isRTL ? "الهاتف" : "Phone",
-                  value: "055 597 9607",
-                  sub: isRTL ? "أحد – خميس ٨ص – ١٠م" : "Sun – Thu 8am – 10pm",
-                  color: "bg-blue-500/10 text-blue-500",
-                  href: "tel:+966555979607",
                 },
                 {
                   icon: Envelope,

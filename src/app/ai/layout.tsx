@@ -111,7 +111,7 @@ export default function AILayout({ children }: { children: React.ReactNode }) {
   // fresh-session / new-tab open (before user.userType resolves) doesn't fall
   // through to the Business default. Only genuinely lawyer-exclusive tools here
   // (NOT shared tools like /ai/draft or /ai/contracts).
-  const LAWYER_AI_PREFIXES = ["/ai/collector", "/ai/brief-check"];
+  const LAWYER_AI_PREFIXES = ["/ai/collector", "/ai/brief-check", "/ai/direction-support", "/ai/vault"];
   if (LAWYER_AI_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return <LawyerDashboardLayout>{children}</LawyerDashboardLayout>;
   }
@@ -144,5 +144,8 @@ export default function AILayout({ children }: { children: React.ReactNode }) {
   }
 
   // ── 4. FALLBACK ──────────────────────────────────────────────────────────
+  if (!user.isLoggedIn) {
+    return <>{children}</>;
+  }
   return <BusinessDashboardLayout>{children}</BusinessDashboardLayout>;
 }

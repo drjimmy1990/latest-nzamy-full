@@ -27,6 +27,7 @@ import {
 // here without updating 20260826_corporate_identity_persisted.sql breaks the
 // signup trigger silently.
 import { normalizeCrNumber, isLegalRepCapacity } from "@/app/register/client/components/_corporateIdentity";
+import { normalizeSaudiMobile } from "@/lib/services/saudiMobile";
 
 // ─── Arabic error copy ────────────────────────────────────────────────────────
 // Every message this route can return reaches a user: the lawyer profile
@@ -75,52 +76,6 @@ const MAX_HEADLINE_LENGTH = 160;
  */
 function entityOwnerColumn(table: string): "owner_user_id" | "user_id" {
   return table === "micro_profiles" || table === "provider_profiles" ? "user_id" : "owner_user_id";
-}
-
-/**
- * Arabic-Indic (٠١٢…) and Extended Arabic-Indic (۰۱۲…) digits → ASCII.
- *
- * A Saudi user on an Arabic keyboard types ٠٥١٢٣٤٥٦٧٨. Without this the
- * required phone field would refuse a number the user considers correct.
- */
-function toAsciiDigits(value: string): string {
-  return value.replace(/[\u0660-\u0669\u06f0-\u06f9]/g, (d) => {
-    const code = d.charCodeAt(0);
-    const base = code >= 0x06f0 ? 0x06f0 : 0x0660;
-    return String(code - base);
-  });
-}
-
-/**
- * A Saudi mobile number in E.164 (`+9665XXXXXXXX`), or `null` when the input is
- * not one.
- *
- * Accepts what people actually type — Arabic-Indic digits, spaces, dashes, and
- * a `05`, `5`, `966`, `00966` or `+966` prefix — and stores exactly one shape.
- *
- * It refuses rather than storing anything it cannot dial: `profiles.phone` is
- * the only number the outbound notification payload carries
- * (src/lib/n8n/payload.ts:214,218), and a junk value there would satisfy the
- * onboarding gate's non-empty check (src/lib/auth/onboardingGate.ts) while
- * being unreachable — strictly worse than leaving the column NULL, which at
- * least keeps the gate asking.
- *
- * Saudi mobiles only. A user whose only mobile is foreign cannot pass this, and
- * that is a stated limitation, not an oversight.
- *
- * NOTE: duplicated, deliberately, in src/app/onboarding/page.tsx so the wizard
- * can validate before it submits. The two copies must stay identical; if a
- * third caller appears, extract them into one module.
- */
-function normalizeSaudiMobile(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  // Strip spaces, dashes, brackets and the bidi marks a copy-paste from an RTL
-  // page can carry along.
-  let v = toAsciiDigits(raw).replace(/[\s()\u200e\u200f-]/g, "");
-  if (v.startsWith("00966")) v = `+${v.slice(2)}`;
-  else if (v.startsWith("966")) v = `+${v}`;
-  else if (/^0?5\d{8}$/.test(v)) v = `+966${v.replace(/^0/, "")}`;
-  return /^\+9665\d{8}$/.test(v) ? v : null;
 }
 
 /**

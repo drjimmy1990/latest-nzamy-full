@@ -10,7 +10,7 @@ import {
   Scales, ShieldCheck, Database, CaretDown, ClipboardText,
   Money, Megaphone, Star, Globe, BookOpen, Article,
   Storefront, ToggleRight, Flag, Tag, UsersFour, Crown, Tray, Files,
-  Lightbulb,
+  Lightbulb, List,
 } from "@phosphor-icons/react";
 import { useNotifications } from "@/hooks/useNotifications";
 import { createClient } from "@/lib/supabase/client";
@@ -79,6 +79,15 @@ export function AdminSidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [notifOpen, setNotifOpen] = useState(false);
+  /* This sidebar was the one dashboard chrome in the product with no mobile
+     form at all: a hard w-[240px] aside with no breakpoint, no hamburger and
+     no drawer, eating 64% of a 375px screen on every admin route. It is now
+     the same element in two modes — an off-canvas drawer below lg, and the
+     original static column at lg and above, where `lg:static lg:translate-x-0`
+     restores today's layout exactly. */
+  const [mobileOpen, setMobileOpen] = useState(false);
+  // Close the drawer on navigation, or it stays over the page you just opened.
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
   const notifRef = useRef<HTMLDivElement>(null);
   // Owner item ٧٣ — the bell's "3" was a hardcoded string with no dropdown
   // behind it. `useNotifications` is the same hook Navbar.tsx already reads
@@ -129,7 +138,48 @@ export function AdminSidebar() {
   }
 
   return (
-    <aside className="w-[240px] flex-shrink-0 flex flex-col h-full border-l border-white/[0.05] bg-[#0d0d15]">
+    <>
+    {/* Mobile top bar — the hamburger this console never had. lg:hidden, so
+        the desktop console never renders it. */}
+    <header className="lg:hidden fixed top-0 right-0 left-0 z-[55] min-h-[56px] safe-top flex items-center justify-between px-4 bg-[#0d0d15] border-b border-white/[0.05]">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0B3D2E] to-[#1a6b50]">
+          <Scales size={16} weight="duotone" className="text-[#C8A762]" />
+        </div>
+        <p className="text-[13px] font-black text-white tracking-wide">نظـامي — الإدارة</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        aria-label="فتح قائمة الإدارة"
+        aria-expanded={mobileOpen}
+        /* 44x44 is Apple's minimum touch target; the old icon buttons in this
+           console were 36px. */
+        className="flex h-11 w-11 items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.06] transition-colors"
+      >
+        <List size={20} weight="bold" />
+      </button>
+    </header>
+
+    {/* Backdrop — mobile only, and only while the drawer is open. */}
+    <AnimatePresence>
+      {mobileOpen && (
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          onClick={() => setMobileOpen(false)}
+          className="lg:hidden fixed inset-0 z-[59] bg-black/60 backdrop-blur-sm"
+        />
+      )}
+    </AnimatePresence>
+
+    <aside
+      className={`
+        w-[240px] flex-shrink-0 flex flex-col h-full border-l border-white/[0.05] bg-[#0d0d15]
+        fixed inset-y-0 right-0 z-[60] overflow-y-auto safe-top transition-transform duration-300
+        ${mobileOpen ? "translate-x-0" : "translate-x-full"}
+        lg:static lg:z-auto lg:translate-x-0 lg:overflow-visible
+      `}
+    >
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/[0.05]">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#0B3D2E] to-[#1a6b50] shadow-lg">
@@ -277,5 +327,6 @@ export function AdminSidebar() {
         </Link>
       </div>
     </aside>
+    </>
   );
 }

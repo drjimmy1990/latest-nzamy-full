@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Navbar          from "@/components/Navbar";
 import Footer          from "@/components/Footer";
 import { useTheme }    from "@/components/ThemeProvider";
+import { useUser, type UserType } from "@/hooks/useUser";
 import { getPlanList, getComparisonList, faqs } from "@/constants/pricingData";
 import type { AudienceTab, Billing, CompanySize } from "@/constants/pricingData";
 
@@ -15,31 +16,49 @@ import { PricingFAQ }          from "@/components/pricing/PricingFAQ";
 import { PricingCTA }          from "@/components/pricing/PricingCTA";
 import { GovernmentRolesInfo } from "@/components/pricing/GovernmentRolesInfo";
 
+// FIX P5: package family (AudienceTab) a logged-in user's account type
+// defaults to. Guests and account types with no dedicated family (e.g.
+// "admin" — there's no admin pricing tab) fall back to "individuals", the
+// platform-wide default; the selector stays visible so anyone can still
+// browse the other families explicitly.
+const USER_TYPE_TO_AUDIENCE: Partial<Record<NonNullable<UserType>, AudienceTab>> = {
+  lawyer:     "lawyers",
+  firm:       "firms",
+  individual: "individuals",
+  corporate:  "companies",
+  micro:      "micro",
+  government: "government",
+  ngo:        "ngo",
+  provider:   "providers",
+};
+
+function audienceForUserType(userType: UserType | null | undefined): AudienceTab {
+  return (userType && USER_TYPE_TO_AUDIENCE[userType]) || "individuals";
+}
+
 export default function PricingPage() {
   const { lang } = useTheme();
   const isAr = lang === "ar";
+  const { userType, isLoggedIn, loading: userLoading } = useUser();
 
   const [billing,  setBilling]  = useState<Billing>("monthly");
   const [companySize,  setCompanySize]  = useState<CompanySize>("small");
   const [hasLegalDept, setHasLegalDept] = useState(false);
   const [libraryMode,  setLibraryMode]  = useState(false);
 
-  // FIX B8: smart-default audience tab based on logged-in user role
-  const [audience, setAudience] = useState<AudienceTab>(() => {
-    if (typeof window === "undefined") return "individuals";
-    try {
-      const raw = localStorage.getItem("nzamy_demo_role");
-      if (raw && raw !== "guest") {
-        const parsed = JSON.parse(raw) as { userType?: string };
-        if (parsed.userType === "lawyer")    return "lawyers";
-        if (parsed.userType === "firm")      return "firms";
-        if (parsed.userType === "corporate") return "companies";
-        if (parsed.userType === "micro")     return "micro";
-        if (parsed.userType === "provider")  return "providers";
-      }
-    } catch {}
-    return "individuals";
-  });
+  // FIX P5: smart-default audience tab based on logged-in user role.
+  // Starts at the guest default — same on server and client — so the first
+  // client render matches the SSR markup exactly (audience also toggles
+  // extra DOM, e.g. the library-mode toggle, so guessing synchronously from
+  // localStorage here caused a hydration mismatch). Once useUser() resolves
+  // client-side, the effect below applies the real default — but only until
+  // the user explicitly picks a tab themselves, so we never clobber that.
+  const [audience, setAudience] = useState<AudienceTab>("individuals");
+  const userPickedRef = useRef(false);
+  useEffect(() => {
+    if (userLoading || userPickedRef.current || !isLoggedIn) return;
+    setAudience(audienceForUserType(userType));
+  }, [userLoading, isLoggedIn, userType]);
 
   const planList       = getPlanList(audience, isAr, { hasLegalDept, companySize, libraryMode });
   const comparisonList = getComparisonList(audience, isAr);
@@ -47,6 +66,7 @@ export default function PricingPage() {
 
   // Reset library mode when switching away from lawyers/firms
   function handleSetAudience(a: typeof audience) {
+    userPickedRef.current = true; // explicit user choice — stop auto-defaulting
     if (a !== "lawyers" && a !== "firms") setLibraryMode(false);
     setAudience(a);
   }

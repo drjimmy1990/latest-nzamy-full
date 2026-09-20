@@ -5,6 +5,7 @@ import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { ShieldWarning, ArrowLeft } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
+import { isAllowedByTypeOrMembership } from "@/lib/auth/entityMembership";
 
 export function UserTypeGuard({
   allowedTypes,
@@ -28,8 +29,14 @@ export function UserTypeGuard({
     );
   }
 
-  // Admins can bypass type guards
-  const isAllowed = allowedTypes.includes(userSession.userType) || userSession.userType === "admin";
+  const isAllowed = isAllowedByTypeOrMembership(
+    userSession.userType,
+    allowedTypes,
+    {
+      ...(userSession.firmMembership ? { firm: userSession.firmMembership } : {}),
+      ...(userSession.businessMembership ? { business: userSession.businessMembership } : {}),
+    },
+  );
 
   if (!isAllowed) {
     return (

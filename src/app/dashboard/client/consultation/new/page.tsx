@@ -438,6 +438,7 @@ export default function NewConsultationPage() {
         // `Number(payment.amount) > 0`) from refusing the request outright.
         payment: { amount: payableTotal, status: "not_required" },
         sourcePath: "/dashboard/client/consultation/new",
+        ...(user.businessMembership ? { entityScope: "business" as const } : {}),
         metadata: {
           path,
           specialty,
@@ -778,7 +779,7 @@ export default function NewConsultationPage() {
                   <div className="text-right w-full">
                     <p className={`text-[14px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>مع محامٍ</p>
                     <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                      جلسة مجدولة · من {lowestConsultationPrice.toLocaleString("ar-SA")} ر.س
+                      استشارة محامٍ معتمد · من {lowestConsultationPrice.toLocaleString("ar-SA")} ر.س (كتابية) أو {modeConfig.video.price.toLocaleString("ar-SA")} ر.س (مرئية)
                     </p>
                     <div className="flex flex-col gap-1 mt-2.5">
                       {[
@@ -988,18 +989,12 @@ export default function NewConsultationPage() {
                 </button>
               </div>
 
-              {/* Beta notice (lawyer only) */}
-              {path === "lawyer" && IS_BETA && !selectedLawyer && (
-                <div className={`flex items-start gap-2.5 p-4 rounded-xl border ${isDark ? "bg-amber-900/10 border-amber-900/30" : "bg-amber-50 border-amber-200"}`}>
-                  <Info size={15} className={`flex-shrink-0 mt-0.5 ${isDark ? "text-amber-500" : "text-amber-600"}`} weight="fill" />
-                  <div>
-                    <p className={`text-[12px] font-bold mb-0.5 ${isDark ? "text-amber-400" : "text-amber-800"}`}>مرحلة البيتا</p>
-                    <p className={`text-[11px] leading-relaxed ${isDark ? "text-amber-300/70" : "text-amber-700"}`}>
-                      تقوم المنصة بتعيين أفضل محام متخصص تلقائيا. سيتواصل معك لتأكيد الموعد.
-                    </p>
-                  </div>
-                </div>
-              )}
+              {/* The «مرحلة البيتا» notice that stood here — «تقوم المنصة
+                  بتعيين أفضل محام متخصص تلقائيا. سيتواصل معك لتأكيد الموعد» —
+                  was deleted by د. محمد on his own branch, and that deletion is
+                  kept here rather than overwritten by the merge. It is also the
+                  honest direction: no assignment engine exists, and «أفضل محام
+                  متخصص» is a claim about a selection nothing performs. */}
 
               <div className="flex justify-between pt-1">
                 <button
@@ -1028,11 +1023,18 @@ export default function NewConsultationPage() {
                   has an allowance left, because nothing on the platform knows —
                   see the `payableTotal` block. It states only what this step
                   does: it sends, and it charges nothing. */}
-              <div className={`flex items-start gap-2 p-3.5 rounded-xl mb-5 text-[12px] font-semibold leading-relaxed ${
+              <div className={`flex items-start gap-2.5 p-3.5 rounded-xl mb-5 text-[12px] font-semibold leading-relaxed ${
                 isDark ? "bg-emerald-900/20 border border-emerald-700/30 text-emerald-300" : "bg-emerald-50 border border-emerald-200 text-emerald-800"
               }`}>
                 <CheckCircle size={15} weight="fill" className="flex-shrink-0 mt-0.5" />
-                <span>إرسال الطلب مجاني — لا يُطلب منك أي دفع في هذه الخطوة. يراجع فريق نظامي طلبك ثم يتواصل معك بالمبلغ النهائي قبل تنفيذ الاستشارة.</span>
+                <div>
+                  <p className="font-bold mb-0.5">إرسال الطلب مجاني ومتاح بدون سداد فوري في هذه الخطوة</p>
+                  <p className={`text-[11px] font-normal ${isDark ? "text-emerald-300/80" : "text-emerald-700"}`}>
+                    {path === "ai"
+                      ? "استشارة نظامي AI مشمولة مجاناً للاستفسار اليومي الأول."
+                      : `السعر التقديري لـ (${MODE_COPY[mode].label}): ${servicePriceLabel(service)} — لا يُخصم أي مبلغ الآن، ويتواصل معك فريق نظامي لتأكيد الموعد والتفاصيل.`}
+                  </p>
+                </div>
               </div>
 
               {/* Summary card */}

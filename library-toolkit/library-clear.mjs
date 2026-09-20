@@ -34,6 +34,11 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
+// Developer handoff package: a database clear, including the supposedly dry
+// count, must never contact an unknown target from an unpacked test bundle.
+// The historical implementation below is retained for review only.
+console.error("library:clear is disabled in this developer test package; no database call was made. Use a separately reviewed staging plan and backup.");
+process.exit(2);
 // Safe by default: dry unless --live is passed.
 const LIVE = process.argv.includes("--live");
 const FORCE_PROD = process.argv.includes("--force-prod");

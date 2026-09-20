@@ -13,6 +13,7 @@
     "test": "node scripts/smoke-routes.mjs",
     "test:smoke": "node scripts/smoke-routes.mjs",
     "test:unit": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"src/**/*.test.ts\"",
+    "test:scripts": "node scripts/run-script-tests.mjs",
     "type-check": "tsc --noEmit",
     "blog:backup": "node blog-toolkit/blog-backup.mjs",
     "blog:clear": "node blog-toolkit/blog-clear.mjs",
@@ -27,9 +28,27 @@
     "library:status": "node library-toolkit/library-status.mjs",
     "library:baseline": "node library-toolkit/library-baseline.mjs",
     "library:reseed": "node library-toolkit/library-reseed.mjs",
-    "library:reseed:wipe": "node library-toolkit/library-reseed.mjs --wipe"
+    "library:reseed:wipe": "node library-toolkit/library-reseed.mjs --wipe",
+    "academy:status": "node academy-toolkit/academy-status.mjs",
+    "academy:verify": "node academy-toolkit/academy-verify.mjs",
+    "academy:seed": "node academy-toolkit/academy-seed.mjs",
+    "docs:check-drift": "node scripts/check-docs-drift.mjs",
+    "schema:check-drift": "node scripts/check-schema-manifest-drift.mjs",
+    "contract:check-drift": "npx tsx scripts/check-frontmatter-contract-drift.ts",
+    "library:check-repealed-active": "npx tsx scripts/check-repealed-shown-active.ts",
+    "library:audit-parent-linkage": "node --import tsx scripts/audit-parent-linkage.ts",
+    "library:check-h16-h17-h18-gate": "npx tsx scripts/check-h16-h17-h18-gate.ts",
+    "library:check-qadha-conventions": "npx tsx scripts/check-qadha-regulation-conventions.ts",
+    "library:verify-contract": "node scripts/verify-seeder-contract.mjs",
+    "mobile:sync": "cap sync",
+    "mobile:ios": "cap open ios",
+    "mobile:android": "cap open android",
+    "mobile:prepare": "npm ci && npx cap sync ios && npx cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/ios": "8.5.2",
     "@phosphor-icons/react": "^2.1.7",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.107.0",
@@ -39,12 +58,13 @@
     "framer-motion": "^11.0.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
-    "next": "^16.2.1",
+    "next": "16.3.3",
     "react": "^19.0.0",
     "react-confetti": "^6.1.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.4.3",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/canvas-confetti": "^1.9.0",
     "@types/js-yaml": "^4.0.9",
@@ -52,10 +72,27 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^16.2.1",
-    "js-yaml": "^4.3.0",
-    "sharp": "^0.34.5",
+    "eslint-config-next": "16.3.3",
+    "js-yaml": "4.3.2",
+    "sharp": "0.35.4",
     "tailwindcss": "^4.0.0",
+    "tsx": "4.23.13",
     "typescript": "^5.0.0"
+  },
+  "overrides": {
+    "baseline-browser-mapping": "2.11.25",
+    "browserslist": "4.29.0",
+    "dompurify": "3.4.15",
+    "fflate": "0.8.3",
+    "js-yaml": "4.3.2",
+    "minimatch@10.2.5": {
+      "brace-expansion": "5.0.12"
+    },
+    "minimatch@10.2.6": {
+      "brace-expansion": "5.0.12"
+    },
+    "minimatch@3.1.5": {
+      "brace-expansion": "1.1.18"
+    }
   }
 }

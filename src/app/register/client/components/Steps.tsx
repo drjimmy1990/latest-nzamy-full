@@ -18,6 +18,7 @@ import {
   ArrowLeft,
   Globe,
   User,
+  Users,
 } from "@phosphor-icons/react";
 import { ClientType, Step } from "../types";
 import { clientTypes } from "../data";
@@ -546,7 +547,15 @@ export function Step3({
 }
 
 // Step 4: Success
-export function Step4({ isAr, clientType }: { isAr: boolean; clientType: ClientType }) {
+export function Step4({
+  isAr,
+  clientType,
+  intendedPlan,
+}: {
+  isAr: boolean;
+  clientType: ClientType;
+  intendedPlan?: string | null;
+}) {
   const typeLabel = {
     individual: isAr ? "فرد" : "Individual",
     company: isAr ? "شركة" : "Company",
@@ -588,6 +597,48 @@ export function Step4({ isAr, clientType }: { isAr: boolean; clientType: ClientT
       </p>
 
       <div className="mt-8 space-y-3">
+        {intendedPlan === "shield" && (
+          <motion.a
+            href="/dashboard/client"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-4 rounded-2xl border-2 border-royal bg-royal/5 p-4 text-start transition-all hover:bg-royal/10 dark:bg-royal/20"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-royal text-gold">
+              <Shield size={22} weight="duotone" />
+            </span>
+            <div className="flex-1">
+              <div className="text-sm font-bold text-royal dark:text-gold">
+                {isAr ? "إتمام تفعيل التأمين القانوني الفردي" : "Complete Legal Shield Activation"}
+              </div>
+              <div className="text-xs text-ink-muted dark:text-gray-400">
+                {isAr ? "٣٦٥ ر.س/سنة (عرض التأسيس ٢٩٦ ر.س) — استشارات وخصم ١٥٪" : "365 SAR/yr (Founder 296 SAR) — Consultations & 15% discount"}
+              </div>
+            </div>
+            <ArrowLeft size={16} className="text-royal dark:text-gold" />
+          </motion.a>
+        )}
+        {intendedPlan === "group" && (
+          <motion.a
+            href="/dashboard/client/my-group?action=create"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-4 rounded-2xl border-2 border-amber-500 bg-amber-500/5 p-4 text-start transition-all hover:bg-amber-500/10 dark:bg-amber-500/20"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white">
+              <Users size={22} weight="duotone" />
+            </span>
+            <div className="flex-1">
+              <div className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                {isAr ? "إنشاء وتفعيل مجموعة التأمين (الرَّبع)" : "Create & Activate Group Shield"}
+              </div>
+              <div className="text-xs text-ink-muted dark:text-gray-400">
+                {isAr ? "يبدأ من ٧٥٠ ر.س لـ ٣ أفراد — ٥ استشارات مرئية/عضو وخصم ٢٥٪" : "From 750 SAR for 3 members — 5 video consults & 25% discount"}
+              </div>
+            </div>
+            <ArrowLeft size={16} className="text-amber-700 dark:text-amber-400" />
+          </motion.a>
+        )}
         {[
           { icon: Star, labelAr: "انتقل إلى لوحة التحكم", labelEn: "Go to Dashboard", href: dashboardHref },
           { icon: Scales, labelAr: "احجز استشارتك الأولى", labelEn: "Book your first consultation", href: "/services/consultations" },

@@ -1,5 +1,24 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
-export type ArticleStatus = "active" | "repealed" | "amended" | "suspended";
+export type ArticleStatus =
+  | "active"
+  | "repealed"
+  | "amended"
+  | "suspended"
+  | "added"
+  | "merged"
+  | "status_undeclared";
+
+/** A reader-facing notice only; it does not infer a lifecycle or repeal date. */
+export function articleStatusNotice(status: ArticleStatus, isRTL: boolean): string | null {
+  return status === "status_undeclared"
+    ? isRTL ? "لم يُتحقّق من الحالة" : "Status not verified"
+    : null;
+}
+
+/** Historical-text toggle is exclusively for an explicit repeal status. */
+export function isRepealedArticleStatus(status: ArticleStatus): boolean {
+  return status === "repealed";
+}
 
 export interface AmendmentEntry {
   date: string;
@@ -11,6 +30,22 @@ export interface AmendmentEntry {
 export interface ExecutiveRegulation {
   ref: string;
   text: string;
+  regNum?: string | null;
+  status?: string;
+  isSecondaryDisplay?: boolean;
+}
+
+// One secondary instrument's own articles, flattened across every نظام
+// article it's attached to and pre-sorted/deduplicated server-side (excludes
+// is_secondary_display duplicates) — powers the "اللائحة وحدها" flat view.
+export interface RegulationInstrument {
+  ref: string;
+  articles: {
+    regNum: string | null;
+    text: string;
+    status: string;
+    systemArticleNumber: string | null;
+  }[];
 }
 
 export interface JudicialPrinciple {
@@ -42,6 +77,7 @@ export interface LawArticle {
   text: string;
   instrument?: string;
   executiveReg?: ExecutiveRegulation;
+  regulations?: ExecutiveRegulation[];
   amendments?: AmendmentEntry[];
   /**
    * ⚠️ Never populated. The corpus has no repeal-provenance field: all 41,845
@@ -92,7 +128,17 @@ export type LawDocumentType =
   | "ملحق"
   | "ضوابط التنفيذ";
 
-export type LawStatus = "active" | "repealed" | "suspended" | "partially_amended";
+/** Document-level lifecycle/archival status, distinct from ArticleStatus. */
+export type LawStatus =
+  | "active"
+  | "partially_active"
+  | "deferred_effective"
+  | "issued_publication_unverified"
+  | "suspended"
+  | "repealed"
+  | "superseded_duplicate"
+  | "merged_into_parent"
+  | "status_undeclared";
 
 export interface LawSystem {
   // ── الحقول الأساسية الحالية ──
@@ -106,7 +152,15 @@ export interface LawSystem {
   preamble: string;              // نص الديباجة
   chapters: LawChapter[];
   regulationPreamble?: string;   // نص ديباجة اللائحة
+  regulationInstruments?: RegulationInstrument[]; // العرض المسطَّح "اللائحة وحدها"
   appendices?: LawAppendix[];    // جداول/ملاحق مستوى الوثيقة (اختياري — أنظمة قليلة فقط)
+  /** Registry identity of the parent instrument, not a BOE law_guid. */
+  parentLawId?: string;
+  /** Verbatim display name stated by the secondary instrument itself. */
+  parentLaw?: string;
+  enablingArticle?: string;
+  /** Present only when the API resolved one safe, unambiguous parent row. */
+  parentLawLink?: { slug: string; title: string } | null;
 
   /**
    * The document's kind exactly as the source states it, straight from

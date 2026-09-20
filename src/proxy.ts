@@ -109,6 +109,7 @@ const PROTECTED = [
   "/ai/report-generator",
   "/ai/tracker",
   "/ai/draft",
+  "/ai/direction-support",
   "/ai/contracts",
   "/ai/wargaming",
   "/settings",

@@ -129,9 +129,9 @@ export function ParagraphEditor({
         </AnimatePresence>
 
         {editNote && (
-          <div className={`mt-2 flex items-center gap-1 text-[10px] ${isDark ? "text-amber-400" : "text-amber-600"}`}>
-            <PencilLine size={10} />
-            <span>تم إضافة تعديل على هذا البند</span>
+          <div className={`mt-2 rounded-lg border-r-2 px-2.5 py-1.5 text-[11px] leading-relaxed flex items-start gap-1.5 ${isDark ? "border-amber-400 bg-amber-900/10 text-amber-300" : "border-amber-500 bg-amber-50 text-amber-800"}`}>
+            <PencilLine size={11} className="flex-shrink-0 mt-0.5" />
+            <span>🖊 تعديل مطلوب: {editNote}</span>
           </div>
         )}
       </div>
@@ -173,7 +173,7 @@ export function ParagraphEditor({
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   className={`flex items-center gap-1 text-[10px] ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
                   <CheckCircle size={11} weight="fill" />
-                  تم حفظ التعديل — سيُطبَّق في النسخة النهائية
+                  تم إلحاق تعديلك بالبند أعلاه
                 </motion.div>
               )}
             </div>

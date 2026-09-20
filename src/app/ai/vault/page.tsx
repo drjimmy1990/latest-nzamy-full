@@ -49,9 +49,9 @@ const MOCK_LAWYER = {
 type VaultTab = "documents" | "lawyer" | "templates";
 
 const VAULT_TABS: { key: VaultTab; label: string; icon: typeof Vault }[] = [
-  { key: "documents", label: "المستندات",   icon: Vault },
-  { key: "lawyer",    label: "بيانات المحامي", icon: User },
-  { key: "templates", label: "القوالب المحفوظة", icon: Notebook },
+  { key: "documents", label: "الوثائق والمستندات", icon: Vault },
+  { key: "lawyer",    label: "الهوية والمطبوعات",   icon: User },
+  { key: "templates", label: "النماذج المعتمدة",   icon: Notebook },
 ];
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -76,11 +76,11 @@ export default function AIVaultPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>خزنة البيانات الذكية</h1>
-            <span className="rounded-full bg-purple-500/15 border border-purple-500/30 px-2.5 py-0.5 text-[10px] font-bold text-purple-400">MAX فقط</span>
+            <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>الخزنة</h1>
+            <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-500">المكتب والمنشأة</span>
           </div>
           <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            خزنة وثائق شركتك/مكتبك — AI ينزّل البيانات تلقائياً في كل عقد ومذكرة
+            مستودع الوثائق الرسمية، الهوية والمطبوعات، والنماذج المعتمدة للمكتب — تتكامل مع الذكاء الاصطناعي والمنصة العامة
           </p>
         </div>
         <div className={`hidden sm:flex items-center gap-1.5 rounded-xl px-3 py-2 border ${isDark ? "border-white/[0.06] bg-zinc-800" : "border-zinc-200 bg-zinc-50"}`}>
@@ -111,14 +111,14 @@ export default function AIVaultPage() {
         })}
       </div>
 
-      {/* ── Tab 1: المستندات ── */}
+      {/* ── Tab 1: الوثائق والمستندات ── */}
       {activeTab === "documents" && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
           {/* Info strip */}
           <div className={`rounded-2xl p-4 border ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
             <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
               <span className="font-bold text-[#C8A762] me-1">كيف تعمل الخزنة؟</span>
-              ستحفظ الخزنة وثائق شركتك (سجل تجاري، عقد تأسيس، ترويسة...) — وعند صياغة أي وثيقة، ينزّل AI بيانات الشركة تلقائياً. الخزنة قيد التجهيز، والمستندات المعروضة أدناه نموذج توضيحي.
+              مستودع مركزي لحفظ وثائق المكتب والمنشأة (سجل تجاري، عقد تأسيس، وكالات، لوائح)، وتكاملها تلقائياً مع أدوات الصياغة بالمنصة العامة ومحركات الذكاء الاصطناعي. الخزنة قيد التجهيز، والمستندات المعروضة أدناه نموذج توضيحي.
             </p>
           </div>
 
@@ -217,13 +217,13 @@ export default function AIVaultPage() {
         </motion.div>
       )}
 
-      {/* ── Tab 2: بيانات المحامي ── */}
+      {/* ── Tab 2: الهوية والمطبوعات ── */}
       {activeTab === "lawyer" && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
           <div className={`rounded-2xl p-4 border ${isDark ? "border-emerald-700/20 bg-emerald-900/10" : "border-emerald-200 bg-emerald-50"}`}>
             <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
               <span className="font-bold text-emerald-500 me-1">الغرض:</span>
-              بيانات المحامي تُدرج تلقائياً عند صياغة أي مذكرة أو عقد. لا تحتاج لإعادة كتابتها في كل مرة.
+              الهوية الرسمية والمطبوعات المعتمدة للمكتب (الشعار، الترويسة الرسمية، وبيانات الترخيص والاعتماد) — تُدرج وتُدمج تلقائياً في كافة العقود والمذكرات ومخرجات الصياغة الرسمية بالمنصة.
             </p>
           </div>
 
@@ -309,19 +309,19 @@ export default function AIVaultPage() {
         </motion.div>
       )}
 
-      {/* ── Tab 3: القوالب المحفوظة ── */}
+      {/* ── Tab 3: النماذج المعتمدة ── */}
       {activeTab === "templates" && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className={`h-16 w-16 rounded-2xl flex items-center justify-center mb-4 ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`}>
               <Notebook size={28} className={isDark ? "text-zinc-600" : "text-zinc-400"} />
             </div>
-            <h3 className={`text-[16px] font-bold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>القوالب المحفوظة</h3>
-            <p className={`text-[13px] max-w-sm mb-4 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-              قوالب المذكرات والعقود التي أعجبتك ستظهر هنا — يمكنك إعادة استخدامها وتعديلها في أي وقت.
+            <h3 className={`text-[16px] font-bold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>النماذج المعتمدة للمكتب</h3>
+            <p className={`text-[13px] max-w-md mb-4 leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+              نماذج المذكرات، صحف الدعاوى، والعقود المعتمدة الخاصة بمكتبك. في النسخة الكاملة، ستتكامل هذه النماذج تلقائياً مع محركات الذكاء الاصطناعي لدمج أسلوب مكتبك مع خدمات الصياغة بالمنصة العامة.
             </p>
             <div className={`rounded-xl px-4 py-2 border text-[11px] ${isDark ? "border-[#C8A762]/20 text-[#C8A762]" : "border-amber-200 text-amber-600"}`}>
-              قريباً — ستتوفر مع تحديث الصائغ القانوني
+              قريباً — ستتوفر مع الإطلاق الكامل لمنظومة الصياغة الذكية
             </div>
           </div>
         </motion.div>
