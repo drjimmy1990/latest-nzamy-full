@@ -118,15 +118,15 @@ DECLARE
   missing text[] := '{}';
 BEGIN
   IF to_regclass('public.court_cost_notices') IS NULL THEN
-    missing := missing || 'public.court_cost_notices (20260906_court_costs_and_firm_profile_fields.sql)';
+    missing := array_append(missing, 'public.court_cost_notices (20260906_court_costs_and_firm_profile_fields.sql)');
   END IF;
   IF to_regclass('public.case_disbursements') IS NULL THEN
-    missing := missing || 'public.case_disbursements (20260906_court_costs_and_firm_profile_fields.sql)';
+    missing := array_append(missing, 'public.case_disbursements (20260906_court_costs_and_firm_profile_fields.sql)');
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                   WHERE table_schema = 'public' AND table_name = 'service_requests'
                     AND column_name = 'business_id') THEN
-    missing := missing || 'public.service_requests.business_id (20260914_entity_memberships_and_business_requests.sql)';
+    missing := array_append(missing, 'public.service_requests.business_id (20260914_entity_memberships_and_business_requests.sql)');
   END IF;
 
   SELECT count(*) INTO n FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
@@ -136,7 +136,7 @@ BEGIN
                        'is_firm_owner', 'is_business_owner',
                        'is_government_owner', 'is_ngo_owner');
   IF n <> 8 THEN
-    missing := missing || format('%s of 8 entity RLS helper functions (20260903_phase2… + 20260921_03)', n);
+    missing := array_append(missing, format('%s of 8 entity RLS helper functions (20260903_phase2… + 20260921_03)', n));
   END IF;
 
   IF array_length(missing, 1) IS NOT NULL THEN
@@ -244,54 +244,79 @@ END $$;
 -- role). Everything below is what stops a deploy that skipped it.
 -- =============================================================================
 
-SELECT 'documents owner-only storage policies (expect 4)' AS check,
-       (SELECT count(*) FROM pg_policy
-         WHERE polrelid = 'storage.objects'::regclass
-           AND polname IN ('documents select own', 'documents insert own',
-                           'documents update own', 'documents delete own')) AS present;
+-- The policies may have been created by hand in the Dashboard's Storage UI, which
+-- appends its own suffix to every name ("documents select own kx3f9a_0"), so the
+-- gates below classify by CONTENT, never by name: a policy counts as owner-only
+-- when it is permissive, granted to authenticated only, and its expression
+-- restricts BOTH the bucket (bucket_id = 'documents') AND the owner folder
+-- (auth.uid() = (storage.foldername(name))[1]) — USING for SELECT/UPDATE/DELETE,
+-- WITH CHECK for INSERT (and for UPDATE when present).
+CREATE TEMP VIEW _verify_documents_policies AS
+WITH pol AS (
+  SELECT p.polname, p.polcmd, p.polpermissive,
+         coalesce(pg_get_expr(p.polqual, p.polrelid), '')      AS q,
+         coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') AS wc,
+         coalesce((SELECT array_agg(r.rolname::text ORDER BY r.rolname) FROM pg_roles r WHERE r.oid = ANY (p.polroles)),
+                  ARRAY[]::text[]) AS roles
+    FROM pg_policy p
+   WHERE p.polrelid = 'storage.objects'::regclass
+), classified AS (
+  SELECT *,
+         (polpermissive
+          AND roles = ARRAY['authenticated']::text[]
+          AND CASE polcmd
+                WHEN 'r' THEN q  LIKE '%bucket_id = ''documents''%' AND q  LIKE '%auth.uid()%' AND q  LIKE '%storage.foldername(name))[1]%'
+                WHEN 'd' THEN q  LIKE '%bucket_id = ''documents''%' AND q  LIKE '%auth.uid()%' AND q  LIKE '%storage.foldername(name))[1]%'
+                WHEN 'a' THEN wc LIKE '%bucket_id = ''documents''%' AND wc LIKE '%auth.uid()%' AND wc LIKE '%storage.foldername(name))[1]%'
+                WHEN 'w' THEN q  LIKE '%bucket_id = ''documents''%' AND q  LIKE '%auth.uid()%' AND q  LIKE '%storage.foldername(name))[1]%'
+                          AND (wc = '' OR (wc LIKE '%bucket_id = ''documents''%' AND wc LIKE '%auth.uid()%' AND wc LIKE '%storage.foldername(name))[1]%'))
+                ELSE false
+              END) AS owner_only,
+         (position('documents' in q || ' ' || wc) > 0 OR position('bucket_id' in q || ' ' || wc) = 0) AS can_match_documents
+    FROM pol
+)
+SELECT * FROM classified;
+
+SELECT 'documents owner-only storage policies (expect 4 = one each of SELECT/INSERT/UPDATE/DELETE)' AS check,
+       (SELECT count(DISTINCT polcmd) FROM _verify_documents_policies WHERE owner_only) AS present;
 
 SELECT 'other storage.objects policies that can match bucket documents (expect 0)' AS check,
-       (SELECT count(*) FROM pg_policy
-         WHERE polrelid = 'storage.objects'::regclass
-           AND polname NOT IN ('documents select own', 'documents insert own',
-                               'documents update own', 'documents delete own')
-           AND (position('documents' in (coalesce(pg_get_expr(polqual, polrelid), '') || ' ' ||
-                                         coalesce(pg_get_expr(polwithcheck, polrelid), ''))) > 0
-             OR position('bucket_id' in (coalesce(pg_get_expr(polqual, polrelid), '') || ' ' ||
-                                         coalesce(pg_get_expr(polwithcheck, polrelid), ''))) = 0)) AS present;
+       (SELECT count(*) FROM _verify_documents_policies WHERE NOT owner_only AND can_match_documents) AS present;
+
+SELECT 'storage.objects policies (for the record)' AS check,
+       string_agg(format('%s [%s%s]', polname, polcmd, CASE WHEN owner_only THEN ' owner-only' ELSE ' OTHER' END), '; ' ORDER BY polname) AS present
+  FROM _verify_documents_policies;
 
 DO $$
 DECLARE
-  n_own   int;
+  n_cmds  int;
   n_other int;
+  rls_on  boolean;
 BEGIN
-  -- UAT-STORAGE-001. The four policies are applied by hand as
-  -- supabase_storage_admin (supabase/storage_policies_documents.sql); this
-  -- block is what makes a skipped manual step fail the deploy.
+  -- UAT-STORAGE-001. The four policies are applied by hand (Dashboard Storage UI
+  -- or psql as supabase_storage_admin — supabase/storage_policies_documents.sql);
+  -- this block is what makes a skipped manual step fail the deploy.
   IF to_regclass('storage.objects') IS NULL THEN
     RAISE EXCEPTION '_verify: storage.objects is not visible — cannot verify the documents bucket policies';
   END IF;
 
-  SELECT count(*) INTO n_own FROM pg_policy
-   WHERE polrelid = 'storage.objects'::regclass
-     AND polname IN ('documents select own', 'documents insert own',
-                     'documents update own', 'documents delete own');
-  IF n_own <> 4 THEN
-    RAISE EXCEPTION '_verify: % of the 4 owner-only documents storage policies exist — run supabase/storage_policies_documents.sql as supabase_storage_admin', n_own;
+  SELECT relrowsecurity INTO rls_on FROM pg_class WHERE oid = 'storage.objects'::regclass;
+  IF NOT rls_on THEN
+    RAISE EXCEPTION '_verify: row level security is OFF on storage.objects';
   END IF;
 
-  SELECT count(*) INTO n_other FROM pg_policy
-   WHERE polrelid = 'storage.objects'::regclass
-     AND polname NOT IN ('documents select own', 'documents insert own',
-                         'documents update own', 'documents delete own')
-     AND (position('documents' in (coalesce(pg_get_expr(polqual, polrelid), '') || ' ' ||
-                                   coalesce(pg_get_expr(polwithcheck, polrelid), ''))) > 0
-       OR position('bucket_id' in (coalesce(pg_get_expr(polqual, polrelid), '') || ' ' ||
-                                   coalesce(pg_get_expr(polwithcheck, polrelid), ''))) = 0);
+  SELECT count(DISTINCT polcmd) INTO n_cmds FROM _verify_documents_policies WHERE owner_only;
+  IF n_cmds <> 4 THEN
+    RAISE EXCEPTION '_verify: owner-only documents policies cover % of the 4 commands (SELECT/INSERT/UPDATE/DELETE) — apply supabase/storage_policies_documents.sql (Dashboard Storage UI or psql as supabase_storage_admin)', n_cmds;
+  END IF;
+
+  SELECT count(*) INTO n_other FROM _verify_documents_policies WHERE NOT owner_only AND can_match_documents;
   IF n_other <> 0 THEN
-    RAISE EXCEPTION '_verify: % other policy on storage.objects can still match bucket documents', n_other;
+    RAISE EXCEPTION '_verify: % other policy on storage.objects can still match bucket documents — delete it (the "for the record" row above names it)', n_other;
   END IF;
 END $$;
+
+DROP VIEW IF EXISTS _verify_documents_policies;
 
 -- =============================================================================
 -- plan §3b — the three files that must NEVER be applied
