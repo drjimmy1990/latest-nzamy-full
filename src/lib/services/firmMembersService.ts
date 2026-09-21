@@ -5,9 +5,15 @@
  *
  * Until Phase 2 nothing in the product wrote a firm_members row, so the
  * "firm" arm of every Phase 1 policy was dead. This is the first writer:
- * the firm OWNER (user_type "firm", firm_profiles.owner_user_id) adds an
+ * the firm OWNER (user_type "firm", firm_profiles.owner_user_id) INVITES an
  * EXISTING lawyer account by e-mail. Invitations to people without an
  * account are a later step (team_invitations exists, unused).
+ *
+ * Since review 2026-09-21 A5/F03 the row starts at `status: "invited"`, not
+ * `"active"`: the invited person accepts or declines from their own dashboard
+ * through `invitationsService.ts` (RLS arm:
+ * 20260922_02_members_accept_own_invitation.sql). An `invited` row grants
+ * nothing — every membership read in this repo filters `status = 'active'`.
  */
 
 "use client";
@@ -46,7 +52,12 @@ export async function getFirmMembers(): Promise<ListRead<FirmMember>> {
   }
 }
 
-/** Adds an existing lawyer account (looked up by e-mail, server-side) as an active member. Throws with Arabic screen copy. */
+/**
+ * INVITES an existing lawyer/individual account (looked up by e-mail,
+ * server-side). The returned member is `status: "invited"`. 201 for a new
+ * invitation, 200 when a `removed`/`suspended` row was re-invited in place —
+ * both carry the same `{ data }`. Throws with Arabic screen copy.
+ */
 export async function addFirmMember(input: { email: string; role: FirmRole }): Promise<FirmMember> {
   if (!isSupabaseMode) throw new Error("إدارة الفريق غير متاحة في وضع العرض التجريبي");
   const res = await apiMutate<{ data: FirmMember }>(BASE, "POST", input);

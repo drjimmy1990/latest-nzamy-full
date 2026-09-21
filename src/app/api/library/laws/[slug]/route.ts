@@ -40,7 +40,7 @@ export async function GET(
 
     if (lawError || !law) {
       return NextResponse.json(
-        { error: 'Law not found' },
+        { error: 'لم يُعثر على هذا النظام' },
         { status: 404 }
       );
     }
@@ -69,15 +69,34 @@ export async function GET(
     }
 
     // Fetch chapters
-    const { data: chapters } = await supabase
+    const { data: chapters, error: chaptersError } = await supabase
       .schema('library')
       .from('chapters')
       .select('*')
       .eq('law_slug', slug)
       .order('order_index', { ascending: true });
 
+    // A-04 (2026-09-22): exactly the failure class the articles guard below
+    // exists to close, three lines earlier. A failed chapters query arrives as
+    // `chapters === null`, `(chapters || [])` at the response build then yields
+    // ZERO chapters, and the ungrouped-articles fallback does NOT rescue it —
+    // that fallback only fires when the articles carry no chapter_id at all. So
+    // the route would again answer 200 with a law that has no text in it.
+    if (chaptersError || !Array.isArray(chapters)) {
+      console.error(
+        `[Laws API] Chapters query failed for "${slug}":`,
+        chaptersError?.code ?? 'no-error-code',
+        chaptersError?.message ?? 'null payload with no error',
+        chaptersError?.details ?? '',
+      );
+      return NextResponse.json(
+        { error: 'تعذّر تحميل أبواب هذا النظام' },
+        { status: 500 }
+      );
+    }
+
     // Fetch articles with amendments
-    const { data: articles } = await supabase
+    const { data: articles, error: articlesError } = await supabase
       .schema('library')
       .from('articles')
       .select(`
@@ -87,6 +106,26 @@ export async function GET(
       `)
       .eq('law_slug', slug)
       .order('order_index', { ascending: true });
+
+    // A-04 (2026-09-22): `error` was never read here, and a failed embed does
+    // not fail the request — it arrives as `articles === null`. PostgREST fails
+    // the WHOLE embedded query when ANY embedded relation is unreadable, so a
+    // single missing grant on article_regulations (42501) served every law in
+    // the corpus as a 200 with `chapters: [...], articles: 0` for a full day.
+    // The failure mode of a library route is an error, never an empty law:
+    // a reader cannot tell "this law has no articles" from "we lost them".
+    if (articlesError || !Array.isArray(articles)) {
+      console.error(
+        `[Laws API] Articles query failed for "${slug}":`,
+        articlesError?.code ?? 'no-error-code',
+        articlesError?.message ?? 'null payload with no error',
+        articlesError?.details ?? '',
+      );
+      return NextResponse.json(
+        { error: 'تعذّر تحميل مواد هذا النظام' },
+        { status: 500 }
+      );
+    }
 
     // ── Paywall check ────────────────────────────────────────────────────────
     // Check access once (same result for all articles in a law)
@@ -137,12 +176,29 @@ export async function GET(
     // duplicates (is_secondary_display) excluded so each article appears once.
     // See 00_عقل_القوانين/13_دليل_المبرمج/02_عقد_اللوائح_المدمجة_والبذر.md §1-3-د.
     const regulationsByRef = new Map<string, Record<string, unknown>[]>();
+    // Number of regulation articles withheld from this view because the نظام
+    // article they hang under is behind the paywall. The page needs the count,
+    // not the rows: it renders the same lock/upgrade affordance the article
+    // view renders, instead of an empty tab that reads as "no regulation".
+    let regulationInstrumentsLocked = 0;
     articles?.forEach((article: Record<string, unknown>) => {
       const regRows = (article.article_regulations as Record<string, unknown>[]) || [];
+      // F13: this view used to emit the FULL r.text of every regulation row for
+      // every article, never consulting hasFullAccess/freeLimit, while
+      // formatArticleWithPaywall omits the regulations block entirely for a
+      // locked article. Same predicate, same outcome — omitted, not truncated,
+      // because a truncated regulation is still paid text in the clear.
+      const parentLocked = isArticleLocked(article, hasFullAccess, freeLimit);
       regRows.forEach((r) => {
         if (r.is_secondary_display === true) return;
         const ref = String(r.ref || '');
         if (!ref) return;
+        // Counted after the two exclusions above: a dual-linked duplicate and a
+        // ref-less row are not "withheld", they are not part of this view at all.
+        if (parentLocked) {
+          regulationInstrumentsLocked++;
+          return;
+        }
         if (!regulationsByRef.has(ref)) regulationsByRef.set(ref, []);
         regulationsByRef.get(ref)!.push(r);
       });
@@ -187,6 +243,10 @@ export async function GET(
       regulationPreamble: regulationPreamble,
       // Flat per-instrument view for the "اللائحة وحدها" tab — see build above.
       regulationInstruments,
+      // > 0 when the paywall removed regulation articles from that flat view.
+      // An instrument whose every article is locked never appears in
+      // regulationInstruments at all, so this is the only signal the page has.
+      regulationInstrumentsLocked,
       // Paywall metadata for frontend
       paywall: {
         isWhitelisted,
@@ -215,7 +275,7 @@ export async function GET(
   } catch (error) {
     console.error('[Laws API] Error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'تعذّر تحميل هذا النظام' },
       { status: 500 }
     );
   }
@@ -262,14 +322,31 @@ function preview(value: unknown, limit: number = LOCKED_PREVIEW_CHARS): string {
   return s.substring(0, limit) + (s.length > limit ? '...' : '');
 }
 
+/**
+ * THE lock predicate for this route — one definition, two call sites.
+ *
+ * It was inline in formatArticleWithPaywall only, which is why the flat
+ * "اللائحة وحدها" view (regulationInstruments, built in GET) shipped the full
+ * text of every executive regulation to anonymous readers while the per-article
+ * view withheld it (F13). Both views must lock on the same fact, so both call
+ * this. `__globalIndex` is stamped on every article before either runs.
+ */
+function isArticleLocked(
+  article: Record<string, unknown>,
+  hasFullAccess: boolean,
+  freeLimit: number,
+): boolean {
+  const globalIndex = (article.__globalIndex as number) ?? 0;
+  // freeLimit === -1 means unlimited (whitelisted law)
+  return !hasFullAccess && freeLimit !== -1 && globalIndex >= freeLimit;
+}
+
 function formatArticleWithPaywall(
   article: Record<string, unknown>,
   hasFullAccess: boolean,
   freeLimit: number,
 ) {
-  const globalIndex = (article.__globalIndex as number) ?? 0;
-  // freeLimit === -1 means unlimited (whitelisted law)
-  const isLocked = !hasFullAccess && freeLimit !== -1 && globalIndex >= freeLimit;
+  const isLocked = isArticleLocked(article, hasFullAccess, freeLimit);
 
   const result: Record<string, unknown> = {
     id: article.id,

@@ -22,16 +22,11 @@ $tables = @(
   'activity_events', 'admin_audit_events', 'wallet_transactions'
 )
 
-$envMap = @{}
-Get-Content (Join-Path $PSScriptRoot '..\..\.env.local') | ForEach-Object {
-  $match = [regex]::Match($_, '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$')
-  if ($match.Success) {
-    $envMap[$match.Groups[1].Value] = $match.Groups[2].Value.Trim().Trim('"').Trim("'")
-  }
-}
+. (Join-Path $PSScriptRoot '_env.ps1')
+$uatEnv = Assert-UatProject
+$baseUrl = $uatEnv.Url
+$serviceRoleKey = $uatEnv.ServiceKey
 
-$baseUrl = $envMap['NEXT_PUBLIC_SUPABASE_URL']
-$serviceRoleKey = $envMap['SUPABASE_SERVICE_ROLE_KEY']
 if ([string]::IsNullOrWhiteSpace($baseUrl) -or [string]::IsNullOrWhiteSpace($serviceRoleKey)) {
   throw 'The UAT test database credentials are not available in .env.local.'
 }

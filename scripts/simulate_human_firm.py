@@ -3,18 +3,18 @@ Simulate Human Law Firm Behavior on Nezamy Platform (Live / Localhost)
 ======================================================================
 Target Actors:
 1. Primary Owner: firm-a-owner (الشريك المدير لمكتب محاماة A)
-   Email: firm-a-owner.uat-20260915-full@nzamy.test (UID: cf87004d-5ec2-439d-8f4f-7b565bf94b41)
+   Email: default below, override via env UAT_FIRM_A_OWNER_EMAIL
 2. Partner: firm-a-partner (شريك)
-   Email: firm-a-partner.uat-20260915-full@nzamy.test (UID: 1d0b4aa9-3868-4c65-9543-5a6f6ecb5ffb)
+   Email: default below, override via env UAT_FIRM_A_PARTNER_EMAIL
 3. Senior Lawyer: firm-a-senior_lawyer (محامٍ أول)
-   Email: firm-a-senior_lawyer.uat-20260915-full@nzamy.test (UID: 4dec4678-623c-460d-ae04-fac1abafd423)
+   Email: default below, override via env UAT_FIRM_A_SENIOR_EMAIL
 4. Trainee: firm-a-trainee (محامٍ متدرب)
-   Email: firm-a-trainee.uat-20260915-full@nzamy.test (UID: 3a059185-8c1d-42ee-97cd-07479681b0f9)
+   Email: default below, override via env UAT_FIRM_A_TRAINEE_EMAIL
 5. Tenant Comparison: firm-b-owner (مالك شركة محاماة B المعزولة)
-   Email: firm-b-owner.uat-20260915-full@nzamy.test (UID: 4d096e47-d848-43ab-a90f-dfe09b98f320)
+   Email: default below, override via env UAT_FIRM_B_OWNER_EMAIL
 
-Password: Uat!co6VNCZijtZNMXV8BWIB9c4Q9
-Target URL: https://nezamy.sa (fallback: http://localhost:3000)
+Password: set via env UAT_PASSWORD (required, no default)
+Target: local by default (http://localhost:3000); --live + env UAT_ALLOW_LIVE=1 required for production
 
 Physics: Fast Realistic Human Simulation
 - Cubic Bezier mouse curves with velocity ease-in-out profiling
@@ -33,6 +33,7 @@ import time
 import math
 import random
 import json
+import argparse
 from datetime import datetime
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -44,18 +45,22 @@ SCREENSHOTS_DIR = os.path.join(OUTPUT_DIR, "screenshots", "firm")
 os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
 # Brain directory for markdown viewing
-BRAIN_SCREENSHOTS_DIR = r"C:\Users\Judge\.gemini\antigravity\brain\d3f849a7-a057-419a-bc8d-58f4df37226e\screenshots\firm"
-os.makedirs(BRAIN_SCREENSHOTS_DIR, exist_ok=True)
+BRAIN_SCREENSHOTS_DIR = os.environ.get("UAT_BRAIN_SCREENSHOTS_DIR")
+if BRAIN_SCREENSHOTS_DIR:
+    os.makedirs(BRAIN_SCREENSHOTS_DIR, exist_ok=True)
 
 LIVE_BASE_URL = "https://nezamy.sa"
 LOCAL_BASE_URL = "http://localhost:3000"
 
-FIRM_A_OWNER_EMAIL = "firm-a-owner.uat-20260915-full@nzamy.test"
-FIRM_A_PARTNER_EMAIL = "firm-a-partner.uat-20260915-full@nzamy.test"
-FIRM_A_SENIOR_EMAIL = "firm-a-senior_lawyer.uat-20260915-full@nzamy.test"
-FIRM_A_TRAINEE_EMAIL = "firm-a-trainee.uat-20260915-full@nzamy.test"
-FIRM_B_OWNER_EMAIL = "firm-b-owner.uat-20260915-full@nzamy.test"
-UNIVERSAL_PASSWORD = "Uat!co6VNCZijtZNMXV8BWIB9c4Q9"
+FIRM_A_OWNER_EMAIL = os.environ.get("UAT_FIRM_A_OWNER_EMAIL", "firm-a-owner.uat-20260915-full@nzamy.test")
+FIRM_A_PARTNER_EMAIL = os.environ.get("UAT_FIRM_A_PARTNER_EMAIL", "firm-a-partner.uat-20260915-full@nzamy.test")
+FIRM_A_SENIOR_EMAIL = os.environ.get("UAT_FIRM_A_SENIOR_EMAIL", "firm-a-senior_lawyer.uat-20260915-full@nzamy.test")
+FIRM_A_TRAINEE_EMAIL = os.environ.get("UAT_FIRM_A_TRAINEE_EMAIL", "firm-a-trainee.uat-20260915-full@nzamy.test")
+FIRM_B_OWNER_EMAIL = os.environ.get("UAT_FIRM_B_OWNER_EMAIL", "firm-b-owner.uat-20260915-full@nzamy.test")
+UNIVERSAL_PASSWORD = os.environ.get("UAT_PASSWORD")
+if not UNIVERSAL_PASSWORD:
+    print("[Config] UAT_PASSWORD environment variable is not set. Set it before running this script.")
+    sys.exit(2)
 
 
 class HumanDriver:
@@ -168,11 +173,12 @@ def save_screenshot(page: Page, filename: str):
     """Saves screenshot both to outputs and brain directory for cross-reference."""
     target_path = os.path.join(SCREENSHOTS_DIR, filename)
     page.screenshot(path=target_path)
-    brain_path = os.path.join(BRAIN_SCREENSHOTS_DIR, filename)
-    try:
-        shutil.copy2(target_path, brain_path)
-    except Exception:
-        pass
+    if BRAIN_SCREENSHOTS_DIR:
+        brain_path = os.path.join(BRAIN_SCREENSHOTS_DIR, filename)
+        try:
+            shutil.copy2(target_path, brain_path)
+        except Exception:
+            pass
     size = os.path.getsize(target_path)
     print(f"  📸 تم حفظ اللقطة: {filename} (الحجم: {size:,} بايت)")
 
@@ -536,4 +542,15 @@ def run_firm_simulation():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Simulate Human Law Firm Behavior")
+    parser.add_argument("--live", action="store_true",
+                         help="Target the live production site instead of localhost (also requires env UAT_ALLOW_LIVE=1)")
+    args = parser.parse_args()
+    if args.live:
+        if os.environ.get("UAT_ALLOW_LIVE") != "1":
+            print("[EnvSelector] --live requires env UAT_ALLOW_LIVE=1 to be set. Refusing to target production.")
+            sys.exit(2)
+    else:
+        LIVE_BASE_URL = LOCAL_BASE_URL
+    print(f"[EnvSelector] Target: {LIVE_BASE_URL}")
     run_firm_simulation()

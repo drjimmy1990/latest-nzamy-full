@@ -6,15 +6,14 @@ non-writing validation checks. No browser submission is used.
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$OutputDirectory,
-  [string]$RunId = 'uat-20260915-full'
+  [string]$RunId = 'uat-20260915-full',
+  [switch]$IUnderstandThisIsProduction
 )
 
 $ErrorActionPreference = 'Stop'
-$envMap = @{}
-Get-Content (Join-Path $PSScriptRoot '..\..\.env.local') | ForEach-Object {
-  $match = [regex]::Match($_, '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$')
-  if ($match.Success) { $envMap[$match.Groups[1].Value] = $match.Groups[2].Value.Trim().Trim('"').Trim("'") }
-}
+. (Join-Path $PSScriptRoot '_env.ps1')
+$uatEnv = Assert-UatProject -AllowWrites -IUnderstandThisIsProduction:$IUnderstandThisIsProduction
+$envMap = $uatEnv.RawMap
 foreach ($required in @('NEXT_PUBLIC_SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY')) {
   if ([string]::IsNullOrWhiteSpace($envMap[$required])) { throw "Missing $required in the local UAT environment." }
 }

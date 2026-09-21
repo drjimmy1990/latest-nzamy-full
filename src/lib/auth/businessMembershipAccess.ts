@@ -65,11 +65,16 @@ export const BUSINESS_MEMBER_STATUS_VALUES: readonly BusinessMemberStatus[] = [
 ];
 
 /**
- * The statuses this API may SET. `invited` is absent on purpose: there is no
- * acceptance flow — no e-mail is sent, nothing reads `business_members` with
- * `status = 'invited'`, and `/api/v1/firm/members` POST (this API's model)
- * likewise inserts `active` with `accepted_at` set. A row parked at `invited`
- * would be a pending invitation nobody can accept.
+ * The statuses this API may SET.
+ *
+ * "invited" is absent on purpose, but no longer because there is nothing to
+ * accept (review A5/F03 built that: POST /api/v1/{business,firm}/members
+ * writes "invited", and the invitee answers at POST
+ * /api/v1/me/invitations/{kind}/{id}/accept|decline). It is absent because
+ * this is the OWNER's PATCH: letting an owner set a row back to "invited"
+ * would reset an ACTIVE member to «pending» and silently cancel a consent
+ * already given. Re-inviting a "removed"/"suspended" row is POST's job, not
+ * this one's.
  */
 export const BUSINESS_PATCHABLE_STATUSES: readonly BusinessMemberStatus[] = [
   "active",

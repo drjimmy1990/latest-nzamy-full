@@ -14,6 +14,11 @@
 --   supabase/migrations/20260914_entity_memberships_and_business_requests.sql ← service_requests.business_id + its policy
 --   supabase/tests/rls/prelude_entity_recursion_defect_proof.sql        ← PROVES 42P17 on all four membership tables
 --   supabase/migrations/20260921_03_entity_rls_recursion_fix.sql
+--   supabase/migrations/20260922_02_members_accept_own_invitation.sql  ← the 5th
+--       policy on every *_members table: the arm an invitee uses to answer their
+--       own invitation (review A5/F03). It is in this chain so that T1-T8 below
+--       prove 20260921_03's matrix still behaves with it present; what the arm
+--       itself does is proved in members_accept_own_invitation.test.sql.
 --   supabase/tests/rls/entity_members_no_recursion.test.sql             ← this file
 --
 -- Actors (one set, reused across all four entities):
@@ -73,7 +78,7 @@ insert into public.ngo_members (ngo_id, user_id, role, status)
 insert into public.service_requests (id, requester_user_id, title, business_id)
   values ('req-biz-1','00000000-0000-0000-0000-00000000000f','طلب الشركة','ffffffff-0000-0000-0000-0000000000b1');
 
-select 'T0 policy counts after 20260921_03 (expect 3 per *_profiles, 4 per *_members): '
+select 'T0 policy counts after 20260921_03 + 20260922_02 (expect 3 per *_profiles, 5 per *_members): '
        || string_agg(c.relname || '=' || (select count(*) from pg_policy p where p.polrelid = c.oid),
                      ' · ' order by c.relname)
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -143,12 +148,31 @@ begin
     execute format(
       'insert into public.%I (%I, user_id, role, status) values (%L, %L, %L, %L)',
       e.mtbl, e.fk, e.entity_id, e.new_user, e.member_role, 'invited');
-    execute format('update public.%I set status = %L where user_id = %L', e.mtbl, 'active', e.new_user);
+
+    -- …with ONE exception since 20260922_02 (review 2026-09-21 A5 / F03):
+    -- `invited -> active` is the owner write that is now refused, because it
+    -- is the invitee's answer and nobody else's. This step used to be exactly
+    -- that update — written when `invited` meant nothing and there was no
+    -- acceptance flow to bypass. Only firm/business: government_members and
+    -- ngo_members have no `accepted_at` column, so there is no evidence of
+    -- consent to check there, and no invitation surface in the product either.
+    -- What the whole flow proves is in members_accept_own_invitation.test.sql.
+    if e.mtbl in ('firm_members', 'business_members') then
+      begin
+        execute format('update public.%I set status = %L where user_id = %L', e.mtbl, 'active', e.new_user);
+        raise exception 'T4 FAIL [%]: the owner answered an invitation on the invitee''s behalf in % (A5/F03)', e.label, e.mtbl;
+      exception when insufficient_privilege then
+        raise notice 'T4 PASS [%]: the owner could not answer the invitation in % (A5/F03)', e.label, e.mtbl;
+      end;
+    end if;
+
+    -- What the owner MAY still do with a pending invitation: cancel it.
+    execute format('update public.%I set status = %L where user_id = %L', e.mtbl, 'removed', e.new_user);
     get diagnostics n = row_count;
     if n <> 1 then
       raise exception 'T4 FAIL [%]: owner updated % row(s) in %, expected 1', e.label, n, e.mtbl;
     end if;
-    raise notice 'T4 PASS [%]: owner inserted and updated a membership row in %', e.label, e.mtbl;
+    raise notice 'T4 PASS [%]: owner inserted and cancelled a membership invitation in %', e.label, e.mtbl;
 
     -- T5 a plain member may not write the membership table
     perform set_config('test.uid', member_id, false);

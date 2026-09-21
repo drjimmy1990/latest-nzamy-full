@@ -3,14 +3,14 @@ Simulate Human Justice Providers Behavior on Nezamy Platform (Live / Localhost)
 ================================================================================
 Target Actors:
 1. Provider Notary: provider-notary (موثّق معتمد)
-   Email: provider-notary.uat-20260915-full@nzamy.test (UID: e02a276a-76e7-4324-9ceb-22fbb2411567)
+   Email: default below, override via env UAT_PROVIDER_NOTARY_EMAIL
 2. Provider Arbitrator: provider-arbitrator (محكّم معتمد)
-   Email: provider-arbitrator.uat-20260915-full@nzamy.test (UID: dedb9b77-43dc-4796-83b3-8ca626e53703)
+   Email: default below, override via env UAT_PROVIDER_ARBITRATOR_EMAIL
 3. Provider Bailiff: provider-bailiff (موجّه / مراجع معتمد)
-   Email: provider-bailiff.uat-20260915-full@nzamy.test (UID: 3cd371e7-d252-4706-8abe-5d3a24e35467)
+   Email: default below, override via env UAT_PROVIDER_BAILIFF_EMAIL
 
-Password: Uat!co6VNCZijtZNMXV8BWIB9c4Q9
-Target URL: https://nezamy.sa (fallback: http://localhost:3000)
+Password: set via env UAT_PASSWORD (required, no default)
+Target: local by default (http://localhost:3000); --live + env UAT_ALLOW_LIVE=1 required for production
 
 Physics: Fast Realistic Human Simulation
 - Cubic Bezier mouse curves with velocity ease-in-out profiling
@@ -29,6 +29,7 @@ import time
 import math
 import random
 import json
+import argparse
 from datetime import datetime
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -40,16 +41,20 @@ SCREENSHOTS_DIR = os.path.join(OUTPUT_DIR, "screenshots", "provider")
 os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
 BRAIN_CONV_ID = "27ac1089-e845-4eb8-9bfa-f462c2d34cad"
-BRAIN_SCREENSHOTS_DIR = os.path.join(r"C:\Users\Judge\.gemini\antigravity\brain", BRAIN_CONV_ID, "screenshots", "provider")
-os.makedirs(BRAIN_SCREENSHOTS_DIR, exist_ok=True)
+BRAIN_SCREENSHOTS_DIR = os.environ.get("UAT_BRAIN_SCREENSHOTS_DIR")
+if BRAIN_SCREENSHOTS_DIR:
+    os.makedirs(BRAIN_SCREENSHOTS_DIR, exist_ok=True)
 
 LIVE_BASE_URL = "https://nezamy.sa"
 LOCAL_BASE_URL = "http://localhost:3000"
 
-NOTARY_EMAIL = "provider-notary.uat-20260915-full@nzamy.test"
-ARBITRATOR_EMAIL = "provider-arbitrator.uat-20260915-full@nzamy.test"
-BAILIFF_EMAIL = "provider-bailiff.uat-20260915-full@nzamy.test"
-UNIVERSAL_PASSWORD = "Uat!co6VNCZijtZNMXV8BWIB9c4Q9"
+NOTARY_EMAIL = os.environ.get("UAT_PROVIDER_NOTARY_EMAIL", "provider-notary.uat-20260915-full@nzamy.test")
+ARBITRATOR_EMAIL = os.environ.get("UAT_PROVIDER_ARBITRATOR_EMAIL", "provider-arbitrator.uat-20260915-full@nzamy.test")
+BAILIFF_EMAIL = os.environ.get("UAT_PROVIDER_BAILIFF_EMAIL", "provider-bailiff.uat-20260915-full@nzamy.test")
+UNIVERSAL_PASSWORD = os.environ.get("UAT_PASSWORD")
+if not UNIVERSAL_PASSWORD:
+    print("[Config] UAT_PASSWORD environment variable is not set. Set it before running this script.")
+    sys.exit(2)
 
 
 class HumanDriver:
@@ -162,11 +167,12 @@ def save_screenshot(page: Page, filename: str):
     """Saves screenshot both to outputs and brain directory for cross-reference."""
     target_path = os.path.join(SCREENSHOTS_DIR, filename)
     page.screenshot(path=target_path)
-    brain_path = os.path.join(BRAIN_SCREENSHOTS_DIR, filename)
-    try:
-        shutil.copy2(target_path, brain_path)
-    except Exception:
-        pass
+    if BRAIN_SCREENSHOTS_DIR:
+        brain_path = os.path.join(BRAIN_SCREENSHOTS_DIR, filename)
+        try:
+            shutil.copy2(target_path, brain_path)
+        except Exception:
+            pass
     size = os.path.getsize(target_path)
     print(f"  📸 تم حفظ اللقطة: {filename} (الحجم: {size:,} بايت)")
 
@@ -510,4 +516,15 @@ def run_provider_simulation():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Simulate Human Justice Providers Behavior")
+    parser.add_argument("--live", action="store_true",
+                         help="Target the live production site instead of localhost (also requires env UAT_ALLOW_LIVE=1)")
+    args = parser.parse_args()
+    if args.live:
+        if os.environ.get("UAT_ALLOW_LIVE") != "1":
+            print("[EnvSelector] --live requires env UAT_ALLOW_LIVE=1 to be set. Refusing to target production.")
+            sys.exit(2)
+    else:
+        LIVE_BASE_URL = LOCAL_BASE_URL
+    print(f"[EnvSelector] Target: {LIVE_BASE_URL}")
     run_provider_simulation()

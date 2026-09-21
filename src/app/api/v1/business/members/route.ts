@@ -4,11 +4,13 @@ import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
   BUSINESS_INVITE_ROLE_VALUES,
+  BUSINESS_ROLE_LABEL,
   isInvitableBusinessRole,
   type BusinessRole,
 } from "@/lib/auth/businessMembershipAccess";
 import { resolveBusinessProfileScope } from "@/lib/auth/businessProfileScope";
 import { escapeLikePattern } from "@/lib/services/likePattern";
+import { recordNotification } from "@/lib/notify";
 
 /**
  * /api/v1/business/members — the company roster (WP-6 B-5, plan §5 Q7 = yes,
@@ -34,12 +36,39 @@ import { escapeLikePattern } from "@/lib/services/likePattern";
  *   500  a read failed — never `{ data: [] }` (see listRead.ts)
  *
  * POST /api/v1/business/members   body `{ email: string, role: BusinessRole }`
- *   201 `{ data: BusinessMember }`
+ *   201 `{ data: BusinessMember }` — a NEW invitation
+ *   200 `{ data: BusinessMember }` — an existing `removed`/`suspended` row was
+ *        re-invited in place (see «RE-INVITING» below)
  *   400  missing e-mail, or a role outside the eight invitable ones
  *   403  the caller is not the company owner (also the RLS answer, 42501)
  *   404  no company on this account, or no account a company may add carries
  *        that e-mail (see the invite lookup below)
- *   409  that account is already on this company's roster
+ *   409  that account is already on this company's roster (`invited` or
+ *        `active` — the two states a second invitation would overwrite)
+ *
+ * ── AN INVITATION, NOT A MEMBERSHIP (review 2026-09-21 A5 / F03) ───────────
+ * This POST used to insert `status: 'active', accepted_at: now()`, so a
+ * company owner who knew an e-mail address put that person on the roster
+ * without asking — and 20260914's policy «business members read business
+ * service requests» plus /api/v1/service-requests then routed the victim's
+ * private consultations into the company feed. It now writes
+ * `status: 'invited', accepted_at: null` and notifies the invitee, who
+ * answers it themselves at `/api/v1/me/invitations/business/{id}/accept`
+ * (or `/decline`). The database arm that lets them is
+ * 20260922_02_members_accept_own_invitation.sql.
+ *
+ * An `invited` row grants nothing: every membership read in this repo —
+ * `useUser`, `resolveActiveEntityIds`, `is_active_business_member`, the GET
+ * above — filters `status = 'active'`.
+ *
+ * ── RE-INVITING ────────────────────────────────────────────────────────────
+ * Removal is `status = 'removed'`, never a DELETE, and
+ * `uq_business_members_business_user` is total — so before this change a
+ * colleague who had once been removed could NEVER be added again (23505 →
+ * «عضو مسبقاً», forever, about somebody who is not a member). A `removed` or
+ * `suspended` row is therefore PATCHed back to `invited` with the new role,
+ * through the RLS client (the owner's UPDATE arm admits it), and answered 200
+ * rather than 201: nothing was created.
  *
  * `BusinessMember` = `{ id, businessId, userId, role, status, displayName,
  * email, isOwner, acceptedAt, createdAt }` — see
@@ -208,8 +237,22 @@ const AR = {
   // address — without confirming or denying that the address exists at all.
   accountNotFound:
     "لا يوجد حساب مؤهل بهذا البريد على المنصّة. تأكّد من البريد أو تواصل مع فريق نظامي لإضافة العضو.",
-  alreadyMember: "هذا المستخدم عضو في الشركة مسبقاً.",
+  alreadyMember: "هذا المستخدم عضو في الشركة مسبقاً أو لديه دعوة قائمة بانتظار الرد.",
 } as const;
+
+/**
+ * Where the invitee will find the invitation — the screen that mounts
+ * `PendingInvitationsBanner`. Keyed on the account type the invite lookup
+ * already read, because a lawyer sent to `/dashboard/client` would find no
+ * banner there.
+ */
+function inviteeDashboardHref(userType: string | null | undefined): string {
+  if (userType === "lawyer") return "/dashboard/lawyer";
+  if (userType === "corporate") return "/dashboard/business";
+  return "/dashboard/client";
+}
+
+const MEMBER_COLUMNS = "id, business_id, user_id, role, status, accepted_at, created_at";
 
 export async function GET(_request: NextRequest) {
   try {
@@ -312,7 +355,7 @@ export async function POST(request: NextRequest) {
 
     const { data: business, error: businessError } = await supabase
       .from("business_profiles")
-      .select("id, owner_user_id")
+      .select("id, owner_user_id, company_name_ar")
       .eq("owner_user_id", user.id)
       .maybeSingle();
     if (businessError) {
@@ -356,28 +399,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: AR.accountNotFound }, { status: 404 });
     }
 
-    // `status: 'active'` with `accepted_at`, exactly as /api/v1/firm/members
-    // POST does: there is no invite e-mail and no acceptance screen anywhere in
-    // the product, so a row parked at 'invited' would be a pending invitation
-    // nobody can accept. `team_invitations` exists and is unused; wiring it is
-    // its own task.
-    const { data, error } = await supabase
+    // AN INVITATION — `status: 'invited'`, `accepted_at: null`. See the
+    // header: this used to be `active` + `now()`, which is review finding A5.
+    let created = true;
+    let { data, error } = await supabase
       .from("business_members")
       .insert({
         business_id: business.id,
         user_id: account.id,
         role,
-        status: "active",
-        accepted_at: new Date().toISOString(),
+        status: "invited",
+        accepted_at: null,
       })
-      .select("id, business_id, user_id, role, status, accepted_at, created_at")
+      .select(MEMBER_COLUMNS)
       .single();
 
-    if (error || !data) {
-      if (error?.code === "23505") {
-        // uq_business_members_business_user (20260914:18-19)
+    if (error?.code === "23505") {
+      // uq_business_members_business_user (20260914:18-19). A row already
+      // exists — and since removal is a STATUS, it may well be somebody who
+      // is not a member at all. Re-invite `removed`/`suspended` in place
+      // (the owner's RLS UPDATE arm, 20260921_03, admits it); leave `invited`
+      // and `active` alone, because those are the two states a second
+      // invitation would quietly overwrite.
+      const reinvite = await supabase
+        .from("business_members")
+        .update({ role, status: "invited", accepted_at: null })
+        .eq("business_id", business.id)
+        .eq("user_id", account.id)
+        .in("status", ["removed", "suspended"])
+        .select(MEMBER_COLUMNS)
+        .maybeSingle();
+      if (reinvite.error) {
+        console.error(
+          "[business/members POST] re-invite failed:",
+          reinvite.error.message,
+          reinvite.error.code,
+        );
+        return NextResponse.json(
+          { error: reinvite.error.code === "42501" ? AR.ownerOnly : AR.addFailed },
+          { status: reinvite.error.code === "42501" ? 403 : 500 },
+        );
+      }
+      if (!reinvite.data) {
         return NextResponse.json({ error: AR.alreadyMember }, { status: 409 });
       }
+      created = false;
+      data = reinvite.data;
+      error = null;
+    }
+
+    if (error || !data) {
       if (error?.code === "23514") {
         return NextResponse.json(
           { error: `الدور يجب أن يكون واحدًا من: ${BUSINESS_INVITE_ROLE_VALUES.join(", ")}` },
@@ -391,6 +462,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: AR.addFailed }, { status: 500 });
     }
 
+    // The invitee is told, in Arabic, who invited them and as what — an
+    // invitation nobody is told about is the same silence review A5 is about.
+    // Best-effort by contract (notify.ts swallows its own failures); the
+    // invitation itself is already written either way.
+    const companyName = (business.company_name_ar as string | null) ?? "شركة";
+    await recordNotification({
+      userId: account.id,
+      title: "دعوة للانضمام إلى فريق شركة",
+      body: `دعتك «${companyName}» للانضمام إلى فريقها بصفة «${BUSINESS_ROLE_LABEL[role] ?? role}». يمكنك قبول الدعوة أو رفضها من لوحتك.`,
+      href: inviteeDashboardHref(account.user_type as string | null),
+    });
+
     return NextResponse.json(
       {
         data: toDto(
@@ -399,7 +482,7 @@ export async function POST(request: NextRequest) {
           business.owner_user_id as string,
         ),
       },
-      { status: 201 },
+      { status: created ? 201 : 200 },
     );
   } catch (err) {
     console.error("[business/members POST] Unexpected error:", err);

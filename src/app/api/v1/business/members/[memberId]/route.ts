@@ -22,7 +22,27 @@ import {
  *   403  the caller does not own this company, or the target row IS the
  *        owner's own row
  *   404  no company on this account, or no such member in THIS company
+ *   409  `status: "active"` on a row that was never accepted — see CONSENT
  *   500  a read or the write failed
+ *
+ * ── CONSENT (review 2026-09-21 A5 / F03) ────────────────────────────────────
+ * This endpoint may NOT answer an invitation on the invitee's behalf.
+ * `POST ../route.ts` now writes `status: 'invited', accepted_at: null`, and
+ * the ONLY thing that turns that into a membership is the invited person's own
+ * `POST /api/v1/me/invitations/business/{id}/accept`. Without the check below
+ * the whole flow is decorative: two owner-only calls (POST an invitation, then
+ * PATCH it to `active`) put a stranger on the roster exactly as before, the
+ * victim is never asked, the invitation disappears from their banner, and from
+ * that moment 20260914's «business members read business service requests»
+ * routes their private consultations into this company's feed.
+ *
+ * The rule is stated on the TARGET STATE, not on one transition, so the
+ * walk-around `invited → suspended → active` is refused too: `accepted_at` is
+ * the only evidence that a person said yes, and only their own answer writes
+ * it. Re-activating someone who DID accept and was later suspended still
+ * works — that row has an `accepted_at`. The same invariant is enforced in the
+ * database by `entity_member_invitation_answer_guard()` (20260922_02), because
+ * this route is not the only way to reach the table.
  *
  * `removed` is a status, not a DELETE: the row stays so the company keeps a
  * record of who was on the roster and when, and so an `on delete cascade`
@@ -55,6 +75,7 @@ const AR = {
   ownerOnly: "إدارة أعضاء الشركة متاحة لمالك الحساب فقط.",
   memberNotFound: "العضو غير موجود.",
   cannotEditOwner: "لا يمكن تعديل عضوية مالك الشركة.",
+  notAcceptedYet: "لا يمكن تفعيل العضوية قبل أن يقبل المدعوّ الدعوة بنفسه.",
 } as const;
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ memberId: string }> }) {
@@ -98,9 +119,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ m
         : NextResponse.json({ error: AR.noBusiness }, { status: 404 });
     }
 
+    // `status, accepted_at` are read for the CONSENT check below — the row's
+    // current state has to be known BEFORE the update, not after it.
     const { data: existing, error: existingError } = await supabase
       .from("business_members")
-      .select("id, business_id, user_id")
+      .select("id, business_id, user_id, status, accepted_at")
       .eq("id", memberId)
       .eq("business_id", business.id)
       .maybeSingle();
@@ -113,6 +136,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ m
     }
     if (existing.user_id === business.owner_user_id) {
       return NextResponse.json({ error: AR.cannotEditOwner }, { status: 403 });
+    }
+
+    // CONSENT — see the header. An invitation is answered by the invitee, and
+    // by nobody else. 409 rather than 403: the caller IS allowed here, the row
+    // is simply not in a state this endpoint may activate.
+    const existingAcceptedAt = (existing as { accepted_at?: string | null }).accepted_at ?? null;
+    if (decision.patch.status === "active" && existingAcceptedAt === null) {
+      return NextResponse.json({ error: AR.notAcceptedYet }, { status: 409 });
     }
 
     const { data, error } = await supabase

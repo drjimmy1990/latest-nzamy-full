@@ -153,6 +153,8 @@ export interface LawSystem {
   chapters: LawChapter[];
   regulationPreamble?: string;   // نص ديباجة اللائحة
   regulationInstruments?: RegulationInstrument[]; // العرض المسطَّح "اللائحة وحدها"
+  /** F13 — regulation articles withheld by the paywall */
+  regulationInstrumentsLocked?: number;
   appendices?: LawAppendix[];    // جداول/ملاحق مستوى الوثيقة (اختياري — أنظمة قليلة فقط)
   /** Registry identity of the parent instrument, not a BOE law_guid. */
   parentLawId?: string;

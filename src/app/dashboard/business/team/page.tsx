@@ -33,12 +33,18 @@
  *     `can("team-legal-department")` used to be read; the company's real
  *     `has_legal_dept` column is now set from «إعدادات الكيان» (WP-6 B-4)
  *     and no control on this page depends on it.
- *   • pending invitations — there is no invite e-mail and no acceptance
- *     screen, so an added member is `active` immediately (exactly what
- *     /api/v1/firm/members does) and there is no «بانتظار القبول» list to
- *     show. `team_invitations` exists in the schema, unused.
- *   • a seat counter — nothing counts seats; see `seatPolicy` in
- *     src/constants/settingsReadiness.ts.
+ *   • a seat counter — nothing counts seats.
+ *
+ * ── ADDING SOMEBODY IS AN INVITATION NOW (review 2026-09-21 A5/F03) ─────
+ * «إضافة عضو» used to write `status: 'active'` — the person was on the
+ * roster without being asked, and their own private service requests started
+ * flowing into this company's feed. The POST now writes `status: 'invited'`,
+ * notifies them, and they accept or decline from their own dashboard
+ * (`PendingInvitationsBanner` → `/api/v1/me/invitations/…`). So an
+ * «بانتظار القبول» row IS a real state here, and it is rendered as one:
+ * no role menu and no suspend button on it, because neither means anything
+ * before the person has joined — only «إلغاء الدعوة». `team_invitations`
+ * remains unused; the invitation lives in `business_members` itself.
  *
  * ── NAMES AND E-MAILS MAY BE ABSENT, AND THE PAGE SAYS SO ────────────────
  * The route resolves the other members' names through a server-only
@@ -180,8 +186,10 @@ function AddMemberModal({
             <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
               <CheckCircle size={32} weight="fill" className="text-emerald-500" />
             </div>
-            <p className={`font-bold text-[15px] ${isDark ? "text-white" : "text-zinc-800"}`}>تمت الإضافة</p>
-            <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>أصبح العضو نشطاً في فريق الشركة.</p>
+            <p className={`font-bold text-[15px] ${isDark ? "text-white" : "text-zinc-800"}`}>تمّ إرسال الدعوة</p>
+            {/* Not «أصبح العضو نشطاً» any more: the POST writes `invited`,
+                and saying otherwise would be the consent claim review A5 is about. */}
+            <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>وصلت الدعوة إلى لوحة المدعوّ؛ لن ينضمّ إلى الفريق ولن يطّلع على شيء قبل أن يقبلها.</p>
           </div>
         ) : (
           <div className="p-6 space-y-4">
@@ -314,7 +322,9 @@ function MemberCard({
       </div>
 
       <p className={`text-[11px] mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-        عضو منذ {formatDate(m.acceptedAt ?? m.createdAt)}
+        {m.status === "invited"
+          ? `دُعي في ${formatDate(m.createdAt)} — بانتظار القبول`
+          : `عضو منذ ${formatDate(m.acceptedAt ?? m.createdAt)}`}
       </p>
 
       {rowError && (
@@ -323,8 +333,47 @@ function MemberCard({
         </p>
       )}
 
+      {/* An INVITED row is not a membership: the person has not answered yet,
+          sees nothing of this company, and may still say no. A role menu and a
+          «تعليق» button on it would both be edits to something that does not
+          exist, so the only control is withdrawing the invitation — which is
+          the same PATCH to `removed` the roster has always used. */}
+      {canManage && !m.isOwner && m.status === "invited" && (
+        <div className="space-y-2">
+          <p className={`text-[11px] leading-5 ${isDark ? "text-amber-400/80" : "text-amber-600"}`}>
+            بانتظار قبول الدعوة — لا يطّلع هذا الحساب على شيء من بيانات الشركة قبل أن يقبل.
+          </p>
+          {confirmRemove ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => run(() => onSetStatus(m.id, "removed"), "تعذّر إلغاء الدعوة.")}
+                disabled={busy}
+                className="flex-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-red-500/10 text-red-500 hover:bg-red-500/20 cursor-pointer disabled:opacity-60"
+              >
+                تأكيد إلغاء الدعوة
+              </button>
+              <button
+                onClick={() => setConfirmRemove(false)}
+                disabled={busy}
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}
+              >
+                تراجع
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmRemove(true)}
+              disabled={busy}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${isDark ? "text-zinc-500 hover:text-red-400" : "text-zinc-400 hover:text-red-500"}`}
+            >
+              <Trash size={12} /> إلغاء الدعوة
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Never on the owner's own row — the API refuses it too (403). */}
-      {canManage && !m.isOwner && (
+      {canManage && !m.isOwner && m.status !== "invited" && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">

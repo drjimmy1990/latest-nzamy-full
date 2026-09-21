@@ -110,7 +110,9 @@ test("the [memberId] sibling uses the same client and the same projection", () =
 });
 
 test("the writes a firm owner can actually fail are Arabic, not Postgres codes", () => {
-  assert.match(routeSource, /error\?\.code === "23505"[\s\S]{0,200}?عضو في المكتب مسبقا/);
+  // 23505 now opens the re-invite arm first; the Arabic 409 is what it answers
+  // when the existing row is `invited`/`active`.
+  assert.match(routeSource, /error\?\.code === "23505"[\s\S]{0,1800}?عضو في المكتب مسبقا/);
   assert.match(routeSource, /error\?\.code === "23514"[\s\S]{0,200}?FIRM_ROLE_VALUES\.join/);
   assert.match(routeSource, /error\?\.code === "42501"[\s\S]{0,200}?غير مصرح/);
 });
@@ -123,6 +125,37 @@ test("a failed read is a 500, never an empty list presented as fact", () => {
   assert.match(routeSource, /if \(membersError\) \{[\s\S]{0,300}?status: 500/);
   assert.match(routeSource, /if \(profileError\) \{[\s\S]{0,300}?status: 500/);
   assert.doesNotMatch(routeSource, /catch[\s\S]{0,80}?return NextResponse\.json\(\{ data: \[\] \}/);
+});
+
+// ── A5/F03: adding somebody is an INVITATION, not a membership ──────────
+
+test("the firm POST writes an INVITATION — status 'invited', accepted_at null", () => {
+  assert.match(routeSource, /status: "invited",\s*\n\s*accepted_at: null,/);
+  assert.doesNotMatch(routeSource, /status: "active",\s*\n\s*accepted_at: new Date\(\)\.toISOString\(\)/);
+});
+
+test("a `removed`/`suspended` firm row is re-invited in place, through the RLS client", () => {
+  assert.match(routeSource, /\.update\(\{ role, status: "invited", accepted_at: null \}\)/);
+  assert.match(routeSource, /\.in\("status", \["removed", "suspended"\]\)/);
+  assert.match(routeSource, /\.eq\("firm_id", firm\.id\)\s*\n\s*\.eq\("user_id", account\.id\)/);
+  assert.doesNotMatch(routeSource, /service\.from\("firm_members"\)/);
+  assert.match(routeSource, /status: created \? 201 : 200/);
+});
+
+test("the firm invitee is notified in Arabic, with the office name and the role", () => {
+  assert.ok(routeSource.includes('import { recordNotification } from "@/lib/notify";'));
+  const call = /await recordNotification\(\{[\s\S]{0,600}?\}\);/.exec(routeSource);
+  assert.ok(call, "no recordNotification call in the POST");
+  const body = call![0];
+  assert.match(body, /userId: account\.id,/);
+  assert.match(body, /FIRM_ROLE_LABEL\[role as FirmRole\]/);
+  assert.match(body, /\$\{firmName\}/);
+  assert.ok(/[\u0600-\u06FF]/.test(body), "the notification is not Arabic");
+  assert.match(body, /href: inviteeDashboardHref\(account\.user_type as string \| null\),/);
+});
+
+test("the office name is read from the owner's own RLS-scoped firm row", () => {
+  assert.match(routeSource, /\.select\("id, owner_user_id, name_ar"\)\s*\n\s*\.eq\("owner_user_id", userId\)/);
 });
 
 test("the firm invite lookup matches the e-mail literally — LIKE/PostgREST wildcards are escaped first", () => {

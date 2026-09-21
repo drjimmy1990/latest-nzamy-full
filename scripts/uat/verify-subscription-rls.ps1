@@ -6,15 +6,14 @@ actors can read or write, and removes every record it created in finally.
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$ActorsFile,
-  [string]$OutputDirectory
+  [string]$OutputDirectory,
+  [switch]$IUnderstandThisIsProduction
 )
 
 $ErrorActionPreference = 'Stop'
-$envMap = @{}
-Get-Content (Join-Path $PSScriptRoot '..\..\.env.local') | ForEach-Object {
-  $m = [regex]::Match($_, '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$')
-  if ($m.Success) { $envMap[$m.Groups[1].Value] = $m.Groups[2].Value.Trim().Trim('"').Trim("'") }
-}
+. (Join-Path $PSScriptRoot '_env.ps1')
+$uatEnv = Assert-UatProject -AllowWrites -IUnderstandThisIsProduction:$IUnderstandThisIsProduction
+$envMap = $uatEnv.RawMap
 foreach ($required in @('NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY')) {
   if ([string]::IsNullOrWhiteSpace($envMap[$required])) { throw "Missing $required in local UAT configuration." }
 }

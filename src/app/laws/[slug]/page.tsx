@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
-  ListBullets, X
+  ListBullets, X, Lock
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -205,6 +205,11 @@ function LawSystemPageContent() {
           appendices: data.appendices || null,
           regulationPreamble: data.regulationPreamble || '',
           regulationInstruments: data.regulationInstruments || [],
+          // F13: how many regulation articles the server withheld from the flat
+          // view because their نظام article is behind the paywall. This mapping
+          // is a whitelist — omitting it here would silently discard the only
+          // signal that the «اللائحة وحدها» tab is showing less than the law has.
+          regulationInstrumentsLocked: data.regulationInstrumentsLocked || 0,
         } as LawSystem);
       } catch (err) {
         console.error('[LawReader] Failed to load law:', err);
@@ -802,7 +807,13 @@ function LawSystemPageContent() {
                 >
                   {isRTL ? "النظام فقط" : "Law Only"}
                 </button>
-                {law.chapters.some(ch => ch.articles.some(a => a.regulations && a.regulations.length > 0)) && (
+                {/* F13: `a.regulations` is emitted by the API for UNLOCKED articles
+                    only, so a law whose every regulation-bearing article sits past
+                    the free limit would lose the tab itself — not just its content.
+                    The withheld count keeps the entry point (and the upgrade
+                    affordance behind it) reachable. */}
+                {(law.chapters.some(ch => ch.articles.some(a => a.regulations && a.regulations.length > 0)) ||
+                  (law.regulationInstrumentsLocked ?? 0) > 0) && (
                   <button
                     onClick={() => setViewMode("regulation")}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -854,7 +865,9 @@ function LawSystemPageContent() {
                   </div>
                 ))}
               </div>
-            ) : viewMode === "regulation" && (law as any).regulationInstruments?.length > 0 ? (
+            ) : viewMode === "regulation" &&
+                ((law as any).regulationInstruments?.length > 0 ||
+                 (law.regulationInstrumentsLocked ?? 0) > 0) ? (
               // ── العرض المسطَّح الجديد "اللائحة وحدها" ──────────────────────
               // مبني من law.regulationInstruments (محسوب مسبقاً من الخادم:
               // مجمَّع بـref، مرتَّب بـsort_key، ومُستبعَد منه is_secondary_display)
@@ -862,13 +875,20 @@ function LawSystemPageContent() {
               // راجع 00_عقل_القوانين/13_دليل_المبرمج/02_عقد_اللوائح_المدمجة_والبذر.md §1-3-د.
               <div className="space-y-4">
                 {(() => {
-                  const instruments = (law as any).regulationInstruments as Array<{
+                  // `?? []` because this branch now also opens when the list is
+                  // empty and every instrument was withheld by the paywall (F13).
+                  const instruments = ((law as any).regulationInstruments ?? []) as Array<{
                     ref: string;
                     articles: { regNum: string | null; text: string; status: string; systemArticleNumber: string | null }[];
                   }>;
                   const visible = selectedRegName
                     ? instruments.filter((i) => i.ref === selectedRegName)
                     : instruments;
+                  // F13: the server omits (never truncates) the regulation
+                  // articles hanging under a locked نظام article, so this tab
+                  // would otherwise silently shrink — or come up empty for a
+                  // law whose every regulation sits past the free limit.
+                  const lockedRegCount = law.regulationInstrumentsLocked ?? 0;
 
                   return (
                     <>
@@ -911,6 +931,26 @@ function LawSystemPageContent() {
                           ))}
                         </div>
                       ))}
+                      {lockedRegCount > 0 && (
+                        <div className={`rounded-xl border p-5 text-center space-y-2.5 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+                          <p className={`text-[12px] font-bold leading-relaxed ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
+                            {isRTL
+                              // The number is law-wide, not per-instrument, so
+                              // the copy says "في هذا النظام" and never "هنا":
+                              // the chips above can be filtering this list to a
+                              // single ref while the withheld articles belong to
+                              // another one.
+                              ? `${lockedRegCount} من مواد اللوائح في هذا النظام لا تظهر لأن المواد النظامية التابعة لها خارج المعاينة المجانية`
+                              : `${lockedRegCount} regulation article(s) in this law are hidden: the law articles they belong to are outside the free preview`}
+                          </p>
+                          <button
+                            onClick={() => setShowPaywall(true)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0B3D2E] text-white text-[11px] font-bold shadow"
+                          >
+                            <Lock size={11} /> {isRTL ? "اشترك للوصول" : "Subscribe to access"}
+                          </button>
+                        </div>
+                      )}
                     </>
                   );
                 })()}

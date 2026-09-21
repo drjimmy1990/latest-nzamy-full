@@ -92,12 +92,27 @@ BASE=(
   "$HERE/prelude_entity_rls_chain.sql"    # drops the firm_profiles/firm_members stubs so 20260616 builds the real ones
   "$HERE/prelude_rehearsal_base.sql"      # public.user_settings — see that file's header for why prelude_profiles_phone.sql cannot be used here
   "$MIG/20260603_phase1_001_profiles.sql"
+  "$MIG/20260614_auto_create_role_profiles.sql"
+  "$MIG/20260616_production_readiness_fixes.sql"
   "$MIG/20260625_fix_rls_recursion.sql"
   "$MIG/20260616_entities_setup_and_rls_fix.sql"
   "$MIG/20260617_fix_remaining_rls.sql"
   "$MIG/20260603_phase1_003_subscriptions_billing.sql"
   "$MIG/20260903_phase2_clients_and_firm_membership.sql"
+  # ── added 2026-09-22 so the 20260922_* files and their _verify.sql gates can run here.
+  #    20260821 + 20260826 must precede 20260827: each CREATE OR REPLACEs handle_new_user(),
+  #    and 20260827 carries the newest body (the one that copies the signup phone).
+  "$MIG/20260821_fix_provider_signup_sub_role.sql"
+  "$MIG/20260826_corporate_identity_persisted.sql"     # legal_rep_* columns 20260922_03 grants
   "$MIG/20260827_signup_contact_fields.sql"
+  "$MIG/20260906_phase6_settings_out_of_browser.sql"   # nationality / office_address / license_issued_on
+  "$MIG/20260907_phase7_profile_services_reviews.sql"  # slug / headline_ar / education
+  "$MIG/20260626_legal_library_schema.sql"             # library schema 20260922_01 grants on
+  "$MIG/20260627_platform_settings.sql"
+  "$MIG/20260729_library_status.sql"
+  "$MIG/20260730_article_regulations.sql"
+  "$MIG/20260824_laws_effective_date_gregorian_columns.sql"
+  "$MIG/20260911_library_laws_enactment_gazette_schema.sql"
 )
 for f in "${BASE[@]}"; do
   psql_file "$(basename "$f")" "$f" \
@@ -229,6 +244,10 @@ ORDER=(
   "$MIG/20260921_02_subscriptions_write_revoke.sql"
   "$MIG/20260921_03_entity_rls_recursion_fix.sql"
   "$MIG/20260921_04_profiles_phone_e164_check.sql"
+  # ── 2026-09-22 batch (review A4 / A5 / A6) — apply in this order, before the code deploy ──
+  "$MIG/20260922_01_library_grants.sql"
+  "$MIG/20260922_02_members_accept_own_invitation.sql"
+  "$MIG/20260922_03_lawyer_provider_column_grants.sql"
   "$ROOT/supabase/storage_policies_documents.sql"
   "$MIG/_verify.sql"
 )

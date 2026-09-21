@@ -20,6 +20,15 @@
  * (`team_invitations` exists in the schema, unused) — the add-member form
  * says so rather than pretending an e-mail alone is enough.
  *
+ * ── ADDING SOMEBODY IS AN INVITATION (review 2026-09-21 A5/F03) ────────
+ * The POST used to write `status: 'active'`, so a firm owner who knew an
+ * e-mail address put that account on the roster without asking. It now writes
+ * `status: 'invited'` and notifies them; they accept or decline on their own
+ * dashboard (`PendingInvitationsBanner` → `/api/v1/me/invitations/…`). An
+ * «بانتظار القبول» card therefore shows no role menu and no «تعليق»
+ * — neither means anything before the person has joined — only
+ * «إلغاء الدعوة».
+ *
  * ── WHAT WAS REMOVED, AND WHY IT HAS NO REPLACEMENT HERE ───────────────────
  * Nothing in `firm_members` (or anywhere else) backs these, so they are gone
  * rather than re-mocked:
@@ -179,8 +188,9 @@ function AddMemberModal({ isDark, onClose, onAdd }: AddMemberModalProps) {
             >
               <CheckCircle size={32} weight="fill" className="text-emerald-500" />
             </motion.div>
-            <p className={`font-bold text-[15px] ${isDark ? "text-white" : "text-zinc-800"}`}>تمت الإضافة</p>
-            <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>أصبح العضو نشطًا في فريق المكتب.</p>
+            <p className={`font-bold text-[15px] ${isDark ? "text-white" : "text-zinc-800"}`}>تمّ إرسال الدعوة</p>
+            {/* Not «أصبح العضو نشطًا» any more: the POST writes `invited`. */}
+            <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>وصلت الدعوة إلى لوحة المدعوّ؛ لن ينضمّ إلى فريق المكتب ولن يطّلع على شيء قبل أن يقبلها.</p>
           </motion.div>
         ) : (
           <div className="p-6 space-y-4">
@@ -251,7 +261,7 @@ interface MemberCardProps {
   isDark: boolean;
   card: string;
   onChangeRole: (memberId: string, role: FirmRole) => Promise<void>;
-  onToggleStatus: (memberId: string, next: "active" | "suspended") => Promise<void>;
+  onToggleStatus: (memberId: string, next: "active" | "suspended" | "removed") => Promise<void>;
 }
 
 function MemberCard({ m, isDark, card, onChangeRole, onToggleStatus }: MemberCardProps) {
@@ -281,6 +291,19 @@ function MemberCard({ m, isDark, card, onChangeRole, onToggleStatus }: MemberCar
       await onToggleStatus(m.id, m.status === "suspended" ? "active" : "suspended");
     } catch (err) {
       setRowError(err instanceof Error ? err.message : "تعذّر تغيير الحالة.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Withdraw an unanswered invitation — `removed`, the roster's own convention. */
+  const handleCancelInvite = async () => {
+    setBusy("status");
+    setRowError("");
+    try {
+      await onToggleStatus(m.id, "removed");
+    } catch (err) {
+      setRowError(err instanceof Error ? err.message : "تعذّر إلغاء الدعوة.");
     } finally {
       setBusy(null);
     }
@@ -321,9 +344,11 @@ function MemberCard({ m, isDark, card, onChangeRole, onToggleStatus }: MemberCar
         <span dir="ltr" className="truncate">{m.email ?? "—"}</span>
       </div>
 
-      {/* Joined date */}
+      {/* Joined date — or, for an unanswered invitation, the date it was sent */}
       <p className={`text-[11px] mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-        عضو منذ {formatDate(m.acceptedAt ?? m.createdAt)}
+        {m.status === "invited"
+          ? `دُعي في ${formatDate(m.createdAt)} — بانتظار القبول`
+          : `عضو منذ ${formatDate(m.acceptedAt ?? m.createdAt)}`}
       </p>
 
       {rowError && (
@@ -332,8 +357,26 @@ function MemberCard({ m, isDark, card, onChangeRole, onToggleStatus }: MemberCar
         </p>
       )}
 
-      {/* Actions — never on the owner's own row */}
-      {!m.isOwner && (
+      {/* An INVITED row is not a membership: the person has not answered, sees
+          nothing of this office, and may still say no. The only control is
+          withdrawing the invitation. */}
+      {!m.isOwner && m.status === "invited" && (
+        <div className="space-y-2">
+          <p className={`text-[11px] leading-5 ${isDark ? "text-amber-400/80" : "text-amber-600"}`}>
+            بانتظار قبول الدعوة — لا يطّلع هذا الحساب على شيء من بيانات المكتب قبل أن يقبل.
+          </p>
+          <button
+            onClick={handleCancelInvite}
+            disabled={busy !== null}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${isDark ? "text-zinc-500 hover:text-red-400" : "text-zinc-400 hover:text-red-500"}`}
+          >
+            <X size={12} weight="bold" /> إلغاء الدعوة
+          </button>
+        </div>
+      )}
+
+      {/* Actions — never on the owner's own row, never on an invitation */}
+      {!m.isOwner && m.status !== "invited" && (
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <select
@@ -429,7 +472,7 @@ export default function FirmTeamPage() {
       : prev);
   };
 
-  const handleToggleStatus = async (memberId: string, next: "active" | "suspended") => {
+  const handleToggleStatus = async (memberId: string, next: "active" | "suspended" | "removed") => {
     const updated = await updateFirmMember(memberId, { status: next });
     setRead(prev => prev && prev.ok
       ? { ...prev, items: prev.items.map(m => (m.id === memberId ? updated : m)) }

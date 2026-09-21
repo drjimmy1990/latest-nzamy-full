@@ -3,9 +3,9 @@ Simulate Human System Admin Behavior on Nezamy Platform (Live / Localhost)
 ==========================================================================
 Target Actor:
 Admin Core: admin (إدارة المنصة المركزية)
-Email: admin.uat-20260915-full@nzamy.test (UID: 953bfb24-e058-4de8-9a5a-84fda0652390)
-Password: Uat!co6VNCZijtZNMXV8BWIB9c4Q9
-Target URL: https://nezamy.sa (fallback: http://localhost:3000)
+Email: default below, override via env UAT_ADMIN_EMAIL
+Password: set via env UAT_PASSWORD (required, no default)
+Target: local by default (http://localhost:3000); --live + env UAT_ALLOW_LIVE=1 required for production
 
 Physics: Fast Realistic Human Simulation
 - Cubic Bezier mouse curves with velocity ease-in-out profiling
@@ -24,6 +24,7 @@ import time
 import math
 import random
 import json
+import argparse
 from datetime import datetime
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -35,14 +36,18 @@ SCREENSHOTS_DIR = os.path.join(OUTPUT_DIR, "screenshots", "admin")
 os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
 BRAIN_CONV_ID = "27ac1089-e845-4eb8-9bfa-f462c2d34cad"
-BRAIN_SCREENSHOTS_DIR = os.path.join(r"C:\Users\Judge\.gemini\antigravity\brain", BRAIN_CONV_ID, "screenshots", "admin")
-os.makedirs(BRAIN_SCREENSHOTS_DIR, exist_ok=True)
+BRAIN_SCREENSHOTS_DIR = os.environ.get("UAT_BRAIN_SCREENSHOTS_DIR")
+if BRAIN_SCREENSHOTS_DIR:
+    os.makedirs(BRAIN_SCREENSHOTS_DIR, exist_ok=True)
 
 LIVE_BASE_URL = "https://nezamy.sa"
 LOCAL_BASE_URL = "http://localhost:3000"
 
-ADMIN_EMAIL = "admin.uat-20260915-full@nzamy.test"
-UNIVERSAL_PASSWORD = "Uat!co6VNCZijtZNMXV8BWIB9c4Q9"
+ADMIN_EMAIL = os.environ.get("UAT_ADMIN_EMAIL", "admin.uat-20260915-full@nzamy.test")
+UNIVERSAL_PASSWORD = os.environ.get("UAT_PASSWORD")
+if not UNIVERSAL_PASSWORD:
+    print("[Config] UAT_PASSWORD environment variable is not set. Set it before running this script.")
+    sys.exit(2)
 
 
 class HumanDriver:
@@ -155,11 +160,12 @@ def save_screenshot(page: Page, filename: str):
     """Saves screenshot both to outputs and brain directory for cross-reference."""
     target_path = os.path.join(SCREENSHOTS_DIR, filename)
     page.screenshot(path=target_path)
-    brain_path = os.path.join(BRAIN_SCREENSHOTS_DIR, filename)
-    try:
-        shutil.copy2(target_path, brain_path)
-    except Exception:
-        pass
+    if BRAIN_SCREENSHOTS_DIR:
+        brain_path = os.path.join(BRAIN_SCREENSHOTS_DIR, filename)
+        try:
+            shutil.copy2(target_path, brain_path)
+        except Exception:
+            pass
     size = os.path.getsize(target_path)
     print(f"  📸 تم حفظ اللقطة: {filename} (الحجم: {size:,} بايت)")
 
@@ -340,4 +346,15 @@ def run_admin_simulation():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Simulate Human System Admin Behavior")
+    parser.add_argument("--live", action="store_true",
+                         help="Target the live production site instead of localhost (also requires env UAT_ALLOW_LIVE=1)")
+    args = parser.parse_args()
+    if args.live:
+        if os.environ.get("UAT_ALLOW_LIVE") != "1":
+            print("[EnvSelector] --live requires env UAT_ALLOW_LIVE=1 to be set. Refusing to target production.")
+            sys.exit(2)
+    else:
+        LIVE_BASE_URL = LOCAL_BASE_URL
+    print(f"[EnvSelector] Target: {LIVE_BASE_URL}")
     run_admin_simulation()

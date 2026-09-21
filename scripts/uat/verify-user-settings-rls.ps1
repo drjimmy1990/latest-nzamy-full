@@ -3,9 +3,11 @@ Controlled RLS test for user_settings. It snapshots or creates a setting for a
 synthetic user, checks own/cross-user access, then restores the original state.
 #>
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$ActorsFile,[string]$OutputDirectory)
-$ErrorActionPreference='Stop';$envMap=@{}
-Get-Content (Join-Path $PSScriptRoot '..\..\.env.local')|ForEach-Object{$m=[regex]::Match($_,'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$');if($m.Success){$envMap[$m.Groups[1].Value]=$m.Groups[2].Value.Trim().Trim('"').Trim("'")}}
+param([Parameter(Mandatory=$true)][string]$ActorsFile,[string]$OutputDirectory,[switch]$IUnderstandThisIsProduction)
+$ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot '_env.ps1')
+$uatEnv=Assert-UatProject -AllowWrites -IUnderstandThisIsProduction:$IUnderstandThisIsProduction
+$envMap=$uatEnv.RawMap
 foreach($required in @('NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY')){if([string]::IsNullOrWhiteSpace($envMap[$required])){throw "Missing $required in local UAT configuration."}}
 $actorsDocument=Get-Content -Raw $ActorsFile|ConvertFrom-Json;if([string]::IsNullOrWhiteSpace($OutputDirectory)){$OutputDirectory=Split-Path -Parent $ActorsFile};New-Item -ItemType Directory -Force -Path $OutputDirectory|Out-Null
 $clientA=$actorsDocument.actors.'client-a';$clientB=$actorsDocument.actors.'client-b';if(-not $clientA -or -not $clientB){throw 'client-a and client-b UAT actors are required.'}

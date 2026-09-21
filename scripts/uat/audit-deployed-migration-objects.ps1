@@ -6,9 +6,10 @@ It neither applies SQL nor changes data.
 [CmdletBinding()]
 param([Parameter(Mandatory = $true)][string]$OutputDirectory)
 
-$ErrorActionPreference='Stop';$envMap=@{}
-Get-Content (Join-Path $PSScriptRoot '..\..\.env.local')|ForEach-Object{$m=[regex]::Match($_,'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$');if($m.Success){$envMap[$m.Groups[1].Value]=$m.Groups[2].Value.Trim().Trim('"').Trim("'")}}
-foreach($required in @('NEXT_PUBLIC_SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY')){if([string]::IsNullOrWhiteSpace($envMap[$required])){throw "Missing $required in local UAT configuration."}}
+$ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot '_env.ps1')
+$uatEnv=Assert-UatProject
+$envMap=$uatEnv.RawMap
 New-Item -ItemType Directory -Force -Path $OutputDirectory|Out-Null
 $headers=@{apikey=$envMap.SUPABASE_SERVICE_ROLE_KEY;Authorization="Bearer $($envMap.SUPABASE_SERVICE_ROLE_KEY)"}
 function Test-DeployedObject([string]$Name,[string]$Path){

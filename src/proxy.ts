@@ -10,6 +10,11 @@ import {
 // this file imports next/server, so nothing could import it to make a claim
 // about who is allowed where. See routeAccess.test.ts for what is pinned.
 import { routeAccessRuleFor, isProtectedApiPath } from "@/lib/auth/routeAccess";
+// Gate 2 asks this which membership table (if any) can additionally open a
+// path. Pure — it imports routeAccess and nothing else — so it is safe in the
+// edge bundle, and it is the SAME function the browser guard's membership
+// arms read, which is what keeps the two gates from drifting apart.
+import { entityMembershipKindForPath } from "@/lib/auth/entityMembership";
 import { resolveAuthOutcome, AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
 import { isSupabaseMode, isDemoMode } from "@/lib/runtimeMode";
 import {
@@ -406,11 +411,11 @@ export default async function proxy(req: NextRequest) {
     //
     // What the PAGE path offers is weaker than "a UserTypeGuard is in the
     // layout", and the difference is the whole point of writing it down:
-    //   - <UserTypeGuard> is PRESENT in seven of the nine dashboard layouts —
-    //     admin, firm, business, micro, provider, government, ngo. It is absent
-    //     from src/app/dashboard/lawyer/layout.tsx and
-    //     src/app/dashboard/client/layout.tsx, which carry no type check at
-    //     all, so on this branch any signed-in user reaches those two shells.
+    //   - <UserTypeGuard> is PRESENT in all nine dashboard layouts — admin,
+    //     firm, business, micro, provider, government, ngo, and (since the
+    //     2026-09-05 role-guard batch) src/app/dashboard/lawyer/layout.tsx and
+    //     src/app/dashboard/client/layout.tsx as well — so no dashboard shell
+    //     is reached unguarded on this branch.
     //   - Where it is present it REFUSES only when its own profiles read
     //     succeeds. That read is useUser's (src/hooks/useUser.ts:533-553) — a
     //     separate request from the one that just failed here, so it frequently
@@ -536,6 +541,121 @@ export default async function proxy(req: NextRequest) {
       !isAdmin &&
       (knownType === null || !(rbacRule.allowedTypes as readonly string[]).includes(knownType))
     ) {
+      // ─── The second key: an ACCEPTED membership ──────────────────────────
+      // Review 2026-09-21 B3 / F08.
+      //
+      // Reached ONLY after the allowedTypes comparison above has already
+      // failed, so nobody who belongs here by type pays a round trip for it:
+      // an `individual` on /dashboard/client, a `lawyer` on /dashboard/lawyer,
+      // a `corporate` on /dashboard/business never enter this branch at all.
+      //
+      // That includes every ENTITY OWNER, and it is worth deriving rather than
+      // trusting, because an owner lookup here would otherwise be the obvious
+      // missing half. A `business_profiles` row is created only for
+      // `user_type = 'corporate'` and a `firm_profiles` row only for `'firm'`:
+      // by `handle_new_user` at signup
+      // (supabase/migrations/20260716_security_hardening.sql:58-75), and by
+      // `sectorRowValuesFor` (src/lib/auth/accountTypeClaim.ts:435-446) when a
+      // Google account claims its type afterwards. ROUTE_ACCESS gives
+      // /dashboard/business exactly `["corporate"]` and /dashboard/firm exactly
+      // `["firm"]` (src/lib/auth/routeAccess.ts:68, :78), so an owner is
+      // admitted by the comparison above and never reaches this line. There is
+      // a second, independent reason no owner branch is needed: every owner
+      // ALSO holds an `active` row in the matching members table, written by a
+      // trigger on the profiles row it belongs to —
+      // `ensure_business_owner_membership`
+      // (supabase/migrations/20260914_entity_memberships_and_business_requests.sql:21-41,
+      // with a backfill of the rows that predate it at :43-48) and
+      // `ensure_firm_owner_membership`
+      // (supabase/migrations/20260903_phase2_clients_and_firm_membership.sql:249-266)
+      // — so the read below would admit an owner even if the type check
+      // somehow had not.
+      //
+      // WHAT THIS EXISTS TO FIX. A5/F03 turned an invitation into a real
+      // consent decision: POST /api/v1/{business,firm}/members now writes
+      // `status = 'invited'`, and the invited person accepts at POST
+      // /api/v1/me/invitations/{kind}/{id}/accept. An `individual` or a
+      // `lawyer` who accepts becomes an ACTIVE member of a company or a firm
+      // while their own profiles.user_type stays exactly what it was —
+      // membership is additive and nothing in this app rewrites that column
+      // (it cannot: trg_lock_user_type). The browser already understood that:
+      // UserTypeGuard asks `isAllowedByTypeOrMembership`
+      // (src/components/dashboard/UserTypeGuard.tsx:68-75). The edge did not,
+      // so it redirected the accepted member away BEFORE the page — and
+      // therefore before that guard — ever rendered. The invitation could be
+      // accepted and still lead nowhere, which is the whole of F08.
+      //
+      // WHICH PATHS. `entityMembershipKindForPath`
+      // (src/lib/auth/entityMembership.ts:20-25) is the same table the browser
+      // guard's membership arms read, which is why it is imported rather than
+      // re-spelled here. /dashboard/firm → firm, /dashboard/business →
+      // business, and the three shared client-intake prefixes → business,
+      // because their rule admits `corporate` (routeAccess.ts:72-75) and
+      // `isAllowedByTypeOrMembership` opens anything admitting `corporate` to a
+      // business member. Every other prefix answers null and stays governed by
+      // profiles.user_type alone, exactly as before. Pinned, path by path, in
+      // src/proxy.membership.test.ts.
+      //
+      // HOW IT IS READ. One RLS-scoped read on the client already built above —
+      // never a service client, which this file does not have and must not
+      // acquire. The row is reached through the own-row disjunct
+      // `user_id = auth.uid()` of "<x>_members: own row, co-member, owner or
+      // admin can read"
+      // (supabase/migrations/20260921_03_entity_rls_recursion_fix.sql:285,
+      // :353) — the same arm GET /api/v1/me/invitations relies on. The
+      // `status = 'active'` filter is what every other membership reader in the
+      // repo applies (useUser, resolveActiveEntityIds, is_active_business_member),
+      // so a row still parked at `invited` — an invitation NOT yet accepted —
+      // opens nothing here either.
+      //
+      // This adds no redirect target, so the no-loop derivation below is
+      // untouched: the block either passes the request through or falls into
+      // exactly the redirect that was already there.
+      const membershipKind = entityMembershipKindForPath(pathname);
+      if (membershipKind) {
+        const { data: membership, error: membershipError } = await supabase
+          .from(membershipKind === "firm" ? "firm_members" : "business_members")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .limit(1)
+          .maybeSingle();
+
+        // The read itself failed — a blip, PostgREST, RLS. Same choice and the
+        // same reason as `if (profileError) return supabaseResponse;` (:478):
+        // we have learned nothing, so this middleware decides nothing. Stated
+        // rather than assumed, because it is a fail-open on a branch that by
+        // definition cannot tell a real member from a stranger while the read
+        // is down. What stands behind it is not nothing: all three layouts this
+        // block can pass into carry a <UserTypeGuard> that asks
+        // `isAllowedByTypeOrMembership` on its OWN membership read — a separate
+        // request from the one that just failed here, so it frequently does
+        // succeed — and RLS is what actually keeps one entity's rows away from
+        // another either way. Verified rather than inherited, because the note
+        // above :478 has gone stale on exactly this point: it says the client
+        // and lawyer layouts carry no guard, and both now do
+        // (src/app/dashboard/client/layout.tsx:35 guards
+        // ["individual","corporate","admin"], lawyer/layout.tsx:31 guards
+        // ["lawyer","firm","provider","admin"]). Correcting that note is not
+        // this block's job; leaning on its stale half would have been this
+        // block's mistake.
+        // Logged, unlike :478, because unlike that one this read has a table
+        // and a kind worth naming in the log.
+        if (membershipError) {
+          console.error("[rbac] membership lookup failed (page branch)", {
+            pathname,
+            kind: membershipKind,
+            code: membershipError.code,
+            message: membershipError.message,
+          });
+          return supabaseResponse;
+        }
+
+        // An accepted membership. Additive: it opens the entity dashboard the
+        // path asked about and changes nothing else about this account.
+        if (membership) return supabaseResponse;
+      }
+
       const url = req.nextUrl.clone();
       // A type outside the CHECK-constraint vocabulary (or a missing row) is
       // not an authorization for anything, so it goes to the fallback rather

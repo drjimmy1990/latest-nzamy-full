@@ -6,17 +6,15 @@ own profile but not another actor's profile through the REST API.
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$ActorsFile,
-  [string]$OutputDirectory
+  [string]$OutputDirectory,
+  [switch]$IUnderstandThisIsProduction
 )
 
 $ErrorActionPreference = 'Stop'
-$envMap = @{}
-Get-Content (Join-Path $PSScriptRoot '..\..\.env.local') | ForEach-Object {
-  $match = [regex]::Match($_, '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$')
-  if ($match.Success) { $envMap[$match.Groups[1].Value] = $match.Groups[2].Value.Trim().Trim('"').Trim("'") }
-}
-$baseUrl = $envMap['NEXT_PUBLIC_SUPABASE_URL']
-$anonKey = $envMap['NEXT_PUBLIC_SUPABASE_ANON_KEY']
+. (Join-Path $PSScriptRoot '_env.ps1')
+$uatEnv = Assert-UatProject -AllowWrites -IUnderstandThisIsProduction:$IUnderstandThisIsProduction
+$baseUrl = $uatEnv.Url
+$anonKey = $uatEnv.AnonKey
 if ([string]::IsNullOrWhiteSpace($baseUrl) -or [string]::IsNullOrWhiteSpace($anonKey)) { throw 'Missing test auth configuration.' }
 
 $actorsDocument = Get-Content -Raw $ActorsFile | ConvertFrom-Json

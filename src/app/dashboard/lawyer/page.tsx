@@ -16,6 +16,7 @@ import HijriDateWidget from "@/components/HijriDateWidget";
 import Link from "next/link";
 import { LawyerDashboardSkeleton } from "@/components/ui";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
+import PendingInvitationsBanner from "@/components/dashboard/PendingInvitationsBanner";
 
 // ─── Subscription tiers — REMOVED ─────────────────────────────────────────────
 //
@@ -588,6 +589,13 @@ export default function LawyerDashboardPage() {
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-5" dir="rtl">
+
+      {/* Review A5/F03 — an invitation to a company or firm roster is the
+          one thing that must be answered before anything else on this page
+          is true: until it is accepted the inviting entity sees none of
+          this person's work, and after it is accepted it sees some of it.
+          Renders nothing at all when there is no invitation. */}
+      <PendingInvitationsBanner />
 
       {/* ── Onboarding Welcome (first-visit only) ── */}
       <OnboardingBanner role="lawyer" name={name} isDark={isDark} />

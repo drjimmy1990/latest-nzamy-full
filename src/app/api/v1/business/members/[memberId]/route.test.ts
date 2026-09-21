@@ -21,6 +21,10 @@ import {
 } from "../../../../../../lib/auth/businessMembershipAccess.ts";
 
 const routeSource = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+const migrationSource = readFileSync(
+  new URL("../../../../../../../supabase/migrations/20260922_02_members_accept_own_invitation.sql", import.meta.url),
+  "utf8",
+);
 
 test("an empty body is a 400, not a no-op 200", () => {
   const d = decideBusinessMemberPatch({});
@@ -51,7 +55,14 @@ test("`removed` is a settable status — removal keeps the row", () => {
   assert.equal(decideBusinessMemberPatch({ status: "removed" }).ok, true);
 });
 
-test("`invited` cannot be set — there is no acceptance flow to leave a row waiting for", () => {
+test("the OWNER route cannot set `invited` — an invitation is issued by POST, not by PATCH", () => {
+  // Since review A5/F03 there IS an acceptance flow, and `invited` is a real
+  // state — but it is not one this endpoint may write. A new invitation is
+  // `POST /api/v1/business/members` (which also re-invites a `removed` row),
+  // and the answer is the invitee's own
+  // `POST /api/v1/me/invitations/business/{id}/accept|decline`. Letting the
+  // owner PATCH a row back to `invited` here would let them reset an ACTIVE
+  // member to «pending» and silently cancel a consent already given.
   assert.equal(decideBusinessMemberPatch({ status: "invited" }).ok, false);
 });
 
@@ -120,4 +131,53 @@ test("`profiles` is read only through the narrow projection", () => {
 test("the route delegates its body validation to the pure decision", () => {
   assert.match(routeSource, /const decision = decideBusinessMemberPatch\(body as \{ role\?: unknown; status\?: unknown \}\);/);
   assert.match(routeSource, /\.update\(decision\.patch\)/);
+});
+
+// ── CONSENT — review 2026-09-21 A5 / F03 ────────────────────────────────────
+// `decideBusinessMemberPatch` cannot carry this rule: it is pure and never
+// sees the row. The check therefore lives in the caller, and these four tests
+// are what stop it being quietly deleted again. Writing `invited` at POST time
+// closes nothing on its own while THIS endpoint can answer the invitation.
+
+test("the owner cannot activate a membership that was never accepted", () => {
+  // The bypass in full: POST /api/v1/business/members {email, role} writes an
+  // `invited` row, then PATCH {"status":"active"} here makes the victim a
+  // member without ever asking — and the invitation then disappears from
+  // GET /api/v1/me/invitations, so they are not even shown it.
+  assert.match(
+    routeSource,
+    /if \(decision\.patch\.status === "active" && existingAcceptedAt === null\) \{[\s\S]{0,160}?status: 409/,
+  );
+  assert.match(routeSource, /notAcceptedYet: "لا يمكن تفعيل العضوية قبل أن يقبل المدعوّ الدعوة بنفسه\.",/);
+  assert.match(routeSource, /\{ error: AR\.notAcceptedYet \}/);
+});
+
+test("the consent check reads the row's CURRENT state, before the update", () => {
+  // `accepted_at` has to come from the pre-update lookup: the value in the
+  // row the UPDATE returns is already whatever the caller just wrote.
+  assert.match(routeSource, /\.from\("business_members"\)\s*\n\s*\.select\("id, business_id, user_id, status, accepted_at"\)/);
+  const lookup = routeSource.indexOf('.select("id, business_id, user_id, status, accepted_at")');
+  const gate = routeSource.indexOf("existingAcceptedAt === null");
+  const update = routeSource.indexOf(".update(decision.patch)");
+  assert.ok(lookup > 0, "the pre-update lookup does not read status/accepted_at");
+  assert.ok(gate > lookup, "the consent check runs before it has read the row");
+  assert.ok(update > gate, "the update runs before the consent check");
+});
+
+test("the rule is stated on the target state, so invited → suspended → active is covered too", () => {
+  // A check written as «refuse invited → active» would be walked around in two
+  // calls. The condition must not mention the row's current status at all.
+  const gateLine = /if \(decision\.patch\.status === "active" && existingAcceptedAt === null\)/.exec(routeSource);
+  assert.ok(gateLine, "the consent gate is not in the expected form");
+  assert.doesNotMatch(gateLine![0], /existing\.status/);
+});
+
+test("the same invariant is enforced in the database, not only here", () => {
+  // This route is not the only way to reach the table: `authenticated` holds
+  // PostgREST's UPDATE grant, and the owner's RLS arm admits the same PATCH
+  // sent straight to /rest/v1/business_members.
+  assert.match(migrationSource, /a membership cannot be active while accepted_at is null/);
+  assert.match(migrationSource, /create trigger [^']*before update/i);
+  // …and a third party may not forge the evidence either.
+  assert.match(migrationSource, /jsonb_build_object\('accepted_at', old_j -> 'accepted_at'\)/);
 });

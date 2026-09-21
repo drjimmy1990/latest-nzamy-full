@@ -3,16 +3,16 @@ Simulate Human Government Entities Behavior on Nezamy Platform (Live / Localhost
 ==================================================================================
 Target Actors:
 1. Judge: government-judge (قاضي)
-   Email: government-judge.uat-20260915-full@nzamy.test (UID: 0e8ce426-4ca2-4f81-9147-4e444a5d608d)
+   Email: default below, override via env UAT_GOVERNMENT_JUDGE_EMAIL
 2. Prosecutor: government-prosecutor (عضو نيابة عامة)
-   Email: government-prosecutor.uat-20260915-full@nzamy.test (UID: 412b0080-0b0c-4e12-a195-9f28ba0efbaf)
+   Email: default below, override via env UAT_GOVERNMENT_PROSECUTOR_EMAIL
 3. Officer: government-officer (ضابط تحقيق وضبط جنائي)
-   Email: government-officer.uat-20260915-full@nzamy.test (UID: 42fddfc2-fd7b-4e61-a405-0774a5a862fa)
+   Email: default below, override via env UAT_GOVERNMENT_OFFICER_EMAIL
 4. Gov Counsel: government-gov_counsel (مستشار قانوني حكومي)
-   Email: government-gov_counsel.uat-20260915-full@nzamy.test (UID: 6a639991-d632-4464-960d-75e6bb0149f0)
+   Email: default below, override via env UAT_GOVERNMENT_COUNSEL_EMAIL
 
-Password: Uat!co6VNCZijtZNMXV8BWIB9c4Q9
-Target URL: https://nezamy.sa (fallback: http://localhost:3000)
+Password: set via env UAT_PASSWORD (required, no default)
+Target: local by default (http://localhost:3000); --live + env UAT_ALLOW_LIVE=1 required for production
 
 Physics: Fast Realistic Human Simulation
 - Cubic Bezier mouse curves with velocity ease-in-out profiling
@@ -31,6 +31,7 @@ import time
 import math
 import random
 import json
+import argparse
 from datetime import datetime
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -42,17 +43,21 @@ SCREENSHOTS_DIR = os.path.join(OUTPUT_DIR, "screenshots", "government")
 os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
 BRAIN_CONV_ID = "27ac1089-e845-4eb8-9bfa-f462c2d34cad"
-BRAIN_SCREENSHOTS_DIR = os.path.join(r"C:\Users\Judge\.gemini\antigravity\brain", BRAIN_CONV_ID, "screenshots", "government")
-os.makedirs(BRAIN_SCREENSHOTS_DIR, exist_ok=True)
+BRAIN_SCREENSHOTS_DIR = os.environ.get("UAT_BRAIN_SCREENSHOTS_DIR")
+if BRAIN_SCREENSHOTS_DIR:
+    os.makedirs(BRAIN_SCREENSHOTS_DIR, exist_ok=True)
 
 LIVE_BASE_URL = "https://nezamy.sa"
 LOCAL_BASE_URL = "http://localhost:3000"
 
-JUDGE_EMAIL = "government-judge.uat-20260915-full@nzamy.test"
-PROSECUTOR_EMAIL = "government-prosecutor.uat-20260915-full@nzamy.test"
-OFFICER_EMAIL = "government-officer.uat-20260915-full@nzamy.test"
-COUNSEL_EMAIL = "government-gov_counsel.uat-20260915-full@nzamy.test"
-UNIVERSAL_PASSWORD = "Uat!co6VNCZijtZNMXV8BWIB9c4Q9"
+JUDGE_EMAIL = os.environ.get("UAT_GOVERNMENT_JUDGE_EMAIL", "government-judge.uat-20260915-full@nzamy.test")
+PROSECUTOR_EMAIL = os.environ.get("UAT_GOVERNMENT_PROSECUTOR_EMAIL", "government-prosecutor.uat-20260915-full@nzamy.test")
+OFFICER_EMAIL = os.environ.get("UAT_GOVERNMENT_OFFICER_EMAIL", "government-officer.uat-20260915-full@nzamy.test")
+COUNSEL_EMAIL = os.environ.get("UAT_GOVERNMENT_COUNSEL_EMAIL", "government-gov_counsel.uat-20260915-full@nzamy.test")
+UNIVERSAL_PASSWORD = os.environ.get("UAT_PASSWORD")
+if not UNIVERSAL_PASSWORD:
+    print("[Config] UAT_PASSWORD environment variable is not set. Set it before running this script.")
+    sys.exit(2)
 
 
 class HumanDriver:
@@ -165,11 +170,12 @@ def save_screenshot(page: Page, filename: str):
     """Saves screenshot both to outputs and brain directory for cross-reference."""
     target_path = os.path.join(SCREENSHOTS_DIR, filename)
     page.screenshot(path=target_path)
-    brain_path = os.path.join(BRAIN_SCREENSHOTS_DIR, filename)
-    try:
-        shutil.copy2(target_path, brain_path)
-    except Exception:
-        pass
+    if BRAIN_SCREENSHOTS_DIR:
+        brain_path = os.path.join(BRAIN_SCREENSHOTS_DIR, filename)
+        try:
+            shutil.copy2(target_path, brain_path)
+        except Exception:
+            pass
     size = os.path.getsize(target_path)
     print(f"  📸 تم حفظ اللقطة: {filename} (الحجم: {size:,} بايت)")
 
@@ -512,4 +518,15 @@ def run_government_simulation():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Simulate Human Government Entities Behavior")
+    parser.add_argument("--live", action="store_true",
+                         help="Target the live production site instead of localhost (also requires env UAT_ALLOW_LIVE=1)")
+    args = parser.parse_args()
+    if args.live:
+        if os.environ.get("UAT_ALLOW_LIVE") != "1":
+            print("[EnvSelector] --live requires env UAT_ALLOW_LIVE=1 to be set. Refusing to target production.")
+            sys.exit(2)
+    else:
+        LIVE_BASE_URL = LOCAL_BASE_URL
+    print(f"[EnvSelector] Target: {LIVE_BASE_URL}")
     run_government_simulation()

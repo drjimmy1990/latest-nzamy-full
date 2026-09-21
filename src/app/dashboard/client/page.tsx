@@ -31,6 +31,7 @@ import {
   formatArabicDate,
 } from "@/lib/services/clientDashboardCards";
 import { MODE_COPY } from "@/constants/clientConsultationData";
+import PendingInvitationsBanner from "@/components/dashboard/PendingInvitationsBanner";
 import { fadeUp } from "./_data";
 
 // ─── Row readers ──────────────────────────────────────────────────────────────
@@ -544,6 +545,13 @@ export default function ClientDashboard() {
       dir="rtl"
       suppressHydrationWarning
     >
+
+      {/* Review A5/F03 — an invitation to a company or firm roster is the
+          one thing that must be answered before anything else on this page
+          is true: until it is accepted the inviting entity sees none of
+          this person's work, and after it is accepted it sees some of it.
+          Renders nothing at all when there is no invitation. */}
+      <PendingInvitationsBanner />
 
       {/* ══ The summary could not be read ════════════════════════════
           NOT a silent fall-through to empty cards. /api/v1/dashboard/summary is

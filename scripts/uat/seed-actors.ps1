@@ -7,19 +7,13 @@ later by a separate, reviewed process.
 [CmdletBinding()]
 param(
   [string]$RunId,
-  [string]$OutputDirectory
+  [string]$OutputDirectory,
+  [switch]$IUnderstandThisIsProduction
 )
 
 $ErrorActionPreference = 'Stop'
 
-function Read-TestEnvironment {
-  $map = @{}
-  Get-Content (Join-Path $PSScriptRoot '..\..\.env.local') | ForEach-Object {
-    $match = [regex]::Match($_, '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$')
-    if ($match.Success) { $map[$match.Groups[1].Value] = $match.Groups[2].Value.Trim().Trim('"').Trim("'") }
-  }
-  return $map
-}
+. (Join-Path $PSScriptRoot '_env.ps1')
 
 function Invoke-TestRest {
   param([string]$Method, [string]$Path, [object]$Body, [hashtable]$Headers)
@@ -32,15 +26,18 @@ function Invoke-TestRest {
   try {
     return Invoke-RestMethod @params
   } catch {
-    $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { $null }
+    $status = if ($_.Exception.Response) { try { [int]$_.Exception.Response.StatusCode } catch { $null } } else { $null }
     $detail = $null
     if ($_.Exception.Response) {
+      # Windows PowerShell 5.1: the body is still readable from the response stream.
       try {
         $reader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
         $detail = $reader.ReadToEnd()
         $reader.Dispose()
       } catch {}
     }
+    # PowerShell 7: HttpResponseMessage has no GetResponseStream(); the body arrives in ErrorDetails.
+    if ([string]::IsNullOrWhiteSpace($detail) -and $_.ErrorDetails) { $detail = $_.ErrorDetails.Message }
     throw "Test REST request failed: $Method $Path ($status) $detail"
   }
 }
@@ -56,8 +53,23 @@ function New-TestUser {
       password = $script:password; email_confirm = $true; user_metadata = $meta
     } | Out-Null
   } else {
-    $created = Invoke-TestRest -Method 'Post' -Path '/auth/v1/admin/users' -Headers $script:authHeaders -Body @{
-      email = $email; password = $script:password; email_confirm = $true; user_metadata = $meta
+    $created = $null
+    try {
+      $created = Invoke-TestRest -Method 'Post' -Path '/auth/v1/admin/users' -Headers $script:authHeaders -Body @{
+        email = $email; password = $script:password; email_confirm = $true; user_metadata = $meta
+      }
+    } catch {
+      # 422 email_exists on a brand-new address: the gateway can retry a slow POST, so the first attempt
+      # created the user and the retry was refused. Re-list and adopt the row instead of failing the run.
+      if ("$_" -notmatch 'email_exists') { throw }
+      $again = Invoke-TestRest -Method 'Get' -Path '/auth/v1/admin/users?per_page=1000' -Headers $script:authHeaders -Body $null
+      $found = @($again.users) | Where-Object { $_.email -and $_.email.ToLowerInvariant() -eq $email } | Select-Object -First 1
+      if (-not $found) { throw "Auth said email_exists for $email but no such user is listed: $_" }
+      Write-Warning "Auth answered email_exists for $email although it was just created; adopting user $($found.id)."
+      Invoke-TestRest -Method 'Put' -Path ('/auth/v1/admin/users/' + $found.id) -Headers $script:authHeaders -Body @{
+        password = $script:password; email_confirm = $true; user_metadata = $meta
+      } | Out-Null
+      $created = $found
     }
     $id = if ($created.id) { $created.id } elseif ($created.user.id) { $created.user.id } else { throw "Auth creation returned no id for $Key." }
   }
@@ -95,7 +107,7 @@ function Add-Member {
   Invoke-TestRest -Method 'Post' -Path $upsertPath -Headers $script:writeHeaders -Body $row | Out-Null
 }
 
-$environment = Read-TestEnvironment
+$environment = (Assert-UatProject -AllowWrites -IUnderstandThisIsProduction:$IUnderstandThisIsProduction).RawMap
 $script:baseUrl = $environment['NEXT_PUBLIC_SUPABASE_URL']
 $serviceRoleKey = $environment['SUPABASE_SERVICE_ROLE_KEY']
 if ([string]::IsNullOrWhiteSpace($script:baseUrl) -or [string]::IsNullOrWhiteSpace($serviceRoleKey)) {

@@ -380,3 +380,413 @@ BEGIN
     RAISE EXCEPTION '_verify: public.is_active_firm_member takes p_firm_id, not 20260903/20260921_03''s p_firm — a _superseded_20260916_* file was applied to this database';
   END IF;
 END $$;
+
+
+-- ====================================================================
+-- 2026-09-22 — 20260922_01_library_grants.sql (review A4 / F01 + F13)
+-- ====================================================================
+-- ── 20260922_01_library_grants.sql (A4 / F01 — every law page served 0 articles) ──
+-- The route reads library.articles with article_amendments and
+-- article_regulations EMBEDDED, and PostgREST fails the whole query with 42501
+-- when any one of them is unreadable. A missing grant here is not a degraded
+-- page, it is an empty corpus answered with HTTP 200.
+SELECT 'library.article_regulations readable by anon' AS check,
+       has_table_privilege('anon', 'library.article_regulations', 'SELECT') AS present;
+
+SELECT 'library.article_regulations writable by service_role' AS check,
+       has_table_privilege('service_role', 'library.article_regulations', 'INSERT') AS present;
+
+SELECT 'schema library default privileges set' AS check,
+       EXISTS (SELECT 1
+                 FROM pg_default_acl d
+                 JOIN pg_namespace ns ON ns.oid = d.defaclnamespace
+                WHERE ns.nspname = 'library' AND d.defaclobjtype = 'r') AS present;
+
+DO $$
+DECLARE n integer;
+BEGIN
+  IF to_regclass('library.article_regulations') IS NULL THEN
+    RAISE EXCEPTION '_verify: library.article_regulations is missing — 20260730_article_regulations.sql was never applied to this database';
+  END IF;
+
+  IF NOT has_table_privilege('anon', 'library.article_regulations', 'SELECT')
+     OR NOT has_table_privilege('authenticated', 'library.article_regulations', 'SELECT') THEN
+    RAISE EXCEPTION '_verify: library.article_regulations is not readable by anon/authenticated — 20260922_01_library_grants.sql was not applied, and EVERY law page is serving 0 articles with HTTP 200';
+  END IF;
+
+  IF NOT has_table_privilege('service_role', 'library.article_regulations', 'INSERT') THEN
+    RAISE EXCEPTION '_verify: service_role cannot write library.article_regulations — scripts/seed-library.ts cannot seed regulations (20260922_01 not applied)';
+  END IF;
+
+  -- 20260922_01 also turns RLS ON for this table (schema convention: all 17
+  -- sibling content tables have it). With RLS on, the SELECT grant above is
+  -- necessary but NOT sufficient: no policy means anon reads ZERO ROWS with no
+  -- error at all — byte-for-byte the outage this gate exists to catch.
+  IF (SELECT relrowsecurity FROM pg_class WHERE oid = 'library.article_regulations'::regclass)
+     AND NOT EXISTS (SELECT 1
+                       FROM pg_policies
+                      WHERE schemaname = 'library'
+                        AND tablename  = 'article_regulations'
+                        AND cmd IN ('SELECT', 'ALL')
+                        AND (roles @> ARRAY['anon']::name[] OR roles @> ARRAY['public']::name[])) THEN
+    RAISE EXCEPTION '_verify: RLS is enabled on library.article_regulations with no public-read policy — anon holds SELECT but reads zero rows, so every law page still serves 0 articles with HTTP 200';
+  END IF;
+
+  IF to_regclass('library.cross_section_search') IS NOT NULL
+     AND NOT has_table_privilege('anon', 'library.cross_section_search', 'SELECT') THEN
+    RAISE EXCEPTION '_verify: the matview library.cross_section_search is ungranted — 20260922_01 not applied';
+  END IF;
+
+  IF to_regclass('library.v_laws_enactment_status') IS NOT NULL
+     AND NOT has_table_privilege('anon', 'library.v_laws_enactment_status', 'SELECT') THEN
+    RAISE EXCEPTION '_verify: library.v_laws_enactment_status is ungranted — 20260922_01 not applied';
+  END IF;
+
+  -- count(DISTINCT rolname) with `< 2`, NEVER count(*) with `<> 2`.
+  -- pg_default_acl holds one row per GRANTOR role, so a database where a second
+  -- role has ALSO set default SELECT on this schema yields 4 grantee rows for
+  -- the same 2 roles. An equality test would abort the deploy (psql exit 3)
+  -- against a database that is MORE correctly granted, not less.
+  SELECT count(DISTINCT r.rolname) INTO n
+    FROM pg_default_acl d
+    JOIN pg_namespace ns ON ns.oid = d.defaclnamespace
+    CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+    JOIN pg_roles r ON r.oid = a.grantee
+   WHERE ns.nspname = 'library'
+     AND d.defaclobjtype = 'r'
+     AND a.privilege_type = 'SELECT'
+     AND r.rolname IN ('anon', 'authenticated');
+  IF n < 2 THEN
+    RAISE EXCEPTION '_verify: schema library carries default SELECT for only % of the 2 request roles (anon, authenticated) — the next table added to the schema will blank the law pages exactly as article_regulations did', n;
+  END IF;
+END $$;
+
+-- MIGRATION VALIDATION (Docker, postgres:16-alpine, throwaway container
+-- `nz_a4_fix`, removed afterwards; docker server 28.1.1). The stub reproduces
+-- the real 20260626-before-20260730 ordering: roles anon/authenticated/
+-- service_role (service_role WITH BYPASSRLS, as Supabase's is), schema library,
+-- laws/chapters/articles/article_amendments with RLS + public-read policies,
+-- THEN the 20260626 §7 one-shot grants, THEN article_regulations + the
+-- cross_section_search matview + the v_laws_enactment_status view, plus one
+-- law/article/amendment/regulation row.
+--   0. stub                                                     exit 0 ("stub OK")
+--   A. THIS GATE, before the migration            RAISES, psql exit 3 (deploy stops)
+--   B. defect reproduced: anon has SELECT on library.articles and NOT on
+--      article_regulations                                                exit 0
+--   C. PRE-FIX file (count(*) + "<> 2"), run 1 as postgres               exit 0
+--   D. PRE-FIX file, run as a SECOND granting role r2 -> ERROR "...reaches only
+--      4 of the 2 request roles", whole transaction ROLLS BACK,  psql exit 3
+--      (the wording is the fixed file's: the sed swapped only the comparison)
+--   E. anon_can_read was still t afterwards ONLY because run C had already
+--      committed the grants; on a database whose FIRST apply is by that second
+--      role, the rollback leaves NOTHING granted — that is the production
+--      hazard the must-fix removes
+--   F. FIXED file, run 1 as postgres                                     exit 0
+--   G. FIXED file, run 2 as postgres (idempotent)                        exit 0
+--   H. FIXED file, run 3 as r2, two grantors present                     exit 0
+--   I. pg_default_acl then shows 4 rows: postgres{r,S} and r2{r,S}
+--   J. behaviour: PASS 1 named grants are read-for-request-roles /
+--      full-for-service_role (anon got NO insert/update/delete); PASS 2 RLS on
+--      with exactly one anon/authenticated read policy; PASS 3 anon runs the
+--      law-detail embed (articles=1, amendments=1, regulations=1) — this is F01
+--      itself; PASS 4 service_role inserts and deletes through RLS (the
+--      seeder); PASS 5 a table, a sequence and a matview created AFTER the
+--      migration all inherit the grants                                   exit 0
+--   K. THIS GATE again, after the migration, WITH TWO GRANTORS            exit 0
+-- Nothing was applied to production; the developer applies the migration by
+-- hand in the SQL Editor.
+
+
+-- ====================================================================
+-- 2026-09-22 — 20260922_02_members_accept_own_invitation.sql (review A5 / F03)
+-- ====================================================================
+-- ── 20260922_02_members_accept_own_invitation.sql (review 2026-09-21 A5 / F03) ──
+-- Consent on the company/firm roster, both halves of it.
+-- POST /api/v1/{business,firm}/members now writes `status = 'invited'`, and
+-- this migration is what makes that mean anything: without it NOTHING can
+-- answer the row (20260921_03's matrix lets only owner/admin UPDATE a
+-- *_members row), so every invitation on the platform is permanently
+-- unanswerable — and the owner can still flip it to `active` themselves, which
+-- is the bypass the whole finding is about.
+DO $$
+DECLARE
+  t    text;
+  n    int;
+  bad  text;
+  body text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['firm_members', 'business_members', 'government_members', 'ngo_members']
+  LOOP
+    IF to_regclass('public.' || t) IS NULL THEN
+      CONTINUE;
+    END IF;
+
+    SELECT count(*) INTO n
+      FROM pg_policy
+     WHERE polrelid = ('public.' || t)::regclass
+       AND polname = t || ': invitee can answer own invitation'
+       AND polcmd = 'w';
+    IF n <> 1 THEN
+      RAISE EXCEPTION '_verify: public.% has no "invitee can answer own invitation" UPDATE policy — 20260922_02 was not applied, so every roster invitation is unanswerable (A5/F03)', t;
+    END IF;
+
+    SELECT count(*) INTO n FROM pg_policy WHERE polrelid = ('public.' || t)::regclass;
+    IF n <> 5 THEN
+      RAISE EXCEPTION '_verify: public.% carries % policies, expected exactly 5 (20260921_03''s four + 20260922_02''s invitee arm)', t, n;
+    END IF;
+
+    -- RLS filters ROWS, not COLUMNS, and `authenticated` holds the table-level
+    -- UPDATE grant. Without this trigger an invitee can accept as a role they
+    -- were never offered, or move their own invitation row onto an entity that
+    -- never invited them — and the company owner can answer the invitation on
+    -- the invitee's behalf, which re-opens A5 in full.
+    SELECT count(*) INTO n
+      FROM pg_trigger
+     WHERE tgrelid = ('public.' || t)::regclass
+       AND tgname = 'trg_' || t || '_invitation_answer'
+       AND NOT tgisinternal;
+    IF n <> 1 THEN
+      RAISE EXCEPTION '_verify: public.% is missing trg_%_invitation_answer — an invitee could accept as any role, and the owner could accept for them (A5/F03)', t, t;
+    END IF;
+  END LOOP;
+
+  SELECT count(*) INTO n
+    FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+   WHERE ns.nspname = 'public'
+     AND p.proname = 'entity_member_invitation_answer_guard'
+     AND p.prosecdef;
+  IF n <> 1 THEN
+    RAISE EXCEPTION '_verify: public.entity_member_invitation_answer_guard() is missing or is not SECURITY DEFINER — the invitee UPDATE arm has no column guard behind it';
+  END IF;
+
+  -- The guard EXISTING is not enough: an earlier draft of 20260922_02 guarded
+  -- only the invitee and left `PATCH /api/v1/business/members/{id}
+  -- {"status":"active"}` working for the owner, which is the finding itself.
+  -- These two assertions are what distinguish the two versions.
+  SELECT pg_get_functiondef(p.oid) INTO body
+    FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+   WHERE ns.nspname = 'public' AND p.proname = 'entity_member_invitation_answer_guard';
+  IF body !~ 'a membership cannot be active while accepted_at is null' THEN
+    RAISE EXCEPTION '_verify: the invitation-answer guard does not carry the consent invariant — a company owner can still flip an invitation to active without asking (A5/F03)';
+  END IF;
+  IF body !~ 'jsonb_build_object\(''accepted_at''' THEN
+    RAISE EXCEPTION '_verify: the invitation-answer guard does not pin accepted_at against a third party — the consent invariant is one PostgREST field away from being bypassed (A5/F03)';
+  END IF;
+
+  -- The inline-read gate elsewhere in this file catches `from <entity>`; this
+  -- catches a subquery of any kind, which is 20260921_03's own 4c check and the
+  -- property 20260922_02's new arm had to preserve.
+  SELECT string_agg(format('%s.%s', c.relname, pol.polname), ', ') INTO bad
+    FROM pg_policy pol
+    JOIN pg_class c ON c.oid = pol.polrelid
+    JOIN pg_namespace ns ON ns.oid = c.relnamespace
+   WHERE ns.nspname = 'public'
+     AND c.relname IN ('firm_profiles', 'firm_members',
+                       'business_profiles', 'business_members',
+                       'government_profiles', 'government_members',
+                       'ngo_profiles', 'ngo_members')
+     AND (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' ' ||
+          coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+         ~* '\([[:space:]]*select';
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION '_verify: an entity policy contains a subquery (the 42P17 shape 20260921_03 removed): %', bad;
+  END IF;
+
+  RAISE NOTICE '_verify: 20260922_02 OK — invitee UPDATE arm, column guard and the consent invariant present on every membership table';
+END $$;
+
+
+-- ====================================================================
+-- 2026-09-22 — 20260922_03_lawyer_provider_column_grants.sql (review A6 / F04)
+-- ====================================================================
+-- ====================================================================
+-- 2026-09-22 — 20260922_03_lawyer_provider_column_grants.sql (review A6 / F04)
+-- ====================================================================
+-- ── 20260922_03_lawyer_provider_column_grants.sql (review 2026-09-21 A6 / F04) ──
+-- "Any lawyer can self-verify and self-credit", and the same shape on every
+-- other profile table. Each of the seven carries a row-scoped "owner can
+-- update" policy with NO column list, and `authenticated` holds Supabase's
+-- default table-level UPDATE, so before this migration the row check was the
+-- ONLY check: a raw `PATCH /rest/v1/lawyer_profiles?user_id=eq.<me>
+-- {"verification_status":"verified","credit_balance":999999}` succeeded, and so
+-- did the firm/business/government/ngo equivalents on `verification_status`,
+-- `plan_id`, `role` and `restricted_from`.
+--
+-- A column-level REVOKE alone is a NO-OP while the table-level grant stands, so
+-- "the grants look right" is not the question this block asks.
+-- has_column_privilege() is: it answers for the role as it actually resolves,
+-- including privileges reaching it through role membership or PUBLIC, which is
+-- exactly the class of bug ("the REVOKE looked applied and was a no-op") the
+-- migration exists to close.
+--
+-- DUPLICATED ON PURPOSE: section 8 of
+-- supabase/migrations/20260922_03_lawyer_provider_column_grants.sql carries the
+-- same allowed/forbidden arrays. Widen a grant there and you must widen it HERE
+-- TOO - otherwise this block stops the next deploy on "authenticated can UPDATE
+-- <table> columns outside the 20260922_03 allowlist". That drift is fail-closed,
+-- but it surfaces on someone else's change, so touch both copies in one edit.
+--
+-- KNOWN WEAKNESS, deliberately left as-is so this block stays a mirror of
+-- section 8: the two "leak" checks below enumerate information_schema.columns,
+-- which is privilege-filtered - it shows only the columns the CURRENT user owns
+-- or holds some privilege on. Run as the table owner (the migration path, and
+-- deploy.sh today) it is exact; run by a lesser role it would return no rows and
+-- those two assertions would pass vacuously. The catalog-level form that is
+-- immune is the one in the re-check comment at the foot of 20260922_03. Swap
+-- BOTH copies together or not at all.
+DO $$
+DECLARE
+  spec   record;
+  c      text;
+  leaked text;
+  n      int;
+  tables int := 0;
+BEGIN
+  -- The prerequisite, named specifically. 20260826_corporate_identity_persisted
+  -- .sql says of itself that it does not apply itself, and 20260922_03 grants
+  -- its two columns BY NAME — so on a database without 20260826 the migration
+  -- dies on 42703 and rolls back whole. Without this check the symptom below
+  -- would be the confusing "authenticated LOST UPDATE on legal_rep_name".
+  IF to_regclass('public.business_profiles') IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_schema = 'public' AND table_name = 'business_profiles'
+                        AND column_name = 'legal_rep_name') THEN
+    RAISE EXCEPTION '_verify: business_profiles.legal_rep_name is missing — 20260826_corporate_identity_persisted.sql was never applied, so 20260922_03 cannot have been applied either (it grants that column by name and would die on 42703)';
+  END IF;
+
+  FOR spec IN
+    SELECT * FROM (VALUES
+      ('lawyer_profiles',
+       ARRAY['bio_ar','bio_en','specialties','years_experience','hourly_rate',
+             'license_number','bar_association','city','marketplace_visible',
+             'is_accepting_clients','show_contact','slug','education','courts',
+             'languages','headline_ar','license_issued_on','office_address',
+             'display_mode','updated_at']::text[],
+       ARRAY['verification_status','credit_balance','credit_package','credit_expiry',
+             'free_briefs_remaining','active_roles','metadata','user_id']::text[],
+       'lawyers update own profile'),
+      ('provider_profiles',
+       ARRAY['metadata','updated_at']::text[],
+       ARRAY['verification_status','sub_role','license_number','license_expiry',
+             'hourly_rate','service_areas','availability','marketplace_visible',
+             'user_id']::text[],
+       'providers update own profile'),
+      ('firm_profiles',
+       ARRAY['display_mode','metadata','updated_at']::text[],
+       ARRAY['verification_status','plan_id','annual_points_budget','points_spent',
+             'max_seats','license_number','license_expiry','name_ar','branding',
+             'owner_user_id']::text[],
+       'firm_profiles: owner can update'),
+      ('business_profiles',
+       ARRAY['company_name_ar','cr_number','legal_rep_name','legal_rep_capacity',
+             'service_model','has_legal_dept','metadata','updated_at']::text[],
+       ARRAY['verification_status','plan_id','size','legal_structure',
+             'company_name_en','owner_user_id']::text[],
+       'business_profiles: owner can update'),
+      ('government_profiles',
+       ARRAY['metadata','updated_at']::text[],
+       ARRAY['verification_status','role','restricted_from','integrations',
+             'entity_type','plan_id','owner_user_id']::text[],
+       'government_profiles: owner can update'),
+      ('ngo_profiles',
+       ARRAY['metadata','updated_at']::text[],
+       ARRAY['verification_status','compliance_status','plan_id','org_type',
+             'board_seats','owner_user_id']::text[],
+       'ngo_profiles: owner can update'),
+      ('micro_profiles',
+       ARRAY['metadata','updated_at']::text[],
+       ARRAY['litigation_boundary','requirements_score','license_count',
+             'employee_count','user_id']::text[],
+       'micro owners update own profile')
+    ) AS t(tbl, allowed, forbidden, policy_name)
+  LOOP
+    -- Not CONTINUE: all seven are 20260603 tables and exist on every
+    -- environment this file is ever pointed at. An absent one is a deploy
+    -- failure or a typo in this list, and both must be loud.
+    IF to_regclass('public.' || spec.tbl) IS NULL THEN
+      RAISE EXCEPTION '_verify: public.% does not exist — the profile schema is not the one 20260922_03 was written against', spec.tbl;
+    END IF;
+    tables := tables + 1;
+
+    -- (a) the trust/money columns are unwritable, for BOTH request roles.
+    --     `anon` is checked on every table, not just the first: a REVOKE that
+    --     names `authenticated` and forgets `anon` leaves the key that ships to
+    --     every browser holding the whole surface.
+    FOREACH c IN ARRAY spec.forbidden LOOP
+      IF has_column_privilege('authenticated', 'public.' || spec.tbl, c, 'UPDATE') THEN
+        RAISE EXCEPTION '_verify: authenticated can UPDATE public.%.% — 20260922_03 was not applied, and an account can write its own % (A6/F04)', spec.tbl, c, c;
+      END IF;
+      IF has_column_privilege('anon', 'public.' || spec.tbl, c, 'UPDATE') THEN
+        RAISE EXCEPTION '_verify: anon can UPDATE public.%.% — the revoke reached authenticated only (A6/F04)', spec.tbl, c;
+      END IF;
+    END LOOP;
+
+    -- (b) every column the RLS-scoped routes DO write is still writable. A
+    --     missing grant here is not a security hole but a dead settings screen:
+    --     PATCH /api/v1/profile and PATCH /api/v1/settings/preferences would
+    --     start answering an Arabic 500 on a 42501.
+    FOREACH c IN ARRAY spec.allowed LOOP
+      IF NOT has_column_privilege('authenticated', 'public.' || spec.tbl, c, 'UPDATE') THEN
+        RAISE EXCEPTION '_verify: authenticated LOST UPDATE on public.%.% — its write path would 500 (over-revoked, or a column renamed under 20260922_03)', spec.tbl, c;
+      END IF;
+    END LOOP;
+
+    -- (c) nothing OUTSIDE the allowlist is writable by authenticated. This is
+    --     the assertion that survives the future: a column added by a later
+    --     migration inherits the table default and shows up here, instead of
+    --     quietly becoming self-writable.
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO leaked
+      FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = spec.tbl
+       AND NOT (column_name = ANY (spec.allowed))
+       AND has_column_privilege('authenticated', 'public.' || spec.tbl, column_name, 'UPDATE');
+    IF leaked IS NOT NULL THEN
+      RAISE EXCEPTION '_verify: authenticated can UPDATE % columns outside the 20260922_03 allowlist: %', spec.tbl, leaked;
+    END IF;
+
+    --     … and NOTHING AT ALL is writable by anon. anon has no legitimate
+    --     write on any of these tables, so its allowlist is empty and this is
+    --     the symmetric form of the check above.
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO leaked
+      FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = spec.tbl
+       AND has_column_privilege('anon', 'public.' || spec.tbl, column_name, 'UPDATE');
+    IF leaked IS NOT NULL THEN
+      RAISE EXCEPTION '_verify: anon can UPDATE % columns: %', spec.tbl, leaked;
+    END IF;
+
+    -- (d) INSERT is gone for both roles. Every one of these rows is born in
+    --     handle_new_user() or through the service client at
+    --     /api/v1/onboarding/account-type; nothing self-service creates one.
+    IF has_table_privilege('authenticated', 'public.' || spec.tbl, 'INSERT') THEN
+      RAISE EXCEPTION '_verify: authenticated can INSERT into public.% — 20260922_03 was not applied', spec.tbl;
+    END IF;
+    IF has_table_privilege('anon', 'public.' || spec.tbl, 'INSERT') THEN
+      RAISE EXCEPTION '_verify: anon can INSERT into public.% — 20260922_03 was not applied', spec.tbl;
+    END IF;
+    --     … and SELECT survived: the profile screens, the lawyer directory and
+    --     every membership lookup read these tables under RLS.
+    IF NOT has_table_privilege('authenticated', 'public.' || spec.tbl, 'SELECT') THEN
+      RAISE EXCEPTION '_verify: authenticated LOST SELECT on public.% — the profile and directory reads would 401', spec.tbl;
+    END IF;
+
+    -- (e) the row-scoping policy is still there. The column layer replaces
+    --     nothing; it is added beneath it, and a run that lost the policy would
+    --     let any account write any other account's row on an allowed column.
+    --     polcmd 'w' = FOR UPDATE.
+    SELECT count(*) INTO n
+      FROM pg_policy
+     WHERE polrelid = ('public.' || spec.tbl)::regclass
+       AND polname  = spec.policy_name
+       AND polcmd   = 'w';
+    IF n <> 1 THEN
+      RAISE EXCEPTION '_verify: the row-scoped UPDATE policy "%" on public.% is missing — the column grants alone would let any owner write any row', spec.policy_name, spec.tbl;
+    END IF;
+  END LOOP;
+
+  IF tables <> 7 THEN
+    RAISE EXCEPTION '_verify: checked % profile tables, expected 7', tables;
+  END IF;
+
+  RAISE NOTICE '_verify: 20260922_03 OK — UPDATE column-scoped and INSERT revoked on all 7 profile tables (lawyer 20 columns, business 8, firm 3, provider/government/ngo/micro 2 each); anon may write nothing on any of them';
+END $$;

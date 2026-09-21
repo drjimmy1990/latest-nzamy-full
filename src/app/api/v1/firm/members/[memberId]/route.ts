@@ -8,6 +8,25 @@ import type { FirmRole } from "@/types/firmBackendReady";
  * that file's header for the table, the RLS shape and why names/emails are
  * read through a service client. This file only PATCHes one row: role and/or
  * status (`active` ⇄ `suspended`/`removed`) — never the owner's own row.
+ *
+ * ── CONSENT (review 2026-09-21 A5 / F03) ────────────────────────────────────
+ * This endpoint may NOT answer an invitation on the invitee's behalf.
+ * `POST ../route.ts` now writes `status: 'invited', accepted_at: null`, and
+ * the only thing that turns that into a membership is the invited person's own
+ * `POST /api/v1/me/invitations/firm/{id}/accept`. Without the check below the
+ * whole flow is decorative: two owner-only calls (POST an invitation, then
+ * PATCH it to `active`) put a stranger on the roster exactly as before, and
+ * the invitation then disappears from their banner so they are never asked.
+ *
+ * The rule is stated on the TARGET STATE, not on one transition, so
+ * `invited → suspended → active` is refused too: `accepted_at` is the only
+ * evidence that a person said yes, and only their own answer writes it.
+ * Re-activating someone who DID accept and was later suspended still works.
+ * The same invariant is enforced in the database by
+ * `entity_member_invitation_answer_guard()` (20260922_02), because this route
+ * is not the only way to reach the table.
+ *
+ *   409  `status: "active"` on a row that was never accepted
  */
 
 const FIRM_ROLE_VALUES: readonly FirmRole[] = [
@@ -76,9 +95,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ m
       return NextResponse.json({ error: "لا يوجد مكتب مرتبط بهذا الحساب." }, { status: 404 });
     }
 
+    // `status, accepted_at` are read for the CONSENT check below — the row's
+    // current state has to be known BEFORE the update, not after it.
     const { data: existing, error: existingError } = await supabase
       .from("firm_members")
-      .select("id, firm_id, user_id")
+      .select("id, firm_id, user_id, status, accepted_at")
       .eq("id", memberId)
       .eq("firm_id", firm.id)
       .maybeSingle();
@@ -91,6 +112,17 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ m
     }
     if (existing.user_id === firm.owner_user_id) {
       return NextResponse.json({ error: "لا يمكن تعديل عضوية صاحب المكتب." }, { status: 403 });
+    }
+
+    // CONSENT — see the header. An invitation is answered by the invitee, and
+    // by nobody else. 409 rather than 403: the caller IS allowed here, the row
+    // is simply not in a state this endpoint may activate.
+    const existingAcceptedAt = (existing as { accepted_at?: string | null }).accepted_at ?? null;
+    if (status === "active" && existingAcceptedAt === null) {
+      return NextResponse.json(
+        { error: "لا يمكن تفعيل العضوية قبل أن يقبل المدعوّ الدعوة بنفسه." },
+        { status: 409 },
+      );
     }
 
     const patch: Record<string, unknown> = {};

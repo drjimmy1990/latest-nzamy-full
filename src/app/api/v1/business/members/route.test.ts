@@ -184,20 +184,77 @@ test("an unresolved name is null, never a dash that looks like an empty name", (
 test("writes are owner-scoped through business_profiles.owner_user_id", () => {
   assert.match(
     routeSource,
-    /\.from\("business_profiles"\)\s*\n\s*\.select\("id, owner_user_id"\)\s*\n\s*\.eq\("owner_user_id", user\.id\)/,
+    // `company_name_ar` joined this projection for the invitation notification
+    // (A5/F03) — the owner's OWN row, read under RLS, never a service client.
+    /\.from\("business_profiles"\)\s*\n\s*\.select\("id, owner_user_id, company_name_ar"\)\s*\n\s*\.eq\("owner_user_id", user\.id\)/,
   );
   assert.match(routeSource, /canManage: scope\.scope === "owner",/);
 });
 
-test("the insert mirrors the firm route: active with accepted_at, never a pending 'invited'", () => {
-  // There is no invite e-mail and no acceptance screen anywhere in the
-  // product, so a row parked at 'invited' would be an invitation nobody can
-  // accept. /api/v1/firm/members POST makes the same choice.
-  assert.match(routeSource, /status: "active",\s*\n\s*accepted_at: new Date\(\)\.toISOString\(\),/);
+// ── A5/F03: adding somebody is an INVITATION, not a membership ──────────
+//
+// This block replaces an assertion that pinned the opposite ("active with
+// accepted_at, never a pending 'invited'"). That choice was the CRITICAL
+// review finding A5: a company owner who knew an e-mail address put that
+// account on the roster, and 20260914's policy then routed the victim's
+// private service requests into the company feed.
+
+test("the POST writes an INVITATION — status 'invited', accepted_at null", () => {
+  assert.match(routeSource, /status: "invited",\s*\n\s*accepted_at: null,/);
+  // and never the old shape again, in any spelling
+  assert.doesNotMatch(routeSource, /status: "active",\s*\n\s*accepted_at: new Date\(\)\.toISOString\(\)/);
+});
+
+test("a `removed`/`suspended` row is re-invited in place instead of a permanent 409", () => {
+  // Removal is a STATUS and uq_business_members_business_user is total, so
+  // without this arm a colleague removed once could never be added again.
+  const arm = /if \(error\?\.code === "23505"\)[\s\S]{0,1600}?\.in\("status", \["removed", "suspended"\]\)/;
+  assert.match(routeSource, arm);
+  assert.match(routeSource, /\.update\(\{ role, status: "invited", accepted_at: null \}\)/);
+  // …scoped to THIS company and THIS account, never an open update
+  assert.match(routeSource, /\.eq\("business_id", business\.id\)\s*\n\s*\.eq\("user_id", account\.id\)/);
+  // …and it is the RLS client, not the service client, that performs it
+  assert.doesNotMatch(routeSource, /service\s*\n?\s*\.from\("business_members"\)/);
+  assert.doesNotMatch(routeSource, /service\.from\("business_members"\)/);
+  // an `invited` or `active` row is still a 409 (nothing is overwritten)
+  assert.match(routeSource, /if \(!reinvite\.data\) \{[\s\S]{0,160}?alreadyMember[\s\S]{0,60}?status: 409/);
+  // a re-invitation created nothing, so it is a 200
+  assert.match(routeSource, /status: created \? 201 : 200/);
+});
+
+test("the invitee is notified, in Arabic, with the company name and the role", () => {
+  assert.ok(routeSource.includes('import { recordNotification } from "@/lib/notify";'));
+  const call = /await recordNotification\(\{[\s\S]{0,600}?\}\);/.exec(routeSource);
+  assert.ok(call, "no recordNotification call in the POST");
+  const body = call![0];
+  assert.match(body, /userId: account\.id,/);            // the invitee, never the owner
+  assert.match(body, /BUSINESS_ROLE_LABEL\[role\]/);      // the role they were offered
+  assert.match(body, /\$\{companyName\}/);                // who is asking
+  assert.ok(/[\u0600-\u06FF]/.test(body), "the notification is not Arabic");
+  assert.match(body, /href: inviteeDashboardHref\(account\.user_type as string \| null\),/);
+});
+
+test("the notification href points at a dashboard that actually mounts the banner", () => {
+  // A lawyer sent to /dashboard/client would find no banner there.
+  assert.match(
+    routeSource,
+    /function inviteeDashboardHref\(userType: string \| null \| undefined\): string \{[\s\S]{0,320}?"\/dashboard\/lawyer"[\s\S]{0,320}?"\/dashboard\/client"/,
+  );
+});
+
+test("the company name for the notification comes from the owner's OWN RLS-scoped row", () => {
+  // Not a service-client read: `business_profiles` RLS already admits the
+  // owner's own company, so nothing has to be bypassed to name it.
+  assert.match(
+    routeSource,
+    /\.from\("business_profiles"\)\s*\n\s*\.select\("id, owner_user_id, company_name_ar"\)\s*\n\s*\.eq\("owner_user_id", user\.id\)/,
+  );
 });
 
 test("the three write failures a company owner can actually hit are Arabic, not Postgres codes", () => {
-  assert.match(routeSource, /error\?\.code === "23505"[\s\S]{0,200}?alreadyMember/);
+  // 23505 now opens the re-invite arm; `alreadyMember` is what it answers when
+  // the existing row is `invited`/`active` and nothing may be overwritten.
+  assert.match(routeSource, /error\?\.code === "23505"[\s\S]{0,1800}?alreadyMember/);
   assert.match(routeSource, /error\?\.code === "23514"[\s\S]{0,200}?BUSINESS_INVITE_ROLE_VALUES\.join/);
   assert.match(routeSource, /error\?\.code === "42501"[\s\S]{0,200}?ownerOnly/);
   for (const key of ["loadFailed", "addFailed", "noBusiness", "ownerOnly", "alreadyMember"]) {

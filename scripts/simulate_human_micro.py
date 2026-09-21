@@ -3,9 +3,9 @@ Simulate Human Micro Business (SME) Behavior on Nezamy Platform (Live / Localhos
 ==================================================================================
 Target Actor:
   Actor: micro-owner (مالك المنشأة المصغرة)
-  Email: micro-owner.uat-20260915-full@nzamy.test
-  Password: Uat!co6VNCZijtZNMXV8BWIB9c4Q9
-Target URL: https://nezamy.sa (fallback: http://localhost:3000)
+  Email: default below, override via env UAT_MICRO_EMAIL
+  Password: set via env UAT_PASSWORD (required, no default)
+Target: local by default (http://localhost:3000); --live + env UAT_ALLOW_LIVE=1 required for production
 
 Physics: Fast Realistic Human Simulation
 - Cubic Bezier mouse curves with velocity ease-in-out profiling
@@ -22,6 +22,7 @@ import time
 import math
 import random
 import json
+import argparse
 from datetime import datetime
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -35,8 +36,11 @@ os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 LIVE_BASE_URL = "https://nezamy.sa"
 LOCAL_BASE_URL = "http://localhost:3000"
 
-MICRO_EMAIL = "micro-owner.uat-20260915-full@nzamy.test"
-UNIVERSAL_PASSWORD = "Uat!co6VNCZijtZNMXV8BWIB9c4Q9"
+MICRO_EMAIL = os.environ.get("UAT_MICRO_EMAIL", "micro-owner.uat-20260915-full@nzamy.test")
+UNIVERSAL_PASSWORD = os.environ.get("UAT_PASSWORD")
+if not UNIVERSAL_PASSWORD:
+    print("[Config] UAT_PASSWORD environment variable is not set. Set it before running this script.")
+    sys.exit(2)
 
 
 class HumanDriver:
@@ -446,4 +450,15 @@ def run_micro_simulation():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Simulate Human Micro Business (SME) Behavior")
+    parser.add_argument("--live", action="store_true",
+                         help="Target the live production site instead of localhost (also requires env UAT_ALLOW_LIVE=1)")
+    args = parser.parse_args()
+    if args.live:
+        if os.environ.get("UAT_ALLOW_LIVE") != "1":
+            print("[EnvSelector] --live requires env UAT_ALLOW_LIVE=1 to be set. Refusing to target production.")
+            sys.exit(2)
+    else:
+        LIVE_BASE_URL = LOCAL_BASE_URL
+    print(f"[EnvSelector] Target: {LIVE_BASE_URL}")
     run_micro_simulation()

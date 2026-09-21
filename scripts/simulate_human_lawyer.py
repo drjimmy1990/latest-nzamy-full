@@ -2,9 +2,9 @@
 Simulate Human Lawyer Behavior on Nezamy Platform (Live / Localhost)
 =====================================================================
 Target Actor: lawyer-solo (المحامي الفرد)
-Email: lawyer-solo.uat-20260915-full@nzamy.test
-Password: Uat!co6VNCZijtZNMXV8BWIB9c4Q9
-Target URL: https://nezamy.sa (fallback: http://localhost:3000)
+Email: default below, override via env UAT_LAWYER_EMAIL
+Password: set via env UAT_PASSWORD (required, no default)
+Target: local by default (http://localhost:3000); --live + env UAT_ALLOW_LIVE=1 required for production
 
 Physics: Fast Realistic Human Simulation
 - Cubic Bezier mouse curves with velocity ease-in-out profiling
@@ -37,8 +37,11 @@ os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 LIVE_BASE_URL = "https://nezamy.sa"
 LOCAL_BASE_URL = "http://localhost:3000"
 
-ACTOR_EMAIL = "lawyer-solo.uat-20260915-full@nzamy.test"
-ACTOR_PASSWORD = "Uat!co6VNCZijtZNMXV8BWIB9c4Q9"
+ACTOR_EMAIL = os.environ.get("UAT_LAWYER_EMAIL", "lawyer-solo.uat-20260915-full@nzamy.test")
+ACTOR_PASSWORD = os.environ.get("UAT_PASSWORD")
+if not ACTOR_PASSWORD:
+    print("[Config] UAT_PASSWORD environment variable is not set. Set it before running this script.")
+    sys.exit(2)
 
 
 def check_target_environment(mode: str = "auto") -> str:
@@ -656,6 +659,26 @@ def run_simulation(target_mode: str = "auto"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Simulate Human Lawyer Behavior")
-    parser.add_argument("--target", choices=["live", "local", "auto"], default="auto", help="Target environment")
+    parser.add_argument("--target", choices=["live", "local", "auto"], default="local",
+                         help="Target environment (default: local; 'auto' no longer probes production on its own)")
+    parser.add_argument("--live", action="store_true",
+                         help="Required (together with env UAT_ALLOW_LIVE=1) to target the live production site")
     args = parser.parse_args()
-    run_simulation(target_mode=args.target)
+
+    if args.target == "live" and not args.live:
+        print("[EnvSelector] --target live also requires --live to be passed explicitly. Refusing to target production.")
+        sys.exit(2)
+
+    if args.live:
+        if os.environ.get("UAT_ALLOW_LIVE") != "1":
+            print("[EnvSelector] --live requires env UAT_ALLOW_LIVE=1 to be set. Refusing to target production.")
+            sys.exit(2)
+        target_mode = "live"
+    elif args.target == "auto":
+        print("[EnvSelector] 'auto' no longer probes production automatically; defaulting to local. Pass --live to target production.")
+        target_mode = "local"
+    else:
+        target_mode = args.target
+
+    print(f"[EnvSelector] Target: {LIVE_BASE_URL if target_mode == 'live' else LOCAL_BASE_URL}")
+    run_simulation(target_mode=target_mode)

@@ -93,3 +93,6 @@ blog-toolkit/_articles-backup-*.json
 
 # Playwright MCP scratch output (console logs, snapshots) from browser verification runs.
 .playwright-mcp/
+
+# UAT actor credentials (scripts/uat writes plaintext passwords here)
+outputs/

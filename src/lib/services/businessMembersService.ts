@@ -12,6 +12,11 @@
  * Owner-only for every write, per plan §5 Q2/Q7. Reads are open to an active
  * member as well, because RLS admits them (20260921_03's `business_members`
  * SELECT policy) and a roster you are on is not a secret from you.
+ *
+ * ONE EXCEPTION, added for review A5/F03: the INVITED person may write their
+ * own row, and only their own, and only from `invited` to `active`/`removed`
+ * — that is `invitationsService.ts` plus
+ * 20260922_02_members_accept_own_invitation.sql, not this file.
  */
 
 "use client";
@@ -67,7 +72,17 @@ export async function getBusinessMembers(): Promise<BusinessMembersRead> {
   }
 }
 
-/** Adds an EXISTING account, looked up by e-mail server-side, as an active member. Throws with Arabic screen copy. */
+/**
+ * INVITES an existing account, looked up by e-mail server-side. Throws with
+ * Arabic screen copy.
+ *
+ * The returned member is `status: "invited"`, NOT `"active"` (review
+ * 2026-09-21 A5/F03): the person has to accept before the company can see
+ * anything of theirs. They answer from their own dashboard, through
+ * `invitationsService`. The route answers 201 for a new invitation and 200
+ * when it re-invited an existing `removed`/`suspended` row — both carry the
+ * same `{ data }`, so nothing here has to tell them apart.
+ */
 export async function addBusinessMember(input: { email: string; role: BusinessRole }): Promise<BusinessMember> {
   if (!isSupabaseMode) throw new Error("إدارة الفريق غير متاحة في وضع العرض التجريبي");
   const res = await apiMutate<{ data: BusinessMember }>(BASE, "POST", input);

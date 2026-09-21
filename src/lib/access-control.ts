@@ -55,7 +55,7 @@ export interface AdminCheckResult {
 
 // ─── Tier ranking (mirrors client-side useSubscription) ────────────────────────
 
-const TIER_RANK: Record<ServerTier, number> = {
+export const TIER_RANK: Record<ServerTier, number> = {
   free:       0,
   shield:     1,
   ai:         2,

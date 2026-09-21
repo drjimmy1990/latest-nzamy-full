@@ -5,6 +5,8 @@ import { createServiceClient } from "@/lib/supabase/server";
 import type { FirmRole } from "@/types/firmBackendReady";
 import { FIRM_TEAM_VIEW_ROLES, resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
 import { escapeLikePattern } from "@/lib/services/likePattern";
+import { FIRM_ROLE_LABEL } from "@/constants/firmProfileReadiness";
+import { recordNotification } from "@/lib/notify";
 
 /**
  * /api/v1/firm/members — Phase 2 (خطة_البناء_الكاملة §6, migration
@@ -48,6 +50,17 @@ const FIRM_ROLE_VALUES: readonly FirmRole[] = [
 ];
 const FIRM_ROLE_SET = new Set<string>(FIRM_ROLE_VALUES);
 
+const MEMBER_COLUMNS = "id, firm_id, user_id, role, status, accepted_at, created_at";
+
+/**
+ * Where the invitee will find the invitation — the screen that mounts
+ * `PendingInvitationsBanner`. The invite lookup admits `lawyer` and
+ * `individual`, and their dashboards are different places.
+ */
+function inviteeDashboardHref(userType: string | null | undefined): string {
+  return userType === "lawyer" ? "/dashboard/lawyer" : "/dashboard/client";
+}
+
 interface FirmMemberRow {
   id: string;
   firm_id: string;
@@ -89,7 +102,10 @@ function toDto(row: FirmMemberRow, profile: ProfileLite | undefined, ownerUserId
 async function resolveOwnFirm(supabase: SupabaseClient, userId: string) {
   return supabase
     .from("firm_profiles")
-    .select("id, owner_user_id")
+    // `name_ar` is read for the invitation notification only — an invitee has
+    // to be told WHICH office is asking — and `firm_profiles` RLS already
+    // admits the owner's own row.
+    .select("id, owner_user_id, name_ar")
     .eq("owner_user_id", userId)
     .maybeSingle();
 }
@@ -165,12 +181,28 @@ export async function GET(_request: NextRequest) {
  * POST /api/v1/firm/members
  * Body: { email, role }
  *
- * Adds an EXISTING lawyer account, looked up by e-mail, as an active member.
- * Does not create accounts and does not e-mail anyone — inviting someone
- * without a platform account is a later step (`team_invitations` exists,
- * unused). `user_type = 'lawyer'` is enforced on the lookup so this cannot be
- * used to discover whether an e-mail belongs to a client/admin/other entity
- * account — the 404 reads the same either way.
+ * INVITES an EXISTING lawyer/individual account, looked up by e-mail. Does not
+ * create accounts and does not e-mail anyone — inviting someone without a
+ * platform account is a later step (`team_invitations` exists, unused). The
+ * `user_type` filter on the lookup means this cannot be used to discover
+ * whether an e-mail belongs to a client/admin/other entity account — the 404
+ * reads the same either way.
+ *
+ * ── AN INVITATION, NOT A MEMBERSHIP (review 2026-09-21 A5 / F03) ───────────
+ * This used to insert `status: 'active', accepted_at: now()`, so a firm owner
+ * who knew an e-mail address put that person on the roster without asking.
+ * It now writes `status: 'invited', accepted_at: null` and notifies them; the
+ * invitee answers at `/api/v1/me/invitations/firm/{id}/accept` (or
+ * `/decline`), whose database arm is
+ * 20260922_02_members_accept_own_invitation.sql. An `invited` row grants
+ * nothing — every membership read in this repo filters `status = 'active'`.
+ *
+ * A `removed` or `suspended` row is PATCHed back to `invited` (200 instead of
+ * a permanent 409): removal is a status and `unique(firm_id, user_id)` is
+ * total, so without that arm a colleague removed once could never be re-added.
+ *
+ * Responses: 201 a new invitation · 200 a re-invitation · 409 the account
+ * already holds an `invited` or `active` row.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -221,22 +253,53 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "لا يوجد حساب مهني مؤهل بهذا البريد على المنصّة." }, { status: 404 });
     }
 
-    const { data, error } = await supabase
+    // AN INVITATION — `status: 'invited'`, `accepted_at: null`. See the POST
+    // header: this used to be `active` + `now()`, which is review finding A5.
+    let created = true;
+    let { data, error } = await supabase
       .from("firm_members")
       .insert({
         firm_id: firm.id,
         user_id: account.id,
         role,
-        status: "active",
-        accepted_at: new Date().toISOString(),
+        status: "invited",
+        accepted_at: null,
       })
-      .select("id, firm_id, user_id, role, status, accepted_at, created_at")
+      .select(MEMBER_COLUMNS)
       .single();
 
-    if (error || !data) {
-      if (error?.code === "23505") {
-        return NextResponse.json({ error: "هذا المستخدم عضو في المكتب مسبقاً." }, { status: 409 });
+    if (error?.code === "23505") {
+      // A row already exists. Removal is a STATUS, so it may well be somebody
+      // who is not a member at all — re-invite `removed`/`suspended` in place
+      // through the owner's RLS UPDATE arm (20260921_03), and leave `invited`
+      // and `active` alone, because those are the two states a second
+      // invitation would quietly overwrite.
+      const reinvite = await supabase
+        .from("firm_members")
+        .update({ role, status: "invited", accepted_at: null })
+        .eq("firm_id", firm.id)
+        .eq("user_id", account.id)
+        .in("status", ["removed", "suspended"])
+        .select(MEMBER_COLUMNS)
+        .maybeSingle();
+      if (reinvite.error) {
+        console.error("[firm/members POST] re-invite failed:", reinvite.error.message, reinvite.error.code);
+        return reinvite.error.code === "42501"
+          ? NextResponse.json({ error: "غير مصرح — صلاحيات غير كافية" }, { status: 403 })
+          : NextResponse.json({ error: "تعذّر إضافة العضو." }, { status: 500 });
       }
+      if (!reinvite.data) {
+        return NextResponse.json(
+          { error: "هذا المستخدم عضو في المكتب مسبقاً أو لديه دعوة قائمة بانتظار الرد." },
+          { status: 409 },
+        );
+      }
+      created = false;
+      data = reinvite.data;
+      error = null;
+    }
+
+    if (error || !data) {
       if (error?.code === "23514") {
         return NextResponse.json(
           { error: `الدور يجب أن يكون واحدًا من: ${FIRM_ROLE_VALUES.join(", ")}` },
@@ -250,9 +313,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "تعذّر إضافة العضو." }, { status: 500 });
     }
 
+    // The invitee is told who invited them and as what — an invitation nobody
+    // is told about is the same silence review A5 is about. Best-effort by
+    // contract (notify.ts swallows its own failures); the row is written
+    // either way.
+    const firmName = (firm.name_ar as string | null) ?? "مكتب محاماة";
+    await recordNotification({
+      userId: account.id,
+      title: "دعوة للانضمام إلى فريق مكتب محاماة",
+      body: `دعاك «${firmName}» للانضمام إلى فريقه بصفة «${FIRM_ROLE_LABEL[role as FirmRole] ?? role}». يمكنك قبول الدعوة أو رفضها من لوحتك.`,
+      href: inviteeDashboardHref(account.user_type as string | null),
+    });
+
     return NextResponse.json(
       { data: toDto(data as FirmMemberRow, { id: account.id, display_name: account.display_name, email: account.email }, firm.owner_user_id) },
-      { status: 201 },
+      { status: created ? 201 : 200 },
     );
   } catch (err) {
     console.error("[firm/members POST] Unexpected error:", err);
