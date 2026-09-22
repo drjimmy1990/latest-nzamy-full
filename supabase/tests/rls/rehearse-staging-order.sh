@@ -248,6 +248,7 @@ ORDER=(
   "$MIG/20260922_01_library_grants.sql"
   "$MIG/20260922_02_members_accept_own_invitation.sql"
   "$MIG/20260922_03_lawyer_provider_column_grants.sql"
+  "$MIG/20260922_04_library_view_security_invoker.sql"
   "$ROOT/supabase/storage_policies_documents.sql"
   "$MIG/_verify.sql"
 )

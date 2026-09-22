@@ -432,9 +432,11 @@ BEGIN
     RAISE EXCEPTION '_verify: RLS is enabled on library.article_regulations with no public-read policy — anon holds SELECT but reads zero rows, so every law page still serves 0 articles with HTTP 200';
   END IF;
 
+  -- 20260922_04 takes anon/authenticated back OFF this matview (unpopulated,
+  -- no reader), so the 01 gate asserts only the service_role half of the grant.
   IF to_regclass('library.cross_section_search') IS NOT NULL
-     AND NOT has_table_privilege('anon', 'library.cross_section_search', 'SELECT') THEN
-    RAISE EXCEPTION '_verify: the matview library.cross_section_search is ungranted — 20260922_01 not applied';
+     AND NOT has_table_privilege('service_role', 'library.cross_section_search', 'SELECT') THEN
+    RAISE EXCEPTION '_verify: the matview library.cross_section_search is ungranted to service_role — 20260922_01 not applied';
   END IF;
 
   IF to_regclass('library.v_laws_enactment_status') IS NOT NULL
@@ -789,4 +791,40 @@ BEGIN
   END IF;
 
   RAISE NOTICE '_verify: 20260922_03 OK — UPDATE column-scoped and INSERT revoked on all 7 profile tables (lawyer 20 columns, business 8, firm 3, provider/government/ngo/micro 2 each); anon may write nothing on any of them';
+END $$;
+
+
+-- ====================================================================
+-- 2026-09-22 — 20260922_04_library_view_security_invoker.sql (Supabase advisor: security_definer_view)
+-- ====================================================================
+SELECT 'library.v_laws_enactment_status runs as the caller (security_invoker)' AS check,
+       EXISTS (SELECT 1 FROM pg_class c
+                CROSS JOIN LATERAL pg_options_to_table(c.reloptions) o
+               WHERE c.oid = 'library.v_laws_enactment_status'::regclass
+                 AND o.option_name = 'security_invoker'
+                 AND lower(o.option_value) IN ('true','on','1','yes')) AS present;
+
+SELECT 'library.cross_section_search hidden from anon/authenticated' AS check,
+       NOT has_table_privilege('anon', 'library.cross_section_search', 'SELECT')
+       AND NOT has_table_privilege('authenticated', 'library.cross_section_search', 'SELECT') AS present;
+
+DO $$
+DECLARE ok boolean;
+BEGIN
+  IF to_regclass('library.v_laws_enactment_status') IS NOT NULL THEN
+    SELECT EXISTS (SELECT 1 FROM pg_class c
+                    CROSS JOIN LATERAL pg_options_to_table(c.reloptions) o
+                   WHERE c.oid = 'library.v_laws_enactment_status'::regclass
+                     AND o.option_name = 'security_invoker'
+                     AND lower(o.option_value) IN ('true','on','1','yes')) INTO ok;
+    IF NOT ok THEN
+      RAISE EXCEPTION '_verify: library.v_laws_enactment_status is still a SECURITY DEFINER view — 20260922_04 was not applied';
+    END IF;
+  END IF;
+  IF to_regclass('library.cross_section_search') IS NOT NULL
+     AND (has_table_privilege('anon', 'library.cross_section_search', 'SELECT')
+          OR has_table_privilege('authenticated', 'library.cross_section_search', 'SELECT')) THEN
+    RAISE EXCEPTION '_verify: an API role can SELECT the unpopulated matview library.cross_section_search — 20260922_04 was not applied';
+  END IF;
+  RAISE NOTICE '_verify: 20260922_04 OK — exposed views run as the caller; cross_section_search is out of the API surface';
 END $$;

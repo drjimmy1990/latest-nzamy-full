@@ -2,7 +2,7 @@
 
 **Branch:** `main` (working tree; not committed at the time of writing).
 **What it implements:** the six CRITICAL items of [`docs/audits/2026-09-21-post-profiles-review.md`](2026-09-21-post-profiles-review.md) that need no owner decision — **A1, A2, A3, A4 (+F13), A5, A6** — plus **B3** and the re-invite half of **B12**, which A5 could not be shipped without.
-**New migrations (NOT yet applied anywhere):** `20260922_01_library_grants.sql` · `20260922_02_members_accept_own_invitation.sql` · `20260922_03_lawyer_provider_column_grants.sql`. Apply order and the deploy-order cliffs are in §Apply order.
+**New migrations (APPLIED on production 2026-09-22 by the developer via the SQL Editor; 01 verified live by REST — anon SELECT on `library.article_regulations` 200, the public-prosecution law returns 30/30 articles):** `20260922_01_library_grants.sql` · `20260922_02_members_accept_own_invitation.sql` · `20260922_03_lawyer_provider_column_grants.sql`. Apply order and the deploy-order cliffs are in §Apply order.
 **Not in this batch:** the seventh critical item is the incident response of A1/A2 (§Incident), which is operational, not code; B1–B17 **except B3**, C1–C4, B18 (CI), B19 (the owner's ZIP folder), B20 (`deploy.sh db push`) stay open.
 
 ---
@@ -202,7 +202,7 @@ All three are idempotent and safe to re-run. Rollback blocks are in each file's 
 
 ## What the developer still has to do
 
-1. **Apply the three migrations in the order above, then run `_verify.sql`** and confirm it exits 0. Then flip «جاهزة — ننفّذها نحن قبل النشر» to «نُفِّذ ✓» in `تقرير_للمالك_الحالة_الكاملة_٢٠٢٦-٠٩-٠٣.md` §١‏.١٦ and in `دليل_اختبار_المالك_٢٠٢٦-٠٩-٠٤.md` section م.
+1. ~~Apply the three migrations in the order above~~ **Done 2026-09-22** (SQL Editor). Run `_verify.sql` with `set nzamy.env = 'production';` if not yet run and confirm the three `NOTICE: _verify: 20260922_0x OK` lines. The owner docs were flipped to «نُفِّذت ✓ (٢٢ سبتمبر)».
 2. **Optionally rehearse first:** `bash supabase/tests/rls/rehearse-staging-order.sh` now carries all three files and their `_verify.sql` gates.
 3. **Deploy** (`git pull && npm run build && pm2 reload nzamy`, then clear the nginx proxy cache — in that order).
 4. **Remove the 146 synthetic accounts.** `pwsh scripts/uat/teardown-actors.ps1` **dry run first**, read the per-table counts, then `-Execute` — **only after the owner's current test round is over**, and only with the production guards consciously satisfied (`-IUnderstandThisIsProduction` + `NZAMY_UAT_ALLOW_PRODUCTION=1`).
