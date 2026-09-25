@@ -96,3 +96,9 @@ blog-toolkit/_articles-backup-*.json
 
 # UAT actor credentials (scripts/uat writes plaintext passwords here)
 outputs/
+
+# Self-hosted schema/data dumps (scripts/selfhost/run*) — produced by the backup kit, never committed
+scripts/selfhost/run*_delivery/
+
+# Owner delivery packages (library JSONL rows, hundreds of MB) — keep them OUT of git even in a fresh clone
+nzamy-developer-test-*/

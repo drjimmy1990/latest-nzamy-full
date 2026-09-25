@@ -478,9 +478,11 @@ export default function LawyerProfilePage() {
 
                 <div className="flex flex-col sm:flex-row gap-6 items-start">
                   {/* Avatar. A plain <img> rather than next/image: avatar_url is
-                      user-supplied and next.config only allowlists *.supabase.co,
-                      so an unlisted host would throw at runtime. Falls back to
-                      initials, and again to an icon when there is no name. */}
+                      user-supplied and can be any host, while next.config only
+                      allowlists the configured Supabase Storage host(s) (see
+                      supabaseStorageRemotePattern() there), so an unlisted host
+                      would throw at runtime. Falls back to initials, and again
+                      to an icon when there is no name. */}
                   <div className="flex-shrink-0">
                     {avatar && brokenAvatar !== avatar ? (
                       // eslint-disable-next-line @next/next/no-img-element

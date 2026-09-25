@@ -35,6 +35,13 @@ terminating error under 'Stop' and short-circuit before the exit statement.
 if (-not (Get-Variable -Name NzamyProductionProjectRef -Scope Script -ErrorAction SilentlyContinue)) {
   Set-Variable -Name NzamyProductionProjectRef -Scope Script -Option Constant -Value 'gdqfqfcxnwrwgaphtfhu'
 }
+# Production moved to the self-hosted instance (2026-09-25). A self-hosted URL
+# has no project ref (Get-UatEnv parses 'auth' out of auth.nezamy.sa), so the
+# deny-list also matches on the API host. Both the retired cloud project and the
+# self-hosted production host are denied for writes.
+if (-not (Get-Variable -Name NzamyProductionHosts -Scope Script -ErrorAction SilentlyContinue)) {
+  Set-Variable -Name NzamyProductionHosts -Scope Script -Option Constant -Value @('gdqfqfcxnwrwgaphtfhu.supabase.co', 'auth.nezamy.sa')
+}
 
 function Write-UatGuardError {
   param([Parameter(Mandatory = $true)][string]$Message)
@@ -75,8 +82,12 @@ function Get-UatEnv {
     exit 3
   }
 
+  $apiHost = $null
+  try { $apiHost = ([uri]$url).Host.ToLowerInvariant().TrimEnd('.') } catch { $apiHost = $null }
+
   return [pscustomobject]@{
     Url        = $url
+    ApiHost    = $apiHost
     AnonKey    = $map['NEXT_PUBLIC_SUPABASE_ANON_KEY']
     ServiceKey = $serviceKey
     ProjectRef = $projectRef
@@ -108,7 +119,9 @@ function Assert-UatProject {
     exit 3
   }
 
-  if ($AllowWrites -and $uatEnv.ProjectRef -eq $script:NzamyProductionProjectRef) {
+  $isProduction = ($uatEnv.ProjectRef -eq $script:NzamyProductionProjectRef) -or
+                  ($script:NzamyProductionHosts -contains $uatEnv.ApiHost)
+  if ($AllowWrites -and $isProduction) {
     $envOverride = $env:NZAMY_UAT_ALLOW_PRODUCTION -eq '1'
     if (-not ($IUnderstandThisIsProduction -and $envOverride)) {
       Write-UatGuardError (

@@ -1,5 +1,41 @@
 import type { NextConfig } from "next";
 
+// ── Supabase Storage host, derived from the runtime env ─────────────────────
+// Blog cover images (and any other public Storage object) are served from
+// `${NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/<bucket>/...`. This
+// used to be hardcoded to `*.supabase.co`, which is only true for Supabase
+// CLOUD projects; a self-hosted instance (e.g. https://auth.nezamy.sa) has an
+// arbitrary hostname, so next/image would throw
+// "Invalid src prop ... hostname is not configured" for every cover on that
+// host. Deriving the pattern from the same env var the Supabase client itself
+// uses keeps this in sync with whichever backend is configured, with no
+// separate "self-hosted host" variable to remember to set.
+//
+// Guarded: `next.config.ts` loads before any request-time validation runs
+// (including src/instrumentation.ts's own assertion), so an unset or
+// malformed URL must not crash `next build`/`next dev` — it just means no
+// dynamic host is added, and Storage images from that host will 404 out of
+// next/image until the env var is fixed (a loud, easy-to-diagnose failure,
+// not a boot crash).
+function supabaseStorageRemotePattern() {
+  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!raw) return null;
+  try {
+    const { protocol, hostname, port } = new URL(raw);
+    if (protocol !== "http:" && protocol !== "https:") return null;
+    return {
+      protocol: protocol.slice(0, -1) as "http" | "https",
+      hostname,
+      ...(port ? { port } : {}),
+      pathname: "/storage/v1/object/public/**",
+    };
+  } catch {
+    return null;
+  }
+}
+
+const dynamicSupabasePattern = supabaseStorageRemotePattern();
+
 const nextConfig: NextConfig = {
   // ── Image optimisation ──────────────────────────────────────────────────────
   images: {
@@ -9,7 +45,12 @@ const nextConfig: NextConfig = {
     minimumCacheTTL: 60 * 60 * 24 * 30, // 30 days
     remotePatterns: [
       // Blog cover images live in the public Supabase Storage bucket `blog-covers`.
-      { protocol: "https", hostname: "*.supabase.co" },
+      // Kept for any Supabase CLOUD project (dev/staging still pointed there).
+      { protocol: "https", hostname: "*.supabase.co", pathname: "/storage/v1/object/public/**" },
+      // The actual configured backend (self-hosted or cloud) — see
+      // supabaseStorageRemotePattern() above. Omitted if the env var is unset
+      // or unparseable at config-load time.
+      ...(dynamicSupabasePattern ? [dynamicSupabasePattern] : []),
     ],
   },
   async headers() {
