@@ -123,3 +123,13 @@ failed build (pointer unchanged), rollback, status, `main` mode with the script 
 Observed while testing: on a cold server, the `section=all` search occasionally degrades the feqh section at the
 anon 3 s timeout (direct query 0.7–1.3 s; four sections in parallel on a host already using swap). Handled
 gracefully in the UI; re-measure after the planned RAM upgrade.
+
+## 6. Migrations applied on self-hosted (2026-09-25, by the developer)
+
+- `20260925_04_law_facet_counts.sql` — **applied ✓**, verified over REST as anon: 289 groups summing to 5,901 laws.
+- `20260925_01_library_search_law_articles_ranked.sql` — applied, then **dropped the same day**: at full size every
+  common-term call hit the anon statement_timeout (57014 at ~3.2s; rare terms 1.5–2s). The Docker harness had proven
+  correctness on 4 rows, not performance on 110,794. The route treats the function as optional (1.5s budget,
+  fallback to id order; PGRST202 → skipped for 10 minutes), so its absence is the supported state. The file now
+  carries a DO-NOT-APPLY banner and is out of the rehearsal order until it is rebuilt and re-measured at full size.
+

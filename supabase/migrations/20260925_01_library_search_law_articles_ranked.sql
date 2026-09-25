@@ -1,3 +1,10 @@
+-- ⛔ DO NOT APPLY — too slow on the full corpus (measured 2026-09-25 on self-hosted, 110,794 articles):
+--    common terms («العمل», «التحكيم») hit the anon statement_timeout (57014 at ~3.2s) on every call, rare
+--    terms take 1.5–2s. It was applied once and dropped the same day. The search route only uses it when it
+--    exists and falls back to the plain id order, so leaving it absent is the supported state. To be rebuilt
+--    (likely plpgsql + EXECUTE … USING so the tsquery is planned as a constant and the GIN index is used)
+--    and re-measured at full size before it is applied again.
+
 -- =============================================================================
 -- Migration: 20260925_01_library_search_law_articles_ranked.sql
 -- =============================================================================
