@@ -84,10 +84,10 @@ const KNOWN_FLAGS = new Set([
 ]);
 const argv = process.argv.slice(2);
 for (const a of argv) {
-  if (!KNOWN_FLAGS.has(a)) {
+  if (!KNOWN_FLAGS.has(a) && !a.startsWith("--only=")) {
     console.error(`Unknown argument: ${a}`);
     console.error(
-      "Allowed: --execute --verify --reset-passwords --random-passwords. " +
+      "Allowed: --execute --verify --reset-passwords --random-passwords --only=<key>[,<key>]. " +
         "URL/key/password are read from the environment / .env.local only.",
     );
     process.exit(2);
@@ -95,7 +95,9 @@ for (const a of argv) {
 }
 if (argv.includes("--help") || argv.includes("-h")) {
   console.log(
-    "node scripts/seed-clean-test-accounts.mjs [--execute] [--verify] [--reset-passwords] [--random-passwords]",
+    "node scripts/seed-clean-test-accounts.mjs [--execute] [--verify] [--reset-passwords] [--random-passwords] [--only=<key>[,<key>]]\n" +
+      "  --only=admin  limit the run to these account keys (e.g. give admin@ its own password:\n" +
+      "                --execute --reset-passwords --random-passwords --only=admin)",
   );
   process.exit(0);
 }
@@ -162,7 +164,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
 //   lawyer_profiles verification CHECK                            (:3814-3853)
 // Plan ids are the 18 rows of public.subscription_plans; they are re-checked
 // read-only at runtime before anything is written.
-const ACCOUNTS = [
+const ALL_ACCOUNTS = [
   {
     key: "admin",
     email: "admin@nezamy.sa",
@@ -364,7 +366,27 @@ const ACCOUNTS = [
     },
   },
 ];
-const BY_KEY = new Map(ACCOUNTS.map((a) => [a.key, a]));
+const BY_KEY = new Map(ALL_ACCOUNTS.map((a) => [a.key, a]));
+
+// --only=<key>[,<key>] limits the run to those accounts. With --execute it is
+// allowed only for password resets: the membership links of firm-lawyer and
+// corp-legal need their owner's entity from the same run.
+const ONLY = argv
+  .filter((a) => a.startsWith("--only="))
+  .flatMap((a) => a.slice("--only=".length).split(","))
+  .map((k) => k.trim())
+  .filter(Boolean);
+for (const k of ONLY) {
+  if (!BY_KEY.has(k)) {
+    console.error(`--only: unknown account key "${k}". Known: ${ALL_ACCOUNTS.map((a) => a.key).join(", ")}`);
+    process.exit(2);
+  }
+}
+if (ONLY.length && argv.includes("--execute") && !argv.includes("--reset-passwords")) {
+  console.error("--only with --execute is only for password resets: add --reset-passwords (and --random-passwords).");
+  process.exit(2);
+}
+const ACCOUNTS = ONLY.length ? ALL_ACCOUNTS.filter((a) => ONLY.includes(a.key)) : ALL_ACCOUNTS;
 
 // Markers of the placeholder company handle_new_user() inserts for a corporate
 // signup with no company metadata (01-schema.sql:752-770).
