@@ -4,6 +4,20 @@ import { checkLibraryAccess } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { lawStatusForDetail } from '@/app/laws/law-status';
 import { resolveParentLawLink, type ParentLawCandidate } from './_resolve-parent-law';
+import { orderLawChapters } from './_order-chapters';
+import { selectAllPages } from '@/lib/supabase/selectAllPages';
+
+/**
+ * Rows per articles window. Below the 1000-row max-rows on purpose: every
+ * window is one statement under the anon role's ~3s statement_timeout, and an
+ * article row drags its amendments and regulations along. Measured on the
+ * largest law (1,838 articles): a 1000-row window took ~2.1s end to end, a
+ * 500-row window ~1.4s.
+ */
+const ARTICLES_PAGE_SIZE = 500;
+
+/** PostgREST error fields worth logging; selectAllPages types only `message`. */
+type PgErrorParts = { code?: string; details?: string };
 
 /**
  * GET /api/library/laws/[slug]
@@ -68,13 +82,23 @@ export async function GET(
       }
     }
 
-    // Fetch chapters
-    const { data: chapters, error: chaptersError } = await supabase
-      .schema('library')
-      .from('chapters')
-      .select('*')
-      .eq('law_slug', slug)
-      .order('order_index', { ascending: true });
+    // Fetch chapters.
+    //
+    // LIB-04 (2026-09-25): PostgREST answers an unranged select with at most
+    // max-rows (1000) rows and no error, so both lists below are walked in
+    // .range() windows by selectAllPages. The order ends on `id` because the
+    // windows are only disjoint and gap-free under a total order, and nothing
+    // constrains order_index to be unique within a law.
+    const { data: chapters, error: chaptersError } = await selectAllPages<Record<string, unknown>>(
+      (from, to) => supabase
+        .schema('library')
+        .from('chapters')
+        .select('*')
+        .eq('law_slug', slug)
+        .order('order_index', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
 
     // A-04 (2026-09-22): exactly the failure class the articles guard below
     // exists to close, three lines earlier. A failed chapters query arrives as
@@ -85,9 +109,9 @@ export async function GET(
     if (chaptersError || !Array.isArray(chapters)) {
       console.error(
         `[Laws API] Chapters query failed for "${slug}":`,
-        chaptersError?.code ?? 'no-error-code',
+        (chaptersError as PgErrorParts | null)?.code ?? 'no-error-code',
         chaptersError?.message ?? 'null payload with no error',
-        chaptersError?.details ?? '',
+        (chaptersError as PgErrorParts | null)?.details ?? '',
       );
       return NextResponse.json(
         { error: 'تعذّر تحميل أبواب هذا النظام' },
@@ -95,17 +119,39 @@ export async function GET(
       );
     }
 
-    // Fetch articles with amendments
-    const { data: articles, error: articlesError } = await supabase
-      .schema('library')
-      .from('articles')
-      .select(`
-        *,
-        article_amendments (*),
-        article_regulations (*)
-      `)
-      .eq('law_slug', slug)
-      .order('order_index', { ascending: true });
+    // Fetch articles with amendments — paged for the same reason as chapters:
+    // the largest law in the corpus has 1,838 articles, and the unranged select
+    // served the first 1,000 as the whole law (paywall.totalArticles = 1000).
+    // The embedded arrays are per-row and are not subject to max-rows.
+    const { data: articles, error: articlesError } = await selectAllPages<Record<string, unknown>>(
+      (from, to) => supabase
+        .schema('library')
+        .from('articles')
+        // LIB-04c: '*' shipped `fts` (a ~2.3KB/row tsvector) on every paged
+        // row. Explicit columns are what the formatter/grouping below read.
+        .select(`
+          id,
+          chapter_id,
+          order_index,
+          number,
+          number_text,
+          title,
+          text,
+          original_text,
+          status,
+          instrument,
+          historic_regulation_text,
+          executive_reg_text,
+          executive_reg_ref,
+          article_amendments (*),
+          article_regulations (*)
+        `)
+        .eq('law_slug', slug)
+        .order('order_index', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+      { pageSize: ARTICLES_PAGE_SIZE },
+    );
 
     // A-04 (2026-09-22): `error` was never read here, and a failed embed does
     // not fail the request — it arrives as `articles === null`. PostgREST fails
@@ -117,9 +163,9 @@ export async function GET(
     if (articlesError || !Array.isArray(articles)) {
       console.error(
         `[Laws API] Articles query failed for "${slug}":`,
-        articlesError?.code ?? 'no-error-code',
+        (articlesError as PgErrorParts | null)?.code ?? 'no-error-code',
         articlesError?.message ?? 'null payload with no error',
-        articlesError?.details ?? '',
+        (articlesError as PgErrorParts | null)?.details ?? '',
       );
       return NextResponse.json(
         { error: 'تعذّر تحميل مواد هذا النظام' },
@@ -138,23 +184,12 @@ export async function GET(
                           firstLockedCheck.currentTier === 'enterprise' ||
                           isWhitelisted;
 
-    // Group articles by chapter
-    const chapterMap = new Map<string, typeof articles>();
-    const ungroupedArticles: typeof articles = [];
+    // Tag each article with its global (document-order) index for the paywall
+    // check. Grouping into chapters happens in orderLawChapters below.
     let articleGlobalIndex = 0;
 
     articles?.forEach((article: Record<string, unknown>) => {
-      const chapterId = article.chapter_id as string;
-      // Tag each article with its global index for paywall check
       (article as Record<string, unknown>).__globalIndex = articleGlobalIndex++;
-      if (chapterId) {
-        if (!chapterMap.has(chapterId)) {
-          chapterMap.set(chapterId, []);
-        }
-        chapterMap.get(chapterId)!.push(article);
-      } else {
-        ungroupedArticles.push(article);
-      }
     });
 
     // Extract combined regulation preamble if present
@@ -254,22 +289,17 @@ export async function GET(
         hasFullAccess,
         totalArticles: articles?.length ?? 0,
       },
-      chapters: (chapters || []).map((chapter: Record<string, unknown>) => {
-        const chapterArticles = chapterMap.get(chapter.id as string) || [];
-        return {
-          title: chapter.title,
-          articles: chapterArticles.map((a) => formatArticleWithPaywall(a, hasFullAccess, freeLimit)),
-        };
-      }),
+      // LIB-04b (2026-09-25): chapters are ordered by where their articles
+      // sit, not by chapters.order_index (a per-level ordinal on self-hosted);
+      // the seeder's "__orphan__" chapter is relabelled «مواد خارج الأبواب»
+      // and placed by its articles; empty headings are dropped when the law
+      // has articles; articles with no matching chapter land in «أحكام عامة».
+      // No article is dropped. See _order-chapters.ts for the measured cases.
+      chapters: orderLawChapters(chapters, articles).map((chapter) => ({
+        title: chapter.title,
+        articles: chapter.articles.map((a) => formatArticleWithPaywall(a, hasFullAccess, freeLimit)),
+      })),
     };
-
-    // If there are ungrouped articles, add them as a default chapter
-    if (ungroupedArticles.length > 0 && lawSystem.chapters.length === 0) {
-      lawSystem.chapters.push({
-        title: 'أحكام عامة',
-        articles: ungroupedArticles.map((a) => formatArticleWithPaywall(a, hasFullAccess, freeLimit)),
-      });
-    }
 
     return NextResponse.json(lawSystem);
   } catch (error) {

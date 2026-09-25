@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Scales, Gavel, Scroll, CheckCircle, Clock, BookOpen, MagnifyingGlass, ArrowsClockwise
+  Scales, Gavel, Scroll, CheckCircle, BookOpen, MagnifyingGlass, ArrowsClockwise
 } from "@phosphor-icons/react";
 import * as PhosphorIcons from "@phosphor-icons/react";
 import { type DemoPrinciple, type DemoPrecedent, type DemoOrder } from "../demo-data-access";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
+import { SECTION_30 } from "../lawsIndexFacets";
 
 export function highlightText(text: string, q: string, isDark: boolean) {
   if (!text) return "";
@@ -509,9 +510,13 @@ export function EmptyState({ type, catId, isDark, isRTL, hasSearch }: {
   isRTL: boolean;
   hasSearch: boolean;
 }) {
-  const catInfo = LEGAL_TAXONOMY.find(c => c.id === catId);
-  const CatIcon = catInfo ? (PhosphorIcons as Record<string, unknown>)[catInfo.iconName || "BookOpen"] as typeof BookOpen : BookOpen;
+  // SA-30 is not in LEGAL_TAXONOMY; resolve it the way the /laws chips do.
+  const catInfo: { label: string; labelEn: string; iconName?: string } | undefined =
+    LEGAL_TAXONOMY.find(c => c.id === catId) ?? (catId === SECTION_30.id ? SECTION_30 : undefined);
+  const CatIcon = catInfo ? ((PhosphorIcons as Record<string, unknown>)[catInfo.iconName || "BookOpen"] as typeof BookOpen || BookOpen) : BookOpen;
 
+  // "coming-soon" is kept as a type for its callers, but it no longer promises
+  // content: a section that holds nothing says so, with its count of 0.
   if (type === "coming-soon") {
     return (
       <motion.div
@@ -521,17 +526,13 @@ export function EmptyState({ type, catId, isDark, isRTL, hasSearch }: {
         <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 ${isDark ? "bg-[#C8A762]/10" : "bg-[#0B3D2E]/5"}`}>
           <CatIcon size={28} className={isDark ? "text-[#C8A762]/70" : "text-[#0B3D2E]/50"} weight="duotone" />
         </div>
-        <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold mb-3 ${isDark ? "bg-amber-900/20 text-amber-400 border border-amber-700/20" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
-          <Clock size={12} weight="fill" />
-          {isRTL ? "قيد الإعداد" : "In Progress"}
-        </div>
         <p className={`text-base font-black mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>
           {catInfo ? (isRTL ? catInfo.label : catInfo.labelEn) : (isRTL ? "هذا القسم" : "This section")}
         </p>
         <p className={`text-sm max-w-sm mx-auto leading-relaxed ${isDark ? "text-gray-500" : "text-gray-400"}`}>
           {isRTL
-            ? "يُضاف محتوى هذا القسم تباعاً — ستتوفر الأنظمة والمبادئ المرتبطة قريباً."
-            : "Content for this section is being added progressively and will be available soon."}
+            ? "لا توجد عناصر في هذا القسم حالياً (٠)."
+            : "This section has no items (0)."}
         </p>
         {catInfo && (
           <p className={`text-[11px] mt-3 font-semibold ${isDark ? "text-gray-600" : "text-slate-400"}`}>

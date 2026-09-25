@@ -78,7 +78,9 @@ function generateDemoSessions(): SessionEntry[] {
     },
     {
       id: "s3",
-      lawSlug: "execution-law",
+      // execution-law (2026-09-25): dead on self-hosted; real slug is
+      // execution-law-qadha-edition (active — see law-metadata-map.ts note).
+      lawSlug: "execution-law-qadha-edition",
       lawTitle: "نظام التنفيذ",
       lawTitleEn: "Execution Law",
       lastSection: "المادة 34 — الحجز التنفيذي",
@@ -91,7 +93,9 @@ function generateDemoSessions(): SessionEntry[] {
     },
     {
       id: "s4",
-      lawSlug: "evidence-law",
+      // evidence-law (2026-09-25): dead on self-hosted; real slug is
+      // evidence-law-qadha-edition (active).
+      lawSlug: "evidence-law-qadha-edition",
       lawTitle: "نظام الإثبات",
       lawTitleEn: "Evidence Law",
       lastSection: "المادة 22 — اليمين الحاسمة",
@@ -104,7 +108,9 @@ function generateDemoSessions(): SessionEntry[] {
     },
     {
       id: "s5",
-      lawSlug: "labor-law",
+      // labor-law (2026-09-25): dead on self-hosted; real slug is
+      // labor-law-qadha (active, on both self-hosted and the cloud DB).
+      lawSlug: "labor-law-qadha",
       lawTitle: "نظام العمل",
       lawTitleEn: "Labor Law",
       lastSection: "المادة 80 — إنهاء العقد بدون مكافأة",
@@ -117,7 +123,9 @@ function generateDemoSessions(): SessionEntry[] {
     },
     {
       id: "s6",
-      lawSlug: "civil-transactions",
+      // civil-transactions (2026-09-25): dead on self-hosted; real slug is
+      // civil-transactions-law (active, on both self-hosted and the cloud DB).
+      lawSlug: "civil-transactions-law",
       lawTitle: "نظام المعاملات المدنية",
       lawTitleEn: "Civil Transactions Law",
       lastSection: "المادة 180 — المسؤولية التقصيرية",

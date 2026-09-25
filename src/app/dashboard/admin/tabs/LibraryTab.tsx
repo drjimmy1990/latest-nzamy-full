@@ -1,6 +1,6 @@
 "use client";
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { BookOpen, Plus, Check, X, MagnifyingGlass, Funnel, Eye, PencilSimple, Trash, ArrowUpRight, Lock, LockOpen } from "@phosphor-icons/react";
 
 // Must match the CATEGORY_MAP keys in src/app/api/v1/admin/library/route.ts.
@@ -30,10 +30,19 @@ function getCategoryType(category: string): "law" | "decree" | "principle" | "fe
   return "law";
 }
 
+const PAGE_SIZE = 50;
+
 export default function LibraryTab() {
   const [cat, setCat] = useState("الكل");
+  // `searchInput` is what the box shows; `search` is what is fetched, set
+  // 350ms after the last keystroke. A principles substring search scans every
+  // text (~2s on self-hosted), so fetching per keystroke would stack them.
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [entries, setEntries] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [freeItems, setFreeItems] = useState<Record<string, string[]>>({
@@ -57,30 +66,72 @@ export default function LibraryTab() {
     return (freeItems[key] || []).includes(String(id));
   };
 
+  // Only the newest request may write state: a slow earlier search (a
+  // principles scan takes ~2s) must not overwrite a newer page or query.
+  const requestSeq = useRef(0);
+
   const fetchData = async () => {
+    const seq = ++requestSeq.current;
     setLoading(true);
     try {
       const queryParams = new URLSearchParams();
       if (search) queryParams.set("search", search);
       if (cat !== "الكل") queryParams.set("category", cat);
+      queryParams.set("page", String(page));
+      queryParams.set("limit", String(PAGE_SIZE));
 
       const res = await fetch(`/api/v1/admin/library?${queryParams.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch library entries");
-      const data = await res.json();
-      setEntries(data.entries || []);
+      // The API's own `error` is Arabic; anything else (an HTML error page, a
+      // network failure) gets the Arabic fallback below, never a raw English
+      // message.
+      const data = await res.json().catch(() => null);
+      if (seq !== requestSeq.current) return;
+      if (!res.ok || !data) {
+        throw new Error(
+          data && typeof data.error === "string" && data.error ? data.error : "تعذّر جلب سجلات المكتبة. أعد المحاولة.",
+        );
+      }
+      // {data, total, pages} — LIB-15: `total` is the real count:"exact" sum,
+      // not this page's length, so "إجمالي السجلات" below stays honest once a
+      // table has more than one page of rows. `pages` (not
+      // ceil(total/PAGE_SIZE)) is what Prev/Next below page against: in
+      // "الكل" mode the four tables are windowed independently by the same
+      // page, so how far Next can go is bounded by the LARGEST table, not by
+      // the sum of all four (see query-params.ts:computeTotalPages).
+      setEntries(data.data || []);
+      setTotal(typeof data.total === "number" ? data.total : (data.data || []).length);
+      setTotalPages(typeof data.pages === "number" && data.pages > 0 ? data.pages : 1);
       setFreeItems(data.freeItems || { laws: [], decrees: [], principles: [], feqh: [] });
       setError(null);
     } catch (err: any) {
+      if (seq !== requestSeq.current) return;
       console.error(err);
-      setError(err.message || "حدث خطأ أثناء جلب السجلات");
+      // Clear the previous page's rows: showing them under the new page
+      // number would present stale data as the answer.
+      setEntries([]);
+      setError(err instanceof Error && /[\u0600-\u06FF]/.test(err.message) ? err.message : "تعذّر جلب سجلات المكتبة. أعد المحاولة.");
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchData();
-  }, [search, cat]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, cat, page]);
+
+  // A new search or category invalidates the current page (page 3 of an
+  // unfiltered list may not exist once filtered), so each also resets page to
+  // 1 in the SAME update — React batches them into one re-render, so the
+  // effect above fires once per real change. The search is debounced: the
+  // box updates on every keystroke, the fetch 350ms after the last one.
+  useEffect(() => {
+    const trimmed = searchInput.trim();
+    if (trimmed === search) return;
+    const timer = setTimeout(() => { setSearch(trimmed); setPage(1); }, 350);
+    return () => clearTimeout(timer);
+  }, [searchInput, search]);
+  const updateCat = (value: string) => { setCat(value); setPage(1); };
 
   const handleDelete = async (id: string, category: string) => {
     if (!confirm("هل أنت متأكد من رغبتك في حذف هذا السجل؟")) return;
@@ -127,11 +178,17 @@ export default function LibraryTab() {
     }
   };
 
+  // "إجمالي السجلات" reads the server's count:"exact" total (LIB-15), not
+  // entries.length — entries is now one page of PAGE_SIZE rows, and the true
+  // total across laws/decrees/principles/feqh_books can be in the tens of
+  // thousands. The other three KPIs below are unavoidably page-scoped: status
+  // is not aggregated server-side across four tables in one query, so they
+  // describe only the rows currently on screen.
   const stats = [
-    { label: "إجمالي السجلات", val: entries.length, c: "text-blue-400" },
-    { label: "منشور", val: entries.filter((e) => e.status === "published" || e.status === "active").length, c: "text-emerald-400" },
-    { label: "تنتظر مراجعة", val: entries.filter((e) => e.status === "review").length, c: "text-amber-400" },
-    { label: "مسودة", val: entries.filter((e) => e.status === "draft").length, c: "text-zinc-400" },
+    { label: "إجمالي السجلات", val: error ? "—" : total.toLocaleString("ar-SA"), c: "text-blue-400" },
+    { label: "منشور (بالصفحة الحالية)", val: entries.filter((e) => e.status === "published" || e.status === "active").length, c: "text-emerald-400" },
+    { label: "تنتظر مراجعة (بالصفحة الحالية)", val: entries.filter((e) => e.status === "review").length, c: "text-amber-400" },
+    { label: "مسودة (بالصفحة الحالية)", val: entries.filter((e) => e.status === "draft").length, c: "text-zinc-400" },
   ];
 
   return (
@@ -154,8 +211,8 @@ export default function LibraryTab() {
         <div className="flex items-center gap-2 flex-1 min-w-[180px] rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
           <MagnifyingGlass size={13} className="text-zinc-500" />
           <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="بحث في المكتبة..."
             className="bg-transparent text-[12px] text-zinc-200 w-full outline-none placeholder:text-zinc-700"
           />
@@ -164,7 +221,7 @@ export default function LibraryTab() {
           {CATS.map((c) => (
             <button
               key={c}
-              onClick={() => setCat(c)}
+              onClick={() => updateCat(c)}
               className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
                 cat === c ? "bg-[#C8A762] text-black" : "bg-white/[0.04] text-zinc-500 hover:text-zinc-300"
               }`}
@@ -283,9 +340,47 @@ export default function LibraryTab() {
         </table>
         </div>
         {loading && <div className="py-12 text-center text-zinc-500">جاري التحميل...</div>}
-        {!loading && entries.length === 0 && (
+        {!loading && error && (
+          <div role="alert" className="py-12 px-4 flex flex-col items-center gap-3 text-center">
+            <p className="text-[13px] font-semibold text-red-400">{error}</p>
+            <button
+              onClick={() => fetchData()}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white/[0.04] text-zinc-300 hover:text-white transition-colors"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        )}
+        {!loading && !error && entries.length === 0 && (
           <div className="py-12 text-center">
             <p className="text-zinc-600">لا توجد نتائج</p>
+          </div>
+        )}
+        {/* LIB-15: the API now returns one page (PAGE_SIZE rows) of the true
+            total instead of silently capping at PostgREST's 1000-row max, so
+            the tab needs a way to reach every row instead of just the first
+            window. */}
+        {!loading && !error && total > 0 && (
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-white/[0.06]">
+            <p className="text-[11px] text-zinc-500">
+              {`صفحة ${page} من ${totalPages} — ${total.toLocaleString("ar-SA")} سجل إجمالاً`}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || loading}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white/[0.04] text-zinc-400 hover:text-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                السابق
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white/[0.04] text-zinc-400 hover:text-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                التالي
+              </button>
+            </div>
           </div>
         )}
       </div>

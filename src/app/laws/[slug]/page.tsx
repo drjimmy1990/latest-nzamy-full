@@ -18,7 +18,7 @@ import { recordLawOpened, type ReadingActivity } from "@/lib/services/readingAct
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 import type { LawArticle, LawSystem } from "../data";
 import { lawStatusForDetail } from "../law-status";
-import { getLawMeta, fetchLawMetadata, SECTION_COLORS } from "../law-metadata-map";
+import { getLawMeta, lawMetaFromDetail, SECTION_COLORS } from "../law-metadata-map";
 import type { LawMetaEntry } from "../law-metadata-map";
 import { PaywallModal } from "../components/PaywallModal";
 import { useDraftCart } from "@/hooks/useDraftCart";
@@ -55,15 +55,10 @@ function LawSystemPageContent() {
   const params = useParams();
   const slug = (params?.slug as string) ?? "companies-law";
 
+  // LIB-17 (2026-09-25): derived from the ONE law-detail response in loadLaw
+  // below. A separate fetchLawMetadata() effect used to download the whole law
+  // a second time just to count its articles.
   const [lawMeta, setLawMeta] = useState<LawMetaEntry>(() => getLawMeta(slug));
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchLawMetadata(slug).then(meta => {
-      if (!cancelled) setLawMeta(meta);
-    });
-    return () => { cancelled = true; };
-  }, [slug]);
 
   const [showPaywall, setShowPaywall] = useState(false);
   const [showCart,    setShowCart]    = useState(false);
@@ -87,7 +82,10 @@ function LawSystemPageContent() {
   // back to its own default when this is still null (loading, or the fetch
   // failed before setting it).
   const [libraryFreeLimit, setLibraryFreeLimit] = useState<number | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  // "not-found" = the API answered 404; "failed" = any other failure (a 500
+  // from a failed query, a network error). They get different copy: telling a
+  // reader a law does not exist when we merely failed to load it is wrong.
+  const [loadError, setLoadError] = useState<false | "not-found" | "failed">(false);
   const [loading, setLoading] = useState(true);
   const [jumpQuery,  setJumpQuery]  = useState("");  // بحث سريع للمواد
   const [fontSize,        setFontSize]        = useState<"normal"|"large"|"xlarge">("normal"); // حجم الخط
@@ -122,6 +120,9 @@ function LawSystemPageContent() {
 
     // ── Dynamic slug loading (API-backed) ──────────────────────────────────
   useEffect(() => {
+    // A slow response for the PREVIOUS slug must not overwrite this one's
+    // law/meta after a client-side navigation.
+    let cancelled = false;
     async function loadLaw() {
       // NOTE: `companies-law` used to short-circuit to the bundled COMPANIES_LAW
       // constant here, BEFORE the fetch — so the reader never asked the database
@@ -139,14 +140,20 @@ function LawSystemPageContent() {
       try {
         setLoadError(false);
         setLoading(true);
+        // Reset to the static entry for THIS slug first, so a law that fails
+        // to load never shows the previous law's metadata.
+        setLawMeta(getLawMeta(slug));
         const res = await fetch(`/api/library/laws/${apiSlug(slug)}`);
+        if (cancelled) return;
         if (!res.ok) {
-          console.warn(`[LawReader] Law "${slug}" not found in API (${res.status})`);
-          setLoadError(true);
+          console.warn(`[LawReader] Law "${slug}" failed to load from the API (${res.status})`);
+          setLoadError(res.status === 404 ? "not-found" : "failed");
           setLoading(false);
           return;
         }
         const data = await res.json();
+        if (cancelled) return;
+        setLawMeta(lawMetaFromDetail(slug, data));
         setLibraryFreeLimit(
           typeof data?.paywall?.freeLimit === "number" ? data.paywall.freeLimit : null,
         );
@@ -212,13 +219,15 @@ function LawSystemPageContent() {
           regulationInstrumentsLocked: data.regulationInstrumentsLocked || 0,
         } as LawSystem);
       } catch (err) {
+        if (cancelled) return;
         console.error('[LawReader] Failed to load law:', err);
-        setLoadError(true);
+        setLoadError("failed");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     loadLaw();
+    return () => { cancelled = true; };
   }, [slug]);
 
   // ── Load server-side preferences once (signed-in users only) ────────────
@@ -608,12 +617,23 @@ function LawSystemPageContent() {
         <div className="print-main flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4 text-center max-w-md p-6 rounded-2xl border border-red-500/20 bg-red-500/5">
             <Scales size={48} className="text-red-500" />
-            <h2 className="text-lg font-black">{isRTL ? "عذراً، لم نتمكن من العثور على هذا التشريع" : "Law Not Found"}</h2>
-            <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-              {isRTL 
-                ? "قد يكون الرابط غير صحيح، أو أن الوثيقة لم ترفع بعد. يمكنك العودة إلى الفهرس الرئيسي والبحث من جديد." 
-                : "The requested document might not be available or the link is incorrect."}
-            </p>
+            {loadError === "failed" ? (
+              <>
+                <h2 className="text-lg font-black">تعذّر تحميل هذا التشريع</h2>
+                <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+                  حدث خطأ أثناء تحميل نص النظام من المكتبة. حدّث الصفحة بعد قليل، أو عد إلى الفهرس الرئيسي.
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-black">{isRTL ? "عذراً، لم نتمكن من العثور على هذا التشريع" : "Law Not Found"}</h2>
+                <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+                  {isRTL
+                    ? "قد يكون الرابط غير صحيح، أو أن الوثيقة لم ترفع بعد. يمكنك العودة إلى الفهرس الرئيسي والبحث من جديد."
+                    : "The requested document might not be available or the link is incorrect."}
+                </p>
+              </>
+            )}
             <Link href="/laws" className="px-4 py-2 rounded-xl text-xs font-bold bg-[#0B3D2E] text-white hover:opacity-90 transition">
               {isRTL ? "العودة إلى المكتبة القانونية" : "Back to Legal Library"}
             </Link>

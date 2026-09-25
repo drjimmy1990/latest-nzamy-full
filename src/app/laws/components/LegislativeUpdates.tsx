@@ -38,11 +38,16 @@ interface LegislativeUpdate {
 }
 
 // ─── Demo Data ────────────────────────────────────────────────────────────────
+// Slugs below were re-pointed 2026-09-25 (LIB-04 pass) to the real self-hosted
+// corpus slugs, verified against auth.nezamy.sa REST; commercial-courts-law
+// and arbitration-law were already correct. u10 was re-pointed to
+// anti-money-laundering-law; only u11's demo law had no confident self-hosted
+// match and was dropped (see below) rather than pointed at a 404.
 const DEMO_UPDATES: LegislativeUpdate[] = [
   {
     id: "u1",
     lawName: "نظام العمل",
-    lawSlug: "labor-law",
+    lawSlug: "labor-law-qadha",
     changeType: "amendment",
     articleRef: "المادة 74",
     decreeRef: "مرسوم ملكي م/15 وتاريخ 1446/6/1هـ",
@@ -86,7 +91,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
   {
     id: "u5",
     lawName: "نظام الإثبات",
-    lawSlug: "evidence-law",
+    lawSlug: "evidence-law-qadha-edition",
     changeType: "addition",
     articleRef: "المادة 13 مكرر",
     decreeRef: "مرسوم ملكي م/43 وتاريخ 1446/2/20هـ",
@@ -97,7 +102,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
   {
     id: "u6",
     lawName: "نظام الإجراءات الجزائية",
-    lawSlug: "criminal-procedure",
+    lawSlug: "criminal-procedure-law",
     changeType: "amendment",
     articleRef: "المواد 102-107",
     decreeRef: "مرسوم ملكي م/91 وتاريخ 1446/1/5هـ",
@@ -108,7 +113,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
   {
     id: "u7",
     lawName: "نظام حماية البيانات الشخصية (PDPL)",
-    lawSlug: "pdpl",
+    lawSlug: "personal-data-protection-law",
     changeType: "new_law",
     decreeRef: "مرسوم ملكي م/19 وتاريخ 1445/9/9هـ",
     decreeType: "royal_decree",
@@ -118,7 +123,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
   {
     id: "u8",
     lawName: "نظام العمل",
-    lawSlug: "labor-law",
+    lawSlug: "labor-law-qadha",
     changeType: "repeal",
     articleRef: "المادة 45",
     decreeRef: "قرار وزير الموارد البشرية 82345",
@@ -129,7 +134,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
   {
     id: "u9",
     lawName: "نظام التنفيذ",
-    lawSlug: "execution-law",
+    lawSlug: "execution-law-qadha-edition",
     changeType: "amendment",
     articleRef: "المادة 5 و14",
     decreeRef: "مرسوم ملكي م/55 وتاريخ 1445/8/1هـ",
@@ -140,7 +145,7 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
   {
     id: "u10",
     lawName: "نظام مكافحة غسل الأموال",
-    lawSlug: "aml-law",
+    lawSlug: "anti-money-laundering-law",
     changeType: "amendment",
     articleRef: "المادة 2",
     decreeRef: "مرسوم ملكي م/3 وتاريخ 1445/6/25هـ",
@@ -148,20 +153,14 @@ const DEMO_UPDATES: LegislativeUpdate[] = [
     date: "2025-08-12",
     summary: "توسيع تعريف الأصول الرقمية لتشمل العملات المشفرة والرموز الرقمية",
   },
-  {
-    id: "u11",
-    lawName: "لائحة المحاكم الجزائية المتخصصة",
-    lawSlug: "specialized-criminal-courts",
-    changeType: "addition",
-    decreeRef: "قرار مجلس الوزراء 482",
-    decreeType: "cabinet_decision",
-    date: "2025-07-20",
-    summary: "إضافة دوائر متخصصة لقضايا الجرائم الإلكترونية والمالية",
-  },
+  // u11 ("لائحة المحاكم الجزائية المتخصصة" / specialized-criminal-courts,
+  // 2026-09-25) removed: no matching row exists on self-hosted at all, and no
+  // confident real-slug candidate was found — dropped rather than pointed at
+  // a 404.
   {
     id: "u12",
     lawName: "نظام المرافعات الشرعية",
-    lawSlug: "procedural-law",
+    lawSlug: "sharia-pleading-law-qadha-edition",
     changeType: "amendment",
     articleRef: "المادة 25 و26",
     decreeRef: "مرسوم ملكي م/36 وتاريخ 1445/4/10هـ",

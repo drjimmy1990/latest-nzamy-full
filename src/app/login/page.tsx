@@ -24,6 +24,8 @@ import {
   Info,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
+import { useLibraryStats } from "@/lib/library/useLibraryStats";
 import { authenticateTest, TEST_ACCOUNTS, TEST_PASSWORD } from "@/lib/test-credentials";
 import { setDemoSession, useUser } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
@@ -60,11 +62,9 @@ const t = {
     feat3: "محامون معتمدون ومختارون بعناية",
     // «٣٧٠+ خدمة قانونية» was deleted from /services/individuals in an
     // earlier wave for being unsupported by the catalog it counted; the login
-    // screen kept its own copy. Replaced with the legal library's real size —
-    // the same floor LegalLibraryBanner.tsx publishes, checkable with
-    // `select count(*) from library.laws`.
-    stat1Label: "نظاماً ولائحة",
-    stat1Value: "٣٨٦",
+    // screen kept its own copy. Its slot now shows the legal library's real
+    // size — NOT a literal (the same code runs on the cloud DB with 386 rows
+    // and on self-hosted with 5,901): see `libraryStat` in LoginPage below.
     stat2Label: "دعم متواصل",
     stat2Value: "٢٤/٧",
     stat3Label: "آمن ومشفّر",
@@ -96,8 +96,6 @@ const t = {
     feat1: "Advanced AI legal assistance",
     feat2: "Full data security & encryption",
     feat3: "Verified & vetted lawyers",
-    stat1Label: "Laws & regulations",
-    stat1Value: "386",
     stat2Label: "Support",
     stat2Value: "24/7",
     stat3Label: "Secure",
@@ -113,7 +111,6 @@ const features = [
 ];
 
 const stats = [
-  { valueKey: "stat1Value", labelKey: "stat1Label" },
   { valueKey: "stat2Value", labelKey: "stat2Label" },
   { valueKey: "stat3Value", labelKey: "stat3Label" },
 ];
@@ -146,6 +143,21 @@ export default function LoginPage() {
   const isAr = lang === "ar";
   const txt = isAr ? t.ar : t.en;
   const dir = isAr ? "rtl" : "ltr";
+
+  // Live floor of library.laws (GET /api/library/stats). null value = still
+  // loading → placeholder; a failed count drops the tile — never a literal.
+  const library = useLibraryStats();
+  const libraryLaws = library.status === "ready" ? formatLibraryCount(library.stats.laws, isAr ? "ar" : "en") : null;
+  const libraryStat = library.status === "loading" || libraryLaws
+    ? { value: libraryLaws, label: isAr ? LIBRARY_STAT_LABELS.laws.ar : LIBRARY_STAT_LABELS.laws.en }
+    : null;
+  const statTiles: { value: string | null; label: string }[] = [
+    ...(libraryStat ? [libraryStat] : []),
+    ...stats.map((s) => ({
+      value: String(txt[s.valueKey as keyof typeof txt]),
+      label: String(txt[s.labelKey as keyof typeof txt]),
+    })),
+  ];
 
   const router = useRouter();
   const user = useUser();
@@ -426,18 +438,18 @@ export default function LoginPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
-            className="relative z-10 grid grid-cols-3 gap-4"
+            className={`relative z-10 grid gap-4 ${statTiles.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}
           >
-            {stats.map((stat, i) => (
+            {statTiles.map((stat, i) => (
               <div
                 key={i}
                 className="rounded-2xl border border-white/15 bg-white/5 backdrop-blur-sm p-4 text-center"
               >
                 <div className="font-brand text-2xl font-bold text-gold mb-1">
-                  {txt[stat.valueKey as keyof typeof txt]}
+                  {stat.value ?? <span aria-hidden className="inline-block h-[0.8em] w-14 rounded-md align-middle animate-pulse bg-white/10" />}
                 </div>
                 <div className="text-white/60 text-xs font-medium">
-                  {txt[stat.labelKey as keyof typeof txt]}
+                  {stat.label}
                 </div>
               </div>
             ))}

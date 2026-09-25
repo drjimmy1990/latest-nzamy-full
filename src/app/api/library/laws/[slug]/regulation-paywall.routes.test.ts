@@ -27,7 +27,7 @@ const migrationSource = readFileSync(
 test("the articles query reads its error and fails loudly instead of serving an empty law", () => {
   assert.match(
     routeSource,
-    /const \{ data: articles, error: articlesError \} = await supabase/,
+    /const \{ data: articles, error: articlesError \} = await (supabase|selectAllPages)/,
     "the articles query must destructure `error` — dropping it is what turned 42501 into a 200",
   );
 
@@ -167,7 +167,7 @@ test("the migration grants the request roles, not only service_role, and verifie
 test("the chapters query fails closed too — same class, three lines earlier", () => {
   assert.match(
     routeSource,
-    /const \{ data: chapters, error: chaptersError \} = await supabase/,
+    /const \{ data: chapters, error: chaptersError \} = await (supabase|selectAllPages)/,
     "the chapters query must destructure `error`: a null payload yields zero chapters, and the ungrouped fallback does not rescue a law whose articles carry a chapter_id",
   );
   assert.match(
@@ -180,6 +180,80 @@ test("the chapters query fails closed too — same class, three lines earlier", 
   const guard = routeSource.indexOf("if (chaptersError || !Array.isArray(chapters))");
   const articlesQuery = routeSource.indexOf("const { data: articles, error: articlesError }");
   assert.ok(guard > -1 && articlesQuery > -1 && guard < articlesQuery, "the chapters guard must precede the articles query");
+});
+
+test("LIB-04: chapters and articles are paged past PostgREST's 1000-row max-rows", () => {
+  // An unranged select was capped at 1000 rows with no error: the largest law
+  // (1,838 articles) was served as 1,000 and paywall.totalArticles said 1000.
+  for (const [name, table] of [["chapters", "chapters"], ["articles", "articles"]] as const) {
+    const start = routeSource.indexOf(`const { data: ${name}, error: `);
+    assert.ok(start > -1, `the ${name} query must exist`);
+    const call = routeSource.slice(start, start + 900);
+    assert.match(
+      call,
+      /= await selectAllPages</,
+      `the ${name} query must go through selectAllPages, never a bare unranged select`,
+    );
+    assert.match(call, new RegExp(`\\.from\\('${table}'\\)`));
+    // A deterministic order whose LAST key is unique, then the window.
+    assert.match(
+      call,
+      /\.order\('order_index', \{ ascending: true \}\)\s*\.order\('id', \{ ascending: true \}\)\s*\.range\(from, to\)/,
+      `the ${name} windows need order_index then id, then .range(from, to)`,
+    );
+  }
+  assert.match(routeSource, /import \{ selectAllPages \} from '@\/lib\/supabase\/selectAllPages';/);
+  // The paywall total is the real row count, not a capped one.
+  assert.match(routeSource, /totalArticles: articles\?\.length \?\? 0,/);
+});
+
+test("LIB-04b: chapters are ordered, relabelled and filtered by orderLawChapters, articles untouched", () => {
+  // The ordering itself is unit-tested on real corpus data in
+  // _order-chapters.test.ts; this pins that the route actually uses it.
+  assert.match(routeSource, /import \{ orderLawChapters \} from '\.\/_order-chapters';/);
+  const start = routeSource.indexOf("chapters: orderLawChapters(chapters, articles)");
+  assert.ok(start > -1, "the response chapters must come from orderLawChapters over the fetched rows");
+  const block = routeSource.slice(start, start + 300);
+  assert.match(
+    block,
+    /articles: chapter\.articles\.map\(\(a\) => formatArticleWithPaywall\(a, hasFullAccess, freeLimit\)\)/,
+    "every grouped article must still pass through the paywall formatter",
+  );
+  // The old shapes must be gone: appending the orphan last put a law's
+  // opening articles at the bottom, and the ungrouped fallback only fired when
+  // there were no chapters at all (so ungrouped articles could vanish).
+  assert.doesNotMatch(routeSource, /\[\.\.\.real, \.\.\.orphan\]/);
+  assert.doesNotMatch(routeSource, /ungroupedArticles/);
+  assert.doesNotMatch(routeSource, /chapterMap/);
+  // The paywall still keys on document order: the global index is stamped on
+  // every fetched article before any grouping.
+  assert.match(routeSource, /\.__globalIndex = articleGlobalIndex\+\+;/);
+  // selectAllPages needs the deterministic query order; it stays.
+  assert.match(routeSource, /\.from\('chapters'\)[\s\S]{0,200}\.order\('order_index', \{ ascending: true \}\)\s*\.order\('id', \{ ascending: true \}\)/);
+});
+
+test("LIB-04c: the articles select lists columns explicitly and drops the fts tsvector", () => {
+  const start = routeSource.indexOf("const { data: articles, error: ");
+  const selectStart = routeSource.indexOf(".select(`", start);
+  const selectEnd = routeSource.indexOf("`)", selectStart);
+  assert.ok(start > -1 && selectStart > start && selectEnd > selectStart, "the articles select block must exist");
+  const cols = routeSource.slice(selectStart, selectEnd);
+
+  assert.doesNotMatch(cols, /^\s*\*,?\s*$/m, "articles must not select '*' — that ships the ~2.3KB/row fts tsvector");
+  assert.doesNotMatch(cols, /\bfts\b/, "fts must never be selected");
+
+  // Every column formatArticleWithPaywall / the chapter grouping / the
+  // regulationInstruments builder reads off the raw article row.
+  for (const col of [
+    "id", "chapter_id", "order_index", "number", "number_text", "title", "text",
+    "original_text", "status", "instrument", "historic_regulation_text",
+    "executive_reg_text", "executive_reg_ref",
+  ]) {
+    assert.match(cols, new RegExp(`\\b${col}\\b`), `articles select must keep '${col}'`);
+  }
+  // The two embedded relations stay untouched.
+  assert.match(cols, /article_amendments \(\*\)/);
+  assert.match(cols, /article_regulations \(\*\)/);
 });
 
 test("every error body this route returns is Arabic", () => {

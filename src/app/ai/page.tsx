@@ -24,6 +24,8 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
+import { formatLibraryCount } from "@/lib/library/libraryStats";
+import { useLibraryStats } from "@/lib/library/useLibraryStats";
 import Link from "next/link";
 import { useUser, UserPermission } from "@/hooks/useUser";
 import { LAWYER_AI_TOOLS, getLawyerAiBadge, type LawyerAiTool } from "@/constants/lawyerAiCatalog";
@@ -68,11 +70,13 @@ const chatDemo = [
 
 const techPillars = [
   { icon: Brain, titleAr: "النماذج اللغوية المتقدمة", titleEn: "Advanced Language Models", descAr: "نماذج AI مدرّبة خصيصاً على النصوص القانونية السعودية والعربية لتحقيق أعلى دقة ممكنة.", descEn: "AI models specifically trained on Saudi and Arabic legal texts for maximum accuracy." },
-  // «أكثر من ٥٠٠٠ نظام … محدّث بشكل دوري وآني» كان خطأً في شقّيه: العدد الحقيقي
-  // ٣٨٦ نظاماً ولائحة (انظر التعليق في src/components/LegalLibraryBanner.tsx)،
-  // ولا شيء يراقب صدور التشريعات — المكتبة تُحمَّل ببرنامج تعبئة.
-  // الأرقام أدناه أرضياتٌ محسوبة من جداول library، فلا تستبدلها بتقدير.
-  { icon: Database, titleAr: "قاعدة الأنظمة السعودية", titleEn: "Saudi Law Database", descAr: "٣٨٦ نظاماً ولائحة و١٣٬٠٠٠+ مادة و١٧٬٠٠٠+ مبدأ قضائي، بحثٌ بالنص الكامل فيها جميعاً.", descEn: "386 Saudi laws and regulations, 13,000+ articles and 17,000+ judicial principles, all full-text searchable." },
+  // «أكثر من ٥٠٠٠ نظام … محدّث بشكل دوري وآني» كان خطأً في شقّيه وقتها (كانت
+  // المكتبة ٣٨٦ وثيقة)، ولا شيء يراقب صدور التشريعات — المكتبة تُحمَّل ببرنامج
+  // تعبئة. لا رقم مكتوباً هنا (٢٠٢٦-٠٩-٢٥): الشيفرة نفسها تعمل على قاعدة السحابة
+  // وعلى الخادم الذاتي، فالأعداد تُقرأ حيّةً من GET /api/library/stats وتُعرض
+  // أرضياتٍ (withLibraryCounts أدناه)، والنص أدناه بلا أرقام يظهر أثناء التحميل
+  // وعند الفشل. لا تستبدله بتقدير.
+  { icon: Database, titleAr: "قاعدة الأنظمة السعودية", titleEn: "Saudi Law Database", descAr: "الأنظمة واللوائح ومَوادّها والمبادئ القضائية، بحثٌ بالنص الكامل فيها جميعاً.", descEn: "Saudi laws, regulations, their articles and judicial principles, all full-text searchable.", withLibraryCounts: true },
   { icon: UserCheck, titleAr: "مراجعة المحامين المرخّصين", titleEn: "Licensed Lawyer Review", descAr: "كل مخرجات AI تمر بمرحلة تحقق إضافية من محامين سعوديين مرخّصين لضمان الدقة والموثوقية.", descEn: "All AI outputs pass through an additional verification stage by licensed Saudi lawyers to ensure accuracy and reliability." },
 ];
 
@@ -117,6 +121,17 @@ export function AiLandingPage() {
   const [queryIndex, setQueryIndex] = useState(0);
   const currentQuery = isRTL ? typingQueries[queryIndex].ar : typingQueries[queryIndex].en;
   const typedText = useTypingEffect(currentQuery, 35);
+
+  // Live library floors for the Database pillar; number-free text until then.
+  const library = useLibraryStats();
+  const libLaws = library.status === "ready" ? formatLibraryCount(library.stats.laws, isRTL ? "ar" : "en") : null;
+  const libArticles = library.status === "ready" ? formatLibraryCount(library.stats.articles, isRTL ? "ar" : "en") : null;
+  const libPrinciples = library.status === "ready" ? formatLibraryCount(library.stats.principles, isRTL ? "ar" : "en") : null;
+  const libraryPillarDesc = libLaws && libArticles && libPrinciples
+    ? (isRTL
+        ? `${libLaws} وثيقة نظامية و${libArticles} مادة و${libPrinciples} مبدأ قضائي، بحثٌ بالنص الكامل فيها جميعاً.`
+        : `${libLaws} legal instruments, ${libArticles} articles and ${libPrinciples} judicial principles, all full-text searchable.`)
+    : null;
 
   // Cycle query every 4s after typing finishes
   useEffect(() => {
@@ -413,7 +428,7 @@ export function AiLandingPage() {
                     {isRTL ? pillar.titleAr : pillar.titleEn}
                   </h3>
                   <p className={`text-sm leading-relaxed ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-                    {isRTL ? pillar.descAr : pillar.descEn}
+                    {(pillar.withLibraryCounts && libraryPillarDesc) || (isRTL ? pillar.descAr : pillar.descEn)}
                   </p>
                 </motion.div>
               );

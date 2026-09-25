@@ -31,6 +31,6 @@ test('orders use the same bounded preview helper as the other search sections', 
   const route = readFileSync(new URL('./route.ts', import.meta.url), 'utf8');
   assert.match(
     route,
-    /results\.orders\s*=\s*orderResults\.map[\s\S]*?snippet:\s*truncateWithHighlight\(brief,\s*parsed\.plainTerms,\s*snippetLen\(isFree\)\)/,
+    /orderResults\.map\([\s\S]*?snippet:\s*truncateWithHighlight\(brief,\s*parsed\.plainTerms,\s*snippetLen\(isFree\)\)/,
   );
 });

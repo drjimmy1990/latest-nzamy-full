@@ -3,13 +3,25 @@ import { createClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, getLibraryAccessForUser } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
+import { isPrincipleLocked, planPrincipleWindow } from './_window';
 
 /**
- * GET /api/library/precedents/[slug]
- * Fetch a judicial principles collection with all principles and paragraphs.
+ * GET /api/library/precedents/[slug]?offset=0&limit=100
+ * A judicial principles collection plus ONE window of its principles.
+ *
+ * The principles used to come back from one unranged select, which PostgREST
+ * silently caps at max-rows (1000): «mabadi-qararat-qanuniya» holds 2,323
+ * principles and its page showed 1,000, with no error anywhere. A full
+ * collection with text is also ~1.5 MB, so the list is windowed instead:
+ *   - `offset` + `limit` pick the window (limit 1..500, default 100);
+ *     `page` is still accepted and means offset = (page - 1) * limit.
+ *   - `total` / `pagination.total` is the exact count, so the page knows when
+ *     it has everything (it loads more on scroll, and all of it on search).
+ * The paywall is enforced per principle by its GLOBAL index (offset + i), so a
+ * later window never re-unlocks the free first N.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const gate = await libraryGate();
@@ -17,6 +29,8 @@ export async function GET(
 
   try {
     const { slug } = await params;
+    const { searchParams } = new URL(request.url);
+    const { offset, limit } = planPrincipleWindow(searchParams);
     const supabase = await createClient();
 
     // Fetch collection metadata
@@ -25,10 +39,14 @@ export async function GET(
       .from('judicial_collections')
       .select('*')
       .eq('id', slug)
-      .single();
+      .maybeSingle();
 
-    if (collError || !collection) {
-      return NextResponse.json({ error: 'Collection not found' }, { status: 404 });
+    if (collError) {
+      console.error('[Precedents API] collection lookup failed:', collError);
+      return NextResponse.json({ error: 'تعذّر تحميل مجموعة المبادئ' }, { status: 500 });
+    }
+    if (!collection) {
+      return NextResponse.json({ error: 'لم يُعثر على مجموعة المبادئ هذه' }, { status: 404 });
     }
 
     // Check user authentication
@@ -47,17 +65,44 @@ export async function GET(
     const isWhitelisted = false;
     const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
 
-    // Fetch principles with paragraphs
-    const { data: principles } = await supabase
+    // Fetch one window of principles with paragraphs. Explicit columns: `*`
+    // dragged the fts tsvector along for every row.
+    const principlesQuery = await supabase
       .schema('library')
       .from('principles')
       .select(`
-        *,
-        principle_paragraphs (*)
-      `)
+        id, principle_number, issuing_body, session_date, decision_number,
+        reference, text, ruling_basis, facts, reasons, ruling,
+        classification_keywords, order_index,
+        principle_paragraphs ( letter, text, keywords, order_index )
+      `, { count: 'exact' })
       .eq('collection_id', slug)
       .order('order_index', { ascending: true })
-      .order('id', { ascending: true });
+      .order('id', { ascending: true })
+      .range(offset, offset + limit - 1);
+
+    let principles = principlesQuery.data as Record<string, unknown>[] | null;
+    let total = principlesQuery.count;
+    if (principlesQuery.error) {
+      // PGRST103 = offset past the end: an empty window, not a failure.
+      if (principlesQuery.error.code === 'PGRST103') {
+        const head = await supabase
+          .schema('library')
+          .from('principles')
+          .select('id', { count: 'exact', head: true })
+          .eq('collection_id', slug);
+        if (head.error) {
+          console.error('[Precedents API] principle count failed:', head.error);
+          return NextResponse.json({ error: 'تعذّر تحميل مبادئ هذه المجموعة' }, { status: 500 });
+        }
+        principles = [];
+        total = head.count;
+      } else {
+        console.error('[Precedents API] principles query failed:', principlesQuery.error);
+        return NextResponse.json({ error: 'تعذّر تحميل مبادئ هذه المجموعة' }, { status: 500 });
+      }
+    }
+    const totalCount = total ?? offset + (principles?.length ?? 0);
 
     // Format response matching frontend interface
     const response = {
@@ -76,7 +121,14 @@ export async function GET(
         isWhitelisted,
         freeLimit,
         hasFullAccess,
-      totalItems: principles?.length ?? 0,
+        totalItems: totalCount,
+      },
+      total: totalCount,
+      pagination: {
+        offset,
+        limit,
+        total: totalCount,
+        hasMore: offset + (principles?.length ?? 0) < totalCount,
       },
       principles: (principles || []).map((p: Record<string, unknown>, idx: number) => {
         const isFree = isFreeLibraryItem({
@@ -86,7 +138,8 @@ export async function GET(
           freeItemsByType,
           whitelistedLawSlugs: whitelistedSlugs,
         });
-        const isLocked = !isFree && idx >= freeLimit;
+        // The GLOBAL position in the collection, not the index in this window.
+        const isLocked = isPrincipleLocked(isFree, freeLimit, offset + idx);
         const paragraphs = p.principle_paragraphs as Record<string, unknown>[];
         const truncate = (val: unknown, len: number) =>
           typeof val === 'string'
@@ -100,6 +153,11 @@ export async function GET(
           decision_number: p.decision_number,
           reference: p.reference,
           text: isLocked ? truncate(p.text, 150) : p.text,
+          // The page indexes and searches on this; it was never sent, so the
+          // page threw on `.slice` of undefined.
+          classification_keywords: Array.isArray(p.classification_keywords)
+            ? (p.classification_keywords as unknown[]).filter((k): k is string => typeof k === 'string')
+            : [],
           locked: isLocked,
           lockedMessage: isLocked ? 'يتطلب اشتراك Pro أو أعلى لعرض المبدأ كاملاً' : undefined,
           // Locked principles: paragraphs & details are withheld from the payload.
@@ -126,6 +184,6 @@ export async function GET(
     return NextResponse.json(response);
   } catch (error) {
     console.error('[Precedents API] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'تعذّر تحميل مجموعة المبادئ' }, { status: 500 });
   }
 }

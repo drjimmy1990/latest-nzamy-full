@@ -3,13 +3,23 @@
 import {
   BookOpen, BookmarkSimple, Buildings, Stack, FolderSimple, BookBookmark, Copy, Check
 } from "@phosphor-icons/react";
-import type { FeqhBookSystem, FeqhBlock } from "@/app/laws/data";
+import type { BlockLocator } from "./_locator";
+
+/** What the panel reads — met by the reader model and by the legacy nested shape. */
+interface IdentityBook {
+  title: string;
+  author: string;
+  school: string;
+  investigator?: string;
+  publisher?: string;
+  totalVolumes?: number;
+}
 
 interface IdentityPanelProps {
   isDark: boolean;
   isRTL: boolean;
-  book: FeqhBookSystem;
-  activeBlock: FeqhBlock | null;
+  book: IdentityBook;
+  activeBlock: (BlockLocator & { id: string; topic: string }) | null;
   setShowFolderModal: (show: boolean) => void;
 }
 
@@ -55,6 +65,8 @@ export default function IdentityPanel({
              </div>
           )}
           
+          {/* The API carries no publisher: hide the row instead of an empty value. */}
+          {book.publisher && (
           <div className="flex gap-1.5 items-start">
             <Buildings size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
             <div>
@@ -62,7 +74,9 @@ export default function IdentityPanel({
               <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{book.publisher}</p>
             </div>
           </div>
+          )}
 
+          {Boolean(book.totalVolumes) && (
           <div className="flex gap-1.5 items-start">
             <Stack size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
             <div>
@@ -72,6 +86,7 @@ export default function IdentityPanel({
               </p>
             </div>
           </div>
+          )}
         </div>
 
         <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">

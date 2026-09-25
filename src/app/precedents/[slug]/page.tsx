@@ -48,6 +48,15 @@ function stripMd(s: string): string {
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 import { JudicialPrinciplesSystem, JudicialPrincipleItem } from "@/app/laws/data";
 import { apiSlug } from '@/utils/apiSlug';
+import {
+  hasMorePrinciples, mergePrinciples, nextOffset, normalizePrinciple,
+  type CollectionPrinciple,
+} from "./_collection-model";
+
+/** Principles per scroll window, and per window while loading all for a search. */
+const WINDOW_LIMIT = 100;
+const SEARCH_WINDOW_LIMIT = 500;
+type WindowResult = "more" | "done" | "error";
 
 export default function JudicialPrinciplesPage() {
   const params = useParams();
@@ -57,6 +66,21 @@ export default function JudicialPrinciplesPage() {
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [collection, setCollection] = useState<JudicialPrinciplesSystem | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Arabic message when the API failed (5xx) — not the same as "not found". */
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Windowed loading. A collection holds up to 2,323 principles, above the
+  // database's 1,000-row cap, so the API serves windows and the page appends
+  // them as the reader scrolls (and all of them when the reader searches).
+  const [totalPrinciples, setTotalPrinciples] = useState<number | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
+  const heldRef = useRef<CollectionPrinciple[]>([]);
+  const totalRef = useRef<number | null>(null);
+  const pendingRef = useRef<Promise<WindowResult> | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   // Reader states
   const [activePrincipleId, setActivePrincipleId] = useState<string>("");
@@ -221,25 +245,55 @@ export default function JudicialPrinciplesPage() {
 
   // Dynamic collection loading — API-backed with JSON fallback
   useEffect(() => {
+    let cancelled = false;
     async function loadCollectionData() {
       setLoading(true);
+      setLoadError(null);
+      setMoreError(null);
+      heldRef.current = [];
+      totalRef.current = null;
+      pendingRef.current = null;
+      setTotalPrinciples(null);
+      setHasMore(false);
       try {
-        // Try API first. useParams() returns the decoded (raw Arabic) slug; use
-        // encodeURI (not encodeURIComponent) so a pre-encoded slug isn't double-
-        // encoded into %25…, which would 404 the /api/library/precedents/[id] lookup.
-        const res = await fetch(`/api/library/precedents/${apiSlug(slug)}`);
+        // Try API first — the first window only; the rest load on scroll.
+        // apiSlug() decodes then encodes once, so a pre-encoded slug isn't
+        // double-encoded into %25…, which would 404 the lookup.
+        const res = await fetch(`/api/library/precedents/${apiSlug(slug)}?offset=0&limit=${WINDOW_LIMIT}`);
+        if (cancelled) return;
         if (res.ok) {
           const apiData = await res.json();
-          setCollection(apiData as JudicialPrinciplesSystem);
-          if (apiData.principles?.[0]) {
-            setActivePrincipleId(apiData.principles[0].id);
+          if (cancelled) return;
+          const principles = (Array.isArray(apiData.principles) ? apiData.principles : [])
+            .map((p: Record<string, unknown>) => normalizePrinciple(p));
+          const total = typeof apiData.total === "number" ? apiData.total : null;
+          heldRef.current = principles;
+          totalRef.current = total;
+          setTotalPrinciples(total);
+          setHasMore(
+            principles.length > 0 &&
+              hasMorePrinciples(principles.length, total, Boolean(apiData.pagination?.hasMore)),
+          );
+          setCollection({ ...(apiData as JudicialPrinciplesSystem), principles });
+          if (principles[0]) {
+            setActivePrincipleId(principles[0].id);
           }
+          setLoading(false);
+          return;
+        }
+        // A server failure is not "not found": say so instead of falling
+        // through to the static JSON (which would claim the collection is missing).
+        if (res.status >= 500) {
+          const body = await res.json().catch(() => null);
+          if (cancelled) return;
+          setLoadError(typeof body?.error === "string" ? body.error : "تعذّر تحميل مجموعة المبادئ، حاول مجدداً");
           setLoading(false);
           return;
         }
       } catch (e) {
         console.warn('[Precedents] API fetch failed, using JSON fallback:', e);
       }
+      if (cancelled) return;
 
       // Fallback: static JSON imports
       try {
@@ -314,18 +368,108 @@ export default function JudicialPrinciplesPage() {
           throw new Error("Unknown slug or dynamic JSON not available: " + slug);
         }
         
+        if (cancelled) return;
         const colData = data.default as JudicialPrinciplesSystem;
-        setCollection(colData);
-        if (colData.principles[0]) {
-          setActivePrincipleId(colData.principles[0].id);
+        const principles = (colData.principles || []).map((p) =>
+          normalizePrinciple(p as unknown as Record<string, unknown>),
+        );
+        heldRef.current = principles;
+        totalRef.current = principles.length;
+        setTotalPrinciples(principles.length);
+        setCollection({ ...colData, principles });
+        if (principles[0]) {
+          setActivePrincipleId(principles[0].id);
         }
       } catch (e) {
         console.error("Failed to load collection", slug, e);
       }
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     }
     loadCollectionData();
+    return () => { cancelled = true; };
   }, [slug]);
+
+  /**
+   * Append the next window. Concurrent callers share the in-flight request, so
+   * the scroll sentinel and the search loader never fetch the same offset twice.
+   */
+  const loadMore = useCallback((limit: number = WINDOW_LIMIT): Promise<WindowResult> => {
+    if (pendingRef.current) return pendingRef.current;
+    const run = (async (): Promise<WindowResult> => {
+      const held = heldRef.current;
+      if (!hasMorePrinciples(held.length, totalRef.current, true)) return "done";
+      setLoadingMore(true);
+      setMoreError(null);
+      try {
+        const res = await fetch(
+          `/api/library/precedents/${apiSlug(slug)}?offset=${nextOffset(held)}&limit=${limit}`,
+        );
+        const body = await res.json().catch(() => null);
+        if (!res.ok || !body) {
+          setMoreError(typeof body?.error === "string" ? body.error : "تعذّر تحميل المزيد من المبادئ");
+          return "error";
+        }
+        const incoming = (Array.isArray(body.principles) ? body.principles : [])
+          .map((p: Record<string, unknown>) => normalizePrinciple(p));
+        const merged = mergePrinciples(heldRef.current, incoming);
+        const progressed = merged.length > heldRef.current.length;
+        heldRef.current = merged;
+        if (typeof body.total === "number") totalRef.current = body.total;
+        setTotalPrinciples(totalRef.current);
+        setCollection((prev) => (prev ? { ...prev, principles: merged } : prev));
+        // No progress means the server has nothing past what we hold, whatever
+        // the count says — stop rather than request the same offset forever.
+        const more = progressed &&
+          hasMorePrinciples(merged.length, totalRef.current, Boolean(body.pagination?.hasMore));
+        setHasMore(more);
+        return more ? "more" : "done";
+      } catch {
+        setMoreError("تعذّر تحميل المزيد من المبادئ، تحقّق من الاتصال");
+        return "error";
+      } finally {
+        setLoadingMore(false);
+      }
+    })();
+    pendingRef.current = run;
+    run.finally(() => {
+      if (pendingRef.current === run) pendingRef.current = null;
+    });
+    return run;
+  }, [slug]);
+
+  /** Load every remaining window (used by search, which must see them all). */
+  const loadAll = useCallback(async () => {
+    setLoadingAll(true);
+    try {
+      // 2,323 principles at 500 per window is 5 requests; the cap is a guard.
+      for (let i = 0; i < 100; i++) {
+        const r = await loadMore(SEARCH_WINDOW_LIMIT);
+        if (r !== "more") break;
+      }
+    } finally {
+      setLoadingAll(false);
+    }
+  }, [loadMore]);
+
+  // Searching filters on the client, so it needs the whole collection: load the
+  // remaining windows once the reader pauses typing.
+  useEffect(() => {
+    if (!searchQuery.trim() || !hasMore) return;
+    const t = setTimeout(() => { void loadAll(); }, 400);
+    return () => clearTimeout(t);
+  }, [searchQuery, hasMore, loadAll]);
+
+  // Infinite scroll: fetch the next window as the end of the list nears.
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore || moreError || typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) void loadMore(); },
+      { rootMargin: "800px 0px" },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasMore, moreError, loadMore, collection]);
 
   // Track recent sessions
   useEffect(() => {
@@ -450,7 +594,9 @@ export default function JudicialPrinciplesPage() {
   if (!collection) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`}>
-        <p className="text-sm font-bold">{isRTL ? "المجموعة المطلوبة غير موجودة." : "Rulings collection not found."}</p>
+        <p className="text-sm font-bold">
+          {loadError ?? (isRTL ? "المجموعة المطلوبة غير موجودة." : "Rulings collection not found.")}
+        </p>
       </div>
     );
   }
@@ -581,6 +727,7 @@ export default function JudicialPrinciplesPage() {
                   collection={collection}
                   courtLabel={getCourtOrIssuer(null)}
                   courtKnown={isCourtKnown(null)}
+                  totalCount={totalPrinciples}
                   setShowFolderModal={setShowFolderModal}
                 />
               )}
@@ -623,6 +770,18 @@ export default function JudicialPrinciplesPage() {
                           </button>
                         );
                       })
+                    )}
+                    {hasMore && (
+                      <button
+                        type="button"
+                        onClick={() => void loadMore()}
+                        disabled={loadingMore}
+                        className={`w-full mt-1 px-2 py-1.5 rounded-lg text-[10px] font-bold border transition disabled:opacity-60 ${
+                          isDark ? "border-white/[0.07] text-zinc-400 hover:text-zinc-300" : "border-slate-200 text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        {loadingMore ? "جارٍ التحميل…" : "تحميل المزيد من المبادئ"}
+                      </button>
                     )}
                   </div>
                 </div>
@@ -675,9 +834,31 @@ export default function JudicialPrinciplesPage() {
                 fontClass={fontClass}
               />
             ))}
-            {filteredPrinciples.length === 0 && (
+            {filteredPrinciples.length === 0 && !(searchQuery.trim() && (loadingAll || hasMore)) && (
               <div className={`${card} p-8 text-center`}>
                 <p className="text-xs text-slate-500">{isRTL ? "لا توجد مبادئ مطابقة للبحث." : "No matching principles."}</p>
+              </div>
+            )}
+
+            {/* Windowed loading: status, infinite-scroll sentinel and a manual fallback. */}
+            {(hasMore || moreError) && (
+              <div ref={sentinelRef} className={`${card} p-4 text-center print:hidden`}>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mb-2">
+                  {searchQuery.trim() && loadingAll
+                    ? "جارٍ تحميل بقية المبادئ ليشملها البحث…"
+                    : `عُرض ${collection.principles.length} من ${totalPrinciples ?? collection.principles.length} مبدأ`}
+                </p>
+                {moreError && (
+                  <p role="alert" className="text-xs text-red-600 dark:text-red-400 mb-2">{moreError}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void loadMore()}
+                  disabled={loadingMore}
+                  className="px-4 py-2 text-xs font-bold bg-[#0B3D2E] text-white rounded-xl hover:opacity-90 transition disabled:opacity-60"
+                >
+                  {loadingMore ? "جارٍ التحميل…" : moreError ? "إعادة المحاولة" : "تحميل المزيد"}
+                </button>
               </div>
             )}
           </div>

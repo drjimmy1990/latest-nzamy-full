@@ -18,6 +18,12 @@ interface IdentityPanelProps {
   courtLabel: string;
   /** False when neither the record nor the collection names an issuing body. */
   courtKnown: boolean;
+  /**
+   * The collection's exact principle count from the API. The page loads the
+   * principles in windows, so `collection.principles.length` is only what has
+   * been loaded so far (it read 1,000 for a 2,323-principle collection).
+   */
+  totalCount?: number | null;
   setShowFolderModal: (show: boolean) => void;
 }
 
@@ -27,6 +33,7 @@ export default function IdentityPanel({
   collection,
   courtLabel,
   courtKnown,
+  totalCount,
   setShowFolderModal
 }: IdentityPanelProps) {
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`;
@@ -91,7 +98,7 @@ export default function IdentityPanel({
             <div>
               <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "إجمالي المبادئ" : "Total Principles"}</p>
               <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
-                {isRTL ? `${collection.principles.length} مبدأ` : `${collection.principles.length} Principles`}
+                {isRTL ? `${totalCount ?? collection.principles.length} مبدأ` : `${totalCount ?? collection.principles.length} Principles`}
               </p>
             </div>
           </div>

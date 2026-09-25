@@ -18,7 +18,11 @@ test('precedent detail evaluates each principle id and preserves its first-N gat
   const detail = source('./precedents/[slug]/route.ts');
   assert.match(detail, /includeExplicitFreeItem:\s*false/);
   assert.match(detail, /itemId:\s*p\.id as string/);
-  assert.match(detail, /const isLocked = !isFree && idx >= freeLimit/);
+  // The gate is the principle's GLOBAL index in the collection (offset + its
+  // index in the window), through the tested pure helper; -1 = unlimited.
+  assert.match(detail, /const isLocked = isPrincipleLocked\(isFree, freeLimit, offset \+ idx\)/);
+  const windowHelper = source('./precedents/[slug]/_window.ts');
+  assert.match(windowHelper, /return !isFree && freeLimit !== -1 && globalIndex >= freeLimit;/);
 });
 
 test('the shared helper confines the law whitelist to law items', () => {

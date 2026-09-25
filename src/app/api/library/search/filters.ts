@@ -6,7 +6,13 @@
  * then ignoring it would make a narrow search look complete when it is not.
  */
 export interface SearchFilters {
-  category?: string; // laws.section_code / orders.category
+  /**
+   * laws.section_code / orders.category. The DB stores the bare two-digit
+   * code ('00'..'30'); the /laws UI taxonomy sends 'SA-NN'. Both are accepted
+   * and the validated filter always carries the bare code (see
+   * normalizeCategoryFilter).
+   */
+  category?: string;
   track?: string; // judicial_collections.track
   source?: string; // judicial_collections.source_id
   issuer?: string; // orders.issuer
@@ -20,6 +26,37 @@ export interface SearchFilters {
 export type SearchSection = 'all' | 'laws' | 'precedents' | 'orders' | 'feqh';
 export const SEARCH_SECTIONS = ['all', 'laws', 'precedents', 'orders', 'feqh'] as const;
 export const SEARCH_MAX_LIMIT = 100;
+/**
+ * Deepest result a caller may page to (offset + limit). A deep OFFSET over a
+ * 10^5-row full-text match set (feqh «في» page 1000) ran past the anon role's
+ * ~3s statement_timeout and failed the request; nobody reads result #10,000,
+ * so the depth is capped and the caller is told to narrow the query instead.
+ */
+export const SEARCH_MAX_DEPTH = 1000;
+
+/**
+ * The UI taxonomy ids are 'SA-00'..'SA-29' (+ 'SA-99'); library.laws.section_code
+ * and library.decrees_circulars.category hold the bare code '00'..'30'. Sending
+ * 'SA-06' straight to `eq` matched nothing, so every category-scoped search
+ * returned 0 (LIB-02). Accept either spelling, and a single digit ('SA-8', '8'),
+ * and return the stored two-digit form; anything else is not a category the
+ * data can hold.
+ */
+export function normalizeCategoryFilter(value: string): string | null {
+  const match = /^(?:SA-)?(\d{1,2})$/i.exec(value.trim());
+  return match ? match[1].padStart(2, '0') : null;
+}
+
+/**
+ * Every spelling a normalised category code is stored under. Some
+ * decrees_circulars rows carry the unpadded code ('8', '9') where the rest
+ * use '08'/'09', so an `eq('category', '08')` missed them; the orders query
+ * matches both with `.in('category', …)`. laws.section_code is always padded.
+ */
+export function categoryStoredSpellings(code: string): string[] {
+  const unpadded = /^\d+$/.test(code) ? String(Number(code)) : code;
+  return unpadded === code ? [code] : [code, unpadded];
+}
 
 export const ARTICLE_SEARCH_STATUSES = [
   'active', 'amended', 'repealed', 'suspended', 'added', 'merged', 'status_undeclared',
@@ -91,6 +128,7 @@ export type SearchRequestValidationResult =
         | 'invalid_section'
         | 'invalid_sort'
         | 'invalid_page'
+        | 'page_too_deep'
         | 'invalid_limit'
         | Extract<FilterValidationResult, { ok: false }>['code'];
       error: string;
@@ -116,7 +154,7 @@ export function validateSearchFilters(value: unknown, section: SearchSection = '
     return {
       ok: false,
       code: 'invalid_filters',
-      error: 'filters must be an object',
+      error: 'المرشحات (filters) يجب أن تكون كائناً.',
     };
   }
 
@@ -125,7 +163,7 @@ export function validateSearchFilters(value: unknown, section: SearchSection = '
       return {
         ok: false,
         code: 'unimplemented_filter',
-        error: `Filter "${key}" is not implemented`,
+        error: `المرشح "${key}" غير مطبّق بعد.`,
       };
     }
 
@@ -133,7 +171,7 @@ export function validateSearchFilters(value: unknown, section: SearchSection = '
       return {
         ok: false,
         code: 'unknown_filter',
-        error: `Filter "${key}" is not supported`,
+        error: `المرشح "${key}" غير مدعوم.`,
       };
     }
 
@@ -144,7 +182,7 @@ export function validateSearchFilters(value: unknown, section: SearchSection = '
       return {
         ok: false,
         code: 'invalid_filter_type',
-        error: `Filter "${key}" must be a ${key === 'year' ? 'finite number' : 'string'}`,
+        error: `المرشح "${key}" يجب أن يكون ${key === 'year' ? 'رقماً' : 'نصاً'}.`,
       };
     }
 
@@ -152,7 +190,7 @@ export function validateSearchFilters(value: unknown, section: SearchSection = '
       return {
         ok: false,
         code: 'invalid_filter_value',
-        error: `Filter "${key}" must not be empty`,
+        error: `المرشح "${key}" يجب ألا يكون فارغاً.`,
       };
     }
 
@@ -160,7 +198,15 @@ export function validateSearchFilters(value: unknown, section: SearchSection = '
       return {
         ok: false,
         code: 'invalid_filter_value',
-        error: `Filter "status" must be a known article status`,
+        error: 'المرشح "status" يجب أن يكون حالة مادة معروفة.',
+      };
+    }
+
+    if (key === 'category' && normalizeCategoryFilter(filterValue as string) === null) {
+      return {
+        ok: false,
+        code: 'invalid_filter_value',
+        error: 'مرشح التصنيف يجب أن يكون رمز قسم مثل "SA-06" أو "06" أو "6".',
       };
     }
 
@@ -172,12 +218,18 @@ export function validateSearchFilters(value: unknown, section: SearchSection = '
       return {
         ok: false,
         code: 'invalid_filter_scope',
-        error: `Filter "${key}" is not applied when section is "${section}"`,
+        error: `المرشح "${key}" لا يُطبَّق عندما يكون القسم "${section}".`,
       };
     }
   }
 
-  return { ok: true, filters: value as SearchFilters };
+  // Return a normalised copy, never the caller's object: the category must
+  // reach the query in the stored spelling.
+  const filters = { ...value } as SearchFilters;
+  if (filters.category !== undefined) {
+    filters.category = normalizeCategoryFilter(filters.category) as string;
+  }
+  return { ok: true, filters };
 }
 
 /**
@@ -187,37 +239,47 @@ export function validateSearchFilters(value: unknown, section: SearchSection = '
  */
 export function validateSearchRequest(value: unknown): SearchRequestValidationResult {
   if (!isRecord(value)) {
-    return { ok: false, code: 'invalid_request', error: 'request body must be an object' };
+    return { ok: false, code: 'invalid_request', error: 'جسم الطلب يجب أن يكون كائناً.' };
   }
 
   if (typeof value.query !== 'string') {
-    return { ok: false, code: 'invalid_query', error: 'query must be a string' };
+    return { ok: false, code: 'invalid_query', error: 'نص البحث (query) يجب أن يكون نصاً.' };
   }
 
   const rawSection = value.section === undefined ? 'all' : value.section;
   if (typeof rawSection !== 'string' || !includes(SEARCH_SECTIONS, rawSection)) {
-    return { ok: false, code: 'invalid_section', error: 'section is not supported' };
+    return { ok: false, code: 'invalid_section', error: 'القسم المطلوب (section) غير مدعوم.' };
   }
   const section: SearchSection = rawSection;
 
   const sort = value.sort === undefined ? 'relevance' : value.sort;
   if (sort !== 'relevance') {
-    return { ok: false, code: 'invalid_sort', error: 'sort is supported only as "relevance"' };
+    return { ok: false, code: 'invalid_sort', error: 'الترتيب (sort) المدعوم هو "relevance" (حسب الصلة) فقط.' };
   }
 
   const page = value.page === undefined ? 1 : value.page;
   if (typeof page !== 'number' || !Number.isSafeInteger(page) || page < 1) {
-    return { ok: false, code: 'invalid_page', error: 'page must be a positive safe integer' };
+    return { ok: false, code: 'invalid_page', error: 'رقم الصفحة (page) يجب أن يكون عدداً صحيحاً موجباً.' };
   }
 
   const limit = value.limit === undefined ? 10 : value.limit;
   if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > SEARCH_MAX_LIMIT) {
-    return { ok: false, code: 'invalid_limit', error: `limit must be a positive integer no greater than ${SEARCH_MAX_LIMIT}` };
+    return { ok: false, code: 'invalid_limit', error: `عدد النتائج (limit) يجب أن يكون عدداً صحيحاً موجباً لا يتجاوز ${SEARCH_MAX_LIMIT}.` };
   }
 
   const offset = (page - 1) * limit;
   if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(offset + limit - 1)) {
-    return { ok: false, code: 'invalid_page', error: 'page and limit must produce a safe range' };
+    return { ok: false, code: 'invalid_page', error: 'قيمتا الصفحة وعدد النتائج (page, limit) تتجاوزان النطاق المسموح.' };
+  }
+
+  // section=all ignores `page` (it returns a fixed preview per section from
+  // offset 0), so the depth cap only applies to a single-section request.
+  if (section !== 'all' && offset + limit > SEARCH_MAX_DEPTH) {
+    return {
+      ok: false,
+      code: 'page_too_deep',
+      error: `لا يمكن عرض ما بعد أول ${SEARCH_MAX_DEPTH} نتيجة. أضف كلمات أدق أو استخدم المرشحات لتضييق البحث.`,
+    };
   }
 
   const filters = validateSearchFilters(value.filters, section);

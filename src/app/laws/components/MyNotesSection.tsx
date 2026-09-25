@@ -24,14 +24,25 @@ type Tab = "all" | "highlights" | "notes";
 type ViewMode = "flat" | "grouped";
 
 function getCleanDocumentName(pageId: string): string {
+  // 2026-09-25: the old-corpus literal slugs below ("labor-law", "evidence-law", …)
+  // 404 on self-hosted, but a guest's browser may still hold a note saved under
+  // one of them from before the reseed — those keys stay for that display-name
+  // lookup. The real self-hosted slugs are added alongside them so a note saved
+  // going forward gets the same clean name.
   const map: Record<string, string> = {
     "companies-law": "نظام الشركات",
     "labor-law": "نظام العمل",
+    "labor-law-qadha": "نظام العمل",
     "civil-procedure": "نظام المرافعات الشرعية",
+    "sharia-pleading-law-qadha-edition": "نظام المرافعات الشرعية ولائحته التنفيذية",
     "criminal-procedure": "نظام الإجراءات الجزائية",
+    "criminal-procedure-law": "نظام الإجراءات الجزائية",
     "commercial-court": "نظام المحاكم التجارية",
+    "commercial-courts-law": "نظام المحاكم التجارية ولوائحه التنفيذية",
     "civil-transactions": "نظام المعاملات المدنية",
+    "civil-transactions-law": "نظام المعاملات المدنية",
     "evidence-law": "نظام الإثبات",
+    "evidence-law-qadha-edition": "نظام الإثبات",
   };
   
   let cleanId = pageId;

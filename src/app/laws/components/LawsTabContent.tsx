@@ -16,6 +16,8 @@ import {
 } from "@phosphor-icons/react";
 import { LAW_DOC_TYPES, type DocSubType, getDocAnchorPrefix } from "@/constants/lawsLibraryData";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
+import { SECTION_30 } from "../lawsIndexFacets";
+import { type SearchSection, SECTION_DEGRADED_NOTICE, SEARCH_SECTION_LABELS_AR } from "../searchCounts";
 import { articleStatusNotice } from "../data";
 import {
   PrincipleCard,
@@ -26,6 +28,26 @@ import {
   OrderCard,
   EmptyState,
 } from "./ListItems";
+
+/**
+ * The label for a law card's section id, resolved the way the /laws chips
+ * are: LEGAL_TAXONOMY, plus SECTION_30 (103 laws), which that list lacks.
+ */
+function lawCategoryLabel(id: string): { label: string; labelEn: string } | null {
+  return LEGAL_TAXONOMY.find(c => c.id === id) ?? (id === SECTION_30.id ? SECTION_30 : null);
+}
+
+/** A search section that failed to read: a notice, never «0 نتيجة». */
+function DegradedSectionNotice({ section, isDark }: { section: SearchSection; isDark: boolean }) {
+  return (
+    <div role="status" className={`mb-8 rounded-xl border px-4 py-3 text-sm font-medium ${
+      isDark ? "bg-amber-950/20 border-amber-500/30 text-amber-200" : "bg-amber-50 border-amber-200 text-amber-900"
+    }`}>
+      <span className="font-bold">{SEARCH_SECTION_LABELS_AR[section]}: </span>
+      {SECTION_DEGRADED_NOTICE}
+    </div>
+  );
+}
 
 interface LawsTabContentProps {
   isDark: boolean;
@@ -48,8 +70,12 @@ interface LawsTabContentProps {
   catHasContent: (catId: string) => boolean;
   activeCat: string;
   hasResults: (type: any) => boolean;
-  precSort: "relevance" | "year-desc" | "year-asc" | "date-desc";
-  setPrecSort: (sort: "relevance" | "year-desc" | "year-asc" | "date-desc") => void;
+  // أقسام تعذّر البحث فيها (section=all degrades): تُعرض كتنبيه لا كـ«0 نتيجة»
+  searchDegraded?: SearchSection[];
+  // عدد نتائج كل قسم من واجهة البحث («١٠٤» أو «أكثر من ١٬٠٠٠»)؛ غيابه = عدد الصفوف المعروضة
+  searchCountLabels?: Partial<Record<SearchSection, string>>;
+  // نص زر «عرض كل النتائج» لكل قسم؛ «كل» فقط حين يمكن الوصول إلى كل النتائج
+  searchViewAllLabels?: Partial<Record<SearchSection, string>>;
   // فلتر النوع الفرعي لأنظمة ولوائح
   docSubType: DocSubType;
   setDocSubType: (type: DocSubType) => void;
@@ -78,8 +104,9 @@ export function LawsTabContent({
   catHasContent,
   activeCat,
   hasResults,
-  precSort,
-  setPrecSort,
+  searchDegraded = [],
+  searchCountLabels = {},
+  searchViewAllLabels = {},
   docSubType,
   setDocSubType,
   librarySubscribed = false,
@@ -96,43 +123,13 @@ export function LawsTabContent({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
     >
-      {/* Sorting Bar */}
-      <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 p-4 rounded-2xl border ${
-        isDark ? "bg-[#161b22]/50 border-[#2d3748]/50" : "bg-gray-50/50 border-gray-200/60"
-      }`}>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-bold ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-            {isRTL ? "ترتيب النتائج:" : "Sort results by:"}
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            {[
-              { id: "relevance", labelAr: "مدى المطابقة (الافتراضي)", labelEn: "Relevance" },
-              { id: "year-desc", labelAr: "الأحدث إصداراً/تحديثاً", labelEn: "Newest" },
-              { id: "year-asc", labelAr: "الأقدم إصداراً/تحديثاً", labelEn: "Oldest" }
-            ].map((opt) => {
-              const isSelected = precSort === opt.id || (opt.id === "year-desc" && precSort === "date-desc");
-              return (
-                <button
-                  key={opt.id}
-                  onClick={() => setPrecSort(opt.id as any)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 ${
-                    isSelected
-                      ? isDark
-                        ? "bg-[#C8A762]/10 border border-[#C8A762] text-[#C8A762]"
-                        : "bg-[#0B3D2E] text-white border border-[#0B3D2E] shadow-sm"
-                      : isDark
-                      ? "border border-white/5 bg-white/5 text-gray-400 hover:text-white hover:bg-white/10"
-                      : "border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-800"
-                  }`}
-                >
-                  {isRTL ? opt.labelAr : opt.labelEn}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
+      {/* No sort bar: laws arrive server-ordered by section, title, slug. A
+          «الأحدث/الأقدم» order needs a normalized issue date — issue_date_hijri
+          is free text in 14 formats, 1,279 of 5,901 blank («الأقدم» page 1 was
+          50/50 undated; «الأحدث» led with «17/3/1447هـ» and «1473-13-36»). */}
+      {(activeType === "all" || activeType === "laws") && searchDegraded.includes("laws") && (
+        <DegradedSectionNotice section="laws" isDark={isDark} />
+      )}
 
       {/* Laws grid */}
       {(activeType === "all" || activeType === "laws") && filteredLaws.length > 0 && (
@@ -142,7 +139,7 @@ export function LawsTabContent({
               <BookOpen size={13} />
               {isRTL ? "الأنظمة واللوائح" : "Laws & Regulations"}
               <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>
-                {filteredLaws.length}
+                {searchCountLabels.laws ?? filteredLaws.length}
               </span>
             </p>
           )}
@@ -159,7 +156,7 @@ export function LawsTabContent({
                   key={sys.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.05 }}
+                  transition={{ delay: Math.min(idx, 10) * 0.05 }}
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
                     if (target.closest("button") || target.closest("a") || target.closest(".clickable-badge")) {
@@ -215,7 +212,7 @@ export function LawsTabContent({
                       {/* Rich Metadata Section */}
                       <div className="flex flex-wrap justify-center gap-1 mb-2.5">
                         {sys.cat && (() => {
-                          const catObj = LEGAL_TAXONOMY.find(c => c.id === sys.cat);
+                          const catObj = lawCategoryLabel(sys.cat);
                           if (!catObj) return null;
                           return (
                             <span className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded ${isDark ? "bg-white/5 text-gray-400 border border-white/[0.04]" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>
@@ -223,7 +220,7 @@ export function LawsTabContent({
                             </span>
                           );
                         })()}
-                        {sys.doc_type && (
+                        {sys.doc_type && !(sys.sub_types ?? []).includes(sys.doc_type) && (
                           <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                             {sys.doc_type}
                           </span>
@@ -328,7 +325,7 @@ export function LawsTabContent({
                         {/* Badges */}
                         <div className="flex flex-wrap gap-1 mb-1.5">
                           {sys.cat && (() => {
-                            const catObj = LEGAL_TAXONOMY.find(c => c.id === sys.cat);
+                            const catObj = lawCategoryLabel(sys.cat);
                             if (!catObj) return null;
                             return (
                               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isDark ? "bg-white/5 text-gray-400 border border-white/[0.04]" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>
@@ -336,7 +333,7 @@ export function LawsTabContent({
                               </span>
                             );
                           })()}
-                          {sys.doc_type && (
+                          {sys.doc_type && !(sys.sub_types ?? []).includes(sys.doc_type) && (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                               {sys.doc_type}
                             </span>
@@ -630,6 +627,10 @@ export function LawsTabContent({
         </div>
       )}
 
+      {activeType === "all" && searchDegraded.includes("precedents") && (
+        <DegradedSectionNotice section="precedents" isDark={isDark} />
+      )}
+
       {/* "all" mode: also show principles + orders below */}
       {activeType === "all" && filteredPrinciples.length > 0 && (
         <div className="mb-8">
@@ -637,7 +638,7 @@ export function LawsTabContent({
             <Scales size={13} />
             {isRTL ? "أبرز المبادئ القضائية" : "Featured Principles"}
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>
-              {filteredPrinciples.length}
+              {searchCountLabels.precedents ?? filteredPrinciples.length}
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-3"}>
@@ -656,7 +657,7 @@ export function LawsTabContent({
               onClick={() => setActiveType("precedents")}
               className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-[#C8A762] hover:text-[#C8A762]/80" : "text-[#0B3D2E] hover:text-[#0a3328]"} transition-colors`}
             >
-              {isRTL ? `عرض كل ${filteredPrinciples.length} مبدأ` : `View all ${filteredPrinciples.length} principles`}
+              {searchViewAllLabels.precedents ? searchViewAllLabels.precedents : isRTL ? `عرض كل ${filteredPrinciples.length} مبدأ` : `View all ${filteredPrinciples.length} principles`}
               <ArrowRight size={14} className={isRTL ? "rotate-180" : ""} />
             </button>
           )}
@@ -717,6 +718,10 @@ export function LawsTabContent({
         </div>
       )}
 
+      {activeType === "all" && searchDegraded.includes("feqh") && (
+        <DegradedSectionNotice section="feqh" isDark={isDark} />
+      )}
+
       {/* "all" mode: show Feqh books preview */}
       {activeType === "all" && filteredFeqhBooks.length > 0 && (
         <div className="mb-8">
@@ -724,7 +729,7 @@ export function LawsTabContent({
             <BookOpen size={13} />
             {isRTL ? "الفقه والمراجع" : "Fiqh & References"}
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>
-              {filteredFeqhBooks.length}
+              {searchCountLabels.feqh ?? filteredFeqhBooks.length}
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4" : "flex flex-col gap-4 mb-4"}>
@@ -886,11 +891,15 @@ export function LawsTabContent({
               onClick={() => setActiveType("feqh")}
               className={`text-sm font-bold flex items-center gap-1.5 mb-8 ${isDark ? "text-[#C8A762] hover:text-[#C8A762]/80" : "text-[#0B3D2E] hover:text-[#0a3328]"} transition-colors`}
             >
-              {isRTL ? `عرض كل ${filteredFeqhBooks.length} كتب ومراجع` : `View all ${filteredFeqhBooks.length} books`}
+              {searchViewAllLabels.feqh ? searchViewAllLabels.feqh : isRTL ? `عرض كل ${filteredFeqhBooks.length} كتب ومراجع` : `View all ${filteredFeqhBooks.length} books`}
               <ArrowRight size={14} className={isRTL ? "rotate-180" : ""} />
             </button>
           )}
         </div>
+      )}
+
+      {activeType === "all" && searchDegraded.includes("orders") && (
+        <DegradedSectionNotice section="orders" isDark={isDark} />
       )}
 
       {/* orders list in 'all' view */}
@@ -900,7 +909,7 @@ export function LawsTabContent({
             <Scroll size={13} />
             {isRTL ? "أحدث الأوامر والتعاميم" : "Latest Orders & Circulars"}
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>
-              {filteredOrders.length}
+              {searchCountLabels.orders ?? filteredOrders.length}
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-3"}>
@@ -935,7 +944,7 @@ export function LawsTabContent({
               onClick={() => setActiveType("orders")}
               className={`text-sm font-bold flex items-center gap-1.5 mt-4 ${isDark ? "text-gray-300 hover:text-white" : "text-gray-600 hover:text-gray-900"} transition-colors`}
             >
-              {isRTL ? `عرض كل ${filteredOrders.length} أوامر وتعاميم` : `View all ${filteredOrders.length} orders`}
+              {searchViewAllLabels.orders ? searchViewAllLabels.orders : isRTL ? `عرض كل ${filteredOrders.length} أوامر وتعاميم` : `View all ${filteredOrders.length} orders`}
               <ArrowRight size={14} className={isRTL ? "rotate-180" : ""} />
             </button>
           )}
@@ -943,7 +952,19 @@ export function LawsTabContent({
       )}
 
       {/* Empty states */}
-      {!hasResults(activeType) && (
+      {/* Some sections failed and the rest found nothing: say so for the rest,
+          so the failure notice is not read as "nothing was searched". */}
+      {activeType === "all" && !hasResults(activeType) && searchDegraded.length > 0 && (
+        <p role="status" className={`mb-8 rounded-xl border px-4 py-3 text-sm font-medium ${
+          isDark ? "bg-[#161b22] border-[#2d3748] text-gray-300" : "bg-white border-gray-200 text-gray-700"
+        }`}>
+          {`لا توجد نتائج تطابق بحثك في: ${(["laws", "precedents", "orders", "feqh"] as SearchSection[])
+            .filter(k => !searchDegraded.includes(k))
+            .map(k => SEARCH_SECTION_LABELS_AR[k])
+            .join("، ")}`}
+        </p>
+      )}
+      {!hasResults(activeType) && searchDegraded.length === 0 && (
         <EmptyState
           type={catHasContent(activeCat) ? "no-results" : "coming-soon"}
           catId={activeCat}
