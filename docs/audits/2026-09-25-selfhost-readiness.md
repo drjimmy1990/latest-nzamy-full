@@ -88,3 +88,38 @@ promising rows that cannot be reached.
 articles follow `order_index`, not reading order, in ~200 laws (no leak); LIB-18 `effective_date_gregorian` is not
 populated by the seeder (enactments widget empty); title-hit lookups do not normalise hamza; no law-status filter;
 library pages are not in the sitemap.
+
+## 5. Deploying without downtime (`deploy.sh`)
+
+**Found on the first production deploy of 2026-09-25:** `npm run build` into `.next` deletes the build the running
+server uses. pm2 logged "Could not find a production build in the '.next' directory" every 16 s and restarted
+the app 43 times, so nezamy.sa was down for the whole ~6-minute build (and `pm2 reload` then hit a restarting
+process: "Process 1 not found").
+
+**Fix:** `deploy.sh` (rewritten; the old one ran `supabase db push`, which never worked on this project — review
+item B20) alternates two build folders, `.next-a` / `.next-b`. It builds into the one that is not live while the
+site keeps serving, then points the server at it through `NEXT_DIST_DIR` in `.env.production.local` (gitignored;
+loaded before `next.config.ts`, whose `distDir` reads it) and runs `pm2 reload`. A failed build changes nothing;
+`bash deploy.sh --rollback` switches back; `bash deploy.sh --status` shows the live folder. It runs from a temporary
+copy of itself because its own `git pull` can rewrite the file.
+
+Two dead ends found by testing, so the next person does not retry them:
+- **Build into `.next-build`, then rename to `.next`:** Next.js 16 (Turbopack) bakes the folder name into the
+  compiled server (`distDir:".next-build"` in 188 files) — a renamed build cannot find itself.
+- **Stale `.next/types`:** `tsconfig.json` includes every build folder's route types; the live build's
+  `validator.ts` references pages a new release deleted (`laws/civil-procedure/page`) and fails the new build's
+  type-check. `deploy.sh` deletes the `types` folders (type-check only, never read at runtime) before building.
+
+`tsconfig.json` now lists `.next-a` / `.next-b` types itself (otherwise `next build` edits it on the server and
+the dirty file blocks the next `git pull`) and excludes `nzamy-developer-test-*` (the owner package folder broke
+local `npm run type-check`; review item B19 — the folder itself is still inside the local checkout).
+
+**Verified:** a real build into `.next-a` (exit 0, tsconfig untouched); `next start` with no environment variable
+served it via `.env.production.local` (pages 200, `/api/v1/me/invitations` 401, civil-transactions-law 721 articles,
+chunks 200); sandbox runs of `deploy.sh` with stand-in npm/pm2: first deploy from legacy `.next`, alternation,
+failed build (pointer unchanged), rollback, status, `main` mode with the script rewriting itself, exact-commit mode.
+`tsc` 0 errors; eslint clean on the changed config.
+
+Observed while testing: on a cold server, the `section=all` search occasionally degrades the feqh section at the
+anon 3 s timeout (direct query 0.7–1.3 s; four sections in parallel on a host already using swap). Handled
+gracefully in the UI; re-measure after the planned RAM upgrade.

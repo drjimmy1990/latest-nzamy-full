@@ -4,6 +4,8 @@ import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 
 const eslintConfig = [
+  // deploy.sh build folders (see next.config.ts distDir).
+  { ignores: [".next-a/**", ".next-b/**"] },
   ...nextVitals,
   ...nextTypescript,
   {

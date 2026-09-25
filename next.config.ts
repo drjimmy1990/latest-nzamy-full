@@ -37,6 +37,16 @@ function supabaseStorageRemotePattern() {
 const dynamicSupabasePattern = supabaseStorageRemotePattern();
 
 const nextConfig: NextConfig = {
+  // ── Build folder ────────────────────────────────────────────────────────────
+  // deploy.sh alternates two build folders, `.next-a` and `.next-b`: it builds
+  // into the one that is not live, then points the server at it through
+  // NEXT_DIST_DIR in `.env.production.local` (loaded before this file is
+  // evaluated). Building straight into `.next` deleted the running server's
+  // build — on 2026-09-25 pm2 restarted the app 43 times during the ~6-minute
+  // build. A finished build cannot be renamed instead: Next.js 16 bakes the
+  // folder name into the compiled server (`distDir:".next-build"`).
+  // Unset → `.next` (local dev and any plain `next build`).
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // ── Image optimisation ──────────────────────────────────────────────────────
   images: {
     formats: ["image/avif", "image/webp"],

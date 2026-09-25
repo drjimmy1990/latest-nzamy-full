@@ -5,6 +5,8 @@ node_modules/
 
 # ─── Next.js ───────────────────────────────────────────
 /.next/
+/.next-a/
+/.next-b/
 /out/
 /build
 next-env.d.ts
