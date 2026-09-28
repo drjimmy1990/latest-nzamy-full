@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   UserCircle,
@@ -95,56 +94,79 @@ function TabContent({ tabId }: { tabId: string }) {
   }
 }
 
+// ── Loading skeleton (T28-34) ────────────────────────────────────────
+//
+// Drawn until useUser() has resolved the session once. Before that the only
+// session there is is GUEST_SESSION, whose null userType maps to the
+// eight-tab client policy — which is what a lawyer used to see first, before
+// the page swapped to their own tabs. Shapes only: no tab names, no count, no
+// role, nothing that could turn out to be somebody else's settings.
+const SKELETON_BAR = "bg-slate-200/80 dark:bg-white/[0.06]";
+const SKELETON_LABEL_WIDTHS = ["62%", "48%", "70%", "55%", "44%", "66%", "52%", "58%"];
+
+function SettingsSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      className="flex flex-col lg:flex-row gap-6 animate-pulse"
+    >
+      <span className="sr-only">جارٍ تحميل الإعدادات</span>
+
+      {/* Desktop sidebar placeholder — same frame as the real rail. */}
+      <div className="hidden lg:block w-56 flex-shrink-0" aria-hidden="true">
+        <div className="bg-white/80 dark:bg-[#161b22]/80 rounded-[2rem] border border-slate-200/50 dark:border-white/[0.06] p-3">
+          {SKELETON_LABEL_WIDTHS.map((width, i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-3">
+              <div className={`h-[18px] w-[18px] flex-shrink-0 rounded-md ${SKELETON_BAR}`} />
+              <div className={`h-3 rounded-full ${SKELETON_BAR}`} style={{ width }} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Mobile pill placeholders. */}
+      <div className="lg:hidden flex gap-2 overflow-hidden pb-2" aria-hidden="true">
+        {[96, 80, 104, 88].map((width, i) => (
+          <div key={i} className={`h-10 flex-shrink-0 rounded-full ${SKELETON_BAR}`} style={{ width }} />
+        ))}
+      </div>
+
+      {/* Panel placeholder. */}
+      <div className="flex-1 min-w-0" aria-hidden="true">
+        <div className="bg-white/80 dark:bg-[#161b22]/80 rounded-[2rem] border border-slate-200/50 dark:border-white/[0.06] p-7 space-y-6">
+          <div className="flex items-center gap-3 pb-4 border-b border-slate-100 dark:border-white/[0.06]">
+            <div className={`h-10 w-10 rounded-xl ${SKELETON_BAR}`} />
+            <div className="flex-1 space-y-2">
+              <div className={`h-3.5 w-40 max-w-[60%] rounded-full ${SKELETON_BAR}`} />
+              <div className={`h-2.5 w-64 max-w-[80%] rounded-full ${SKELETON_BAR}`} />
+            </div>
+          </div>
+          <div className="grid gap-5 md:grid-cols-2">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="space-y-2">
+                <div className={`h-3 w-24 rounded-full ${SKELETON_BAR}`} />
+                <div className={`h-11 w-full rounded-2xl ${SKELETON_BAR}`} />
+              </div>
+            ))}
+          </div>
+          <div className={`h-11 w-32 rounded-2xl ${SKELETON_BAR}`} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const { isRTL } = useTheme();
   const router = useRouter();
-  const { tabs, policy } = useSettingsTabs();
-
-  const [activeTab, setActiveTab] = useState(tabs[0]?.id ?? "profile");
-  const tabIds = tabs.map((tab) => tab.id).join("|");
-
-  useEffect(() => {
-    if (!tabs.some((tab) => tab.id === activeTab)) {
-      setActiveTab(tabs[0]?.id ?? "profile");
-    }
-  }, [activeTab, tabIds, tabs]);
-
-  // ـ?tab=<id> — DEEP LINK INTO ONE TAB.
-  //
-  // This page had no query handling at all, so every link into it landed on
-  // whatever `tabs[0]` happened to be for that account and a `?tab=` in the
-  // href was decorative. /dashboard/client now links here by name
-  // («الملف الشخصي» → /settings?tab=profile, WP-5 C-3; the business readiness
-  // panel → /settings?tab=entity, WP-6 B-7), and a link that
-  // silently ignores what it asked for is the kind of half-wiring this pass
-  // exists to remove.
-  //
-  // window.location.search, NOT useSearchParams(): that hook forces this
-  // statically rendered page under a Suspense boundary (the wrapper
-  // src/app/marketplace/page.tsx:386-391 and src/app/ai/contracts/page.tsx:435-441
-  // carry for exactly that reason), which is a far bigger change than one deep
-  // link needs. Read after mount, so there is no server/client mismatch.
-  //
-  // APPLIED ONCE, AND ONLY TO A TAB THIS ACCOUNT CAN ACTUALLY SEE. `tabs`
-  // comes from useUser() through useSettingsTabs(), which fills in after the
-  // first paint, so the requested id has to be allowed to arrive late — hence
-  // the ref rather than a `[]` dependency. An id this role has no tab for is
-  // ignored and the effect above keeps tabs[0]; it is never forced onto a tab
-  // the role policy hides.
-  const requestedTabApplied = useRef(false);
-  useEffect(() => {
-    if (requestedTabApplied.current) return;
-    const requested = new URLSearchParams(window.location.search).get("tab");
-    if (!requested) {
-      requestedTabApplied.current = true;
-      return;
-    }
-    const match = tabs.find((tab) => tab.id === requested);
-    if (!match) return;
-    requestedTabApplied.current = true;
-    setActiveTab(match.id);
-  }, [tabIds, tabs]);
+  // T28-34. The open tab is owned by useSettingsTabs() now, not by two effects
+  // here. It is chosen once the session has resolved (`ready`), honours ?tab=
+  // at that moment, and is reset afterwards only when the resolved role
+  // genuinely lacks it — never during a session reload, a sign-out or a
+  // degraded role read. Rules and tests: hooks/settingsActiveTab(.test).ts.
+  const { tabs, policy, ready, activeTab, selectTab } = useSettingsTabs();
 
   const handleLogout = () => {
     logout();
@@ -175,8 +197,11 @@ export default function SettingsPage() {
             image of that fail-open, so the reason is stated instead of the
             tabs simply being absent. `roleUnavailable` is set only when the
             session's membership reads were degraded or failed — not when the
-            account genuinely holds no entity role. */}
-        {policy.roleUnavailable && (
+            account genuinely holds no entity role.
+            Both notices wait for `ready` (T28-34): before the session has
+            resolved, `policy` is the guest's, and neither notice is true of
+            anyone yet. */}
+        {ready && policy.roleUnavailable && (
           <div className="mb-6 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-6 font-semibold text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
             <Warning size={15} weight="fill" className="mt-0.5 shrink-0" />
             <span>
@@ -186,12 +211,15 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {policy.personalOnlyNotice && (
+        {ready && policy.personalOnlyNotice && (
           <div className="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs leading-6 text-sky-800 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200">
             {policy.personalOnlyNotice}
           </div>
         )}
 
+        {!ready || activeTab === null ? (
+          <SettingsSkeleton />
+        ) : (
         <div className="flex flex-col lg:flex-row gap-6">
           {/* ── Desktop sidebar ──────────────────────────────── */}
           <motion.aside
@@ -207,7 +235,8 @@ export default function SettingsPage() {
                 return (
                   <motion.button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => selectTab(tab.id)}
+                    aria-current={active ? "page" : undefined}
                     whileTap={{ scale: 0.98 }}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[13.5px] font-semibold transition-all duration-150 ${
                       active
@@ -247,7 +276,8 @@ export default function SettingsPage() {
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => selectTab(tab.id)}
+                    aria-current={active ? "page" : undefined}
                     className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all backdrop-blur-sm ${
                       active
                         ? "bg-[#0B3D2E] text-white shadow-md"
@@ -290,6 +320,7 @@ export default function SettingsPage() {
             </AnimatePresence>
           </motion.div>
         </div>
+        )}
       </div>
 
       <Footer />

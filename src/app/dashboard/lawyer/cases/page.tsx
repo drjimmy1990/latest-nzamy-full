@@ -17,7 +17,10 @@ import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import type { CaseStatus, CaseType, CourtDegree, Priority, ViewMode, KanbanGroupBy, Case } from "./_types";
 import AddCaseModal from "../_components/AddCaseModal";
+import CaseStageBar from "../_components/CaseStageBar";
 import EmptyState from "@/components/ui/EmptyState";
+import { getLatestCaseStages } from "@/lib/services/caseStagesService";
+import { stageBucketFor, STAGE_BUCKET_LABELS, type StageBucket } from "@/lib/caseStageBuckets";
 
 
 
@@ -148,6 +151,11 @@ export default function CasesPage() {
   const [degreeFilter,  setDegreeFilter]  = useState<CourtDegree | "all">("all");
   const [priorityFilter,setPriorityFilter]= useState<Priority | "all">("all");
   const [courtFilter,   setCourtFilter]   = useState<string>("all");
+  // T28-29a — «المرحلة المسجّلة» bar. `stageRead` is the last bulk read of
+  // case_stages, tagged with the case-id set it was read for; see
+  // `latestDegreeByCase` below for why the tag matters.
+  const [stageFilter,   setStageFilter]   = useState<StageBucket | "all">("all");
+  const [stageRead,     setStageRead]     = useState<{ key: string; byCase: Record<string, string> | null } | null>(null);
   const [cases,         setCases]         = useState<Case[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [loadError,     setLoadError]     = useState(false);
@@ -299,6 +307,41 @@ export default function CasesPage() {
   const activeCases = useMemo(() => cases.filter(c => c.status !== "archived"), [cases]);
   const archivedCases = useMemo(() => cases.filter(c => c.status === "archived"), [cases]);
 
+  // ── T28-29a: latest recorded stage per case ───────────────────────────────
+  // Keyed on the SET of case ids, not on `cases`: a Kanban drag calls
+  // setCases with the same ids, and must not trigger a re-read.
+  const caseIdsKey = useMemo(() => cases.map(c => c.id).sort().join(","), [cases]);
+
+  useEffect(() => {
+    // Demo mode has no case_stages API; the bar stays hidden rather than
+    // counting every case as «لم تُسجَّل مرحلة», which nobody measured.
+    if (!isSupabaseMode || !caseIdsKey) return;
+    let cancelled = false;
+    getLatestCaseStages(caseIdsKey.split(","))
+      .then(stages => {
+        if (cancelled) return;
+        const byCase: Record<string, string> = {};
+        for (const s of stages) byCase[s.caseId] = s.degree;
+        setStageRead({ key: caseIdsKey, byCase });
+      })
+      .catch(err => {
+        if (cancelled) return;
+        // The bar is an extra, not the page: a failed read hides it (and drops
+        // any stage filter, which would otherwise keep narrowing the list with
+        // no visible control) and leaves the case list alone.
+        console.warn("[cases] latest case stages unavailable:", err);
+        setStageRead({ key: caseIdsKey, byCase: null });
+        setStageFilter("all");
+      });
+    return () => { cancelled = true; };
+  }, [caseIdsKey]);
+
+  // null while the read for the CURRENT id set is in flight, after it failed,
+  // and in demo mode — every one of which hides the bar and disables the
+  // filter. A read for an older id set is not reused: it would count a case
+  // it never asked about as «لم تُسجَّل مرحلة».
+  const latestDegreeByCase = stageRead && stageRead.key === caseIdsKey ? stageRead.byCase : null;
+
   const filtered = useMemo(() => {
     const base = viewMode === "archive" ? archivedCases : activeCases;
     return base.filter(c => {
@@ -312,6 +355,9 @@ export default function CasesPage() {
       // وهو حقل لا يكتبه `workflowToCase` إطلاقاً، فكانت الثلاثة تُرجع لا شيء دائماً.
       // "urgent" باقٍ لأن شريط الطعون هو من يضبطه، ولا يظهر إلا حين يوجد ما يطابقه.
       if (timeFilter === "urgent" && !c.hasDeadline) return false;
+      // Only with stage data behind it — see `latestDegreeByCase`.
+      if (stageFilter !== "all" && latestDegreeByCase
+        && stageBucketFor(c.status, latestDegreeByCase[c.id]) !== stageFilter) return false;
       if (search && !c.title.includes(search) && !c.client.includes(search) && !c.court.includes(search)) return false;
       return true;
     }).sort((a, b) => {
@@ -332,7 +378,8 @@ export default function CasesPage() {
     // `reactCompiler` in next.config.ts, no babel-plugin-react-compiler).
     // `collabFilter` خرج من هذه المصفوفة لأنه خرج من الحالة نفسها؛ `timeFilter`
     // باقٍ لأن الشرط الذي يقرؤه ("urgent") ما زال أعلاه.
-  }, [activeCases, archivedCases, statusFilter, typeFilter, degreeFilter, courtFilter, teamFilter, timeFilter, priorityFilter, search, viewMode]);
+    // `stageFilter` و`latestDegreeByCase` (T28-29a) هنا للسبب نفسه: الجسم يقرؤهما.
+  }, [activeCases, archivedCases, statusFilter, typeFilter, degreeFilter, courtFilter, teamFilter, timeFilter, priorityFilter, stageFilter, latestDegreeByCase, search, viewMode]);
 
   /**
    * True only when there is a real list behind every figure on this page.
@@ -376,8 +423,17 @@ export default function CasesPage() {
   const resetFilters = () => {
     setStatusFilter("all"); setTypeFilter("all"); setDegreeFilter("all"); setCourtFilter("all");
     setTeamFilter("all"); setTimeFilter("all"); setPriorityFilter("all");
+    setStageFilter("all");
     setSearch("");
   };
+
+  // A chip click toggles: the active one again clears the filter.
+  const toggleStageFilter = (bucket: StageBucket) => setStageFilter(prev => (prev === bucket ? "all" : bucket));
+
+  // The bar describes the list/Kanban base (`activeCases` — closed yes,
+  // archived no), so «منتهية» here means closed. It is hidden in the archive
+  // view, which ignores `filtered` and would not respond to a click.
+  const showStageBar = viewMode !== "archive" && countsKnown && activeCases.length > 0 && latestDegreeByCase !== null;
 
   const retryLoad = () => {
     setLoading(true);
@@ -895,6 +951,31 @@ export default function CasesPage() {
               </span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* T28-29a — «المرحلة المسجّلة»: a clickable split of the cases by the
+          court degree last recorded for each. Nothing is drawn while the
+          stage read is in flight or after it failed — never a placeholder. */}
+      {showStageBar && latestDegreeByCase && (
+        <CaseStageBar
+          cases={activeCases}
+          latestDegreeByCase={latestDegreeByCase}
+          activeBucket={stageFilter}
+          onToggle={toggleStageFilter}
+          isDark={isDark}
+        />
+      )}
+      {showStageBar && stageFilter !== "all" && (
+        <div className={`rounded-2xl border px-3 py-2.5 flex items-center gap-2 text-[12px] font-semibold ${
+          isDark ? "border-[#C8A762]/25 bg-[#C8A762]/[0.06] text-zinc-300" : "border-royal/15 bg-royal/[0.04] text-slate-700"
+        }`}>
+          <FunnelSimple size={14} className={isDark ? "text-[#C8A762]" : "text-royal"} />
+          <span>تصفية: {STAGE_BUCKET_LABELS[stageFilter]} —</span>
+          <button type="button" onClick={() => setStageFilter("all")}
+            className={`text-[12px] font-bold hover:underline ${isDark ? "text-[#C8A762]" : "text-royal"}`}>
+            إلغاء التصفية
+          </button>
         </div>
       )}
 

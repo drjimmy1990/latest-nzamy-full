@@ -469,3 +469,134 @@ html[dir="rtl"] .text-left {
   }
 }
 
+/* ─── Display density (T28-31) ────────────────────────────────────────────
+   <html data-density="100|85|75"> is written before first paint by
+   themeInitScript (src/app/layout.tsx) from localStorage `nezamy-density`,
+   and kept in step by ThemeProvider. Valid values: src/lib/density.ts.
+
+   WHY `zoom` AND NOT THE ROOT FONT-SIZE. Most text here is fixed-px Tailwind
+   (`text-[11px]`, `text-[13px]`), which a root font-size does not touch; the
+   owner's "75%/85%" is what browser zoom does, and CSS `zoom` on the root is
+   the in-page equivalent: every length — text, padding, icons, the w-64
+   sidebar and the lg:mr-64 offset beside it — shrinks together.
+
+   DESKTOP WITH A MOUSE ONLY. The media query below must match
+   DENSITY_MEDIA_QUERY in density.ts. Phones and tablets stay at 100%: their
+   text inputs have to compute to 16px or iOS Safari zooms the whole page on
+   focus (the guard just above), and that guard stops at 767px, so a zoomed
+   iPad in landscape (1024–1366px, pointer: coarse) is excluded here instead.
+   `screen` keeps printed pages out, as in the heading rule above.
+
+   With data-density="100", or no attribute at all, NOTHING below applies —
+   the page is exactly what it was before the toggle existed. */
+:root {
+  --density-scale: 1;
+}
+
+/* The toggle is only offered where it does something. */
+.nz-density-desktop-only {
+  display: none;
+}
+
+@media screen and (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+  .nz-density-desktop-only {
+    display: block;
+  }
+
+  html[data-density="85"] {
+    --density-scale: 0.85;
+    zoom: 0.85;
+  }
+  html[data-density="75"] {
+    --density-scale: 0.75;
+    zoom: 0.75;
+  }
+
+  /* Pointer-driven canvases (the case graph, the ReactFlow case canvas) turn
+     clientX/clientY and movementX into CSS positions. Under a zoomed root
+     those visual pixels are zoomed a second time and the dragged node drifts
+     away from the cursor. Such a canvas carries .nz-density-reset: a counter-
+     zoom that brings its subtree back to an effective 100%, so pointer maths
+     and drawing agree again. Zoom compounds: 0.85 × (1/0.85) = 1. */
+  html[data-density="85"] .nz-density-reset {
+    zoom: 1.1764706;
+  }
+  html[data-density="75"] .nz-density-reset {
+    zoom: 1.3333333;
+  }
+
+  /* ── Viewport-height compensation ──────────────────────────────────────
+     Under a zoomed root a `100vh` box is drawn at 100vh × zoom — 85% of the
+     window — so full-height shells stopped short and left a band of page
+     background under them (the admin console, the consultation room, the AI
+     chat). Each rule divides ONLY the viewport term by the scale, so after the
+     zoom it is the full window again; a fixed offset beside it (`- 4rem`, a
+     header's height) stays zoomed, in step with the header it stands for.
+
+     THE CASCADE TRAP. These rules are unlayered, so they beat every Tailwind
+     utility — responsive variants included. A base class is therefore only
+     compensated on elements that carry NO variant for the same property
+     (`:not([class*=":min-h-"])` etc.); where a variant exists, the variant
+     class itself is compensated instead (`lg:h-[100dvh]` on /ai/consult,
+     `md:h-[82vh]` in the law reader's AI tab).
+
+     Covered — every pattern of this kind in src/ as of 2026-09-28:
+       min-h-screen (120 uses), min-h-[100dvh] (74), h-[100dvh] (6),
+       lg:h-[100dvh] (1), h-[calc(100vh-4rem)] (4), h-[calc(100vh-76px)] (1),
+       max-h-[calc(100vh-8rem)] (2, the law reader's sticky rails),
+       max-h-[calc(100vh-7rem)] (1, the blog's sticky rail), and the dialog
+       caps max-h-[80|85|90|92vh], max-h-[80|85dvh], h-[90dvh], md:h-[82vh].
+     Not covered, on purpose: the partial `min-h-[40–80vh]` of empty and
+     loading states — a shorter placeholder is harmless — and the few
+     `max-w-[90vw]`-style width caps, which only make a box narrower. */
+  html:is([data-density="85"], [data-density="75"]) .min-h-screen:not([class*=":min-h-"]) {
+    min-height: calc(100vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .min-h-\[100dvh\]:not([class*=":min-h-"]) {
+    min-height: calc(100dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .h-\[100dvh\]:not([class*=":h-"]),
+  html:is([data-density="85"], [data-density="75"]) .lg\:h-\[100dvh\] {
+    height: calc(100dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .h-\[calc\(100vh-4rem\)\]:not([class*=":h-"]) {
+    height: calc(100vh / var(--density-scale) - 4rem);
+  }
+  html:is([data-density="85"], [data-density="75"]) .h-\[calc\(100vh-76px\)\]:not([class*=":h-"]) {
+    height: calc(100vh / var(--density-scale) - 76px);
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[calc\(100vh-8rem\)\]:not([class*=":max-h-"]) {
+    max-height: calc(100vh / var(--density-scale) - 8rem);
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[calc\(100vh-7rem\)\]:not([class*=":max-h-"]) {
+    max-height: calc(100vh / var(--density-scale) - 7rem);
+  }
+
+  /* Dialog caps: without these a modal only starts scrolling sooner, but the
+     same division keeps it the size it was designed at. */
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[80vh\]:not([class*=":max-h-"]) {
+    max-height: calc(80vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[85vh\]:not([class*=":max-h-"]) {
+    max-height: calc(85vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[90vh\]:not([class*=":max-h-"]) {
+    max-height: calc(90vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[92vh\]:not([class*=":max-h-"]) {
+    max-height: calc(92vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[80dvh\]:not([class*=":max-h-"]) {
+    max-height: calc(80dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[85dvh\]:not([class*=":max-h-"]) {
+    max-height: calc(85dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .h-\[90dvh\]:not([class*=":h-"]) {
+    height: calc(90dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .md\:h-\[82vh\] {
+    height: calc(82vh / var(--density-scale));
+  }
+}
+

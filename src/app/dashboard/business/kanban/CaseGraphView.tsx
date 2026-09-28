@@ -172,7 +172,7 @@ export default function CaseGraphView({
 
       {/* ── Main Canvas Area ── */}
       <div 
-        className={`flex-1 relative overflow-hidden ${isPanning ? "cursor-grabbing" : "cursor-grab"}`}
+        className={`nz-density-reset flex-1 relative overflow-hidden ${isPanning ? "cursor-grabbing" : "cursor-grab"}`}
         ref={canvasRef}
         onPointerDown={handleCanvasPointerDown}
         onPointerMove={handlePointerMove}

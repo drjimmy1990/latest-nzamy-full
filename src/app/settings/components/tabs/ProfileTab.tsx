@@ -23,6 +23,7 @@ import {
 } from "@/lib/services/profileFormTransform";
 import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import { LocalActionStatus, SectionTitle } from "./_shared";
+import DensityToggle from "@/components/DensityToggle";
 
 // ── The server envelope (GET/PATCH /api/v1/profile) — only the fields this tab reads ──
 interface ProfileServerRow {
@@ -456,6 +457,14 @@ export function ProfileTab() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Display density (T28-31) — a display preference like the theme */}
+            <div>
+              <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                حجم العرض
+              </label>
+              <DensityToggle variant="panel" />
             </div>
 
             {/* Calendar Type */}

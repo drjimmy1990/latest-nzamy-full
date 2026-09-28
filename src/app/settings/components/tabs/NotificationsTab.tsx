@@ -281,32 +281,41 @@ export function readSmsChannel(preferences: unknown): boolean {
 }
 
 /**
- * A `preferences` object to PUT: the one this account already had, with the
- * notification block updated.
+ * The `preferences` object to PUT: the notification block ALONE, built on the
+ * block this account already had.
  *
- * Everything outside the notification key is carried through untouched — PUT
- * replaces the whole jsonb column, so anything dropped here is deleted. Keys of
- * categories that are not on screen are carried through too: they belong to a
- * role this account had before, and keeping them means an account moved back
- * finds its old answers instead of silent defaults.
+ * Only this tab's key is sent. PUT /api/v1/settings now shallow-merges
+ * `preferences` into the stored object (mergePutPreferences in
+ * src/lib/services/preferencesMerge.ts) — it used to replace the whole jsonb
+ * column, which is why this function used to carry every other key through.
+ * Carrying them is now actively harmful: they are whatever the tab loaded,
+ * possibly minutes ago, and sending them back would revert anything saved
+ * elsewhere since (the lawyer dashboard's quickTools, for one). The server
+ * also ignores the PATCH-owned keys on PUT, as a second guard for old bundles.
+ *
+ * Keys of categories that are not on screen are still carried through INSIDE
+ * the block: they belong to a role this account had before, and keeping them
+ * means an account moved back finds its old answers instead of silent
+ * defaults.
  *
  * `sms` left undefined keeps whatever is stored — the onboarding wizard never
  * asks about channels and must not answer for the user.
+ *
+ * Deploy note: this half and the server merge ship together. This half alone
+ * on the OLD server would overwrite the column with the notification block
+ * only.
  */
 export function buildNotificationPreferences(
   existing: Record<string, unknown> | null | undefined,
   categories: Record<string, boolean>,
   sms?: boolean,
 ): Record<string, unknown> {
-  const base: Record<string, unknown> =
-    existing && typeof existing === "object" ? { ...existing } : {};
-  const current = readNotifBlock(base);
+  const current = readNotifBlock(existing);
   const block: NotifPrefsBlock = {
     categories: { ...(current.categories ?? {}), ...categories },
     sms: sms ?? current.sms ?? true,
   };
-  base[NOTIF_PREFS_KEY] = block;
-  return base;
+  return { [NOTIF_PREFS_KEY]: block };
 }
 
 // ── Errors ────────────────────────────────────────────────────────────
@@ -339,9 +348,9 @@ export function NotificationsTab() {
   );
   const [channel, setChannel] = useState({ app: true, sms: true, email: true });
   /**
-   * The rest of `preferences` as it came back from the server, so the PUT below
-   * can carry it through instead of overwriting the column with this tab's key
-   * alone.
+   * `preferences` as it came back from the server. Only its notification block
+   * is read (the base the PUT below builds on); the PUT sends that block alone
+   * and the server merges it — see buildNotificationPreferences.
    */
   const [storedPreferences, setStoredPreferences] = useState<Record<string, unknown>>({});
   const [ready, setReady] = useState(false);

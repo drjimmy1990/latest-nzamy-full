@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { validatePreferencesPatch, mergePreferences, RECENT_SESSIONS_MAX } from "./preferencesMerge.ts";
+import {
+  validatePreferencesPatch, mergePreferences, mergePutPreferences, PREFERENCE_KEYS, RECENT_SESSIONS_MAX,
+} from "./preferencesMerge.ts";
 
 const VALID_READING_ACTIVITY = {
   lawsThisWeek: 3,
@@ -140,4 +142,72 @@ test("mergePreferences on a null/undefined existing value starts from {}", () =>
 test("mergePreferences with an empty patch returns the existing value unchanged", () => {
   const existing = { notifications: { email: true }, dashboardMode: "full" };
   assert.deepEqual(mergePreferences(existing, {}), existing);
+});
+
+// ── quickTools (T28-30) ─────────────────────────────────────────────────────
+
+test("PREFERENCE_KEYS carries quickTools", () => {
+  assert.ok((PREFERENCE_KEYS as readonly string[]).includes("quickTools"));
+});
+
+test("quickTools: 3..8 unique registry ids are accepted", () => {
+  const result = validatePreferencesPatch({ quickTools: ["cases", "draft", "brief-check", "calculator"] });
+  assert.deepEqual(result, { ok: true, patch: { quickTools: ["cases", "draft", "brief-check", "calculator"] } });
+});
+
+test("quickTools: too few, too many, duplicates, unknown ids and non-arrays are 400s", () => {
+  const nine = ["cases", "hearings", "deadlines", "documents", "finance", "consultations", "clients", "tasks", "contracts"];
+  for (const bad of [
+    [], ["cases", "draft"], nine,
+    ["cases", "draft", "draft"],
+    ["cases", "draft", "direction-support"],
+    ["cases", "draft", 1],
+    "cases", null, { a: 1 },
+  ]) {
+    const result = validatePreferencesPatch({ quickTools: bad });
+    assert.equal(result.ok, false, `expected ${JSON.stringify(bad)} to be rejected`);
+    if (!result.ok) assert.match(result.error, /[؀-ۿ]/, "the error must be Arabic");
+  }
+});
+
+test("quickTools merges without touching notifications or the other PATCH keys", () => {
+  const existing = { notifications: { sms: true }, dashboardMode: "full", quickTools: ["cases", "draft", "tasks"] };
+  const merged = mergePreferences(existing, { quickTools: ["draft", "clients", "calculator"] });
+  assert.deepEqual(merged, { notifications: { sms: true }, dashboardMode: "full", quickTools: ["draft", "clients", "calculator"] });
+});
+
+// ── mergePutPreferences (PUT /api/v1/settings) ──────────────────────────────
+
+test("PUT merge keeps keys the body does not mention (the notifications-tab wipe)", () => {
+  const stored = { notifications: { sms: true, categories: { a: true } }, quickTools: ["cases", "draft", "tasks"], dashboardMode: "light" };
+  const result = mergePutPreferences(stored, { notifications: { sms: false, categories: { a: false } } });
+  assert.deepEqual(result, {
+    ok: true,
+    merged: { notifications: { sms: false, categories: { a: false } }, quickTools: ["cases", "draft", "tasks"], dashboardMode: "light" },
+  });
+});
+
+test("PUT merge drops PATCH-owned keys so a stale echo cannot revert them", () => {
+  // The tab loaded quickTools=[a,b,c] and dashboardMode=full, then the lawyer
+  // changed both elsewhere; an old bundle PUTs the whole loaded object back.
+  const stored = { quickTools: ["draft", "clients", "calculator"], dashboardMode: "light", notifications: { sms: true } };
+  const staleEcho = { quickTools: ["cases", "draft", "tasks"], dashboardMode: "full", readingActivity: VALID_READING_ACTIVITY, recentSessions: [], notifications: { sms: false } };
+  const result = mergePutPreferences(stored, staleEcho);
+  assert.deepEqual(result, {
+    ok: true,
+    merged: { quickTools: ["draft", "clients", "calculator"], dashboardMode: "light", notifications: { sms: false } },
+  });
+});
+
+test("PUT merge on an empty/absent row starts from {}", () => {
+  assert.deepEqual(mergePutPreferences(null, { notifications: { sms: true } }), { ok: true, merged: { notifications: { sms: true } } });
+  assert.deepEqual(mergePutPreferences(undefined, {}), { ok: true, merged: {} });
+});
+
+test("PUT merge refuses a preferences value that is not a plain object", () => {
+  for (const bad of [null, undefined, "x", 1, ["a"]]) {
+    const result = mergePutPreferences({ notifications: {} }, bad);
+    assert.equal(result.ok, false, `expected ${JSON.stringify(bad)} to be rejected`);
+    if (!result.ok) assert.match(result.error, /[؀-ۿ]/);
+  }
 });

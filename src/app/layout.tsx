@@ -3,6 +3,7 @@ import { Cairo, IBM_Plex_Sans_Arabic, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import ThemeProvider from "@/components/ThemeProvider";
 import FloatingButtons from "@/components/FloatingButtons";
+import { DEFAULT_DENSITY, DENSITY_STORAGE_KEY, DENSITY_VALUES } from "@/lib/density";
 
 // Self-hosted via next/font (no runtime request to fonts.googleapis.com).
 // Weights match the previous Google Fonts CSS2 <link> exactly so rendering
@@ -78,6 +79,17 @@ export const metadata: Metadata = {
   },
 };
 
+// Display density (T28-31). The stored value goes onto <html data-density>
+// here, before first paint, so a compact view never flashes at full size
+// first; globals.css turns 85/75 into `zoom` (desktop only). The allowed list
+// and the key are interpolated from src/lib/density.ts — one source of truth,
+// and parseDensity() there applies the same exact-string rule. The attribute
+// is deliberately NOT in the <html> JSX below: a server re-render would put
+// the server's value back over the user's.
+const densityValuesLiteral = JSON.stringify(DENSITY_VALUES.map(String));
+const densityDefaultLiteral = JSON.stringify(String(DEFAULT_DENSITY));
+const densityKeyLiteral = JSON.stringify(DENSITY_STORAGE_KEY);
+
 const themeInitScript = `
 (function () {
   try {
@@ -94,6 +106,13 @@ const themeInitScript = `
     document.documentElement.lang = "ar";
     document.documentElement.dir = "rtl";
     document.documentElement.style.colorScheme = "dark";
+  }
+  try {
+    var density = localStorage.getItem(${densityKeyLiteral});
+    if (${densityValuesLiteral}.indexOf(density) === -1) density = ${densityDefaultLiteral};
+    document.documentElement.setAttribute("data-density", density);
+  } catch (error) {
+    document.documentElement.setAttribute("data-density", ${densityDefaultLiteral});
   }
 })();
 `;

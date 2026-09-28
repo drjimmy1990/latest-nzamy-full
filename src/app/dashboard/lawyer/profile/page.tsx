@@ -20,7 +20,8 @@ import {
   isCourtCode, isLanguageCode, type EducationEntry,
 } from "@/lib/services/lawyerProfileFields";
 import { toArabicDigits } from "@/lib/services/arabicCount";
-import { buildPublicProfileUrl, canShareProfile as mayShareProfile, copyToClipboard } from "@/lib/services/publicProfileLink";
+import { buildPublicProfileUrl, canShareProfile as mayShareProfile } from "@/lib/services/publicProfileLink";
+import ShareProfileModal from "../_components/ShareProfileModal";
 import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import {
   getMyServices, deleteService, updateService, type LawyerService,
@@ -226,8 +227,9 @@ export default function LawyerProfilePage() {
   const [serviceActionError, setServiceActionError] = useState<string | null>(null);
 
   // ─── Share link (item 130) ────────────────────────────────────────────────
-  const [shareState, setShareState] = useState<"idle" | "copied" | "manual">("idle");
-  const [profileUrl, setProfileUrl] = useState("");
+  // The URL while ShareProfileModal is open, null when closed (T28-29b) — the
+  // copy tick and the manual-copy fallback live in the modal now.
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
   // Browser origin for the read-only «رابط ملفك العام» row (owner step ي‏١.1).
   // Read in an effect, never during render: `window` does not exist on the
   // server, and an origin baked into the SSR HTML would be the deploy host's,
@@ -393,19 +395,14 @@ export default function LawyerProfilePage() {
     ? "صفحة الملف العام غير متاحة حالياً — دليل المحامين غير مفتوح للنشر بعد"
     : "سجّل الدخول بحسابك المهني لمشاركة رابط ملفك العام";
 
-  const handleShareProfile = useCallback(async () => {
+  // Opens ShareProfileModal (T28-29b) instead of copying straight away; the
+  // gate above is unchanged and still checked first.
+  const handleShareProfile = useCallback(() => {
     const uid = user.userId;
     if (!canShareProfile || !uid) return;
-    const url = buildPublicProfileUrl(window.location.origin, profileData.slug, uid);
-    setProfileUrl(url);
-    setShareState((await copyToClipboard(url)) ? "copied" : "manual");
+    setShareUrl(buildPublicProfileUrl(window.location.origin, profileData.slug, uid));
   }, [canShareProfile, user.userId, profileData.slug]);
-
-  useEffect(() => {
-    if (shareState !== "copied") return;
-    const timer = window.setTimeout(() => setShareState("idle"), 2500);
-    return () => window.clearTimeout(timer);
-  }, [shareState]);
+  const closeShareModal = useCallback(() => setShareUrl(null), []);
 
   // ─── Print / PDF (item 131) ──────────────────────────────────────────────
   // No custom PDF generation — the browser's own print dialog offers "Save
@@ -549,21 +546,20 @@ export default function LawyerProfilePage() {
                 hides <button>, but «تعديل» is a Next <Link> → <a>, which that
                 rule does not reach, so the whole row is scoped explicitly). */}
             <div className="flex flex-wrap items-center gap-2 pb-1 sm:ms-auto print:hidden">
-              <span className="inline-flex" title={canShareProfile ? "انسخ رابط ملفك العام وشاركه مع موكليك" : shareDisabledReason}>
+              <span className="inline-flex" title={canShareProfile ? "شارك رابط ملفك العام مع موكليك" : shareDisabledReason}>
                 <button
                   type="button"
                   onClick={handleShareProfile}
                   disabled={!canShareProfile}
                   aria-label={canShareProfile ? "مشاركة ملفي المهني" : shareDisabledReason}
+                  aria-haspopup="dialog"
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold border transition-all ${
                     !canShareProfile
                       ? `opacity-50 cursor-not-allowed ${isDark ? "border-white/[0.08] text-zinc-500" : "border-slate-200 text-slate-400"}`
-                      : shareState === "copied"
-                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-600"
-                        : isDark ? "border-white/[0.08] text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      : isDark ? "border-white/[0.08] text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
                   }`}>
                   <ShareNetwork size={13} weight="duotone" />
-                  {shareState === "copied" ? "تم نسخ الرابط ✓" : "مشاركة"}
+                  مشاركة
                 </button>
               </span>
               <button
@@ -580,19 +576,9 @@ export default function LawyerProfilePage() {
             </div>
           </div>
 
-          {/* Manual copy fallback — neither the Clipboard API nor
-              execCommand worked, so the link is put on screen in a
-              selectable field. No tick: nothing has been copied yet. */}
-          {shareState === "manual" && (
-            <div className={`rounded-xl border p-3 mb-4 print:hidden ${isDark ? "border-white/[0.08] bg-white/[0.02]" : "border-slate-200 bg-slate-50/60"}`}>
-              <p className={`text-[11px] font-bold mb-1.5 ${isDark ? "text-zinc-300" : "text-slate-600"}`}>تعذّر النسخ تلقائياً — انسخ الرابط يدوياً</p>
-              <input
-                type="text" dir="ltr" readOnly value={profileUrl}
-                onFocus={(e) => e.currentTarget.select()}
-                className={`w-full rounded-lg border px-3 py-1.5 text-[11px] font-mono ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200" : "border-slate-200 bg-white text-slate-700"}`}
-              />
-            </div>
-          )}
+          {/* Manual copy fallback — MOVED into ShareProfileModal, whose
+              read-only link field is selected with the same message when both
+              clipboard tiers fail (T28-29b). */}
 
           {/*
             Status row — replaces the old hero stats row of four literals.
@@ -1016,6 +1002,15 @@ export default function LawyerProfilePage() {
             initial={serviceModal.mode === "edit" ? serviceModal.service : undefined}
             onClose={() => setServiceModal(null)}
             onSaved={handleServiceSaved}
+          />
+        )}
+        {shareUrl && (
+          <ShareProfileModal
+            key="share-profile"
+            onClose={closeShareModal}
+            isDark={isDark}
+            url={shareUrl}
+            lawyerName={user.name || profileData.name || ""}
           />
         )}
       </AnimatePresence>
