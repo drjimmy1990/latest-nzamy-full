@@ -39,12 +39,16 @@ export const LIBRARY_STAT_KEYS: readonly LibraryStatKey[] = ["laws", "articles",
  * select keeps the count cheap (the cloud's anon statement_timeout is ~3s; a
  * wide select on principles measured 2.9s there, a narrow one 0.2s).
  * library.laws has no `id` column — its key is `slug`.
+ *
+ * `serverOnly`: the table is closed to the anon key (migration 20260929_01,
+ * owner decision T28-21 — the article text is read by the server only), so
+ * its count must come from the server-only client countLibraryTables is given.
  */
-export const LIBRARY_STAT_TABLES: Readonly<Record<LibraryStatKey, { table: string; column: string }>> = {
-  laws: { table: "laws", column: "slug" },
-  articles: { table: "articles", column: "id" },
-  principles: { table: "principles", column: "id" },
-  decrees: { table: "decrees_circulars", column: "id" },
+export const LIBRARY_STAT_TABLES: Readonly<Record<LibraryStatKey, { table: string; column: string; serverOnly: boolean }>> = {
+  laws: { table: "laws", column: "slug", serverOnly: false },
+  articles: { table: "articles", column: "id", serverOnly: true },
+  principles: { table: "principles", column: "id", serverOnly: false },
+  decrees: { table: "decrees_circulars", column: "id", serverOnly: false },
 };
 
 export const LIBRARY_STAT_LABELS: Readonly<Record<LibraryStatKey, { ar: string; en: string }>> = {
@@ -74,12 +78,20 @@ export interface LibraryCountClient {
  * Exact row counts for the four advertised tables, in parallel. Throws on any
  * error or on a null count: a failed count must never become a displayed 0,
  * and one table failing means the caller shows no numbers at all.
+ *
+ * `serverOnlyClient` counts the tables marked `serverOnly` (library.articles);
+ * the rest use `client`, so they stay "what a guest can see". It defaults to
+ * `client` — correct only while the anon key can still read those tables.
+ * This module never builds a client itself (it ships to the browser).
  */
-export async function countLibraryTables(client: LibraryCountClient): Promise<LibraryStats> {
+export async function countLibraryTables(
+  client: LibraryCountClient,
+  serverOnlyClient: LibraryCountClient = client,
+): Promise<LibraryStats> {
   const entries = await Promise.all(
     LIBRARY_STAT_KEYS.map(async (key) => {
-      const { table, column } = LIBRARY_STAT_TABLES[key];
-      const { count, error } = await client
+      const { table, column, serverOnly } = LIBRARY_STAT_TABLES[key];
+      const { count, error } = await (serverOnly ? serverOnlyClient : client)
         .schema("library")
         .from(table)
         .select(column, { count: "exact", head: true });

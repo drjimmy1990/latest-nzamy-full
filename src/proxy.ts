@@ -26,6 +26,8 @@ import {
 import {
   isStrictRateLimitedRoute,
   isGeneralRateLimitedApiPath,
+  isLibraryReadRateLimitedRoute,
+  libraryReadClientKey,
 } from "@/lib/rateLimitRoutes";
 import { hasValidSaudiMobile } from "@/lib/services/saudiMobile";
 
@@ -55,6 +57,11 @@ const rateLimiter = new RateLimiter();
 
 const STRICT_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 10 };
 const GENERAL_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 120 };
+// Law reader GETs + search POSTs + autocomplete GETs (article text, service
+// role). Search and autocomplete both fire on a debounced keystroke, so a fast
+// researcher can reach ~2 a second while typing; 300 a minute per visitor is
+// above a person and well below a scraper walking thousands of laws.
+const LIBRARY_READ_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 300 };
 
 // The actual route tables (which paths/methods match which bucket) live in
 // src/lib/rateLimitRoutes.ts, pure and tested on their own — see that file's
@@ -85,8 +92,9 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const method = req.method.toUpperCase();
     const isStrictMatch = isStrictRateLimitedRoute(method, pathname);
     const isGeneralMatch = isGeneralRateLimitedApiPath(method, pathname);
+    const isLibraryReadMatch = isLibraryReadRateLimitedRoute(method, pathname);
 
-    if (!isStrictMatch && !isGeneralMatch) return null;
+    if (!isStrictMatch && !isGeneralMatch && !isLibraryReadMatch) return null;
 
     const ip = resolveClientIp((name) => req.headers.get(name));
 
@@ -97,6 +105,12 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
 
     if (isGeneralMatch) {
       const decision = rateLimiter.check("general", ip, GENERAL_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isLibraryReadMatch) {
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("library-read", key, LIBRARY_READ_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 

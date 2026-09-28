@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { libraryGate } from '@/lib/library-gate';
 import { LIBRARY_FTS_CONFIG } from '@/utils/normalizeArabic';
 import { fetchLawTitleHits } from '../search/lawTitleHits';
@@ -49,7 +49,12 @@ export async function GET(request: Request) {
     const ftsQuery = query;
     const plainTerms = query.split(/\s+/).filter(Boolean);
 
-    const count = (table: string) => supabase
+    // T28-21 (migration 20260929_01): library.articles is server-only, so its
+    // count runs as the service role. Only a number leaves this route for it —
+    // no article row or text is selected (head: true).
+    const serverOnly = await createServiceClient();
+
+    const count = (table: string, client: typeof supabase | typeof serverOnly = supabase) => client
       .schema('library')
       .from(table)
       .select('id', { count: 'estimated', head: true })
@@ -58,7 +63,7 @@ export async function GET(request: Request) {
 
     // Run all queries in parallel for speed
     const [lawsCount, precedentsCount, ordersCount, feqhCount, topLaws, topPrecedents, topOrders] = await Promise.all([
-      count('articles'),
+      count('articles', serverOnly),
       count('principles'),
       count('decrees_circulars'),
       count('feqh_blocks'),

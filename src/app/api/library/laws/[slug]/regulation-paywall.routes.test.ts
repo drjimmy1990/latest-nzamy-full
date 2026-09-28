@@ -23,6 +23,15 @@ const migrationSource = readFileSync(
   new URL("../../../../../../supabase/migrations/20260922_01_library_grants.sql", import.meta.url),
   "utf8",
 );
+// T28-21: the later migration that makes the three article tables server-only.
+const lockSource = readFileSync(
+  new URL("../../../../../../supabase/migrations/20260929_01_library_text_server_only.sql", import.meta.url),
+  "utf8",
+);
+const verifySource = readFileSync(
+  new URL("../../../../../../supabase/migrations/_verify.sql", import.meta.url),
+  "utf8",
+);
 
 test("the articles query reads its error and fails loudly instead of serving an empty law", () => {
   assert.match(
@@ -143,6 +152,9 @@ test("the page carries the count through its whitelist and shows the existing lo
   );
 });
 
+// Historical: 20260922_01 is applied on production and its text is pinned as
+// it was applied. 20260929_01 (T28-21) later REVOKES exactly these request-role
+// grants — see the "server-only" tests at the end of this file.
 test("the migration grants the request roles, not only service_role, and verifies itself", () => {
   assert.match(migrationSource, /grant select on library\.article_regulations to anon, authenticated;/);
   assert.match(migrationSource, /grant all\s+on library\.article_regulations to service_role;/);
@@ -216,7 +228,7 @@ test("LIB-04b: chapters are ordered, relabelled and filtered by orderLawChapters
   const block = routeSource.slice(start, start + 300);
   assert.match(
     block,
-    /articles: chapter\.articles\.map\(\(a\) => formatArticleWithPaywall\(a, hasFullAccess, freeLimit\)\)/,
+    /articles: chapter\.articles\.map\(\(a\) => formatArticleWithPaywall\(a, hasFullAccess, freeLimit, !officialMeta\.officialMetaLocked\)\)/,
     "every grouped article must still pass through the paywall formatter",
   );
   // The old shapes must be gone: appending the orphan last put a law's
@@ -300,4 +312,72 @@ test("article_regulations gets RLS and a public-read policy, idempotently", () =
     migrationSource,
     /raise exception '20260922_01 verify: RLS is on for library\.article_regulations with no public-read policy/,
   );
+});
+
+test("T28-21: every article read in this route goes through the service-role client", () => {
+  assert.match(routeSource, /import \{ createClient, createServiceClient \} from '@\/lib\/supabase\/server';/);
+  assert.match(routeSource, /const serverOnly = await createServiceClient\(\);/);
+  const start = routeSource.indexOf("const { data: articles, error: ");
+  assert.ok(start > -1);
+  assert.match(
+    routeSource.slice(start, start + 200),
+    /selectAllPages<Record<string, unknown>>\(\s*\(from, to\) => serverOnly\s*\.schema\('library'\)/,
+    "the articles query (with its amendments/regulations embeds) must run as the service role — anon holds no privilege after 20260929_01",
+  );
+  // No other read of the three server-only tables through the cookie client.
+  assert.doesNotMatch(routeSource, /supabase\s*\.schema\('library'\)\s*\.from\('(articles|article_regulations|article_amendments)'\)/);
+  // The cookie client still decides who the caller is.
+  assert.match(routeSource, /await supabase\.auth\.getUser\(\)/);
+});
+
+test("T28-21: 20260929_01 revokes the request roles, drops their read policies, keeps RLS, and raises in its verify", () => {
+  for (const t of ["articles", "article_regulations", "article_amendments"]) {
+    assert.match(lockSource, new RegExp(String.raw`revoke all on library\.${t}\s+from anon, authenticated, public;`));
+    assert.match(lockSource, new RegExp(String.raw`grant all on library\.${t}\s+to service_role;`));
+    assert.match(lockSource, new RegExp(String.raw`alter table library\.${t}\s+enable row level security;`));
+  }
+  // Policies are dropped by catalogue lookup (a dashboard-named extra goes too).
+  assert.match(lockSource, /from pg_policies pol[\s\S]{0,300}?pol\.roles && array\['anon', 'authenticated', 'public'\]::name\[\]/);
+  assert.match(lockSource, /execute format\('drop policy %I on %I\.%I'/);
+  // The marker _verify.sql keys on.
+  assert.match(lockSource, /comment on table library\.articles is\s*'[^']*SERVER-ONLY since 20260929_01/);
+  assert.match(lockSource, /has_any_column_privilege\(r, t, 'SELECT'\)/);
+  assert.match(lockSource, /raise exception '20260929_01 verify:%'/);
+  assert.equal((lockSource.match(/^begin;$/gm) || []).length, 1);
+  assert.equal((lockSource.match(/^commit;$/gm) || []).length, 1);
+  assert.match(lockSource, /DEPLOY ORDER — CODE FIRST, THEN THIS MIGRATION/);
+  assert.match(lockSource, /notify pgrst, 'reload schema';/);
+});
+
+test("T28-21: _verify.sql asserts the lock once applied and does not demand anon SELECT any more", () => {
+  assert.match(verifySource, /text_locked boolean := coalesce\(obj_description\('library\.articles'::regclass, 'pg_class'\), ''\)\s*ILIKE '%server-only since 20260929_01%'/);
+  assert.match(verifySource, /IF NOT text_locked\s*AND \(NOT has_table_privilege\('anon', 'library\.article_regulations', 'SELECT'\)/);
+  assert.match(verifySource, /IF NOT text_locked\s*AND \(SELECT relrowsecurity FROM pg_class WHERE oid = 'library\.article_regulations'::regclass\)/);
+  assert.match(verifySource, /_verify: 20260929_01 is not applied yet/);
+  assert.match(verifySource, /RAISE EXCEPTION '_verify: the article text is readable outside the server again —%'/);
+  // 20260922_01 warns against re-running it after the lock.
+  assert.match(migrationSource, /DO NOT RE-RUN AFTER 20260929_01_library_text_server_only\.sql/);
+});
+
+test("T28-22: official metadata is shaped by lawOfficialMeta on the subscriber tier, not on the whitelist", () => {
+  assert.match(routeSource, /const officialMeta = lawOfficialMeta\(law, isSubscriber\);/);
+  assert.match(routeSource, /TIER_RANK\[await getUserTier\(userId\)\]/);
+  for (const field of ["issuanceDecree", "issuanceDate", "source", "officialSourceUrl", "gazette", "officialMetaLocked"]) {
+    assert.match(routeSource, new RegExp(String.raw`${field}: officialMeta\.${field},`));
+  }
+  // The raw columns never reach the response directly any more.
+  assert.doesNotMatch(routeSource, /law\.issuing_instrument \|\|/);
+  assert.doesNotMatch(routeSource, /law\.boe_source_url \|\|/);
+  // A tier-shaped body never sits in a shared cache.
+  assert.match(routeSource, /NextResponse\.json\(lawSystem, \{\s*headers: \{ 'Cache-Control': TIER_SHAPED_CACHE_CONTROL \},\s*\}\)/);
+});
+
+test("T28-23: replacedBy is a reverse lookup that reads as null on failure, never a 500", () => {
+  assert.match(routeSource, /\.eq\('supersedes_law_slug', slug\)/);
+  assert.match(routeSource, /console\.warn\('\[Laws API\] replacedBy lookup failed:'/);
+  assert.match(routeSource, /replacedBy: await replacedByLookup,/);
+});
+
+test("numberText is the cleaned source locator or null (never a title)", () => {
+  assert.match(routeSource, /numberText: articleLocatorText\(article\.number_text as string \| null, article\.number as number \| null\),/);
 });

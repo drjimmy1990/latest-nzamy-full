@@ -5,6 +5,7 @@ import { libraryGate } from "@/lib/library-gate";
 import { isFreeLibraryItem } from "@/lib/library-item-access";
 import { selectAllPages } from "@/lib/supabase/selectAllPages";
 import { EXEC_REGULATION_TYPE, toSectionCode } from "@/app/laws/lawsIndexFacets";
+import { maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
 
 /**
  * Card columns only (LIB-16). `select('*')` shipped every list row's `fts`
@@ -236,11 +237,15 @@ export async function GET(request: Request) {
     ]);
 
     // ── Apply paywall per row (add free/locked; strip body fields for locked) ──
+    // T28-22 (owner decision): the issuing decree and its date are for
+    // subscribers (tier pro+, never the whitelist — the same rule as the law
+    // page). A non-subscriber's rows carry null there; `status` stays.
     const lawsRows = laws.data as unknown as Record<string, unknown>[];
     laws.data = lawsRows.map((row) => {
       const slug = row.slug as string;
       const isFree = isFreeLibraryItem({ contentType: "laws", itemId: slug, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
-      return { ...(isFree ? row : stripFields({ ...row }, ["preamble", "description", "article_status_summary"])), free: isFree, locked: !isFree };
+      const shaped = isFree ? row : stripFields({ ...row }, ["preamble", "description", "article_status_summary"]);
+      return { ...maskListOfficialFields(shaped, hasFullAccess), free: isFree, locked: !isFree };
     }) as any;
 
     const decreesRows = decrees.data as unknown as Record<string, unknown>[];
@@ -261,13 +266,21 @@ export async function GET(request: Request) {
     books.data = (books.data as unknown as Record<string, unknown>[]).map((row) => ({ ...row, free: true, locked: false })) as any;
     collections.data = (collections.data as unknown as Record<string, unknown>[]).map((row) => ({ ...row, free: true, locked: false })) as any;
 
-    return NextResponse.json({
-      laws,
-      decrees,
-      principles,
-      books,
-      collections,
-    });
+    return NextResponse.json(
+      {
+        laws,
+        decrees,
+        principles,
+        books,
+        collections,
+        // T28-22: true when laws[].issuing_instrument / issue_date_hijri were
+        // withheld from this viewer (non-subscriber), so the page can say
+        // «للمشتركين» instead of «—».
+        officialMetaLocked: !hasFullAccess,
+      },
+      // Tier-shaped (paywall + official metadata): never from a shared cache.
+      { headers: { "Cache-Control": TIER_SHAPED_CACHE_CONTROL } },
+    );
   } catch (error) {
     console.error("[Library Init API] Error:", error);
     return NextResponse.json({ error: "تعذّر تحميل المكتبة القانونية" }, { status: 500 });

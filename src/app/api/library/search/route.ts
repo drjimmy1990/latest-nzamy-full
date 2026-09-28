@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { getLibraryAccessForUser } from '@/lib/access-control';
+import { articleDisplayLabel } from '../laws/[slug]/_article-label';
+import { TIER_SHAPED_CACHE_CONTROL } from '../laws/[slug]/_official-meta';
 import {
   parseSearchQuery,
   SearchQuerySyntaxError,
@@ -66,8 +68,12 @@ function searchUnavailableResponse(status = 503) {
 }
 
 /**
- * Client-side ceiling per section. The anon role's statement_timeout (~3s)
- * normally cancels a slow query first; this bounds a hung connection.
+ * Client-side ceiling per section. For precedents/orders/feqh the anon role's
+ * statement_timeout (~3s) normally cancels a slow query first; this bounds a
+ * hung connection. The laws section reads library.articles as the SERVICE
+ * ROLE since T28-21 (the table is server-only), which does not carry anon's
+ * 3s limit: aborting ends this route's wait, not necessarily the query on the
+ * database side.
  */
 const SECTION_BUDGET_MS = 4500;
 
@@ -146,6 +152,13 @@ export async function POST(request: Request) {
     }
 
     const supabase = await createClient();
+    // T28-21 (migration 20260929_01): library.articles is SERVER-ONLY — the
+    // anon key holds no privilege on it. Every articles read below (the page,
+    // its head count, the ranked RPC, the by-id refetch) uses this client; the
+    // snippet cap below (snippetLen) is then the only thing a caller sees of
+    // the text. Everything else (laws, principles, decrees, feqh) stays on the
+    // request client.
+    const serverOnly = await createServiceClient();
     const offset = (page - 1) * limit;
 
     // ── Paywall: read optional session + library access (guests → free tier).
@@ -213,7 +226,7 @@ export async function POST(request: Request) {
           `;
 
         const lawQuery = (withHistory: boolean, head = false) => {
-          let q = supabase
+          let q = serverOnly
             .schema('library')
             .from('articles')
             .select(LAW_COLUMNS(withHistory), { count: 'estimated', head })
@@ -239,7 +252,9 @@ export async function POST(request: Request) {
         // id-ordered page 2). null → use the plain order.
         const rankedIds = async (): Promise<string[] | null> => {
           if (!rankedLawOrderApplies(section) || from !== 0 || Date.now() < rankedRpcMissingUntil) return null;
-          const { data, error } = await supabase
+          // SECURITY INVOKER over library.articles: it must run as the role
+          // that can read the table (anon gets 42501 after 20260929_01).
+          const { data, error } = await serverOnly
             .schema('library')
             .rpc(RANKED_RPC, {
               p_tsquery: ftsQuery,
@@ -311,7 +326,7 @@ export async function POST(request: Request) {
 
         let articleRows: Record<string, unknown>[] = lawResults;
         if (ranked && ranked.length > 0) {
-          const byIds = await supabase
+          const byIds = await serverOnly
             .schema('library')
             .from('articles')
             .select(LAW_COLUMNS(true))
@@ -347,17 +362,27 @@ export async function POST(request: Request) {
           const lawSlug = r.law_slug as string;
           const law = r.laws as Record<string, unknown> | undefined;
           const isFree = isFreeLibraryItem({ contentType: 'laws', itemId: lawSlug, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
+          // Same label as the law page's contents list (_article-label.ts):
+          // heading marks stripped, an instrument name stored in place of the
+          // number falls back to «المادة N», never «المادة 0» / «المادة null».
+          const articleLabel = articleDisplayLabel(r.number_text as string | null, r.number as number | null);
+          const lawTitle = String(law?.title ?? '');
           return {
             id: r.id,
             section: 'laws',
-            title: `${law?.title} — ${r.number_text || `المادة ${r.number}`}`,
+            title: articleLabel ? `${lawTitle} — ${articleLabel}` : lawTitle,
             // A repealed article has an empty `text` — its wording lives in
             // original_text (1,613 of the 1,862 repealed articles). Without
             // this fallback every repealed hit renders a blank snippet.
             // snippetLen(isFree) still applies, so the paywall is unchanged.
+            // A locked hit shows the article's OPENING, never a window centred
+            // on the query: article text is server-only (20260929_01), and a
+            // query-centred window could be slid across a paid article one
+            // search at a time. The opening is what the law page's locked
+            // preview already shows.
             snippet: truncateWithHighlight(
               (r.text as string) || (r.original_text as string) || '',
-              parsed.plainTerms,
+              isFree ? parsed.plainTerms : [],
               snippetLen(isFree),
             ),
             locked: !isFree,
@@ -603,7 +628,12 @@ export async function POST(request: Request) {
     // counts.laws already includes these; the separate number lets a client
     // label law-level hits apart from article hits.
     const lawsOk = outcomes.laws?.ok === true;
-    return NextResponse.json({ ...combined.body, lawTitleHits: lawsOk ? lawTitleHitCount : 0 });
+    // Tier-shaped (snippet length and `locked` depend on the caller): never
+    // from a shared cache.
+    return NextResponse.json(
+      { ...combined.body, lawTitleHits: lawsOk ? lawTitleHitCount : 0 },
+      { headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } },
+    );
   } catch (error) {
     console.error('[Search] Unexpected error:', error);
     return searchUnavailableResponse(500);

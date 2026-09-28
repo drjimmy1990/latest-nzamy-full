@@ -29,22 +29,48 @@ export function cleanNumberText(raw: string | null | undefined): string {
     .trim();
 }
 
+/** True when cleaned `number_text` is a title or a sentence rather than a locator. */
+function isTitleNotLocator(cleaned: string): boolean {
+  // The name of an instrument stored in place of the number.
+  if (INSTRUMENT_NAME.test(cleaned) && !LOCATOR.test(cleaned)) return true;
+  // Very long text is a heading or a sentence, not a locator.
+  if (cleaned.length > 60 && !LOCATOR.test(cleaned.slice(0, 20))) return true;
+  return false;
+}
+
+/**
+ * The source's own locator for an article (`numberText` in the law-detail
+ * response), or null when the stored text is not one: empty, the name of an
+ * instrument, or a long heading. The client's citation builder prefers this
+ * over the display label, so a title must never reach it as a locator
+ * («المادة (اللائحة التنفيذية لنظام العمل)»); on null it falls back to `num`.
+ *
+ * `number` is accepted for call-site symmetry with articleDisplayLabel and is
+ * deliberately unused: a locator is only ever taken from what the source
+ * wrote, never synthesised from the number.
+ */
+export function articleLocatorText(
+  numberText: string | null | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- see the doc comment
+  _number?: number | string | null,
+): string | null {
+  const cleaned = cleanNumberText(numberText);
+  if (!cleaned || isTitleNotLocator(cleaned)) return null;
+  return cleaned;
+}
+
 export function articleDisplayLabel(
   numberText: string | null | undefined,
   number: number | string | null | undefined,
 ): string {
-  const cleaned = cleanNumberText(numberText);
+  const locator = articleLocatorText(numberText, number);
+  if (locator !== null) return locator;
   // `articles.number` is 0 for many rows whose locator is spelled out
   // («المادة الأولى:» — measured 2026-09-28 on executive-regulations-health-
   // profession), so only a positive number is trusted for the fallback.
   const n = Number(number);
   const hasNumber = Number.isFinite(n) && n > 0;
-  const fallback = hasNumber ? `المادة ${n}` : cleaned;
-
-  if (!cleaned) return fallback;
-  // A title in place of a locator: use the number when we have one.
-  if (INSTRUMENT_NAME.test(cleaned) && !LOCATOR.test(cleaned)) return fallback;
-  // Very long text is a heading or a sentence, not a locator.
-  if (cleaned.length > 60 && !LOCATOR.test(cleaned.slice(0, 20))) return fallback;
-  return cleaned;
+  // A title in place of a locator: use the number when we have one, else
+  // whatever text the source holds (still better than «المادة 0»).
+  return hasNumber ? `المادة ${n}` : cleanNumberText(numberText);
 }

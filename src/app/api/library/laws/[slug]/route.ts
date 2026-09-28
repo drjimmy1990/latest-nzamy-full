@@ -1,19 +1,22 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { checkLibraryAccess } from '@/lib/access-control';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { checkLibraryAccess, getUserTier, TIER_RANK } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { lawStatusForDetail } from '@/app/laws/law-status';
 import { resolveParentLawLink, type ParentLawCandidate } from './_resolve-parent-law';
 import { orderLawChapters } from './_order-chapters';
-import { articleDisplayLabel } from './_article-label';
+import { articleDisplayLabel, articleLocatorText } from './_article-label';
+import { lawOfficialMeta, TIER_SHAPED_CACHE_CONTROL } from './_official-meta';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
- * Rows per articles window. Below the 1000-row max-rows on purpose: every
- * window is one statement under the anon role's ~3s statement_timeout, and an
+ * Rows per articles window. Below the 1000-row max-rows on purpose: an
  * article row drags its amendments and regulations along. Measured on the
- * largest law (1,838 articles): a 1000-row window took ~2.1s end to end, a
- * 500-row window ~1.4s.
+ * largest law (1,838 articles), under the anon role's ~3s statement_timeout
+ * that these reads ran under before T28-21: a 1000-row window took ~2.1s end
+ * to end, a 500-row window ~1.4s. Since T28-21 the windows run as the service
+ * role (see the articles query below), which does not carry anon's 3s limit —
+ * the smaller window still keeps each statement short.
  */
 const ARTICLES_PAGE_SIZE = 500;
 
@@ -59,6 +62,31 @@ export async function GET(
         { status: 404 }
       );
     }
+
+    // T28-23: the law that replaced this one, by the reverse link the newer law
+    // carries (library.laws.supersedes_law_slug). Supplementary: a failed
+    // lookup is logged and reads as "not known", never a 500. Started here and
+    // awaited at the response build, so it overlaps the reads below.
+    const replacedByLookup = (async (): Promise<{ slug: string; title: string } | null> => {
+      const { data, error } = await supabase
+        .schema('library')
+        .from('laws')
+        .select('slug,title')
+        .eq('supersedes_law_slug', slug)
+        .order('slug', { ascending: true })
+        .limit(1);
+      if (error) {
+        console.warn('[Laws API] replacedBy lookup failed:', error.message);
+        return null;
+      }
+      const row = (data as Array<{ slug?: unknown; title?: unknown }> | null)?.[0];
+      return row && typeof row.slug === 'string' && row.slug && row.slug !== slug
+        ? { slug: row.slug, title: typeof row.title === 'string' ? row.title : '' }
+        : null;
+    })().catch((e) => {
+      console.warn('[Laws API] replacedBy lookup threw:', e);
+      return null;
+    });
 
     // parent_law_id is an INSTRUMENTS_REGISTRY instrument id, not a BOE
     // law_guid. Limit to two rows because the resolver needs only to prove
@@ -124,8 +152,15 @@ export async function GET(
     // the largest law in the corpus has 1,838 articles, and the unranged select
     // served the first 1,000 as the whole law (paywall.totalArticles = 1000).
     // The embedded arrays are per-row and are not subject to max-rows.
+    //
+    // T28-21 (owner decision, migration 20260929_01): articles,
+    // article_regulations and article_amendments are SERVER-ONLY — the anon
+    // key holds no privilege on them, so they are read with the service role
+    // and THIS route's masking below (formatArticleWithPaywall, the flat
+    // regulation view) is the paywall. Works the same before the migration.
+    const serverOnly = await createServiceClient();
     const { data: articles, error: articlesError } = await selectAllPages<Record<string, unknown>>(
-      (from, to) => supabase
+      (from, to) => serverOnly
         .schema('library')
         .from('articles')
         // LIB-04c: '*' shipped `fts` (a ~2.3KB/row tsvector) on every paged
@@ -184,6 +219,17 @@ export async function GET(
                           firstLockedCheck.currentTier === 'corp' ||
                           firstLockedCheck.currentTier === 'enterprise' ||
                           isWhitelisted;
+
+    // T28-22 (owner decision): the decree, its date, the official links and the
+    // gazette reference are for SUBSCRIBERS — keyed on the tier alone, never on
+    // the whitelist (a whitelisted law opens its text, not its official
+    // metadata), exactly as /api/library/init and /api/library/enactments do.
+    // checkLibraryAccess answers a whitelisted law before it reads the tier
+    // (currentTier 'free' for everyone), so that case reads the tier here.
+    const isSubscriber = isWhitelisted
+      ? (userId ? (TIER_RANK[await getUserTier(userId)] ?? 0) >= TIER_RANK.pro : false)
+      : (TIER_RANK[firstLockedCheck.currentTier] ?? 0) >= TIER_RANK.pro;
+    const officialMeta = lawOfficialMeta(law, isSubscriber);
 
     // Tag each article with its global (document-order) index for the paywall
     // check. Grouping into chapters happens in orderLawChapters below.
@@ -261,22 +307,37 @@ export async function GET(
       // Only 526 of 1,532 documents in the corpus are a نظام, so the citation
       // builder needs the real value instead of assuming one.
       documentType: law.type || '',
-      issuanceDecree: law.issuing_instrument || '',
-      issuanceDate: law.issue_date_hijri || '',
-      source: law.boe_source_url || '',
+      // T28-22: '' for a non-subscriber, with officialMetaLocked: true so the
+      // page says «للمشتركين» instead of treating the value as unknown.
+      issuanceDecree: officialMeta.issuanceDecree,
+      issuanceDate: officialMeta.issuanceDate,
+      source: officialMeta.source,
+      officialSourceUrl: officialMeta.officialSourceUrl,
+      // {issueNumber, publicationDate, url} from the gazette_* columns only;
+      // null when they are all empty (every law, 2026-09-28) or when locked.
+      gazette: officialMeta.gazette,
+      officialMetaLocked: officialMeta.officialMetaLocked,
       // ك-02 (2026-08-23): library.laws.status is fetched (select('*') above)
       // but was never copied into this response object, so the frontend's
       // "cancelled/active" badge always fell back to a hardcoded static map
       // (law-metadata-map.ts) that hand-lists "active" on every entry.
       law_status: lawStatusForDetail(law.status),
+      // T28-23: the law that replaced this one ({slug, title}), or null when
+      // no law in the library names this one in supersedes_law_slug.
+      replacedBy: await replacedByLookup,
       parentLawId: parentInstrumentId,
       parentLaw: law.parent_law || '',
       enablingArticle: law.enabling_article || '',
       parentLawLink: parentLawLink
         ? { slug: parentLawLink.slug, title: parentLawLink.title }
         : null,
-      preamble: preamble,
-      regulationPreamble: regulationPreamble,
+      // T28-22: the preamble opens with the law's info card («أداة إصدار
+      // التشريع | مرسوم ملكي رقم (م/51) وتاريخ …», «المصدر الرسمي») and then
+      // the decree itself — measured on 5,477 laws, 2026-09-28. Sending it to
+      // a non-subscriber would undo the masking above, so it goes with it.
+      preamble: officialMeta.officialMetaLocked ? '' : preamble,
+      regulationPreamble: officialMeta.officialMetaLocked ? '' : regulationPreamble,
+      preambleLocked: officialMeta.officialMetaLocked && !!(preamble.trim() || regulationPreamble.trim()),
       // Flat per-instrument view for the "اللائحة وحدها" tab — see build above.
       regulationInstruments,
       // > 0 when the paywall removed regulation articles from that flat view.
@@ -298,11 +359,14 @@ export async function GET(
       // No article is dropped. See _order-chapters.ts for the measured cases.
       chapters: orderLawChapters(chapters, articles).map((chapter) => ({
         title: chapter.title,
-        articles: chapter.articles.map((a) => formatArticleWithPaywall(a, hasFullAccess, freeLimit)),
+        articles: chapter.articles.map((a) => formatArticleWithPaywall(a, hasFullAccess, freeLimit, !officialMeta.officialMetaLocked)),
       })),
     };
 
-    return NextResponse.json(lawSystem);
+    // Tier-shaped body (paywall + official metadata): never from a shared cache.
+    return NextResponse.json(lawSystem, {
+      headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL },
+    });
   } catch (error) {
     console.error('[Laws API] Error:', error);
     return NextResponse.json(
@@ -376,6 +440,9 @@ function formatArticleWithPaywall(
   article: Record<string, unknown>,
   hasFullAccess: boolean,
   freeLimit: number,
+  // T28-22: false for a non-subscriber — amending decrees and their dates
+  // are official metadata, withheld like the issuing decree.
+  showOfficialMeta = true,
 ) {
   const isLocked = isArticleLocked(article, hasFullAccess, freeLimit);
 
@@ -386,8 +453,11 @@ function formatArticleWithPaywall(
     num: articleDisplayLabel(article.number_text as string | null, article.number as number | null),
     // Raw locator parts, so a citation can be built from what the source
     // actually says instead of by regex-stripping the display label.
+    // numberText is the cleaned source locator, or null when the stored text
+    // is a title / instrument name rather than a locator (_article-label.ts);
+    // the citation builder then falls back to `num`.
     number: article.number ?? null,
-    numberText: article.number_text || '',
+    numberText: articleLocatorText(article.number_text as string | null, article.number as number | null),
     // Capped when locked: part of the corpus writes statutory text into `title`
     // (longest measured: 531 chars), which would otherwise walk straight past
     // the body preview below.
@@ -463,8 +533,9 @@ function formatArticleWithPaywall(
     const amendments = article.article_amendments as Record<string, unknown>[];
     if (amendments && amendments.length > 0) {
       result.amendments = amendments.map((a) => ({
-        date: a.date,
-        source: a.source,
+        date: showOfficialMeta ? a.date : null,
+        source: showOfficialMeta ? a.source : null,
+        ...(showOfficialMeta ? {} : { sourceLocked: true }),
         type: a.type,
         summary: a.summary,
         fullText: a.full_text,

@@ -1,6 +1,15 @@
 -- =============================================================================
 -- Migration: 20260922_01_library_grants.sql
 -- =============================================================================
+-- ⚠️ DO NOT RE-RUN AFTER 20260929_01_library_text_server_only.sql.
+--   20260929_01 (owner decision T28-21) makes library.articles,
+--   article_regulations and article_amendments server-only. Re-running THIS
+--   file re-opens that lock: §1/§1b re-grant SELECT on article_regulations and
+--   re-create its public-read policy (every regulation text readable with the
+--   public anon key again), and §3 re-grants SELECT on articles and
+--   article_amendments. _verify.sql raises when that happens. Applied on
+--   production 2026-09-22; this note is the only change since.
+-- =============================================================================
 -- PURPOSE
 --   Every law page on the site serves ZERO articles right now. The law-detail
 --   route (src/app/api/library/laws/[slug]/route.ts:80-89) reads a law's

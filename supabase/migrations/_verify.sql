@@ -390,8 +390,16 @@ END $$;
 -- article_regulations EMBEDDED, and PostgREST fails the whole query with 42501
 -- when any one of them is unreadable. A missing grant here is not a degraded
 -- page, it is an empty corpus answered with HTTP 200.
-SELECT 'library.article_regulations readable by anon' AS check,
-       has_table_privilege('anon', 'library.article_regulations', 'SELECT') AS present;
+-- 20260929_01 (T28-21) later locks the three article tables to the server:
+-- once its marker is on library.articles, this row reports the LOCK instead
+-- (true = anon cannot read article_regulations), and the DO block below skips
+-- the anon-readable assertions — see the 20260929_01 section at the end.
+SELECT CASE WHEN coalesce(obj_description('library.articles'::regclass, 'pg_class'), '') ILIKE '%server-only since 20260929_01%'
+            THEN 'library.article_regulations server-only (20260929_01 applied)'
+            ELSE 'library.article_regulations readable by anon' END AS check,
+       CASE WHEN coalesce(obj_description('library.articles'::regclass, 'pg_class'), '') ILIKE '%server-only since 20260929_01%'
+            THEN NOT has_any_column_privilege('anon', 'library.article_regulations', 'SELECT')
+            ELSE has_table_privilege('anon', 'library.article_regulations', 'SELECT') END AS present;
 
 SELECT 'library.article_regulations writable by service_role' AS check,
        has_table_privilege('service_role', 'library.article_regulations', 'INSERT') AS present;
@@ -403,14 +411,21 @@ SELECT 'schema library default privileges set' AS check,
                 WHERE ns.nspname = 'library' AND d.defaclobjtype = 'r') AS present;
 
 DO $$
-DECLARE n integer;
+DECLARE
+  n integer;
+  -- 20260929_01 (T28-21) revokes anon/authenticated on the article tables and
+  -- drops their read policies ON PURPOSE; the routes read them with the
+  -- service role since that commit. Keyed on the marker comment it leaves.
+  text_locked boolean := coalesce(obj_description('library.articles'::regclass, 'pg_class'), '')
+                         ILIKE '%server-only since 20260929_01%';
 BEGIN
   IF to_regclass('library.article_regulations') IS NULL THEN
     RAISE EXCEPTION '_verify: library.article_regulations is missing — 20260730_article_regulations.sql was never applied to this database';
   END IF;
 
-  IF NOT has_table_privilege('anon', 'library.article_regulations', 'SELECT')
-     OR NOT has_table_privilege('authenticated', 'library.article_regulations', 'SELECT') THEN
+  IF NOT text_locked
+     AND (NOT has_table_privilege('anon', 'library.article_regulations', 'SELECT')
+          OR NOT has_table_privilege('authenticated', 'library.article_regulations', 'SELECT')) THEN
     RAISE EXCEPTION '_verify: library.article_regulations is not readable by anon/authenticated — 20260922_01_library_grants.sql was not applied, and EVERY law page is serving 0 articles with HTTP 200';
   END IF;
 
@@ -422,7 +437,10 @@ BEGIN
   -- sibling content tables have it). With RLS on, the SELECT grant above is
   -- necessary but NOT sufficient: no policy means anon reads ZERO ROWS with no
   -- error at all — byte-for-byte the outage this gate exists to catch.
-  IF (SELECT relrowsecurity FROM pg_class WHERE oid = 'library.article_regulations'::regclass)
+  -- (Skipped once 20260929_01 is applied: no public-read policy is then the
+  -- intended state, asserted in the 20260929_01 section below.)
+  IF NOT text_locked
+     AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'library.article_regulations'::regclass)
      AND NOT EXISTS (SELECT 1
                        FROM pg_policies
                       WHERE schemaname = 'library'
@@ -827,4 +845,62 @@ BEGIN
     RAISE EXCEPTION '_verify: an API role can SELECT the unpopulated matview library.cross_section_search — 20260922_04 was not applied';
   END IF;
   RAISE NOTICE '_verify: 20260922_04 OK — exposed views run as the caller; cross_section_search is out of the API surface';
+END $$;
+
+
+-- ====================================================================
+-- 2026-09-29 — 20260929_01_library_text_server_only.sql (owner decision T28-21)
+-- ====================================================================
+-- The article text is server-only: anon/authenticated hold no privilege and
+-- no read policy on library.articles / article_regulations /
+-- article_amendments; the Next routes read them with the service role. Keyed
+-- on the marker comment the migration leaves on library.articles, so a deploy
+-- that runs this file BEFORE the migration is applied still passes (the code
+-- works either way — deploy order is code first, then the migration).
+SELECT '20260929_01 marker on library.articles (article text server-only)' AS check,
+       coalesce(obj_description('library.articles'::regclass, 'pg_class'), '')
+         ILIKE '%server-only since 20260929_01%' AS present;
+
+DO $$
+DECLARE
+  t       text;
+  r       text;
+  missing text := '';
+BEGIN
+  IF coalesce(obj_description('library.articles'::regclass, 'pg_class'), '')
+       NOT ILIKE '%server-only since 20260929_01%' THEN
+    RAISE NOTICE '_verify: 20260929_01 is not applied yet — the article tables are still anon-readable (the pre-lock posture; apply it after the code deploy)';
+    RETURN;
+  END IF;
+
+  FOREACH t IN ARRAY ARRAY['library.articles', 'library.article_regulations', 'library.article_amendments']
+  LOOP
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated']
+    LOOP
+      IF has_any_column_privilege(r, t, 'SELECT') THEN
+        missing := missing || format(' %s can SELECT %s;', r, t);
+      END IF;
+    END LOOP;
+    IF NOT has_table_privilege('service_role', t, 'SELECT') THEN
+      missing := missing || format(' service_role cannot SELECT %s (every law page would 500);', t);
+    END IF;
+    IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = t::regclass) THEN
+      missing := missing || format(' RLS is off on %s;', t);
+    END IF;
+  END LOOP;
+
+  IF EXISTS (SELECT 1
+               FROM pg_policies
+              WHERE schemaname = 'library'
+                AND tablename IN ('articles', 'article_regulations', 'article_amendments')
+                AND cmd IN ('SELECT', 'ALL')
+                AND roles && ARRAY['anon', 'authenticated', 'public']::name[]) THEN
+    missing := missing || ' a public read policy is back on an article table (was 20260922_01 or the self-host schema re-applied?);';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the article text is readable outside the server again —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20260929_01 OK — articles / article_regulations / article_amendments are server-only; service_role reads them';
 END $$;

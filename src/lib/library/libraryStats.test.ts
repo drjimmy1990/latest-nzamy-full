@@ -108,14 +108,38 @@ test("countLibraryTables throws on any error or missing count — never a displa
   await assert.rejects(countLibraryTables(fakeClient({ ...base, laws: { count: null, error: null } })), /library\.laws count missing/);
 });
 
-test("the stats route caches per Supabase host, uses a cookie-less anon client, and never 200s a failure", () => {
+test("the stats route caches per Supabase host, uses cookie-less clients, and never 200s a failure", () => {
   const route = readFileSync(new URL("../../app/api/library/stats/route.ts", import.meta.url), "utf8");
   assert.match(route, /\["library-stats-v1", host\]/);
   assert.match(route, /revalidate: REVALIDATE_SECONDS/);
   assert.match(route, /NEXT_PUBLIC_SUPABASE_ANON_KEY/);
-  assert.doesNotMatch(route, /SERVICE_ROLE/);
+  // T28-21: the service key appears ONCE, for the server-only tables
+  // (library.articles) — passed as countLibraryTables' second client.
+  assert.equal((route.match(/SERVICE_ROLE/g) ?? []).length, 1);
+  assert.match(route, /const serverOnlyClient = createSupabaseClient\(\s*process\.env\.NEXT_PUBLIC_SUPABASE_URL!,\s*process\.env\.SUPABASE_SERVICE_ROLE_KEY!,/);
+  assert.match(route, /countLibraryTables\(\s*client as unknown as LibraryCountClient,\s*serverOnlyClient as unknown as LibraryCountClient,\s*\)/);
+  // Still no cookie-bound client inside unstable_cache.
   assert.doesNotMatch(route, /from "@\/lib\/supabase\/server"/);
   assert.match(route, /status: 503, headers: \{ "Cache-Control": "no-store" \}/);
+});
+
+test("T28-21: library.articles is counted with the server-only client, the rest with the anon client", async () => {
+  assert.equal(LIBRARY_STAT_TABLES.articles.serverOnly, true);
+  assert.equal(LIBRARY_STAT_TABLES.laws.serverOnly, false);
+  assert.equal(LIBRARY_STAT_TABLES.principles.serverOnly, false);
+  assert.equal(LIBRARY_STAT_TABLES.decrees.serverOnly, false);
+  const anonCalls: string[] = [];
+  const serverCalls: string[] = [];
+  // The anon client is refused on articles (42501 after 20260929_01): if the
+  // routing were wrong this would reject.
+  const anon = fakeClient(
+    { laws: ok(5901), articles: { count: null, error: { message: "permission denied for table articles" } }, principles: ok(18983), decrees_circulars: ok(3318) },
+    anonCalls,
+  );
+  const server = fakeClient({ articles: ok(110794) }, serverCalls);
+  assert.deepEqual(await countLibraryTables(anon, server), SELF_HOSTED);
+  assert.deepEqual(serverCalls, ["library.articles:id:exact:true"]);
+  assert.equal(anonCalls.some((c) => c.startsWith("library.articles")), false);
 });
 
 // The 200's Cache-Control is decided by statsCacheControl(closed), not

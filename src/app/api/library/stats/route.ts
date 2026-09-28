@@ -23,6 +23,11 @@ import {
  * used here: cookies() is rejected inside unstable_cache, and a signed-in
  * admin's session would otherwise fill the SHARED cache with counts other
  * visitors cannot see.
+ * EXCEPT library.articles: it is server-only since migration 20260929_01
+ * (owner decision T28-21 — the anon key holds no privilege on it), so its
+ * count alone comes from a cookie-less SERVICE-ROLE client. Only the number
+ * leaves this route (head: true, no rows). The published figure is the same
+ * the anon key counted before the lock (the old policy was `using (true)`).
  *
  * CACHE. ~24h server-side (unstable_cache), keyed on the Supabase host so the
  * cutover can never serve the previous database's counts. A failed count
@@ -48,7 +53,16 @@ const readStats = (host: string): Promise<LibraryStats> =>
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         { auth: { autoRefreshToken: false, persistSession: false } },
       );
-      return countLibraryTables(client as unknown as LibraryCountClient);
+      // For the server-only tables (library.articles) — see CLIENT above.
+      const serverOnlyClient = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } },
+      );
+      return countLibraryTables(
+        client as unknown as LibraryCountClient,
+        serverOnlyClient as unknown as LibraryCountClient,
+      );
     },
     ["library-stats-v1", host],
     { revalidate: REVALIDATE_SECONDS, tags: ["library-stats"] },
