@@ -30,6 +30,15 @@ export function lawStatusForDetail(raw: unknown): LawStatus {
     : "status_undeclared";
 }
 
+/**
+ * True only for a law whose own status is exactly «ملغى» (T28-23): the red
+ * catalogue card and the reader's banner. Same normalisation as the badge, so
+ * the three can never disagree about which laws are repealed.
+ */
+export function isRepealedLawStatus(raw: unknown): boolean {
+  return lawStatusForDetail(raw) === "repealed";
+}
+
 export function lawStatusPresentation(raw: unknown): { labelAr: string; labelEn: string; tone: LawStatusTone } {
   const { ar, en, tone } = STATUS_VIEW[lawStatusForDetail(raw)];
   return { labelAr: ar, labelEn: en, tone };

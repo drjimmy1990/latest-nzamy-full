@@ -4,6 +4,7 @@ import {
   BookOpen, BookmarkSimple, Buildings, Stack, FolderSimple, BookBookmark, Copy, Check
 } from "@phosphor-icons/react";
 import type { BlockLocator } from "./_locator";
+import { volumesCountLabel } from "@/lib/library/bookVolumes";
 
 /** What the panel reads — met by the reader model and by the legacy nested shape. */
 interface IdentityBook {
@@ -12,6 +13,7 @@ interface IdentityBook {
   school: string;
   investigator?: string;
   publisher?: string;
+  /** Number of volumes in the series; omitted for a single book (no count shown). */
   totalVolumes?: number;
 }
 
@@ -32,6 +34,8 @@ export default function IdentityPanel({
 }: IdentityPanelProps) {
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`;
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
+  // «مجلدان» / «4 مجلدات» / «31 مجلدًا»; "" for 0/1 — the row is then hidden.
+  const volumesText = volumesCountLabel(book.totalVolumes ?? 0);
 
   return (
     <div className="space-y-4">
@@ -76,13 +80,13 @@ export default function IdentityPanel({
           </div>
           )}
 
-          {Boolean(book.totalVolumes) && (
+          {volumesText && (
           <div className="flex gap-1.5 items-start">
             <Stack size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
             <div>
               <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد الأجزاء" : "Volumes"}</p>
-              <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
-                {isRTL ? `${book.totalVolumes} مجلد` : `${book.totalVolumes} Vol.`}
+              <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                {volumesText}
               </p>
             </div>
           </div>

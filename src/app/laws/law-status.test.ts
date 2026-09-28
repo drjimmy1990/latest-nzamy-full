@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { lawStatusForDetail, lawStatusPresentation } from "./law-status.ts";
+import { isRepealedLawStatus, lawStatusForDetail, lawStatusPresentation } from "./law-status.ts";
 
 const cases = [
   ["active", "ساري", "Active", "effective"],
@@ -30,6 +30,16 @@ test("missing, unknown, and obsolete tokens never assert activity or suspension"
       tone: "unverified",
     });
   }
+});
+
+test("isRepealedLawStatus: only an exact «repealed» status reads as repealed (T28-23)", () => {
+  assert.equal(isRepealedLawStatus("repealed"), true);
+  assert.equal(isRepealedLawStatus("  repealed "), true);
+  for (const raw of ["active", "suspended", "superseded_duplicate", "Repealed", "", null, undefined, 0]) {
+    assert.equal(isRepealedLawStatus(raw), false, String(raw));
+  }
+  // The card badge and the reader banner share the sidebar's label.
+  assert.equal(lawStatusPresentation("repealed").labelAr, "ملغى");
 });
 
 test("API, page, both sidebar card branches, and regulation status do not retain active fallbacks", () => {

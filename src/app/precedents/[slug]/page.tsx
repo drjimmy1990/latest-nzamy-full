@@ -48,6 +48,7 @@ function stripMd(s: string): string {
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 import { JudicialPrinciplesSystem, JudicialPrincipleItem } from "@/app/laws/data";
 import { apiSlug } from '@/utils/apiSlug';
+import { principleIdFromHash } from "@/app/laws/principleLink";
 import {
   hasMorePrinciples, mergePrinciples, nextOffset, normalizePrinciple,
   type CollectionPrinciple,
@@ -471,6 +472,55 @@ export default function JudicialPrinciplesPage() {
     return () => obs.disconnect();
   }, [hasMore, moreError, loadMore, collection]);
 
+  // ── A catalogue link: /precedents/<collection>#<principle id> ─────────────
+  // The collection opens on its first window of WINDOW_LIMIT principles
+  // (ordered by id), so the linked one may not be loaded yet. Page in windows
+  // until it is held — stopping as soon as it is, never loading the rest —
+  // then scroll it below the fixed navbar (scroll-margin-top on the block)
+  // and flash it. A hash naming no principle of this collection does nothing.
+  const [linkTargetId, setLinkTargetId] = useState("");
+  const hasCollection = collection !== null;
+  useEffect(() => {
+    if (loading || !hasCollection || typeof window === "undefined") return;
+    const target = principleIdFromHash(window.location.hash);
+    if (!target) return;
+    let cancelled = false;
+    const timers: number[] = [];
+    (async () => {
+      // `cancelled` is checked on every turn: when the slug changes mid-loop,
+      // this closure must stop paging the OLD collection into the new one's
+      // heldRef (review of 2026-09-29).
+      for (let i = 0; !cancelled && i < 100 && !heldRef.current.some((p) => p.id === target); i++) {
+        const r = await loadMore(SEARCH_WINDOW_LIMIT);
+        if (cancelled || r !== "more") break;
+      }
+      if (cancelled || !heldRef.current.some((p) => p.id === target)) return;
+      // Keep the scroll observer from re-picking the active principle mid-scroll.
+      isScrolling.current = true;
+      setActivePrincipleId(target);
+      setLinkTargetId(target);
+      // A window appended just now renders on the next commit: wait for the node
+      // (getElementById, not querySelector — ids may start with a digit).
+      let frames = 0;
+      const scrollWhenRendered = () => {
+        if (cancelled) return;
+        const el = document.getElementById(target);
+        if (!el) {
+          if (frames++ < 60) requestAnimationFrame(scrollWhenRendered);
+          return;
+        }
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        timers.push(window.setTimeout(() => { isScrolling.current = false; }, 1200));
+        timers.push(window.setTimeout(() => setLinkTargetId(""), 2600));
+      };
+      requestAnimationFrame(scrollWhenRendered);
+    })();
+    return () => {
+      cancelled = true;
+      timers.forEach((t) => window.clearTimeout(t));
+    };
+  }, [loading, hasCollection, slug, loadMore]);
+
   // Track recent sessions
   useEffect(() => {
     if (!slug || !collection?.title) return;
@@ -832,6 +882,7 @@ export default function JudicialPrinciplesPage() {
                 cleanTextOfRef={cleanTextOfRef}
                 card={card}
                 fontClass={fontClass}
+                isLinkTarget={linkTargetId === p.id}
               />
             ))}
             {filteredPrinciples.length === 0 && !(searchQuery.trim() && (loadingAll || hasMore)) && (

@@ -780,16 +780,29 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
         </button>
       </div>
 
-      {/* Mobile Color Palette and Controls when Drawing/Highlighting is active */}
+      {/* Mobile Color Palette and Controls when Drawing/Highlighting is active.
+          Owner test 2026-09-28: these bars sat at bottom-6, centred — on a
+          375px phone a ~290px bar spans x≈42–333 at y≈763–811, fully covering
+          the draft FAB (left-[88px], 56px, bottom 1.25rem) and overlapping
+          WhatsApp (left-6) and scroll-to-top (right-6); the index FAB (5rem)
+          and the tools stack (9rem up to ~12rem, more when open) fill the rest
+          of the bottom edge on both sides. The top of the viewport, just under
+          the fixed navbar (≈82px + safe-area-inset-top: pt-4 + a py-3 card
+          around a 40px logo), holds no FAB, so the bars live there on phones:
+          top = 6rem + inset (a 14px gap). z-40: above the drawing canvas
+          (z-30), below the navbar (z-50) so an opened menu covers the bar.
+          Centred with inset-x-0 + mx-auto + w-fit — no translate for framer's
+          transform to fight. Hidden at lg+ (lg:hidden); desktop is unchanged. */}
       <AnimatePresence>
         {isDrawingMode && (
           <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            initial={{ opacity: 0, y: -20, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.9 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
             onMouseDown={(e)=>e.stopPropagation()}
             onTouchStart={(e)=>e.stopPropagation()}
-            className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 px-4 py-2.5 rounded-full border shadow-2xl backdrop-blur-xl bg-white/90 border-slate-200 dark:bg-zinc-900/90 dark:border-white/10"
+            style={{ top: "calc(6rem + env(safe-area-inset-top, 0px))" }}
+            className="lg:hidden fixed inset-x-0 mx-auto w-fit max-w-[calc(100vw-2rem)] z-40 flex items-center gap-3 px-4 py-2.5 rounded-full border shadow-2xl backdrop-blur-xl bg-white/90 border-slate-200 dark:bg-zinc-900/90 dark:border-white/10 print:hidden"
             dir={isRTL ? "rtl" : "ltr"}
           >
             <span className="text-[10px] font-bold text-slate-500 dark:text-zinc-400">
@@ -846,12 +859,14 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
       <AnimatePresence>
         {isErasingMode && (
           <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            initial={{ opacity: 0, y: -20, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.9 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
             onMouseDown={(e)=>e.stopPropagation()}
             onTouchStart={(e)=>e.stopPropagation()}
-            className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 px-4 py-2.5 rounded-full border shadow-2xl backdrop-blur-xl bg-white/90 border-slate-200 dark:bg-zinc-900/90 dark:border-white/10"
+            // Same phone position as the colour bar above — see the note there.
+            style={{ top: "calc(6rem + env(safe-area-inset-top, 0px))" }}
+            className="lg:hidden fixed inset-x-0 mx-auto w-fit max-w-[calc(100vw-2rem)] z-40 flex items-center gap-3 px-4 py-2.5 rounded-full border shadow-2xl backdrop-blur-xl bg-white/90 border-slate-200 dark:bg-zinc-900/90 dark:border-white/10 print:hidden"
             dir={isRTL ? "rtl" : "ltr"}
           >
             <span className="text-[10px] font-bold text-red-500 flex items-center gap-1.5 animate-pulse">

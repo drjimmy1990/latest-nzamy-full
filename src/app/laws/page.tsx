@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { normalizeArabic } from "@/utils/normalizeArabic";
 import { courtBadge } from "./principleCardFields";
+import { realPrincipleNumber } from "./principleLink";
 import {
   MagnifyingGlass, Faders, CaretDown, Check,
 } from "@phosphor-icons/react";
@@ -174,6 +175,10 @@ export default function LegalLibraryPage() {
   const [selectedHashtag, setSelectedHashtag] = useState<string | null>(null);
   const [otherMenuOpen,  setOtherMenuOpen]  = useState(false);
   const [showPaywall,    setShowPaywall]    = useState(false);
+  // T28-22: /api/library/init withholds each law's issuing instrument and
+  // issue date from a non-subscriber and says so with a top-level flag; the
+  // cards then show one locked row instead of those two lines.
+  const [officialMetaLocked, setOfficialMetaLocked] = useState(false);
 
   // — Feqh filters —
   const [feqhType,    setFeqhType]    = useState<FeqhType>("all");
@@ -537,6 +542,7 @@ export default function LegalLibraryPage() {
         // filtered laws read has already started (a restored chip), it owns
         // dbLaws and pagination.laws; this response must not overwrite it.
         const lawsOwnedByFilter = lawsRequestIdRef.current !== 0;
+        setOfficialMetaLocked(data?.officialMetaLocked === true);
         if (!lawsOwnedByFilter) {
           setDbLaws(data.laws?.data || []);
           lawsKeyRef.current = lawsFilterKey("all", "all");
@@ -555,6 +561,31 @@ export default function LegalLibraryPage() {
           collections: { page: 1, hasMore: data.collections?.hasMore ?? false, total: data.collections?.total ?? 0, loadingMore: false },
         }));
         setDbLoading(false);
+        // T28-24: the fiqh tab groups volumes into one card per series
+        // (FeqhTabContent → bookVolumes.ts). Grouping a 50-row first page
+        // splits a 31-volume series and opens it at the wrong volume, so the
+        // whole books list (185 rows, 2026-09-28) is read once in the
+        // background. Page arithmetic stays on INIT_PAGE_SIZE for loadMore.
+        if (data.books?.hasMore) {
+          const BOOKS_FULL = 200;
+          fetch(`/api/library/init?limit=${BOOKS_FULL}&page=1&section=books`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((all) => {
+              const rows = all?.books?.data;
+              if (!Array.isArray(rows)) return;
+              setDbBooks(rows);
+              setPagination(prev => ({
+                ...prev,
+                books: {
+                  page: Math.ceil(rows.length / INIT_PAGE_SIZE),
+                  hasMore: all.books?.hasMore ?? false,
+                  total: all.books?.total ?? prev.books.total,
+                  loadingMore: false,
+                },
+              }));
+            })
+            .catch((e) => console.error("[Books] full list fetch error:", e));
+        }
       })
       .catch((e) => {
         console.error("Library initialization failed:", e);
@@ -583,6 +614,8 @@ export default function LegalLibraryPage() {
     });
     const res = await fetch(`/api/library/init?${params.toString()}`);
     const body = res.ok ? await res.json() : null;
+    // The lock is per viewer, not per filter, so any successful page may set it.
+    if (body && typeof body === "object") setOfficialMetaLocked(body.officialMetaLocked === true);
     const stale = requestId !== lawsRequestIdRef.current || (page > 1 && key !== lawsKeyRef.current);
     const laws = body?.laws;
     const ok = !!laws && !laws.degraded && Array.isArray(laws.data);
@@ -868,6 +901,9 @@ export default function LegalLibraryPage() {
         // The row's own type: only 593 of 5,901 are «نظام» (LIB-03).
         doc_type: law.type || "",
         issuing_instrument: law.issuing_instrument || "",
+        // The law's own status (T28-23): 617 of 5,899 are «repealed» and get
+        // the red card. This mapping is a whitelist — it used to drop it.
+        status: law.status || "",
       }))
     : []) as any[]; // honest empty state — no fabricated laws in prod (mirrors the gated DEMO_* lists)
 
@@ -897,6 +933,10 @@ export default function LegalLibraryPage() {
     ? dbPrinciples.map((p: any) => ({
         id: String(p.id),
         sourceId: p.judicial_collections?.source_id || "supreme",
+        // The card links to /precedents/<collection>#<principle>. Its own field,
+        // not sourceId (that one drives the track/source filters).
+        collectionId: p.judicial_collections?.id != null ? String(p.judicial_collections.id) : "",
+        principleNum: realPrincipleNumber(p.principle_number) ?? undefined,
         source: p.issuing_body || p.judicial_collections?.court || "المحكمة العليا",
         // Badge and year from the row only (owner test 2026-09-28, T28-04):
         // the old fallbacks put «م ع» on every card and a made-up 1445هـ.
@@ -1057,6 +1097,9 @@ export default function LegalLibraryPage() {
     ? (searchResults?.precedents ?? []).map((r: any) => ({
         id: String(r.id),
         sourceId: r.meta?.collectionSlug || 'supreme',
+        collectionId: r.meta?.collectionSlug != null ? String(r.meta.collectionSlug) : '',
+        // Search meta carries no principle number yet; shown only if it arrives.
+        principleNum: realPrincipleNumber(r.meta?.principleNumber) ?? undefined,
         source: r.meta?.court || '',
         srcAbbr: courtBadge(r.meta?.court),
         text: r.snippet || r.title || '',
@@ -1967,6 +2010,7 @@ export default function LegalLibraryPage() {
                           searchViewAllLabels={searchViewAllLabels}
                           docSubType={docSubType}
                           setDocSubType={setDocSubType}
+                          officialMetaLocked={officialMetaLocked}
                         />
                         {/* Load More for Laws */}
                         {!isSearchActive && !lawsLoading && pagination.laws?.hasMore && activeType === "laws" && (

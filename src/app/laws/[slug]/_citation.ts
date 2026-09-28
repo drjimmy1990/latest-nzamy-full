@@ -29,9 +29,18 @@
  *    omitted — «من (العنوان)» — rather than defaulted to نظام (rule ق-2).
  *  • Never present a page as a locator. LOCATOR_NOUNS deliberately excludes
  *    الصفحة / صفحة / ص and their English equivalents.
- *  • Pure and dependency-free, so it is unit-testable on its own:
- *      npx tsx "src/app/laws/[slug]/_citation.test.ts"
+ *  • Never put a NAME inside «المادة (…)». Part of `number_text` holds the
+ *    instrument's title instead of a locator («اللائحة التنفيذية لنظام العمل»)
+ *    or markdown heading marks («### المادة (1):») — owner test 2026-09-28
+ *    produced «المادة (### المادة (1)…» and «المادة (اللائحة التنفيذية لنظام
+ *    العمل) من …». The title-vs-locator decision is the reader's own
+ *    (_article-label.ts, the one source of truth for the contents list), so a
+ *    citation and the card header can never disagree about it.
+ *  • Pure (its only import is another pure module), so it is unit-testable:
+ *      node --test "src/app/laws/[slug]/_citation.test.ts"
  */
+
+import { articleDisplayLabel, cleanNumberText } from "../../api/library/laws/[slug]/_article-label.ts";
 
 /**
  * Nouns that legitimately introduce a citable legal locator.
@@ -109,6 +118,12 @@ export interface CitationSubject {
    * value is the regulation's own article reference, e.g. "المادة الثالثة".
    */
   regulationRef?: string | null;
+  /**
+   * The regulation article's own number (`article_regulations.reg_num`, e.g.
+   * "5" or "1/3") — the fallback when `regulationRef` is the instrument's name
+   * rather than a locator.
+   */
+  regulationNum?: string | null;
 }
 
 export interface Citation {
@@ -134,6 +149,22 @@ function cleanLocator(value: string | null | undefined): string {
 }
 
 /**
+ * The source text as a usable locator, or "" when it is not one: heading
+ * marks and the trailing colon are dropped, and a title in place of a locator
+ * («اللائحة التنفيذية لنظام العمل», a heading, a sentence) is rejected.
+ *
+ * `articleDisplayLabel(text, 1)` keeps the text when the reader accepts it as
+ * a locator and substitutes its «المادة 1» fallback when it does not — so a
+ * mismatch against the cleaned text means "not a locator".
+ */
+export function usableLocator(value: string | null | undefined): string {
+  const cleaned = cleanNumberText(value);
+  if (!cleaned) return "";
+  if (isPageLocator(cleaned)) return cleaned;
+  return articleDisplayLabel(cleaned, 1) === cleaned ? cleaned : "";
+}
+
+/**
  * Build the citation prefix for a piece of copied legal text.
  *
  * @param subject what is being cited
@@ -156,15 +187,27 @@ export function buildCitation(subject: CitationSubject, isRTL: boolean): Citatio
     : isRepealed ? "text prior to repeal:" : "text:";
 
   // ── Executive regulation ───────────────────────────────────────────────────
-  if (subject.regulationRef) {
-    const loc = cleanLocator(subject.regulationRef);
-    const prefix = isRTL
-      ? `المادة (${loc}) من اللائحة التنفيذية لنظام (${base}) ${tail}`
-      : `Article (${loc}) of the Executive Regulations of (${base}), ${tail}`;
+  // `ref` is often the regulation's NAME («اللائحة التنفيذية لنظام العمل»),
+  // not its article: fall back to reg_num, then to citing the regulation
+  // itself — never «المادة (اللائحة التنفيذية …)».
+  if (subject.regulationRef || subject.regulationNum) {
+    const loc = cleanLocator(usableLocator(subject.regulationRef) || usableLocator(subject.regulationNum));
+    const ofReg = isRTL
+      ? `من اللائحة التنفيذية لنظام (${base})`
+      : `of the Executive Regulations of (${base})`;
+    const prefix = loc
+      ? isRTL
+        ? `المادة (${loc}) ${ofReg} ${tail}`
+        : `Article (${loc}) ${ofReg}, ${tail}`
+      : isRTL
+        ? `${ofReg} ${tail}`
+        : `${ofReg}, ${tail}`;
     return { plain: prefix, html: `<b>${prefix}</b>`, kind: "regulation" };
   }
 
-  const rawLocator = subject.numberText?.trim() || subject.displayNum?.trim() || "";
+  // The source's own locator when it is one, else the display label when THAT
+  // is one, else no locator (the document is cited instead).
+  const rawLocator = usableLocator(subject.numberText) || usableLocator(subject.displayNum);
 
   // ── Page marker — cite the position verbatim, never as an article ──────────
   if (isPageLocator(rawLocator)) {

@@ -47,6 +47,7 @@ function stripMd(s: string): string {
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 import type { FeqhBookSystem } from "@/app/laws/data";
 import { apiSlug } from '@/utils/apiSlug';
+import { volumeSubtitle, volumesCountLabel } from "@/lib/library/bookVolumes";
 import {
   emptyLinks, filterToc, findBlock, fromApiBook, fromNestedBook, linkRun, loadedBlocks,
   mergeSectionBlocks, neighbour, normalizeBlock, runFromCursorResponse,
@@ -480,12 +481,26 @@ export default function FeqhBookPage() {
   const blockLoc = (style: "short" | "long" = "short") =>
     formatLocator(activeBlock, isRTL, style);
 
+  // Multi-volume series (T28-24): the header names the series and the volume
+  // being read, and a switcher moves between volumes. The volume's own title
+  // does not always carry its number («الوسيط … — نظرية الالتزام بوجه عام —
+  // مصادر الالتزام» is الجزء 1), so citations use «السلسلة — الجزء N — …».
+  const series = book.series;
+  const seriesIndex = series ? series.volumes.findIndex((v) => v.id === series.currentId) : -1;
+  const currentVolume = series && seriesIndex >= 0 ? series.volumes[seriesIndex] : null;
+  const prevVolume = series && seriesIndex > 0 ? series.volumes[seriesIndex - 1] : null;
+  const nextVolume = series && seriesIndex >= 0 && seriesIndex < series.volumes.length - 1 ? series.volumes[seriesIndex + 1] : null;
+  const volumeNote = currentVolume ? volumeSubtitle(book.title, book.id) : "";
+  const citeTitle = series && currentVolume
+    ? [series.title, currentVolume.label, volumeNote].filter(Boolean).join(" — ")
+    : book.title;
+
   /** Reference line: the locator segment disappears when the source has none. */
   const blockCitation = () => {
     if (!book || !activeBlock) return "";
     const loc = blockLoc("short");
     // The API carries no publisher; «(طبعة undefined)» was printed into every citation.
-    return [book.author, book.title, loc, book.publisher ? `(طبعة ${book.publisher})` : ""]
+    return [book.author, citeTitle, loc, book.publisher ? `(طبعة ${book.publisher})` : ""]
       .filter(Boolean)
       .join("، ");
   };
@@ -522,7 +537,7 @@ export default function FeqhBookPage() {
     // «كتاب (العنوان - ج 3، ص 47)» → «كتاب (العنوان)» when the source gives no
     // locator, instead of «كتاب (العنوان - ج null، ص null)».
     const loc = blockLoc("short");
-    const where = loc ? `${book.title} - ${loc}` : book.title;
+    const where = loc ? `${citeTitle} - ${loc}` : citeTitle;
     const prefixPlain = isSelectionCopy
       ? (isRTL
           ? `مقتبس من كتاب (${where}):`
@@ -574,10 +589,72 @@ export default function FeqhBookPage() {
                 <Sparkle size={12} weight="fill" />
                 {book.school}
               </div>
-              <h1 className="text-2xl font-black">{book.title}</h1>
+              {series && currentVolume ? (
+                <>
+                  <h1 className="text-2xl font-black">
+                    {series.title}
+                    <span className="text-amber-700 dark:text-[#C8A762]"> — {currentVolume.label}</span>
+                  </h1>
+                  {volumeNote && (
+                    <p className="text-sm font-bold text-slate-600 dark:text-zinc-300 mt-1">{volumeNote}</p>
+                  )}
+                </>
+              ) : (
+                <h1 className="text-2xl font-black">{book.title}</h1>
+              )}
               <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1.5">
                 {isRTL ? "المؤلف:" : "Author:"} {book.author} | {isRTL ? "التحقيق:" : "Investigation:"} {book.investigator}
               </p>
+              {/* Volume switcher: one book, many volumes (T28-24). A native
+                  select — الإنصاف has 31 volumes, too many for chips — plus
+                  the neighbouring volumes for reading straight on. Outside the
+                  side panels, so it works on small screens too. */}
+              {series && currentVolume && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 print:hidden">
+                  <label htmlFor="book-volume-switcher" className="text-xs font-bold text-slate-500 dark:text-zinc-400">
+                    الجزء:
+                  </label>
+                  <select
+                    id="book-volume-switcher"
+                    value={currentVolume.id}
+                    onChange={(e) => {
+                      if (e.target.value !== currentVolume.id) router.push(`/book/${apiSlug(e.target.value)}`);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold ${
+                      isDark ? "bg-zinc-800 border-white/10 text-zinc-300" : "bg-white border-slate-200 text-slate-700"
+                    }`}
+                  >
+                    {series.volumes.map((v) => (
+                      <option key={v.id} value={v.id} title={v.title}>{v.label}</option>
+                    ))}
+                  </select>
+                  <span className="text-[11px] text-slate-500 dark:text-zinc-400">({volumesCountLabel(series.volumes.length)})</span>
+                  {prevVolume && (
+                    <Link
+                      href={`/book/${apiSlug(prevVolume.id)}`}
+                      title={prevVolume.title}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition ${
+                        isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      <CaretRight size={12} />
+                      <span>{prevVolume.label}</span>
+                    </Link>
+                  )}
+                  {nextVolume && (
+                    <Link
+                      href={`/book/${apiSlug(nextVolume.id)}`}
+                      title={nextVolume.title}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition ${
+                        isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span>{nextVolume.label}</span>
+                      <CaretLeft size={12} />
+                    </Link>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex gap-2 print:hidden">
                 <button
@@ -687,7 +764,10 @@ export default function FeqhBookPage() {
               <IdentityPanel
                 isDark={isDark}
                 isRTL={isRTL}
-                book={book}
+                // The volume count is the series size. A single row's
+                // total_volumes is its own volume number, not a count: no
+                // series → no count rather than a wrong one (T28-24).
+                book={{ ...book, totalVolumes: series ? series.volumes.length : undefined }}
                 activeBlock={activeBlock}
                 setShowFolderModal={setShowFolderModal}
               />

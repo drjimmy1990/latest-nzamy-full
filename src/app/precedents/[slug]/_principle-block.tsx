@@ -26,6 +26,8 @@ interface PrincipleBlockProps {
   cleanTextOfRef: (text: string) => string;
   card: string;
   fontClass: string;
+  /** Briefly true when a catalogue link (#<principle id>) brought the reader here. */
+  isLinkTarget?: boolean;
 }
 
 export default function PrincipleBlock({
@@ -45,7 +47,8 @@ export default function PrincipleBlock({
   isReferenceText,
   cleanTextOfRef,
   card,
-  fontClass
+  fontClass,
+  isLinkTarget = false,
 }: PrincipleBlockProps) {
   const isHighlighted = activePrincipleId === p.id;
   const lock = p as MaybeLocked;
@@ -65,8 +68,12 @@ export default function PrincipleBlock({
   return (
     <div
       id={p.id}
+      // Clears the fixed navbar when the page scrolls a linked principle into view.
+      style={{ scrollMarginTop: "calc(8rem + env(safe-area-inset-top, 0px))" }}
       className={`nzamy-reader-block ${card} p-6 md:p-8 transition-all duration-300 ${
-        isHighlighted ? "ring-1 ring-[#C8A762] shadow-md" : ""
+        isLinkTarget
+          ? `ring-4 ring-[#C8A762]/70 shadow-lg shadow-[#C8A762]/20`
+          : isHighlighted ? "ring-1 ring-[#C8A762] shadow-md" : ""
       }`}
     >
       {/* Principle Card Metadata Header */}

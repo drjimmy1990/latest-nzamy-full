@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { checkLibraryAccess } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
+import { buildBookSeries, type BookSeriesInfo, type VolumeRow } from '@/lib/library/bookVolumes';
 import { cleanBookText, firstBlockOrderBySection, normalizeHashiyah, planBlocksPage, planBlocksRequest, shapeToc } from './_shape';
 
 /**
@@ -64,6 +65,35 @@ export async function GET(
     if (!book) {
       return NextResponse.json({ error: 'لم يُعثر على هذا الكتاب' }, { status: 404 });
     }
+
+    // The series this volume belongs to, for the reader's volume switcher
+    // (owner test 2026-09-28, T28-24). feqh_books holds one row PER VOLUME and
+    // no series column — total_volumes is the row's own volume number — so the
+    // series is recovered from the titles (src/lib/library/bookVolumes.ts).
+    // 185 short rows, read in parallel with the TOC. Only the opening request
+    // needs it (section and cursor loads send toc=0), and it is best-effort:
+    // a failure means no switcher, never a failed book.
+    const seriesPromise: Promise<BookSeriesInfo | null> = includeToc
+      ? (async () => {
+          const res = await selectAllPages<VolumeRow>((from, to) =>
+            supabase
+              .schema('library')
+              .from('feqh_books')
+              .select('id, title, total_volumes, author')
+              .order('id', { ascending: true })
+              .range(from, to) as unknown as
+              Promise<{ data: VolumeRow[] | null; error: { message: string } | null }>,
+          );
+          if (res.error) {
+            console.warn(`[Books] series lookup failed for "${slug}" — no volume switcher:`, res.error);
+            return null;
+          }
+          return buildBookSeries(res.data, String(book.id));
+        })().catch((e: unknown) => {
+          console.warn(`[Books] series lookup threw for "${slug}" — no volume switcher:`, e);
+          return null;
+        })
+      : Promise.resolve(null);
 
     // Check user authentication
     const { data: { user } } = await supabase.auth.getUser();
@@ -342,6 +372,10 @@ export async function GET(
       if (selection.mode === 'before') blocks.reverse();
     }
 
+    // Never rejects (see seriesPromise): null when the book stands alone,
+    // when the lookup failed, or on a toc=0 request.
+    const series = await seriesPromise;
+
     // Format response matching frontend interface
     const response = {
       id: book.id,
@@ -352,8 +386,12 @@ export async function GET(
       category: book.category,
       description: book.description,
       investigator: book.investigator,
+      // This row's own volume number (not a series size) — kept for existing
+      // clients; the series size is series.volumes.length.
       totalVolumes: book.total_volumes,
       totalPages: book.total_pages,
+      // { title, volumes: [{ id, label, title }], currentId } | null
+      series,
       chapters: shapeToc(chapters, firstBlockOrder),
       blocks: (blocks || []).map((b: Record<string, unknown>) => {
         // Gate on the block's own book-global order_index so locking is correct

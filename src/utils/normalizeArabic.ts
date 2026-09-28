@@ -151,6 +151,84 @@ function quoteTsqueryLexeme(lexeme: string): string {
   return `'${lexeme.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 }
 
+const ALEF_FORMS = ['ا', 'أ', 'إ', 'آ'] as const;
+const FINAL_SWAP: Record<string, string> = { 'ة': 'ه', 'ه': 'ة', 'ى': 'ي', 'ي': 'ى' };
+
+/**
+ * Most spellings one query word expands to. The two slots below are at most
+ * 4 alef forms × 2 final forms, so 8 is the whole product: no spelling is
+ * ever dropped by the cap.
+ */
+export const MAX_SPELLING_VARIANTS = 8;
+
+/**
+ * Most EXTRA lexemes one whole query may gain from spelling expansion. Every
+ * lexeme travels in the PostgREST URL (four sections plus title hits), and a
+ * URL past ~15 KB is rejected; a query that would exceed the budget keeps its
+ * remaining words as typed. 48 covers six fully-expanded words.
+ */
+export const MAX_QUERY_SPELLING_VARIANTS = 48;
+
+/**
+ * The spellings of one query word that the stored text may use (T28-11: «نظام
+ * الاثبات» found nothing because the corpus writes «الإثبات»). The FTS index
+ * is built with `library.arabic` = `simple`, which does no Arabic folding, so
+ * the query names each plausible stored spelling instead:
+ *   - the alef that opens the word, or follows its «ال»: ا / أ / إ / آ
+ *     («اثبات» → «إثبات», «الاثبات» → «الإثبات», «الغاء» → «إلغاء», «الا» → «إلا»);
+ *   - a final ة ↔ ه and a final ى ↔ ي (words of 3+ letters).
+ * Hamza on waw/yaa (ؤ/ئ) is left alone. The word as typed is always first;
+ * a word with no such letter comes back alone, unchanged.
+ */
+export function arabicSpellingVariants(word: string): string[] {
+  const chars = Array.from(word);
+  const isAlef = (c: string | undefined) => c !== undefined && (ALEF_FORMS as readonly string[]).includes(c);
+  const alefOptions = (c: string) => [c, ...ALEF_FORMS.filter((f) => f !== c)];
+  const slots: Array<{ at: number; options: string[] }> = [];
+  // At most this many letters change in one spelling.
+  let maxChanges = 2;
+
+  if (chars.length >= 4 && chars[0] === 'ا' && chars[1] === 'ل' && isAlef(chars[2])) {
+    slots.push({ at: 2, options: alefOptions(chars[2]) });
+  } else if (chars.length >= 2 && isAlef(chars[0])) {
+    // Also for «ال…» words: «الغاء» may be «إلغاء», «الكتروني» «إلكتروني».
+    // Usually that «ال» is the article («العمل») and those spellings match
+    // nothing, so such a word changes one letter at most — no «آلعمله».
+    if (chars[1] === 'ل') maxChanges = 1;
+    slots.push({ at: 0, options: alefOptions(chars[0]) });
+  }
+  const last = chars.length - 1;
+  if (chars.length >= 3 && FINAL_SWAP[chars[last]]) {
+    slots.push({ at: last, options: [chars[last], FINAL_SWAP[chars[last]]] });
+  }
+  if (slots.length === 0) return [word];
+
+  // Every combination, fewest changed letters first (then generation order).
+  let combos: Array<{ chars: string[]; changes: number }> = [{ chars, changes: 0 }];
+  for (const slot of slots) {
+    const next: typeof combos = [];
+    for (const combo of combos) {
+      slot.options.forEach((option, i) => {
+        const copy = [...combo.chars];
+        copy[slot.at] = option;
+        next.push({ chars: copy, changes: combo.changes + (i > 0 ? 1 : 0) });
+      });
+    }
+    combos = next;
+  }
+  const ordered = combos
+    .map((combo, i) => ({ ...combo, i }))
+    .filter((combo) => combo.changes <= maxChanges)
+    .sort((a, b) => a.changes - b.changes || a.i - b.i);
+  const out: string[] = [];
+  for (const combo of ordered) {
+    const spelled = combo.chars.join('');
+    if (!out.includes(spelled)) out.push(spelled);
+    if (out.length >= MAX_SPELLING_VARIANTS) break;
+  }
+  return out;
+}
+
 function isLiteralSlash(input: string, index: number, termStart: number): boolean {
   const previous = input[index - 1] ?? '';
   const next = input[index + 1] ?? '';
@@ -180,6 +258,19 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
 
   const fail = (message: string, at = index): never => {
     throw new SearchQuerySyntaxError(message, at);
+  };
+
+  // One word → its lexeme, or an OR-group of its stored spellings
+  // (arabicSpellingVariants). A prefix search keeps `:*` on every spelling.
+  // Once the query's variant budget is spent, words stay as typed.
+  let variantBudget = MAX_QUERY_SPELLING_VARIANTS;
+  const wordTsquery = (word: string, prefix: boolean): string => {
+    const suffix = prefix ? ':*' : '';
+    let spellings = arabicSpellingVariants(word);
+    if (spellings.length - 1 > variantBudget) spellings = [word];
+    variantBudget -= spellings.length - 1;
+    if (spellings.length === 1) return `${quoteTsqueryLexeme(word)}${suffix}`;
+    return `(${spellings.map((s) => `${quoteTsqueryLexeme(s)}${suffix}`).join(' | ')})`;
   };
 
   const pushOperand = (operand: Extract<SearchQueryToken, { kind: 'operand' }>) => {
@@ -226,16 +317,20 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
     }
 
     // The stored FTS vectors use `library.arabic (copy = simple)` on the
-    // original source text. Do not apply normalizeSearch here: folding alef,
-    // taa marbuta, alif maqsura or digit forms on the query alone would create
-    // lexemes that do not exist in that index. A future normalization change
-    // must rebuild both the generated vectors and this emitter together.
+    // original source text, with no folding. Never FOLD the query alone
+    // (normalizeSearch): «الاثبات» folded is still a lexeme the index lacks
+    // when the source writes «الإثبات». Instead each word EXPANDS to an
+    // OR-group of the spellings the source may use (wordTsquery →
+    // arabicSpellingVariants), always including the word as typed. Digit
+    // forms are left as typed. Folding on both sides would need the stored
+    // vectors rebuilt together with this emitter.
     const words = phrase.trim().split(/\s+/).filter(Boolean);
     if (words.length === 0) fail('Quoted phrase cannot be empty', phraseStart);
 
     return {
       kind: 'operand',
-      tsquery: words.map(quoteTsqueryLexeme).join(' <-> '),
+      // (spellings of w1) <-> (spellings of w2): adjacency is kept per word.
+      tsquery: words.map((word) => wordTsquery(word, false)).join(' <-> '),
       plain: phrase,
     };
   };
@@ -266,7 +361,7 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
 
     return {
       kind: 'operand',
-      tsquery: `${quoteTsqueryLexeme(plain)}${wildcard ? ':*' : ''}`,
+      tsquery: wordTsquery(plain, wildcard),
       plain,
     };
   };

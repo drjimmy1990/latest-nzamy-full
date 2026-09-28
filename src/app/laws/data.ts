@@ -21,8 +21,11 @@ export function isRepealedArticleStatus(status: ArticleStatus): boolean {
 }
 
 export interface AmendmentEntry {
-  date: string;
-  source: string;
+  date: string | null;
+  source: string | null;
+  /** T28-22: true when the amending instrument and its date are withheld
+   *  from a non-subscriber (the API sends them as null). */
+  sourceLocked?: boolean;
   summary: string;
   fullText: string;
 }
@@ -70,7 +73,7 @@ export interface LawArticle {
   /** Numeric article number as the source states it. */
   number?: number | string | null;
   /** The source's own written locator, e.g. "السادسة والأربعون". */
-  numberText?: string;
+  numberText?: string | null;
   title: string;
   status: ArticleStatus;
   free: boolean;

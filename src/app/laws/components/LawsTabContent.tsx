@@ -19,6 +19,8 @@ import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import { SECTION_30 } from "../lawsIndexFacets";
 import { type SearchSection, SECTION_DEGRADED_NOTICE, SEARCH_SECTION_LABELS_AR } from "../searchCounts";
 import { articleStatusNotice } from "../data";
+import { isRepealedLawStatus } from "../law-status";
+import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
 import {
   PrincipleCard,
   PrincipleRow,
@@ -81,6 +83,8 @@ interface LawsTabContentProps {
   setDocSubType: (type: DocSubType) => void;
   // اشتراك المكتبة — يفتح كل محتوى أنظمة ولوائح
   librarySubscribed?: boolean;
+  // T28-22: بيانات الإصدار الرسمية محجوبة عن غير المشترك (علم من /api/library/init)
+  officialMetaLocked?: boolean;
 }
 
 export function LawsTabContent({
@@ -110,6 +114,7 @@ export function LawsTabContent({
   docSubType,
   setDocSubType,
   librarySubscribed = false,
+  officialMetaLocked = false,
 }: LawsTabContentProps) {
   const router = useRouter();
   const [expandedDesc, setExpandedDesc] = useState<Record<string, boolean>>({});
@@ -151,6 +156,26 @@ export function LawsTabContent({
                 const searchArticleStatusNotice = sys._isSearchResult && sys.articleStatus === "status_undeclared"
                   ? articleStatusNotice(sys.articleStatus, isRTL)
                   : null;
+                // T28-23: the LAW's own status (catalogue rows only — a search
+                // hit is an article and carries no law status).
+                const isRepealedLaw = !sys._isSearchResult && isRepealedLawStatus(sys.status);
+                // T28-22: one locked row replaces the instrument and «صدر:» lines.
+                const showLockedMeta = officialMetaLocked && !sys._isSearchResult;
+                const titleClass = isRepealedLaw
+                  ? `line-through decoration-red-500 decoration-2 ${isDark ? "text-red-200" : "text-red-900"}`
+                  : isDark ? "text-white" : "text-gray-900";
+                const repealedBadge = (
+                  <span className={`px-2 py-0.5 text-[10px] font-black rounded-lg border ${
+                    isDark ? "bg-red-950/50 border-red-500/40 text-red-300" : "bg-red-50 border-red-300 text-red-700"
+                  }`}>
+                    ⛔ ملغى وغير سارٍ
+                  </span>
+                );
+                const repealedNote = (
+                  <p className={`text-[10.5px] font-semibold mb-2 ${isDark ? "text-red-300/90" : "text-red-700"}`}>
+                    يُعرض للأرشيف وللوقائع السابقة لإلغائه
+                  </p>
+                );
                 return (
                 <motion.div
                   key={sys.id}
@@ -169,7 +194,9 @@ export function LawsTabContent({
                     }
                   }}
                   className={`group relative rounded-2xl border p-5 transition-all ${
-                    isUnlocked
+                    isRepealedLaw
+                      ? `${isUnlocked ? "cursor-pointer hover:border-red-500" : ""} ${isDark ? "bg-red-950/20 border-red-500/40" : "bg-red-50/60 border-red-300"}`
+                      : isUnlocked
                       ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
                       : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
                   }`}
@@ -197,6 +224,7 @@ export function LawsTabContent({
                         <span className={`px-2 py-0.5 text-[10px] font-bold rounded-lg ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>
                           {isRTL ? "مُحدّث" : "Updated"}
                         </span>
+                        {isRepealedLaw && repealedBadge}
                         {isUnlocked && (
                           <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                             <Sparkle size={9} weight="fill" />
@@ -204,10 +232,11 @@ export function LawsTabContent({
                           </span>
                         )}
                       </div>
-                      
-                      <h3 className={`text-base font-black mb-2 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
+
+                      <h3 className={`text-base font-black mb-2 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
                         {isRTL ? sys.title : sys.titleEn}
                       </h3>
+                      {isRepealedLaw && repealedNote}
 
                       {/* Rich Metadata Section */}
                       <div className="flex flex-wrap justify-center gap-1 mb-2.5">
@@ -289,7 +318,7 @@ export function LawsTabContent({
                         {sys.chaptersCount > 0 && (
                           <span>{isRTL ? `الأبواب: ${sys.chaptersCount}` : `Chapters: ${sys.chaptersCount}`}</span>
                         )}
-                        {sys.issuing_instrument && (
+                        {sys.issuing_instrument && !showLockedMeta && (
                           <>
                             {(sys.articlesCount > 0 || sys.chaptersCount > 0) && <span className="w-1 h-1 rounded-full bg-gray-400 opacity-50" />}
                             <span className="truncate max-w-[120px]">{sys.issuing_instrument.split(" وتاريخ ")[0]}</span>
@@ -297,12 +326,14 @@ export function LawsTabContent({
                         )}
                       </div>
 
-                      <div className="flex items-center justify-between w-full mt-auto pt-2 border-t border-dashed border-gray-200 dark:border-white/[0.04]">
+                      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 w-full mt-auto pt-2 border-t border-dashed border-gray-200 dark:border-white/[0.04]">
                         <span className={`text-[11px] flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                           {isRTL ? "تصفح النظام" : "Browse System"}
                           <ArrowRight size={12} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                         </span>
-                        {sys.lastUpdated && sys.lastUpdated !== "—" && (
+                        {showLockedMeta ? (
+                          <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} />
+                        ) : sys.lastUpdated && sys.lastUpdated !== "—" && (
                           <span className={`text-[10px] ${muted}`}>
                             {isRTL ? `صدر: ${sys.lastUpdated}` : `Issued: ${sys.lastUpdated}`}
                           </span>
@@ -323,11 +354,13 @@ export function LawsTabContent({
                               {librarySubscribed && !sys.free ? (isRTL ? "مكتبة" : "SUBSCRIBED") : (isRTL ? "متاح" : "FREE")}
                             </span>
                           )}
+                          {isRepealedLaw && repealedBadge}
                         </div>
 
-                        <h3 className={`text-sm font-black mb-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
+                        <h3 className={`text-sm font-black mb-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
                           {isRTL ? sys.title : sys.titleEn}
                         </h3>
+                        {isRepealedLaw && repealedNote}
 
                         {/* Badges */}
                         <div className="flex flex-wrap gap-1 mb-1.5">
@@ -370,7 +403,7 @@ export function LawsTabContent({
                               {isRTL ? `حالة المادة: ${searchArticleStatusNotice}` : `Article status: ${searchArticleStatusNotice}`}
                             </span>
                           )}
-                          {sys.issuing_instrument && (
+                          {sys.issuing_instrument && !showLockedMeta && (
                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${isDark ? "bg-[#C8A762]/10 border-[#C8A762]/20 text-[#C8A762]" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
                               {sys.issuing_instrument}
                             </span>
@@ -426,7 +459,9 @@ export function LawsTabContent({
                             {isRTL ? "تصفح النظام" : "Browse"}
                             <ArrowRight size={12} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                           </span>
-                          {sys.lastUpdated && sys.lastUpdated !== "—" && (
+                          {showLockedMeta ? (
+                            <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} textSize="text-[9px]" />
+                          ) : sys.lastUpdated && sys.lastUpdated !== "—" && (
                             <span className={`text-[9px] ${muted} whitespace-nowrap`}>
                               {isRTL ? `صدر: ${sys.lastUpdated}` : `Issued: ${sys.lastUpdated}`}
                             </span>

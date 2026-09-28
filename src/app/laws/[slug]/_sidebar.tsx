@@ -5,6 +5,8 @@ import {
 } from "@phosphor-icons/react";
 import type { LawSystem, LawArticle } from "../data";
 import { lawStatusPresentation } from "../law-status";
+import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
+import { gazetteIssueLabel, urlHostname, type LawOfficialMeta } from "./_official-meta";
 
 // ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx — يحافظ على
 // سلوك عرض الشارة/الاسم المدموج بلا تغيير، بمصدر بيانات جديد فقط.
@@ -35,6 +37,8 @@ interface SidebarPanelProps {
   userType: string | null;
   mode?: "identity" | "index" | "all";
   viewMode?: "all" | "law" | "regulation";
+  /** T28-22/26: lock flag, official URL and Umm al-Qura issue from the detail API. */
+  officialMeta?: LawOfficialMeta;
 }
 
 export default function SidebarPanel({
@@ -54,9 +58,17 @@ export default function SidebarPanel({
   setShowPaywall,
   userType,
   mode = "all",
-  viewMode = "all"
+  viewMode = "all",
+  officialMeta,
 }: SidebarPanelProps) {
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
+  // T28-22: for a non-subscriber the API withholds the issuance data. The
+  // hand-written law-metadata-map still carries a decree for a few dozen laws
+  // (lawMeta.issuanceDecree / regulation_decree / latestAmendmentDecree), so
+  // those are suppressed too — otherwise the lock would hold for most laws and
+  // leak for the mapped ones.
+  const metaLocked = officialMeta?.locked === true;
+  const issuanceDecree = metaLocked ? "" : (law.issuanceDecree || lawMeta.issuanceDecree || "");
   const border = isDark ? "border-white/[0.07]" : "border-slate-200";
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
   const textStart = isRTL ? "text-right" : "text-left";
@@ -281,16 +293,16 @@ export default function SidebarPanel({
                   <span className="text-[9px] font-black text-[#C8A762]">{isRTL ? "تفاصيل النظام" : "Law Details"}</span>
                 </div>
                 
-                {(law.issuanceDecree || lawMeta.issuanceDecree) && (
+                {issuanceDecree && (
                   <div className="flex gap-1.5 items-start">
                     <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
                     <div>
                       <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "أداة الإصدار" : "Issuance"}</p>
-                      <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{law.issuanceDecree || lawMeta.issuanceDecree}</p>
+                      <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{issuanceDecree}</p>
                     </div>
                   </div>
                 )}
-                
+
                 {(lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length) && (
                   <div className="flex items-center justify-between text-[9px] mt-1">
                     <span className={muted}>{isRTL ? "عدد مواد النظام" : "Law Articles"}</span>
@@ -306,7 +318,7 @@ export default function SidebarPanel({
                   <span className="text-[9px] font-black text-[#C8A762]">{isRTL ? "تفاصيل اللائحة التنفيذية" : "Regulation Details"}</span>
                 </div>
                 
-                {lawMeta.regulation_decree && (
+                {!metaLocked && lawMeta.regulation_decree && (
                   <div className="flex gap-1.5 items-start">
                     <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
                     <div>
@@ -326,12 +338,12 @@ export default function SidebarPanel({
             </>
           ) : (
             <>
-              {(law.issuanceDecree || lawMeta.issuanceDecree) && (
+              {issuanceDecree && (
                 <div className="flex gap-1.5 items-start">
                   <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
                   <div>
                     <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "أداة الإصدار" : "Issuance"}</p>
-                    <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{law.issuanceDecree || lawMeta.issuanceDecree}</p>
+                    <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{issuanceDecree}</p>
                   </div>
                 </div>
               )}
@@ -345,7 +357,12 @@ export default function SidebarPanel({
           )}
 
           {/* الحقول العامة المشتركة */}
-          {lawMeta.latestAmendmentDecree && (
+          {/* T28-22: one row stands in for every withheld issuance field
+              (أداة الإصدار، آخر تعديل، المصدر) — no blank labels. */}
+          {metaLocked && (
+            <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} className="w-full" />
+          )}
+          {!metaLocked && lawMeta.latestAmendmentDecree && (
             <div className="flex gap-1.5 items-start">
               <CalendarBlank size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
               <div>
@@ -363,7 +380,7 @@ export default function SidebarPanel({
               </div>
             </div>
           )}
-          {law.source && (
+          {!metaLocked && law.source && (
             <div className="flex gap-1.5 items-start">
               <Tag size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
               <div className="min-w-0">
@@ -383,6 +400,54 @@ export default function SidebarPanel({
                 ) : (
                   <p className={`text-[10px] leading-tight break-words ${muted}`}>{law.source}</p>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* T28-26: the official page, only as the server sent it (http/https),
+              and not repeated when it is the same link as «المصدر» above. */}
+          {!metaLocked && officialMeta?.officialSourceUrl && officialMeta.officialSourceUrl !== law.source && (
+            <div className="flex gap-1.5 items-start">
+              <BookOpen size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+              <div className="min-w-0">
+                <p className={`text-[8px] uppercase tracking-wider ${muted}`}>المصدر الرسمي</p>
+                <a
+                  href={officialMeta.officialSourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  dir="ltr"
+                  className={`block text-[10px] leading-tight break-all underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                >
+                  {urlHostname(officialMeta.officialSourceUrl)}
+                </a>
+              </div>
+            </div>
+          )}
+
+          {/* T28-26: the Umm al-Qura issue — rendered only when the API names
+              one, linked only when it sent the issue's own URL. */}
+          {!metaLocked && officialMeta?.gazette && (
+            <div className="flex gap-1.5 items-start">
+              <CalendarBlank size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+              <div className="min-w-0">
+                <p className={`text-[8px] uppercase tracking-wider ${muted}`}>النشر في الجريدة الرسمية</p>
+                <p className={`text-[10px] font-semibold leading-tight break-words ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
+                  {officialMeta.gazette.url ? (
+                    <a
+                      href={officialMeta.gazette.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                    >
+                      {gazetteIssueLabel(officialMeta.gazette)}
+                    </a>
+                  ) : (
+                    gazetteIssueLabel(officialMeta.gazette)
+                  )}
+                  {officialMeta.gazette.publicationDate && (
+                    <span className={`font-normal ${muted}`}>{` · ${officialMeta.gazette.publicationDate}`}</span>
+                  )}
+                </p>
               </div>
             </div>
           )}

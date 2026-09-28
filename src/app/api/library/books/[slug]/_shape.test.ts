@@ -140,6 +140,20 @@ test("route: 400 on a bad request, head count past the end, cursors via gte/lte"
   assert.match(src, /sawSchemaGap\s*\?/);
 });
 
+test("route: the volume series (T28-24) is read only with the TOC, best-effort, and returned as `series`", () => {
+  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  // Section and cursor loads (toc=0) never re-read feqh_books.
+  assert.match(src, /const seriesPromise: Promise<BookSeriesInfo \| null> = includeToc\s*\?/);
+  assert.match(src, /from\('feqh_books'\)\s*\.select\('id, title, total_volumes, author'\)/);
+  assert.match(src, /buildBookSeries\(res\.data, String\(book\.id\)\)/);
+  // A failed lookup is a warning and null — never a response of its own.
+  const block = src.slice(src.indexOf("const seriesPromise"), src.indexOf("// Check user authentication"));
+  assert.doesNotMatch(block, /NextResponse\.json/);
+  assert.match(block, /\.catch\(/);
+  assert.match(src, /const series = await seriesPromise;/);
+  assert.match(src, /\n\s*series,\n/);
+});
+
 test('cleanBookText drops page-break comments, bold marks and separator-only text', () => {
   assert.equal(cleanBookText('قال ابن القيم <!-- PAGE_END --> رحمه الله'), 'قال ابن القيم  رحمه الله');
   assert.equal(cleanBookText('نص <-- PAGE_END --!> تابع'), 'نص  تابع');

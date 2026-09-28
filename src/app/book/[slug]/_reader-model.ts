@@ -54,6 +54,23 @@ export interface ReaderChapter {
   sections: ReaderSection[];
 }
 
+/** One volume of a multi-volume series, as the books API lists it (T28-24). */
+export interface ReaderSeriesVolume {
+  id: string;
+  /** Short switcher label: «الجزء 3», «المقدمة», «الجزء 7 – المجلد 2». */
+  label: string;
+  /** The volume's full title. */
+  title: string;
+}
+
+export interface ReaderSeries {
+  /** The base title shared by every volume. */
+  title: string;
+  /** Every volume, in reading order. */
+  volumes: ReaderSeriesVolume[];
+  currentId: string;
+}
+
 export interface ReaderBook {
   id: string;
   title: string;
@@ -61,7 +78,10 @@ export interface ReaderBook {
   school: string;
   investigator: string;
   publisher: string;
+  /** feqh_books.total_volumes — this row's own volume number, NOT a series size. */
   totalVolumes: number;
+  /** The series this volume belongs to, or null for a single book. */
+  series: ReaderSeries | null;
   chapters: ReaderChapter[];
 }
 
@@ -107,15 +127,39 @@ export function normalizeBlock(raw: Row, fallbackSectionId = ""): ReaderBlock {
   };
 }
 
+/**
+ * The API's `series` field → a switcher the reader can trust, or null. A
+ * series needs a title, at least two volumes with an id and a label, and must
+ * contain the volume being read; anything else is treated as "no series".
+ */
+export function parseSeries(value: unknown, bookId: string): ReaderSeries | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const s = value as Row;
+  const title = str(s.title).trim();
+  const seen = new Set<string>();
+  const volumes = rows(s.volumes)
+    .map((v) => ({ id: str(v.id), label: str(v.label).trim(), title: str(v.title) }))
+    .filter((v) => {
+      if (!v.id || !v.label || seen.has(v.id)) return false;
+      seen.add(v.id);
+      return true;
+    });
+  const currentId = str(s.currentId) || bookId;
+  if (!title || volumes.length < 2 || !volumes.some((v) => v.id === currentId)) return null;
+  return { title, volumes, currentId };
+}
+
 function bookMeta(api: Row, chapters: ReaderChapter[]): ReaderBook {
+  const id = str(api.id);
   return {
-    id: str(api.id),
+    id,
     title: str(api.title),
     author: str(api.author),
     school: str(api.school),
     investigator: str(api.investigator),
     publisher: str(api.publisher),
     totalVolumes: numOrNull(api.totalVolumes) ?? 0,
+    series: parseSeries(api.series, id),
     chapters,
   };
 }

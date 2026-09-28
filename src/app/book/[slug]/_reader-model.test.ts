@@ -9,7 +9,7 @@ import test from "node:test";
 import {
   fromApiBook, fromNestedBook, filterToc, findBlock, loadedBlocks, linkRun, emptyLinks,
   mergeSectionBlocks, neighbour, normalizeBlock, orderedSectionIds, chapterOfSection,
-  runFromCursorResponse, type BlocksBySection, type BookLinks, type CompleteSections,
+  parseSeries, runFromCursorResponse, type BlocksBySection, type BookLinks, type CompleteSections,
 } from "./_reader-model.ts";
 
 // Shape measured from /api/library/books/الشرح الكبير على المقنع - الجزء 04.
@@ -219,4 +219,30 @@ test("the legacy nested shape (demo / JSON fallback) still reads", () => {
   assert.deepEqual(st.blocksBySection[sid].map((b) => b.id), ["x1", "x2"]);
   assert.deepEqual(neighbour(st.blocksBySection, st.links, "x1", 1), { kind: "block", id: "x2" });
   assert.equal(neighbour(st.blocksBySection, st.links, "x2", 1), null);
+});
+
+test("series (T28-24): the API's volume list reaches the reader; anything malformed is no series", () => {
+  const series = {
+    title: "المغني",
+    volumes: [
+      { id: "المغني - الجزء تقديم", label: "التقديم", title: "المغني — التقديم" },
+      { id: "المغني - الجزء 01", label: "الجزء 1", title: "المغني — الجزء 1" },
+      { id: "المغني - الجزء 02", label: "الجزء 2", title: "المغني — الجزء 2" },
+    ],
+    currentId: "المغني - الجزء 01",
+  };
+  const st = fromApiBook({ ...api, id: "المغني - الجزء 01", series });
+  assert.deepEqual(st.book.series, series);
+  // No field (a single book, or an older API) → null; the nested demo → null.
+  assert.equal(fromApiBook(api).book.series, null);
+  assert.equal(fromNestedBook({ id: "rawd", title: "الروض", chapters: [] }).book.series, null);
+  // Malformed shapes never throw and never half-render a switcher.
+  assert.equal(parseSeries(null, "x"), null);
+  assert.equal(parseSeries([], "x"), null);
+  assert.equal(parseSeries({ title: "المغني", volumes: series.volumes.slice(0, 1), currentId: series.volumes[0].id }, "x"), null);
+  assert.equal(parseSeries({ ...series, currentId: "كتاب آخر" }, "كتاب آخر"), null); // current volume not listed
+  assert.equal(parseSeries({ ...series, title: "" }, "x"), null);
+  const noCurrent = parseSeries({ title: "المغني", volumes: [...series.volumes, { id: "", label: "x" }, series.volumes[1]] }, "المغني - الجزء 02");
+  assert.equal(noCurrent?.currentId, "المغني - الجزء 02"); // falls back to the book id
+  assert.equal(noCurrent?.volumes.length, 3);              // empty id and duplicate dropped
 });

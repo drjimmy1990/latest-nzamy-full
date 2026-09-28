@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
-  ListBullets, X, Lock
+  ListBullets, X, Lock, Prohibit
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -17,7 +17,10 @@ import { getPreferences, patchPreferences, type RecentSession } from "@/lib/serv
 import { recordLawOpened, type ReadingActivity } from "@/lib/services/readingActivityStats";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 import type { LawArticle, LawSystem } from "../data";
-import { lawStatusForDetail } from "../law-status";
+import { isRepealedLawStatus, lawStatusForDetail } from "../law-status";
+import { EMPTY_OFFICIAL_META, parseOfficialMeta, type LawOfficialMeta } from "./_official-meta";
+import { getSelectedTextWithin } from "./_article-components";
+import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { getLawMeta, lawMetaFromDetail, SECTION_COLORS } from "../law-metadata-map";
 import type { LawMetaEntry } from "../law-metadata-map";
 import { PaywallModal } from "../components/PaywallModal";
@@ -82,6 +85,13 @@ function LawSystemPageContent() {
   // back to its own default when this is still null (loading, or the fetch
   // failed before setting it).
   const [libraryFreeLimit, setLibraryFreeLimit] = useState<number | null>(null);
+  // T28-22/23/26: official-publication fields (lock flag, official URL, Umm
+  // al-Qura issue, the law that replaced a repealed one). Held beside `law`
+  // rather than inside it — the LawSystem mapping below is a shared whitelist.
+  const [officialMeta, setOfficialMeta] = useState<LawOfficialMeta>(EMPTY_OFFICIAL_META);
+  // T28-22: the API withholds the preamble (it opens with the decree card)
+  // from a non-subscriber and says so here.
+  const [preambleLocked, setPreambleLocked] = useState(false);
   // "not-found" = the API answered 404; "failed" = any other failure (a 500
   // from a failed query, a network error). They get different copy: telling a
   // reader a law does not exist when we merely failed to load it is wrong.
@@ -156,6 +166,8 @@ function LawSystemPageContent() {
         // Reset to the static entry for THIS slug first, so a law that fails
         // to load never shows the previous law's metadata.
         setLawMeta(getLawMeta(slug));
+        setOfficialMeta(EMPTY_OFFICIAL_META);
+        setPreambleLocked(false);
         const res = await fetch(`/api/library/laws/${apiSlug(slug)}`);
         if (cancelled) return;
         if (!res.ok) {
@@ -170,6 +182,8 @@ function LawSystemPageContent() {
         setLibraryFreeLimit(
           typeof data?.paywall?.freeLimit === "number" ? data.paywall.freeLimit : null,
         );
+        setOfficialMeta(parseOfficialMeta(data));
+        setPreambleLocked(data?.preambleLocked === true);
         // Transform API response to match LawSystem interface
         setLaw({
           id: data.id || data.slug,
@@ -676,7 +690,13 @@ function LawSystemPageContent() {
           <div className="flex flex-wrap items-start gap-3 justify-between">
             <div>
               <h1 className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}>{lawTitle}</h1>
-              <p className={`text-[12px] ${muted}`}>{law.issuanceDecree}</p>
+              {/* T28-22: withheld for a non-subscriber → one locked row; simply
+                  empty → nothing (this used to render an empty line). */}
+              {officialMeta.locked ? (
+                <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} textSize="text-[11px]" />
+              ) : law.issuanceDecree ? (
+                <p className={`text-[12px] ${muted}`}>{law.issuanceDecree}</p>
+              ) : null}
             </div>
             <div className="flex gap-2 print:hidden">
                 <button
@@ -710,6 +730,38 @@ function LawSystemPageContent() {
             </div>
           </div>
         </div>
+
+        {/* T28-23: a repealed law stays readable — it decides facts that
+            happened before its repeal — but it must say so before any article.
+            The way forward is offered only when the API names the law that
+            replaced it; no replacement is ever guessed. */}
+        {isRepealedLawStatus(law.law_status) && (
+          <div
+            role="note"
+            className={`mb-5 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${
+              isDark ? "border-red-500/40 bg-red-950/30" : "border-red-300 bg-red-50"
+            }`}
+          >
+            <div className="flex items-start gap-2.5">
+              <Prohibit size={20} weight="fill" className="mt-0.5 shrink-0 text-red-500" />
+              <div>
+                <p className={`text-sm font-black ${isDark ? "text-red-300" : "text-red-700"}`}>هذا التشريع ملغى وغير سارٍ</p>
+                <p className={`mt-0.5 text-[12px] leading-relaxed ${isDark ? "text-red-300/80" : "text-red-800/80"}`}>
+                  يُعرض نصّه للأرشيف ولحسم الوقائع السابقة لتاريخ إلغائه.
+                </p>
+              </div>
+            </div>
+            {officialMeta.replacedBy && (
+              <Link
+                href={`/laws/${encodeURIComponent(officialMeta.replacedBy.slug)}`}
+                title={officialMeta.replacedBy.title || undefined}
+                className="inline-flex shrink-0 items-center justify-center rounded-xl bg-red-600 px-3.5 py-2 text-[12px] font-bold text-white transition hover:bg-red-700 print:hidden"
+              >
+                الانتقال إلى النظام الساري ←
+              </Link>
+            )}
+          </div>
+        )}
 
         {/* ــ شريط وضع القراءة وحجم الخط والعودة ــ */}
         <div className={`relative z-45 flex flex-wrap items-center justify-between gap-4 mb-3 print:hidden ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
@@ -759,7 +811,13 @@ function LawSystemPageContent() {
 
             <ReportArticleIssueButton
               lawSlug={slug}
-              articleRef={activeArticle ? `${activeArticle.num} — ${lawTitle}` : lawTitle}
+              // The article's display label only (T28-28): «num — lawTitle»
+              // passed the server's 100-char limit on long titles → 400. The
+              // law is already on the row as lawSlug.
+              articleRef={activeArticle?.num ?? ""}
+              // The reader's highlight inside the active article, read at the
+              // moment the dialog opens (optional; the reader can remove it).
+              captureHighlight={() => (activeArticle ? getSelectedTextWithin(activeArticle.id) : "")}
               isDark={isDark}
               isRTL={isRTL}
               disabled={!activeArticle}
@@ -792,6 +850,7 @@ function LawSystemPageContent() {
                 userType={userType}
                 mode="identity"
                 viewMode={viewMode as any}
+                officialMeta={officialMeta}
               />
               {/* Index Panel */}
               <SidebarPanel
@@ -881,6 +940,8 @@ function LawSystemPageContent() {
             <PreambleBlock
               text={law.preamble}
               regulationPreamble={(law as any).regulationPreamble}
+              locked={preambleLocked}
+              onUnlock={() => setShowPaywall(true)}
             isDark={isDark}
               isRTL={isRTL}
               viewMode={viewMode as any}
@@ -1396,6 +1457,7 @@ function LawSystemPageContent() {
                   filteredArticles={filteredArticles} cartMap={cartMap} isScrolling={isScrolling}
                   setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
                   userType={userType} mode="identity" viewMode={viewMode as any}
+                  officialMeta={officialMeta}
                 />
                 <SidebarPanel
                   isDark={isDark} isRTL={isRTL} law={law} lawMeta={lawMeta}

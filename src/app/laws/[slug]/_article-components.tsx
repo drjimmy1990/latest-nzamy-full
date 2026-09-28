@@ -11,6 +11,7 @@ import {
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import { articleStatusNotice, isRepealedArticleStatus, type LawArticle, type JudicialPrinciple, type JudicialPrecedent } from "../data";
 import { buildCitation } from "./_citation";
+import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { useSubscription } from "@/hooks/useSubscription";
 
 // ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx/_sidebar.tsx.
@@ -302,7 +303,9 @@ if (typeof document !== "undefined") {
   });
 }
 
-function getSelectedTextWithin(containerId: string, fallbackText?: string): string {
+// Exported for the reader's report dialog (T28-28), which quotes the reader's
+// highlight inside the active article the same way the copy buttons do.
+export function getSelectedTextWithin(containerId: string, fallbackText?: string): string {
   if (typeof window === "undefined") return "";
   const container = document.getElementById(containerId);
   if (!container) return "";
@@ -581,6 +584,8 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
         docTitle: lawName,
         docType: lawType,
         regulationRef: mergedReg.ref,
+        // The fallback when `ref` is the regulation's name, not its article.
+        regulationNum: article.regulations?.[0]?.regNum ?? null,
       },
       isRTL,
     );
@@ -837,8 +842,14 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                   {article.amendments.map((amend, i) => (
                     <div key={i} className={`p-3 rounded-xl border ${isDark ? "border-amber-700/10 bg-amber-900/5" : "border-amber-200 bg-amber-50/60"}`}>
                       <div className="flex gap-2 mb-1">
-                        <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>{amend.source}</span>
-                        <span className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{amend.date}</span>
+                        {amend.sourceLocked ? (
+                          <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>🔒 أداة التعديل وتاريخه متاحان للمشتركين</span>
+                        ) : (
+                          <>
+                            <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>{amend.source}</span>
+                            <span className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{amend.date}</span>
+                          </>
+                        )}
                       </div>
                       <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{amend.summary}</p>
                       <p className={`text-[12px] leading-relaxed pt-2 border-t ${isDark ? "border-amber-700/15 text-zinc-400" : "border-amber-200 text-zinc-600"}`}>{amend.fullText}</p>
@@ -950,22 +961,39 @@ export function PreambleBlock({
   isDark,
   isRTL = true,
   viewMode = "all",
+  locked = false,
+  onUnlock,
 }: {
   text?: string;
   regulationPreamble?: string;
   isDark: boolean;
   isRTL?: boolean;
   viewMode?: "all" | "law" | "regulation";
+  /** T28-22: the API withheld the preamble from a non-subscriber. */
+  locked?: boolean;
+  onUnlock?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const textStart = isRTL ? "text-right" : "text-left";
+
+  const label = isRTL ? "الديباجة" : "Preamble";
+
+  // The preamble opens with the decree card, so it is a subscriber feature:
+  // one closed row that leads to the same paywall as the other locked rows.
+  if (locked) {
+    return (
+      <div className={`rounded-2xl border print:hidden flex flex-wrap items-center gap-3 px-4 py-3 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+        <BookOpen size={14} className="text-[#C8A762] flex-shrink-0" weight="duotone" />
+        <span className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{label}</span>
+        {onUnlock && <OfficialMetaLockedRow isDark={isDark} onUnlock={onUnlock} textSize="text-[11px]" />}
+      </div>
+    );
+  }
 
   const hasText = viewMode !== "regulation" && text && !isPreambleEmpty(text);
   const hasReg = viewMode !== "law" && regulationPreamble && !isPreambleEmpty(regulationPreamble);
 
   if (!hasText && !hasReg) return null;
-
-  const label = isRTL ? "الديباجة" : "Preamble";
 
   return (
     <div className={`rounded-2xl border overflow-hidden print:hidden ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
