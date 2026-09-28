@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { normalizeArabic } from "@/utils/normalizeArabic";
+import { courtBadge } from "./principleCardFields";
 import {
   MagnifyingGlass, Faders, CaretDown, Check,
 } from "@phosphor-icons/react";
@@ -27,7 +28,6 @@ import RecentSessions from "./components/RecentSessions";
 import SmartFolders from "./components/SmartFolders";
 import { MyNotesSection } from "./components/MyNotesSection";
 import { GamificationCard } from "./components/GamificationCard";
-import LegislativeUpdates from "./components/LegislativeUpdates";
 import EnactmentCountdownWidget from "./components/EnactmentCountdownWidget";
 
 import {
@@ -898,10 +898,12 @@ export default function LegalLibraryPage() {
         id: String(p.id),
         sourceId: p.judicial_collections?.source_id || "supreme",
         source: p.issuing_body || p.judicial_collections?.court || "المحكمة العليا",
-        srcAbbr: p.judicial_collections?.source_id === "supreme" ? "م ع" : "ت ق",
+        // Badge and year from the row only (owner test 2026-09-28, T28-04):
+        // the old fallbacks put «م ع» on every card and a made-up 1445هـ.
+        srcAbbr: courtBadge(p.issuing_body || p.judicial_collections?.court),
         text: p.text || "",
         ref: p.decision_number || "—",
-        year: String(p.year_hijri || 1445),
+        year: p.year_hijri ? String(p.year_hijri) : "",
         subject: "civil" as any,
         // `judicial_collections.category` does not exist — see the table
         // definition in 20260626_legal_library_schema.sql. This read was always
@@ -975,9 +977,11 @@ export default function LegalLibraryPage() {
           categoryLabel,
           desc: b.description || "",
           free: b.free ?? true,
-          progress: 100,
+          // No per-book reading progress is tracked; the constant 100 rendered
+          // «نسبة التحصيل 100%» on every card (owner test 2026-09-28, T28-05).
+          progress: 0,
           volCount: b.total_volumes || 1,
-          lastUpdated: "—"
+          lastUpdated: ""
         };
       })
     : (isSupabaseMode ? [] : DEMO_FEQH_BOOKS)) as any[];
@@ -1053,11 +1057,11 @@ export default function LegalLibraryPage() {
     ? (searchResults?.precedents ?? []).map((r: any) => ({
         id: String(r.id),
         sourceId: r.meta?.collectionSlug || 'supreme',
-        source: r.meta?.court || 'المحكمة العليا',
-        srcAbbr: 'م ع',
+        source: r.meta?.court || '',
+        srcAbbr: courtBadge(r.meta?.court),
         text: r.snippet || r.title || '',
         ref: r.meta?.decisionNumber || '—',
-        year: String(r.meta?.year || 1445),
+        year: r.meta?.year ? String(r.meta.year) : "",
         subject: 'civil' as any,
         cat: 'SA-03',
         _isSearchResult: true,
@@ -2083,7 +2087,10 @@ export default function LegalLibraryPage() {
             {showSidebars && (
               <aside className="lg:col-span-3 space-y-6 order-3 lg:order-3">
                 <GamificationCard isDark={isDark} isRTL={isRTL} />
-                <LegislativeUpdates isDark={isDark} isRTL={isRTL} />
+                {/* «التحديثات التشريعية» (LegislativeUpdates) is not mounted: it
+                    rendered a hardcoded list of amendments that were never issued
+                    (owner test 2026-09-28, T28-01). It returns once an amendments
+                    feed exists in the library data. */}
               </aside>
             )}
 

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
-  BLOCKS_DEFAULT_LIMIT, BLOCKS_MAX_LIMIT, firstBlockOrderBySection, isUuid, normalizeHashiyah,
+  BLOCKS_DEFAULT_LIMIT, BLOCKS_MAX_LIMIT, cleanBookText, firstBlockOrderBySection, isUuid, normalizeHashiyah,
   planBlocksPage, planBlocksRequest, shapeToc,
 } from "./_shape.ts";
 
@@ -138,4 +138,18 @@ test("route: 400 on a bad request, head count past the end, cursors via gte/lte"
   assert.match(src, /q\.lte\('order_index', selection\.order\)/);
   // The misleading migration hint is only logged when a column is missing.
   assert.match(src, /sawSchemaGap\s*\?/);
+});
+
+test('cleanBookText drops page-break comments, bold marks and separator-only text', () => {
+  assert.equal(cleanBookText('قال ابن القيم <!-- PAGE_END --> رحمه الله'), 'قال ابن القيم  رحمه الله');
+  assert.equal(cleanBookText('نص <-- PAGE_END --!> تابع'), 'نص  تابع');
+  assert.equal(cleanBookText('**الباب الأول** في الأحكام'), 'الباب الأول في الأحكام');
+  assert.equal(cleanBookText('---'), null);
+  assert.equal(cleanBookText('  \n---\n  '), null);
+  assert.equal(cleanBookText(''), null);
+  assert.equal(cleanBookText(null), null);
+  assert.equal(cleanBookText('سطر\n\n\n\nسطر'), 'سطر\n\nسطر');
+  // Review m2: separators go before bold, and bold never spans lines.
+  assert.equal(cleanBookText('***\nنص الباب\n***\nتابع'), 'نص الباب\n\nتابع');
+  assert.equal(cleanBookText('2**3 ثم **تنبيه**'), '2**3 ثم تنبيه');
 });

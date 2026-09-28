@@ -7,7 +7,7 @@ import { Brain, ArrowLeft } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
 /**
- * /ai/research — تمت إعادة دمجه مع "المستشار القانوني ماكس"
+ * /ai/research — تمت إعادة دمجه مع "المستشار القانوني"
  * يُعيد التوجيه تلقائياً إلى /ai/legal-opinion
  */
 export default function ResearchRedirectPage() {
@@ -30,7 +30,7 @@ export default function ResearchRedirectPage() {
           <Brain size={28} weight="duotone" className="text-[#C8A762]" />
         </div>
         <h2 className={`text-lg font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
-          دُمج مع المستشار القانوني ماكس
+          دُمج مع المستشار القانوني
         </h2>
         <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
           تم دمج "الباحث القانوني" مع "الرأي القانوني" لتوفير تجربة متكاملة أكثر احترافاً.

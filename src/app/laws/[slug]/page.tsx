@@ -115,6 +115,19 @@ function LawSystemPageContent() {
     }
   }, [searchParams]);
 
+  // The view-mode switcher is hidden for a law with nothing to switch to
+  // (T28-09). A catalogue chip can still arrive with ?viewMode=regulation or
+  // appendix; with the switcher gone that would leave an empty list and no
+  // way back, so such a law always shows «عرض الكل» (independent review m3).
+  const hasViewModeChoices = !!law && (
+    law.chapters.some(ch => ch.articles.some(a => a.regulations && a.regulations.length > 0)) ||
+    (law.regulationInstrumentsLocked ?? 0) > 0 ||
+    (law.appendices?.length ?? 0) > 0
+  );
+  useEffect(() => {
+    if (law && !hasViewModeChoices && viewMode !== "all") setViewMode("all");
+  }, [law, hasViewModeChoices, viewMode]);
+
   // Cart: global, backed by localStorage via useDraftCart
   const { cart, setCart } = useDraftCart();
 
@@ -290,6 +303,7 @@ function LawSystemPageContent() {
       titleEn: law.titleEn || law.title,
       catId: lawMeta.section_code ? `SA-${lawMeta.section_code}` : "SA-00",
       type: "law",
+      openedAt: new Date().toISOString(),
     };
     if (isLoggedIn && isSupabaseMode) {
       const filtered = (serverRecentSessions ?? []).filter(s => !(s.slug === slug && s.type === "law"));
@@ -353,7 +367,7 @@ function LawSystemPageContent() {
       new Set(art.regulations.map((r: any) => String(r.ref || "")).filter(Boolean)),
     );
     return {
-      ref: distinctRefs.join(", "),
+      ref: distinctRefs.join("، "),
       text: art.regulations.map((r: any) => String(r.text || "")).join("\n\n"),
     };
   };
@@ -758,7 +772,7 @@ function LawSystemPageContent() {
 
           {/* RIGHT COLUMN: Identity Panel AND Index Panel */}
           {!isReadingMode && (
-            <aside className="hidden lg:block lg:col-span-3 sticky top-6 z-40 space-y-3 print:hidden max-h-[calc(100vh-2rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
+            <aside className="hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
               {/* Identity Card */}
               <SidebarPanel
                 isDark={isDark}
@@ -804,8 +818,11 @@ function LawSystemPageContent() {
 
           {/* CENTER COLUMN: Articles list */}
           <div className={`nzamy-reader-container col-span-12 min-w-0 space-y-4 ${isReadingMode ? "max-w-3xl mx-auto w-full" : "lg:col-span-6"}`}>
-            {/* View Mode Switcher (Tabs) */}
-            {!isReadingMode && (
+            {/* View Mode Switcher (Tabs) — only when there is something to switch
+                to. A law with no regulation (unlocked or withheld) and no
+                appendix showed «عرض الكل | النظام فقط», two buttons that render
+                the same list (owner test 2026-09-28, T28-09). */}
+            {!isReadingMode && hasViewModeChoices && (
               <div className={`flex items-center gap-1.5 p-1 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"} w-fit mb-4 print:hidden`}>
                 <button
                   onClick={() => setViewMode("all")}
@@ -1230,7 +1247,7 @@ function LawSystemPageContent() {
 
           {/* LEFT COLUMN: AI Tools and related documents */}
           {!isReadingMode && (
-            <aside className="hidden lg:block lg:col-span-3 sticky top-6 z-40 space-y-3 print:hidden max-h-[calc(100vh-2rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
+            <aside className="hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
               <button
                 onClick={() => setShowCommunity(true)}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold transition ${
@@ -1329,7 +1346,9 @@ function LawSystemPageContent() {
           type="button"
           onClick={() => setShowIndexSheet(true)}
           aria-label={isRTL ? "فهرس المواد والبحث" : "Article index and search"}
-          className={`lg:hidden fixed bottom-20 ${isRTL ? "right-6" : "left-6"} z-40 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg safe-bottom print:hidden ${isDark ? "bg-zinc-800 text-white border border-white/10" : "bg-white text-[#0B3D2E] border border-slate-200"}`}
+          // Middle of the phone FAB column (see ResearchWorkspace's stack note).
+          style={{ bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))" }}
+          className={`lg:hidden fixed ${isRTL ? "right-6" : "left-6"} z-40 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg print:hidden ${isDark ? "bg-zinc-800 text-white border border-white/10" : "bg-white text-[#0B3D2E] border border-slate-200"}`}
         >
           <ListBullets size={22} weight="bold" />
         </button>
@@ -1443,7 +1462,10 @@ function LawSystemPageContent() {
             whileHover={{ scale: 1.1, y: -2 }}
             whileTap={{ scale: 0.92 }}
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-            className={`fixed z-[9999] bottom-20 md:bottom-6 ${isRTL ? "right-6" : "left-6"} w-12 h-12 rounded-full flex items-center justify-center border transition-all duration-300 print:hidden ${
+            // Bottom of the FAB column, above the safe-area inset; z-40 like
+            // the other FABs (it was z-[9999] and covered modals).
+            style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
+            className={`fixed z-40 ${isRTL ? "right-6" : "left-6"} w-12 h-12 rounded-full flex items-center justify-center border transition-all duration-300 print:hidden ${
               isDark
                 ? "bg-[#0B3D2E] border-[#C8A762]/60 text-[#C8A762] hover:bg-[#082d22] hover:border-[#C8A762] shadow-[0_8px_20px_rgba(200,167,98,0.25)]"
                 : "bg-[#0B3D2E] border-[#C8A762] text-[#C8A762] hover:bg-[#082d22] shadow-[0_8px_20px_rgba(11,61,46,0.35)]"

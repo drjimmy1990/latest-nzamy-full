@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { checkLibraryAccess } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
-import { firstBlockOrderBySection, normalizeHashiyah, planBlocksPage, planBlocksRequest, shapeToc } from './_shape';
+import { cleanBookText, firstBlockOrderBySection, normalizeHashiyah, planBlocksPage, planBlocksRequest, shapeToc } from './_shape';
 
 /**
  * GET /api/library/books/[slug]
@@ -372,8 +372,10 @@ export async function GET(
           page: b.page_number ?? null,
           volLabel: b.volume_label ?? null,
           pageLabel: b.page_label ?? null,
-          matn: isLocked ? (typeof b.matn === 'string' ? b.matn.substring(0, 100) + (b.matn.length > 100 ? '...' : '') : b.matn) : b.matn,
-          sharh: isLocked ? (typeof b.sharh === 'string' ? b.sharh.substring(0, 100) + (b.sharh.length > 100 ? '...' : '') : b.sharh) : b.sharh,
+          // Cleaned first (page-break comments, bold marks, «---»-only text),
+          // then previewed — so a locked preview is clean too (T28-10).
+          matn: (() => { const t = cleanBookText(b.matn); return isLocked && t ? t.substring(0, 100) + (t.length > 100 ? '...' : '') : t; })(),
+          sharh: (() => { const t = cleanBookText(b.sharh); return isLocked && t ? t.substring(0, 100) + (t.length > 100 ? '...' : '') : t; })(),
           // Always a list: the column is `{}` for every current row.
           hashiyah: isLocked ? [] : normalizeHashiyah(b.hashiyah),
           sectionId: b.section_id,

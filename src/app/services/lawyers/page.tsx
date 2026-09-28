@@ -64,7 +64,7 @@ const ROLES = [
       {
         href: "/ai/legal-opinion",
         icon: MagnifyingGlass,
-        labelAr: "المستشار ماكس",
+        labelAr: "المستشار القانوني",
         descAr: "محرك بحثك الفوري. اسأل أي سؤال قانوني معقد ليجيبك بتأصيل موثق بالمواد والتعاميم الحديثة.",
         badge: null,
         hot: false,

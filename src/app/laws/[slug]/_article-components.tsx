@@ -18,7 +18,7 @@ function getMergedReg(a: LawArticle): { ref: string; text: string } | null {
   if (!a.regulations || a.regulations.length === 0) return null;
   const distinctRefs = Array.from(new Set(a.regulations.map((r) => r.ref || "").filter(Boolean)));
   return {
-    ref: distinctRefs.join(", "),
+    ref: distinctRefs.join("، "),
     text: a.regulations.map((r) => r.text || "").join("\n\n"),
   };
 }
@@ -91,10 +91,13 @@ function parseMarkdownContent(text: string): ParseBlock[] {
         continue;
       }
 
-      // ─── Headings: ###, ##, ####
-      const headingMatch = trimmed.match(/^(#{2,4})\s+(.+)$/);
+      // ─── Headings: # … ###### — clamped to the three rendered levels.
+      // A single «#» used to fall through and print as «# عنوان» (owner
+      // test 2026-09-28, executive-regulations-health-profession preamble).
+      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
       if (headingMatch) {
-        blocks.push({ type: "heading", text: headingMatch[2], level: headingMatch[1].length });
+        const level = Math.min(4, Math.max(2, headingMatch[1].length));
+        blocks.push({ type: "heading", text: headingMatch[2], level });
         continue;
       }
 

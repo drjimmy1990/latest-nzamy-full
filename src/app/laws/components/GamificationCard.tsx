@@ -273,7 +273,7 @@ export function GamificationCard({ isRTL, isDark }: { isRTL: boolean; isDark: bo
     {
       icon: BookOpen,
       value: articlesCount,
-      label: isRTL ? "ماده قانونية" : "Articles Opened",
+      label: isRTL ? "مادة قانونية" : "Articles Opened",
       color: isDark ? "bg-blue-900/30 text-blue-400" : "bg-blue-50 text-blue-700",
     },
     {
@@ -288,13 +288,22 @@ export function GamificationCard({ isRTL, isDark }: { isRTL: boolean; isDark: bo
       label: isRTL ? "صفحة فقهية" : "Feqh Pages",
       color: isDark ? "bg-amber-900/30 text-amber-400" : "bg-amber-50 text-amber-700",
     },
-  ];
+    // Owner test 2026-09-28 (T28-03): only «laws browsed» is ever recorded
+    // (recordLawOpened in readingActivityStats.ts). Articles, principles and
+    // feqh pages have no writer, so their tiles sat at 0 forever. A tile is
+    // shown only once its counter has a value.
+  ].filter((s, i) => i === 0 || s.value > 0);
 
   const getShareText = () => {
     const period = isRTL ? (view === "week" ? "هذا الأسبوع" : "هذا الشهر") : (view === "week" ? "this week" : "this month");
+    const extraAr = [
+      articlesCount > 0 ? `\n⚖️ قراءة المواد: ${articlesCount}` : "",
+      principlesCount > 0 ? `\n🔨 المبادئ القضائية: ${principlesCount}` : "",
+      feqhCount > 0 ? `\n📖 الصفحات الفقهية: ${feqhCount}` : "",
+    ].join("");
     return isRTL
-      ? `⚡ أنجزت قراءة وتحصيل ${percentage}% من هدفي المعتمد ${period} في منصة نظامي القانونية!\n📊 إحصائيات النشاط:\n📚 استعراض الأنظمة: ${lawsCount}\n⚖️ قراءة المواد: ${articlesCount}\n🔨 المبادئ القضائية: ${principlesCount}\n📖 الصفحات الفقهية: ${feqhCount}\n🔗 تصفح المكتبة الآن: https://nezamy.sa/laws`
-      : `⚡ I achieved ${percentage}% of my legal reading target ${period} on Nzamy Platform!\n📊 Stats:\n📚 Laws: ${lawsCount} | ⚖️ Articles: ${articlesCount} | 🔨 Principles: ${principlesCount} | 📖 Feqh Pages: ${feqhCount}\n🔗 Visit: https://nezamy.sa/laws`;
+      ? `⚡ أنجزت ${percentage}% من هدفي ${period} في منصة نظامي القانونية!\n📊 إحصائيات النشاط:\n📚 استعراض الأنظمة: ${lawsCount}${extraAr}\n🔗 تصفح المكتبة الآن: https://nezamy.sa/laws`
+      : `⚡ I reached ${percentage}% of my reading target ${period} on Nzamy Platform!\n📚 Laws: ${lawsCount}\n🔗 Visit: https://nezamy.sa/laws`;
   };
 
   const copyToClipboard = async () => {
@@ -447,7 +456,7 @@ export function GamificationCard({ isRTL, isDark }: { isRTL: boolean; isDark: bo
                   {percentage}%
                 </span>
                 <span className={`text-[8px] mt-1.5 font-semibold uppercase tracking-wider ${muted}`}>
-                  {currentRead} / {target} {isRTL ? "مادة" : "Read"}
+                  {currentRead} / {target} {isRTL ? "نظام" : "Laws"}
                 </span>
               </div>
             </div>

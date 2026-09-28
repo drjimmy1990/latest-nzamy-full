@@ -26,6 +26,7 @@ import {
   shouldRetryLawsWithoutHistory,
   stripDefiniteArticle,
   titlePhrasePattern,
+  foldLettersForIlike,
   titlePrefixPattern,
   titleStemPatterns,
   type LawTitleCandidate,
@@ -298,8 +299,8 @@ test("title matching strips the query's «ال»: «الجرائم المعلو�
 });
 
 test("title candidate lookups: stem patterns and the «نظام <phrase>» title", () => {
-  assert.deepEqual(titleStemPatterns("الجرائم المعلوماتية"), ["%جرائم%", "%معلوماتية%"]);
-  assert.deepEqual(titleStemPatterns("مكافحة الجرائم"), ["%مكافحة%", "%جرائم%"]);
+  assert.deepEqual(titleStemPatterns("الجرائم المعلوماتية"), ["%جرائم%", "%معلوماتي_%"]);
+  assert.deepEqual(titleStemPatterns("مكافحة الجرائم"), ["%مكافح_%", "%جرائم%"]);
   assert.equal(titleStemPatterns("جرائم معلوماتية"), null, "nothing to strip: the contains lookup covers it");
   assert.equal(titleStemPatterns("الجرائم*"), null);
   assert.equal(nizamTitleFor("العمل"), "نظام العمل");
@@ -328,3 +329,21 @@ test("a count proven over the larger fetch window stays exact for the preview", 
   );
 });
 
+
+test("title patterns ignore hamza, ta marbuta and alef maqsura (T28-11)", () => {
+  const toRe = (pat: string) => new RegExp("^" + pat.replace(/%/g, ".*").replace(/_/g, ".") + "$", "u");
+  // «الاثبات» typed without hamza must match the stored «الإثبات», and back.
+  assert.ok(toRe(titlePhrasePattern("نظام الاثبات")!).test("نظام الإثبات"));
+  assert.ok(toRe(titlePhrasePattern("نظام الإثبات")!).test("نظام الاثبات"));
+  assert.ok(toRe(titlePhrasePattern("اللائحه")!).test("اللائحة التنفيذية"));
+  assert.ok(toRe(titlePhrasePattern("احوال")!).test("نظام الأحوال الشخصية"));
+  assert.equal(foldLettersForIlike("مصر"), "مصر");
+});
+
+test("the fold stays positional — «هيئة» no longer matches «لائحة» (review M2)", () => {
+  const toRe = (pat: string) => new RegExp("^" + pat.replace(/%/g, ".*").replace(/_/g, ".") + "$", "u");
+  assert.equal(toRe(titlePhrasePattern("هيئة")!).test("اللائحة التنفيذية"), false);
+  assert.equal(toRe(titlePhrasePattern("الهيئة")!).test("اللائحة التنفيذية لنظام العمل"), false);
+  assert.ok(toRe(titlePhrasePattern("الهيئه")!).test("نظام الهيئة العامة"));
+  assert.equal(foldLettersForIlike("العمل"), "العمل");
+});

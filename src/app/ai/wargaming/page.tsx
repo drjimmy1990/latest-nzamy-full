@@ -971,7 +971,6 @@ export default function AIWargamingPage() {
       <div>
         <div className="flex items-center gap-2 mb-1">
           <h1 className={`text-xl font-bold ${D?"text-white":"text-zinc-900"}`}>المحاكي الشامل</h1>
-          <span className="rounded-full bg-purple-500/15 border border-purple-500/30 px-2.5 py-0.5 text-[10px] font-bold text-purple-400">MAX فقط</span>
         </div>
         <p className={`text-[12px] ${D?"text-zinc-500":"text-zinc-400"}`}>حدد القضية → اختر الأهداف → راجع الطلب وأرسله</p>
       </div>

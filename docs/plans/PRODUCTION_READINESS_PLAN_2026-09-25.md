@@ -222,3 +222,129 @@ Every batch: GitNexus `impact()` before editing a symbol and `detect_changes()` 
 - It does not migrate any cloud data (clean start stands) and does not touch `owner-edits` (٦).
 - It does not build finance, marketplace, government/ngo modules or founder offers before the decisions in §3 P5; it makes their pages honest instead.
 - It does not re-measure library latency or chapter descents (data work: LIB-18, 82 laws, 2 covers — owner content items).
+
+---
+
+## 7. Owner test of 2026-09-28 (package «حزمة تسليم المبرمج المعتمدة 2026-09-27», folder `test 28-9`)
+
+**What arrived.** The package was written by an AI tool. It contains:
+- a 52-section "backend guide";
+- 37 patch files;
+- a field-test guide and a QA checklist;
+- a stand-alone `index.html` mock-up;
+- verification scripts;
+- **43 screenshots**.
+
+The package stays out of git: it carries plaintext test passwords for six accounts that do not exist on our database.
+
+**How it was read.**
+- Three Opus agents viewed all 43 screenshots and mapped each one to `file:line` at HEAD `ed40a86`.
+- A fourth agent read the whole guide and every patch against our schema and code.
+- Read-only probes against nezamy.sa checked `platform_settings`, the law API and search.
+
+**Three findings change how the package is used:**
+
+1. **The screenshots are the real test. The package's index of them is not.**
+   - 40 of the 43 show the live nezamy.sa. Of the rest, 2 are his mock-up, 1 is a markdown preview and 1 is a duplicate.
+   - The AI's per-file diagnosis is wrong or attached to the wrong file for about 38 of them. For example, it calls a law-library screenshot "inheritance calculator".
+   - The tickets below come from the images, not from the index.
+2. **No patch is applied verbatim.**
+   - The patches target a schema that does not exist here: `library.laws` with a UUID id, `raw_markdown`, `is_free_preview`, `profiles.subscription_tier`, `law_firms`, `/api/consultations/book`, and so on.
+   - Several are unsafe as written:
+     - `sw.patch.js` caches per-user law responses, so Pro text would be served to a guest after logout.
+     - The §15 admin policy trusts `raw_user_meta_data.role`, which users can write.
+     - The firm-invite migration brings back the 42P17 recursion.
+     - The lawyers-directory migration publishes the phone numbers of 25,928 people with `USING (true)`.
+     - `community_ssr_aeo` renders a public page with the service-role key.
+     - The brief-review patch is a new `setTimeout` fake.
+   - Each requirement is re-implemented on our schema instead.
+3. **The "library leak" is not what the package says.**
+   - The laws route already sends only 5 free items, plus a ~100-character preview for each of the rest. Verified live on `judiciary-diwan-mazalim-executive-mechanism`: 5 free, 10 locked.
+   - That law's 15 "articles" are long sections (أولاً…تاسعاً), so the 5 free items are a third of its text.
+   - The real bypass is the P0 item already planned: `anon` can `SELECT` `library.articles` and `article_regulations` directly through PostgREST. This is owner question ٦٠, and the package now answers its direction: close it.
+
+### 7.1 Live bugs from the screenshots (no owner decision needed) — batch T28-A
+
+| id | defect (screenshot) | where | size |
+|---|---|---|---|
+| T28-01 | «التحديثات التشريعية» shows made-up amendments (e.g. نظام العمل م/74) to every visitor | `src/app/laws/components/LegislativeUpdates.tsx:46,232,416` | S |
+| T28-02 | «الجلسات الأخيرة» always shows generated demo sessions, even to guests | `src/app/laws/components/RecentSessions.tsx:41,330-333` | S |
+| T28-03 | Reading-activity card: it counts laws but labels them «مادة»; three counters can never move; typo «ماده» | `src/app/laws/components/GamificationCard.tsx:276,450` | S |
+| T28-04 | Principle cards: a hardcoded «م ع» badge, including on ديوان المظالم; a made-up 1445هـ fallback year shown beside the real one; the cards cannot be clicked | `src/app/laws/page.tsx:904,1057,1060`; `components/ListItems.tsx:563,616-618` | S |
+| T28-05 | Catalogue: every book shows «نسبة التحصيل 100%» and «—»; every card shows «الأبواب: 0»; search-result cards show «المواد: 0 · الأبواب: 0» | `src/app/laws/page.tsx:862,978-980,1031-1035` | S |
+| T28-06 | Regulation view: the contents list repeats the regulation name on every row and ignores the chip filter; two regulations are joined with a Latin comma | `src/app/laws/[slug]/_sidebar.tsx:15,465,512`; `_article-components.tsx:21`; `page.tsx:109,356` | S–M |
+| T28-07 | The raw «المصدر» URL runs out of its card and is not a link | `_sidebar.tsx:370-371` | S |
+| T28-08 | The reader sidebars slide under the fixed navbar | `page.tsx:761,1233` vs `Navbar.tsx:332` | S |
+| T28-09 | The view-mode buttons «عرض الكل \| النظام فقط» are shown for a law that has no regulation | `page.tsx:808-829` | S |
+| T28-10 | Raw markdown on screen: backticks; single-`#` headings; «### المادة (n):» in article labels; book `**…**` and `<!-- PAGE_END -->`; a book block that is only "---" | `src/utils/sanitize.ts:52-61`; `_article-components.tsx:95`; `api/library/laws/[slug]/route.ts:383`; `book/[slug]/page.tsx:745-755` | S–M |
+| T28-11 | Search ignores hamza: «نظام الاثبات» finds 0 title hits while «نظام الإثبات» finds 3. Searching an author's name never finds his books | `src/utils/normalizeArabic.ts`, `api/library/search/lawTitleHits.ts`, `search/route.ts:531-543` | M |
+| T28-12 | Floating buttons: the orange «!» report button duplicates the in-page report button and covers the desktop research tools; on phones, three floating buttons pile over the text | `src/components/FloatingButtons.tsx:600-640,679`; `ResearchWorkspace.tsx:876` | S |
+| T28-13 | Lawyer consultation booking, step 4: «تعذّر التحقق من الجلسة» appears when the page's session has not loaded yet; past dates are accepted | `dashboard/lawyer/consultations/page.tsx:201-252,403,705` | S |
+| T28-14 | `/ai/analyze`: the public navbar appears inside the dashboard; «انتهى رصيدك من الكريديت» shows for every account because it reads a metadata field nothing writes; a lawyer gets the client analyser before `useUser` loads | `src/app/ai/analyze/page.tsx:4,16-28`; `src/hooks/useUser.ts:804` | S |
+| T28-15 | Tasks: the empty-state banner sits above the page title and points «أعلاه» at a button below it; kanban drag is broken in Firefox (no `dataTransfer.setData`) | `dashboard/lawyer/tasks/page.tsx:490-501,427,845`; `_components/TaskCard.tsx:92` | S |
+| T28-16 | Library data: a junk «2024-Incometax-Decisions» document and a duplicate «نظام الإثبات» row are live. PDF footers («صفحة 5 من 26»), stray page numbers, and internal editor notes with an archive path appear in the `executive-regulations-health-profession` preamble | parser exclusions, plus a data-cleanup SQL that you run, plus owner corpus fixes | M |
+| T28-17 | «AI Max» / «MAX فقط» labels are still visible. The owner says remove them but keep the fiqh word «المماكسة». Change the labels only, not the tier type | 17 files (list in the extraction report) | S |
+| T28-18 | Made-up testimonials on `/pro` | `src/app/pro/page.tsx:269-275` | S |
+| T28-19 | `/dashboard/corporate` returns 404; add a 308 redirect to `/dashboard/business` | `next.config.ts` redirects | S |
+| T28-20 | Collector shows «تعذّرت قراءة الجلسات» while its badge shows 1. This is intermittent: the four session-related failures in his screenshots all fall in one 15-minute window right after the cutover | reproduce and read the server logs; `ai/collector/_components/SessionsPanel.tsx:94-98` | S |
+
+### 7.2 Decided by the owner in this package — build on our schema (batch T28-B)
+
+| id | requirement | our implementation |
+|---|---|---|
+| T28-21 | Close direct database reads of paid text (Q ٦٠ answered) | Same as the P0 migration: revoke `anon` SELECT on `library.articles` and `article_regulations` and serve the text through the route. Stage it on the Docker harness first. Free content must keep working |
+| T28-22 | Hide the decree number and date, the gazette issue and the official links from non-subscribers, in the reader and the catalogue | Shape the route, `init` and `search` responses by `hasFullAccess`. **Tell the owner about the SEO trade-off** |
+| T28-23 | Repealed law: a red catalogue card, and a reader banner pointing to the law that replaced it | `status`, plus a reverse lookup on `supersedes_law_slug` |
+| T28-24 | Multi-volume fiqh books as one card with a volume switcher | Group `library.feqh_books` by base title / `total_volumes` |
+| T28-25 | Four court badges (م ع، د م، ل ج، م س) taken from the real principle source | Map the court field of `library.principles` to a badge |
+| T28-26 | The gazette issue number links to uqn.gov.sa | Identity panel |
+| T28-27 | Countdown: a 14-day "recently in force" window (his option ب) | Extend `EnactmentCountdownWidget` and `/api/library/enactments` |
+| T28-28 | Report dialog: highlighted text optional, 5-character minimum, 4 categories, article context | Extend `ReportArticleIssueButton` and `/api/v1/library/issue-reports`, not the package's table |
+| T28-29 | A clickable case-stage bar that filters the lawyer's cases, and a share-profile modal (link, WhatsApp/X/LinkedIn; the QR code waits on Q ٤١) | `dashboard/lawyer/cases/page.tsx`, `lawyer/page.tsx:640-672`, built on our `case_stages` |
+| T28-30 | Customisable quick tools (operational and AI, 3–8 of them) | Save in `user_settings.preferences` through `/api/v1/settings/preferences`. Never a new table, never localStorage |
+| T28-31 | Density toggle | A display preference like theme, so localStorage is allowed. The default size is an owner question (75 % vs 85 %) |
+| T28-32 | Wargaming specialties: all sections plus «أخرى» | Use the 31 sections answered in Q ٨٥, not 27 |
+| T28-33 | Circuits directory: full e-mail, one-tap copy, public and free (Q ٤٧) | Fix the `split("@")[0]` truncation now. **Add no new circuit data** until it has a source and `verified_at` (Q ١٠٦) |
+| T28-34 | Settings: a skeleton while loading, and no tab reset | `settings/page.tsx:104-111`, `useSettingsTabs.ts:65` |
+| T28-35 | Monitor, vault and brief-check: stop showing mock data | `DashboardComingSoon` for now. Brief review comes back as a **manual team service** (a real order), not a fake AI feature; see the question below |
+
+### 7.3 Needs the owner before building (added to the registry as ١٤٢ onwards)
+
+**Naming and pricing**
+- The name «التأمين القانوني» vs the binding name «عضوية الحماية القانونية — ليست تأميناً».
+- Whether unused consultations roll over.
+- 39 vs 49 SAR a month.
+- The 99 SAR AI plan, which the binding document forbids.
+- Founder seats: 396 vs 496, and whether the price is "permanent".
+- Pay-per-matter prices: the package has two different lists, vs the «سعر تقديري» wording.
+- New tiers: consultant 199/1,990, corporate 1,890 a month, firm 799 for 5 seats, lawyer Pro 299 vs 499.
+
+**Library access**
+- The free preview: 3 or 5 articles, and who unlocks the full text.
+
+**Payment**
+- Moyasar as the payment provider (Q ١).
+
+**Calculators**
+- Court-fees brackets: the package has three different versions. Our current calculator's rates are also made up, so it moves behind «تقديري» wording until he confirms.
+- The inheritance calculator's rules.
+
+**Directory and roles**
+- Lifting `BETA_MONOPOLY_MODE` and importing 25,928 lawyers (personal data).
+- Separating lawyers from consultants (Art. 18).
+- Firm magic-link invites with a 72 h expiry and a 30-day handover.
+
+**Other**
+- Renaming `/ai/global`.
+- The corporate hub.
+- Real ambient sounds (licensing).
+- The service-worker offline library: declined for safety.
+
+### 7.4 Order
+
+1. **T28-A this week**, one batch per area: library reader, then catalogue and search, then dashboards and AI pages, then data cleanup.
+2. **T28-21**, together with the P0 migrations.
+3. **T28-B** UI items.
+4. **Items that need a decision**, as the answers arrive.
+
+The owner report is updated in each batch's commit.

@@ -279,12 +279,19 @@ export function LawsTabContent({
 
                       {/* Inline Compact Articles/Chapters Summary */}
                       <div className={`flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mb-4 py-1.5 px-3 rounded-lg text-[10px] font-bold text-center ${isDark ? "bg-white/[0.03] text-gray-400" : "bg-gray-50 text-gray-600"}`}>
-                        <span>{isRTL ? `المواد: ${sys.articlesCount}` : `Articles: ${sys.articlesCount}`}</span>
-                        <span className="w-1 h-1 rounded-full bg-gray-400 opacity-50" />
-                        <span>{isRTL ? `الأبواب: ${sys.chaptersCount}` : `Chapters: ${sys.chaptersCount}`}</span>
+                        {/* Counts render only when known (owner test 2026-09-28, T28-05):
+                            «الأبواب» is not in the catalogue payload, and a search hit is
+                            an article, not a law — the «0» shown there was a made-up value. */}
+                        {sys.articlesCount > 0 && (
+                          <span>{isRTL ? `المواد: ${sys.articlesCount}` : `Articles: ${sys.articlesCount}`}</span>
+                        )}
+                        {sys.articlesCount > 0 && sys.chaptersCount > 0 && <span className="w-1 h-1 rounded-full bg-gray-400 opacity-50" />}
+                        {sys.chaptersCount > 0 && (
+                          <span>{isRTL ? `الأبواب: ${sys.chaptersCount}` : `Chapters: ${sys.chaptersCount}`}</span>
+                        )}
                         {sys.issuing_instrument && (
                           <>
-                            <span className="w-1 h-1 rounded-full bg-gray-400 opacity-50" />
+                            {(sys.articlesCount > 0 || sys.chaptersCount > 0) && <span className="w-1 h-1 rounded-full bg-gray-400 opacity-50" />}
                             <span className="truncate max-w-[120px]">{sys.issuing_instrument.split(" وتاريخ ")[0]}</span>
                           </>
                         )}
@@ -295,9 +302,9 @@ export function LawsTabContent({
                           {isRTL ? "تصفح النظام" : "Browse System"}
                           <ArrowRight size={12} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                         </span>
-                        {sys.lastUpdated && (
+                        {sys.lastUpdated && sys.lastUpdated !== "—" && (
                           <span className={`text-[10px] ${muted}`}>
-                            {isRTL ? `تحديث: ${sys.lastUpdated}` : `Updated: ${sys.lastUpdated}`}
+                            {isRTL ? `صدر: ${sys.lastUpdated}` : `Issued: ${sys.lastUpdated}`}
                           </span>
                         )}
                       </div>
@@ -398,24 +405,30 @@ export function LawsTabContent({
 
                       {/* Right: Stats + CTA */}
                       <div className="flex items-center gap-3 sm:shrink-0">
-                        <div className={`grid grid-cols-2 gap-3 px-3 py-2 rounded-lg border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/60"}`}>
+                        {(sys.articlesCount > 0 || sys.chaptersCount > 0) && (
+                        <div className={`grid ${sys.articlesCount > 0 && sys.chaptersCount > 0 ? "grid-cols-2" : "grid-cols-1"} gap-3 px-3 py-2 rounded-lg border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/60"}`}>
+                          {sys.articlesCount > 0 && (
                           <div className="flex flex-col items-center">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المواد" : "Articles"}</span>
-                            <span className={`text-sm font-black ${isDark ? "text-gray-200" : "text-gray-800"}`}>{sys.articlesCount}</span>
+                            <span className={`text-sm font-black ${isDark ? "text-gray-300" : "text-gray-800"}`}>{sys.articlesCount}</span>
                           </div>
+                          )}
+                          {sys.chaptersCount > 0 && (
                           <div className="flex flex-col items-center">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "الأبواب" : "Chapters"}</span>
-                            <span className={`text-sm font-black ${isDark ? "text-gray-200" : "text-gray-800"}`}>{sys.chaptersCount}</span>
+                            <span className={`text-sm font-black ${isDark ? "text-gray-300" : "text-gray-800"}`}>{sys.chaptersCount}</span>
                           </div>
+                          )}
                         </div>
+                        )}
                         <div className="flex flex-col justify-center gap-1">
                           <span className={`text-[11px] flex items-center gap-1 font-bold whitespace-nowrap ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                             {isRTL ? "تصفح النظام" : "Browse"}
                             <ArrowRight size={12} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                           </span>
-                          {sys.lastUpdated && (
+                          {sys.lastUpdated && sys.lastUpdated !== "—" && (
                             <span className={`text-[9px] ${muted} whitespace-nowrap`}>
-                              {isRTL ? `آخر تعديل: ${sys.lastUpdated}` : `Updated: ${sys.lastUpdated}`}
+                              {isRTL ? `صدر: ${sys.lastUpdated}` : `Issued: ${sys.lastUpdated}`}
                             </span>
                           )}
                         </div>

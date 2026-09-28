@@ -665,11 +665,17 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
         )}
       </AnimatePresence>
 
-      {/* Mobile Floating Action Button (FAB) Stack */}
-      <div 
+      {/* Mobile Floating Action Button (FAB) Stack.
+          Owner test 2026-09-28 (T28-12): this sat at bottom-20 in the same
+          corner as the reader's index button and scroll-to-top, so the three
+          covered each other and the article text. One column now, top to
+          bottom: tools (9rem) → index (5rem) → scroll-to-top (1.25rem),
+          each above the iOS safe-area inset; z-40 like the other FABs. */}
+      <div
         onMouseDown={(e)=>e.stopPropagation()}
         onTouchStart={(e)=>e.stopPropagation()}
-        className={`lg:hidden fixed bottom-20 ${isRTL ? "right-6" : "left-6"} z-[9999] flex flex-col items-center gap-3 print:hidden`}
+        style={{ bottom: "calc(9rem + env(safe-area-inset-bottom, 0px))" }}
+        className={`lg:hidden fixed ${isRTL ? "right-6" : "left-6"} z-40 flex flex-col items-center gap-3 print:hidden`}
       >
         <AnimatePresence>
           {isMobileMenuOpen && (

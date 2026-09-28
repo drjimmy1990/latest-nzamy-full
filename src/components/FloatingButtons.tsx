@@ -455,9 +455,43 @@ export function isFabSuppressedPath(pathname: string | null): boolean {
   );
 }
 
+/*
+ * Routes whose page already carries its own in-page report control, added
+ * 2026-09-28 for the owner's law-reader screenshots.
+ *
+ * The law reader renders «أبلغ عن خطأ في هذه المادة» next to each article
+ * (ReportArticleIssueButton, src/app/laws/[slug]/page.tsx). The orange «!»
+ * mini-FAB duplicated it, covered the research sidebar's tools on desktop
+ * (ResearchWorkspace's «مسح كل التظليلات»), and on a phone was one of three
+ * buttons stacked over the article text. Owner decision: no report FAB on the
+ * reader. Only the report FAB is dropped here — WhatsApp keeps its own rules.
+ * Precedent and book pages have no in-page control, so they keep the FAB —
+ * and so do royal orders (/laws/orders/*), whose page has no in-page button.
+ */
+const REPORT_FAB_SUPPRESSED_PREFIXES = ["/laws"] as const;
+const REPORT_FAB_KEPT_PREFIXES = ["/laws/orders"] as const;
+
+export function isReportFabSuppressedPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  const under = (p: string) => pathname === p || pathname.startsWith(p + "/");
+  if (REPORT_FAB_KEPT_PREFIXES.some(under)) return false;
+  return REPORT_FAB_SUPPRESSED_PREFIXES.some(under);
+}
+
+/*
+ * Every FAB in this file sits 1.25rem above the bottom edge PLUS the iOS home
+ * indicator inset (owner decision 2026-09-28: "bottom-5 with the safe-area
+ * offset"). An inline style rather than a class: the old `bottom-20
+ * md:bottom-6 … safe-bottom` pair added the inset as padding-bottom on the
+ * container, which grew the hit area instead of lifting the button, and the
+ * phone-only 5rem lift put the stack in the middle of the reading column.
+ */
+const FAB_BOTTOM_STYLE = { bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" } as const;
+
 // ─── Floating Buttons ────────────────────────────────────────────────────────
 // Single WhatsApp FAB + optional Report mini-FAB stacked above it.
-// Pass reportConfig to show the orange Report button (library pages only).
+// Pass reportConfig to show the orange Report button (library pages without
+// their own in-page report control — see isReportFabSuppressedPath).
 
 export default function FloatingButtons({ reportConfig: propReportConfig, cartCount: propCartCount, onCartClick: propOnCartClick }: FloatingButtonsProps = {}) {
   const pathname = usePathname();
@@ -467,15 +501,14 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   // Check if current page is a specific detailed legal item
   const isItemDetail = isLegalItemDetailPage(pathname);
 
-  // Dynamically calculate reportConfig based on pathname ONLY when inside a specific legal item page
+  // Dynamically calculate reportConfig based on pathname ONLY when inside a
+  // specific legal item page — and never on the law reader (/laws/*), whose
+  // page has its own per-article report button (isReportFabSuppressedPath).
   let reportConfig: ReportConfig | undefined = propReportConfig;
-  if (!reportConfig && isItemDetail) {
+  if (!reportConfig && isItemDetail && !isReportFabSuppressedPath(pathname)) {
     if (pathname.startsWith("/laws/orders/")) {
       const slug = pathname.substring("/laws/orders/".length);
       if (slug) reportConfig = { pageSlug: "order-" + slug, pageType: "order" };
-    } else if (pathname.startsWith("/laws/")) {
-      const slug = pathname.substring("/laws/".length);
-      if (slug) reportConfig = { pageSlug: slug, pageType: "law" };
     } else if (pathname.startsWith("/precedents/judgment/")) {
       const slug = pathname.substring("/precedents/judgment/".length);
       if (slug) reportConfig = { pageSlug: "judgment-" + slug, pageType: "precedent" };
@@ -601,7 +634,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
           is matrix row 168's complaint in its most severe form.
           40 is above page content and below every overlay, which is the only
           band a persistent FAB belongs in. */}
-      <div className={`fixed bottom-20 md:bottom-6 ${waBtnSide} z-40 ${isFabMobileSuppressedPath(pathname) ? "hidden lg:flex" : "flex"} flex-col items-center gap-2.5 print:hidden safe-bottom`}>
+      <div style={FAB_BOTTOM_STYLE} className={`fixed ${waBtnSide} z-40 ${isFabMobileSuppressedPath(pathname) ? "hidden lg:flex" : "flex"} flex-col items-center gap-2.5 print:hidden`}>
 
         {/* ── Orange Report mini-FAB (only on library pages) ── */}
         {reportConfig && (
@@ -676,7 +709,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
       {/* ── Floating Draft Cart FAB (Restricted to legal item detail pages) ── */}
       {showDraftFab && (
-        <div className={`fixed bottom-20 md:bottom-6 ${isRTL ? "left-[88px]" : "right-[88px]"} z-40 print:hidden safe-bottom`}>
+        <div style={FAB_BOTTOM_STYLE} className={`fixed ${isRTL ? "left-[88px]" : "right-[88px]"} z-40 print:hidden`}>
           <div className="relative group">
             {/* Tooltip */}
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold shadow-lg border border-white/10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">

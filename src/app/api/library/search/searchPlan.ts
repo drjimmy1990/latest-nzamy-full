@@ -550,7 +550,36 @@ export function titlePhrasePattern(rawQuery: string): string | null {
   const phrase = rawQuery.trim().replace(/\s+/g, ' ');
   if (phrase.length < 2 || phrase.length > 80) return null;
   if (!/^[\p{L}\p{N} ]+$/u.test(phrase)) return null;
-  return `%${phrase}%`;
+  return `%${foldLettersForIlike(phrase)}%`;
+}
+
+/**
+ * Letters people type interchangeably become the ILIKE single-character
+ * wildcard, so «نظام الاثبات» finds «نظام الإثبات» (owner test 2026-09-28,
+ * T28-11: the hamza-less spelling found 0 title hits). The `simple` FTS
+ * config does no Arabic folding and ILIKE compares code points, so the fold
+ * lives in the pattern. Scoring (scoreLawTitle) already folds with
+ * normalizeSearch, so the wider candidate set is ranked the same way.
+ * Only called on phrases titlePhrasePattern has vetted (letters, digits,
+ * spaces), so no caller-supplied «_» or «%» ever reaches a pattern.
+ *
+ * The fold is positional, where the variants actually occur: the alef that
+ * opens a word or follows its «ال» (إثبات/اثبات, الأحوال/الاحوال), and a
+ * final ة/ه or ى/ي (اللائحة/اللائحه). Folding every alef, ه and ي made
+ * «هيئة» match every «لائحة» title — too many false candidates filled the
+ * 25-row lookups and pushed real matches out (independent review, M2).
+ */
+export function foldLettersForIlike(phrase: string): string {
+  return phrase
+    .split(' ')
+    .map((word) => {
+      let w = word;
+      if (/^ال[اأإآ]/.test(w)) w = `ال_${w.slice(3)}`;
+      else if (/^[أإآ]/.test(w) || (/^ا/.test(w) && !/^ال/.test(w))) w = `_${w.slice(1)}`;
+      if (w.length > 2) w = w.replace(/[ةه]$/, '_').replace(/[ىي]$/, '_');
+      return w;
+    })
+    .join(' ');
 }
 
 /** ILIKE pattern for titles that START with the phrase («نظام العمل…»), or null (see titlePhrasePattern). */
@@ -573,7 +602,7 @@ export function titleStemPatterns(rawQuery: string): string[] | null {
   const patterns = words.map((w) => {
     const bare = w.startsWith('ال') && w.length > 3 ? w.slice(2) : null;
     if (bare) stripped = true;
-    return `%${bare ?? w}%`;
+    return `%${foldLettersForIlike(bare ?? w)}%`;
   });
   return stripped ? patterns : null;
 }

@@ -487,18 +487,6 @@ export default function LawyerTasksPage() {
           </p>
         </motion.div>
       )}
-      {loadState === "ready" && tasks.length === 0 && (
-        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-slate-50"}`}>
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-white/[0.05]" : "bg-white"}`}>
-            <CheckCircle size={18} weight="duotone" className={isDark ? "text-zinc-500" : "text-slate-400"} />
-          </div>
-          <div>
-            <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد مهام بعد</p>
-            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>ابدأ بإضافة مهمة من زر «مهمة جديدة» أعلاه.</p>
-          </div>
-        </motion.div>
-      )}
       {/* Save error — an optimistic write the server refused, rolled back */}
       {saveError && (
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
@@ -590,6 +578,22 @@ export default function LawyerTasksPage() {
             </div>
           </div>
       </motion.div>
+
+      {/* Empty state (T28-15) — below the header now, so «أعلاه» is true: it
+          used to render ABOVE the page title while pointing «أعلاه» at a
+          button that was actually below it. */}
+      {loadState === "ready" && tasks.length === 0 && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-slate-50"}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-white/[0.05]" : "bg-white"}`}>
+            <CheckCircle size={18} weight="duotone" className={isDark ? "text-zinc-500" : "text-slate-400"} />
+          </div>
+          <div>
+            <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد مهام بعد</p>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>ابدأ بإضافة مهمة من زر «مهمة جديدة» أعلاه.</p>
+          </div>
+        </motion.div>
+      )}
 
       {/* The الكل / مهامي / مهام الفريق toggle used to sit here. It filtered on
           `t.ownerId`, which GET /api/v1/lawyer/tasks does not return and
@@ -841,8 +845,14 @@ export default function LawyerTasksPage() {
                       : "bg-white border border-slate-100/50 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.03)]"
                   } ${dragOverCol===col.key ? (isDark ? "ring-2 ring-emerald-500/30 bg-emerald-500/5" : "ring-2 ring-emerald-500/20 bg-emerald-50") : ""}`}
                   style={{ minWidth: 360, width: 360 }}
-                  onDragOver={e=>{e.preventDefault();if(isDraggable)setDragOverCol(col.key as TaskStatus);}}
-                  onDrop={()=>{if(isDraggable)onDrop(col.key as TaskStatus);}}
+                  onDragOver={e=>{e.preventDefault();if(isDraggable){e.dataTransfer.dropEffect="move";setDragOverCol(col.key as TaskStatus);}}}
+                  onDrop={e=>{
+                    e.preventDefault(); // Firefox otherwise navigates to the dropped text/plain
+                    if(!isDraggable)return;
+                    // The card's dragstart set both; the dataTransfer copy is the fallback.
+                    if(!dragId.current)dragId.current=e.dataTransfer.getData("text/plain")||null;
+                    onDrop(col.key as TaskStatus);
+                  }}
                 >
                   <div className="absolute inset-0 pointer-events-none opacity-[0.015] bg-[url('/noise.svg')]" />
                   

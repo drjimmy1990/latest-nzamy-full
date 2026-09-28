@@ -89,7 +89,7 @@ export const RECENT_CASES: RecentCase[] = [
 ];
 
 export const ACTIVITY_TIMELINE: ActivityItem[] = [
-  { id: 1, time: "منذ ١٠ دقائق", action: "المستشار ماكس: تحليل القضية وتحضير استراتيجية الدفوع",   type: "ai",      caseRef: "قضية عمالية ٤٥٦٧",    category: "ai" },
+  { id: 1, time: "منذ ١٠ دقائق", action: "المستشار القانوني: تحليل القضية وتحضير استراتيجية الدفوع",   type: "ai",      caseRef: "قضية عمالية ٤٥٦٧",    category: "ai" },
   { id: 2, time: "منذ ٤٥ دقيقة", action: "تم استلام مذكرة رد من الخصم عبر منصة ناجز",              type: "warning", caseRef: "نزاع تجاري — الأفق",  category: "manual" },
   { id: 3, time: "منذ ساعة",      action: "محترف العقود: صياغة عقد شراكة مع إضافات حماية الملكية", type: "ai",      caseRef: "عقد شراكة — النور",   category: "ai" },
   { id: 4, time: "منذ ٣ ساعات",   action: "حُدِّد موعد جلسة جديد (عن بعد)",                        type: "info",    caseRef: "استئناف العقار ٢١٣",  category: "system" },

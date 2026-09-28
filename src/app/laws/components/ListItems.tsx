@@ -9,6 +9,7 @@ import * as PhosphorIcons from "@phosphor-icons/react";
 import { type DemoPrinciple, type DemoPrecedent, type DemoOrder } from "../demo-data-access";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import { SECTION_30 } from "../lawsIndexFacets";
+import { principleYear } from "../principleCardFields";
 
 export function highlightText(text: string, q: string, isDark: boolean) {
   if (!text) return "";
@@ -194,7 +195,7 @@ export function PrincipleRow({ p, isDark, idx, isRTL = true, q = "" }: { p: Demo
             {p.page && <span>{isRTL ? "ص" : "p."} {p.page}</span>}
             {p.caseNum && !isTamyeez && <span>{isRTL ? "رقم القرار" : "Decision No."}: {p.caseNum}</span>}
             {isTamyeez && p.caseNum && <span>{isRTL ? "رقم القرار" : "Decision No."}: {p.caseNum}</span>}
-            <span>{p.year}{isRTL ? "هـ" : " AH"}</span>
+            {principleYear(p.year, p.ref) && <span>{principleYear(p.year, p.ref)}{isRTL ? "هـ" : " AH"}</span>}
           </div>
 
         </div>
@@ -615,7 +616,7 @@ export function PrincipleCard({ p, isDark, idx, isRTL = true, q = "" }: { p: Dem
         <div className={`flex flex-wrap items-center gap-x-2 text-[9px] font-mono ${isDark ? "text-gray-600" : "text-slate-400"}`}>
           <span>{p.ref}</span>
           {p.page && <span>{isRTL ? "ص" : "p."} {p.page}</span>}
-          <span>{p.year}{isRTL ? "هـ" : " AH"}</span>
+          {principleYear(p.year, p.ref) && <span>{principleYear(p.year, p.ref)}{isRTL ? "هـ" : " AH"}</span>}
         </div>
       </div>
     </motion.div>

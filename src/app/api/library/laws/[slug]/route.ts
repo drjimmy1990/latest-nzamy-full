@@ -5,6 +5,7 @@ import { libraryGate } from '@/lib/library-gate';
 import { lawStatusForDetail } from '@/app/laws/law-status';
 import { resolveParentLawLink, type ParentLawCandidate } from './_resolve-parent-law';
 import { orderLawChapters } from './_order-chapters';
+import { articleDisplayLabel } from './_article-label';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -380,7 +381,9 @@ function formatArticleWithPaywall(
 
   const result: Record<string, unknown> = {
     id: article.id,
-    num: article.number_text || `المادة ${article.number}`,
+    // Heading marks stripped; an instrument name stored in place of the
+    // number falls back to «المادة N» (owner test 2026-09-28, _article-label.ts).
+    num: articleDisplayLabel(article.number_text as string | null, article.number as number | null),
     // Raw locator parts, so a citation can be built from what the source
     // actually says instead of by regex-stripping the display label.
     number: article.number ?? null,

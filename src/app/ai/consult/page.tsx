@@ -175,7 +175,7 @@ export default function AIConsultPage() {
     {
       id: "sys-1",
       role: "system",
-      text: "جلسة استشارة جديدة · نظامي AI MAX · مارس ٢٠٢٦",
+      text: "جلسة استشارة جديدة · نظامي AI",
       time: "",
     },
   ]);

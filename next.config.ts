@@ -168,6 +168,14 @@ const nextConfig: NextConfig = {
       // destination shape.
       { source: "/dashboard/provider/promotions", destination: "/dashboard/provider/profile", permanent: true },
       { source: "/dashboard/provider/promotions/:path*", destination: "/dashboard/provider/profile", permanent: true },
+
+      // ── T28-19 — /dashboard/corporate ────────────────────────────────────
+      // The corporate account's dashboard lives at /dashboard/business (the
+      // `corporate` user type maps there); /dashboard/corporate never existed
+      // as a route, but it is the URL people guess and type. No page lives at
+      // this path, so the rule shadows nothing.
+      { source: "/dashboard/corporate", destination: "/dashboard/business", permanent: true },
+      { source: "/dashboard/corporate/:path*", destination: "/dashboard/business/:path*", permanent: true },
     ];
   },
 };

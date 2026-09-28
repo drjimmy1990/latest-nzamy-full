@@ -12,7 +12,7 @@ function getMergedReg(a: LawArticle): { ref: string; text: string } | null {
   if (!a.regulations || a.regulations.length === 0) return null;
   const distinctRefs = Array.from(new Set(a.regulations.map((r) => r.ref || "").filter(Boolean)));
   return {
-    ref: distinctRefs.join(", "),
+    ref: distinctRefs.join("، "),
     text: a.regulations.map((r) => r.text || "").join("\n\n"),
   };
 }
@@ -366,9 +366,23 @@ export default function SidebarPanel({
           {law.source && (
             <div className="flex gap-1.5 items-start">
               <Tag size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
-              <div>
+              <div className="min-w-0">
                 <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "المصدر" : "Source"}</p>
-                <p className={`text-[10px] leading-tight ${muted}`}>{law.source}</p>
+                {/* A real link that wraps inside the card: the raw URL used to
+                    run past the card edge as plain text (owner test 2026-09-28, T28-07). */}
+                {/^https?:\/\//i.test(law.source) ? (
+                  <a
+                    href={law.source}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    dir="ltr"
+                    className={`block text-[10px] leading-tight break-all underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                  >
+                    {(() => { try { return new URL(law.source).hostname; } catch { return law.source; } })()}
+                  </a>
+                ) : (
+                  <p className={`text-[10px] leading-tight break-words ${muted}`}>{law.source}</p>
+                )}
               </div>
             </div>
           )}
@@ -462,7 +476,11 @@ export default function SidebarPanel({
                     } ${a.status === "repealed" ? "line-through opacity-50" : ""}`}
                   >
                     {!a.free && <Lock size={9} className="flex-shrink-0" />}
-                    <span className="truncate flex-1 font-medium">{getMergedReg(a)?.ref}</span>
+                    {/* The article the regulation hangs off, not the regulation's
+                        name: that name is the same on every row, so the list read
+                        «اللائحة التنفيذية لنظام العمل» thirty times (owner test
+                        2026-09-28, T28-06). The name stays in the tooltip. */}
+                    <span className="truncate flex-1 font-medium" title={getMergedReg(a)?.ref}>{a.num}</span>
                     {hasRegInCart && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
                   </button>
                 );

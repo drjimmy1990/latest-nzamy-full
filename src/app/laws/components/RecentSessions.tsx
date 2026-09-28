@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
+import { useUser } from "@/hooks/useUser";
+import { isSupabaseMode } from "@/lib/services/api";
+import { getPreferences, type RecentSession } from "@/lib/services/preferencesService";
 import {
   ClockCounterClockwise, CaretDown, CaretUp, BookOpen,
   Trash, ArrowRight, Eye, Clock, CalendarBlank,
@@ -10,23 +13,25 @@ import {
 // ─── Types ──────────────────────────────────────────────────────────────────────
 export interface SessionEntry {
   id: string;
+  /** The reader this entry opens (law, royal order or precedent). */
+  href: string;
   lawSlug: string;
   lawTitle: string;
   lawTitleEn: string;
   /** Last article or section viewed */
   lastSection?: string;
   lastSectionEn?: string;
-  /** reading progress 0-100 */
-  progress: number;
-  /** ISO timestamp */
-  timestamp: string;
+  /** reading progress 0-100 — not tracked yet, so absent */
+  progress?: number;
+  /** ISO timestamp — absent on entries saved before 2026-09-28 */
+  timestamp?: string;
   /** category badge */
   catId: string;
   catLabel: string;
   catLabelEn: string;
 }
 
-type TimeGroup = "today" | "yesterday" | "thisWeek" | "thisMonth" | "older";
+type TimeGroup = "today" | "yesterday" | "thisWeek" | "thisMonth" | "older" | "undated";
 
 const GROUP_LABELS: Record<TimeGroup, { ar: string; en: string }> = {
   today:     { ar: "اليوم",          en: "Today" },
@@ -34,128 +39,49 @@ const GROUP_LABELS: Record<TimeGroup, { ar: string; en: string }> = {
   thisWeek:  { ar: "هذا الأسبوع",   en: "This Week" },
   thisMonth: { ar: "هذا الشهر",     en: "This Month" },
   older:     { ar: "أقدم",          en: "Older" },
+  undated:   { ar: "آخر ما تصفّحت",  en: "Recently viewed" },
 };
 
-const GROUP_ORDER: TimeGroup[] = ["today", "yesterday", "thisWeek", "thisMonth", "older"];
+const GROUP_ORDER: TimeGroup[] = ["today", "yesterday", "thisWeek", "thisMonth", "older", "undated"];
 
-// ─── Demo Data ──────────────────────────────────────────────────────────────────
-function generateDemoSessions(): SessionEntry[] {
-  const now = new Date();
+// ─── Real data ──────────────────────────────────────────────────────────────────
+// Maps the stored RecentSession rows (preferencesService) onto the card shape.
+// Entries written before 2026-09-28 carry no openedAt; they are grouped as
+// «آخر ما تصفّحت» instead of being given an invented time.
+// The guest key is shared by three readers: laws (type "law"), royal orders
+// ("order", src/app/laws/orders/[slug]) and precedents ("precedent",
+// src/app/precedents/[slug]). Each entry opens its own reader. The slug is
+// stored as useParams() returned it — possibly already percent-encoded — so
+// it is only encoded when it is not.
+function sessionHref(type: string | undefined, slug: string): string {
+  const safe = /%[0-9A-Fa-f]{2}/.test(slug) ? slug : encodeURIComponent(slug);
+  if (type === "order") return `/laws/orders/${safe}`;
+  if (type === "precedent") return `/precedents/${safe}`;
+  return `/laws/${safe}`;
+}
 
-  const mkDate = (daysAgo: number, hours: number = 14) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - daysAgo);
-    d.setHours(hours, Math.floor(Math.random() * 60), 0, 0);
-    return d.toISOString();
-  };
-
-  return [
-    {
-      id: "s1",
-      lawSlug: "companies-law",
-      lawTitle: "نظام الشركات",
-      lawTitleEn: "Companies Law",
-      lastSection: "المادة 54 — مسؤولية المدير",
-      lastSectionEn: "Article 54 — Director Liability",
-      progress: 72,
-      timestamp: mkDate(0, 16),
-      catId: "SA-04",
-      catLabel: "التجاري والشركات",
-      catLabelEn: "Commercial & Companies",
-    },
-    {
-      id: "s2",
-      lawSlug: "civil-procedure",
-      lawTitle: "نظام المرافعات الشرعية",
-      lawTitleEn: "Civil Procedure Law",
-      lastSection: "المادة 76 — الدفع بعدم الاختصاص",
-      lastSectionEn: "Article 76 — Jurisdiction Plea",
-      progress: 38,
-      timestamp: mkDate(0, 10),
-      catId: "SA-00",
-      catLabel: "الإجرائي والقضائي",
-      catLabelEn: "Procedural",
-    },
-    {
-      id: "s3",
-      // execution-law (2026-09-25): dead on self-hosted; real slug is
-      // execution-law-qadha-edition (active — see law-metadata-map.ts note).
-      lawSlug: "execution-law-qadha-edition",
-      lawTitle: "نظام التنفيذ",
-      lawTitleEn: "Execution Law",
-      lastSection: "المادة 34 — الحجز التنفيذي",
-      lastSectionEn: "Article 34 — Execution Seizure",
-      progress: 55,
-      timestamp: mkDate(1, 20),
-      catId: "SA-00",
-      catLabel: "الإجرائي والقضائي",
-      catLabelEn: "Procedural",
-    },
-    {
-      id: "s4",
-      // evidence-law (2026-09-25): dead on self-hosted; real slug is
-      // evidence-law-qadha-edition (active).
-      lawSlug: "evidence-law-qadha-edition",
-      lawTitle: "نظام الإثبات",
-      lawTitleEn: "Evidence Law",
-      lastSection: "المادة 22 — اليمين الحاسمة",
-      lastSectionEn: "Article 22 — Decisive Oath",
-      progress: 90,
-      timestamp: mkDate(1, 15),
-      catId: "SA-00",
-      catLabel: "الإجرائي والقضائي",
-      catLabelEn: "Procedural",
-    },
-    {
-      id: "s5",
-      // labor-law (2026-09-25): dead on self-hosted; real slug is
-      // labor-law-qadha (active, on both self-hosted and the cloud DB).
-      lawSlug: "labor-law-qadha",
-      lawTitle: "نظام العمل",
-      lawTitleEn: "Labor Law",
-      lastSection: "المادة 80 — إنهاء العقد بدون مكافأة",
-      lastSectionEn: "Article 80 — Termination Without Award",
-      progress: 25,
-      timestamp: mkDate(4, 11),
-      catId: "SA-06",
-      catLabel: "العمل والتأمينات",
-      catLabelEn: "Labor",
-    },
-    {
-      id: "s6",
-      // civil-transactions (2026-09-25): dead on self-hosted; real slug is
-      // civil-transactions-law (active, on both self-hosted and the cloud DB).
-      lawSlug: "civil-transactions-law",
-      lawTitle: "نظام المعاملات المدنية",
-      lawTitleEn: "Civil Transactions Law",
-      lastSection: "المادة 180 — المسؤولية التقصيرية",
-      lastSectionEn: "Article 180 — Tort Liability",
-      progress: 44,
-      timestamp: mkDate(12, 9),
-      catId: "SA-03",
-      catLabel: "المدني والأحوال الشخصية",
-      catLabelEn: "Civil & Personal Status",
-    },
-    {
-      id: "s7",
-      lawSlug: "arbitration-law",
-      lawTitle: "نظام التحكيم",
-      lawTitleEn: "Arbitration Law",
-      lastSection: "المادة 50 — بطلان الحكم",
-      lastSectionEn: "Article 50 — Award Nullification",
-      progress: 68,
-      timestamp: mkDate(20, 14),
-      catId: "SA-28",
-      catLabel: "التحكيم وتسوية النزاعات",
-      catLabelEn: "Arbitration",
-    },
-  ];
+function toSessionEntries(list: RecentSession[]): SessionEntry[] {
+  return list
+    .filter(s => s && typeof s.slug === "string" && typeof s.title === "string" && s.title.trim())
+    .map((s, i) => ({
+      id: `${s.type ?? "law"}:${s.slug}:${i}`,
+      href: sessionHref(s.type, s.slug),
+      lawSlug: s.slug,
+      lawTitle: s.title,
+      lawTitleEn: s.titleEn || s.title,
+      timestamp: s.openedAt,
+      catId: s.catId ?? "",
+      catLabel: "",
+      catLabelEn: "",
+    }));
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
-function classifyDate(isoStr: string): TimeGroup {
+function classifyDate(isoStr: string | undefined): TimeGroup {
+  if (!isoStr) return "undated";
   const now = new Date();
   const d = new Date(isoStr);
+  if (Number.isNaN(d.getTime())) return "undated";
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const startOfYesterday = new Date(startOfToday); startOfYesterday.setDate(startOfYesterday.getDate() - 1);
   const startOfWeek = new Date(startOfToday); startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
@@ -215,13 +141,16 @@ function SessionCard({
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={() => { window.location.href = entry.href; }}
+      role="link"
       className={`group relative flex items-center gap-2.5 p-3 rounded-xl border transition-all duration-200 cursor-pointer overflow-hidden ${
         isDark
           ? "bg-[#161b22] border-[#2d3748] hover:border-[#C8A762]/30 hover:bg-[#1c2230]"
           : "bg-white border-gray-200/80 hover:border-[#0B3D2E]/30 hover:shadow-[0_4px_20px_-6px_rgba(11,61,46,0.08)]"
       }`}
     >
-      {/* Progress ring - Smaller and more compact */}
+      {/* Progress ring — only when a real progress value exists */}
+      {typeof entry.progress === "number" && (
       <div className="relative flex-shrink-0 w-10 h-10">
         <svg className="w-10 h-10 -rotate-90" viewBox="0 0 40 40">
           <circle
@@ -235,11 +164,11 @@ function SessionCard({
             fill="none"
             strokeWidth="2.5"
             strokeLinecap="round"
-            strokeDasharray={`${(entry.progress / 100) * 100.5} 100.5`}
+            strokeDasharray={`${((entry.progress ?? 0) / 100) * 100.5} 100.5`}
             className={
-              entry.progress >= 80
+              (entry.progress ?? 0) >= 80
                 ? "stroke-emerald-500"
-                : entry.progress >= 50
+                : (entry.progress ?? 0) >= 50
                   ? "stroke-[#C8A762]"
                   : isDark ? "stroke-[#C8A762]/60" : "stroke-[#0B3D2E]"
             }
@@ -254,10 +183,12 @@ function SessionCard({
           </span>
         </div>
       </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         {/* Category Label stacked above the title to prevent truncation */}
+        {entry.catLabel && (
         <div className="mb-1 flex">
           <span className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded-md ${
             isDark ? "bg-[#C8A762]/10 text-[#C8A762]/80" : "bg-[#0B3D2E]/5 text-[#0B3D2E]/60"
@@ -265,6 +196,7 @@ function SessionCard({
             {isRTL ? entry.catLabel : entry.catLabelEn}
           </span>
         </div>
+        )}
         
         <h4 className={`text-[12.5px] font-bold tracking-tight leading-snug mb-0.5 truncate ${isDark ? "text-white" : "text-gray-900"}`}>
           {isRTL ? entry.lawTitle : entry.lawTitleEn}
@@ -276,12 +208,14 @@ function SessionCard({
           </p>
         )}
         
+        {entry.timestamp && (
         <div className={`flex items-center gap-1.5 text-[9px] font-medium leading-none ${isDark ? "text-gray-600" : "text-gray-400"}`}>
           <Clock size={9} weight="fill" className="shrink-0" />
           <span className="truncate">{formatTime(entry.timestamp, isRTL)}</span>
           <span className="opacity-40 shrink-0">·</span>
           <span className="truncate">{formatRelativeDate(entry.timestamp, isRTL)}</span>
         </div>
+        )}
       </div>
 
       {/* Actions on hover - Absolute positioned to avoid layout shift */}
@@ -327,11 +261,35 @@ export default function RecentSessions({
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
   const [isExpandedView, setIsExpandedView] = useState(false);
 
-  useEffect(() => {
-    // In production, load from localStorage / API
-    setSessions(generateDemoSessions());
-  }, []);
+  const { isLoggedIn, loading: authLoading } = useUser();
 
+  // Owner test 2026-09-28 (T28-02): this used to render generateDemoSessions()
+  // — seven invented sessions with invented progress — to every visitor,
+  // guests included. It now reads the same list the law reader writes
+  // (src/app/laws/[slug]/page.tsx): preferences.recentSessions for signed-in
+  // users, the `nzamy_recent_sessions` browser key for guests. No progress
+  // is tracked anywhere, so no progress ring is shown.
+  useEffect(() => {
+    if (authLoading) return;
+    let cancelled = false;
+    const apply = (list: RecentSession[] | null | undefined) => {
+      if (!cancelled) setSessions(toSessionEntries(list ?? []));
+    };
+    if (isLoggedIn && isSupabaseMode) {
+      getPreferences().then(prefs => apply(prefs?.recentSessions));
+    } else {
+      try {
+        const raw = localStorage.getItem("nzamy_recent_sessions");
+        const parsed = raw ? JSON.parse(raw) : [];
+        apply(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        apply([]);
+      }
+    }
+    return () => { cancelled = true; };
+  }, [authLoading, isLoggedIn]);
+
+  // Hides the row in this view only; the stored list is untouched.
   const handleRemove = useCallback((id: string) => {
     setSessions(prev => prev.filter(s => s.id !== id));
   }, []);
@@ -340,7 +298,7 @@ export default function RecentSessions({
   const grouped = GROUP_ORDER.reduce<Record<TimeGroup, SessionEntry[]>>((acc, g) => {
     acc[g] = sessions.filter(s => classifyDate(s.timestamp) === g);
     return acc;
-  }, { today: [], yesterday: [], thisWeek: [], thisMonth: [], older: [] });
+  }, { today: [], yesterday: [], thisWeek: [], thisMonth: [], older: [], undated: [] });
 
   const totalSessions = sessions.length;
 
@@ -378,7 +336,7 @@ export default function RecentSessions({
             </h3>
             <p className={`text-[11px] ${isDark ? "text-gray-500" : "text-gray-400"}`}>
               {isRTL
-                ? `${totalSessions} نظام تم تصفحه مؤخراً`
+                ? `ما تصفّحته مؤخراً: ${totalSessions}`
                 : `${totalSessions} recently viewed`}
             </p>
           </div>

@@ -61,7 +61,6 @@ export default function CorpMonitorPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>راصد التشريعات</h1>
-            <span className="rounded-full bg-purple-500/15 border border-purple-500/30 px-2.5 py-0.5 text-[10px] font-bold text-purple-400">MAX</span>
             <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">جديد</span>
           </div>
           <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>

@@ -162,3 +162,25 @@ export function planBlocksRequest(searchParams: URLSearchParams): BlocksRequestP
   if (before !== null) return { ok: true, sectionId, selection: { mode: 'before', order: before } };
   return { ok: true, sectionId, selection: { mode: 'page' } };
 }
+
+/**
+ * Book text as the reader should see it (owner test 2026-09-28, T28-10).
+ * The extracted corpus carries page-break comments («<!-- PAGE_END -->», and a
+ * garbled «<-- PAGE_END --!>» variant), markdown bold marks («**…**»), and
+ * blocks whose whole text is a separator («---»). The reader prints text
+ * verbatim, so each showed up on screen. Returns null when nothing readable
+ * is left, so the reader skips the section instead of showing an empty frame.
+ */
+export function cleanBookText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value
+    .replace(/<!?-{2,}\s*PAGE_(?:END|START|BREAK)[^>]*>/gi, '')
+    // Separator lines first, so «***» is not half-eaten by the bold rule.
+    .replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, '')
+    // Bold within one line only, and only when «**» opens a word: «2**3» or
+    // an unpaired «**» stays as written.
+    .replace(/(^|[^\w؀-ۿ*])\*\*(?!\s)([^*\n]+?)\*\*/gm, '$1$2')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return text ? text : null;
+}
