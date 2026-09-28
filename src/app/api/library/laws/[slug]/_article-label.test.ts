@@ -21,6 +21,12 @@ test("an instrument name in place of a number falls back to «المادة N»",
   assert.equal(articleDisplayLabel("نظام العمل", 4), "المادة 4");
 });
 
+test("a zero or missing number is never printed as «المادة 0»", () => {
+  assert.equal(articleDisplayLabel("المادة الأولى:", 0), "المادة الأولى");
+  assert.equal(articleDisplayLabel("اللائحة التنفيذية لنظام العمل", 0), "اللائحة التنفيذية لنظام العمل");
+  assert.equal(articleDisplayLabel("", 0), "");
+});
+
 test("empty text uses the number; no number keeps whatever text exists", () => {
   assert.equal(articleDisplayLabel("", 5), "المادة 5");
   assert.equal(articleDisplayLabel(null, 5), "المادة 5");

@@ -34,8 +34,12 @@ export function articleDisplayLabel(
   number: number | string | null | undefined,
 ): string {
   const cleaned = cleanNumberText(numberText);
-  const hasNumber = number !== null && number !== undefined && String(number).trim() !== "";
-  const fallback = hasNumber ? `المادة ${number}` : cleaned;
+  // `articles.number` is 0 for many rows whose locator is spelled out
+  // («المادة الأولى:» — measured 2026-09-28 on executive-regulations-health-
+  // profession), so only a positive number is trusted for the fallback.
+  const n = Number(number);
+  const hasNumber = Number.isFinite(n) && n > 0;
+  const fallback = hasNumber ? `المادة ${n}` : cleaned;
 
   if (!cleaned) return fallback;
   // A title in place of a locator: use the number when we have one.
