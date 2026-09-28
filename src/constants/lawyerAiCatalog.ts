@@ -91,8 +91,12 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
   {
     permission: "ai:brief-check",
     href: "/ai/brief-check",
-    titleAr: "فاحص المذكرات",
-    titleEn: "Brief Auditor",
+    // Was «فاحص المذكرات» / "Brief Auditor" — the name of an automatic
+    // checker that never existed (the page showed five fixed findings after a
+    // timer). /ai/brief-check now places an order the TEAM fulfils (owner
+    // decision Q77), under the owner's own name for the service.
+    titleAr: "مراجعة وتدقيق مذكرة",
+    titleEn: "Brief Review",
     pointCost: 0,
     betaStatus: "beta-free",
     sidebarPlacement: "hub-only",

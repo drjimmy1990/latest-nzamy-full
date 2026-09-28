@@ -17,6 +17,17 @@ import { isRecord, str, collectAttachments, documentIdStr, type OrderAttachment,
  */
 export const WARGAMING_CRITIQUE_TARGET = "critique";
 
+/**
+ * The «أخرى» tile of the wizard's specialty picker (owner test 28-9, T28-32).
+ * The picker offers the platform's 31 sections (LEGAL_TAXONOMY, stored as
+ * their SA-xx ids) plus this one; choosing it makes `areaOther` — the client's
+ * own wording for the specialty — required. `area` itself stays a free string
+ * here: orders placed before the switch carry the old eight ids ("labor",
+ * "commercial", …) and must keep validating on the server.
+ */
+export const WARGAMING_AREA_OTHER = "other";
+export const MAX_AREA_OTHER_LENGTH = 120;
+
 const MIN_CASE_SUMMARY = 20;
 
 export interface WargamingIntakeV1 {
@@ -24,6 +35,8 @@ export interface WargamingIntakeV1 {
   service: "wargaming";
   role: "plaintiff" | "defendant" | "advisor";
   area: string;
+  /** Present only when area === "other": the specialty as the client typed it. */
+  areaOther?: string;
   caseSummary: string;
   targets: string[];
   memoText?: string;
@@ -54,7 +67,16 @@ export function validateWargamingIntake(input: unknown): ValidationResult<Wargam
   }
 
   const area = str(input.area);
-  if (!area) errors.push("تخصص القضية مطلوب");
+  // Read only for «أخرى»: a stale areaOther left behind after the client
+  // switched to a listed section must not ride along in the order.
+  const areaOther = area === WARGAMING_AREA_OTHER ? str(input.areaOther) : "";
+  if (!area) {
+    errors.push("تخصص القضية مطلوب");
+  } else if (area === WARGAMING_AREA_OTHER && !areaOther) {
+    errors.push("اكتب تخصص القضية عند اختيار «أخرى»");
+  } else if (areaOther.length > MAX_AREA_OTHER_LENGTH) {
+    errors.push(`وصف التخصص طويل جداً — الحد الأقصى ${MAX_AREA_OTHER_LENGTH} حرفاً`);
+  }
 
   const caseSummary = str(input.caseSummary);
   if (caseSummary.length < MIN_CASE_SUMMARY) {
@@ -99,6 +121,7 @@ export function validateWargamingIntake(input: unknown): ValidationResult<Wargam
       service: "wargaming",
       role: role as "plaintiff" | "defendant" | "advisor",
       area,
+      ...(areaOther ? { areaOther } : {}),
       caseSummary,
       targets,
       ...(memoText ? { memoText } : {}),

@@ -1,6 +1,111 @@
+import { useEffect, useRef, useState } from "react";
 import {
-  Gavel, Buildings, Shield, FileText, HouseSimple, Scales, ClipboardText
+  Gavel, Buildings, Shield, FileText, HouseSimple, Scales, ClipboardText,
+  Copy, Check, Envelope, Warning,
 } from "@phosphor-icons/react";
+import { copyToClipboard } from "@/lib/services/publicProfileLink";
+
+// ─── Circuits directory: honesty + one-tap copy (owner test 28-9, T28-33) ────
+//
+// Every circuit entry on this page and on the two dashboard copies
+// (dashboard/business/circuits-emails, dashboard/firm/circuits-emails) has
+// been in the repo since the initial commit and bears the marks of placeholder
+// data: sequential phone numbers (0112175000/01/02), «c.court.r1@moj.gov.sa»,
+// najiz codes and durations nobody sourced. The owner's own package calls it a
+// sample and says the real 2,192-circuit directory must still be supplied. So
+// the directory says so, on every screen and on every entry, until it is
+// replaced from the official source — and no circuit data is added here.
+
+export const CIRCUITS_SAMPLE_NOTICE =
+  "عيّنة توضيحية لم يُتحقَّق منها بعد — لا تعتمد هذه العناوين في مراسلة رسمية حتى نحدّث الدليل من مصدره الرسمي";
+
+/** The notice every circuits screen shows above the directory. */
+export function CircuitsSampleNotice({ isDark }: { isDark: boolean }) {
+  return (
+    <div role="note" className={`rounded-2xl border p-3.5 flex items-start gap-2.5 ${isDark ? "border-amber-700/30 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+      <Warning size={16} weight="fill" className="text-amber-500 flex-shrink-0 mt-0.5" />
+      <p className={`text-[12px] font-semibold leading-relaxed ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+        {CIRCUITS_SAMPLE_NOTICE}
+      </p>
+    </div>
+  );
+}
+
+/** True only for an entry that carries `verified: true` (none do today). */
+export function isVerifiedCircuit(entry: unknown): boolean {
+  return (entry as { verified?: boolean } | null)?.verified === true;
+}
+
+/** «غير مُتحقَّق» — carried by every entry until the directory is sourced. */
+export function UnverifiedBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full border px-2 py-0.5 border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+      <Warning size={10} weight="fill" /> غير مُتحقَّق
+    </span>
+  );
+}
+
+/**
+ * One circuit e-mail: the FULL address (the directory used to show only the
+ * part before «@»), left-to-right, monospace, selectable in one tap and
+ * wrapping on a phone instead of overflowing; a copy button with a small
+ * toast; and the mailto link kept as its own button, so selecting the text
+ * never opens the mail app.
+ *
+ * The toast says «نُسخ البريد» only when copyToClipboard() reports the text
+ * actually landed on the clipboard (plain-http office LANs and denied
+ * permissions fall back to execCommand, which can still fail) — otherwise it
+ * tells the user to select the address by hand.
+ *
+ * `verified` gates the copy and mailto buttons: an entry that has not been
+ * checked against the official directory (all of them today) shows its
+ * address as text only, so a litigant is never one click away from mailing a
+ * placeholder. The buttons appear per entry once it carries a source and a
+ * verification date.
+ */
+export function CircuitEmail({ email, isDark, verified = false }: { email: string; isDark: boolean; verified?: boolean }) {
+  const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  async function copy() {
+    const ok = await copyToClipboard(email);
+    setStatus(ok ? "copied" : "failed");
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setStatus("idle"), 2200);
+  }
+
+  const btn = `flex-shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg border transition-colors ${
+    isDark ? "border-white/[0.08] text-zinc-400 hover:text-white hover:bg-white/[0.06]" : "border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+  }`;
+
+  return (
+    <div className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 ${isDark ? "border-white/[0.06] bg-zinc-950/40" : "border-slate-100 bg-slate-50"}`}>
+      <span dir="ltr" className={`flex-1 min-w-0 text-left font-mono text-[12px] select-all break-all ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+        {email}
+      </span>
+      {verified && (<>
+      <button type="button" onClick={copy} className={btn} aria-label={`نسخ البريد ${email}`} title="نسخ البريد">
+        {status === "copied" ? <Check size={14} weight="bold" className="text-emerald-500" /> : <Copy size={14} />}
+      </button>
+      <a href={`mailto:${email}`} className={btn} aria-label={`مراسلة ${email}`} title="مراسلة">
+        <Envelope size={14} className="text-blue-500" />
+      </a>
+      </>)}
+      {status !== "idle" && (
+        <div role="status" aria-live="polite"
+          className={`fixed bottom-6 inset-x-0 mx-auto w-fit max-w-[90vw] z-50 rounded-xl px-4 py-2 text-[12px] font-bold shadow-lg ${
+            status === "copied" ? "bg-[#0B3D2E] text-white" : "bg-red-600 text-white"
+          }`}>
+          {status === "copied" ? "نُسخ البريد" : "تعذّر النسخ — حدّد البريد يدوياً"}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export const CIRCUITS = [
   {

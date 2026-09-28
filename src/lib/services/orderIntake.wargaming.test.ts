@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateWargamingIntake, WARGAMING_CRITIQUE_TARGET } from "./orderIntake.wargaming.ts";
+import {
+  validateWargamingIntake, WARGAMING_CRITIQUE_TARGET, WARGAMING_AREA_OTHER, MAX_AREA_OTHER_LENGTH,
+} from "./orderIntake.wargaming.ts";
+import { valueLabelAr, labelFor } from "./intakeValues.ts";
+import { LEGAL_TAXONOMY } from "../../constants/taxonomies.ts";
 
 const valid = {
   schemaVersion: 1,
@@ -148,4 +152,75 @@ test("collects every error, not just the first", () => {
   const r = validateWargamingIntake({ ...valid, role: "judge", area: "", caseSummary: "x", targets: [] });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.length >= 4);
+});
+
+// ─── Specialty: the 31 sections + «أخرى» (owner test 28-9, T28-32) ──────────
+
+test("accepts every one of the 31 LEGAL_TAXONOMY section ids as the area", () => {
+  assert.equal(LEGAL_TAXONOMY.length, 31);
+  for (const c of LEGAL_TAXONOMY) {
+    const r = validateWargamingIntake({ ...valid, area: c.id });
+    assert.equal(r.ok, true, c.id);
+    if (r.ok) {
+      assert.equal(r.value.area, c.id);
+      assert.equal(r.value.areaOther, undefined);
+    }
+  }
+});
+
+test("«أخرى» requires the typed specialty", () => {
+  const r = validateWargamingIntake({ ...valid, area: WARGAMING_AREA_OTHER });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("أخرى")));
+});
+
+test("«أخرى» with a whitespace-only specialty is rejected", () => {
+  const r = validateWargamingIntake({ ...valid, area: WARGAMING_AREA_OTHER, areaOther: "   " });
+  assert.equal(r.ok, false);
+});
+
+test("«أخرى» keeps the typed specialty, trimmed, in the validated value", () => {
+  const r = validateWargamingIntake({ ...valid, area: WARGAMING_AREA_OTHER, areaOther: "  منازعات الأوقاف  " });
+  assert.equal(r.ok, true);
+  if (r.ok) {
+    assert.equal(r.value.area, WARGAMING_AREA_OTHER);
+    assert.equal(r.value.areaOther, "منازعات الأوقاف");
+  }
+});
+
+test("«أخرى» rejects an over-long specialty", () => {
+  const r = validateWargamingIntake({ ...valid, area: WARGAMING_AREA_OTHER, areaOther: "ت".repeat(MAX_AREA_OTHER_LENGTH + 1) });
+  assert.equal(r.ok, false);
+});
+
+test("a stale areaOther is dropped when a listed section is chosen", () => {
+  const r = validateWargamingIntake({ ...valid, area: "SA-06", areaOther: "نص قديم" });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal("areaOther" in r.value, false);
+});
+
+test("the server re-validates the wizard's own output: «أخرى» round-trips", () => {
+  const first = validateWargamingIntake({ ...valid, area: WARGAMING_AREA_OTHER, areaOther: "منازعات الأوقاف" });
+  assert.equal(first.ok, true);
+  if (first.ok) {
+    const second = validateWargamingIntake(first.value);
+    assert.equal(second.ok, true);
+    if (second.ok) assert.deepEqual(second.value, first.value);
+  }
+});
+
+test("orders placed before the switch (old eight ids) still validate and still read in Arabic", () => {
+  for (const [id, ar] of [
+    ["labor", "نظام العمل"], ["commercial", "تجاري وشركات"], ["civil", "مدني"], ["criminal", "جنائي"],
+    ["family", "أحوال شخصية"], ["real-estate", "عقاري"], ["arbitration", "تحكيم / وساطة"], ["admin", "إداري"],
+  ] as const) {
+    assert.equal(validateWargamingIntake({ ...valid, area: id }).ok, true, id);
+    assert.equal(valueLabelAr("area", id), ar);
+  }
+});
+
+test("the team's brief reads every new area id in Arabic, from the same list the picker renders", () => {
+  for (const c of LEGAL_TAXONOMY) assert.equal(valueLabelAr("area", c.id), c.label);
+  assert.equal(valueLabelAr("area", WARGAMING_AREA_OTHER), "أخرى");
+  assert.equal(labelFor("areaOther"), "التخصص كما كتبه العميل");
 });

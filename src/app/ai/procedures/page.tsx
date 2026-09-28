@@ -1,27 +1,23 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Gavel, BookOpen, ArrowRight, CaretLeft,
-  Clock, CheckCircle, Buildings, Scales, FileText, Warning,
-  Info, Shield, Globe, MapPin, Envelope, ArrowSquareOut,
-  ChatCircleDots, ThumbsUp, ThumbsDown, Users, Star, CaretDown,
-  Lightning, Robot, SealCheck, HouseSimple,
-  ClipboardText, Sparkle, Question, BookBookmark,
+  Clock, Info, Globe, MapPin, CaretDown,
+  ClipboardText,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import { VoiceInput } from "@/components/ui/VoiceInput";
-import { markdownBoldToSafeHtml } from "@/utils/sanitize";
-import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
 
 // ─── Types & Imports ─────────────────────────────────────────────────────────
-import { CIRCUITS, PROCEDURE_STEPS, COURTS_LIST } from "./_data";
-import { SmartAnswer, getSmartAnswer, formatSmartAnswer } from "./_ai";
+import {
+  CIRCUITS, PROCEDURE_STEPS, COURTS_LIST,
+  CircuitEmail, CircuitsSampleNotice, UnverifiedBadge, isVerifiedCircuit,
+} from "./_data";
 
 type Mode = "circuits" | "procedures";
 
@@ -31,9 +27,6 @@ type Mode = "circuits" | "procedures";
 export default function ProceduresPage() {
   const { isDark } = useTheme();
   const [mode, setMode] = useState<Mode>("circuits");
-  const [query, setQuery] = useState("");
-  const [answer, setAnswer] = useState<SmartAnswer | null>(null);
-  const [searching, setSearching] = useState(false);
   const [selectedCourt, setSelectedCourt] = useState<string | null>(null);
   const [expandedCircuit, setExpandedCircuit] = useState<number | null>(null);
   const [expandedStep, setExpandedStep] = useState<number | null>(null);
@@ -42,16 +35,13 @@ export default function ProceduresPage() {
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-sm";
 
-  async function doSearch(overrideQuery?: string) {
-    const q = (overrideQuery || query).trim();
-    if (!q) return;
-    if (overrideQuery) setQuery(q);
-    setSearching(true);
-    setAnswer(null);
-    await new Promise(r => setTimeout(r, 1400));
-    setAnswer(getSmartAnswer(q));
-    setSearching(false);
-  }
+  // Owner test 28-9 (T28-33): both tabs used to open with an «اسأل» box whose
+  // answer was a 1.4-second setTimeout followed by one of three canned replies
+  // (getSmartAnswer in the deleted _ai.ts) — a fixed «الدائرة التجارية الأولى»
+  // card for any question mentioning a court, invented community votes with a
+  // «موثّق» seal, and a fixed limitation-period answer with a 95% "confidence"
+  // bar. Nothing was searched. Removed entirely; the directory and the
+  // procedure guides below are what this page actually has.
 
   const procedure = selectedCourt ? PROCEDURE_STEPS[selectedCourt] : null;
   const courtInfo = COURTS_LIST.find(c => c.id === selectedCourt);
@@ -107,182 +97,11 @@ export default function ProceduresPage() {
       <AnimatePresence mode="wait">
         {mode === "circuits" && (
           <motion.div key="circuits" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-            
-            {/* Search box */}
-            <div className={`${card} p-4 space-y-3`}>
-              <p className={`text-[10px] font-black uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                اسأل عن الدوائر القضائية
-              </p>
-              <div className={`flex items-center gap-2 rounded-2xl border px-4 py-3 ${isDark ? "border-white/[0.08] bg-zinc-800/60 focus-within:border-amber-500/40" : "border-slate-200 bg-slate-50 focus-within:border-[#0B3D2E]/40"}`}>
-                <ChatCircleDots size={18} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-                <input value={query} onChange={e => setQuery(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && doSearch()}
-                  placeholder="مثال: رقم الدائرة التجارية الثالثة؟ أو: بريد دائرة الأحوال الشخصية؟"
-                  className={`flex-1 bg-transparent text-[13px] outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-zinc-800 placeholder:text-zinc-400"}`} />
-                <VoiceInput onTranscript={t => setQuery(prev => prev ? `${prev} ${t}` : t)} compact />
-              </div>
 
-              {/* Quick questions */}
-              <div className="flex flex-wrap gap-2">
-                {[
-                  "الدائرة التجارية الأولى",
-                  "بريد الدائرة العمالية بالرياض",
-                  "مقر الاستئناف التجاري",
-                  "هل للاستئناف دوائر عمالية؟",
-                ].map(q => (
-                  <button key={q} onClick={() => doSearch(q)}
-                    className={`rounded-xl px-3 py-1.5 text-[11px] border transition-colors ${isDark ? "border-white/[0.07] bg-zinc-800 hover:bg-zinc-700 text-zinc-400" : "border-slate-200 bg-white hover:bg-slate-50 text-slate-500"}`}>
-                    <Lightning size={10} className="inline me-1 text-amber-500" />{q}
-                  </button>
-                ))}
-                {/* Same reasoning as the hearing modal: `disabled:opacity-40`
-                    on a dark-green button washes the label out with the
-                    background, so shot 09 reads it as "desaturated / disabled-
-                    looking" — which it is, except a user cannot tell whether it
-                    is off on purpose or just badly drawn. A neutral disabled
-                    surface with legible grey text answers that. */}
-                <motion.button whileHover={query.trim() && !searching ? { scale: 1.02 } : {}}
-                  whileTap={query.trim() && !searching ? { scale: 0.97 } : {}}
-                  onClick={() => doSearch()} disabled={!query.trim() || searching}
-                  className={`ms-auto rounded-xl px-5 py-2 text-[12px] font-bold transition-colors ${
-                    (!query.trim() || searching)
-                      ? isDark
-                        ? "bg-zinc-800 text-zinc-500 cursor-not-allowed"
-                        : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                      : "bg-[#0B3D2E] text-white hover:bg-[#092e22]"
-                  }`}>
-                  {searching ? (
-                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white mx-auto" />
-                  ) : "اسأل"}
-                </motion.button>
-              </div>
-            </div>
-
-            {/* Searching animation */}
-            {searching && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className={`${card} p-4 flex items-center gap-3`}>
-                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}>
-                  <Robot size={16} className="text-[#C8A762]" />
-                </motion.div>
-                <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>أبحث في قاعدة البيانات والذكاء الاجتماعي للمحامين...</p>
-              </motion.div>
-            )}
-
-            {/* Smart Answer */}
-            <AnimatePresence>
-              {answer && !searching && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                  <BetaReviewGate toolId="procedures.smart-answer" toolName="إجابة المرشد القضائي" reviewScope="legal-data">
-                  <div className={`${card} p-4 space-y-3`}>
-                    {answer.type !== "circuit" && (
-                      <div className="flex items-center gap-2">
-                        <SealCheck size={15} weight="fill" className="text-emerald-500" />
-                        <span className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{answer.answer}</span>
-                        <div className="ms-auto flex items-center gap-2">
-                          <div className={`h-1.5 w-16 rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-                            <motion.div initial={{ width: 0 }} animate={{ width: `${answer.confidence}%` }}
-                              className={`h-full rounded-full ${answer.confidence > 90 ? "bg-emerald-500" : "bg-amber-500"}`}
-                              transition={{ duration: 0.8 }} />
-                          </div>
-                          <span className={`text-[11px] font-mono font-bold ${answer.confidence > 90 ? "text-emerald-500" : "text-amber-500"}`}>{answer.confidence}٪</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Direct answer */}
-                    {answer.type === "direct" && (
-                      <div>
-                        <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-700"}`}
-                          dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(answer.answer) }} />
-                        {answer.source && (
-                          <p className={`mt-2 text-[11px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                            📖 المصدر: {answer.source}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Circuit answer */}
-                    {answer.type === "circuit" && answer.circuitData && (
-                      <div className={`rounded-xl border p-4 space-y-3 ${isDark ? "border-amber-700/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-                        <p className={`text-[13px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}>{answer.circuitData.name}</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            { icon: Envelope, label: "البريد", value: answer.circuitData.email },
-                            { icon: MapPin, label: "الموقع", value: answer.circuitData.floor },
-                            { icon: Globe, label: "ناجز", value: answer.circuitData.najizCode },
-                          ].map((item, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                              <item.icon size={12} className="text-amber-500 flex-shrink-0" />
-                              <div className="min-w-0">
-                                <p className={`text-[9px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{item.label}</p>
-                                <p className={`text-[11px] font-semibold truncate ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{item.value}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Community answer */}
-                    {answer.type === "community" && answer.communityVotes && (
-                      <div className="space-y-2">
-                        <p className={`text-[10px] font-black uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                          تصويت المحامين في نظامي ({answer.communityVotes.reduce((s, v) => s + v.votes, 0)} محامٍ)
-                        </p>
-                        {answer.communityVotes.map((vote, i) => (
-                          <div key={i} className={`rounded-xl border p-3 ${i === 0
-                            ? isDark ? "border-emerald-700/20 bg-emerald-900/10" : "border-emerald-200 bg-emerald-50"
-                            : isDark ? "border-white/[0.04]" : "border-slate-100"
-                          }`}>
-                            <div className="flex items-start justify-between gap-2">
-                              <p className={`text-[12px] leading-relaxed flex-1 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{vote.answer}</p>
-                              <div className="flex items-center gap-1 flex-shrink-0">
-                                {vote.verified && <SealCheck size={11} weight="fill" className="text-emerald-500" />}
-                                <span className={`text-[11px] font-bold ${i === 0 ? "text-emerald-500" : isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                                  {vote.votes} ✓
-                                </span>
-                              </div>
-                            </div>
-                            {i === 0 && (
-                              <div className={`mt-1.5 h-1 rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-                                <motion.div initial={{ width: 0 }}
-                                  animate={{ width: `${(vote.votes / answer.communityVotes![0].votes) * 100}%` }}
-                                  className="h-full rounded-full bg-emerald-500" transition={{ duration: 0.8 }} />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                        <p className={`text-[10px] ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
-                          💡 هذا الذكاء الاجتماعي مبني على تجارب محامين معتمدين في المنصة
-                        </p>
-                      </div>
-                    )}
-
-                    <AiResultActions
-                      text={formatSmartAnswer(answer)}
-                      filename="procedures-answer"
-                      showShare
-                    />
-                  </div>
-                  </BetaReviewGate>
-
-                  {/* CTA */}
-                  <div className={`mt-3 flex items-center gap-3 flex-wrap`}>
-                    <Link href="/ai/legal-opinion"
-                      className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px] font-bold border ${isDark ? "border-[#C8A762]/30 bg-[#C8A762]/5 text-[#C8A762]" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-                      <Sparkle size={13} /> احصل على رأي قانوني مفصّل
-                    </Link>
-                    <Link href="/ai/draft"
-                      className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px] font-bold border ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-300" : "border-slate-200 bg-white text-slate-600"}`}>
-                      <BookOpen size={13} /> اكتب المذكرة
-                    </Link>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {/* Owner test 28-9 (T28-33): the entries below are an unverified
+                sample (see CIRCUITS_SAMPLE_NOTICE in _data.tsx), so the tab
+                opens by saying so. */}
+            <CircuitsSampleNotice isDark={isDark} />
 
             {/* Owner item ٣٥ — the circuits directory used to live in a SECOND
                 `{mode === "circuits"}` block further down, carrying the same
@@ -291,14 +110,9 @@ export default function ProceduresPage() {
                 gap in the owner's screenshot: the presence tracker treats them
                 as one node, keeps the first, and reserves the space of the
                 second while it waits for an exit that never comes. Merged here
-                so the tab is a single keyed child.
-
-                The second block also opened with a «ابحث: دائرة تجارية…» input
-                that had no `value`, no `onChange` and no filter behind it — it
-                accepted typing and did nothing. It is deleted rather than left
-                in the merged tab: the working ask-box at the top of this same
-                tab is the real search, and a control that only pretends to
-                filter is the kind of promise this pass exists to remove. */}
+                so the tab is a single keyed child. Its «ابحث: دائرة تجارية…»
+                input had no value, no onChange and no filter behind it, and was
+                deleted for that reason. */}
             {CIRCUITS.map((group, gi) => {
               const Icon = group.icon;
               return (
@@ -321,34 +135,37 @@ export default function ProceduresPage() {
                         className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
                         {group.circuits.map((circuit, ci2) => (
                           <div key={ci2} className={`p-4 ${ci2 < group.circuits.length - 1 ? (isDark ? "border-b border-white/[0.04]" : "border-b border-slate-50") : ""}`}>
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <span className={`text-[10px] font-black rounded-full px-2 py-0.5 ${group.bg} ${group.color}`}>
                                   الدائرة {circuit.num}
                                 </span>
                                 <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{circuit.spec}</p>
+                                {!isVerifiedCircuit(circuit) && <UnverifiedBadge />}
                               </div>
-                              {circuit.avgDays && (
-                                <span className={`text-[10px] flex items-center gap-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                              {/* Durations, floors and najiz codes are shown only for a verified
+                                  entry — the sample ones were never sourced. */}
+                              {isVerifiedCircuit(circuit) && circuit.avgDays && (
+                                <span className={`text-[10px] flex items-center gap-1 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
                                   <Clock size={9} />{circuit.avgDays}
                                 </span>
                               )}
                             </div>
+                            {/* The full address — the tab used to print only
+                                the part before «@» (owner test 28-9, T28-33). */}
+                            {circuit.email && (
+                              <div className="mb-2">
+                                <CircuitEmail email={circuit.email} isDark={isDark} verified={isVerifiedCircuit(circuit)} />
+                              </div>
+                            )}
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                              {circuit.email && (
-                                <a href={`mailto:${circuit.email}`}
-                                  className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border transition-colors ${isDark ? "border-white/[0.06] hover:border-blue-500/30 text-zinc-500 hover:text-blue-400" : "border-slate-100 hover:border-blue-200 text-slate-500 hover:text-blue-600"}`}>
-                                  <Envelope size={11} className="text-blue-500 flex-shrink-0" />
-                                  <span className="truncate">{circuit.email.split("@")[0]}</span>
-                                </a>
-                              )}
-                              {circuit.floor && (
+                              {isVerifiedCircuit(circuit) && circuit.floor && (
                                 <div className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
                                   <MapPin size={11} className="text-amber-500 flex-shrink-0" />
                                   {circuit.floor}
                                 </div>
                               )}
-                              {circuit.najizCode && (
+                              {isVerifiedCircuit(circuit) && circuit.najizCode && (
                                 <div className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border font-mono ${isDark ? "border-white/[0.06] text-zinc-600" : "border-slate-100 text-slate-400"}`}>
                                   <Globe size={11} className="text-purple-500 flex-shrink-0" />
                                   {circuit.najizCode}
@@ -369,9 +186,11 @@ export default function ProceduresPage() {
               );
             })}
 
+            {/* «البيانات تُحدَّث دورياً» used to sit here — nothing updates
+                this sample, and the line contradicted the notice above. */}
             <div className={`text-center py-3`}>
-              <p className={`text-[11px] ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
-                البيانات تُحدَّث دورياً · للتأكيد الرسمي تواصل مباشرة مع المحكمة
+              <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                للتأكيد الرسمي تواصل مباشرة مع المحكمة
               </p>
             </div>
 
@@ -388,148 +207,12 @@ export default function ProceduresPage() {
         {/* ── MODE: PROCEDURES ── */}
         {mode === "procedures" && (
           <motion.div key="procedures" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-4">
-            
-            {/* Search box */}
-            <div className={`${card} p-4 flex flex-col gap-3`}>
-              <p className={`text-[10px] font-black uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                استشر الذكاء الاصطناعي عن الإجراءات
-              </p>
-              <div className={`flex items-center gap-2 rounded-2xl border px-4 py-3 ${isDark ? "border-white/[0.08] bg-zinc-800/60 focus-within:border-[#C8A762]/40" : "border-slate-200 bg-slate-50 focus-within:border-[#0B3D2E]/40"}`}>
-                <ChatCircleDots size={18} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-                <input value={query} onChange={e => setQuery(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && doSearch()}
-                  placeholder="مثال: كيف أرفع دعوى فصل تعسفي؟"
-                  className={`flex-1 bg-transparent text-[13px] outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-zinc-800 placeholder:text-zinc-400"}`} />
-                <VoiceInput onTranscript={t => setQuery(prev => prev ? `${prev} ${t}` : t)} compact />
-              </div>
 
-              {/* Quick questions */}
-              <div className="flex flex-wrap gap-2 mt-1">
-                {[
-                  "إجراءات المحكمة العمالية",
-                  "الاعتراض على حكم",
-                  "الصلح والتسوية",
-                  "إلغاء قرار إداري",
-                ].map(q => (
-                  <button key={q} onClick={() => doSearch(q)}
-                    className={`rounded-xl px-3 py-1.5 text-[11px] border transition-colors ${isDark ? "border-white/[0.07] bg-zinc-800 hover:bg-zinc-700 text-zinc-400" : "border-slate-200 bg-white hover:bg-slate-50 text-slate-500"}`}>
-                    <Lightning size={10} className="inline me-1 text-amber-500" />{q}
-                  </button>
-                ))}
-                {/* Same reasoning as the hearing modal: `disabled:opacity-40`
-                    on a dark-green button washes the label out with the
-                    background, so shot 09 reads it as "desaturated / disabled-
-                    looking" — which it is, except a user cannot tell whether it
-                    is off on purpose or just badly drawn. A neutral disabled
-                    surface with legible grey text answers that. */}
-                <motion.button whileHover={query.trim() && !searching ? { scale: 1.02 } : {}}
-                  whileTap={query.trim() && !searching ? { scale: 0.97 } : {}}
-                  onClick={() => doSearch()} disabled={!query.trim() || searching}
-                  className={`ms-auto rounded-xl px-5 py-2 text-[12px] font-bold transition-colors ${
-                    (!query.trim() || searching)
-                      ? isDark
-                        ? "bg-zinc-800 text-zinc-500 cursor-not-allowed"
-                        : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                      : "bg-[#0B3D2E] text-white hover:bg-[#092e22]"
-                  }`}>
-                  {searching ? (
-                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white mx-auto" />
-                  ) : "ابحث"}
-                </motion.button>
-              </div>
-            </div>
-
-            {/* Searching animation */}
-            {searching && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className={`${card} p-4 flex items-center gap-3`}>
-                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}>
-                  <Robot size={16} className="text-[#C8A762]" />
-                </motion.div>
-                <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>أبحث في قاعدة البيانات والذكاء الاجتماعي للمحامين...</p>
-              </motion.div>
-            )}
-
-            {/* Answer Display (reusable) */}
-            <AnimatePresence>
-              {answer && !searching && answer.type !== "circuit" && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`${card} p-4 flex flex-col gap-3`}>
-                  <BetaReviewGate toolId="procedures.smart-answer" toolName="إجابة المرشد القضائي" reviewScope="legal-data">
-                  <div className="flex items-center gap-2">
-                    <SealCheck size={15} weight="fill" className="text-emerald-500" />
-                    <span className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{answer.answer}</span>
-                    <div className="ms-auto flex items-center gap-2">
-                      <div className={`h-1.5 w-16 rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-                        <motion.div initial={{ width: 0 }} animate={{ width: `${answer.confidence}%` }}
-                          className={`h-full rounded-full ${answer.confidence > 90 ? "bg-emerald-500" : "bg-amber-500"}`}
-                          transition={{ duration: 0.8 }} />
-                      </div>
-                      <span className={`text-[11px] font-mono font-bold ${answer.confidence > 90 ? "text-emerald-500" : "text-amber-500"}`}>{answer.confidence}٪</span>
-                    </div>
-                  </div>
-                  
-                  {answer.type === "direct" && (
-                    <div className="mt-1">
-                      <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-700"}`}
-                        dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(answer.answer) }} />
-                      {answer.source && (
-                        <p className={`mt-2 text-[11px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                          📖 المصدر: {answer.source}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  
-                  {answer.type === "community" && answer.communityVotes && (
-                    <div className="flex flex-col gap-2 mt-1">
-                      <p className={`text-[10px] font-black uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                        تصويت المحامين في نظامي ({answer.communityVotes.reduce((s, v) => s + v.votes, 0)} محامٍ)
-                      </p>
-                      {answer.communityVotes.map((vote, i) => (
-                        <div key={i} className={`rounded-xl border p-3 ${i === 0
-                          ? isDark ? "border-emerald-700/20 bg-emerald-900/10" : "border-emerald-200 bg-emerald-50"
-                          : isDark ? "border-white/[0.04]" : "border-slate-100"
-                        }`}>
-                          <div className="flex items-start justify-between gap-2">
-                            <p className={`text-[12px] leading-relaxed flex-1 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{vote.answer}</p>
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              {vote.verified && <SealCheck size={11} weight="fill" className="text-emerald-500" />}
-                              <span className={`text-[11px] font-bold ${i === 0 ? "text-emerald-500" : isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                                {vote.votes} ✓
-                              </span>
-                            </div>
-                          </div>
-                          {i === 0 && (
-                            <div className={`mt-1.5 h-1 rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-                              <motion.div initial={{ width: 0 }}
-                                animate={{ width: `${(vote.votes / answer.communityVotes![0].votes) * 100}%` }}
-                                className="h-full rounded-full bg-emerald-500" transition={{ duration: 0.8 }} />
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <AiResultActions
-                    text={formatSmartAnswer(answer)}
-                    filename="procedures-answer"
-                    showShare
-                  />
-                  </BetaReviewGate>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Separator */}
-            <div className="flex items-center gap-4 py-3">
-              <div className={`flex-1 h-px ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
-              <p className={`text-[10px] font-black uppercase tracking-wider flex-shrink-0 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                تصفح الإجراءات يدوياً
-              </p>
-              <div className={`flex-1 h-px ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
-            </div>
+            {/* The canned «استشر الذكاء الاصطناعي» box that sat here is gone
+                (see the note at the top of this component). */}
+            <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+              اختر المحكمة لعرض خطوات التقاضي أمامها
+            </p>
 
             {!selectedCourt ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">

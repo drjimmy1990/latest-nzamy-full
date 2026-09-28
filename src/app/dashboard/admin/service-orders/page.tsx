@@ -145,6 +145,9 @@ const LEGAL_REP_CAPACITY_AR: Record<string, string> = {
 
 const SERVICE_BADGE: Record<string, string> = {
   draft: "الصائغ", contracts: "العقود", wargaming: "المحاكاة", legal_opinion: "الرأي الفصل",
+  // /ai/brief-check (owner decision Q77) — type `ai_draft`, told apart from a
+  // drafting order only by `metadata.service`; see src/lib/services/briefReviewOrder.ts.
+  brief_review: "مراجعة مذكرة",
 };
 
 /**

@@ -19,19 +19,23 @@ import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import {
-  validateWargamingIntake, WARGAMING_CRITIQUE_TARGET,
+  validateWargamingIntake, WARGAMING_CRITIQUE_TARGET, WARGAMING_AREA_OTHER, MAX_AREA_OTHER_LENGTH,
 } from "@/lib/services/orderIntake.wargaming";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
+import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type SimTarget  = "opponent" | "court" | "critique" | "plea";
 type CaseRole   = "plaintiff" | "defendant" | "advisor";
-type CaseArea   = "labor" | "commercial" | "civil" | "criminal" | "family" | "real-estate" | "arbitration" | "admin";
+// A LEGAL_TAXONOMY section id (SA-00 … SA-99) or WARGAMING_AREA_OTHER.
+type CaseArea   = string;
 type ItemAction = "add" | "edit" | "delete" | null;
 
 interface CaseContext {
   role: CaseRole | "";
   area: CaseArea | "";
+  /** The specialty in the client's own words — used only when area is «أخرى». */
+  areaOther: string;
   summary: string;
 }
 
@@ -65,16 +69,22 @@ const CASE_ROLES: { id: CaseRole; label: string; icon: typeof Gavel }[] = [
   { id:"advisor",   label:"مستشار / محكّم / مراجع", icon:Brain     },
 ];
 
+// Owner test 28-9 (T28-32): the picker offered 8 hand-picked areas; the owner
+// asked for all 31 sections plus «أخرى». The list IS LEGAL_TAXONOMY — the
+// platform's one specialisation vocabulary (owner ruling on س٥) — in its own
+// order, stored by SA-xx id. The admin brief resolves the same ids from the
+// same list (src/lib/services/intakeValues.ts), which also keeps the previous
+// eight ids readable for orders placed before this change.
 const CASE_AREAS: { id: CaseArea; label: string }[] = [
-  { id:"labor",       label:"نظام العمل"    },
-  { id:"commercial",  label:"تجاري وشركات" },
-  { id:"civil",       label:"مدني"           },
-  { id:"criminal",    label:"جنائي"          },
-  { id:"family",      label:"أحوال شخصية"  },
-  { id:"real-estate", label:"عقاري"          },
-  { id:"arbitration", label:"تحكيم / وساطة" },
-  { id:"admin",       label:"إداري"          },
+  ...LEGAL_TAXONOMY.map(c => ({ id: c.id, label: c.label })),
+  { id: WARGAMING_AREA_OTHER, label: "أخرى" },
 ];
+
+/** What the recap and the order title call the chosen specialty — the client's own words for «أخرى». */
+function caseAreaLabel(ctx: CaseContext): string {
+  if (ctx.area === WARGAMING_AREA_OTHER) return ctx.areaOther.trim() || "أخرى";
+  return CASE_AREAS.find(a => a.id === ctx.area)?.label ?? "";
+}
 
 // Kept for when real AI simulation lands — currently unreachable, no live
 // caller substitutes this into an order (Task C1).
@@ -343,7 +353,16 @@ function CaseSetup({
   const card = `rounded-2xl border ${D?"bg-zinc-900 border-white/[0.07]":"bg-white border-zinc-200/70"}`;
   const fRef = useRef<HTMLInputElement>(null);
   const UserIcon = user.userType==="firm"?Buildings:user.userType==="lawyer"?UserFocus:User;
-  const canNext = ctx.role!==""&&ctx.area!==""&&ctx.summary.trim().length>=20&&!uploading;
+  const isOtherArea = ctx.area===WARGAMING_AREA_OTHER;
+  const areaReady = ctx.area!=="" && (!isOtherArea || ctx.areaOther.trim().length>0);
+  const canNext = ctx.role!==""&&areaReady&&ctx.summary.trim().length>=20&&!uploading;
+  // 32 chips do not fit a phone screen as one wall, so the list scrolls and a
+  // filter narrows it. «أخرى» stays visible whatever the filter says: it is
+  // the way out when the client's specialty is not among the 31.
+  const [areaQuery, setAreaQuery] = useState("");
+  const aq = areaQuery.trim();
+  const visibleAreas = CASE_AREAS.filter(a => a.id===WARGAMING_AREA_OTHER || !aq || a.label.includes(aq));
+  const selectedHidden = ctx.area!=="" && !visibleAreas.some(a => a.id===ctx.area);
 
   return (
     <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="space-y-4">
@@ -373,14 +392,41 @@ function CaseSetup({
       {/* Area */}
       <div className={`${card} p-5`}>
         <p className={`text-[12px] font-bold mb-3 ${D?"text-zinc-400":"text-zinc-500"}`}>تخصص القضية</p>
-        <div className="flex flex-wrap gap-2">
-          {CASE_AREAS.map(a=>(
-            <button key={a.id} onClick={()=>setCtx({...ctx,area:a.id})}
+        <div className="relative mb-3">
+          <MagnifyingGlass size={14} className={`absolute inset-y-0 end-3 my-auto pointer-events-none ${D?"text-zinc-500":"text-zinc-400"}`}/>
+          <input value={areaQuery} onChange={e=>setAreaQuery(e.target.value)}
+            placeholder="ابحث بين الأقسام الـ٣١…" aria-label="ابحث عن تخصص القضية"
+            className={`w-full rounded-xl border pe-9 ps-3 py-2 text-[12px] outline-none ${D?"border-white/[0.08] bg-zinc-800/60 text-zinc-100 placeholder:text-zinc-500":"border-zinc-200 bg-zinc-50/80 text-zinc-800 placeholder:text-zinc-400"}`}/>
+        </div>
+        {selectedHidden && (
+          <p className={`mb-2 text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>
+            المختار: <span className="font-bold text-[#C8A762]">{caseAreaLabel(ctx)}</span>
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2 max-h-56 overflow-y-auto p-0.5" role="radiogroup" aria-label="تخصص القضية">
+          {visibleAreas.map(a=>(
+            <button key={a.id} type="button" role="radio" aria-checked={ctx.area===a.id}
+              onClick={()=>setCtx({...ctx,area:a.id,areaOther:a.id===WARGAMING_AREA_OTHER?ctx.areaOther:""})}
               className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all ${ctx.area===a.id?"bg-[#C8A762] border-[#C8A762] text-[#0B3D2E]":D?"border-white/[0.07] text-zinc-400 hover:border-white/20":"border-zinc-200 text-zinc-500 hover:border-zinc-300"}`}>
               {a.label}
             </button>
           ))}
         </div>
+        {aq && visibleAreas.length===1 && (
+          <p className={`mt-2 text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>لا يوجد قسم بهذا الاسم — اختر «أخرى» واكتب التخصص.</p>
+        )}
+        {isOtherArea && (
+          <div className="mt-3 space-y-1.5">
+            <input value={ctx.areaOther} onChange={e=>setCtx({...ctx,areaOther:e.target.value})}
+              maxLength={MAX_AREA_OTHER_LENGTH} autoFocus
+              placeholder="اكتب تخصص القضية، مثل: منازعات الأوقاف"
+              aria-label="تخصص القضية (أخرى)"
+              className={inp}/>
+            {!ctx.areaOther.trim() && (
+              <p className="text-[11px] text-amber-500">اكتب التخصص لتتمكن من المتابعة</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Summary */}
@@ -458,7 +504,7 @@ function TargetSelect({
   attachMemoFile: (file: File) => Promise<OrderAttachment>;
   removeMemoAttachment: (documentId: string) => void;
 }) {
-  const areaLabel = CASE_AREAS.find(a=>a.id===ctx.area)?.label??"";
+  const areaLabel = caseAreaLabel(ctx);
   const roleLabel  = CASE_ROLES.find(r=>r.id===ctx.role)?.label??"";
   const hasCritique = targets.has(WARGAMING_CRITIQUE_TARGET);
   const memoFileRef = useRef<HTMLInputElement>(null);
@@ -841,7 +887,7 @@ export default function AIWargamingPage() {
   // either value any more. "submit" is the real replacement.
   type PageStep = "setup" | "targets" | "simulating" | "submit" | "results";
   const [step,    setStep]    = useState<PageStep>("setup");
-  const [ctx,     setCtx]     = useState<CaseContext>({ role:"", area:"", summary:"" });
+  const [ctx,     setCtx]     = useState<CaseContext>({ role:"", area:"", areaOther:"", summary:"" });
   const [targets, setTargets] = useState<Set<SimTarget>>(new Set(["opponent","court"]));
   const [points,  setPoints]  = useState<SimPoint[]>([]);
   const [memoText, setMemoText] = useState("");
@@ -890,7 +936,7 @@ export default function AIWargamingPage() {
 
   function fullReset() {
     setStep("setup");
-    setCtx({role:"",area:"",summary:""});
+    setCtx({role:"",area:"",areaOther:"",summary:""});
     setTargets(new Set(["opponent","court"]));
     setPoints([]);
     setMemoText("");
@@ -900,7 +946,9 @@ export default function AIWargamingPage() {
     attachments.forEach(a => removeAttachment(a.documentId));
   }
 
-  const areaLabel = CASE_AREAS.find(a=>a.id===ctx.area)?.label??"";
+  // For «أخرى» this is the client's own wording — so the recap, the order
+  // title below and the team's brief all name the specialty they typed.
+  const areaLabel = caseAreaLabel(ctx);
   const roleLabel  = CASE_ROLES.find(r=>r.id===ctx.role)?.label??"";
 
   function buildIntake(): Record<string, unknown> {
@@ -909,6 +957,7 @@ export default function AIWargamingPage() {
       service: "wargaming",
       role: ctx.role,
       area: ctx.area,
+      ...(ctx.area === WARGAMING_AREA_OTHER ? { areaOther: ctx.areaOther.trim() } : {}),
       caseSummary: ctx.summary,
       targets: Array.from(targets),
       // Only send memoText/memoAttachmentIds when critique is actually

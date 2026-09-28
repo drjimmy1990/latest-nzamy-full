@@ -1,245 +1,309 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
-import { useState, useRef } from "react";
+/**
+ * «مراجعة وتدقيق مذكرة» — a real order the TEAM fulfils (owner decision,
+ * registry Q77, 28 Sep).
+ *
+ * This page used to be «مراجع الدوائر الحكومية»: drop any file, wait a
+ * `setTimeout(2800)`, and read the same five hard-coded findings (a repealed
+ * article, a precedent that "does not exist", …) as if they had been found in
+ * YOUR memo. Nothing read the file. It is now an intake form: the memo is
+ * uploaded, the client's capacity and the wanted outcome are picked, and the
+ * order lands in the admin queue (receiver `ai_workspace`) beside the four
+ * wizard services. What the team sends back is delivered on /ai/orders/<id>.
+ *
+ * NO BetaReviewGate. That gate hides an AI RESULT behind a review card while
+ * BETA_REVIEW_MODE is on; with no `orderPayload` it replaces its children with
+ * «غير متاح». There is no AI result here any more — the page only creates a
+ * team order — so wrapping the form would hide the one real thing on it.
+ *
+ * The upload goes through useOrderAttachments (uploadDocumentFile with no
+ * requestId) when the file is picked, and its documentId travels in
+ * `metadata.attachments`; POST /api/v1/service-requests binds it to the new
+ * order server-side. Uploading AFTER the order exists
+ * (uploadDocumentFile(file, { requestId })) would bind the file but leave it
+ * out of `metadata.attachments`, which is the list the admin queue, the order
+ * page and the fulfilment brief read — the team would never see the memo.
+ *
+ * Price: none is shown, the same as the four wizard services — their orders
+ * are placed with payment `{0, not_required}` and their pages name no price.
+ */
+
+import { useRef, useState } from "react";
+import Link from "next/link";
 import {
-  FileMagnifyingGlass, CloudArrowUp, Warning, Eye,
-  BookOpen, Robot, ArrowSquareOut, X, Download,
-  SealWarning, CheckCircle, Lightbulb,
+  FileMagnifyingGlass, CloudArrowUp, X, Warning, PaperPlaneTilt, SignIn, Paperclip,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import AiResultActions from "@/components/AiResultActions";
-import BetaReviewGate from "@/components/BetaReviewGate";
-
-// ─── Mock findings ────────────────────────────────────────────────────────────
-
-const BRIEF_ISSUES = [
-  {
-    type: "error",
-    title: "مادة ملغاة مستشهد بها",
-    detail: "المادة ٦٧ من نظام الإجراءات المدنية المُستشهد بها في الفقرة الثالثة تم إلغاؤها واستبدالها بالمادة ٥٩ المُعدَّلة عام ١٤٤٢هـ.",
-    page: "ص ٤ — الفقرة الثالثة",
-    fix: "استبدل الاستشهاد بالمادة ٥٩ من نظام الإجراءات المدنية المُعدَّل ١٤٤٢هـ.",
-  },
-  {
-    type: "error",
-    title: "سابقة قضائية غير موجودة",
-    detail: "رقم القضية ٢٢٤٤/م/٢٠١٩ المُستشهد بها غير موجود في سجلات المحكمة العليا.",
-    page: "ص ٦ — هامش ٣",
-    fix: "راجع رقم القضية — قد يكون ١٢٢٤ أو ٢٢٤٤ في محكمة مختلفة.",
-  },
-  {
-    type: "warning",
-    title: "ثغرة في سلسلة الحجج",
-    detail: "الانتقال من الدفع الأول إلى الدفع الثالث مباشرةً دون رابط منطقي يُضعف الحجة.",
-    page: "ص ٧ — الدفع الثالث",
-    fix: "أضف فقرة رابطة تؤسّس على الدفع الثاني قبل الانتقال للثالث.",
-  },
-  {
-    type: "warning",
-    title: "سابقة قوية غائبة",
-    detail: "هناك حكم استئناف ١٤٤٤/٣ من منطقة الرياض يدعم حجتك الرئيسية ولم يُستشهد به.",
-    page: "عام",
-    fix: "أضف الاستشهاد بالحكم ١٤٤٤/٣ تحت 'السوابق القضائية'.",
-  },
-  {
-    type: "ok",
-    title: "الهيكل العام سليم",
-    detail: "هيكل المذكرة (مقدمة، وقائع، دفوع، طلبات) متوافق مع متطلبات المحكمة.",
-    page: "عام",
-    fix: "",
-  },
-];
+import { useUser } from "@/hooks/useUser";
+import { useOrderAttachments } from "@/hooks/useOrderAttachments";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { apiMutate } from "@/lib/services/api";
+import type { OrderAttachment } from "@/lib/services/orderIntake";
+import {
+  BRIEF_CLIENT_ROLES, BRIEF_REVIEW_SCOPES, BRIEF_REVIEW_SOURCE_PATH, MEMO_FILE_ACCEPT,
+  MAX_ROLE_OTHER_LENGTH, MAX_COURT_LENGTH, MAX_CASE_TYPE_LENGTH, MAX_NOTES_LENGTH,
+  memoFileRejection, validateBriefReviewForm, buildBriefReviewOrderBody, briefReviewSubmitErrorAr,
+  type BriefClientRoleId, type BriefReviewScopeId,
+} from "@/lib/services/briefReviewOrder";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AIBriefCheckPage() {
   const { isDark } = useTheme();
-  const [file, setFile] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [results, setResults] = useState<typeof BRIEF_ISSUES | null>(null);
-  const [dragging, setDragging] = useState(false);
+  const user = useUser();
+  const { uploading, attachError, attachFile, removeAttachment, clearAttachError } = useOrderAttachments();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  async function handleFile(name: string) {
-    setFile(name);
-    setChecking(true);
-    setResults(null);
-    await new Promise(r => setTimeout(r, 2800));
-    setResults(BRIEF_ISSUES);
-    setChecking(false);
+  const [memo, setMemo] = useState<OrderAttachment | null>(null);
+  const [fileError, setFileError] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [clientRole, setClientRole] = useState<BriefClientRoleId | "">("");
+  const [clientRoleOther, setClientRoleOther] = useState("");
+  const [reviewScope, setReviewScope] = useState<BriefReviewScopeId | "">("");
+  const [courtType, setCourtType] = useState("");
+  const [caseType, setCaseType] = useState("");
+  const [notes, setNotes] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  // Uploading and ordering both need a session. `loading` is its own state:
+  // treating "not yet known" as signed out would flash the sign-in prompt at
+  // a signed-in lawyer (same rule as ServiceRequestWizard.tsx).
+  const signedIn = !user.loading && user.isLoggedIn;
+
+  async function pickFile(file: File | undefined) {
+    if (!file || uploading) return;
+    setFileError("");
+    clearAttachError();
+    const rejection = memoFileRejection(file.name);
+    if (rejection) { setFileError(rejection); return; }
+    try {
+      setMemo(await attachFile(file));
+    } catch {
+      // attachFile has already put the Arabic reason in `attachError`.
+    }
+  }
+
+  function removeMemo() {
+    if (memo) removeAttachment(memo.documentId);
+    setMemo(null);
+    setFileError("");
+    clearAttachError();
+  }
+
+  async function submit() {
+    if (uploading || submitting) return;
+    setErrors([]);
+    const check = validateBriefReviewForm({
+      memo, clientRole, clientRoleOther, reviewScope, courtType, caseType, notes,
+    });
+    if (!check.ok) { setErrors(check.errors); return; }
+
+    setSubmitting(true);
+    try {
+      // Same profile read as the four wizards (useDraftState.submitOrder): the
+      // n8n WhatsApp notice addresses `requester.phone`.
+      const supabase = createBrowserClient();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const { data: profile } = authUser
+        ? await supabase.from("profiles").select("display_name, phone, email").eq("id", authUser.id).single()
+        : { data: null };
+
+      const body = buildBriefReviewOrderBody(check.value, {
+        name: profile?.display_name ?? undefined,
+        phone: profile?.phone ?? undefined,
+        email: profile?.email ?? undefined,
+      });
+      const res = await apiMutate<{ data: { id: string } }>("/api/v1/service-requests", "POST", body);
+      // `submitting` stays true on success: the page is leaving, and a second
+      // click must not place a second order.
+      window.location.href = `/ai/orders/${res.data.id}`;
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      console.error("[AIBriefCheckPage] submit failed:", raw);
+      setErrors([briefReviewSubmitErrorAr(raw)]);
+      setSubmitting(false);
+    }
   }
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
-
-  const errorCount = results?.filter(r => r.type === "error").length ?? 0;
-  const warnCount = results?.filter(r => r.type === "warning").length ?? 0;
+  const label = `block text-[12px] font-semibold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`;
+  const hint = `text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`;
+  const input = `w-full rounded-xl border px-3.5 py-2.5 text-[13px] outline-none ${
+    isDark ? "border-white/[0.07] bg-zinc-950 text-zinc-200 focus:border-[#C8A762]/40" : "border-zinc-200 bg-white text-zinc-800 focus:border-[#0B3D2E]/40"}`;
+  const pill = (active: boolean) => `rounded-xl border px-3.5 py-2 text-[12px] font-semibold transition-colors ${
+    active
+      ? isDark ? "border-[#C8A762]/50 bg-[#C8A762]/10 text-[#C8A762]" : "border-[#0B3D2E]/40 bg-[#0B3D2E]/5 text-[#0B3D2E]"
+      : isDark ? "border-white/[0.07] text-zinc-400 hover:border-white/20" : "border-zinc-200 text-zinc-600 hover:border-zinc-300"}`;
+  const shownFileError = fileError || attachError;
 
   return (
     <div className={`p-5 md:p-7 max-w-4xl mx-auto space-y-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>مراجع الدوائر الحكومية</h1>
-          </div>
-          <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            ارفع مذكرتك أو وثيقتك — AI يكشف: مواد ملغاة · سوابق ناقصة · ثغرات منطقية · متطلبات دوائر حكومية
-          </p>
-          <div className={`mt-2 flex flex-wrap gap-1.5`}>
-            {[
-              "مراجعة العقود الحكومية",
-              "فحص اللوائح والأنظمة",
-              "متابعة قرارات الترخيص",
-              "مراجعة وثائق المناقصات",
-              "التحقق من الإشعارات الحكومية",
-              "فحص الاعتراضات الإدارية",
-            ].map(ex => (
-              <span key={ex} className={`rounded-full px-2 py-0.5 text-[10px] border ${isDark ? "border-white/[0.07] bg-white/[0.03] text-zinc-500" : "border-zinc-200 bg-zinc-50 text-zinc-400"}`}>
-                {ex}
-              </span>
-            ))}
-          </div>
-        </div>
+      <div>
+        <h1 className={`text-xl font-bold mb-1 ${isDark ? "text-white" : "text-zinc-900"}`}>مراجعة وتدقيق مذكرة</h1>
+        <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+          ارفع مذكرتك واختر المطلوب: تقرير بالثغرات في الأسانيد والتسلسل والدفوع والطلبات والوقائع، أو مراجعة المذكرة وتنقيحها كاملة.
+          يراجع فريق نظامي مذكرتك ويعيد إليك النتيجة في صفحة طلباتك.
+        </p>
       </div>
 
-      {/* Upload */}
-      {!file && (
-        <div
-          onDragOver={e => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f.name); }}
-          onClick={() => inputRef.current?.click()}
-          className={`cursor-pointer rounded-3xl border-2 border-dashed p-12 text-center transition-all ${dragging
-            ? isDark ? "border-purple-500/60 bg-purple-900/10" : "border-purple-400 bg-purple-50"
-            : isDark ? "border-white/[0.08] hover:border-purple-500/30" : "border-zinc-200 hover:border-purple-300"
-          }`}
-        >
-          <input ref={inputRef} type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f.name); }} />
-          <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl ${dragging ? "bg-purple-500/20" : isDark ? "bg-white/[0.05]" : "bg-zinc-100"}`}>
-            <FileMagnifyingGlass size={32} className={dragging ? "text-purple-500" : isDark ? "text-zinc-500" : "text-zinc-400"} />
-          </div>
-          <h3 className={`font-bold text-[16px] mb-1 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>ارفع المذكرة للفحص</h3>
-          <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>PDF · Word — حد أقصى ٢٠ م.ب</p>
-          <p className={`text-[11px] mt-2 ${isDark ? "text-zinc-700" : "text-zinc-300"}`}>متاح ضمن الباقة</p>
+      {/* Guests: the page stays readable, the form needs a session. */}
+      {user.loading && (
+        <p className={hint}>جارٍ التحقق من الجلسة…</p>
+      )}
+      {!user.loading && !user.isLoggedIn && (
+        <div className={`${card} p-6 shadow-sm space-y-3`}>
+          <p className={`text-[14px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>سجّل الدخول لإرسال مذكرتك للمراجعة</p>
+          <p className={hint}>
+            ستحتاج إلى: ملف المذكرة (PDF أو Word)، وصفة الموكل، واختيار المطلوب — ويمكنك إضافة المحكمة ونوع القضية وملاحظاتك.
+          </p>
+          <Link
+            href={`/login?from=${encodeURIComponent(BRIEF_REVIEW_SOURCE_PATH)}`}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[12px] font-bold text-white"
+          >
+            <SignIn size={14} /> تسجيل الدخول
+          </Link>
         </div>
       )}
 
-      {/* File + status */}
-      {file && (
-        <div className={`${card} flex items-center gap-3 px-5 py-4 shadow-sm`}>
-          <div className="h-10 w-10 flex-shrink-0 rounded-xl bg-purple-500/10 flex items-center justify-center">
-            <FileMagnifyingGlass size={18} weight="duotone" className="text-purple-500" />
+      {signedIn && (
+        <div className={`${card} p-5 md:p-6 shadow-sm space-y-6`}>
+
+          {/* ١ — the memo */}
+          <div>
+            <p className={label}>١. المذكرة المراد مراجعتها</p>
+            {!memo ? (
+              <div
+                role="button"
+                tabIndex={0}
+                aria-disabled={uploading}
+                onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && !uploading) { e.preventDefault(); inputRef.current?.click(); } }}
+                onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={e => { e.preventDefault(); setDragging(false); void pickFile(e.dataTransfer.files[0]); }}
+                onClick={() => { if (!uploading) inputRef.current?.click(); }}
+                className={`rounded-2xl border-2 border-dashed p-8 text-center transition-all ${uploading ? "cursor-wait" : "cursor-pointer"} ${dragging
+                  ? isDark ? "border-[#C8A762]/60 bg-[#C8A762]/5" : "border-[#0B3D2E]/40 bg-[#0B3D2E]/5"
+                  : isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#0B3D2E]/30"
+                }`}
+              >
+                <input
+                  ref={inputRef}
+                  type="file"
+                  className="hidden"
+                  accept={MEMO_FILE_ACCEPT}
+                  onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; void pickFile(f); }}
+                />
+                <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl ${isDark ? "bg-white/[0.05]" : "bg-zinc-100"}`}>
+                  {uploading
+                    ? <CloudArrowUp size={22} className="text-[#C8A762]" />
+                    : <FileMagnifyingGlass size={22} className={isDark ? "text-zinc-400" : "text-zinc-500"} />}
+                </div>
+                <p className={`text-[13px] font-semibold mb-1 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                  {uploading ? "جارٍ رفع المذكرة…" : "اسحب المذكرة هنا أو اضغط لاختيارها"}
+                </p>
+                <p className={hint}>PDF أو Word — حد أقصى ٢٠ ميجابايت</p>
+              </div>
+            ) : (
+              <div className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${isDark ? "border-white/[0.07] bg-zinc-950" : "border-zinc-200 bg-zinc-50"}`}>
+                <Paperclip size={16} className="flex-shrink-0 text-[#C8A762]" />
+                <p className={`flex-1 min-w-0 truncate text-[13px] font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{memo.name}</p>
+                <button
+                  onClick={removeMemo}
+                  disabled={submitting}
+                  aria-label="إزالة المذكرة"
+                  className={`flex h-8 w-8 items-center justify-center rounded-xl disabled:opacity-40 ${isDark ? "hover:bg-white/[0.07] text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"}`}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+            {shownFileError && <p className="mt-2 text-[11px] text-red-500">{shownFileError}</p>}
           </div>
-          <div className="flex-1 min-w-0">
-            <p className={`text-[13px] font-bold truncate ${isDark ? "text-white" : "text-zinc-900"}`}>{file}</p>
-            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-              {checking ? "جارٍ الفحص..." : `${results?.length ?? 0} نتيجة`}
-            </p>
+
+          {/* ٢ — the client's capacity */}
+          <div>
+            <p className={label}>٢. صفة الموكل</p>
+            <div className="flex flex-wrap gap-2">
+              {BRIEF_CLIENT_ROLES.map(r => (
+                <button key={r.id} type="button" onClick={() => setClientRole(r.id)} className={pill(clientRole === r.id)} aria-pressed={clientRole === r.id}>
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            {clientRole === "other" && (
+              <input
+                type="text"
+                value={clientRoleOther}
+                onChange={e => setClientRoleOther(e.target.value)}
+                maxLength={MAX_ROLE_OTHER_LENGTH}
+                placeholder="اكتب صفة الموكل"
+                className={`${input} mt-2`}
+              />
+            )}
           </div>
-          <button onClick={() => { setFile(null); setResults(null); }}
-            className={`flex h-8 w-8 items-center justify-center rounded-xl ${isDark ? "hover:bg-white/[0.07] text-zinc-500" : "hover:bg-zinc-100 text-zinc-400"}`}>
-            <X size={14} />
+
+          {/* ٣ — what the client wants back */}
+          <div>
+            <p className={label}>٣. المطلوب</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {BRIEF_REVIEW_SCOPES.map(s => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setReviewScope(s.id)}
+                  aria-pressed={reviewScope === s.id}
+                  className={`${pill(reviewScope === s.id)} text-start leading-relaxed py-3`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ٤ — optional context */}
+          <div className="space-y-3">
+            <p className={label}>٤. بيانات إضافية (اختياري)</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <input type="text" value={courtType} onChange={e => setCourtType(e.target.value)} maxLength={MAX_COURT_LENGTH}
+                placeholder="المحكمة أو الجهة" className={input} />
+              <input type="text" value={caseType} onChange={e => setCaseType(e.target.value)} maxLength={MAX_CASE_TYPE_LENGTH}
+                placeholder="نوع القضية" className={input} />
+            </div>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} maxLength={MAX_NOTES_LENGTH} rows={4}
+              placeholder="ملاحظات للفريق — مثلاً: ما الذي يقلقك في المذكرة، أو موعد الجلسة" className={`${input} leading-relaxed`} />
+          </div>
+
+          {errors.length > 0 && (
+            <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 space-y-1">
+              {errors.map(e => (
+                <p key={e} className="flex items-center gap-1.5 text-[11px] text-red-500">
+                  <Warning size={12} /> {e}
+                </p>
+              ))}
+            </div>
+          )}
+
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} className="mt-0.5" />
+            <span className={hint}>
+              أقر بأن البيانات المدخلة صحيحة، وأوافق على إرسال المذكرة المرفوعة لفريق نظامي لمراجعتها.
+            </span>
+          </label>
+
+          <button
+            onClick={submit}
+            disabled={!confirmed || submitting || uploading}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-6 py-3 text-[13px] font-bold text-white shadow-md disabled:opacity-40"
+          >
+            <PaperPlaneTilt size={15} />
+            {submitting ? "جارٍ الإرسال…" : uploading ? "انتظر اكتمال رفع المذكرة…" : "إرسال الطلب"}
           </button>
         </div>
-      )}
-
-      {/* Processing */}
-      <AnimatePresence>
-        {checking && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className={`${card} p-6 flex items-center gap-3 shadow-sm`}>
-            <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}>
-              <Robot size={22} weight="duotone" className="text-purple-500" />
-            </motion.div>
-            <div>
-              <p className={`font-semibold text-[14px] ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>AI يفحص المذكرة...</p>
-              <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>فحص المواد · التحقق من السوابق · تحليل منطق الحجج</p>
-            </div>
-            <div className={`ms-auto h-1.5 w-32 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-zinc-100"}`}>
-              <motion.div animate={{ x: ["-100%", "100%"] }} transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-                className="h-full w-1/2 bg-gradient-to-r from-transparent via-purple-500/60 to-transparent" />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Results */}
-      {results && (
-        <BetaReviewGate toolId="brief-check.result" toolName="فحص المذكرة والسوابق" reviewScope="legal-data">
-        <div className="space-y-4">
-          {/* Summary */}
-          <div className={`${card} p-4 shadow-sm`}>
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Warning size={15} weight="fill" className="text-red-500" />
-                <span className={`font-mono text-xl font-bold text-red-500`}>{errorCount}</span>
-                <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>أخطاء حرجة</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <SealWarning size={15} weight="fill" className="text-amber-500" />
-                <span className={`font-mono text-xl font-bold text-amber-500`}>{warnCount}</span>
-                <span className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>تحذيرات</span>
-              </div>
-              <div className="flex items-center gap-2 ms-auto">
-                <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold border ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-300" : "border-zinc-200 bg-zinc-50 text-zinc-600"}`}>
-                  <Download size={13} /> تقرير PDF
-                </motion.button>
-              </div>
-            </div>
-          </div>
-
-          {/* Findings list */}
-          <div className="space-y-3">
-            {results.map((r, i) => {
-              const isError = r.type === "error";
-              const isOk = r.type === "ok";
-              return (
-                <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
-                  className={`${card} p-5 shadow-sm`}>
-                  <div className="flex items-start gap-3">
-                    <div className={`flex-shrink-0 flex h-9 w-9 items-center justify-center rounded-xl ${
-                      isError ? "bg-red-500/10" :
-                      isOk ? "bg-emerald-500/10" :
-                      "bg-amber-500/10"
-                    }`}>
-                      {isError ? <Warning size={16} weight="fill" className="text-red-500" /> :
-                       isOk ? <CheckCircle size={16} weight="fill" className="text-emerald-500" /> :
-                       <Eye size={16} className="text-amber-500" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <p className={`font-bold text-[13px] ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{r.title}</p>
-                        <span className={`text-[10px] font-mono rounded-full px-2 py-0.5 ${isDark ? "bg-zinc-800 text-zinc-500" : "bg-zinc-100 text-zinc-400"}`}>{r.page}</span>
-                      </div>
-                      <p className={`text-[12px] leading-relaxed mb-2 ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{r.detail}</p>
-                      {r.fix && (
-                        <div className={`rounded-xl px-3 py-2 border ${isDark ? "border-[#0B3D2E]/40 bg-[#0B3D2E]/15" : "border-emerald-200 bg-emerald-50"}`}>
-                          <div className="flex items-start gap-1.5">
-                            <Lightbulb size={11} className="flex-shrink-0 mt-0.5 text-emerald-500" />
-                            <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{r.fix}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-
-          {/* Unified Result Actions */}
-          <AiResultActions
-            text={results.map(r => `[${r.type}] ${r.title} — ${r.detail}${r.fix ? `\nالإصلاح: ${r.fix}` : ""}`).join("\n\n")}
-            filename="brief-check-report"
-            showVault
-            showHumanReview
-            className="justify-start"
-          />
-        </div>
-        </BetaReviewGate>
       )}
     </div>
   );

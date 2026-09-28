@@ -31,12 +31,16 @@ import {
 import { validateContractsIntake } from "./orderIntake.contracts.ts";
 import { validateWargamingIntake } from "./orderIntake.wargaming.ts";
 import { validateLegalOpinionIntake } from "./orderIntake.legalOpinion.ts";
+import { BRIEF_REVIEW_SERVICE, validateBriefReviewMetadata } from "./briefReviewOrder.ts";
 
 export type IntakeGuardResult =
   /** No AI intake on this request — legacy/non-AI orders pass through. */
   | { kind: "pass" }
-  | { kind: "ok"; service: ServiceKey }
-  | { kind: "invalid"; service: ServiceKey; errors: string[] };
+  | { kind: "ok"; service: GuardedService }
+  | { kind: "invalid"; service: GuardedService; errors: string[] };
+
+/** The four wizard services, plus the team-reviewed memo order. */
+export type GuardedService = ServiceKey | typeof BRIEF_REVIEW_SERVICE;
 
 const VALIDATOR_BY_SERVICE: Record<ServiceKey, (input: unknown) => ValidationResult<unknown>> = {
   draft: validateDraftIntake,
@@ -79,6 +83,16 @@ function asServiceKey(v: unknown): ServiceKey | null {
  */
 export function checkOrderIntake(metadata: unknown): IntakeGuardResult {
   if (!isRecord(metadata)) return { kind: "pass" };
+
+  // «مراجعة وتدقيق مذكرة» (briefReviewOrder.ts) is not a wizard ServiceKey, so
+  // the dispatch table below would let it through unchecked; and unlike the
+  // wizards, a missing intake is itself invalid for it.
+  if (metadata.service === BRIEF_REVIEW_SERVICE || (isRecord(metadata.intake) && metadata.intake.service === BRIEF_REVIEW_SERVICE)) {
+    const errors = validateBriefReviewMetadata(metadata);
+    return errors.length > 0
+      ? { kind: "invalid", service: BRIEF_REVIEW_SERVICE, errors }
+      : { kind: "ok", service: BRIEF_REVIEW_SERVICE };
+  }
 
   const intake = metadata.intake;
   if (intake === undefined || intake === null) return { kind: "pass" };

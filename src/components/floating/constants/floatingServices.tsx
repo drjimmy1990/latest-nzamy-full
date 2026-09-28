@@ -358,7 +358,7 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
       { key: "firm-compliance-conflict", icon: <ShieldCheck {...iconProps} />, label: "تعارض المصالح", sub: "Conflict • KYC • قيود", href: "/dashboard/firm/compliance/conflict" },
       { key: "firm-compliance-walls", icon: <Vault {...iconProps} />, label: "الجدران الصينية", sub: "فصل الملفات الحساسة", href: "/dashboard/firm/compliance/walls" },
       { key: "firm-compliance-governance", icon: <Gavel {...iconProps} />, label: "الحوكمة", sub: "سياسات ومصفوفة صلاحيات", href: "/dashboard/firm/governance" },
-      { key: "firm-compliance-monitor", icon: <Warning {...iconProps} />, label: "مراقبة الأنظمة", sub: "تحديثات ومخاطر امتثال", href: "/ai/monitor" },
+      { key: "firm-compliance-monitor", icon: <Warning {...iconProps} />, label: "راصد التشريعات", sub: "قيد النفاذ وأحدث الإصدارات", href: "/ai/monitor" },
       quick,
     ], "دعم الامتثال");
   }

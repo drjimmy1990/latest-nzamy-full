@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "framer-motion";
-import { PencilLine, SealCheck } from "@phosphor-icons/react";
+import { PencilLine, SealCheck, FileMagnifyingGlass } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -57,11 +58,12 @@ export function DraftPreStep({ onStartDraft, initialMode = "" }: DraftPreStepPro
           );
         })()}
 
-        {/* Single card — was a 2-card grid before "مراجعة مذكرة" (Card B,
-            owner items ٨٧/٨٨) was removed: a fake "processing" delay over
-            MOCK_PARAS presented as an AI reading of the client's memo, with
-            no five-dimension review engine behind it. */}
-        <div className="grid grid-cols-1 gap-5 sm:max-w-sm">
+        {/* Two cards again. Card B «مراجعة وتدقيق مذكرة» was removed (owner
+            items ٨٧/٨٨) because it showed a fake "processing" delay over
+            MOCK_PARAS as an AI reading of the client's memo. It is back as a
+            link to /ai/brief-check, which now places a real order the TEAM
+            fulfils (owner decision, registry Q77) — no delay, no mock output. */}
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
 
           {/* A — صياغة جديدة */}
           <motion.button
@@ -109,6 +111,51 @@ export function DraftPreStep({ onStartDraft, initialMode = "" }: DraftPreStepPro
               <motion.span animate={{ x: [0, 4, 0] }} transition={{ duration: 1.5, repeat: Infinity }}>←</motion.span>
             </div>
           </motion.button>
+
+          {/* B — مراجعة وتدقيق مذكرة (a team order on /ai/brief-check) */}
+          <Link
+            href="/ai/brief-check"
+            className={`group relative block overflow-hidden rounded-3xl border p-6 text-start transition-all duration-300 hover:-translate-y-0.5 ${
+              isDark
+                ? "border-amber-700/30 bg-amber-900/10 hover:border-amber-600/50 hover:bg-amber-900/20"
+                : "border-amber-200/80 bg-gradient-to-br from-amber-50/80 to-orange-50/40 hover:border-amber-300 hover:shadow-lg hover:shadow-amber-500/10"
+            }`}
+          >
+            {/* Glow */}
+            <div className="absolute -top-10 -left-10 w-32 h-32 rounded-full bg-amber-500/10 blur-2xl group-hover:bg-amber-500/20 transition-all" />
+
+            {/* Icon */}
+            <div className="relative mb-5">
+              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/30">
+                <FileMagnifyingGlass size={24} weight="duotone" className="text-white" />
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="relative space-y-2">
+              <p className={`font-bold text-[17px] ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>مراجعة وتدقيق مذكرة</p>
+              <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                ارفع مذكرتك ويراجعها فريق نظامي: تقرير بالثغرات أو تنقيح كامل
+              </p>
+            </div>
+
+            {/* Features */}
+            <div className="relative flex flex-wrap gap-2 mt-5">
+              {["رفع المذكرة", "تحديد صفة الموكل", "تقرير بالثغرات أو تنقيح كامل", "مراجعة يدوية من الفريق"].map(f => (
+                <span key={f} className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${
+                  isDark
+                    ? "border-amber-700/30 text-amber-400 bg-amber-900/20"
+                    : "border-amber-300/60 text-amber-700 bg-amber-50"
+                }`}>✓ {f}</span>
+              ))}
+            </div>
+
+            {/* CTA */}
+            <div className={`relative mt-5 flex items-center gap-2 text-[12px] font-bold ${isDark ? "text-amber-400" : "text-amber-600"}`}>
+              <span>ارفع مذكرتك</span>
+              <motion.span animate={{ x: [0, 4, 0] }} transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}>←</motion.span>
+            </div>
+          </Link>
         </div>
 
         {/* Bottom hint */}

@@ -348,3 +348,33 @@ The package stays out of git: it carries plaintext test passwords for six accoun
 4. **Items that need a decision**, as the answers arrive.
 
 The owner report is updated in each batch's commit.
+
+### 7.5 Status after the 29 Sep batch (T28-B built)
+
+Built on our schema, reviewed by an independent Opus pass, and every finding of that pass fixed or listed below. Not deployed yet.
+
+| id | status | notes |
+|---|---|---|
+| T28-21 | **built; migration for the user** | `20260929_01_library_text_server_only.sql` revokes anon/authenticated on `library.articles`, `article_regulations`, `article_amendments` (+ the `cross_section_search` matview) and drops their read policies. The law reader, search, autocomplete and the stats count read article text with the service role; the cookie client still does auth. Docker harness `library_text_server_only.test.sql` T1–T8 pass. `_verify.sql` checks the lock once the marker comment exists. **Order: deploy, check a law as guest, then run the migration.** Search hits that are locked now show the article's opening, never a query-centred window. New per-visitor limiter: POST search + GET autocomplete + GET law = 300/min, keyed on `CF-Connecting-IP` (the site is behind Cloudflare). |
+| T28-22 | **built (route level)** | Decree, dates, official links, gazette data, the **preamble** (it opens with the decree card, measured on 5,477 laws) and amending decrees are withheld from non-subscribers in `laws/[slug]`, `init`, `enactments` and `/api/library/monitor`; `Cache-Control: private, no-store`. Locked row «🔒 بيانات الإصدار الرسمية متاحة للمشتركين». **Not closed at the data level:** `library.laws` stays anon-readable with these columns (see T28-36). Titles of decree documents contain their numbers by nature. |
+| T28-23 | built | Red catalogue card (617 repealed documents) and reader banner. The «الانتقال إلى النظام الساري» link needs `supersedes_law_slug`, empty on every law today. |
+| T28-24 | built | 185 book rows → 36 cards (16 series + 20 singles), volume switcher in the reader, the library loads the full books list once. |
+| T28-25 | done in `3abce98` | `courtBadge`. |
+| T28-26 | built, no data | Gazette row links only to a stored `gazette_url`; `gazette_issue_number`/`gazette_url` are empty on every law. |
+| T28-27 | built | The countdown read `effective_date_gregorian`, empty on every law, so it never showed anything. It now resolves `effective_date_hijri` through Umm al-Qura (`src/lib/library/enactmentFeed.ts`); 2 upcoming laws today. «نافذ حديثاً» = today and the 14 days before. |
+| T28-28 | built | 4 pills mapped onto existing `kind` values (no migration), optional highlight with «✕ إزالة التظليل», `articleRef` = label ≤ 100 chars (long law titles used to 400). No contact field: the reporter is signed in. |
+| T28-29 | built | Clickable stage bar (bulk `GET /api/v1/lawyer/case-stages`). Share modal built but **hidden while `BETA_MONOPOLY_MODE`** (Q ١٥١); QR waits on Q ٤١. |
+| T28-30 | built | `preferences.quickTools` (3–8 of 17 real routes). `PUT /api/v1/settings` now merges `preferences` (a tab could wipe keys saved elsewhere). |
+| T28-31 | built | `<html data-density>` 100/85/75 with CSS `zoom`, desktop only, default 100 (Q ١٥٣). Pointer canvases carry `.nz-density-reset`. |
+| T28-32 | built | 31 sections + «أخرى» with free text; server validator accepts `areaOther`. |
+| T28-33 | built, data blocked | Full address; copy and mailto only for a **verified** entry. Every entry today is an invented sample (sequential phones, `c.court.r1@…`), so all show the address as text with «غير مُتحقَّق», and invented floors/codes/durations/phones are hidden. The 2,192-circuit source is still needed (Q ١٥٩). |
+| T28-34 | built | Settings skeleton until the role is known; the open tab is only reset when the resolved role truly lacks it. |
+| T28-35 | built | Monitor → live library feed (upcoming / recently in force / latest). Vault → `DashboardComingSoon` with the owner's lawyer/company split. `/ai/brief-check` → a real team order (`type ai_draft`, `metadata.service brief_review`, server check in `intakeGuard`), Card B back in the drafter. |
+
+Leftovers of the 28 Sep round also closed: principle cards link to `/precedents/<collection>#<principle>`; article full-text search expands hamza / ة‑ه / ى‑ي spellings (≤ 8 per word, 48 per query); citations never print «المادة (### …)»; the phone drawing bars moved under the navbar.
+
+**New tickets from this batch**
+- **T28-36 (security, M + 1 migration):** column-level grants on `library.laws` so `preamble`, `issuing_instrument`, `issue_date_hijri`, `publication_date_hijri`, `boe_source_url`, `official_source_url`, `gazette_*` are server-only too; every anon `select('*')`/explicit read of those columns moves to the service role first (code first, then migration). Also drop the hand-written decrees from `src/app/laws/law-metadata-map.ts` (they ship in the browser bundle).
+- **T28-37 (ops):** nginx on the server should restore the visitor address behind Cloudflare (`set_real_ip_from <Cloudflare ranges>; real_ip_header CF-Connecting-IP;`). Until then the older write buckets key on a Cloudflare edge address.
+- **T28-38 (data, owner):** `supersedes_law_slug` and gazette numbers are empty on every law; duplicate deferred rows «م 36 نظام التعليم العام لعام 1448هـ» / «م 53 نظام إيرادات الدولة لعام 1448هـ»; an impossible issue date `1473-13-36`.
+- **T28-39 (perf):** article full-text search for a rare or absent word scans in id order (`ORDER BY id LIMIT`) and hit the 3 s anon timeout before this batch; it now runs as the service role with no database timeout, bounded only by the new limiter. Check the plan with `EXPLAIN` on the server.

@@ -63,7 +63,9 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "مدير العقود",    labelEn: "Contracts",       href: "/dashboard/lawyer/contracts", icon: "FileText" },
       { label: "المستندات",      labelEn: "Documents",        href: "/dashboard/lawyer/documents", icon: "FolderOpen" },
-      { label: "الخزنة",         labelEn: "The Vault",        href: "/ai/vault",                    icon: "Vault" },
+      // badge «قريباً» — /ai/vault renders DashboardComingSoon (its mock
+      // documents and mock lawyer card were removed, owner decision 28 Sep).
+      { label: "الخزنة",         labelEn: "The Vault",        href: "/ai/vault",                    icon: "Vault", badge: "قريباً" },
       // «الأرشيف الموحّد» stood here. An earlier round downgraded its badge
       // from «جديد» to «قريباً» — honest about the pill, but the entry still
       // spent a line of the sidebar on a 12-line DashboardComingSoon template.

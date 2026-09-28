@@ -557,14 +557,14 @@ const LEGACY_AI_TOOLS: AiToolCard[] = [
   { id: "ai:consult", href: "/ai/consult", titleAr: "المستشار الذكي", titleEn: "AI Advisor", icon: ChatCircleDots, descAr: "إجابات فورية لاستفساراتك القانونية", descEn: "Instant answers to your questions" },
   { id: "ai:analyze", href: "/ai/analyze", titleAr: "فاحص المستندات والقضايا", titleEn: "Case & Doc Analyzer", icon: MagnifyingGlass, descAr: "تقييم قضيتك أو فحص وثيقتك مع توصية فورية", descEn: "Evaluate your case or check your document with instant recommendation" },
   { id: "ai:legal-opinion", href: "/ai/legal-opinion", titleAr: "الرأي الفصل", titleEn: "Al-Ra'y Al-Fasl", icon: Brain, descAr: "رأي · دراسة · بحث قانوني · عناية واجبة — متعدد الوكلاء", descEn: "Opinion · Study · Research · Due Diligence — Multi-Agent", badge: "PRO" },
-  { id: "ai:brief-check", href: "/ai/brief-check", titleAr: "فاحص المذكرات", titleEn: "Brief Auditor", icon: FileMagnifyingGlass, descAr: "يكشف المواد الملغاة والسوابق الناقصة والثغرات المنطقية في مذكرتك", descEn: "Detects repealed articles, missing precedents & logical gaps in your brief" },
+  { id: "ai:brief-check", href: "/ai/brief-check", titleAr: "مراجعة وتدقيق مذكرة", titleEn: "Brief Review", icon: FileMagnifyingGlass, descAr: "ارفع مذكرتك ويراجعها فريق نظامي: تقرير بالثغرات أو تنقيح كامل", descEn: "Upload your brief for review by the Nezamy team: a gaps report or a full revision" },
   { id: "ai:procedures", href: "/ai/procedures", titleAr: "المرشد القضائي", titleEn: "Court Guide", icon: UserCheck, descAr: "توجيهك للإجراءات الصحيحة أمام المحاكم", descEn: "Guide to court procedures" },
   { id: "ai:communicate", href: "/ai/communicate", titleAr: "المتحدث الذكي", titleEn: "Smart Communicator", icon: Envelope, descAr: "AI يكتب رسائلك وإيميلاتك بالأسلوب المناسب", descEn: "AI writes your messages and emails in the right tone" },
   { id: "ai:assistant", href: "/ai/assistant", titleAr: "المساعد المتقدم", titleEn: "Advanced Assistant", icon: Robot, descAr: "مساعد قانوني شخصي دائم عبر محادثة ذكية مطولة", descEn: "Persistent personal legal assistant through smart chat" },
   // Corporate specific
   { id: "ai:corp:compliance", href: "/ai/corp/compliance", titleAr: "مراقب الامتثال", titleEn: "Compliance", icon: Database, descAr: "فحص وتأكيد مراعاة الشركة للأنظمة", descEn: "Check company regulatory compliance" },
   { id: "ai:tracker", href: "/ai/tracker", titleAr: "المُعقّب الذكي", titleEn: "AI Agent", icon: Sparkle, descAr: "وكيل AI لمتابعة المعاملات آلياً", descEn: "Agent to follow up on transactions", badge: "جديد" },
-  { id: "ai:monitor", href: "/ai/monitor", titleAr: "راصد التشريعات", titleEn: "Law Monitor", icon: Database, descAr: "تنبيهات فورية بأي تعديلات في الأنظمة", descEn: "Instant law change alerts" }
+  { id: "ai:monitor", href: "/ai/monitor", titleAr: "راصد التشريعات", titleEn: "Law Monitor", icon: Database, descAr: "الأنظمة قيد النفاذ والنافذة حديثاً وأحدث الإصدارات من المكتبة", descEn: "Upcoming, newly in-force and latest laws from the library" }
 ];
 
 const GLOBAL_RESEARCH_CARD: AiToolCard = {
