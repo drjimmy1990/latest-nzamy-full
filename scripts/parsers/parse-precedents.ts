@@ -25,7 +25,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { nullIfForbidden, filterMeta } from "./manifest";
-import { slugifyArabic as sharedSlugify } from "./lib/slug";
+import { slugifyArabic as sharedSlugify, nameForId } from "./lib/slug";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
@@ -296,7 +296,7 @@ function extractUnnamedDetails(text: string): string | undefined {
  * at bare `fileId`.
  */
 function safeFallbackId(filePath: string, fileId: string): string {
-  const parentFolder = path.basename(path.dirname(filePath));
+  const parentFolder = nameForId(path.basename(path.dirname(filePath)));
   return `${parentFolder}__${fileId}`;
 }
 
@@ -313,7 +313,7 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
   // Never defaulted to a real branch — see lib/court.ts.
   const courtInfo = classifyCourt(filePath, meta);
 
-  const fileId = path.basename(filePath, ".md");
+  const fileId = nameForId(path.basename(filePath, ".md"));
   const title = String(meta.title || fileId);
 
   console.log(`  ⚖️  Parsing principle collection: ${title}`);
@@ -437,7 +437,7 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
     return null;
   }
 
-  const fileId = path.basename(filePath, ".md");
+  const fileId = nameForId(path.basename(filePath, ".md"));
   const title = String(meta.title || fileId);
 
   console.log(`  📘 Parsing court precedent: ${title}`);
@@ -574,7 +574,7 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
   // Never defaulted to a real branch — see lib/court.ts.
   const courtInfo = classifyCourt(filePath, meta);
 
-  const fileId = path.basename(filePath, ".md");
+  const fileId = nameForId(path.basename(filePath, ".md"));
   const hasArticleStart = /<!--\s*ARTICLE_START\s/.test(body);
   const hasPrincipleStart = body.includes("PRINCIPLE_START");
   const isCourtPrecedent = Boolean(meta.court_type || meta.ruling_number || meta.case_number);

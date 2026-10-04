@@ -20,7 +20,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { resolveCorpusScope, assertCorpusScopeContract, type CorpusScopeDecision } from "./corpus-scope";
 const corpusScopeDecisions: CorpusScopeDecision[] = [];
-import { slugifyArabic as sharedSlugify } from "./lib/slug";
+import { slugifyArabic as sharedSlugify, nameForId } from "./lib/slug";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { buildEntityIndexFromCategoryInput, resolveCrossDomain } from "./lib/entity-prescan";
@@ -224,7 +224,7 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
   corpusScopeDecisions.push(scopeDecision);
   if (scopeDecision.corpus_scope !== "public_corpus") return null;
 
-  const fileId = path.basename(filePath, ".md");
+  const fileId = nameForId(path.basename(filePath, ".md"));
   const title = String(meta.title || fileId);
 
   const schemaVersionKey = String(meta.schema_version ?? "").trim() || "(missing)";

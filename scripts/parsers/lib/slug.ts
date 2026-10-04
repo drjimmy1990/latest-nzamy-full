@@ -105,3 +105,16 @@ export function findSlugCollisions(
   }
   return collisions;
 }
+
+// ── Names from the file system → identities (2026-10-04) ────────────────────
+// Ids are built from file and folder names (laws without `slug:`, decrees,
+// fiqh books, precedent fallbacks). The same Arabic name can reach the
+// parser in two Unicode forms: macOS hands out what the library wrote, a
+// zip / Windows copy can hand out the decomposed (NFD) form, where «ئ» is
+// «ي» + U+0654 and slugifyArabic then gives a different slug. Production ids
+// are the composed (NFC) form, so every name is composed here before it
+// becomes an id. Use these ONLY for identity/display — open files with the
+// real on-disk path (an NFC path does not open an NFD file on Windows).
+export function nameForId(name: string): string {
+  return name.normalize("NFC");
+}

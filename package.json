@@ -26,6 +26,7 @@
     "library:seed": "node library-toolkit/library-seed.mjs",
     "library:seed:owner": "node scripts/seed-library-from-owner.mjs",
     "library:counts": "node scripts/check-counts.mjs",
+    "library:diff": "node scripts/library-rows-diff.mjs",
     "library:verify": "node library-toolkit/library-verify.mjs",
     "library:status": "node library-toolkit/library-status.mjs",
     "library:baseline": "node library-toolkit/library-baseline.mjs",

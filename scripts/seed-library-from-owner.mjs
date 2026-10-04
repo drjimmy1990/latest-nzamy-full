@@ -9,23 +9,15 @@
  *
  * NO 800MB SQL FILE UPLOAD NEEDED.
  *
- * STRIPPED COLUMNS — READ BEFORE RE-RUNNING AFTER A SCHEMA CHANGE
- *   needs_human_review / review_reason (laws, decrees_circulars, principles)
- *   and is_synthetic_page (feqh_blocks) are deleted from every row before
- *   upsert. This is NOT a data-quality choice — those columns simply do not
- *   exist yet on the target database. They land with migrations
- *   20260821_feqh_blocks_is_synthetic_page.sql and
- *   20260822_needs_human_review_columns.sql, which are written but not
- *   applied on self-hosted as of this script's last edit. Applying the two
- *   migrations alone leaves every already-seeded row at the column default
- *   (false / null) — it does not backfill the real values. Once those
- *   migrations run, remove the corresponding stripKeys entries below and
- *   RE-SEED the four affected tables (laws, decrees_circulars, principles,
- *   feqh_blocks); the re-seed's upsert is what actually writes the values.
- *   EXCEPTION (2026-10-04): the review/editorial family (needs_human_review,
- *   review_*, editorial_notes*) is internal for good (library contract 1.6)
- *   and is removed from every row and from `metadata` by
- *   stripInternalContentKeys whatever stripKeys says.
+ * STRIPPED COLUMNS
+ *   - is_synthetic_page (feqh_blocks): the column does not exist on the
+ *     target (migration 20260821_feqh_blocks_is_synthetic_page.sql is not
+ *     applied), so it is deleted from every row.
+ *   - needs_human_review / review_* / editorial_notes* (any table, and inside
+ *     `metadata`): INTERNAL for good (library contract 1.6, 2026-10-04 leak)
+ *     — removed from every row by stripInternalContentKeys. Do NOT apply
+ *     20260822_needs_human_review_columns.sql to bring them back as columns:
+ *     a column on a public table is readable with the anon key.
  *
  * TWO-LEVEL CHAPTERS (2026-10-04)
  *   `chapters` rows that carry `level` (1|2) and `parent_chapter_id` (uuid of
@@ -37,23 +29,25 @@
  *   row comes later in the file fails (23503) unless both land in the same
  *   request — the JSONL must list each parent before its children.
  *
- * Usage:
- *   node scripts/seed-library-from-owner.mjs                  # seed everything
- *   node scripts/seed-library-from-owner.mjs --dry             # parse-only, no network writes
- *   node scripts/seed-library-from-owner.mjs --table laws
- *   node scripts/seed-library-from-owner.mjs --from chapters
- *   node scripts/seed-library-from-owner.mjs --limit 500
- *   node scripts/seed-library-from-owner.mjs --rows /path/to/evidence/full/rows
- *   NZAMY_LIBRARY_ROWS_DIR=/path/to/rows node scripts/seed-library-from-owner.mjs
+ * Usage (2026-10-04 — DRY by default; the owner's guide is
+ * دليل_المالك_تحميل_المكتبة_٢٠٢٦-١٠-٠٤.md):
+ *   node scripts/seed-library-from-owner.mjs --help
+ *   node scripts/seed-library-from-owner.mjs --rows <dir>                 # dry: reads, writes nothing
+ *   node scripts/seed-library-from-owner.mjs --rows <dir> --apply --confirm-host auth.nezamy.sa   # LIVE
+ *   … --table laws | --from chapters | --limit 500 | --allow-cloud
  *
- * Rows directory resolution (so the owner can keep the package OUTSIDE the repo):
- *   1. --rows <dir>
- *   2. env NZAMY_LIBRARY_ROWS_DIR
- *   3. newest nzamy-developer-test-<suffix>/evidence/full/rows found under the repo root
- *
- * Safety:
- *   Refuses to run against a target host ending in supabase.co (the old cloud
- *   project) unless --allow-cloud is passed explicitly.
+ * Safety (src/lib/library/seedOwnerArgs.ts, tested):
+ *   - an unknown option or a stray value stops the script before anything
+ *     (2026-10-04: an unknown `--help` used to start a real production load;
+ *     `npm run … --dry --rows X` without `--` hands the script only `X`);
+ *   - `--rows <dir>` is required — no silent pick of "the newest package";
+ *   - a write needs `--apply` AND `--confirm-host <host>` equal to the host
+ *     of NEXT_PUBLIC_SUPABASE_URL;
+ *   - refuses a *.supabase.co target (the old cloud project) unless
+ *     --allow-cloud is passed explicitly.
+ *   Run scripts/library-rows-diff.mjs on the same --rows folder first: an
+ *   upsert never deletes, so renamed / moved / renumbered items would stay
+ *   live next to their new copies.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -62,41 +56,45 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
-// Node ≥ 22.18 loads this .ts module directly (type stripping).
-import { stripInternalContentKeys } from "../src/lib/library/internalContentFields.ts";
+// Node ≥ 22.18 loads these .ts modules directly (type stripping). They are
+// imported dynamically so the harmless "Module type … is not specified"
+// notice they trigger can be kept off the owner's screen.
+const emitWarning = process.emitWarning;
+process.emitWarning = (warning, ...rest) => {
+  if (String(warning).includes("Module type of file")) return;
+  return emitWarning.call(process, warning, ...rest);
+};
+const { stripInternalContentKeys } = await import("../src/lib/library/internalContentFields.ts");
+const { liveWriteDecision, parseSeedOwnerArgs, SEED_OWNER_USAGE } = await import("../src/lib/library/seedOwnerArgs.ts");
+
+// Leave from the top level without a synchronous process.exit right after the
+// dynamic .ts imports: on Windows that aborts Node itself (libuv
+// "UV_HANDLE_CLOSING" assertion, exit 127) instead of returning the code.
+// Sets the code, exits 50 ms later, and parks this module until then.
+function quit(code) {
+  process.exitCode = code;
+  setTimeout(() => process.exit(code), 50);
+  return new Promise(() => {});
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-// ── CLI arguments ────────────────────────────────────────────────────────────
-const argv = process.argv.slice(2);
-function getArg(flag) {
-  const idx = argv.indexOf(flag);
-  if (idx === -1) return undefined;
-  const value = argv[idx + 1];
-  if (value === undefined || value.startsWith("--")) {
-    console.error(`❌ ${flag} requires a value.`);
-    process.exit(1);
-  }
-  return value;
+// ── CLI arguments (strict; see seedOwnerArgs.ts) ─────────────────────────────
+const parsedArgs = parseSeedOwnerArgs(process.argv.slice(2));
+if (!parsedArgs.ok) {
+  console.error(`❌ ${parsedArgs.error}\n\n${SEED_OWNER_USAGE}`);
+  await quit(2);
 }
-const hasFlag = (flag) => argv.includes(flag);
-
-const specificTable = getArg("--table");
-const fromTable = getArg("--from");
-const limitArg = getArg("--limit");
-let maxLimit = Infinity;
-if (limitArg !== undefined) {
-  const parsedLimit = Number(limitArg);
-  if (!Number.isInteger(parsedLimit) || parsedLimit <= 0) {
-    console.error(`❌ --limit must be a positive integer, got "${limitArg}".`);
-    process.exit(1);
-  }
-  maxLimit = parsedLimit;
+const cli = parsedArgs.options;
+if (cli.help) {
+  console.log(SEED_OWNER_USAGE);
+  await quit(0);
 }
-const rowsArg = getArg("--rows");
-const allowCloud = hasFlag("--allow-cloud");
-const isDry = hasFlag("--dry");
+const specificTable = cli.table ?? undefined;
+const fromTable = cli.from ?? undefined;
+const maxLimit = cli.limit ?? Infinity;
+const allowCloud = cli.allowCloud;
 
 // ── Auto-load .env.local (from the repo root, not cwd) ──────────────────────
 const envPath = path.join(ROOT, ".env.local");
@@ -136,12 +134,20 @@ try {
   targetHost = assertNotCloud(SUPABASE_URL, allowCloud);
 } catch (e) {
   console.error(`❌ ${e.message}`);
-  process.exit(1);
+  await quit(1);
 }
 
+// Dry unless --apply AND --confirm-host names this very host.
+const decision = liveWriteDecision(cli, targetHost);
+if (decision.error) {
+  console.error(`❌ ${decision.error}`);
+  await quit(2);
+}
+const isDry = !decision.live;
+
 if (!isDry && !SERVICE_KEY) {
-  console.error("❌ Error: SUPABASE_SERVICE_ROLE_KEY is missing in .env.local (required unless --dry)");
-  process.exit(1);
+  console.error("❌ Error: SUPABASE_SERVICE_ROLE_KEY is missing in .env.local (required for --apply)");
+  await quit(1);
 }
 
 const supabase = isDry
@@ -151,55 +157,11 @@ const supabase = isDry
       db: { schema: "library" },
     });
 
-// ── Rows directory resolution ────────────────────────────────────────────────
-function resolveRowsDir(explicitArg) {
-  if (explicitArg) {
-    const resolved = path.resolve(process.cwd(), explicitArg);
-    if (!fs.existsSync(resolved)) {
-      throw new Error(`--rows directory not found: ${resolved}`);
-    }
-    return resolved;
-  }
-
-  if (process.env.NZAMY_LIBRARY_ROWS_DIR) {
-    const resolved = path.resolve(process.cwd(), process.env.NZAMY_LIBRARY_ROWS_DIR);
-    if (!fs.existsSync(resolved)) {
-      throw new Error(`NZAMY_LIBRARY_ROWS_DIR directory not found: ${resolved}`);
-    }
-    return resolved;
-  }
-
-  const candidates = [];
-  for (const entry of fs.readdirSync(ROOT, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.startsWith("nzamy-developer-test-")) continue;
-    const rowsPath = path.join(ROOT, entry.name, "evidence", "full", "rows");
-    if (!fs.existsSync(rowsPath)) continue;
-    const dateMatch = entry.name.match(/(\d{4}-\d{2}-\d{2})$/);
-    candidates.push({
-      name: entry.name,
-      rowsPath,
-      dateKey: dateMatch ? dateMatch[1] : "0000-00-00",
-      mtime: fs.statSync(rowsPath).mtimeMs,
-    });
-  }
-
-  if (candidates.length === 0) {
-    throw new Error(
-      `No owner package found. Looked for "nzamy-developer-test-*/evidence/full/rows" under ${ROOT}. ` +
-        `Pass --rows <dir> or set NZAMY_LIBRARY_ROWS_DIR.`
-    );
-  }
-
-  candidates.sort((a, b) => (a.dateKey !== b.dateKey ? (a.dateKey < b.dateKey ? 1 : -1) : b.mtime - a.mtime));
-  return candidates[0].rowsPath;
-}
-
-let ROWS_DIR;
-try {
-  ROWS_DIR = resolveRowsDir(rowsArg);
-} catch (e) {
-  console.error(`❌ ${e.message}`);
-  process.exit(1);
+// ── Rows directory: --rows only (no silent "newest package" pick) ────────────
+const ROWS_DIR = path.resolve(process.cwd(), cli.rows);
+if (!fs.existsSync(ROWS_DIR) || !fs.statSync(ROWS_DIR).isDirectory()) {
+  console.error(`❌ --rows folder not found: ${ROWS_DIR}`);
+  await quit(1);
 }
 
 // 14 Tables in FK-safe dependency order
@@ -390,6 +352,9 @@ async function main() {
   console.log("═".repeat(70));
   console.log("  🏛️  NZAMY LEGAL LIBRARY — DIRECT STREAMING SEEDER");
   console.log(`  Target: ${SUPABASE_URL} (${targetHost})${isDry ? "  [DRY RUN — no writes]" : ""}`);
+  console.log(isDry
+    ? "  Mode: DRY — nothing is written. Add --apply --confirm-host <host> to load."
+    : `  Mode: ⚠️  LIVE — upserting into ${targetHost} (confirmed with --confirm-host).`);
   console.log(`  Rows dir: ${ROWS_DIR}`);
   console.log("═".repeat(70));
 
