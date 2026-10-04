@@ -621,10 +621,9 @@ function AiHubDashboard() {
       if (user.country === "SA" && (user.userType === "lawyer" || user.userType === "firm")) return true;
       return false;
     }
-    if (t.href === "/ai/consult") {
-      if (user.country && user.country !== "SA" && user.userType === "individual") return false;
-      return true;
-    }
+    // /ai/consult is open to everyone again, non-Saudi individuals included
+    // (owner Q172 default, 2026-10-04): /ai/global is coming-soon, not a substitute.
+    if (t.href === "/ai/consult") return true;
     if (!t.id) return true;
     return user.permissions.includes(t.id as UserPermission);
   });

@@ -437,7 +437,9 @@ export default function LawyerProfilePage() {
           const bio = (isRTL ? text(lp?.bio_ar) ?? text(lp?.bio_en) : text(lp?.bio_en) ?? text(lp?.bio_ar));
           const bar = text(lp?.bar_association);
           const licence = text(lp?.license_number);
-          const rate = typeof lp?.hourly_rate === "number" && lp.hourly_rate > 0 ? lp.hourly_rate : null;
+          // Hidden during the beta (owner Q168 default, 2026-10-04): the page
+          // opened for profile sharing, and a public price is the owner's call.
+          const rate = BOOKING_OPEN && typeof lp?.hourly_rate === "number" && lp.hourly_rate > 0 ? lp.hourly_rate : null;
           const accepting = lp?.is_accepting_clients === true;
           const memberSince = p.created_at ? membershipYear(p.created_at, isRTL) : null;
 

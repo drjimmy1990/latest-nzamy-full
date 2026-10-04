@@ -406,20 +406,15 @@ export function getSidebarByUserType(
       if (country && country !== "SA") {
         base = INDIVIDUAL_SIDEBAR.map(group => {
           if (group.title === "نظامي AI" || group.titleEn === "Nzamy AI") {
+            // Default of owner Q172 (2026-10-04): «الاستشارة» stays — /ai/global
+            // is coming-soon (Q154), so replacing the consult with it left
+            // non-Saudi individuals no way to ask. It is listed beside it.
             return {
               ...group,
-              items: group.items.map(item => {
-                if (item.href === "/ai/consult") {
-                  return {
-                    label: "القضاء والتشريع المقارن",
-                    labelEn: "Comparative Law",
-                    href: "/ai/global",
-                    icon: "Globe",
-                    badge: "قريباً",
-                  };
-                }
-                return item;
-              })
+              items: [
+                ...group.items,
+                { label: "القضاء والتشريع المقارن", labelEn: "Comparative Law", href: "/ai/global", icon: "Globe", badge: "قريباً" },
+              ],
             };
           }
           return group;
