@@ -40,7 +40,13 @@ import {
 import { parseFrontmatter } from "./lib/frontmatter";
 import { slugifyArabic as sharedSlugify, findSlugCollisions, nameForId } from "./lib/slug";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
-import { buildEntityIndexFromCategoryInput, resolveCrossDomain } from "./lib/entity-prescan";
+import {
+  buildEntityIndexFromCategoryInput,
+  buildSlugIndexFromCategoryInput,
+  resolveCrossDomain,
+  resolvePathSurvivor,
+  resolveSlugSurvivor,
+} from "./lib/entity-prescan";
 import { extractArticleHistory, stripDetails, stripArticleHeading, unwrapLiveAnnexes } from "./lib/article-history";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 
@@ -1664,6 +1670,17 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
   // but the design is symmetric and cheap to keep that way). Built only if
   // there is an unresolved tag left to check.
   const entityIndex = stillUnresolved.length > 0 ? buildEntityIndexFromCategoryInput(inputPath) : new Map();
+  // superseded_by written as the survivor's SLUG (owner export 2026-10-03, see
+  // entity-prescan.ts). In-domain first, against this run's PARSED laws: only a
+  // law that is really in the output (public, untagged, not dropped) verifies a
+  // drop — this also covers slugs derived from a file name. A slug two parsed
+  // laws share is left alone: the collision gate below stops the run anyway.
+  const bySlugSurvivor = new Map<string, ParsedLaw | null>();
+  for (const law of laws) {
+    if (toDrop.has(law) || law.isSupersededDuplicate) continue;
+    bySlugSurvivor.set(law.slug, bySlugSurvivor.has(law.slug) ? null : law);
+  }
+  const slugIndex = stillUnresolved.length > 0 ? buildSlugIndexFromCategoryInput(inputPath) : new Map();
 
   const unverifiedSupersededTags: string[] = [];
   const crossDomainVerifiedSuperseded: string[] = [];
@@ -1680,12 +1697,31 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
       );
       continue;
     }
+    const slugSurvivor = bySlugSurvivor.get(law.supersededBy);
+    if (slugSurvivor && slugSurvivor !== law) {
+      toDrop.add(law);
+      continue;
+    }
     const crossHit = resolveCrossDomain(entityIndex, law.supersededBy, "law");
     if (crossHit) {
       toDrop.add(law);
       crossDomainVerifiedSuperseded.push(
         `${path.basename(lawSourceFile.get(law) || law.slug)} :: superseded_by="${law.supersededBy}" verified ` +
           `as a real, untagged ${crossHit.kind} (${path.basename(crossHit.path)}) — resolved cross-domain (أولوية 2)`,
+      );
+      continue;
+    }
+    // A decree survivor named by its slug or its file path (a law survivor
+    // would have matched the parsed laws above, so a law hit here is one that
+    // is not published).
+    const slugCrossHit =
+      resolveSlugSurvivor(slugIndex, law.supersededBy, ["decree"], lawSourceFile.get(law)) ??
+      resolvePathSurvivor(inputPath, law.supersededBy, ["decree"], lawSourceFile.get(law));
+    if (slugCrossHit) {
+      toDrop.add(law);
+      crossDomainVerifiedSuperseded.push(
+        `${path.basename(lawSourceFile.get(law) || law.slug)} :: superseded_by="${law.supersededBy}" verified ` +
+          `by slug/path as a real, untagged ${slugCrossHit.kind} (${path.basename(slugCrossHit.path)}) — resolved cross-domain`,
       );
       continue;
     }

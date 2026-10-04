@@ -23,7 +23,13 @@ const corpusScopeDecisions: CorpusScopeDecision[] = [];
 import { slugifyArabic as sharedSlugify, nameForId } from "./lib/slug";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
-import { buildEntityIndexFromCategoryInput, resolveCrossDomain } from "./lib/entity-prescan";
+import {
+  buildEntityIndexFromCategoryInput,
+  buildSlugIndexFromCategoryInput,
+  resolveCrossDomain,
+  resolvePathSurvivor,
+  resolveSlugSurvivor,
+} from "./lib/entity-prescan";
 import { filterMeta, assertManifestLoadable } from "./manifest";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 import { classifyInstrument, type InstrumentType } from "./lib/instrument";
@@ -413,6 +419,9 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
   const entityIndex = allDecrees.some((d) => d.isSupersededDuplicate)
     ? buildEntityIndexFromCategoryInput(resolvedPath)
     : new Map();
+  const slugIndex = allDecrees.some((d) => d.isSupersededDuplicate)
+    ? buildSlugIndexFromCategoryInput(resolvedPath)
+    : new Map();
 
   const decreeToDrop = new Set<ParsedDecree>();
   const decreeUnverifiedSupersededTags: string[] = [];
@@ -434,6 +443,20 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
       decreeCrossDomainVerified.push(
         `${d.id} :: superseded_by="${d.supersededBy}" verified as a real, untagged ${crossHit.kind} ` +
           `(${path.basename(crossHit.path)}) — resolved cross-domain (أولوية 2)`,
+      );
+      continue;
+    }
+    // superseded_by written as the survivor's SLUG or FILE PATH (owner export
+    // 2026-10-03, see entity-prescan.ts): a published, untagged decree or law —
+    // never this file itself (decree ids are file names).
+    const slugHit =
+      resolveSlugSurvivor(slugIndex, d.supersededBy, ["decree", "law"]) ??
+      resolvePathSurvivor(resolvedPath, d.supersededBy, ["decree", "law"]);
+    if (slugHit && !(slugHit.kind === "decree" && nameForId(path.basename(slugHit.path, ".md")) === d.id)) {
+      decreeToDrop.add(d);
+      decreeCrossDomainVerified.push(
+        `${d.id} :: superseded_by="${d.supersededBy}" verified by slug/path as a real, untagged ${slugHit.kind} ` +
+          `(${path.basename(slugHit.path)})`,
       );
       continue;
     }
