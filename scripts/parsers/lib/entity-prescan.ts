@@ -32,6 +32,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { parseFrontmatter } from "./frontmatter";
 import { applyExclusions } from "./exclusions";
+import { resolveCorpusScope } from "../corpus-scope";
 
 export type EntityKind = "law" | "decree";
 
@@ -157,4 +158,166 @@ export function resolveCrossDomain(index: EntityIndex, ref: string, selfKind: En
   if (hit.kind === selfKind) return undefined;
   if (hit.isSupersededDuplicate) return undefined; // never verify against another dangling tag
   return hit;
+}
+
+// ── superseded_by written as the survivor's SLUG ─────────────────────────────
+// The owner's 2026-10-03 export names the survivor by its slug in 98 of its
+// 162 superseded_by pointers (e.g. "law-m-43-1443-05-26-law-00-1161" for
+// نظام الإثبات). The contract (schema_manifest → superseded_by) asks for the
+// instrument id or the file path, and neither lookup above matches a slug, so
+// every one of those real duplicates stopped the parse as "unverified". The
+// slug is the laws table's own primary key, so it names the survivor at least
+// as strictly as an id. The manifest is NOT edited (it is the owner's contract,
+// hash-checked against his vault); this lookup is an extra, stricter path.
+//
+// Index: EXPLICIT frontmatter `slug` only (a filename-derived slug is the laws
+// parser's own business — it checks its parsed output first). Two untagged
+// files declaring the same slug make it ambiguous: never pick one.
+
+export const AMBIGUOUS_SLUG = "ambiguous" as const;
+export type SlugIndex = Map<string, EntityRef | typeof AMBIGUOUS_SLUG>;
+
+export function buildSlugIndex(roots: Partial<Record<EntityKind, string>>): SlugIndex {
+  const index: SlugIndex = new Map();
+
+  function scan(kind: EntityKind, root: string | undefined) {
+    if (!root || !fs.existsSync(root)) return;
+    const { kept } = applyExclusions(walkMd(root));
+    for (const file of kept) {
+      const meta = readFrontmatterCheap(file);
+      if (!meta) continue;
+      const slug = String(meta.slug ?? "").trim();
+      if (!slug) continue;
+      const statusVal = String(meta.status ?? "").trim();
+      const isSupersededDuplicate = statusVal === "superseded_duplicate" || statusVal === "merged";
+      const ref: EntityRef = { kind, path: file, isSupersededDuplicate };
+      const existing = index.get(slug);
+      if (!existing) {
+        index.set(slug, ref);
+      } else if (existing !== AMBIGUOUS_SLUG) {
+        // A tagged copy never competes with an untagged survivor; two of the
+        // same kind (both tagged or both untagged) leave the slug undecidable.
+        if (existing.isSupersededDuplicate && !isSupersededDuplicate) index.set(slug, ref);
+        else if (existing.isSupersededDuplicate === isSupersededDuplicate) index.set(slug, AMBIGUOUS_SLUG);
+      }
+    }
+  }
+
+  scan("law", roots.law);
+  scan("decree", roots.decree);
+  return index;
+}
+
+/** Same parent derivation as buildEntityIndexFromCategoryInput. */
+export function buildSlugIndexFromCategoryInput(anyInputPath: string): SlugIndex {
+  const resolved = path.resolve(anyInputPath);
+  const isKnownCategory = Object.values(CATEGORY_FOLDERS).includes(path.basename(resolved));
+  const parent = isKnownCategory ? path.dirname(resolved) : resolved;
+  return buildSlugIndex({
+    law: path.join(parent, CATEGORY_FOLDERS.law),
+    decree: path.join(parent, CATEGORY_FOLDERS.decree),
+  });
+}
+
+/**
+ * Will this file really be published? The same corpus-scope decision the
+ * parsers make, on the same bytes. A survivor the gate keeps out (institutional,
+ * pending review, gate zero) must not verify a drop: both copies would vanish.
+ */
+function isPublishedSurvivor(file: string): boolean {
+  try {
+    const raw = fs.readFileSync(file, "utf-8");
+    const { meta } = parseFrontmatter(raw, file);
+    return resolveCorpusScope(meta, file, raw).corpus_scope === "public_corpus";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve a slug-valued `superseded_by` to an untagged, unambiguous, published
+ * survivor of one of `allowKinds`, never the tagged file itself. Undefined when
+ * there is nothing safe to accept — the caller's "unverified, refuse to guess"
+ * path then applies unchanged.
+ */
+export function resolveSlugSurvivor(
+  index: SlugIndex,
+  ref: string,
+  allowKinds: readonly EntityKind[],
+  selfPath?: string,
+): EntityRef | undefined {
+  const hit = index.get(ref);
+  if (!hit || hit === AMBIGUOUS_SLUG) return undefined;
+  if (!allowKinds.includes(hit.kind)) return undefined;
+  if (hit.isSupersededDuplicate) return undefined;
+  if (selfPath && path.resolve(hit.path) === path.resolve(selfPath)) return undefined;
+  if (!isPublishedSurvivor(hit.path)) return undefined;
+  return hit;
+}
+
+// ── superseded_by written as the survivor's FILE PATH ────────────────────────
+// The contract's second form ("مسار الملف الناجي نسبةً للمستودع"). The laws
+// parser matches law paths in its own output, but nothing matched a path into
+// the OTHER folder, and parse-decrees had no path lookup at all: 39 of the
+// owner's 2026-10-03 pointers stayed "unverified" although every target file
+// exists. Same acceptance rules as the slug lookup.
+
+/** One path segment, matched by its NFC form (macOS may store names NFD). */
+function findEntry(dir: string, name: string): string | undefined {
+  const direct = path.join(dir, name);
+  if (fs.existsSync(direct)) return direct;
+  let ents: string[];
+  try {
+    ents = fs.readdirSync(dir);
+  } catch {
+    return undefined;
+  }
+  const want = name.normalize("NFC");
+  const hit = ents.find((e) => e.normalize("NFC") === want);
+  return hit === undefined ? undefined : path.join(dir, hit);
+}
+
+/**
+ * Resolve a path-valued `superseded_by` ("01_المكتبة_القانونية/أوامر وتعاميم/…/x.md"
+ * or "أوامر وتعاميم/…/x.md") against the library that holds `anyInputPath`, to
+ * an existing, not-excluded, untagged, published survivor of `allowKinds` that
+ * is not the tagged file itself.
+ */
+export function resolvePathSurvivor(
+  anyInputPath: string,
+  ref: string,
+  allowKinds: readonly EntityKind[],
+  selfPath?: string,
+): EntityRef | undefined {
+  if (!/\.md$/i.test(ref.trim())) return undefined;
+  const resolved = path.resolve(anyInputPath);
+  const isKnownCategory = Object.values(CATEGORY_FOLDERS).includes(path.basename(resolved));
+  const parent = isKnownCategory ? path.dirname(resolved) : resolved;
+
+  // Written from various depths ("01_المكتبة_القانونية/أوامر وتعاميم/…",
+  // "أوامر وتعاميم/…"): start at the first category folder.
+  const all = ref.trim().replace(/\\/g, "/").split("/").filter((s) => s && s !== ".");
+  const categoryOf = (seg: string | undefined) => (Object.keys(CATEGORY_FOLDERS) as EntityKind[])
+    .find((k) => CATEGORY_FOLDERS[k].normalize("NFC") === seg?.normalize("NFC"));
+  const start = all.findIndex((seg) => categoryOf(seg) !== undefined);
+  if (start < 0) return undefined;
+  const segments = all.slice(start);
+  const kind = categoryOf(segments[0]);
+  if (!kind || !allowKinds.includes(kind)) return undefined;
+
+  let current: string | undefined = parent;
+  for (const seg of segments) {
+    current = current === undefined ? undefined : findEntry(current, seg);
+    if (current === undefined) return undefined;
+  }
+  const file = current as string;
+  if (!fs.statSync(file).isFile()) return undefined;
+  if (applyExclusions([file]).kept.length === 0) return undefined;
+  if (selfPath && path.resolve(file) === path.resolve(selfPath)) return undefined;
+  const meta = readFrontmatterCheap(file);
+  if (!meta) return undefined;
+  const statusVal = String(meta.status ?? "").trim();
+  if (statusVal === "superseded_duplicate" || statusVal === "merged") return undefined;
+  if (!isPublishedSurvivor(file)) return undefined;
+  return { kind, path: file, isSupersededDuplicate: false };
 }

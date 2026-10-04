@@ -415,3 +415,33 @@ Leftovers of the 28 Sep round also closed: principle cards link to `/precedents/
 Still team-only: the first load of the 10-03 export (984 moves, ~200 renames → orphan cleanup + redirects Q ١٦٦), and any load the diff calls needs-team. Open: the laws parse fails closed on 6 corpus-scope files (Q ١٠٥).
 
 **Clean reload (2026-10-04, user decision: no real users yet).** For the 10-03 export, instead of pruning orphans row by row: `supabase/one-time/2026-10-04_library_clean_wipe.sql` (run by the user, block by block) TRUNCATEs the 14 library content tables in one transaction — no CASCADE, so a future outside FK makes it fail instead of emptying that table — and keeps `smart_folders`, `smart_folder_items`, `issue_reports`, `invitations`, grants, RLS, the column lock. Block 2 wipes nothing until its `set local nzamy.confirm_wipe = 'auth.nezamy.sa'` line is uncommented (Studio's Run without a selection executes the whole file). Proved by `supabase/tests/rls/library_clean_wipe.test.sql` (+ `prelude_library_clean_wipe_fixture.sql`): 6 checks on the 20261004 chain, T6 = the file as written wipes nothing; the uncommented path was also run on its own (wipes; the confirm does not outlive the transaction). The header's `pg_dump` (user tables excluded) → wipe → `pg_restore` round trip was also run on postgres:16: all content rows back, parent chapters intact, 0 errors. Order (guide §٨): owner dry-runs + diff → team reads `rows-diff-report.json` (`missing_files` empty, `incoming` ≈ `loaded` per table, no `resurrected`) → user dumps and wipes → owner re-runs the diff (must be adds-only, loaded 0 — keeps the "never load after needs-team" rule and proves the host) → loads `--apply --confirm-host` at once → diff CLEAN → block 4 (refresh `cross_section_search`) → `bash deploy.sh` (a rebuild: `/api/library/stats` holds counts ~24h in the build folder's `unstable_cache`, `/sitemap.xml` is prerendered at build; deploy.sh builds into a fresh folder, reloads pm2, purges nginx). New unit test: `diffKeys` against an empty live table → adds-only. The site's library is empty from the wipe to the end of the load. `library-toolkit/library-clear.mjs` stays disabled (HTTP deletes one table per request, `.env.vps` fallback to the old cloud keys, its laws group misses `article_regulations`). Not run yet — waits on the 10-03 export.
+
+**10-03 export checked (2026-10-05).** 11,961 files, all match `MANIFEST_SHA256.tsv`. Precedents + fiqh parse; laws + decrees stopped on 172 files.
+- **Our side (160):** `superseded_by` written as the survivor's SLUG (98) or FILE PATH (39 decree-side + cross-folder, all targets exist; plus filename-derived slugs) was never followed. `scripts/parsers/lib/entity-prescan.ts`:
+  - `buildSlugIndex` (explicit front-matter slugs; two untagged → ambiguous);
+  - `resolveSlugSurvivor`;
+  - `resolvePathSurvivor` (NFC-tolerant per segment, any prefix before the category folder).
+
+  Both accept only an untagged, not-excluded, PUBLISHED survivor: a lazy `resolveCorpusScope` on the full file, so an institutional target never verifies a drop. `parse-laws.ts` checks slugs against its own parsed output first, then decree slugs/paths; `parse-decrees.ts` checks slug/path of either kind, never itself. The manifest is not edited (owner contract, drift-hashed). Tests: `scripts/parsers/superseded-by-slug.test.ts` (11). Result on the real export: laws 114 → 1 unverified, decrees 48 → 1.
+- **Owner side (12):** `إصلاحات_المكتبة_للمالك_٢٠٢٦-١٠-٠٥.md` + `library-toolkit/owner-fixes-2026-10-05.mjs`, which edits only his vault, is dry by default and changes one header line per file:
+  - 2 links (`LAW-09-0258` → `LAW-09-0231`; `NCAR-DOC-00618` → path);
+  - 5 `type` values (مدونة/برنامج → لائحة تنفيذية);
+  - 2 SOCPA `gate_zero_status` → `corpus_scope: institutional_reference` (= registry);
+  - 3 company charters moved to `Raw_Vault/02_بانتظار_قرار_النطاق/` (registry pending_review / mixed_requires_separation; a header can't override; Q ١٠٥).
+- **Rehearsal on a scratch copy with exactly those 12 edits:**
+  - parse 4/4;
+  - dry seed 0 errors / 0 blocking;
+  - loader `--dry` clean;
+  - the tool's `--apply` byte-identical to the hand edits;
+  - live diff = needs-team (laws 5,899 → 4,399: +1,876 / 2,523 kept / 3,376 left; articles 57,580 left), 0 resurrected, 0 twins, `missing_files` [] → clean reload (guide §٨).
+- **The 3,376 left-behind law slugs, bucketed** (the parser's own slug rule, applied to the full front matter of every export file):
+  - 1,175 moved to أوامر وتعاميم (his 1,162 moves);
+  - 1,488 same document under a new slug (an explicit `slug:` replaced the filename-derived one, or a rename that kept the title);
+  - 335 now tagged duplicates (dropped on purpose);
+  - 376 renamed with a new title, or removed;
+  - 2 other.
+
+  Redirects (Q ١٦٦): the moves → his transition maps; the 1,488 can be mapped old→new automatically; the 376 need review.
+- **Reference row counts of the 10-03 export** (rehearsal `new` column), the pre-wipe yardstick instead of "close to loaded": laws 4,399 · chapters 12,097 · articles 94,199 · article_amendments 6,524 · article_regulations 15,685 · decrees_circulars 4,398 · decree_pages 12,256 · judicial_collections 216 · principles 19,604 · principle_paragraphs 1,443 · feqh_books 189 · feqh_chapters 96,960 · feqh_sections 140,586 · feqh_blocks 210,724. (Correction: commit 13efa67's message says the 3,376 all got new explicit slugs; the buckets above are the measured split.)
+- The 11 parser tests are local-only: CI runs `test:unit` (`src/**`).
+- 9 parser tests fail locally with missing-file errors (owner Mac paths, `PRECEDENTS_1436_SOURCE`, the developer bundle) — environment, not this change; the other 99 pass.
