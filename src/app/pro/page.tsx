@@ -222,11 +222,9 @@ export default function ProPage() {
                   : isDark ? "border-white/10 bg-dark-card" : "border-slate-200 bg-white"
                 }`}
               >
-                {plan.highlight && (
-                  <span className="absolute -top-3 start-1/2 -translate-x-1/2 rounded-full bg-gold px-4 py-1 text-xs font-bold text-royal">
-                    {isRTL ? "الأكثر شعبية" : "Most Popular"}
-                  </span>
-                )}
+                {/* No «الأكثر شعبية» badge (owner, Q164, 2026-10-03): no
+                    subscription data supports a popularity claim. The card
+                    keeps its emphasis styling, which claims nothing. */}
                 <h3 className={`text-xl font-bold ${plan.highlight ? "text-white" : isDark ? "text-white" : "text-slate-900"}`}>
                   {isRTL ? plan.name.ar : plan.name.en}
                 </h3>

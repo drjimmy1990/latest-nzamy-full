@@ -191,7 +191,9 @@ export default function ServicesBento() {
               {isAr ? "خدمات قانونية متكاملة" : "Comprehensive Legal Services"}
             </h2>
             <p className={`mt-4 max-w-[55ch] text-base ${isDark ? "text-gray-400" : "text-ink-muted"}`}>
-              {isAr ? "مرتبة حسب الأكثر طلباً — اختر الفئة المناسبة لعرض الخدمات" : "Ranked by popularity — pick your category to find what you need"}
+              {/* Was «مرتبة حسب الأكثر طلباً»: the list below is a literal
+                  in this file, not ranked by any demand data (owner, Q164). */}
+              {isAr ? "اختر الفئة المناسبة لعرض الخدمات" : "Pick your category to find what you need"}
             </p>
           </motion.div>
 

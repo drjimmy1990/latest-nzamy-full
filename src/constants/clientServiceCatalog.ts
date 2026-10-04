@@ -248,7 +248,11 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     betaVisibility: "public",
     requiresPayment: false,
     includedByPlan: "ai_individual",
-    tag: "الأكثر طلبا",
+    // No «الأكثر طلبا» tag (owner, Q164, 2026-10-03): no order data supports
+    // a popularity claim. NOTE: migration 20260518 seeded the same tag into
+    // admin_pricing_catalog.metadata, and /api/client-pricing lets that row
+    // win (pricingRepository: metadata.tag ?? existing.tag) — the DB row must
+    // be cleared too for the tag to disappear in production.
     aiPowered: true,
   },
   {
@@ -399,7 +403,8 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     requestType: "service",
     betaVisibility: "public",
     requiresPayment: true,
-    tag: "شائع",
+    // No «شائع» tag (owner, Q164): same unsupported popularity claim. The
+    // 20260518 admin_pricing_catalog seed carries it too (see contract-draft).
     humanService: true,
   },
   {

@@ -471,8 +471,12 @@ html[dir="rtl"] .text-left {
 
 /* ─── Display density (T28-31) ────────────────────────────────────────────
    <html data-density="100|85|75"> is written before first paint by
-   themeInitScript (src/app/layout.tsx) from localStorage `nezamy-density`,
-   and kept in step by ThemeProvider. Valid values: src/lib/density.ts.
+   themeInitScript (src/app/layout.tsx) from localStorage, and kept in step by
+   ThemeProvider. Valid values and the storage rule: src/lib/density.ts.
+
+   75 IS THE DEFAULT (owner, Q153, 2026-10-03): every desktop visitor who has
+   not picked a size in Settings gets the rules below. The only control is in
+   Settings → الملف الشخصي; there is no toggle in the sidebars any more.
 
    WHY `zoom` AND NOT THE ROOT FONT-SIZE. Most text here is fixed-px Tailwind
    (`text-[11px]`, `text-[13px]`), which a root font-size does not touch; the
@@ -493,16 +497,7 @@ html[dir="rtl"] .text-left {
   --density-scale: 1;
 }
 
-/* The toggle is only offered where it does something. */
-.nz-density-desktop-only {
-  display: none;
-}
-
 @media screen and (min-width: 1024px) and (hover: hover) and (pointer: fine) {
-  .nz-density-desktop-only {
-    display: block;
-  }
-
   html[data-density="85"] {
     --density-scale: 0.85;
     zoom: 0.85;
@@ -540,14 +535,21 @@ html[dir="rtl"] .text-left {
      class itself is compensated instead (`lg:h-[100dvh]` on /ai/consult,
      `md:h-[82vh]` in the law reader's AI tab).
 
-     Covered — every pattern of this kind in src/ as of 2026-09-28:
+     Covered — every pattern of this kind in src/ as of 2026-09-28, plus the
+     ones re-checked on 2026-10-04 when 75 became the default:
        min-h-screen (120 uses), min-h-[100dvh] (74), h-[100dvh] (6),
        lg:h-[100dvh] (1), h-[calc(100vh-4rem)] (4), h-[calc(100vh-76px)] (1),
        max-h-[calc(100vh-8rem)] (2, the law reader's sticky rails),
        max-h-[calc(100vh-7rem)] (1, the blog's sticky rail), and the dialog
-       caps max-h-[80|85|90|92vh], max-h-[80|85dvh], h-[90dvh], md:h-[82vh].
+       caps max-h-[80|85|90|92vh], max-h-[80|85dvh], h-[90dvh], md:h-[82vh];
+       since 2026-10-04 also max-h-[70vh] (two dialog bodies), max-h-[75dvh]
+       (the article-report dialog), max-h-[60vh] (the dashboard search
+       palette's results, the book reader's chapter list) and h-[70vh] (the
+       business case graph canvas) — at 75% each of those came out at barely
+       half the window.
      Not covered, on purpose: the partial `min-h-[40–80vh]` of empty and
-     loading states — a shorter placeholder is harmless — and the few
+     loading states — a shorter placeholder is harmless — the short
+     `max-h-[40|45|50vh]` lists inside dialogs and rails, and the few
      `max-w-[90vw]`-style width caps, which only make a box narrower. */
   html:is([data-density="85"], [data-density="75"]) .min-h-screen:not([class*=":min-h-"]) {
     min-height: calc(100vh / var(--density-scale));
@@ -597,6 +599,18 @@ html[dir="rtl"] .text-left {
   }
   html:is([data-density="85"], [data-density="75"]) .md\:h-\[82vh\] {
     height: calc(82vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[70vh\]:not([class*=":max-h-"]) {
+    max-height: calc(70vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[75dvh\]:not([class*=":max-h-"]) {
+    max-height: calc(75dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[60vh\]:not([class*=":max-h-"]) {
+    max-height: calc(60vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .h-\[70vh\]:not([class*=":h-"]) {
+    height: calc(70vh / var(--density-scale));
   }
 }
 

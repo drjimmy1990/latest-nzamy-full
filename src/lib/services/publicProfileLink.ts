@@ -16,8 +16,8 @@
  * safe — but the slug is the one a lawyer can read out over the phone, so it
  * wins whenever it exists.
  *
- * `buildPublicProfileUrl` and `canShareProfile` are pure (no DOM, no clock, no
- * network) so `node --test` can run them directly; `copyToClipboard` is the
+ * `buildPublicProfileUrl` is pure (no DOM, no clock, no
+ * network) so `node --test` can run it directly; `copyToClipboard` is the
  * browser half and is deliberately kept in the same module so a caller cannot
  * pick up the URL rule without the copy behaviour that goes with it.
  */
@@ -41,32 +41,6 @@ export function buildPublicProfileUrl(
 ): string {
   const path = (slug ?? "").trim() || userId;
   return `${origin}/lawyers/${encodeURIComponent(path)}`;
-}
-
-/**
- * Whether the «مشاركة» button may hand the link out at all.
- *
- * Two conditions, both of which are false for some sessions today:
- *   1. there is a signed-in id — guests and demo sessions carry none, so there
- *      is nothing per-user to link to;
- *   2. the public directory is open — under BETA_MONOPOLY_MODE the whole
- *      `/lawyers` subtree redirects to `/services/lawyers`
- *      (src/app/lawyers/layout.tsx:27), so a copied link would land the
- *      recipient on the firm's intake page instead of on this lawyer.
- *
- * `betaMonopolyMode` is a parameter, not a module import, so this stays pure
- * and testable in both positions; both call sites pass the BETA_MONOPOLY_MODE
- * constant from src/lib/betaConfig.ts.
- *
- * A third condition is NOT gated from here and cannot be: `/api/v1/lawyers/[id]`
- * requires `verification_status = 'verified'` AND `marketplace_visible = true`,
- * and in production every lawyer row is still «pending». Flipping
- * BETA_MONOPOLY_MODE on its own would turn this button into a link to a «not
- * found» page — the lawyer's own profile, publicly missing, handed to a client.
- * Verification has to land before that flip, or with it.
- */
-export function canShareProfile(userId: string | null | undefined, betaMonopolyMode: boolean): boolean {
-  return Boolean(userId) && !betaMonopolyMode;
 }
 
 /**

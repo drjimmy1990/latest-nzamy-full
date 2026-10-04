@@ -55,7 +55,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
     {
       id: "lib-q2",
       name: "نصف سنوي",
-      badge: "الأكثر اختياراً",
+      badge: null,
       priceMonthly: "٥٥٠",
       priceYearly:  "٥٥٠",
       priceOriginal: "١٬٠٥٠",
@@ -156,7 +156,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
     {
       id: "lib-q2",
       name: "Semi-Annual",
-      badge: "Most Popular",
+      badge: null,
       priceMonthly: "550",
       priceYearly:  "550",
       priceOriginal: "1,050",

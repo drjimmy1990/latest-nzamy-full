@@ -459,13 +459,12 @@ export function ProfileTab() {
               </div>
             </div>
 
-            {/* Display density (T28-31) — a display preference like the theme */}
-            <div>
-              <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
-                حجم العرض
-              </label>
-              <DensityToggle variant="panel" />
-            </div>
+            {/* Display density (T28-31) — a display preference like the theme.
+                Default 75% on desktop (owner, Q153); this is the ONLY place the
+                control is mounted, so it is how a user goes back to 100%. The
+                panel carries its own «حجم العرض» label (it names the radio
+                group), so there is no second label around it. */}
+            <DensityToggle />
 
             {/* Calendar Type */}
             <div>

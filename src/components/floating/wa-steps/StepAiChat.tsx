@@ -272,7 +272,9 @@ export default function StepAiChat({ isDark, isRTL, userCategory, isLoggedIn, on
             </motion.div>
 
             <motion.p variants={staggerItemVariants} className={`text-[10px] font-bold mt-1 tracking-tight ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-              الأسئلة الأكثر طلباً:
+              {/* Was «الأسئلة الأكثر طلباً»: AI_QUESTIONS is a hard-coded
+                  list, not ranked by usage (owner, Q164). */}
+              أسئلة شائعة:
             </motion.p>
             {defaultQuestions.slice(0, 3).map((q, i) => (
               (() => {

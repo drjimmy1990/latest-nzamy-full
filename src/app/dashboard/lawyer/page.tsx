@@ -63,11 +63,10 @@ import {
   type LawyerDashboardHearing,
 } from "@/lib/services/lawyerDashboardService";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
-import { buildPublicProfileUrl, canShareProfile as mayShareProfile } from "@/lib/services/publicProfileLink";
+import { profileShareState, type ProfileShareState } from "./_components/profileShareTargets";
 import ShareProfileModal from "./_components/ShareProfileModal";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { orderReference } from "@/lib/services/orderReference";
-import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -221,10 +220,9 @@ export default function LawyerDashboardPage() {
   // own arrives as a `null` field inside `dashboardData` instead. Neither may
   // ever be rendered as an empty practice — see the comment on the fetch below.
   const [loadError, setLoadError] = useState<string | null>(null);
-  // The public-profile URL while ShareProfileModal is open, null when closed
-  // (T28-29b). The copy button, its «نُسخ» tick and the manual-copy fallback
-  // all live in the modal now; this page only builds the URL behind the gate.
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  // What ShareProfileModal shows while open, null when closed (T28-29b): the
+  // link + QR of a published profile, or why there is none (owner Q151).
+  const [shareState, setShareState] = useState<ProfileShareState | null>(null);
   // «أدوات نظامي — وصول سريع» (T28-30): the lawyer's saved tools from
   // user_settings.preferences.quickTools. `null` while that read is in flight
   // (supabase mode only) so the grid never shows the defaults first and then
@@ -233,13 +231,17 @@ export default function LawyerDashboardPage() {
     isSupabaseMode ? null : [...DEFAULT_QUICK_TOOLS],
   );
   const [showQuickToolsCustomizer, setShowQuickToolsCustomizer] = useState(false);
-  // The lawyer's Phase-7 `lawyer_profiles.slug`, or "" while it is unknown.
-  // This page does not otherwise read `lawyer_profiles` — the dashboard
-  // summary comes from `service_requests` — so the slug is fetched on its own,
-  // once, from GET /api/v1/profile. A failed read is not an error state here:
-  // it leaves the slug empty and `buildPublicProfileUrl` falls back to the
-  // user id, which is exactly what this button used to hand out unconditionally.
-  const [profileSlug, setProfileSlug] = useState("");
+  // The `lawyer_profiles` fields the share modal needs (slug, verification,
+  // visibility), read once from GET /api/v1/profile. Until that read answers,
+  // the button stays off (`shareReady`), so the modal never answers early.
+  const [shareReady, setShareReady] = useState(false);
+  const [shareInput, setShareInput] = useState({
+    slug: "",
+    hasRoleProfile: false,
+    roleProfileReadFailed: false,
+    verificationStatus: null as string | null,
+    marketplaceVisible: false,
+  });
 
   // Fetch real dashboard data, and re-fetch whenever a workflow item is
   // added/changed (the add-case / add-task modals dispatch nzamy-workflow-updated).
@@ -284,84 +286,57 @@ export default function LawyerDashboardPage() {
     return () => window.removeEventListener("nzamy-workflow-updated", handler);
   }, [loadSummary]);
 
-  // ─── Public profile link (WP-4 G4) ────────────────────────────────────────
+  // ─── Public profile link (WP-4 G4; owner Q151, 2026-10-03) ────────────────
   //
-  // The gate, the URL rule and the clipboard now live in
-  // src/lib/services/publicProfileLink.ts, shared with
-  // /dashboard/lawyer/profile's «مشاركة» button. Read `canShareProfile` and
-  // `buildPublicProfileUrl` there for the two conditions that have to hold
-  // before this link may be handed out.
-  //
-  // What this paragraph used to say, and what was wrong with it: «`[slug]` is
-  // a misnomer: there is no slug column on `profiles` or on `lawyer_profiles`
-  // … so the per-user value is `useUser().userId`, NOT a name-shaped slug».
-  // That stopped being true when
-  // supabase/migrations/20260907_phase7_profile_services_reviews.sql:46 added
-  // `lawyer_profiles.slug` (unique, CHECK-constrained, editable at
-  // /dashboard/lawyer/profile/edit). The comment stayed, and so did the code
-  // under it: this button kept copying `/lawyers/${userId}` — a UUID — while
-  // the profile page's twin already preferred the slug. Hence the shared
-  // module, and hence the fetch below: the slug is a `lawyer_profiles` column
-  // and this page reads nothing else from that table.
-  //
-  // ⚠️ A third condition is not — and cannot be — gated from here, and it is
-  // the one that would bite first. This paragraph used to read: «the profile
-  // page itself never reads its route segment; it renders a module-level mock,
-  // so every id shows the same fabricated lawyer». That was true when it was
-  // written and is FALSE NOW — src/app/lawyers/[slug]/page.tsx was rebuilt: it
-  // reads `params.slug`, treats it as the profiles.id it actually is, fetches
-  // the real advocate, and has its own loading / not-found / error states. The
-  // fabricated lawyer is gone. Do not re-add that warning.
-  //
-  // What stands in its place is a DATA condition, not a code one. That page is
-  // served by /api/v1/lawyers/[id], which requires BOTH
-  // `lawyer_profiles.verification_status = 'verified'` AND
-  // `marketplace_visible = true`. In production every lawyer row is still
-  // «pending» with marketplace_visible false, so that route 404s for every one
-  // of them today. Flipping BETA_MONOPOLY_MODE on its own would therefore turn
-  // this button into a link to a «not found» page — the lawyer's own profile,
-  // publicly missing, handed to their client. Verification has to land before
-  // that flip, or with it.
-  //
-  // The gate is the compile-time const, not a runtime flag: the admin features
-  // screen lists BETA_MONOPOLY_MODE but holds it in a local array with no
-  // persistence, and no platform_settings row backs it — its own teardown note
-  // says removal «لا تتم من الواجهة فقط».
-  const canShareProfile = mayShareProfile(userId, BETA_MONOPOLY_MODE);
-  // Monopoly mode is tested FIRST because it is the reason that applies to
-  // everyone today. Ordering it after the id check would tell a demo lawyer —
-  // which is how this dashboard is actually tested, demo sessions carry no
-  // `userId` — to «sign in» while they are already signed in.
-  const shareDisabledReason = BETA_MONOPOLY_MODE
-    ? "صفحة الملف العام غير متاحة حالياً — دليل المحامين غير مفتوح للنشر بعد"
+  // The owner keeps the lawyers DIRECTORY closed but lets each lawyer share
+  // their OWN profile. /lawyers/[slug] renders only a published profile
+  // (verification_status = 'verified' AND marketplace_visible), so this button
+  // opens the same modal as /dashboard/lawyer/profile's «مشاركة», fed by
+  // `profileShareState` (profileShareTargets.ts): link + QR when published,
+  // the reason when not, nothing asserted when the record could not be read.
+  // Signed out / demo sessions carry no user id, so the button stays off; it
+  // also waits for the profile read below to settle.
+  const canShareProfile = Boolean(userId) && shareReady;
+  const shareDisabledReason = userId
+    ? "جارٍ التحقق من حالة ملفك المهني…"
     : "سجّل الدخول بحسابك المهني لمشاركة رابط ملفك العام";
 
-  // One read of GET /api/v1/profile, only for `roleProfile.slug`. Deliberately
-  // silent on failure and on a missing row: the fallback is the user id, which
-  // is what this button handed out before the slug column existed, so a failed
-  // read degrades to the old behaviour instead of disabling the button or
-  // putting a second error banner on a dashboard that already has one.
+  // One read of GET /api/v1/profile for the fields `profileShareState` needs.
+  // No banner on failure: the modal then says the record could not be read.
   useEffect(() => {
     if (!isSupabaseMode || !userId || userType !== "lawyer") return;
     let cancelled = false;
-    apiGet<{ roleProfile?: { slug?: string | null } | null }>("/api/v1/profile")
+    apiGet<{
+      roleProfile?: { slug?: string | null; verification_status?: string | null; marketplace_visible?: boolean | null } | null;
+      roleProfileReadFailed?: boolean;
+    }>("/api/v1/profile")
       .then((res) => {
         if (cancelled) return;
-        setProfileSlug(res.roleProfile?.slug?.trim() || "");
+        const r = res.roleProfile ?? null;
+        setShareInput({
+          slug: r?.slug?.trim() || "",
+          hasRoleProfile: r != null,
+          roleProfileReadFailed: res.roleProfileReadFailed === true,
+          verificationStatus: r?.verification_status ?? null,
+          marketplaceVisible: r?.marketplace_visible === true,
+        });
+        setShareReady(true);
       })
       .catch((err: unknown) => {
-        console.warn("[lawyer dashboard] public profile slug unavailable:", err);
+        if (cancelled) return;
+        console.warn("[lawyer dashboard] public profile record unavailable:", err);
+        setShareInput((prev) => ({ ...prev, roleProfileReadFailed: true }));
+        setShareReady(true);
       });
     return () => { cancelled = true; };
   }, [userId, userType]);
 
-  // Opens ShareProfileModal (T28-29b) — it used to copy straight to the
-  // clipboard. The gate is unchanged and still checked here first.
+  // Opens ShareProfileModal (T28-29b) with the published / unpublished state.
   const handleShareProfile = useCallback(() => {
     if (!canShareProfile || !userId) return;
-    setShareUrl(buildPublicProfileUrl(window.location.origin, profileSlug, userId));
-  }, [canShareProfile, userId, profileSlug]);
-  const closeShareModal = useCallback(() => setShareUrl(null), []);
+    setShareState(profileShareState({ origin: window.location.origin, userId, ...shareInput }));
+  }, [canShareProfile, userId, shareInput]);
+  const closeShareModal = useCallback(() => setShareState(null), []);
 
   // One read of the saved quick tools. getPreferences() answers null on a
   // failed read (and {} for an account that never saved) — both fall back to
@@ -1395,12 +1370,12 @@ export default function LawyerDashboardPage() {
             onSaved={setQuickToolIds}
           />
         )}
-        {shareUrl && (
+        {shareState && (
           <ShareProfileModal
             key="share-profile"
             onClose={closeShareModal}
             isDark={isDark}
-            url={shareUrl}
+            state={shareState}
             lawyerName={name ?? ""}
           />
         )}

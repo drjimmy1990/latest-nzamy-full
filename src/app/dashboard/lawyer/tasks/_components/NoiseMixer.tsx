@@ -35,7 +35,7 @@ const ActiveEqualizer = ({ isDark }: { isDark: boolean }) => {
 
 export function NoiseMixer({ isDark, noises, onChange }: NoiseMixerProps) {
   const [expanded, setExpanded] = useState(false);
-  const { apply } = useMultiNoise();
+  const { apply, unlock } = useMultiNoise();
 
   useEffect(() => { apply(noises); }, [noises, apply]);
 
@@ -46,6 +46,7 @@ export function NoiseMixer({ isDark, noises, onChange }: NoiseMixerProps) {
     if (isActive(ch)) {
       onChange(noises.filter(n => n.channel !== ch));
     } else {
+      unlock(); // inside the click itself — Safari won't start audio from the effect
       onChange([...noises, { channel: ch, volume: 0.7 }]);
     }
   }

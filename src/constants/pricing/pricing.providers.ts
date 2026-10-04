@@ -20,7 +20,7 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       },
     },
     {
-      id: "provider-pro", name: "احترافي", badge: "الأكثر اختياراً ⭐",
+      id: "provider-pro", name: "احترافي", badge: null,
       priceMonthly: "٢,٩٨٨", priceYearly: "٢,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "عمولة أقل (١٠٪) + أولوية في توزيع الطلبات + أدوات ذكية.",
       target: "المحترفون النشطون", cta: "اشترك سنوياً",
@@ -61,7 +61,7 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       },
     },
     {
-      id: "provider-pro", name: "Professional", badge: "Most Popular ⭐",
+      id: "provider-pro", name: "Professional", badge: null,
       priceMonthly: "2,988", priceYearly: "2,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Lower commission (10%) + priority requests + smart tools.",
       target: "Active Professionals", cta: "Subscribe Yearly",

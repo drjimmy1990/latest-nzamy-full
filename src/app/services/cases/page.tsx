@@ -26,7 +26,7 @@ const services = [
     icon: FileText,
     title: 'قضايا العمالية',
     desc: 'الفصل التعسفي، المكافآت، وحقوق الموظفين',
-    tag: 'الأكثر طلباً',
+    // لا وسم «الأكثر طلباً» (قرار المالك ق١٦٤): لا بيانات طلبات تسنده.
   },
   {
     icon: Shield,
@@ -162,7 +162,9 @@ export default function CasesServicePage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-semibold text-ink text-base">{s.title}</h3>
-                    <span className="text-[10px] px-2 py-0.5 bg-gold/10 text-gold-dark rounded-full font-medium">{s.tag}</span>
+                    {s.tag && (
+                      <span className="text-[10px] px-2 py-0.5 bg-gold/10 text-gold-dark rounded-full font-medium">{s.tag}</span>
+                    )}
                   </div>
                   <p className="text-ink-muted text-sm leading-relaxed">{s.desc}</p>
                 </div>

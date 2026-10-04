@@ -71,9 +71,8 @@ export default function StepLawyerCTA({ mode, onRestart }: Props) {
         <div className="absolute top-0 end-0 w-64 h-64 bg-emerald-500/10 blur-[60px] pointer-events-none rounded-full" />
         <div className="flex items-center justify-between flex-wrap gap-6 relative z-10">
           <div>
-            <div className={`inline-block px-3 py-1 rounded-full text-[11px] font-bold mb-3 ${isDark ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-100 text-emerald-800"}`}>
-              {isRTL ? "الباقة الأكثر طلباً" : "Most Popular"}
-            </div>
+            {/* No «الباقة الأكثر طلباً» pill (owner, Q164, 2026-10-03): no
+                order data supports a popularity claim. */}
             <p className={`text-[16px] font-bold mb-2 ${isDark ? "text-white" : "text-zinc-900"}`}>
               {isRTL ? "مراجعة قانونية من محامٍ معتمد" : "Legal Review by Certified Lawyer"}
             </p>

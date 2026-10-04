@@ -25,7 +25,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       },
     },
     {
-      id: "lawyer-advanced", name: "المتقدمة", badge: "الأكثر اختياراً",
+      id: "lawyer-advanced", name: "المتقدمة", badge: null,
       priceMonthly: "٢٬٥٠٠", priceYearly: "٢٬٥٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "٥٬٠٠٠ نقطة — بونص +١٠٠٪", target: "محامون", bonusLabel: "+١٠٠٪ نقاط مجانية",
       cta: "اشحن الآن", ctaHref: "/register/provider?plan=advanced-credits", highlighted: true, color: "border-royal/20",
@@ -94,7 +94,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       },
     },
     {
-      id: "lawyer-advanced", name: "Advanced", badge: "Most Popular",
+      id: "lawyer-advanced", name: "Advanced", badge: null,
       priceMonthly: "2,500", priceYearly: "2,500", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "5,000 points — +100% bonus", target: "Lawyers", bonusLabel: "+100% Free Points",
       cta: "Top Up Now", ctaHref: "/register/provider?plan=advanced-credits", highlighted: true, color: "border-royal/20",
@@ -180,7 +180,6 @@ export const lawyerProductPricing = {
       { name: "منقح ناجز", points: 10 },
       { name: "المقارن الذكي", points: 5 },
       { name: "السكرتير الذكي (تنظيم/تذكير)", points: 5 },
-      { name: "راصد التشريعات (تنبيه مخصص)", points: 10 },
       { name: "صياغة مستند من نموذج", points: 50 },
       { name: "الأرشيف السحابي (سعة إضافية)", points: 50 },
     ]},
@@ -254,7 +253,6 @@ export const lawyerServicesTable: ServiceCategory[] = [
       { name: "المحاكي الشامل (جلسة)",             points: 30, baseSAR: "٣٠" },
       { name: "سؤال قانوني سريع",                  points: 20, baseSAR: "٢٠" },
       { name: "ParaLegal — إحاطة",                  points: 20, baseSAR: "٢٠" },
-      { name: "راصد التشريعات (تنبيه مخصص)",      points: 10, baseSAR: "١٠" },
       { name: "المفرّغ الذكي (جلسة)",               points: 10, baseSAR: "١٠" },
       { name: "منقح ناجز",                          points: 10, baseSAR: "١٠" },
       { name: "الأرشيف السحابي (سعة إضافية)",     points: 50, baseSAR: "٥٠" },

@@ -15,7 +15,6 @@ import {
 import { useNotifications } from "@/hooks/useNotifications";
 import { createClient } from "@/lib/supabase/client";
 import { toArabicDigits } from "@/lib/services/arabicCount";
-import DensityToggle from "@/components/DensityToggle";
 
 const NAV = [
   {
@@ -272,11 +271,6 @@ export function AdminSidebar() {
           {adminEmail && <p className="truncate text-[9px] text-zinc-600">{adminEmail}</p>}
         </div>
       </div>
-
-      {/* T28-31 display density — the admin console's copy of the control in
-          SharedSidebar. tone="dark": this console is dark whatever the site
-          theme. Hidden below desktop by the component itself. */}
-      <DensityToggle tone="dark" className="mx-4 mt-2.5" />
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">

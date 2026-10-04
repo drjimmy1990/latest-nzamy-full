@@ -24,7 +24,8 @@ const ROLES = [
     color: "text-royal",
     bg: "bg-royal/8 dark:bg-royal/15",
     border: "border-royal/25",
-    badgeAr: "الأكثر استخداماً",
+    // Dropped `badgeAr: "الأكثر استخداماً"` (owner, Q164): nothing rendered
+    // it, and no usage data supports the claim if anyone ever did.
     // أُزيلت أرقام مُختلَقة: «٥+ ساعات توفير يومي»، «٩٤٪ رضا عن دقة المسودات»،
     // «٠٪ مواعيد أو جلسات فائتة». لا يوجد جدول تقييمات ولا قياس لوقت المستخدمين.
     // لا تُعِد رقماً هنا ما لم يكن محسوباً من بيانات حقيقية.
@@ -187,8 +188,10 @@ const ROLES = [
         icon: FileText,
         labelAr: "الصياغة التوثيقية الآلية",
         descAr: "نظام ينتج الإفراغات وعقود الشركات والوكالات الخاصة بدقة توافق اشتراطات وزارة العدل بدقائق.",
-        badge: "الأكثر إنجازاً",
-        hot: true,
+        // No «الأكثر إنجازاً» badge (owner, Q164, 2026-10-03): an
+        // unsupported superlative — no usage data ranks this tool.
+        badge: null,
+        hot: false,
         features: ["عقود نقل ملكية", "وكالات الورثة", "عقود التأسيس"],
       },
       {

@@ -567,16 +567,19 @@ const LEGACY_AI_TOOLS: AiToolCard[] = [
   { id: "ai:monitor", href: "/ai/monitor", titleAr: "راصد التشريعات", titleEn: "Law Monitor", icon: Database, descAr: "الأنظمة قيد النفاذ والنافذة حديثاً وأحدث الإصدارات من المكتبة", descEn: "Upcoming, newly in-force and latest laws from the library" }
 ];
 
+// Renamed by the owner (Q154): «القضاء والتشريع المقارن». The page renders
+// DashboardComingSoon in both its tabs, so the card says «قريباً» and promises
+// nothing live — it used to read «بحث حي» over a timer-driven mock.
 const GLOBAL_RESEARCH_CARD: AiToolCard = {
-  id: null, // متاح لكل المستخدمين المسجّلين (بحث حي دولي)
+  id: null,
   href: "/ai/global",
-  titleAr: "نظامي عالمي",
-  titleEn: "Nezamy Global",
+  titleAr: "القضاء والتشريع المقارن",
+  titleEn: "Comparative Law",
   icon: Globe,
-  descAr: "اسأل عن قانون أي دولة — بحث حي في المصادر الرسمية + مصادر موثّقة + مقياس ثقة + تحويل لمحامٍ محلي",
-  descEn: "Ask about any country's law — live research, cited sources, confidence score & local lawyer referral",
-  badgeAr: "بحث حي",
-  badgeEn: "Live",
+  descAr: "السوابق القضائية الدولية والتشريعات المقارنة — قيد الإعداد والربط الدولي",
+  descEn: "International precedents and comparative legislation — in preparation",
+  badgeAr: "قريباً",
+  badgeEn: "Soon",
 };
 
 const AI_TOOLS: AiToolCard[] = [

@@ -375,7 +375,7 @@ export function getSidebarByUserType(
               ...group,
               items: [
                 ...group.items,
-                { label: "نظامي عالمي", labelEn: "Nezamy Global", href: "/ai/global", icon: "Globe" }
+                { label: "القضاء والتشريع المقارن", labelEn: "Comparative Law", href: "/ai/global", icon: "Globe", badge: "قريباً" }
               ]
             };
           }
@@ -393,7 +393,7 @@ export function getSidebarByUserType(
               ...group,
               items: [
                 ...group.items,
-                { label: "نظامي عالمي", labelEn: "Nezamy Global", href: "/ai/global", icon: "Globe" }
+                { label: "القضاء والتشريع المقارن", labelEn: "Comparative Law", href: "/ai/global", icon: "Globe", badge: "قريباً" }
               ]
             };
           }
@@ -411,10 +411,11 @@ export function getSidebarByUserType(
               items: group.items.map(item => {
                 if (item.href === "/ai/consult") {
                   return {
-                    label: "نظامي عالمي",
-                    labelEn: "Nezamy Global",
+                    label: "القضاء والتشريع المقارن",
+                    labelEn: "Comparative Law",
                     href: "/ai/global",
                     icon: "Globe",
+                    badge: "قريباً",
                   };
                 }
                 return item;

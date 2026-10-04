@@ -15,7 +15,6 @@ import { useUser, logout } from "@/hooks/useUser";
 import { getNavByUserType, getDashboardRoute, getRoleLabel, type NavItem } from "@/constants/navigation";
 import Link from "next/link";
 import { useNotifications } from "@/hooks/useNotifications";
-import DensityToggle from "@/components/DensityToggle";
 
 // ─── Icon resolver (phosphor icon names → components) ─────────────────────────
 const ICON_MAP = PhosphorIcons as unknown as Record<string, ElementType>;
@@ -235,13 +234,6 @@ function AvatarDropdown({
           {label}
         </Link>
       ))}
-
-      {/* T28-31 display density — the same control as the dashboard rail, so
-          it is one tap away on the public pages (the law library, /settings)
-          too. Desktop with a mouse only; the component hides itself
-          elsewhere, border and all. Clicks stay inside this menu: the avatar
-          wrapper stops propagation, so choosing a size does not close it. */}
-      <DensityToggle className="border-t border-slate-100 dark:border-white/10 mt-1 px-3 pt-2.5 pb-1.5" />
 
       {/* Sign out */}
       <div className="border-t border-slate-100 dark:border-white/10 mt-1 pt-1">

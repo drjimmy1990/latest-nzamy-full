@@ -62,7 +62,10 @@ export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
     },
     {
       id: "video", icon: VideoCamera, label: "استشارة مرئية", sublabel: "مع محامٍ معتمد", price: "٢٩٩ ر.س",
-      desc: "مكالمة فيديو مع محامٍ مرخص — الأكثر تفاعلاً", color: "border-blue-200 hover:border-blue-400", badge: "الأكثر طلباً",
+      // No «الأكثر طلباً» badge (owner, Q164, 2026-10-03): no booking data
+      // supports a popularity claim. («الأكثر تفاعلاً» stays: it describes
+      // the medium, video vs voice, not demand.)
+      desc: "مكالمة فيديو مع محامٍ مرخص — الأكثر تفاعلاً", color: "border-blue-200 hover:border-blue-400", badge: null,
     },
     {
       id: "in-person", icon: User, label: "استشارة حضورية", sublabel: "في مكتب المحامي", price: "٥٩٩ ر.س",
@@ -80,7 +83,7 @@ export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
     },
     {
       id: "video", icon: VideoCamera, label: "Video Consultation", sublabel: "With a certified lawyer", price: "299 SAR",
-      desc: "Video call with a licensed lawyer — most interactive option", color: "border-blue-200 hover:border-blue-400", badge: "Most Popular",
+      desc: "Video call with a licensed lawyer — most interactive option", color: "border-blue-200 hover:border-blue-400", badge: null,
     },
     {
       id: "in-person", icon: User, label: "In-Person Consultation", sublabel: "At the lawyer's office", price: "599 SAR",

@@ -9,7 +9,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { usePomodoroEngine } from "./_pomodoro/usePomodoroEngine";
-import { MODE_COLORS, MODE_LABELS, DURATIONS } from "./_pomodoro/types";
+import { MODE_COLORS, MODE_LABELS, DURATIONS, NOISE_CONFIG } from "./_pomodoro/types";
 import type { PomodoroMode, PomodoroSession } from "./_pomodoro/types";
 import {
   getServerSessions, recordSessionOnServer, migrateLocalSessionsToServer,
@@ -485,7 +485,7 @@ export default function PomodoroPanel({
                         </p>
                         {s.noises?.length > 0 && (
                           <p className={`text-[10px] font-semibold mt-0.5 ${muted}`}>
-                            {s.noises.slice(0,3).join(" · ")}
+                            {s.noises.slice(0,3).map((k) => NOISE_CONFIG.find((n) => n.key === k)?.label ?? k).join(" · ")}
                           </p>
                         )}
                       </div>

@@ -3,8 +3,10 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import {
   DEFAULT_DENSITY,
+  DENSITY_LEGACY_STORAGE_KEY,
   DENSITY_STORAGE_KEY,
   parseDensity,
+  resolveStoredDensity,
   type Density,
 } from "@/lib/density";
 
@@ -16,7 +18,7 @@ interface ThemeContextType {
   theme: Theme;
   lang: Lang;
   calendarType: CalendarType;
-  /** Display density (T28-31): 100 | 85 | 75. See src/lib/density.ts. */
+  /** Display density (T28-31): 100 | 85 | 75, default 75. See src/lib/density.ts. */
   density: Density;
   isDark: boolean;
   isRTL: boolean;
@@ -91,9 +93,14 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     const resolvedTheme = readTheme(localStorage.getItem("nezamy-theme"));
     const resolvedLang = readLang(localStorage.getItem("nezamy-lang"));
     const resolvedCalendar = readCalendarType(localStorage.getItem("nezamy-calendar"));
+    // Same rule as the pre-paint script (density.ts → densityInitSnippet), so
+    // the attribute this writes is the one already on <html>: no jump.
     let resolvedDensity: Density = DEFAULT_DENSITY;
     try {
-      resolvedDensity = parseDensity(localStorage.getItem(DENSITY_STORAGE_KEY));
+      resolvedDensity = resolveStoredDensity(
+        localStorage.getItem(DENSITY_STORAGE_KEY),
+        localStorage.getItem(DENSITY_LEGACY_STORAGE_KEY),
+      );
     } catch { /* storage blocked — keep the default, as the pre-paint script does */ }
 
     setThemeState(resolvedTheme);
@@ -105,21 +112,23 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     setMounted(true);
   }, []);
 
-  // Density: written only once `mounted`, like theme/lang below — writing on
-  // the first commit would put the default (100) over the value the pre-paint
-  // script already applied, and the page would flash to full size.
+  // Density: the attribute follows the state once `mounted` — syncing on the
+  // first commit would put the default over the value the pre-paint script
+  // already applied. Storage is NOT written here: only an explicit choice is
+  // stored (setDensity below). The first version wrote on every load, which
+  // is why a legacy "100" proves nothing — see src/lib/density.ts.
   useEffect(() => {
     if (!mounted) return;
     syncDensity(density);
-    try {
-      localStorage.setItem(DENSITY_STORAGE_KEY, String(density));
-    } catch { /* storage blocked — the choice still applies to this page */ }
   }, [density, mounted]);
 
   // A change made in another tab of the same browser applies here too.
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (event.key === DENSITY_STORAGE_KEY) setDensityState(parseDensity(event.newValue));
+      if (event.key !== DENSITY_STORAGE_KEY) return;
+      let legacy: string | null = null;
+      try { legacy = localStorage.getItem(DENSITY_LEGACY_STORAGE_KEY); } catch { /* blocked */ }
+      setDensityState(resolveStoredDensity(event.newValue, legacy));
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -142,7 +151,14 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
   const setTheme = (nextTheme: Theme) => setThemeState(nextTheme);
   const setLang = (nextLang: Lang) => setLangState(nextLang);
   const setCalendarType = (nextCalendarType: CalendarType) => setCalendarTypeState(nextCalendarType);
-  const setDensity = (nextDensity: Density) => setDensityState(parseDensity(nextDensity));
+  // The one place a density is stored: the user picked it (Settings → حجم العرض).
+  const setDensity = (nextDensity: Density) => {
+    const chosen = parseDensity(nextDensity);
+    setDensityState(chosen);
+    try {
+      localStorage.setItem(DENSITY_STORAGE_KEY, String(chosen));
+    } catch { /* storage blocked — the choice still applies to this page */ }
+  };
 
   const isDark = theme === "dark";
   const isRTL = lang === "ar";

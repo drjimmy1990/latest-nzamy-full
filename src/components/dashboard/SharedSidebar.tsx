@@ -25,7 +25,6 @@ import { SidebarFeatureRequest } from "@/components/FeatureRequestBanner";
 import HijriDateWidget from "@/components/HijriDateWidget";
 import UpgradeModal from "@/components/UpgradeModal";
 import { GlobalSearch } from "@/components/dashboard/GlobalSearch";
-import DensityToggle from "@/components/DensityToggle";
 import { isSharedClientIntakePath } from "@/lib/auth/routeAccess";
 
 import {
@@ -181,11 +180,6 @@ export default function SharedSidebar() {
             <X size={18} />
           </button>
         </div>
-        {/* T28-31 display density. The top of this rail IS the dashboard's
-            top bar on desktop (the <header> above is lg:hidden), and density
-            only applies on a desktop with a mouse — DensityToggle hides itself
-            everywhere else, so the mobile drawer never shows a dead control. */}
-        <DensityToggle className="mt-2.5" />
       </div>
 
       {/* Mode toggle (lawyer/firm only) */}

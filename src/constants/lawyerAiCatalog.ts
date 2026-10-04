@@ -263,8 +263,12 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     href: "/ai/monitor",
     titleAr: "راصد التشريعات",
     titleEn: "Law Monitor",
-    pointCost: 10,
-    betaStatus: "priced",
+    // Free (2026-10-04): /ai/monitor is a live library feed that charges
+    // nothing, so the hub's old «10 نقطة» pill priced a tool with no price.
+    // pointCost is display-only — no route debits it — so this changes the
+    // badge to «مجاني» and nothing else.
+    pointCost: 0,
+    betaStatus: "free",
     sidebarPlacement: "core",
     adminPricingKey: "lawyer.ai.monitor",
   },

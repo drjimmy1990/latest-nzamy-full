@@ -716,8 +716,9 @@ export default function LawyerProfileEditPage() {
             • verification_status is deliberately excluded from the PATCH
               allowlist (self-verification would be a trust-badge bypass); only
               the admin verification endpoint can set it.
-            • /lawyers is redirected away entirely while BETA_MONOPOLY_MODE is
-              on, so the directory is not a live page for anyone right now.
+            • while BETA_MONOPOLY_MODE is on the directory (/lawyers,
+              /lawyers/browse) redirects away; a PUBLISHED profile still opens
+              at /lawyers/[slug] through the link the lawyer shares (owner Q151).
           The beta clause is behind the flag so this stops being displayed the
           day the flag is turned off.
         */}
@@ -736,7 +737,7 @@ export default function LawyerProfileEditPage() {
                 )}
               </li>
               {BETA_MONOPOLY_MODE && (
-                <li>• دليل المحامين العام غير مُفعَّل خلال مرحلة التجربة الحالية، فلا يظهر فيه أي محامٍ بعد — حتى الموثّقين.</li>
+                <li>• خلال مرحلة التجربة لا يُفتح دليل المحامين للتصفّح؛ ملفك المنشور يصل إليه من تشاركه معه الرابط أو رمز QR من زر «مشاركة» في ملفك.</li>
               )}
             </ul>
           </div>

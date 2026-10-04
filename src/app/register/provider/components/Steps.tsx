@@ -390,11 +390,9 @@ export function Step4({ isAr, selectedPlan, onSelect }: { isAr: boolean; selecte
                   : "border-slate-200/70 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-dark-card"
               }`}
             >
-              {plan.highlighted && !isActive && (
-                <span className="absolute top-3 end-3 rounded-full bg-gold px-2 py-0.5 text-[10px] font-bold text-white">
-                  {isAr ? "الأكثر طلباً" : "Most Popular"}
-                </span>
-              )}
+              {/* No «الأكثر طلباً» badge on the highlighted plan (owner, Q164,
+                  2026-10-03): no subscription data supports a popularity
+                  claim. `highlighted` still drives the active-state styling. */}
               {isActive && !plan.highlighted && (
                 <span className="absolute top-3 end-3 flex h-5 w-5 items-center justify-center rounded-full bg-royal">
                   <Check size={11} weight="bold" className="text-white" />

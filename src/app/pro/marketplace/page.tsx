@@ -45,7 +45,8 @@ const PRODUCTS = [
     desc:    { ar: "توليد مسودات قانونية متكاملة بالذكاء الاصطناعي — عقود، مذكرات، ردود، في ثوانٍ", en: "Generate complete legal drafts with AI — contracts, memos, responses, in seconds" },
     price:   { ar: "٢٩٩ ر.س/شهر", en: "SAR 299/mo" },
     rating: 4.9, reviews: 312, verified: true,
-    badge:   { ar: "الأكثر مبيعاً", en: "Best Seller" }, badgeColor: "bg-gold/15 text-gold-dark dark:text-gold",
+    // No «الأكثر مبيعاً» badge (owner, Q164): there are no sales to rank.
+    badge:   null, badgeColor: "",
     features: { ar: ["عقود لا محدودة", "دعم 40+ نوع مستند", "مراجعة ذاتية AI"], en: ["Unlimited contracts", "40+ document types", "AI self-review"] },
     icon: Brain,
   },

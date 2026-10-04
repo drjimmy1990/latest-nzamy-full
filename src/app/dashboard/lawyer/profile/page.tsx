@@ -20,8 +20,9 @@ import {
   isCourtCode, isLanguageCode, type EducationEntry,
 } from "@/lib/services/lawyerProfileFields";
 import { toArabicDigits } from "@/lib/services/arabicCount";
-import { buildPublicProfileUrl, canShareProfile as mayShareProfile } from "@/lib/services/publicProfileLink";
+import { buildPublicProfileUrl } from "@/lib/services/publicProfileLink";
 import ShareProfileModal from "../_components/ShareProfileModal";
+import { profileShareState, type ProfileShareState } from "../_components/profileShareTargets";
 import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import {
   getMyServices, deleteService, updateService, type LawyerService,
@@ -227,9 +228,9 @@ export default function LawyerProfilePage() {
   const [serviceActionError, setServiceActionError] = useState<string | null>(null);
 
   // ─── Share link (item 130) ────────────────────────────────────────────────
-  // The URL while ShareProfileModal is open, null when closed (T28-29b) — the
-  // copy tick and the manual-copy fallback live in the modal now.
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  // What ShareProfileModal shows while open, null when closed (T28-29b) — the
+  // link + QR for a published profile, or why there is none (owner Q151).
+  const [shareState, setShareState] = useState<ProfileShareState | null>(null);
   // Browser origin for the read-only «رابط ملفك العام» row (owner step ي‏١.1).
   // Read in an effect, never during render: `window` does not exist on the
   // server, and an origin baked into the SSR HTML would be the deploy host's,
@@ -380,29 +381,48 @@ export default function LawyerProfilePage() {
     }
   }, []);
 
-  // ─── Share link (item 130 · WP-4 G4) ─────────────────────────────────────
+  // ─── Share link (item 130 · WP-4 G4 · owner Q151) ────────────────────────
   //
-  // Gate, URL and clipboard all come from src/lib/services/publicProfileLink.ts
-  // now, shared with the dashboard home page's «مشاركة ملفي المهني» button.
-  // This paragraph used to explain why the two screens each kept their own
-  // copy — and then record that they had drifted, the other one still handing
-  // out `/lawyers/${userId}` unconditionally because it was written before the
-  // slug column existed. Both read the same `slug || userId` rule from that
-  // module, so that drift cannot recur. `shareDisabledReason` stays local: the
-  // two screens word the same refusal differently on purpose.
-  const canShareProfile = mayShareProfile(user.userId, BETA_MONOPOLY_MODE);
-  const shareDisabledReason = BETA_MONOPOLY_MODE
-    ? "صفحة الملف العام غير متاحة حالياً — دليل المحامين غير مفتوح للنشر بعد"
-    : "سجّل الدخول بحسابك المهني لمشاركة رابط ملفك العام";
+  // The URL rule (`slug || userId`) comes from src/lib/services/publicProfileLink.ts,
+  // shared with the dashboard home page's «مشاركة ملفي المهني» button, so the
+  // two screens cannot hand out different links.
+  //
+  // The GATE changed with the owner's answer to Q151 (2026-10-03): the
+  // directory stays closed in the beta, but a lawyer shares his OWN published
+  // profile by link and QR — /lawyers/[slug] now renders a published profile
+  // and 404s anything else. So this button (and the dashboard home's) no
+  // longer waits on BETA_MONOPOLY_MODE; it opens the modal for any signed-in lawyer, and
+  // `profileShareState` decides what the modal may show: the link + QR only
+  // when verified AND visible, otherwise which of the two is missing.
+  const canShareProfile = Boolean(user.userId);
+  const shareDisabledReason = "سجّل الدخول بحسابك المهني لمشاركة رابط ملفك العام";
+  const shareInput = {
+    userId: user.userId,
+    slug: profileData.slug,
+    hasRoleProfile: profileData.hasRoleProfile,
+    roleProfileReadFailed: profileData.roleProfileReadFailed,
+    verificationStatus: profileData.verificationStatus,
+    marketplaceVisible: profileData.marketplaceVisible,
+  };
+  // For the read-only link row below; `origin` is "" until the mount effect runs.
+  const linkPublished = profileShareState({ ...shareInput, origin }).kind === "published";
 
-  // Opens ShareProfileModal (T28-29b) instead of copying straight away; the
-  // gate above is unchanged and still checked first.
   const handleShareProfile = useCallback(() => {
-    const uid = user.userId;
-    if (!canShareProfile || !uid) return;
-    setShareUrl(buildPublicProfileUrl(window.location.origin, profileData.slug, uid));
-  }, [canShareProfile, user.userId, profileData.slug]);
-  const closeShareModal = useCallback(() => setShareUrl(null), []);
+    if (!user.userId) return;
+    setShareState(profileShareState({
+      origin: window.location.origin,
+      userId: user.userId,
+      slug: profileData.slug,
+      hasRoleProfile: profileData.hasRoleProfile,
+      roleProfileReadFailed: profileData.roleProfileReadFailed,
+      verificationStatus: profileData.verificationStatus,
+      marketplaceVisible: profileData.marketplaceVisible,
+    }));
+  }, [
+    user.userId, profileData.slug, profileData.hasRoleProfile, profileData.roleProfileReadFailed,
+    profileData.verificationStatus, profileData.marketplaceVisible,
+  ]);
+  const closeShareModal = useCallback(() => setShareState(null), []);
 
   // ─── Print / PDF (item 131) ──────────────────────────────────────────────
   // No custom PDF generation — the browser's own print dialog offers "Save
@@ -732,7 +752,9 @@ export default function LawyerProfilePage() {
                  verification_status = 'verified' — both the API query and the
                  RLS policy — and verification is admin-only, deliberately not
                  self-editable;
-              3. during the beta the public directory is not reachable at all.
+              3. during the beta the directory cannot be browsed — a PUBLISHED
+                 profile opens only through the link the lawyer shares (owner
+                 Q151; /lawyers/[slug] renders it, /lawyers/browse redirects).
             Clause 3 is gated on the flag so this copy stops being true-but-
             stale the moment BETA_MONOPOLY_MODE is turned off. The whole block
             is gated on hasRoleProfile because it explains a tile that is not on
@@ -746,7 +768,7 @@ export default function LawyerProfilePage() {
               «طلب الظهور في الدليل» تفضيل محفوظ في ملفك ولا يعني أن ملفك منشور.
               لا يُدرَج أي محامٍ في الدليل العام قبل توثيق حسابه من إدارة المنصة،
               والتوثيق يتم من الإدارة ولا يمكن تعديله من هنا.
-              {BETA_MONOPOLY_MODE && " كما أن دليل المحامين العام غير مُفعَّل خلال مرحلة التجربة الحالية، فلا يظهر فيه أي محامٍ حتى الآن."}
+              {BETA_MONOPOLY_MODE && " ودليل المحامين غير مفتوح للتصفّح خلال مرحلة التجربة، فالملف المنشور لا يصل إليه أحد إلا عبر الرابط أو رمز QR الذي تشاركه أنت من زر «مشاركة»."}
             </p>
           </div>
           )}
@@ -772,11 +794,11 @@ export default function LawyerProfilePage() {
             NOT gated on `canShareProfile`. That flag governs the share BUTTON,
             which promises two things this row does not: that the clipboard
             worked, and that the link opens. Reading back the slug he himself
-            stored is neither, so it is shown whenever `slug` is set — including
-            in beta, where the sentence below says plainly that the public
-            directory is closed rather than letting the lawyer assume the URL is
-            live. No row at all when the slug is empty: an origin with an empty
-            path is not a link to anything.
+            stored is neither, so it is shown whenever `slug` is set — and the
+            sentence below says whether it opens: only a PUBLISHED profile
+            (verified + visible) renders at /lawyers/[slug]; anything else is a
+            404 there. No row at all when the slug is empty: an origin with an
+            empty path is not a link to anything.
             print:hidden — a URL field is chrome, not part of the printed profile.
           */}
           {profileData.slug && (
@@ -791,9 +813,11 @@ export default function LawyerProfilePage() {
                 onFocus={(e) => e.currentTarget.select()}
                 className={`w-full rounded-lg border px-3 py-1.5 text-[11px] font-mono ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200" : "border-slate-200 bg-white text-slate-700"}`}
               />
-              {BETA_MONOPOLY_MODE && (
+              {profileData.hasRoleProfile && !profileData.roleProfileReadFailed && (
                 <p className={`mt-1.5 text-[10px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                  الدليل العام غير مُفعَّل خلال مرحلة التجربة، فالرابط لا يفتح بعد.
+                  {linkPublished
+                    ? "ملفك منشور، ويفتح هذا الرابط لمن تشاركه معه."
+                    : "لا يفتح هذا الرابط قبل نشر ملفك: توثيق الحساب من الإدارة وتفعيل خيار الظهور."}
                 </p>
               )}
             </div>
@@ -1004,12 +1028,12 @@ export default function LawyerProfilePage() {
             onSaved={handleServiceSaved}
           />
         )}
-        {shareUrl && (
+        {shareState && (
           <ShareProfileModal
             key="share-profile"
             onClose={closeShareModal}
             isDark={isDark}
-            url={shareUrl}
+            state={shareState}
             lawyerName={user.name || profileData.name || ""}
           />
         )}

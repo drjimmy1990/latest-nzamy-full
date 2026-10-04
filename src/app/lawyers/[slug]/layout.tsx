@@ -1,5 +1,22 @@
 /**
- * /lawyers/[slug] — per-profile SEO metadata.
+ * /lawyers/[slug] — the server gate and per-profile SEO metadata.
+ *
+ * ─── The gate (owner Q151, 2026-10-03) ───────────────────────────────────────
+ * The directory stays closed during the beta, but a lawyer may share his OWN
+ * profile by link and QR, so this page is no longer redirected away
+ * (src/app/lawyers/layout.tsx). What makes that safe is this file: the layout
+ * renders the page only for a PUBLISHED profile — verified AND
+ * marketplace_visible, exactly the public API's gate — and calls `notFound()`
+ * (a real 404, `noindex` included) when the id/slug names nothing published.
+ * The client page underneath never gets to ask the API about an unpublished
+ * profile from a shared link. If the lookup itself FAILS (missing env, a
+ * PostgREST error) the page is rendered anyway: its own fetch then shows the
+ * «تعذّر التحميل» retry state, which is the honest answer to an outage — a 404
+ * would tell the visitor this lawyer does not exist.
+ *
+ * During the beta a published profile is `noIndex`: it is reachable by the
+ * link the lawyer hands out, not something search engines should list while
+ * the owner keeps the directory closed for privacy.
  *
  * ─── Why this file exists ─────────────────────────────────────────────────────
  * The only metadata in this subtree was the directory-level export in
@@ -45,10 +62,10 @@
  * ─── Production reality: the fallback IS the normal path ──────────────────────
  * All 5 lawyer rows in production are `verification_status = 'pending'` with
  * `marketplace_visible = false`, so TODAY EVERY profile takes the neutral
- * branch. It is written as the common case: it names nobody, it is `noIndex`
- * (the page renders «غير متاح» — there is nothing to index), and every path
- * through it — malformed id, missing env, PostgREST error, thrown client — ends
- * in a returned Metadata object rather than a 500.
+ * branch — and, since the gate above, a 404. It is written as the common
+ * case: it names nobody, it is `noIndex`, and every path through it —
+ * malformed id, missing env, PostgREST error, thrown client — ends in a
+ * returned Metadata object rather than a 500.
  *
  * The neutral branch keeps a SELF-canonical (`/lawyers/<slug>`) rather than
  * pointing at `/lawyers`: `noindex` combined with a cross-canonical is
@@ -57,8 +74,12 @@
  */
 
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { cache } from "react";
 import { buildMetadata } from "@/lib/seo";
 import { createServiceClient } from "@/lib/supabase/server";
+import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
+import { classifyProfileParam } from "./_profileParam";
 
 /**
  * The allow-list projection — a strict subset of the route's PUBLIC_COLUMNS.
@@ -67,7 +88,7 @@ import { createServiceClient } from "@/lib/supabase/server";
  */
 const METADATA_COLUMNS =
   "id, display_name, display_name_en, city, " +
-  "lawyer_profiles!inner(user_id, specialties, years_experience, bio_ar, bio_en, " +
+  "lawyer_profiles!inner(user_id, slug, specialties, years_experience, bio_ar, bio_en, " +
   "verification_status, marketplace_visible)";
 
 interface GateRow {
@@ -91,9 +112,9 @@ function truncate(text: string, max = 155): string {
 }
 
 /**
- * Metadata for a profile that is NOT publicly listed — which is every profile
- * in production today. Names nobody, states nothing about whether the account
- * exists, and is not indexable.
+ * Metadata for a profile that is NOT published (the layout then 404s) or
+ * could not be looked up (the page then shows its retry state). Names nobody,
+ * states nothing about whether the account exists, and is not indexable.
  */
 function unavailableMetadata(slug: string): Metadata {
   return buildMetadata({
@@ -107,35 +128,66 @@ function unavailableMetadata(slug: string): Metadata {
 }
 
 /**
- * Resolve the lawyer through the public gate, or return `null`.
- *
- * `null` collapses "no such lawyer", "not verified", "not listed", "no usable
- * name" and "the query failed" into one answer, exactly as the API route
- * collapses the first three into one 404 body. Nothing about the reason reaches
- * the caller, because the caller renders a `<title>`.
+ * What the gate learned. `not-found` collapses "no such lawyer", "not
+ * verified" and "not listed" into one answer, exactly as the API route
+ * collapses them into one 404 body — nothing about the reason reaches a
+ * `<title>` or the 404 page. A published lawyer with no name is still
+ * PUBLISHED (the page renders him as «محامٍ موثّق», and the share modal hands
+ * out his link on the same two conditions); only his `<title>` is neutral. `error` is kept apart: the
+ * question could not be asked, which is not an answer about the lawyer.
  */
-async function resolveListedLawyer(slug: string): Promise<GateRow | null> {
-  // A malformed id is answered without touching the database — same guard the
-  // route uses, so Postgres' uuid parser is never handed junk.
-  if (!/^[0-9a-f-]{36}$/i.test(slug)) return null;
+type GateResult =
+  | { status: "published"; row: GateRow }
+  | { status: "not-found" }
+  | { status: "error" };
+
+/**
+ * Metadata for a PUBLISHED profile whose lawyer has not entered a name. The
+ * page renders («محامٍ موثّق»), so it must not say «غير متاح»; it names nobody
+ * and is not indexable.
+ */
+function namelessMetadata(slug: string): Metadata {
+  return buildMetadata({
+    titleAr: "ملف محامٍ موثّق",
+    titleEn: "Verified Lawyer Profile",
+    descriptionAr: "ملف مهني لمحامٍ موثّق على منصة نظامي.",
+    descriptionEn: "A verified lawyer's profile on Nzamy.",
+    path: `/lawyers/${encodeURIComponent(slug)}`,
+    noIndex: true,
+  });
+}
+
+/**
+ * Resolve the lawyer through the public gate. Wrapped in React `cache()` so
+ * `generateMetadata` and the layout below share ONE query per request.
+ */
+const resolvePublishedLawyer = cache(async (slug: string): Promise<GateResult> => {
+  // Id or slug, decided the way GET /api/v1/lawyers/[id] decides it (see
+  // _profileParam.ts). Neither shape → not-found without touching the
+  // database, so Postgres' uuid parser is never handed junk.
+  const param = classifyProfileParam(slug);
+  if (!param) return { status: "not-found" };
 
   try {
     const supabase = await createServiceClient();
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("profiles")
       .select(METADATA_COLUMNS)
-      .eq("id", slug)
       .eq("user_type", "lawyer")
       .eq("lawyer_profiles.verification_status", "verified")
-      .eq("lawyer_profiles.marketplace_visible", true)
-      .maybeSingle();
+      .eq("lawyer_profiles.marketplace_visible", true);
+    query = param.kind === "id"
+      ? query.eq("id", param.value)
+      : query.eq("lawyer_profiles.slug", param.value);
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) {
-      console.error("[lawyers/[slug] generateMetadata]", error.message);
-      return null;
+      console.error("[lawyers/[slug] gate]", error.message);
+      return { status: "error" };
     }
-    if (!data) return null;
+    if (!data) return { status: "not-found" };
 
     const row = data as unknown as Record<string, unknown>;
 
@@ -147,16 +199,20 @@ async function resolveListedLawyer(slug: string): Promise<GateRow | null> {
       | undefined;
 
     // ── The gate, re-asserted in code. See the header comment. ──
-    if (!lp) return null;
-    if (lp.verification_status !== "verified") return null;
-    if (lp.marketplace_visible !== true) return null;
+    if (!lp) return { status: "not-found" };
+    if (lp.verification_status !== "verified") return { status: "not-found" };
+    if (lp.marketplace_visible !== true) return { status: "not-found" };
+    // A slug link must name THIS row's slug — the embed filter alone is the
+    // one PostgREST modifier the header warns about trusting.
+    if (param.kind === "slug" && lp.slug !== param.value) return { status: "not-found" };
 
-    // A listed lawyer with no usable name is not a title — «" - نظامي | Nzamy"»
-    // is worse than the neutral branch, and 4 of the 5 production rows are
-    // near-empty. Treat it as unlisted.
+    // A published lawyer with no usable name is not a TITLE — «" - نظامي |
+    // Nzamy"» is worse than a neutral one, and most production rows are
+    // near-empty — but he is still published, so the page must not 404 (the
+    // share modal's "published" is the same two checks, nothing about names).
+    // generateMetadata gives him the neutral, noIndex title instead.
     const displayName = clean(row.display_name);
     const displayNameEn = clean(row.display_name_en);
-    if (!displayName && !displayNameEn) return null;
 
     const specialties = Array.isArray(lp.specialties)
       ? lp.specialties.map(clean).filter(Boolean)
@@ -164,22 +220,25 @@ async function resolveListedLawyer(slug: string): Promise<GateRow | null> {
     const years = typeof lp.years_experience === "number" ? lp.years_experience : 0;
 
     return {
-      display_name: displayName || null,
-      display_name_en: displayNameEn || null,
-      city: clean(row.city) || null,
-      specialties,
-      // Zero is "not recorded", never a claim — the description omits it.
-      yearsExperience: years > 0 ? years : 0,
-      bioAr: clean(lp.bio_ar),
-      bioEn: clean(lp.bio_en),
+      status: "published",
+      row: {
+        display_name: displayName || null,
+        display_name_en: displayNameEn || null,
+        city: clean(row.city) || null,
+        specialties,
+        // Zero is "not recorded", never a claim — the description omits it.
+        yearsExperience: years > 0 ? years : 0,
+        bioAr: clean(lp.bio_ar),
+        bioEn: clean(lp.bio_en),
+      },
     };
   } catch (err) {
     // Missing service-role env, network failure, unparseable response. The
     // normal path must not 500.
-    console.error("[lawyers/[slug] generateMetadata] crash:", err);
-    return null;
+    console.error("[lawyers/[slug] gate] crash:", err);
+    return { status: "error" };
   }
-}
+});
 
 /**
  * Build the Arabic description from columns that actually exist. The bio is
@@ -229,15 +288,15 @@ export async function generateMetadata({
   // see the note at the top of page.tsx.
   const { slug } = await params;
 
-  const row = await resolveListedLawyer(slug);
-  if (!row) return unavailableMetadata(slug);
+  const gate = await resolvePublishedLawyer(slug);
+  if (gate.status !== "published") return unavailableMetadata(slug);
+  const row = gate.row;
 
-  // `resolveListedLawyer` guarantees at least one of the two is non-empty, but
-  // guard rather than assert — an empty title is the one output this file must
-  // never produce.
+  // A published profile with no name gets a neutral title, never an empty one —
+  // an empty title is the one output this file must never produce.
   const nameAr = row.display_name ?? row.display_name_en ?? "";
   const nameEn = row.display_name_en;
-  if (!nameAr) return unavailableMetadata(slug);
+  if (!nameAr) return namelessMetadata(slug);
 
   // «محامٍ معتمد» is backed by `verification_status = 'verified'`, which is the
   // platform having checked the licence — the same claim the gate above
@@ -261,15 +320,23 @@ export async function generateMetadata({
     // directory's.
     path: `/lawyers/${encodeURIComponent(slug)}`,
     keywords,
+    // Link-only while the directory is closed (owner, Q151) — see the header.
+    noIndex: BETA_MONOPOLY_MODE,
   });
 }
 
-export default function LawyerProfileLayout({
+export default async function LawyerProfileLayout({
   children,
+  params,
 }: {
   children: React.ReactNode;
+  params: Promise<{ slug: string }>;
 }) {
-  // No redirect and no chrome here — src/app/lawyers/layout.tsx already wraps
-  // this segment. This layout exists solely to carry `generateMetadata`.
+  const { slug } = await params;
+  // Outside any try/catch: notFound() works by throwing.
+  const gate = await resolvePublishedLawyer(slug);
+  if (gate.status === "not-found") notFound();
+  // "published" renders the page; "error" renders it too, so the client
+  // page's own fetch can show the retry state instead of a false 404.
   return <>{children}</>;
 }

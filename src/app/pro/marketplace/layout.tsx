@@ -20,9 +20,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // What it kept shipping is worse than the one that was closed. This page is
   // linked from the FOOTER OF EVERY PUBLIC PAGE and renders a storefront of six
   // products with named monthly prices (٢٩٩ / ١٩٩ / ١٤٩ / ٩٩ / ٢٤٩ ر.س and
-  // ٣٩٩ ر.س للمراجعة), star ratings up to 5.0, review counts up to 421, a
-  // «الأكثر مبيعاً» best-seller badge, and hero stats «٥٠+ أداة وخدمة» /
-  // «١٠٠٪ موثّقة ومعتمدة» — every one of them a literal in the file.
+  // ٣٩٩ ر.س للمراجعة), star ratings up to 5.0, review counts up to 421, and
+  // hero stats «٥٠+ أداة وخدمة» / «١٠٠٪ موثّقة ومعتمدة» — every one of them a
+  // literal in the file. (It also carried a «الأكثر مبيعاً» best-seller badge;
+  // that one was removed under the owner's Q164 decision, 2026-10-03.)
   //
   // There is no vendor, no order, no review and no payment provider behind any
   // of it. One of the six («مراجعة قانونية متخصصة … رد خلال ٢٤ ساعة» from

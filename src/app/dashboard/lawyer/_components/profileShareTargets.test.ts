@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildProfileShareTargets, PROFILE_SHARE_TEXT } from "./profileShareTargets.ts";
+import {
+  buildProfileShareTargets,
+  PROFILE_SHARE_TEXT,
+  profileQrFileName,
+  profileShareState,
+} from "./profileShareTargets.ts";
 
 const URL_ = "https://nezamy.sa/lawyers/ahmad-k";
 
@@ -41,4 +46,51 @@ test("a url with reserved characters survives the round trip", () => {
 
 test("the share text is Arabic", () => {
   assert.match(PROFILE_SHARE_TEXT, /^[؀-ۿ]/);
+});
+
+// ─── profileShareState: only a published profile gets a link (owner Q151) ────
+
+const BASE = {
+  origin: "https://nezamy.sa",
+  userId: "11111111-2222-3333-4444-555555555555",
+  slug: "ahmad-k",
+  hasRoleProfile: true,
+  roleProfileReadFailed: false,
+  verificationStatus: "verified",
+  marketplaceVisible: true,
+};
+
+test("verified + visible → published, with the slug link", () => {
+  assert.deepEqual(profileShareState(BASE), { kind: "published", url: "https://nezamy.sa/lawyers/ahmad-k" });
+});
+
+test("published without a slug falls back to the user id link", () => {
+  assert.deepEqual(profileShareState({ ...BASE, slug: "" }), {
+    kind: "published",
+    url: `https://nezamy.sa/lawyers/${BASE.userId}`,
+  });
+});
+
+test("not verified, or not visible → unpublished, naming what is missing, no url", () => {
+  assert.deepEqual(profileShareState({ ...BASE, verificationStatus: "pending" }), { kind: "unpublished", verified: false, visible: true });
+  assert.deepEqual(profileShareState({ ...BASE, marketplaceVisible: false }), { kind: "unpublished", verified: true, visible: false });
+  assert.deepEqual(profileShareState({ ...BASE, verificationStatus: null, marketplaceVisible: false }), { kind: "unpublished", verified: false, visible: false });
+  for (const status of ["rejected", "suspended", "Verified", ""]) {
+    assert.equal(profileShareState({ ...BASE, verificationStatus: status }).kind, "unpublished", status);
+  }
+});
+
+test("an unread professional record, or no signed-in id → unknown, never a guess", () => {
+  assert.deepEqual(profileShareState({ ...BASE, roleProfileReadFailed: true }), { kind: "unknown" });
+  // Read fine, no row yet: its own state, not "could not check".
+  assert.deepEqual(profileShareState({ ...BASE, hasRoleProfile: false }), { kind: "no_profile" });
+  for (const userId of [null, undefined, "", "  "]) {
+    assert.deepEqual(profileShareState({ ...BASE, userId }), { kind: "unknown" }, String(userId));
+  }
+});
+
+test("profileQrFileName names the PNG after the link's last segment", () => {
+  assert.equal(profileQrFileName("https://nezamy.sa/lawyers/ahmad-k"), "nezamy-profile-ahmad-k.png");
+  assert.equal(profileQrFileName(`https://nezamy.sa/lawyers/${BASE.userId}`), `nezamy-profile-${BASE.userId}.png`);
+  assert.equal(profileQrFileName("https://nezamy.sa/lawyers/%D8%A3"), "nezamy-profile.png");
 });

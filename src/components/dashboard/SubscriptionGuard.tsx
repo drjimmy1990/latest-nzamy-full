@@ -33,7 +33,7 @@ export function SubscriptionGuard({
       shield: "التأمين القانوني",
       ai: "نظامي AI",
       pro: "الاحترافية",
-      max: "الماكس",
+      max: "الاحترافية", // no «الماكس» plan (owner, Q163) — same name as pro; see TIER_LABELS_AR
       corp: "حوكمة الشركات",
       enterprise: "الشركات المتكاملة",
     };
