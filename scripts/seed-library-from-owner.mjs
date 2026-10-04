@@ -22,6 +22,20 @@
  *   migrations run, remove the corresponding stripKeys entries below and
  *   RE-SEED the four affected tables (laws, decrees_circulars, principles,
  *   feqh_blocks); the re-seed's upsert is what actually writes the values.
+ *   EXCEPTION (2026-10-04): the review/editorial family (needs_human_review,
+ *   review_*, editorial_notes*) is internal for good (library contract 1.6)
+ *   and is removed from every row and from `metadata` by
+ *   stripInternalContentKeys whatever stripKeys says.
+ *
+ * TWO-LEVEL CHAPTERS (2026-10-04)
+ *   `chapters` rows that carry `level` (1|2) and `parent_chapter_id` (uuid of
+ *   a level-1 chapter row of the same law) pass straight through — nothing
+ *   strips them. Run migration 20261004_02_library_chapter_levels.sql FIRST:
+ *   without it every chapter row carrying those keys fails (unknown column).
+ *   parent_chapter_id is a foreign key to chapters.id, and this script upserts
+ *   the JSONL in file order, 200 rows per request: a level-2 row whose parent
+ *   row comes later in the file fails (23503) unless both land in the same
+ *   request — the JSONL must list each parent before its children.
  *
  * Usage:
  *   node scripts/seed-library-from-owner.mjs                  # seed everything
@@ -48,6 +62,8 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
+// Node ≥ 22.18 loads this .ts module directly (type stripping).
+import { stripInternalContentKeys } from "../src/lib/library/internalContentFields.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -282,6 +298,10 @@ async function seedTable(tableConfig) {
     for (const key of tableConfig.stripKeys) {
       delete row[key];
     }
+    // Internal editorial/review notes never reach a public row — neither as a
+    // column nor inside the `metadata` jsonb (2026-10-04: they were readable
+    // through the public REST key on judicial_collections and principles).
+    row = stripInternalContentKeys(row);
 
     // Guard against unique index collision on duplicate instrument_id
     if (tableConfig.name === "laws" && row.instrument_id != null) {

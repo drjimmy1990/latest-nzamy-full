@@ -346,6 +346,8 @@ export interface LawTitleCandidate {
   type?: string | null;
   description?: string | null;
   section_code?: string | null;
+  /** The law's own status (e.g. 'repealed') — the result card marks repealed laws. */
+  status?: string | null;
 }
 
 const PRIMARY_LAW_TYPE = 'نظام';

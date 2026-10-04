@@ -225,7 +225,8 @@ test("LIB-04b: chapters are ordered, relabelled and filtered by orderLawChapters
   assert.match(routeSource, /import \{ orderLawChapters \} from '\.\/_order-chapters';/);
   const start = routeSource.indexOf("chapters: orderLawChapters(chapters, articles)");
   assert.ok(start > -1, "the response chapters must come from orderLawChapters over the fetched rows");
-  const block = routeSource.slice(start, start + 300);
+  // 600: the map also passes the optional two-level fields (20261004_02).
+  const block = routeSource.slice(start, start + 600);
   assert.match(
     block,
     /articles: chapter\.articles\.map\(\(a\) => formatArticleWithPaywall\(a, hasFullAccess, freeLimit, !officialMeta\.officialMetaLocked\)\)/,

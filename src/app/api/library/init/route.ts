@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getLibraryAccessForUser } from "@/lib/access-control";
 import { libraryGate } from "@/lib/library-gate";
 import { isFreeLibraryItem } from "@/lib/library-item-access";
@@ -13,6 +13,11 @@ import { maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/lib
  * the first paint at limit=50, 2.8 MB at limit=200. Each list below names
  * what /laws (src/app/laws/page.tsx lawsList/ordersList/booksList/
  * collectionsList) and /laws/feqh-preview actually read.
+ *
+ * issuing_instrument / issue_date_hijri are column-locked for the anon key
+ * (migration 20261004_01), so the laws section is read with the service role
+ * and masked per tier below. The other sections stay on the request client
+ * (the principles and collections lists name allow-list columns only).
  */
 const LAW_LIST_COLUMNS =
   "slug, title, title_en, description, type, section_code, section_name, issuing_instrument, issue_date_hijri, total_articles, status, has_merged_regulation";
@@ -32,6 +37,8 @@ export async function GET(request: Request) {
   if (gate) return gate;
 
   const supabase = await createClient();
+  // The laws section only (see the column note above LAW_LIST_COLUMNS).
+  const serverOnly = await createServiceClient();
 
   // Bounded reads: the front-end mounts this once on load, so cap each table
   // to a sane page size instead of `select('*')` (unbounded table scan).
@@ -108,10 +115,11 @@ export async function GET(request: Request) {
       table: string,
       selectClause: string,
       sectionName: string,
-      shape: Shape
+      shape: Shape,
+      client: typeof supabase | typeof serverOnly = supabase
     ) => {
       const { data, count, error } = await shape(
-        supabase
+        client
           .schema("library")
           .from(table)
           .select(selectClause, { count: "exact" })
@@ -214,7 +222,7 @@ export async function GET(request: Request) {
             }
             // Browse order mirrors the chip order: section, then title.
             return out.order("section_code").order("title").order("slug");
-          })
+          }, serverOnly)
         : Promise.resolve(emptySection()),
       shouldFetch("decrees")
         ? fetchSection("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", (q) => q.order("id"))

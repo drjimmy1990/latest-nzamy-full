@@ -209,11 +209,13 @@ begin
     missing := missing || ' the marker comment on library.articles is missing;';
   end if;
 
-  -- The catalogue stays public: the lock must not have spread.
+  -- The catalogue stays public: the lock must not have spread. Any-column, not
+  -- table-level: 20261004_01 later narrows laws/principles to column grants,
+  -- and a re-run of this file must still pass after it.
   foreach t in array array['library.laws', 'library.chapters', 'library.principles',
                            'library.decrees_circulars', 'library.feqh_books']
   loop
-    if to_regclass(t) is not null and not has_table_privilege('anon', t, 'SELECT') then
+    if to_regclass(t) is not null and not has_any_column_privilege('anon', t, 'SELECT') then
       missing := missing || format(' anon lost SELECT on %s;', t);
     end if;
   end loop;

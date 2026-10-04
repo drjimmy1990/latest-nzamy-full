@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { libraryGate } from '@/lib/library-gate';
 import { LIBRARY_FTS_CONFIG } from '@/utils/normalizeArabic';
 import { fetchLawTitleHits } from '../search/lawTitleHits';
+import { fetchBookTitleHits } from '../search/bookTitleHits';
 import { buildAutocompleteBody, uniformCountsExact, type FacetResult, type TopMatch } from './facets';
 
 /** Client-side ceiling; the anon statement_timeout (~3s) normally fires first. */
@@ -51,7 +52,9 @@ export async function GET(request: Request) {
 
     // T28-21 (migration 20260929_01): library.articles is server-only, so its
     // count runs as the service role. Only a number leaves this route for it —
-    // no article row or text is selected (head: true).
+    // no article row or text is selected (head: true). Everything else stays
+    // on the request client: migration 20261004_01 keeps `fts` and every
+    // laws / principles column read here on the anon allow-list.
     const serverOnly = await createServiceClient();
 
     const count = (table: string, client: typeof supabase | typeof serverOnly = supabase) => client
@@ -62,7 +65,7 @@ export async function GET(request: Request) {
       .abortSignal(signal);
 
     // Run all queries in parallel for speed
-    const [lawsCount, precedentsCount, ordersCount, feqhCount, topLaws, topPrecedents, topOrders] = await Promise.all([
+    const [lawsCount, precedentsCount, ordersCount, feqhCount, topLaws, topPrecedents, topOrders, topBooks] = await Promise.all([
       count('articles', serverOnly),
       count('principles'),
       count('decrees_circulars'),
@@ -113,6 +116,10 @@ export async function GET(request: Request) {
         .order('id')
         .limit(4)
         .abortSignal(signal),
+
+      // Books whose title carries the query («إعلام الموقعين» found the
+      // book's quotations, never the book). Public catalogue columns.
+      fetchBookTitleHits(supabase, query, 2, signal),
     ]);
 
     const lawMatches: TopMatch[] = ((topLaws.data ?? []) as Record<string, unknown>[]).map((law) => ({
@@ -135,6 +142,13 @@ export async function GET(request: Request) {
       slug: o.id as string,
     }));
 
+    const bookMatches: TopMatch[] = topBooks.hits.map((b) => ({
+      title: b.title,
+      section: 'feqh',
+      slug: b.slug,
+      snippet: [b.author, b.volumesLabel].filter(Boolean).join(' · ') || undefined,
+    }));
+
     const built = buildAutocompleteBody({
       counts: {
         laws: lawsCount,
@@ -143,6 +157,8 @@ export async function GET(request: Request) {
         feqh: feqhCount,
       },
       matches: [
+        // A book named by the query is the strongest suggestion: first.
+        { result: { count: null, error: topBooks.error }, items: bookMatches },
         { result: topLaws, items: lawMatches },
         { result: topPrecedents, items: precedentMatches },
         { result: topOrders, items: orderMatches },

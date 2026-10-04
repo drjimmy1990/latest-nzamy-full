@@ -21,7 +21,10 @@ test("every library.articles read (page, head count, ranked RPC, by-id refetch) 
   assert.match(routeSource, /await serverOnly\s*\.schema\('library'\)\s*\.rpc\(RANKED_RPC,/);
   // The head-count fallback goes through the same builder, so it moves with it.
   assert.match(routeSource, /lawQuery\(false, true\)\.abortSignal\(signal\)/);
-  // The other sections stay on the request client.
+  // The other sections — and the law title lookups — stay on the request
+  // client: 20261004_01 keeps fts and the columns they read on the anon
+  // allow-list, so a public search stays under anon's statement_timeout.
+  assert.match(routeSource, /fetchLawTitleHitsChecked\(supabase, \{/);
   for (const table of ["principles", "decrees_circulars", "feqh_blocks"]) {
     assert.match(routeSource, new RegExp(String.raw`supabase\s*\.schema\('library'\)\s*\.from\('${table}'\)`));
   }

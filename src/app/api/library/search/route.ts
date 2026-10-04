@@ -33,6 +33,10 @@ import {
   type SectionOutcome,
 } from './searchPlan';
 import { fetchLawTitleHitsChecked, type LawTitleHitsResult } from './lawTitleHits';
+import { fetchBookTitleHits } from './bookTitleHits';
+
+/** Book-title hits listed above the fiqh passages on page 1. */
+const BOOK_TITLE_HITS_MAX = 3;
 
 /**
  * POST /api/library/search
@@ -157,7 +161,9 @@ export async function POST(request: Request) {
     // its head count, the ranked RPC, the by-id refetch) uses this client; the
     // snippet cap below (snippetLen) is then the only thing a caller sees of
     // the text. Everything else (laws, principles, decrees, feqh) stays on the
-    // request client.
+    // request client: migration 20261004_01 keeps `fts` and every column read
+    // below on the anon allow-list, so those public searches stay under anon's
+    // statement_timeout.
     const serverOnly = await createServiceClient();
     const offset = (page - 1) * limit;
 
@@ -222,7 +228,7 @@ export async function POST(request: Request) {
         // everywhere.
         const LAW_COLUMNS = (withHistory: boolean) => `
             id, number, number_text, status, text,${withHistory ? ' original_text,' : ''} law_slug,
-            laws!inner ( slug, title, type, section_code, section_name )
+            laws!inner ( slug, title, type, section_code, section_name, status )
           `;
 
         const lawQuery = (withHistory: boolean, head = false) => {
@@ -353,6 +359,7 @@ export async function POST(request: Request) {
               lawTitle: law.title,
               lawSlug: law.slug,
               lawType: law.type,
+              lawStatus: law.status ?? null,
               sectionCode: law.section_code ? `SA-${law.section_code}` : undefined,
             },
           };
@@ -393,6 +400,7 @@ export async function POST(request: Request) {
               status: r.status,
               lawSlug: r.law_slug,
               lawType: law?.type,
+              lawStatus: law?.status ?? null,
               sectionCode: law?.section_code ? `SA-${law.section_code}` : undefined,
             },
           };
@@ -568,10 +576,35 @@ export async function POST(request: Request) {
           `, { count: 'estimated', head })
           .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG });
 
-        const res = await feqhQuery()
-          .order('id')
-          .range(from, from + fetchSizeFor(size) - 1)
-          .abortSignal(signal);
+        // Books whose TITLE carries the query lead page 1 (a passage search
+        // alone never surfaced «إعلام الموقعين» itself). Page 1 only: they
+        // are a header, not counted rows (see the return below).
+        const [res, titleBooks] = await Promise.all([
+          feqhQuery()
+            .order('id')
+            .range(from, from + fetchSizeFor(size) - 1)
+            .abortSignal(signal),
+          from === 0
+            ? fetchBookTitleHits(supabase, parsed.raw, BOOK_TITLE_HITS_MAX, signal)
+            : Promise.resolve({ hits: [], error: null }),
+        ]);
+        if (titleBooks.error) console.warn('[Search] book title lookup failed:', titleBooks.error);
+        const bookItems: SearchResultItem[] = titleBooks.hits.map((b) => ({
+          id: `book:${b.slug}`,
+          section: 'feqh',
+          title: b.title,
+          snippet: [b.author, b.volumesLabel].filter(Boolean).join(' · '),
+          // A catalogue card: the book page applies its own paywall.
+          locked: false,
+          meta: {
+            kind: 'book',
+            bookTitle: b.title,
+            author: b.author || null,
+            bookSlug: b.slug,
+            volumeCount: b.volumeCount,
+            volumesLabel: b.volumesLabel,
+          },
+        }));
         const settled = await settlePage('feqh', res as unknown as RowsResult, () => feqhQuery(true).abortSignal(signal));
         if (!settled) return { ok: false };
         const feqhResults = settled.rows;
@@ -596,9 +629,15 @@ export async function POST(request: Request) {
           };
         });
         const deduped = dedupeResults(results);
+        const pageRows = deduped.slice(0, size);
+        // Book hits are a header above page 1, not rows of the paged passage
+        // list: the count stays the passages' own (the client pages fiqh by
+        // page × limit < count, so counting the hits opened an empty page),
+        // and the section=all preview keeps its size.
+        const withBooks = from === 0 ? [...bookItems, ...pageRows] : pageRows;
         return {
           ok: true,
-          results: deduped.slice(0, size),
+          results: section === 'feqh' ? withBooks : withBooks.slice(0, size),
           ...sectionCount({ estimate: settled.count, offset: from, rawRows: feqhResults.length, requested: fetchSizeFor(size), listedWhenComplete: deduped.length }),
         };
       } catch (e) {

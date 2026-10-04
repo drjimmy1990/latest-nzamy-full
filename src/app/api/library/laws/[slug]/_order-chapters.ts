@@ -26,9 +26,10 @@
  *     law on article 48. Placed by number it sits after the chapter starting
  *     at 41. A leading orphan (articles 1-11) still lands first.
  *  3. Chapters with no articles are dropped when the law has any article:
- *     the corpus has no parent/child link between chapters, so an empty
- *     heading has no position to be shown at. A law with no articles keeps its
- *     headings, in query order.
+ *     an empty heading has no position of its own. The one exception is a
+ *     level-1 heading (migration 20261004_02, «الباب» over «الفصل»): it is
+ *     put back right before the first kept chapter that names it as parent.
+ *     A law with no articles keeps its headings, in query order.
  *  4. Articles whose chapter_id matches no fetched chapter (or is null) are
  *     kept in a «أحكام عامة» group placed by rule 1. No article is ever dropped.
  *
@@ -43,6 +44,9 @@ export const UNGROUPED_CHAPTER_LABEL = 'أحكام عامة';
 export interface ChapterRowLike {
   id?: unknown;
   title?: unknown;
+  /** 20261004_02: 1 = باب-level heading, 2 = a chapter under it. Absent before the migration. */
+  level?: unknown;
+  parent_chapter_id?: unknown;
 }
 
 export interface ArticleRowLike {
@@ -53,6 +57,28 @@ export interface ArticleRowLike {
 export interface OrderedChapter<A> {
   title: string;
   articles: A[];
+  /** Sent only when the row carries them (two-level chapters, 20261004_02). */
+  id?: string;
+  level?: 1 | 2;
+  parentChapterId?: string | null;
+}
+
+interface ChapterMeta {
+  id?: string;
+  level?: 1 | 2;
+  parentChapterId?: string | null;
+}
+
+/** The optional two-level fields of a chapter row; {} on an older database. */
+export function chapterLevelMeta(c: ChapterRowLike): ChapterMeta {
+  const out: ChapterMeta = {};
+  const lv = Number(c.level);
+  if (lv === 1 || lv === 2) {
+    if (c.id != null && String(c.id)) out.id = String(c.id);
+    out.level = lv;
+    if (lv === 2) out.parentChapterId = typeof c.parent_chapter_id === 'string' ? c.parent_chapter_id : null;
+  }
+  return out;
 }
 
 /** Numeric article number, or NaN when there is none (null is NOT 0). */
@@ -68,6 +94,11 @@ interface Group<A> {
   articles: A[];
   /** Global position of the group's first article. */
   first: number;
+  meta: ChapterMeta;
+}
+
+function emit<A>(g: Group<A>): OrderedChapter<A> {
+  return { title: g.title, articles: g.articles, ...g.meta };
 }
 
 function firstNumber<A extends ArticleRowLike>(group: Group<A>): number {
@@ -100,18 +131,18 @@ export function orderLawChapters<A extends ArticleRowLike>(
     isOrphan(c) ? ORPHAN_CHAPTER_LABEL : String(c.title ?? '');
 
   if (articles.length === 0) {
-    return chapters.map((c) => ({ title: label(c), articles: [] }));
+    return chapters.map((c) => ({ title: label(c), articles: [], ...chapterLevelMeta(c) }));
   }
 
   const byId = new Map<string, Group<A>>();
   for (const c of chapters) {
     const id = c.id == null ? '' : String(c.id);
     if (!id || byId.has(id)) continue;
-    byId.set(id, { title: label(c), isOrphan: isOrphan(c), articles: [], first: Infinity });
+    byId.set(id, { title: label(c), isOrphan: isOrphan(c), articles: [], first: Infinity, meta: chapterLevelMeta(c) });
   }
 
   const ungrouped: Group<A> = {
-    title: UNGROUPED_CHAPTER_LABEL, isOrphan: false, articles: [], first: Infinity,
+    title: UNGROUPED_CHAPTER_LABEL, isOrphan: false, articles: [], first: Infinity, meta: {},
   };
   for (let index = 0; index < articles.length; index++) {
     const article = articles[index];
@@ -129,7 +160,7 @@ export function orderLawChapters<A extends ArticleRowLike>(
   // other chapters' first numbers ascend (else there is no numeric scale to
   // place it on and rule 1's position stands).
   const orphans = groups.filter((g) => g.isOrphan);
-  if (orphans.length === 0) return groups.map(({ title, articles: a }) => ({ title, articles: a }));
+  if (orphans.length === 0) return withParentHeadings(groups, byId).map(emit);
 
   const rest = groups.filter((g) => !g.isOrphan);
   let ascending = true;
@@ -158,5 +189,27 @@ export function orderLawChapters<A extends ArticleRowLike>(
     }
   }
 
-  return ordered.map(({ title, articles: a }) => ({ title, articles: a }));
+  return withParentHeadings(ordered, byId).map(emit);
+}
+
+/**
+ * Rule 3's exception: an article-less level-1 heading goes back in right
+ * before the first kept chapter whose parent it is. Nothing else moves.
+ */
+function withParentHeadings<A>(ordered: Group<A>[], byId: Map<string, Group<A>>): Group<A>[] {
+  const placed = new Set<string>();
+  const out: Group<A>[] = [];
+  for (const g of ordered) {
+    if (g.meta.id) placed.add(g.meta.id);
+    const parentId = g.meta.level === 2 ? g.meta.parentChapterId : null;
+    if (parentId && !placed.has(parentId)) {
+      const parent = byId.get(parentId);
+      if (parent && parent.articles.length === 0 && parent.meta.level === 1) {
+        out.push(parent);
+        placed.add(parentId);
+      }
+    }
+    out.push(g);
+  }
+  return out;
 }

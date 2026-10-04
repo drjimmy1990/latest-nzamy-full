@@ -11,10 +11,15 @@ import {
   type LawTitleCandidate,
 } from './searchPlan';
 
+/**
+ * The REQUEST client. Every column selected or filtered here (fts included) is
+ * on the anon allow-list of migration 20261004_01, so these public lookups
+ * stay under anon's statement_timeout.
+ */
 type LibraryClient = Awaited<ReturnType<typeof createClient>>;
 
 const CANDIDATES_PER_QUERY = 25;
-const LAW_TITLE_COLUMNS = 'slug, title, type, description, section_code';
+const LAW_TITLE_COLUMNS = 'slug, title, type, description, section_code, status';
 
 export interface LawTitleHitOptions {
   /** The string handed to textSearch (a tsquery for search, raw words for autocomplete). */

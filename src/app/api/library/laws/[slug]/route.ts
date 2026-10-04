@@ -24,6 +24,16 @@ const ARTICLES_PAGE_SIZE = 500;
 type PgErrorParts = { code?: string; details?: string };
 
 /**
+ * The library.laws columns this route reads — never `*` (it shipped `fts`, and
+ * after migration 20261004_01 a `*` select needs privileges on every column).
+ * The official metadata and the preamble are in it: they are column-locked for
+ * the anon key since 20261004_01, so this read runs as the service role and
+ * lawOfficialMeta() below is the mask (T28-22).
+ */
+const LAW_DETAIL_COLUMNS =
+  'slug, title, title_en, type, status, description, preamble, parent_law_id, parent_law, enabling_article, issuing_instrument, issue_date_hijri, boe_source_url, official_source_url, gazette_issue_number, gazette_publication_date, gazette_url';
+
+/**
  * GET /api/library/laws/[slug]
  * Fetch a complete law with chapters, articles, regulations, and amendments.
  * Articles beyond the free limit are locked for non-Pro users.
@@ -48,14 +58,29 @@ export async function GET(
       // Guest user — continue with null userId
     }
 
+    // Trusted server reads: the law's official metadata and preamble
+    // (column-locked for the anon key, 20261004_01) and the article tables
+    // (server-only, 20260929_01 / T28-21). The cookie client above still
+    // decides who the caller is; this route's masking is the paywall.
+    const serverOnly = await createServiceClient();
+
     // Fetch law metadata
-    const { data: law, error: lawError } = await supabase
+    const { data: law, error: lawError } = await serverOnly
       .schema('library')
       .from('laws')
-      .select('*')
+      .select(LAW_DETAIL_COLUMNS)
       .eq('slug', slug)
       .single();
 
+    // PGRST116 = no row: a real 404. Anything else (a missing grant, a
+    // missing service key) is a failed read, not "this law does not exist".
+    if (lawError && lawError.code !== 'PGRST116') {
+      console.error(`[Laws API] Law query failed for "${slug}":`, lawError.code ?? 'no-error-code', lawError.message);
+      return NextResponse.json(
+        { error: 'تعذّر تحميل هذا النظام' },
+        { status: 500 }
+      );
+    }
     if (lawError || !law) {
       return NextResponse.json(
         { error: 'لم يُعثر على هذا النظام' },
@@ -67,6 +92,8 @@ export async function GET(
     // carries (library.laws.supersedes_law_slug). Supplementary: a failed
     // lookup is logged and reads as "not known", never a 500. Started here and
     // awaited at the response build, so it overlaps the reads below.
+    // Request client on purpose: slug, title and supersedes_law_slug stay on
+    // the anon allow-list of 20261004_01 (the link itself is public).
     const replacedByLookup = (async (): Promise<{ slug: string; title: string } | null> => {
       const { data, error } = await supabase
         .schema('library')
@@ -90,7 +117,8 @@ export async function GET(
 
     // parent_law_id is an INSTRUMENTS_REGISTRY instrument id, not a BOE
     // law_guid. Limit to two rows because the resolver needs only to prove
-    // uniqueness; on ambiguity it deliberately returns no hyperlink.
+    // uniqueness; on ambiguity it deliberately returns no hyperlink. Every
+    // column here (instrument_id included) is on the anon allow-list.
     let parentLawLink: { slug: string; title: string } | null = null;
     const parentInstrumentId = String(law.parent_law_id || '').trim();
     if (parentInstrumentId) {
@@ -156,9 +184,9 @@ export async function GET(
     // T28-21 (owner decision, migration 20260929_01): articles,
     // article_regulations and article_amendments are SERVER-ONLY — the anon
     // key holds no privilege on them, so they are read with the service role
-    // and THIS route's masking below (formatArticleWithPaywall, the flat
-    // regulation view) is the paywall. Works the same before the migration.
-    const serverOnly = await createServiceClient();
+    // (serverOnly, above) and THIS route's masking below
+    // (formatArticleWithPaywall, the flat regulation view) is the paywall.
+    // Works the same before the migration.
     const { data: articles, error: articlesError } = await selectAllPages<Record<string, unknown>>(
       (from, to) => serverOnly
         .schema('library')
@@ -317,7 +345,7 @@ export async function GET(
       // null when they are all empty (every law, 2026-09-28) or when locked.
       gazette: officialMeta.gazette,
       officialMetaLocked: officialMeta.officialMetaLocked,
-      // ك-02 (2026-08-23): library.laws.status is fetched (select('*') above)
+      // ك-02 (2026-08-23): library.laws.status is fetched (LAW_DETAIL_COLUMNS)
       // but was never copied into this response object, so the frontend's
       // "cancelled/active" badge always fell back to a hardcoded static map
       // (law-metadata-map.ts) that hand-lists "active" on every entry.
@@ -357,10 +385,22 @@ export async function GET(
       // and placed by its articles; empty headings are dropped when the law
       // has articles; articles with no matching chapter land in «أحكام عامة».
       // No article is dropped. See _order-chapters.ts for the measured cases.
+      // Two-level chapters (20261004_02): id / level / parentChapterId only
+      // when the row carries a level, so an older database sends today's shape.
       chapters: orderLawChapters(chapters, articles).map((chapter) => ({
         title: chapter.title,
+        ...(chapter.id ? { id: chapter.id } : {}),
+        ...(chapter.level ? { level: chapter.level } : {}),
+        ...(chapter.level === 2 ? { parentChapterId: chapter.parentChapterId ?? null } : {}),
         articles: chapter.articles.map((a) => formatArticleWithPaywall(a, hasFullAccess, freeLimit, !officialMeta.officialMetaLocked)),
       })),
+      // A law whose official text is not published has no articles; the
+      // parser keeps the library's notice in `description`. Shown without an
+      // article number, and never routed through the (masked) preamble.
+      notice: articles.length === 0 && typeof law.description === 'string'
+        && law.description.trim() && law.description.trim() !== String(law.title ?? '').trim()
+        ? law.description.trim()
+        : '',
     };
 
     // Tier-shaped body (paywall + official metadata): never from a shared cache.

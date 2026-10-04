@@ -16,8 +16,40 @@
  * Pure, no imports: `node --test` loads it (_article-label.test.ts).
  */
 
-/** Words that mark a string as an article/item locator rather than a title. */
-const LOCATOR = /(^|\s)(المادة|مادة|البند|بند|الفقرة|فقرة|أولاً|أولا|ثانياً|ثانيا|ثالثاً|رابعاً|خامساً|سادساً|سابعاً|ثامناً|تاسعاً|عاشراً)(\s|$|\(|:)|^[\s(]*[0-9٠-٩]+/;
+/**
+ * Item ordinals «أولاً … عاشراً», in every spelling the corpus uses: tanween
+ * after the alef («ثالثاً»), tanween before it («ثالثًا» — 6 labels of نظام
+ * الغرف التجارية fell back to «المادة N» on this one), bare alef («ثالثا»),
+ * and the doubled-alef slip «سادساا» (measured in the owner corpus,
+ * 2026-10-04). The bare stem «ثالث» alone is NOT the adverbial ordinal; it
+ * only counts in a compound «ثالث عشر» (13th).
+ */
+const ORDINAL_STEMS = "(?:[أا]ول|ثاني|ثالث|رابع|خامس|سادس|سابع|ثامن|تاسع|عاشر)";
+const ORDINAL = `(?:${ORDINAL_STEMS}(?:اً|ًا|اا|ا)|(?:حادي|${ORDINAL_STEMS})\\s+عشر(?:اً|ًا|ا)?)`;
+
+/**
+ * Words that mark a string as an article/item locator rather than a title.
+ * The word must end at a space, the end, «(», «:», or a dash/tatweel/period —
+ * «ثالثًا- الأمانة العامة…» puts a dash straight after the ordinal.
+ * (Do not add «تعديل» or «الدليل»: they open titles, not locators.)
+ */
+const LOCATOR = new RegExp(
+  `(^|\\s)(المادة|مادة|البند|بند|الفقرة|فقرة|${ORDINAL})(\\s|$|\\(|:|-|–|—|ـ|\\.)|^[\\s(]*[0-9٠-٩]+`,
+  "u",
+);
+
+/** An item ordinal opening the text, ending at the same separators LOCATOR accepts. */
+const LEADING_ORDINAL = new RegExp(`^\\s*(${ORDINAL})(?=\\s|$|\\(|:|-|–|—|ـ|\\.)`, "u");
+
+/**
+ * The item ordinal a text opens with («ثالثًا- الأمانة العامة…» → «ثالثًا»),
+ * exactly as written, or null. Used by the reader's citation builder to cite a
+ * long ordinal-led heading by its ordinal, as a bare «ثالثاً» always was.
+ */
+export function leadingOrdinal(text: string | null | undefined): string | null {
+  const m = LEADING_ORDINAL.exec(String(text ?? ""));
+  return m ? m[1] : null;
+}
 
 /** Words that mark a string as the name of an instrument, not a locator. */
 const INSTRUMENT_NAME = /^(اللائحة|لائحة|نظام|النظام|قواعد|القواعد|تنظيم|التنظيم|قرار|القرار|مرسوم|المرسوم)(\s|$)/;
@@ -68,9 +100,10 @@ export function articleDisplayLabel(
   // `articles.number` is 0 for many rows whose locator is spelled out
   // («المادة الأولى:» — measured 2026-09-28 on executive-regulations-health-
   // profession), so only a positive number is trusted for the fallback.
-  const n = Number(number);
+  // A blank or "0" number (string or number) is "no number": never «المادة 0».
+  const n = typeof number === "string" && number.trim() === "" ? NaN : Number(number);
   const hasNumber = Number.isFinite(n) && n > 0;
   // A title in place of a locator: use the number when we have one, else
-  // whatever text the source holds (still better than «المادة 0»).
+  // whatever text the source holds (number_text — never «المادة 0»).
   return hasNumber ? `المادة ${n}` : cleanNumberText(numberText);
 }

@@ -457,7 +457,10 @@ BEGIN
     RAISE EXCEPTION '_verify: the matview library.cross_section_search is ungranted to service_role — 20260922_01 not applied';
   END IF;
 
+  -- 20261004_01 closes this view to the API roles ON PURPOSE (it projects the
+  -- column-locked official metadata); asserted in its own section at the end.
   IF to_regclass('library.v_laws_enactment_status') IS NOT NULL
+     AND coalesce(obj_description('library.laws'::regclass, 'pg_class'), '') NOT ILIKE '%column-locked since 20261004_01%'
      AND NOT has_table_privilege('anon', 'library.v_laws_enactment_status', 'SELECT') THEN
     RAISE EXCEPTION '_verify: library.v_laws_enactment_status is ungranted — 20260922_01 not applied';
   END IF;
@@ -903,4 +906,133 @@ BEGIN
   END IF;
 
   RAISE NOTICE '_verify: 20260929_01 OK — articles / article_regulations / article_amendments are server-only; service_role reads them';
+END $$;
+
+
+-- ====================================================================
+-- 2026-10-04 — 20261004_01_library_column_lock.sql (owner question ١٦٢)
+-- ====================================================================
+-- library.laws / judicial_collections / principles are column-locked: the
+-- API roles read an explicit allow-list only (no official metadata, no
+-- `metadata`; `fts` stays readable — public searches filter on it), and
+-- v_laws_enactment_status is closed to them. Keyed
+-- on the marker comment on library.laws, so a deploy that runs this file
+-- BEFORE the migration is applied still passes (code first, then migration).
+-- The allow-lists here MUST match the migration's grant lists.
+SELECT '20261004_01 marker on library.laws (library column lock)' AS check,
+       coalesce(obj_description('library.laws'::regclass, 'pg_class'), '')
+         ILIKE '%column-locked since 20261004_01%' AS present;
+
+DO $$
+DECLARE
+  spec    record;
+  r       text;
+  col     text;
+  missing text := '';
+BEGIN
+  IF coalesce(obj_description('library.laws'::regclass, 'pg_class'), '')
+       NOT ILIKE '%column-locked since 20261004_01%' THEN
+    RAISE NOTICE '_verify: 20261004_01 is not applied yet — library.laws / judicial_collections / principles are still readable column-for-column by anon (the pre-lock posture; apply it after the code deploy)';
+    RETURN;
+  END IF;
+
+  FOR spec IN
+    SELECT * FROM (VALUES
+      ('library.laws', ARRAY[
+        'slug', 'title', 'title_en', 'type', 'description', 'section_code', 'section_name',
+        'status', 'total_articles', 'has_merged_regulation',
+        'effective_date_hijri', 'effective_date_gregorian',
+        'supersedes_law_slug', 'instrument_id', 'parent_law_id', 'parent_law', 'enabling_article',
+        'fts', 'created_at', 'updated_at']),
+      ('library.judicial_collections', ARRAY[
+        'id', 'title', 'court', 'year_hijri', 'part', 'source_id', 'series_id', 'track', 'description',
+        'ruling_count', 'free', 'progress', 'created_at', 'updated_at']),
+      ('library.principles', ARRAY[
+        'id', 'collection_id', 'principle_number', 'issuing_body', 'session_date',
+        'decision_number', 'reference', 'text', 'ruling_basis', 'facts', 'reasons', 'ruling',
+        'year_hijri', 'order_index', 'classification_keywords', 'hashtags', 'is_redacted',
+        'fts', 'created_at', 'updated_at'])
+    ) AS v(tbl, allowed)
+  LOOP
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated']
+    LOOP
+      IF has_table_privilege(r, spec.tbl, 'SELECT') THEN
+        missing := missing || format(' %s holds table-level SELECT on %s (was 20260922_01 §3 or the self-host schema re-applied?);', r, spec.tbl);
+      END IF;
+      FOREACH col IN ARRAY spec.allowed
+      LOOP
+        IF NOT has_column_privilege(r, spec.tbl, col, 'SELECT') THEN
+          missing := missing || format(' %s cannot read allowed column %s.%s (the page that shows it now fails);', r, spec.tbl, col);
+        END IF;
+      END LOOP;
+      FOR col IN
+        SELECT att.attname::text
+          FROM pg_attribute att
+         WHERE att.attrelid = spec.tbl::regclass
+           AND att.attnum > 0
+           AND NOT att.attisdropped
+      LOOP
+        IF NOT (col = ANY (spec.allowed)) AND has_column_privilege(r, spec.tbl, col, 'SELECT') THEN
+          missing := missing || format(' %s can read locked column %s.%s;', r, spec.tbl, col);
+        END IF;
+      END LOOP;
+    END LOOP;
+    IF NOT has_table_privilege('service_role', spec.tbl, 'SELECT') THEN
+      missing := missing || format(' service_role cannot SELECT %s (the law page, catalogue and search would fail);', spec.tbl);
+    END IF;
+    IF NOT EXISTS (SELECT 1
+                     FROM pg_policies pol
+                    WHERE pol.schemaname || '.' || pol.tablename = spec.tbl
+                      AND pol.cmd IN ('SELECT', 'ALL')
+                      AND pol.roles && ARRAY['anon', 'public']::name[]) THEN
+      missing := missing || format(' no read policy for anon on %s (every guest read returns 0 rows);', spec.tbl);
+    END IF;
+  END LOOP;
+
+  IF to_regclass('library.v_laws_enactment_status') IS NOT NULL
+     AND (has_any_column_privilege('anon', 'library.v_laws_enactment_status', 'SELECT')
+          OR has_any_column_privilege('authenticated', 'library.v_laws_enactment_status', 'SELECT')) THEN
+    missing := missing || ' an API role can SELECT library.v_laws_enactment_status again;';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the library column lock is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261004_01 OK — laws / judicial_collections / principles column-locked for anon/authenticated (allow-list only); v_laws_enactment_status closed; service_role reads all three';
+END $$;
+
+-- 20261004_02 (two-level chapters) — checked only once the column exists.
+DO $$
+DECLARE
+  missing text := '';
+  r text;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'library' AND table_name = 'chapters' AND column_name = 'level') THEN
+    RAISE NOTICE '_verify: 20261004_02 not applied yet (library.chapters has no level column) — skipped';
+    RETURN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'library' AND table_name = 'chapters' AND column_name = 'parent_chapter_id') THEN
+    missing := missing || ' library.chapters.parent_chapter_id is missing;';
+  END IF;
+  IF EXISTS (SELECT 1 FROM library.chapters WHERE level NOT IN (1, 2)) THEN
+    missing := missing || ' a chapter has a level outside 1..2;';
+  END IF;
+  IF EXISTS (SELECT 1 FROM library.chapters c
+               JOIN library.chapters p ON p.id = c.parent_chapter_id
+              WHERE c.law_slug IS DISTINCT FROM p.law_slug OR p.level <> 1 OR c.level <> 2) THEN
+    missing := missing || ' a parent link crosses laws or does not go level 2 → level 1;';
+  END IF;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF NOT has_column_privilege(r, 'library.chapters', 'level', 'SELECT')
+       OR NOT has_column_privilege(r, 'library.chapters', 'parent_chapter_id', 'SELECT') THEN
+      missing := missing || format(' %s cannot read the chapter level columns;', r);
+    END IF;
+  END LOOP;
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: two-level chapters (20261004_02) —%', missing;
+  END IF;
+  RAISE NOTICE '_verify: 20261004_02 OK — chapter levels valid, parents stay inside their law';
 END $$;

@@ -33,11 +33,14 @@ export async function GET(
     const { offset, limit } = planPrincipleWindow(searchParams);
     const supabase = await createClient();
 
-    // Fetch collection metadata
+    // Fetch collection metadata — the columns the response below reads. Never
+    // `*`: `metadata` (the source front matter, internal review notes
+    // included) is column-locked for the anon key since 20261004_01, so a `*`
+    // select would be refused outright.
     const { data: collection, error: collError } = await supabase
       .schema('library')
       .from('judicial_collections')
-      .select('*')
+      .select('id, title, court, year_hijri, part, source_id, track, description, ruling_count, free')
       .eq('id', slug)
       .maybeSingle();
 

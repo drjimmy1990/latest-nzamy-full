@@ -223,3 +223,29 @@ test("articleNumberValue: null and non-numeric are NaN, never 0", () => {
   assert.equal(articleNumberValue("12"), 12);
   assert.equal(articleNumberValue(3.5), 3.5);
 });
+
+test("20261004_02: level fields pass through and an empty باب returns before its first فصل", () => {
+  const chapters = [
+    { id: "b1", title: "الباب الأول", level: 1 },
+    { id: "f1", title: "الفصل الأول", level: 2, parent_chapter_id: "b1" },
+    { id: "f2", title: "الفصل الثاني", level: 2, parent_chapter_id: "b1" },
+    { id: "b2", title: "الباب الثاني", level: 1 },
+  ];
+  const articles = [
+    { chapter_id: "f1", number: 1 },
+    { chapter_id: "f2", number: 2 },
+    { chapter_id: "b2", number: 3 },
+  ];
+  const out = orderLawChapters(chapters, articles);
+  assert.deepEqual(out.map((c) => [c.title, c.level, c.parentChapterId ?? null, c.articles.length]), [
+    ["الباب الأول", 1, null, 0],
+    ["الفصل الأول", 2, "b1", 1],
+    ["الفصل الثاني", 2, "b1", 1],
+    ["الباب الثاني", 1, null, 1],
+  ]);
+});
+
+test("20261004_02: rows without a level keep today's shape (no id/level keys)", () => {
+  const out = orderLawChapters([{ id: "c1", title: "الفصل" }], [{ chapter_id: "c1", number: 1 }]);
+  assert.deepEqual(Object.keys(out[0]).sort(), ["articles", "title"]);
+});

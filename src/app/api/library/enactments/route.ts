@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getUserTier, TIER_RANK } from "@/lib/access-control";
 import { libraryGate } from "@/lib/library-gate";
 import { TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
@@ -9,6 +9,11 @@ import { splitEnactments, type EnactmentRow } from "@/lib/library/enactmentFeed"
 
 export const dynamic = "force-dynamic";
 
+/**
+ * issuing_instrument, publication_date_hijri and gazette_issue_number are
+ * column-locked for the anon key (migration 20261004_01): the read runs as the
+ * service role and `base()` below masks them for a non-subscriber (T28-22).
+ */
 const ENACTMENT_COLUMNS =
   "slug, title, title_en, status, issuing_instrument, publication_date_hijri, effective_date_hijri, effective_date_gregorian, gazette_issue_number";
 const LIST_LIMIT = 12;
@@ -69,7 +74,8 @@ export async function GET() {
     // the same prefilter and parser as /api/library/monitor.
     const y = todayHijri.year;
     const tokens = hijriYearTokens(y - 1, y + UPCOMING_YEARS_AHEAD);
-    const { data, error } = await supabase
+    const serverOnly = await createServiceClient();
+    const { data, error } = await serverOnly
       .schema("library")
       .from("laws")
       .select(ENACTMENT_COLUMNS)

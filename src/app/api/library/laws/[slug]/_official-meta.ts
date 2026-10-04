@@ -11,9 +11,11 @@
  * widget apply, so one law never shows its decree on one screen and hides it
  * on the next.
  *
- * This is route-level masking: library.laws (and v_laws_enactment_status)
- * stay anon-readable with these columns, by the same owner decision that
- * keeps the catalogue public.
+ * The masking here is the route-level half. Since migration 20261004_01
+ * (owner question ١٦٢) the database holds the other half: these columns of
+ * library.laws (and the preamble) are column-locked for the anon key, and
+ * v_laws_enactment_status is closed to it, so the routes read them with the
+ * service role and mask them here. The rest of the catalogue stays public.
  *
  * Pure, no imports: `node --test` loads it (_official-meta.test.ts).
  */

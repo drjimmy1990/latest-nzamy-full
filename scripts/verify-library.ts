@@ -72,10 +72,12 @@ async function checkTableCount(tableName: string): Promise<number> {
     check(`Table: ${tableName}`, 'warn', 'skipped — server-only table, SUPABASE_SERVICE_ROLE_KEY not set');
     return 0;
   }
+  // Count on the key column: after 20261004_01 the anon key may read only some
+  // columns of laws / judicial_collections / principles, and `*` is refused.
   const { count, error } = await client
     .schema('library')
     .from(tableName)
-    .select('*', { count: 'exact', head: true });
+    .select(tableName === 'laws' ? 'slug' : 'id', { count: 'exact', head: true });
   
   if (error) {
     check(`Table: ${tableName}`, 'fail', `Error: ${error.message}`);

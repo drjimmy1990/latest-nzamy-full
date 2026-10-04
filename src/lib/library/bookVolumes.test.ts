@@ -197,3 +197,12 @@ test("volumesCountLabel: Arabic count agreement, nothing for a single", () => {
   assert.equal(volumesCountLabel(10), "10 مجلدات");
   assert.equal(volumesCountLabel(31), "31 مجلدًا");
 });
+
+test("a book-title search hit keeps the series size the API sent", () => {
+  const cards = toCatalogueCards([
+    { id: "book:elam-1", slug: "elam-1", title: "إعلام الموقعين عن رب العالمين", _isSearchResult: true, searchVolumesLabel: "4 مجلدات" },
+    { id: "blk-9", slug: "kashaf", title: "كشاف القناع — باب الطهارة", _isSearchResult: true },
+  ]);
+  assert.equal(cards[0].volumesLabel, "4 مجلدات");
+  assert.equal(cards[1].volumesLabel, "");
+});

@@ -320,5 +320,10 @@ export function isInternalField(key: string): boolean {
     "extraction_method", "verification_status", "source_images",
     "last_page_extracted", "last_ruling_extracted", "investigator",
   ];
-  return list.includes(key);
+  // editorial_notes and its siblings (editorial_notes_dates, added by the
+  // library 2026-10-03) are internal by contract 1.6 and nothing downstream
+  // reads them — drop them here, whatever the manifest copy lists.
+  // (needs_human_review/review_reason stay readable for the parsers' own
+  // diagnostics; the seeders strip them from every public row.)
+  return list.includes(key) || /^editorial_notes/.test(key);
 }

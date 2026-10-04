@@ -102,8 +102,10 @@ test("every section query has a deterministic primary-key order and reports coun
   // LIMIT with order('id') walks the primary key and timed out on rare terms.
   assert.match(routeSource, /lawQuery\(withHistory\)\.order\('id'\)\.range\(from, from \+ fetchSizeFor\(size\) - 1\)/);
   for (const name of ["precQuery", "orderQuery", "feqhQuery"]) {
-    assert.match(routeSource, new RegExp(`await ${name}\\(\\)\\s*\\.order\\('id'\\)\\s*\\.range\\(from, from \\+ fetchSizeFor\\(size\\) - 1\\)`));
+    // feqh runs its window inside Promise.all beside the book-title lookup.
+    assert.match(routeSource, new RegExp(`(?:await |\\[\\s*)?${name}\\(\\)\\s*\\.order\\('id'\\)\\s*\\.range\\(from, from \\+ fetchSizeFor\\(size\\) - 1\\)`));
   }
+  assert.match(routeSource, /await Promise\.all\(\[\s*feqhQuery\(\)\s*\.order\('id'\)/);
   assert.doesNotMatch(routeSource, /\.range\(from, from \+ size - 1\)/);
   assert.equal((routeSource.match(/requested: fetchSizeFor\(size\)/g) ?? []).length, 4);
   assert.equal((routeSource.match(/\.\.\.sectionCount\(\{/g) ?? []).length, 4);

@@ -33,6 +33,7 @@ import {
   findUnseededPrecedentDetails,
   PRIVATE_PRECEDENT_STORAGE_VERSION,
 } from "./seed-library.live-preflight";
+import { stripInternalContentKeys } from "../src/lib/library/internalContentFields";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types — Imported from parser output shapes
@@ -499,6 +500,70 @@ export function buildArticleOrderByRef(chapters: any[]): Map<any, number> {
   return orderByArticle;
 }
 
+/**
+ * Two-level chapters (owner-approved 2026-10-04): `level` and
+ * `parent_chapter_id` for every chapter row of ONE law.
+ *
+ * The parser links a level-2 chapter to its level-1 heading by source position
+ * (`parent_source_index` = the heading's `source_index`). Chapter UUIDs are
+ * allocated separately (number + occurrence, resolveLawChapterIds), so the map
+ * goes source_index → the RESOLVED id of the chapter at that position, built
+ * for the whole law before any row is linked.
+ *
+ * Never guessed: a level-2 chapter keeps `parent_chapter_id: null` when its
+ * parent_source_index is missing, matches no chapter, matches more than one,
+ * points at itself, or points at a chapter that is not level 1. A level-1
+ * chapter never has a parent. Parse output from before the `level` field
+ * (no `level` key) yields level 1 / null for every chapter.
+ *
+ * @param chapters    the law's parsed chapters, in the order the ids were allocated
+ * @param chapterIds  the resolved chapter UUIDs, index-aligned with `chapters`
+ */
+export function resolveChapterHierarchy(
+  chapters: ReadonlyArray<{ source_index?: unknown; level?: unknown; parent_source_index?: unknown } | null | undefined>,
+  chapterIds: readonly string[],
+): Array<{ level: 1 | 2; parent_chapter_id: string | null }> {
+  if (chapters.length !== chapterIds.length) {
+    throw new Error(`chapter hierarchy: ${chapters.length} chapters but ${chapterIds.length} ids`);
+  }
+  const levels = chapters.map((ch): 1 | 2 => (ch?.level === 2 || ch?.level === "2" ? 2 : 1));
+  // null marks a source position held by more than one chapter: ambiguous.
+  const idBySourceIndex = new Map<number, string | null>();
+  chapters.forEach((ch, ci) => {
+    const at = ch?.source_index;
+    if (typeof at !== "number" || !Number.isInteger(at)) return;
+    idBySourceIndex.set(at, idBySourceIndex.has(at) ? null : chapterIds[ci]);
+  });
+  const levelById = new Map<string, 1 | 2>();
+  chapterIds.forEach((id, ci) => levelById.set(id, levels[ci]));
+
+  return chapters.map((ch, ci) => {
+    const level = levels[ci];
+    if (level !== 2) return { level, parent_chapter_id: null };
+    const parentAt = ch?.parent_source_index;
+    if (typeof parentAt !== "number" || !Number.isInteger(parentAt)) return { level, parent_chapter_id: null };
+    const parentId = idBySourceIndex.get(parentAt) ?? null;
+    if (!parentId || parentId === chapterIds[ci] || levelById.get(parentId) !== 1) {
+      return { level, parent_chapter_id: null };
+    }
+    return { level, parent_chapter_id: parentId };
+  });
+}
+
+/**
+ * Chapter rows in upsert order: every row without a parent first, then the
+ * rows that reference one — stable within each group. batchUpsert writes its
+ * slices one after another (and its split-and-retry keeps that order), so by
+ * the time a level-2 row is sent, its level-1 parent is already committed and
+ * the parent_chapter_id foreign key holds, whatever the batch boundaries.
+ */
+export function orderChapterRowsParentsFirst<T extends { parent_chapter_id?: unknown }>(rows: readonly T[]): T[] {
+  return [
+    ...rows.filter((row) => row.parent_chapter_id == null),
+    ...rows.filter((row) => row.parent_chapter_id != null),
+  ];
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Seed: LAWS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -668,25 +733,19 @@ export async function seedLaws(
       parent_law_id: String(law.parent_law_id || "").trim().substring(0, 100) || null,
       parent_law: String(law.parent_law || "").trim() || null,
       enabling_article: String(law.enabling_article || "").trim() || null,
-      // ب-139: always write the CURRENT value, never conditionally — a file
-      // whose flag was cleared must see needs_human_review flip back to
-      // false on the next reseed, not stay stuck true forever.
-      needs_human_review: Boolean(law.needsHumanReview),
-      // Council review (Codex, 2026-08-22) suggested a CHECK constraint
-      // requiring a non-empty reason whenever the flag is true — but 3 known
-      // live files carry the flag with no review_reason recorded in source
-      // at all. Rather than relax the constraint (losing its real value: a
-      // future seeder bug that sets the flag without ever assigning a
-      // reason), record that gap honestly instead of leaving it null.
-      review_reason: law.needsHumanReview
-        ? String(law.reviewReason || "").trim() || "(بلا سبب مسجَّل بالمصدر — العلم موجود بالفرونت-ماتر بلا review_reason)"
-        : null,
+      // needs_human_review / review_reason are no longer written as columns
+      // (2026-10-04): internal by library contract 1.6, and a column on a
+      // public table is readable with the anon key. The ب-139 audit report
+      // (reviewFlagged, below) reads the source, not the database.
     });
 
     const chapters = (law.chapters || []) as any[];
     const plan = identityPlans.get(law);
     if (!plan) throw new Error(`missing law identity plan: ${lawId}`);
     const articleOrderByRef = buildArticleOrderByRef(chapters);
+    // Built for the whole law first: a level-2 chapter's parent is looked up by
+    // the parent's source position among THIS law's resolved chapter ids.
+    const hierarchy = resolveChapterHierarchy(chapters, plan.chapterIds);
     for (let ci = 0; ci < chapters.length; ci++) {
       const ch = chapters[ci];
       const chapterId = plan.chapterIds[ci];
@@ -696,6 +755,11 @@ export async function seedLaws(
         number: ch.number || 0,
         title: ch.title || "",
         order_index: ch.number || 0,
+        // REQUIRES migration 20261004_02_library_chapter_levels.sql: without
+        // these two columns every chapter upsert fails (unknown column). Always
+        // written — a re-seed must also turn a removed level back into 1/null.
+        level: hierarchy[ci].level,
+        parent_chapter_id: hierarchy[ci].parent_chapter_id,
       });
 
       const articles = (ch.articles || []) as any[];
@@ -796,7 +860,9 @@ export async function seedLaws(
   allStats.push(lawStats);
 
   const chStats: SeedStats = { table: "chapters", inserted: 0, skipped: 0, errors: 0 };
-  await batchUpsert(client, "chapters", uniqueChapterRows, dryRun, chStats, errors, drySeedExporter);
+  // Parents before children so parent_chapter_id's foreign key always holds.
+  // Upsert only — chapters are never deleted here.
+  await batchUpsert(client, "chapters", orderChapterRowsParentsFirst(uniqueChapterRows), dryRun, chStats, errors, drySeedExporter);
   allStats.push(chStats);
 
   const artStats: SeedStats = { table: "articles", inserted: 0, skipped: 0, errors: 0 };
@@ -890,11 +956,10 @@ export async function seedDecrees(
       preamble: dec.preamble || "",
       hashtags: dec.hashtags || [],
       official_url: dec.official_url || "",
-      // ب-139: same convention as lawRows above — always the current value.
-      needs_human_review: Boolean(dec.needsHumanReview),
-      review_reason: dec.needsHumanReview
-        ? String(dec.reviewReason || "").trim() || "(بلا سبب مسجَّل بالمصدر — العلم موجود بالفرونت-ماتر بلا review_reason)"
-        : null,
+      // needs_human_review / review_reason are no longer written as columns
+      // (2026-10-04): internal by library contract 1.6, and a column on a
+      // public table is readable with the anon key. The ب-139 audit report
+      // (reviewFlagged, below) reads the source, not the database.
     });
 
     const arts = (dec.articles || []) as any[];
@@ -1087,7 +1152,9 @@ export async function seedPrecedents(
       // Previously dropped entirely even though parsePrincipleCollection()
       // already returns the full source frontmatter here (see ب-88 sibling
       // finding, 06 §"إصلاحات مصاحبة بالسيدر" item 5).
-      metadata: coll.metadata || {},
+      // Without the internal review/editorial notes: `metadata` is a public
+      // column (2026-10-04 leak, see internalContentFields.ts).
+      metadata: stripInternalContentKeys(coll.metadata || {}),
     });
 
     const principles = (coll.principles || []) as any[];
@@ -1127,19 +1194,10 @@ export async function seedPrecedents(
         // Parser already extracts these from bracketed text (parse-precedents.ts
         // parsePrincipleCollection) — only the seeder was dropping them.
         classification_keywords: pr.classification_keywords || [],
-        // ب-139 (corrected): confirmed by direct read of the 3 known-flagged
-        // source files that `needs_human_review` is a CONTAINER/file-level
-        // frontmatter flag (one per volume), never a per-PRINCIPLE_START or
-        // per-ARTICLE_START JSON key — no source file has ever carried it at
-        // that level. The original per-principle read here (`pr.needs_human_
-        // review`) was always false and is why the seeder dry-run showed 0
-        // flagged precedents despite 3 real flagged files. Fixed: propagate
-        // the collection's own flag to every principle unbundled from it.
-        needs_human_review: Boolean(coll.needs_human_review),
-        review_reason: coll.needs_human_review
-          ? String(coll.review_reason || "").trim() ||
-            "(بلا سبب مسجَّل بالمصدر — العلم موجود بالفرونت-ماتر بلا review_reason)"
-          : null,
+        // needs_human_review / review_reason are no longer written as columns
+        // (2026-10-04): internal by library contract 1.6, and a column on a
+        // public table is readable with the anon key. The ب-139 audit report
+        // (reviewFlagged, below) reads the source, not the database.
       });
 
       const subs = (pr.sub_principles || []) as any[];
@@ -1194,13 +1252,11 @@ export async function seedPrecedents(
       // them (ب-88 sibling finding).
       hashtags: prec.hashtags || [],
       is_redacted: Boolean(prec.is_redacted),
-      metadata: prec.metadata || {},
-      // ب-139: same convention as lawRows/decreeRows above.
-      needs_human_review: Boolean(prec.needs_human_review),
-      review_reason: prec.needs_human_review
-        ? String(prec.review_reason || "").trim() ||
-          "(بلا سبب مسجَّل بالمصدر — العلم موجود بالفرونت-ماتر بلا review_reason)"
-        : null,
+      metadata: stripInternalContentKeys(prec.metadata || {}),
+      // needs_human_review / review_reason are no longer written as columns
+      // (2026-10-04): internal by library contract 1.6, and a column on a
+      // public table is readable with the anon key. The ب-139 audit report
+      // (reviewFlagged, below) reads the source, not the database.
     });
   }
 
@@ -1498,8 +1554,9 @@ export async function seedLibrary(options: {
   const drySeedExporter = options.drySeedJsonlDir
     ? createDrySeedJsonlExporter(options.drySeedJsonlDir, path.resolve(__dirname, ".."))
     : undefined;
-  // ب-139: council-mandated (Codex, 2026-08-22) — needs_human_review is now
-  // written to the database (see the companion migration), but is EXPLICITLY
+  // ب-139: council-mandated (Codex, 2026-08-22) — needs_human_review is
+  // reported here from the source (since 2026-10-04 it is no longer written
+  // to the database: contract 1.6 makes it internal), and EXPLICITLY
   // not used to exclude anything from seeding: an unknown fraction of the
   // 337 flagged files are stale (issue fixed elsewhere without clearing the
   // flag). Printing this report on every run — instead of requiring someone

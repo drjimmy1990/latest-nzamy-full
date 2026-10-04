@@ -284,6 +284,8 @@ export interface CatalogueBook {
   desc?: string;
   /** Set on search hits (passages), which are never grouped. */
   _isSearchResult?: boolean;
+  /** A book-title search hit names its series size (the API's «٤ مجلدات»). */
+  searchVolumesLabel?: string | null;
 }
 
 /**
@@ -305,7 +307,7 @@ export interface CatalogueCard<T extends CatalogueBook> {
  */
 export function toCatalogueCards<T extends CatalogueBook>(books: readonly T[]): CatalogueCard<T>[] {
   if (books.some((b) => b._isSearchResult)) {
-    return books.map((b) => ({ key: b.id, book: b, title: b.title, volumesLabel: "" }));
+    return books.map((b) => ({ key: b.id, book: b, title: b.title, volumesLabel: b.searchVolumesLabel ?? "" }));
   }
   const rows = books.map((b) => ({ id: b.slug, title: b.title, total_volumes: b.volCount ?? null, author: b.author ?? null, book: b }));
   return groupBookVolumes(rows).map((entry): CatalogueCard<T> => {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { libraryGate } from "@/lib/library-gate";
 import { getUserTier, TIER_RANK } from "@/lib/access-control";
 import {
@@ -25,9 +25,16 @@ import {
  * Response: { upcoming, recentlyEffective, latest, today, ordersAvailable }.
  * Every date column in both tables is Hijri TEXT in mixed shapes, so each
  * query is narrowed server-side by year tokens (`like *1448*`, both digit
- * systems) and the rest is parsed and sorted in monitorFeed.ts. PostgREST caps
- * a response at 1,000 rows; every prefilter below returns a few hundred at
- * most (probed 2026-09-28: 71 effective dates ≥ 1447, 288 laws issued ≥ 1447).
+ * systems) and the rest is parsed and sorted in monitorFeed.ts.
+ *
+ * issue_date_hijri / publication_date_hijri are column-locked for the anon key
+ * (migration 20261004_01) — selecting OR filtering on them needs the column —
+ * so the two laws reads run as the service role; maskOfficialDates is the
+ * mask. The orders read stays on the request client.
+ *
+ * PostgREST caps a response at 1,000 rows; every prefilter below returns a
+ * few hundred at most (probed 2026-09-28: 71 effective dates ≥ 1447, 288 laws
+ * issued ≥ 1447).
  */
 
 export const dynamic = "force-dynamic";
@@ -75,14 +82,15 @@ export async function GET() {
     const effectiveTokens = hijriYearTokens(y - 1, y + UPCOMING_YEARS_AHEAD);
     const latestTokens = hijriYearTokens(y - 1, y);
 
+    const serverOnly = await createServiceClient();
     const [effectiveRes, latestLawsRes, ordersRes] = await Promise.all([
-      supabase
+      serverOnly
         .schema("library")
         .from("laws")
         .select(LAW_COLUMNS)
         .or(`${likeYearClauses(["effective_date_hijri"], effectiveTokens)},status.eq.deferred_effective`)
         .limit(1000),
-      supabase
+      serverOnly
         .schema("library")
         .from("laws")
         .select(LAW_COLUMNS)

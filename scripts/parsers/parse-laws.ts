@@ -12,6 +12,8 @@
  * Markers handled:
  *   <!-- ARTICLE_START {JSON} -->  …  <!-- ARTICLE_END -->
  *   <!-- CHAPTER_START {JSON} -->  …  <!-- CHAPTER_END -->
+ *       optional "level": 1|2 (absent → 1); markers stay flat, a level-2
+ *       chapter follows its level-1 heading (see resolveChapterParents)
  *   <!-- REGULATION {JSON} -->
  *   <!-- AMENDMENT  {JSON} -->
  *
@@ -154,6 +156,22 @@ const syntheticWholeDocumentArticles: string[] = [];
  * Codex). Collected and gates the exit code like the other invariants.
  */
 const malformedAnchorFiles: string[] = [];
+/**
+ * Two-level chapters (2026-10-04): a CHAPTER_START whose `level` is not 1/2
+ * (clamped or ignored), and a level-2 chapter with no level-1 chapter before it
+ * in the same part of the file (kept, with no parent — never guessed).
+ * Informational: recorded in the report, does NOT gate the exit code (a markup
+ * slip in one heading must not block the whole library).
+ */
+const chapterLevelDiagnostics: string[] = [];
+/**
+ * `text_availability: official_text_unpublished` documents: the ones whose
+ * notice was kept as `description` instead of a synthetic «الصفحة 1» article,
+ * and the ones whose flag disagrees with what the file holds (anchors present,
+ * or a positive total_articles) — those are parsed exactly as before.
+ * Informational, never gating.
+ */
+const unpublishedTextNotices: string[] = [];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -280,11 +298,31 @@ export interface ParsedArticle {
   instrument?: string;
 }
 
+/** Heading depth of a chapter: 1 = «الباب»/«الفصل», 2 = «الفصل»/«الفرع» under it. */
+export type ChapterLevel = 1 | 2;
+
 export interface ParsedChapter {
   /** Absolute UTF-16 chapter-marker offset in the parsed body; used only for ordering. */
   source_index?: number;
   number: number;
   title: string;
+  /**
+   * Read from the CHAPTER_START marker's own `"level"` (owner-approved
+   * 2026-10-04, «الفصول بمستويين معتمد»). Absent → 1, so every file written
+   * before the library adds the field parses exactly as before plus `level: 1`.
+   * Markers stay FLAT in the source: a level-2 chapter is a sibling marker that
+   * follows its level-1 heading, never nested inside it.
+   */
+  level: ChapterLevel;
+  /**
+   * source_index of the level-1 chapter this level-2 chapter sits under: the
+   * last level-1 chapter before it in the same part of the file (main text, or
+   * one ATTACHED_REGULATION block). Absent for level 1, and absent for a
+   * level-2 chapter with no such heading — reported, never guessed. The key is
+   * only ever set when there is a parent (an explicit `undefined` would make
+   * the parse output differ from a file without levels).
+   */
+  parent_source_index?: number;
   articles: ParsedArticle[];
 }
 
@@ -377,6 +415,15 @@ export interface ParsedLaw {
    */
   needsHumanReview: boolean;
   reviewReason: string;
+  /**
+   * Set only for a document whose frontmatter says
+   * `text_availability: official_text_unpublished` and that carries no
+   * ARTICLE_START at all: its body is a notice («لم يُنشر النص الرسمي…»), not
+   * an article, so it is kept here instead of being wrapped as «الصفحة 1».
+   * seed-library.ts already writes `law.description` to library.laws.description
+   * (an existing column), so no schema change is involved.
+   */
+  description?: string;
 }
 
 export interface LawsParserOutput {
@@ -496,6 +543,129 @@ function extractPreamble(body: string): string {
   return body.slice(0, firstMarker).trim();
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Two-level chapters (owner-approved 2026-10-04)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * The `level` of a CHAPTER_START marker. Absent/null/"" → 1 (every file written
+ * before the field existed). A number or numeric string is truncated and
+ * clamped to 1..2; anything else (text, boolean, object) is ignored → 1. A
+ * value that had to be clamped or ignored comes back with `problem` set so the
+ * caller can report it.
+ */
+export function resolveChapterLevel(raw: unknown): { level: ChapterLevel; problem?: string } {
+  if (raw === undefined || raw === null || (typeof raw === "string" && raw.trim() === "")) {
+    return { level: 1 };
+  }
+  const n = typeof raw === "number"
+    ? raw
+    : typeof raw === "string" && /^\s*[0-9٠-٩]+(\.[0-9]+)?\s*$/.test(raw)
+      ? Number(normalizeDigits(raw.trim()))
+      : NaN;
+  if (!Number.isFinite(n)) {
+    return { level: 1, problem: `level ${JSON.stringify(raw)} is not a number — read as 1` };
+  }
+  const whole = Math.trunc(n);
+  if (whole <= 1) {
+    return whole === 1 && n === 1 ? { level: 1 } : { level: 1, problem: `level ${JSON.stringify(raw)} clamped to 1` };
+  }
+  if (whole >= 2) {
+    return whole === 2 && n === 2 ? { level: 2 } : { level: 2, problem: `level ${JSON.stringify(raw)} clamped to 2` };
+  }
+  return { level: 1 };
+}
+
+/**
+ * Offsets of the part boundaries inside a law file: every
+ * `<!-- ATTACHED_REGULATION {…} -->` and `<!-- ATTACHED_REGULATION_END -->`.
+ *
+ * Measured on the owner corpus (2026-10-04): there is no REGULATION_START or
+ * PART marker anywhere. A regulation that carries its own chapter series is
+ * wrapped in ATTACHED_REGULATION … ATTACHED_REGULATION_END (36 blocks; e.g.
+ * نظام القضاء holds «لائحة التفتيش القضائي» and «اللائحة المنظمة لأعمال أعوان
+ * القضاء», each with its own «الباب الأول/الفصل الأول» series). The inline
+ * `<!-- REGULATION {…} -->` … `<!-- REGULATION_END -->` pairs only wrap
+ * regulation text inside an article and never contain chapters, so they are
+ * not boundaries.
+ */
+export function findChapterPartBoundaries(body: string): number[] {
+  const offsets: number[] = [];
+  // `\b` after REGULATION does not match before `_END` (`_` is a word char),
+  // so the first alternative is the opening marker only.
+  const re = /<!--\s*ATTACHED_REGULATION(?:\b|_END\b)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) offsets.push(m.index);
+  return offsets;
+}
+
+/**
+ * The level-1 parent of every level-2 chapter, by source position.
+ *
+ * A level-2 chapter's parent is the last level-1 chapter before it in the SAME
+ * part: a part ends at every ATTACHED_REGULATION boundary (opening or closing),
+ * so a chapter inside a merged regulation never attaches to a heading of the
+ * main law, and the main law after a regulation block never attaches to a
+ * heading inside it. `number` is never used for identity (it is 0 on thousands
+ * of chapters). A level-2 chapter with no level-1 chapter before it in its
+ * part gets no parent and a `problem` — the caller reports it.
+ *
+ * @param chapters in source order, each with its marker offset
+ * @param boundaries from findChapterPartBoundaries
+ */
+export function resolveChapterParents(
+  chapters: ReadonlyArray<{ source_index?: number; level: ChapterLevel; title: string }>,
+  boundaries: readonly number[],
+): Array<{ parent_source_index?: number; problem?: string }> {
+  const partOf = (index: number) => {
+    let part = 0;
+    for (const b of boundaries) if (b < index) part++;
+    return part;
+  };
+  let lastLevel1: { part: number; source_index: number } | null = null;
+  return chapters.map((chapter) => {
+    if (typeof chapter.source_index !== "number") {
+      return chapter.level === 2
+        ? { problem: `level-2 chapter "${chapter.title}" has no source position — no parent recorded` }
+        : {};
+    }
+    const part = partOf(chapter.source_index);
+    if (chapter.level === 1) {
+      lastLevel1 = { part, source_index: chapter.source_index };
+      return {};
+    }
+    if (lastLevel1 && lastLevel1.part === part && lastLevel1.source_index < chapter.source_index) {
+      return { parent_source_index: lastLevel1.source_index };
+    }
+    return {
+      problem: `level-2 chapter "${chapter.title}" has no level-1 chapter before it in the same part ` +
+        `(${part === 0 ? "main text" : `part ${part} — an ATTACHED_REGULATION boundary precedes it`}) — kept without a parent`,
+    };
+  });
+}
+
+/**
+ * `text_availability: official_text_unpublished` plus no positive
+ * `total_articles`: the document says its official text is not published, so
+ * its body is a notice. Only consulted for a body with NO article anchors at
+ * all (ب-138: a frontmatter count alone once deleted real text — the absence of
+ * any ARTICLE_START is what makes this safe).
+ */
+export function declaresUnpublishedOfficialText(meta: Record<string, unknown>): boolean {
+  if (String(meta.text_availability ?? "").trim() !== "official_text_unpublished") return false;
+  const declared = meta.total_articles;
+  if (declared === undefined || declared === null || String(declared).trim() === "") return true;
+  return Number(declared) === 0;
+}
+
+/** The notice text of an unpublished-text document: comments, blockquote marks and the identity card removed. */
+export function unpublishedNoticeText(body: string): string {
+  const cleaned = body
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/^>\s?/gm, "");
+  return stripIdentityCardBoilerplate(cleaned).trim();
+}
+
 function parseSingleLaw(filePath: string): ParsedLaw | null {
   // Normalise line endings at read time. 1,331 of 1,533 delivered files use
   // CRLF, and JS regex treats \r as a line terminator that `.` will not match —
@@ -583,8 +753,13 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   const hasChapters = chapterRe.test(body);
   chapterRe.lastIndex = 0;
 
+  // Set only for an unpublished-text notice (see declaresUnpublishedOfficialText).
+  let unpublishedNotice = "";
+  let unpublishedHandled = false;
+
   if (!hasChapters) {
     let articles = parseArticlesInBlock(body, "", 0, path.basename(filePath));
+    let keepEmptyChapter = true;
     if (articles.length === 0) {
       const hasArticleStart = /<!--\s*ARTICLE_START\b/.test(body);
       const hasArticleEnd = /<!--\s*ARTICLE_END\s*-->/.test(body);
@@ -595,7 +770,18 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
       // duplicate that content under a second identity instead of leaving
       // the redirect as the pointer it was designed to be.
       const isRedirectStub = meta.note_type === "redirect";
-      if (!hasArticleStart && !hasArticleEnd && !isRedirectStub) {
+      if (!hasArticleStart && !hasArticleEnd && !isRedirectStub && declaresUnpublishedOfficialText(meta)) {
+        // The document states its official text is not published and holds no
+        // article anchor: the body is a notice, not «الصفحة 1». Kept as the
+        // law's description; no article, no empty untitled chapter row.
+        unpublishedNotice = unpublishedNoticeText(body);
+        unpublishedHandled = true;
+        keepEmptyChapter = false;
+        unpublishedTextNotices.push(
+          `${path.basename(filePath)} :: official_text_unpublished — notice kept as description ` +
+            `(${unpublishedNotice.length} chars), no article emitted`,
+        );
+      } else if (!hasArticleStart && !hasArticleEnd && !isRedirectStub) {
         const wrapped = wrapAsWholeDocumentArticle(body, meta);
         const synthetic = parseArticlesInBlock(wrapped, "", 0, path.basename(filePath));
         if (synthetic.length === 1 && hasMeaningfulContent(synthetic[0].text)) {
@@ -606,20 +792,33 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
         malformedAnchorFiles.push(path.basename(filePath));
       }
     }
-    chapters.push({ source_index: 0, number: 0, title: "", articles });
+    if (keepEmptyChapter) chapters.push({ source_index: 0, number: 0, title: "", level: 1, articles });
   } else {
     while ((chapterMatch = chapterRe.exec(body)) !== null) {
       const chapterMeta = safeJsonParse(chapterMatch[1], `chapter in ${slug}`);
       const chapterBody = chapterMatch[2];
       const chapterNum = Number(chapterMeta?.number || chapters.length + 1);
       const chapterTitle = String(chapterMeta?.title || `الباب ${chapterNum}`);
+      const { level, problem } = resolveChapterLevel(chapterMeta?.level);
+      if (problem) {
+        chapterLevelDiagnostics.push(`${path.basename(filePath)} :: chapter "${chapterTitle}" — ${problem}`);
+      }
 
       const chapterBodyOffset = chapterMatch.index + chapterMatch[0].indexOf("-->") + 3;
       const articles = parseArticlesInBlock(
         chapterBody, chapterTitle, chapterNum, path.basename(filePath), chapterBodyOffset,
       );
-      chapters.push({ source_index: chapterMatch.index, number: chapterNum, title: chapterTitle, articles });
+      chapters.push({ source_index: chapterMatch.index, number: chapterNum, title: chapterTitle, level, articles });
     }
+
+    // Level-2 → level-1 links, by source position within one part of the file.
+    // A level-1 chapter with no articles (a pure container heading) is still
+    // emitted above — it is what its level-2 chapters point at.
+    const parents = resolveChapterParents(chapters, findChapterPartBoundaries(body));
+    parents.forEach((link, ci) => {
+      if (link.parent_source_index !== undefined) chapters[ci].parent_source_index = link.parent_source_index;
+      if (link.problem) chapterLevelDiagnostics.push(`${path.basename(filePath)} :: ${link.problem}`);
+    });
   }
 
   // Also parse articles outside chapters (if some articles are outside chapter markers)
@@ -630,11 +829,21 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     outsideBody = outsideBody.replace(chapterBlockRe, "");
     const orphanArticles = parseArticlesInBlock(outsideBody, "__orphan__", -1);
     if (orphanArticles.length > 0) {
-      chapters.push({ number: -1, title: "__orphan__", articles: orphanArticles });
+      chapters.push({ number: -1, title: "__orphan__", level: 1, articles: orphanArticles });
     }
   }
 
   const totalArticles = chapters.reduce((sum, ch) => sum + ch.articles.length, 0);
+
+  // The unpublished flag on a file that is NOT a bare notice (it has article
+  // anchors, chapters, or a positive total_articles) is left to a human: the
+  // file is parsed exactly as before and the disagreement is listed.
+  if (!unpublishedHandled && String(meta.text_availability ?? "").trim() === "official_text_unpublished") {
+    unpublishedTextNotices.push(
+      `${path.basename(filePath)} :: text_availability=official_text_unpublished but ${totalArticles} article(s) ` +
+        `parsed (total_articles=${JSON.stringify(meta.total_articles ?? null)}) — parsed as before, flag needs review`,
+    );
+  }
 
   // ك-03 (2026-08-23): the preamble is the one per-FILE (not per-article) text
   // blob, and never went through either <details> pass — a live-annex block
@@ -804,6 +1013,7 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     supersededBy,
     needsHumanReview,
     reviewReason,
+    ...(unpublishedNotice ? { description: unpublishedNotice } : {}),
   };
 
   // ب-135: measure coverage against the SAME `chapters` this function is
@@ -1302,6 +1512,7 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     frontmatterWarnings, emptyArticles, verifiedEmptyArticles,
     orphanRegulationAnchors, supersededDuplicateSkipped, gateZeroExcluded,
     lowCoverageFiles, syntheticWholeDocumentArticles, malformedAnchorFiles,
+    chapterLevelDiagnostics, unpublishedTextNotices,
   ]) bucket.length = 0;
   for (const version of Object.keys(schemaVersionCounts)) delete schemaVersionCounts[version];
 
@@ -1711,6 +1922,14 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     "🛑 malformed ARTICLE_START/END (unmatched — not a genuine zero-anchor document)",
     malformedAnchorFiles,
   );
+  printCapped(
+    "⚠️  chapter level problem(s) — level clamped/ignored, or a level-2 chapter with no level-1 heading before it (kept, no parent)",
+    chapterLevelDiagnostics,
+  );
+  printCapped(
+    "ℹ️  official_text_unpublished document(s) — notice kept as description, or flag disagreeing with the file",
+    unpublishedTextNotices,
+  );
 
   if (failed.length > 0) {
     console.error(`\n🛑 ${failed.length} file(s) failed to parse and are MISSING from the output.`);
@@ -1750,6 +1969,8 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         corpusScopeBlocked: corpusScopeDecisions.filter(d => d.corpus_scope === "pending_review" || d.corpus_scope === "mixed_requires_separation").length,
         corpusScopeInstitutional: corpusScopeDecisions.filter(d => d.corpus_scope === "institutional_reference").length,
         lowCoverageFiles: lowCoverageFiles.length,
+        chapterLevelDiagnostics: chapterLevelDiagnostics.length,
+        unpublishedTextNotices: unpublishedTextNotices.length,
       },
       excluded: excludedList,
       frontmatterWarnings,
@@ -1768,6 +1989,8 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         lowCoverageFiles,
         unverifiedSupersededTags,
         unverifiedEntityCollisions,
+        chapterLevelDiagnostics,
+        unpublishedTextNotices,
       },
       identityCollisions: collisions.map((c) => ({ key: c.slug, members: c.sources })),
       failed: failed.map((f) => `${f.file}: ${f.error}`),

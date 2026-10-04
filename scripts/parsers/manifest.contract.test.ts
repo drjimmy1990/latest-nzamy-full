@@ -24,3 +24,20 @@ test("ambiguous raw types cannot regain a blanket normalization", () => {
   const bytes = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   assert.equal(bytes.manifest_version, "1.18");
 });
+
+test("editorial notes never leave the parser; review flags stay for diagnostics", async () => {
+  const { filterMeta } = await import("./manifest.ts");
+  const out = filterMeta({
+    title: "نظام",
+    editorial_notes: [{ note: "داخلي" }],
+    editorial_notes_dates: ["ملاحظة تاريخ"],
+    needs_human_review: true,
+    review_reason: "سبب",
+  });
+  assert.equal("editorial_notes" in out, false);
+  assert.equal("editorial_notes_dates" in out, false);
+  assert.equal(out.title, "نظام");
+  // read by the parsers, then stripped from every public row by the seeders
+  assert.equal(out.needs_human_review, true);
+  assert.equal(out.review_reason, "سبب");
+});

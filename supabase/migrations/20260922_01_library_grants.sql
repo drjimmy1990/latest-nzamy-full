@@ -9,6 +9,14 @@
 --   public anon key again), and §3 re-grants SELECT on articles and
 --   article_amendments. _verify.sql raises when that happens. Applied on
 --   production 2026-09-22; this note is the only change since.
+-- ⚠️ NOR AFTER 20261004_01_library_column_lock.sql.
+--   20261004_01 (owner question ١٦٢) column-locks library.laws,
+--   judicial_collections and principles: anon/authenticated read an explicit
+--   column allow-list only, and library.v_laws_enactment_status is closed to
+--   them. §3's catch-all below re-grants TABLE-level SELECT on all of them —
+--   every law's decree, gazette reference and preamble, and every collection's
+--   internal `metadata`, readable with the public anon key again — and §2
+--   re-opens the view. _verify.sql raises when that happens.
 -- =============================================================================
 -- PURPOSE
 --   Every law page on the site serves ZERO articles right now. The law-detail
