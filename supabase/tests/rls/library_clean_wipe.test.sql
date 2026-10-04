@@ -97,3 +97,22 @@ begin
   raise notice 'T5 ok — an outside foreign key blocks the wipe instead of being cascaded';
 end $$;
 drop table library.wipe_probe;
+
+-- T6 the file AS WRITTEN (the `set local` confirm line still commented out) wipes
+-- nothing: the whole file is run again — like Run in Studio with no selection —
+-- with the confirmation cleared. /tmp/mig17.sql is the one-time file: it is the
+-- 17th file of the chain above (15 migrations, the fixture, the wipe).
+-- Its expected output: ERROR "library clean wipe: NOT confirmed", then
+-- "current transaction is aborted" for the statements after it, and ROLLBACK.
+set nzamy.confirm_wipe = '';
+\set ON_ERROR_STOP off
+\i /tmp/mig17.sql
+\set ON_ERROR_STOP on
+reset nzamy.confirm_wipe;
+do $$
+begin
+  if (select count(*) from library.laws) <> 1 or (select count(*) from library.articles) <> 1 then
+    raise exception 'T6: the unconfirmed file emptied the library';
+  end if;
+  raise notice 'T6 ok — the file as written (confirm line commented out) wiped nothing';
+end $$;

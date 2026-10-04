@@ -3,6 +3,11 @@
 -- supabase/one-time/2026-10-04_library_clean_wipe.sql in the chain of
 -- library_clean_wipe.test.sql (which documents the full command).
 
+-- Stands in for the team removing the dashes before `set local nzamy.confirm_wipe`
+-- in block 2: every later connection (each file of the chain) starts confirmed.
+-- T6 of the test resets it and proves the file as written wipes nothing.
+alter database postgres set nzamy.confirm_wipe = 'auth.nezamy.sa';
+
 insert into auth.users (id) values ('00000000-0000-4000-8000-0000000000aa');
 
 insert into library.laws (slug, title, type, section_code)

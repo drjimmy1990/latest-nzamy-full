@@ -36,6 +36,17 @@ test("rows deleted on purpose coming back → resurrected → needs-team", () =>
   assert.deepEqual(diffKeys("laws", set("a", "new-law"), set("a")).resurrected, []);
 });
 
+test("after the clean wipe (live table empty) → adds-only, loaded 0; deleted junk still stops it", () => {
+  // guide section ٨: the owner re-runs the diff after «تم المسح» and loads only on this verdict
+  const d = diffKeys("articles", set("law__art-1", "law__art-2"), set());
+  assert.equal(d.loaded, 0);
+  assert.equal(d.added, 2);
+  assert.equal(d.leftBehind, 0);
+  assert.equal(diffVerdict([d]), "adds-only");
+  const junk = diffKeys("laws", set("a", "2024-incometax-decisions-al-hkwmh"), set());
+  assert.equal(diffVerdict([d, junk]), "needs-team");
+});
+
 test("the same name in NFD vs NFC is flagged as a Unicode twin", () => {
   const nfc = "مسائل".normalize("NFC") + " " + "ئ"; // ئ composed
   const nfd = nfc.normalize("NFD");

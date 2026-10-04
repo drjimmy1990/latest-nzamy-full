@@ -5,7 +5,8 @@
 -- دليل_المالك_تحميل_المكتبة_٢٠٢٦-١٠-٠٤.md (he dry-runs, we wipe, he loads at once).
 -- Tested on a throwaway Postgres: supabase/tests/rls/library_clean_wipe.test.sql
 -- (the 14 tables empty; user tables, grants, column lock, chapter levels kept;
--- reload inserts cleanly; an outside foreign key blocks the TRUNCATE).
+-- reload inserts cleanly; an outside foreign key blocks the TRUNCATE; the file
+-- as written — confirm line still commented out — wipes nothing).
 --
 -- library-toolkit/library-clear.mjs is NOT the tool for this: it stays disabled
 -- (it deletes over HTTP one table per request, falls back to old cloud keys in
@@ -34,10 +35,17 @@
 --   1. the new rows folder is ready, and
 --        node scripts/seed-library-from-owner.mjs --rows <dir>
 --      (dry run) ended with "DRY RUN — no writes. All rows parsed cleanly.";
---   2. the files the team deleted on purpose are out of the source, or the
---      reload brings them back: run
+--   2. the diff report (<dir>/rows-diff-report.json, from
 --        node scripts/library-rows-diff.mjs --rows <dir>
---      and read its "↺ deleted on purpose" lines (any → fix the source first).
+--      — its verdict is "needs-team" here, expected: the wipe removes what is
+--      left behind) shows:
+--        - "missing_files": []  — all 14 tables have a file; a missing one
+--          would be emptied by the wipe and never refilled;
+--        - per table, "incoming" close to "loaded" (= block 1's count), above
+--          all laws and articles — a much smaller file means a partial parse
+--          (e.g. the laws parse stopped on the corpus-scope files, Q١٠٥);
+--        - no "resurrected" keys (the console's "↺ deleted on purpose" lines):
+--          any → take those files out of the source first.
 --   3. a way back: the previous rows folder (production was loaded from the
 --      owner's 2026-09-20 rows, minus the two junk laws), and optionally a
 --      database dump on the server:
@@ -54,11 +62,20 @@
 --      (Dump → wipe → restore round trip tested 2026-10-04 on postgres:16: every
 --      content row back, parent chapters intact, user tables untouched, 0 errors.)
 --
--- AFTER block 3, load at once:
+-- AFTER block 3, whoever loads (the owner, guide section ٨), at once:
+--   node scripts/library-rows-diff.mjs --rows <dir>        # expect ✅ ADDS AND UPDATES ONLY, loaded 0 everywhere
 --   node scripts/seed-library-from-owner.mjs --rows <dir> --apply --confirm-host auth.nezamy.sa
 --   node scripts/library-rows-diff.mjs --rows <dir>        # expect ✅ CLEAN
--- then block 4 here, then purge the page cache on the app server:
---   find /www/server/nginx/proxy_cache_dir -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+-- then block 4 here, then on the app server:
+--   bash deploy.sh
+-- A rebuild, not only an nginx purge: /api/library/stats keeps its counts ~24h
+-- in the build folder's data cache (a visitor during the empty window can pin
+-- zeros), and /sitemap.xml is rendered at build time with the law slugs of
+-- that moment. deploy.sh builds into a fresh folder, reloads pm2 and purges
+-- the nginx cache.
+--
+-- IF STUDIO THEN SAYS "current transaction is aborted": run   rollback;
+-- (an error inside block 2 leaves its transaction open on that connection).
 -- ════════════════════════════════════════════════════════════════════════════
 
 -- 1) PREVIEW — what is there now (run alone).
@@ -82,7 +99,19 @@ union all select '(kept) issue_reports', count(*) from library.issue_reports
 union all select '(kept) invitations', count(*) from library.invitations;
 
 -- 2) WIPE — one transaction; rolls back unless all 14 are empty afterwards.
+--    It wipes NOTHING until you remove the two dashes at the start of the
+--    `set local` line below, so pasting the whole file and pressing Run (to
+--    look at block 1) cannot empty the library by accident.
 begin;
+
+-- set local nzamy.confirm_wipe = 'auth.nezamy.sa';
+
+do $$
+begin
+  if coalesce(current_setting('nzamy.confirm_wipe', true), '') <> 'auth.nezamy.sa' then
+    raise exception 'library clean wipe: NOT confirmed — nothing was emptied. Remove the two dashes before "set local nzamy.confirm_wipe" in block 2, then run block 2 alone.';
+  end if;
+end $$;
 
 truncate table
   library.article_amendments,
