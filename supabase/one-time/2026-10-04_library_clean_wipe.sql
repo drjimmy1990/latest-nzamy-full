@@ -41,9 +41,18 @@
 --      left behind) shows:
 --        - "missing_files": []  — all 14 tables have a file; a missing one
 --          would be emptied by the wipe and never refilled;
---        - per table, "incoming" close to "loaded" (= block 1's count), above
---          all laws and articles — a much smaller file means a partial parse
---          (e.g. the laws parse stopped on the corpus-scope files, Q١٠٥);
+--        - per table, "incoming" close to that export's REFERENCE counts — a
+--          table far below its reference means a partial parse; stop. NOT
+--          "close to loaded": the 2026-10-03 export legitimately shrinks laws
+--          5,899 → 4,399 (1,175 moved to decrees, 335 duplicates dropped).
+--          Reference for the 2026-10-03 export (rehearsal 2026-10-05; small
+--          differences are fine if the owner edited after 3 Oct):
+--            laws 4,399 · chapters 12,097 · articles 94,199
+--            article_amendments 6,524 · article_regulations 15,685
+--            decrees_circulars 4,398 · decree_pages 12,256
+--            judicial_collections 216 · principles 19,604 · principle_paragraphs 1,443
+--            feqh_books 189 · feqh_chapters 96,960 · feqh_sections 140,586 · feqh_blocks 210,724
+--          (also in إصلاحات_المكتبة_للمالك_٢٠٢٦-١٠-٠٥.md, section ٤);
 --        - no "resurrected" keys (the console's "↺ deleted on purpose" lines):
 --          any → take those files out of the source first.
 --   3. a way back: the previous rows folder (production was loaded from the

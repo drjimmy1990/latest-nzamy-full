@@ -433,5 +433,15 @@ Still team-only: the first load of the 10-03 export (984 moves, ~200 renames →
   - dry seed 0 errors / 0 blocking;
   - loader `--dry` clean;
   - the tool's `--apply` byte-identical to the hand edits;
-  - live diff = needs-team (laws 5,899 → 4,399; +1,876 / 2,523 kept / 3,376 left — explicit clean slugs replaced filename-derived ones; articles 57,580 left), 0 resurrected, 0 twins, `missing_files` [] → clean reload (guide §٨); ~3,376 old law URLs need redirects (Q ١٦٦).
+  - live diff = needs-team (laws 5,899 → 4,399: +1,876 / 2,523 kept / 3,376 left; articles 57,580 left), 0 resurrected, 0 twins, `missing_files` [] → clean reload (guide §٨).
+- **The 3,376 left-behind law slugs, bucketed** (the parser's own slug rule, applied to the full front matter of every export file):
+  - 1,175 moved to أوامر وتعاميم (his 1,162 moves);
+  - 1,488 same document under a new slug (an explicit `slug:` replaced the filename-derived one, or a rename that kept the title);
+  - 335 now tagged duplicates (dropped on purpose);
+  - 376 renamed with a new title, or removed;
+  - 2 other.
+
+  Redirects (Q ١٦٦): the moves → his transition maps; the 1,488 can be mapped old→new automatically; the 376 need review.
+- **Reference row counts of the 10-03 export** (rehearsal `new` column), the pre-wipe yardstick instead of "close to loaded": laws 4,399 · chapters 12,097 · articles 94,199 · article_amendments 6,524 · article_regulations 15,685 · decrees_circulars 4,398 · decree_pages 12,256 · judicial_collections 216 · principles 19,604 · principle_paragraphs 1,443 · feqh_books 189 · feqh_chapters 96,960 · feqh_sections 140,586 · feqh_blocks 210,724. (Correction: commit 13efa67's message says the 3,376 all got new explicit slugs; the buckets above are the measured split.)
+- The 11 parser tests are local-only: CI runs `test:unit` (`src/**`).
 - 9 parser tests fail locally with missing-file errors (owner Mac paths, `PRECEDENTS_1436_SOURCE`, the developer bundle) — environment, not this change; the other 99 pass.
