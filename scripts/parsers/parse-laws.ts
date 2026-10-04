@@ -38,7 +38,7 @@ import {
   clearRejectedEnumValues,
 } from "./manifest";
 import { parseFrontmatter } from "./lib/frontmatter";
-import { slugifyArabic as sharedSlugify, findSlugCollisions } from "./lib/slug";
+import { slugifyArabic as sharedSlugify, findSlugCollisions, nameForId } from "./lib/slug";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { buildEntityIndexFromCategoryInput, resolveCrossDomain } from "./lib/entity-prescan";
 import { extractArticleHistory, stripDetails, stripArticleHeading, unwrapLiveAnnexes } from "./lib/article-history";
@@ -735,7 +735,7 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   schemaVersionCounts[schemaVersionKey] = (schemaVersionCounts[schemaVersionKey] || 0) + 1;
   const variant = detectVariant(body, meta);
 
-  const fileBaseName = path.basename(filePath, ".md");
+  const fileBaseName = nameForId(path.basename(filePath, ".md"));
   const rawSlug = (meta.slug as string) || fileBaseName;
   // Normalize slugs: if slug contains spaces or Arabic chars, run it through slugifyArabic
   // to produce a URL-safe slug. PostgREST breaks with spaces in PK values.

@@ -23,7 +23,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { slugifyArabic as sharedSlugify } from "./lib/slug";
+import { slugifyArabic as sharedSlugify, nameForId } from "./lib/slug";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
@@ -305,7 +305,7 @@ function detectHeadingLevel(line: string): { level: HeadingLevel; title: string 
 
 function parseSingleBook(filePath: string): ParsedFeqhBook | null {
   const raw = fs.readFileSync(filePath, "utf-8");
-  const fileId = path.basename(filePath, ".md");
+  const fileId = nameForId(path.basename(filePath, ".md"));
 
   console.log(`  📖 Parsing feqh book: ${fileId}`);
 
