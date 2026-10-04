@@ -1,12 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import {
-  Stack, BookOpen, Scroll, CalendarBlank, Buildings, Tag, FolderSimple, Lock, Crown
+  Stack, BookOpen, Scroll, CalendarBlank, Buildings, Tag, FolderSimple, Lock, Crown, CaretDown
 } from "@phosphor-icons/react";
 import type { LawSystem, LawArticle } from "../data";
 import { lawStatusPresentation } from "../law-status";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { gazetteIssueLabel, urlHostname, type LawOfficialMeta } from "./_official-meta";
+import { buildChapterTree } from "./_chapter-tree";
+import { jumpToReaderAnchor } from "./_reader-anchors";
 
 // ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx — يحافظ على
 // سلوك عرض الشارة/الاسم المدموج بلا تغيير، بمصدر بيانات جديد فقط.
@@ -39,6 +42,13 @@ interface SidebarPanelProps {
   viewMode?: "all" | "law" | "regulation";
   /** T28-22/26: lock flag, official URL and Umm al-Qura issue from the detail API. */
   officialMeta?: LawOfficialMeta;
+  /**
+   * Set while the reader shows the flat «التشريعات الفرعية» view: the DOM id
+   * of the regulation card a نظام article's entry jumps to (that view renders
+   * no نظام article, so its id is not on the page). Entries without a card in
+   * the current view are not listed. See _reader-anchors.ts.
+   */
+  regulationAnchorFor?: (articleId: string) => string | undefined;
 }
 
 export default function SidebarPanel({
@@ -60,8 +70,28 @@ export default function SidebarPanel({
   mode = "all",
   viewMode = "all",
   officialMeta,
+  regulationAnchorFor,
 }: SidebarPanelProps) {
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
+  // Two-level contents: level-1 groups the reader has folded (by chapter id).
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleGroup = (key: string) =>
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  /**
+   * Jump to an article (or to the element standing in for it) — the heading
+   * lands just below the fixed bar (scroll-margin on the target, block:start).
+   */
+  const jumpTo = (articleId: string, anchorId?: string) => {
+    jumpToReaderAnchor(isScrolling, anchorId ?? articleId);
+    setActiveId(articleId);
+  };
+  const tocTitle = (title: string) => title.replace("الباب الأول: ", "").replace("الفصل الثاني: ", "");
   // T28-22: for a non-subscriber the API withholds the issuance data. The
   // hand-written law-metadata-map still carries a decree for a few dozen laws
   // (lawMeta.issuanceDecree / regulation_decree / latestAmendmentDecree), so
@@ -72,6 +102,9 @@ export default function SidebarPanel({
   const border = isDark ? "border-white/[0.07]" : "border-slate-200";
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
   const textStart = isRTL ? "text-right" : "text-left";
+  // `0 && …` would print a literal 0 for a law with no articles (an unpublished-text
+  // notice, 2026-10-04) — render the row only for a positive count.
+  const articleCount = Number(lawMeta.total_articles) || law.chapters?.flatMap(c => c.articles).length || 0;
 
   const renderLawStatus = () => {
     const status = lawStatusPresentation(law.law_status);
@@ -303,10 +336,10 @@ export default function SidebarPanel({
                   </div>
                 )}
 
-                {(lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length) && (
+                {articleCount > 0 && (
                   <div className="flex items-center justify-between text-[9px] mt-1">
                     <span className={muted}>{isRTL ? "عدد مواد النظام" : "Law Articles"}</span>
-                    <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length}</span>
+                    <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{articleCount}</span>
                   </div>
                 )}
               </div>
@@ -347,10 +380,10 @@ export default function SidebarPanel({
                   </div>
                 </div>
               )}
-              {(lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length) && (
+              {articleCount > 0 && (
                 <div className="flex items-center justify-between text-[9px]">
                   <span className={muted}>{isRTL ? "عدد المواد" : "Articles"}</span>
-                  <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length}</span>
+                  <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{articleCount}</span>
                 </div>
               )}
             </>
@@ -488,10 +521,7 @@ export default function SidebarPanel({
             onKeyDown={e => {
               if (e.key === "Enter" && filteredArticles?.length) {
                 const a = filteredArticles[0];
-                isScrolling.current = true;
-                setActiveId(a.id);
-                document.getElementById(a.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                setTimeout(() => { isScrolling.current = false; }, 1000);
+                jumpTo(a.id, regulationAnchorFor?.(a.id));
                 setJumpQuery("");
               }
             }}
@@ -513,7 +543,10 @@ export default function SidebarPanel({
             (() => {
               const regArticles = law.chapters
                 .flatMap(ch => ch.articles)
-                .filter(a => a.regulations && a.regulations.length > 0);
+                .filter(a => a.regulations && a.regulations.length > 0)
+                // Flat view: only entries that have a card on the page (the
+                // instrument filter can hide the rest), so every click lands.
+                .filter(a => !regulationAnchorFor || !!regulationAnchorFor(a.id));
               const visibleRegArts = filteredArticles
                 ? regArticles.filter(a => filteredArticles.some(f => f.id === a.id))
                 : regArticles;
@@ -528,10 +561,9 @@ export default function SidebarPanel({
                   <button
                     key={a.id}
                     onClick={() => {
-                      isScrolling.current = true;
-                      setActiveId(a.id);
-                      document.getElementById(a.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                      setTimeout(() => { isScrolling.current = false; }, 1000);
+                      // The flat view renders regulation cards, not this نظام
+                      // article: jump to its first card (_reader-anchors.ts).
+                      jumpTo(a.id, regulationAnchorFor?.(a.id));
                       setJumpQuery("");
                     }}
                     className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] transition ${
@@ -559,10 +591,7 @@ export default function SidebarPanel({
               <button
                 key={a.id}
                 onClick={() => {
-                  isScrolling.current = true;
-                  setActiveId(a.id);
-                  document.getElementById(a.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                  setTimeout(() => { isScrolling.current = false; }, 1000);
+                  jumpTo(a.id, regulationAnchorFor?.(a.id));
                   setJumpQuery("");
                 }}
                 className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition ${
@@ -578,38 +607,82 @@ export default function SidebarPanel({
               </button>
             ))
           ) : (
-            /* وضع عادي — شجرة الأبواب */
-            law.chapters.map((ch, ci) => (
-              <div key={ci}>
-                <p className={`text-[9px] font-bold px-2 py-1 ${muted}`}>{ch.title.replace("الباب الأول: ", "").replace("الفصل الثاني: ", "")}</p>
-                {ch.articles.map(a => (
+            /* وضع عادي — شجرة الأبواب. Two-level chapters (2026-10-04): a
+               level-1 heading groups the level-2 chapters under it; with no
+               level data every node is a plain chapter, rendered exactly as
+               before (_chapter-tree.ts). */
+            buildChapterTree(law.chapters).map((node) => {
+              const renderArticleEntry = (a: LawArticle) => (
+                <button
+                  key={a.id}
+                  onClick={() => jumpTo(a.id)}
+                  className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition ${
+                    activeId === a.id
+                      ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
+                      : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                  } ${a.status === "repealed" ? "line-through opacity-50" : ""}`}
+                >
+                  {!a.free && <Lock size={9} className="flex-shrink-0" />}
+                  <span className="truncate flex-1">{a.num}</span>
+                  {!!(a.regulations && a.regulations.length > 0) && (
+                    <span title={isRTL ? "يحتوي لائحة تنفيذية" : "Has executive regulation"}
+                      className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${
+                        activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-500" : "text-slate-400"
+                      }`}>ل</span>
+                  )}
+                  {cartMap.has(a.id) && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
+                </button>
+              );
+
+              if (node.children.length === 0) {
+                const ch = node.chapter;
+                return (
+                  <div key={node.index}>
+                    <p className={`text-[9px] font-bold px-2 py-1 ${muted}`}>{tocTitle(ch.title)}</p>
+                    {ch.articles.map(renderArticleEntry)}
+                  </div>
+                );
+              }
+
+              const groupKey = node.chapter.id || `#${node.index}`;
+              const collapsed = collapsedGroups.has(groupKey);
+              return (
+                <div key={node.index}>
                   <button
-                    key={a.id}
-                    onClick={() => {
-                      isScrolling.current = true;
-                      setActiveId(a.id);
-                      document.getElementById(a.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                      setTimeout(() => { isScrolling.current = false; }, 1000);
+                    type="button"
+                    aria-expanded={!collapsed}
+                    onClick={(e) => {
+                      // Folding is not navigation: keep the phone index sheet open.
+                      e.stopPropagation();
+                      toggleGroup(groupKey);
                     }}
-                    className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition ${
-                      activeId === a.id
-                        ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
-                        : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
-                    } ${a.status === "repealed" ? "line-through opacity-50" : ""}`}
+                    className={`w-full ${textStart} flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black transition ${
+                      isDark ? "text-zinc-300 hover:bg-white/[0.04]" : "text-slate-600 hover:bg-slate-50"
+                    }`}
                   >
-                    {!a.free && <Lock size={9} className="flex-shrink-0" />}
-                    <span className="truncate flex-1">{a.num}</span>
-                    {!!(a.regulations && a.regulations.length > 0) && (
-                      <span title={isRTL ? "يحتوي لائحة تنفيذية" : "Has executive regulation"}
-                        className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${
-                          activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-500" : "text-slate-400"
-                        }`}>ل</span>
-                    )}
-                    {cartMap.has(a.id) && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
+                    <CaretDown
+                      size={9}
+                      weight="bold"
+                      className={`flex-shrink-0 transition-transform ${collapsed ? (isRTL ? "rotate-90" : "-rotate-90") : ""}`}
+                    />
+                    <span className="truncate flex-1">{tocTitle(node.chapter.title)}</span>
                   </button>
-                ))}
-              </div>
-            ))
+                  {!collapsed && (
+                    <>
+                      {node.chapter.articles.map(renderArticleEntry)}
+                      <div className={`ms-2 ps-1.5 border-s ${isDark ? "border-white/[0.06]" : "border-slate-200"}`}>
+                        {node.children.map((child) => (
+                          <div key={child.index}>
+                            <p className={`text-[9px] font-bold px-2 py-1 ${muted}`}>{tocTitle(child.chapter.title)}</p>
+                            {child.chapter.articles.map(renderArticleEntry)}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       </div>

@@ -40,7 +40,7 @@
  *      node --test "src/app/laws/[slug]/_citation.test.ts"
  */
 
-import { articleDisplayLabel, cleanNumberText } from "../../api/library/laws/[slug]/_article-label.ts";
+import { articleDisplayLabel, cleanNumberText, leadingOrdinal } from "../../api/library/laws/[slug]/_article-label.ts";
 
 /**
  * Nouns that legitimately introduce a citable legal locator.
@@ -161,7 +161,13 @@ export function usableLocator(value: string | null | undefined): string {
   const cleaned = cleanNumberText(value);
   if (!cleaned) return "";
   if (isPageLocator(cleaned)) return cleaned;
-  return articleDisplayLabel(cleaned, 1) === cleaned ? cleaned : "";
+  if (articleDisplayLabel(cleaned, 1) !== cleaned) return "";
+  // A long heading that opens with an item ordinal («ثالثًا- الأمانة العامة
+  // للغرف…», accepted as a locator since 2026-10-04) is cited by the ordinal
+  // alone — «المادة (ثالثًا)», as a bare «ثالثاً» always was — never with the
+  // whole heading inside the parentheses.
+  const ordinal = cleaned.length > 60 ? leadingOrdinal(cleaned) : null;
+  return ordinal ?? cleaned;
 }
 
 /**

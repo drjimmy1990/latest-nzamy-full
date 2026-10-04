@@ -15,6 +15,7 @@ import { useUser } from "@/hooks/useUser";
 import { isSupabaseMode } from "@/lib/services/api";
 import { getPreferences } from "@/lib/services/preferencesService";
 import { EMPTY_READING_ACTIVITY, type ReadingActivity } from "@/lib/services/readingActivityStats";
+import { useNoSessionCookie } from "./useNoSessionCookie";
 
 // ── guest (local) read ──────────────────────────────────────────────────────
 function loadLocalActivity(): ReadingActivity {
@@ -33,9 +34,12 @@ function useReadingActivity(): { data: ReadingActivity | null; ready: boolean } 
   const { isLoggedIn, loading: authLoading } = useUser();
   const [data, setData]   = useState<ReadingActivity | null>(null);
   const [ready, setReady] = useState(false);
+  // No session cookie: a guest for certain, no need to wait on useUser (sessionCookie.ts).
+  const noSessionCookie = useNoSessionCookie();
+  const authPending = authLoading && !noSessionCookie;
 
   useEffect(() => {
-    if (authLoading) return; // wait for the session to settle before deciding guest vs. signed-in
+    if (authPending) return; // wait for the session to settle before deciding guest vs. signed-in
     let cancelled = false;
     if (isLoggedIn && isSupabaseMode) {
       getPreferences().then(prefs => {
@@ -48,7 +52,7 @@ function useReadingActivity(): { data: ReadingActivity | null; ready: boolean } 
       setReady(true);
     }
     return () => { cancelled = true; };
-  }, [isLoggedIn, authLoading]);
+  }, [isLoggedIn, authPending]);
 
   return { data, ready };
 }

@@ -21,6 +21,7 @@ import { type SearchSection, SECTION_DEGRADED_NOTICE, SEARCH_SECTION_LABELS_AR }
 import { articleStatusNotice } from "../data";
 import { isRepealedLawStatus } from "../law-status";
 import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
+import { ResultsSkeleton } from "./ResultsSkeleton";
 import {
   PrincipleCard,
   PrincipleRow,
@@ -85,6 +86,10 @@ interface LawsTabContentProps {
   librarySubscribed?: boolean;
   // T28-22: بيانات الإصدار الرسمية محجوبة عن غير المشترك (علم من /api/library/init)
   officialMetaLocked?: boolean;
+  // طلب البحث لم يكتمل بعد: هياكل نابضة بدل البطاقات وبدل «لا توجد نتائج»
+  resultsPending?: boolean;
+  // فشل طلب البحث: رسالة الخطأ تُعرض فوق؛ لا «لا توجد نتائج» تحتها
+  searchFailed?: boolean;
 }
 
 export function LawsTabContent({
@@ -115,11 +120,21 @@ export function LawsTabContent({
   setDocSubType,
   librarySubscribed = false,
   officialMetaLocked = false,
+  resultsPending = false,
+  searchFailed = false,
 }: LawsTabContentProps) {
   const router = useRouter();
   const [expandedDesc, setExpandedDesc] = useState<Record<string, boolean>>({});
   const { can } = useSubscription();
   const hasLibraryAccess = can("library-full-access");
+
+  if (resultsPending) {
+    return (
+      <motion.div key="laws-section-pending" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} label="جارٍ البحث" />
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -156,14 +171,45 @@ export function LawsTabContent({
                 const searchArticleStatusNotice = sys._isSearchResult && sys.articleStatus === "status_undeclared"
                   ? articleStatusNotice(sys.articleStatus, isRTL)
                   : null;
-                // T28-23: the LAW's own status (catalogue rows only — a search
-                // hit is an article and carries no law status).
-                const isRepealedLaw = !sys._isSearchResult && isRepealedLawStatus(sys.status);
+                // T28-23: the LAW's own status. A catalogue row carries it from
+                // /api/library/init; a search row carries the parent law's
+                // status from `meta.lawStatus` (page.tsx) — never the article's
+                // status, which stays in `articleStatus`. Owner test 2026-10-01:
+                // a repealed law found by search must look repealed too.
+                const isRepealedLaw = isRepealedLawStatus(sys.status);
                 // T28-22: one locked row replaces the instrument and «صدر:» lines.
                 const showLockedMeta = officialMetaLocked && !sys._isSearchResult;
+                // Owner test 2026-10-01: red text, red frame and the badge mark a
+                // repealed law; the title is no longer struck through.
                 const titleClass = isRepealedLaw
-                  ? `line-through decoration-red-500 decoration-2 ${isDark ? "text-red-200" : "text-red-900"}`
+                  ? isDark ? "text-red-200" : "text-red-900"
                   : isDark ? "text-white" : "text-gray-900";
+                // Owner decision ١٦٠: a law the viewer has not unlocked is an open
+                // card — name, category chips and keywords — that opens the law
+                // page, where the first articles are free. No blur, no paywall
+                // click. The API already withholds a locked row's description
+                // and official metadata; a locked search hit's snippet is not
+                // shown either, so the card says nothing the catalogue locks.
+                const keywords: string[] = Array.isArray(sys.keywords)
+                  ? sys.keywords.filter((k: unknown): k is string => typeof k === "string" && k.trim().length > 0)
+                  : [];
+                const openLaw = () =>
+                  router.push(`/laws/${sys.slug}${getDocAnchorPrefix(docSubType) ? `?fromType=${encodeURIComponent(docSubType)}` : ""}`);
+                const freePreviewHint = (
+                  <span className={`px-2 py-0.5 text-[9px] font-bold rounded-lg flex items-center gap-1 border ${
+                    isDark ? "bg-[#C8A762]/10 border-[#C8A762]/25 text-[#C8A762]" : "bg-amber-50 border-amber-200 text-amber-800"
+                  }`}>
+                    <BookOpen size={9} weight="fill" />
+                    {isRTL ? "المواد الأولى مجاناً" : "First articles free"}
+                  </span>
+                );
+                const keywordChips = keywords.map((k) => (
+                  <span key={`kw-${k}`} className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded border ${
+                    isDark ? "bg-purple-950/30 border-purple-500/20 text-purple-300" : "bg-purple-50 border-purple-200 text-purple-700"
+                  }`}>
+                    #{k}
+                  </span>
+                ));
                 const repealedBadge = (
                   <span className={`px-2 py-0.5 text-[10px] font-black rounded-lg border ${
                     isDark ? "bg-red-950/50 border-red-500/40 text-red-300" : "bg-red-50 border-red-300 text-red-700"
@@ -187,50 +233,27 @@ export function LawsTabContent({
                     if (target.closest("button") || target.closest("a") || target.closest(".clickable-badge")) {
                       return;
                     }
-                    if (!isUnlocked) {
-                      setShowPaywall(true);
-                    } else {
-                      router.push(`/laws/${sys.slug}${getDocAnchorPrefix(docSubType) ? `?fromType=${encodeURIComponent(docSubType)}` : ""}`);
-                    }
+                    openLaw();
                   }}
-                  className={`group relative rounded-2xl border p-5 transition-all ${
+                  className={`group relative rounded-2xl border p-5 transition-all cursor-pointer ${
                     isRepealedLaw
-                      ? `${isUnlocked ? "cursor-pointer hover:border-red-500" : ""} ${isDark ? "bg-red-950/20 border-red-500/40" : "bg-red-50/60 border-red-300"}`
-                      : isUnlocked
-                      ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
-                      : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
+                      ? `hover:border-red-500 ${isDark ? "bg-red-950/20 border-red-500/40" : "bg-red-50/60 border-red-300"}`
+                      : `hover:border-[#0B3D2E]/40 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
                   }`}
                 >
-                  {!isUnlocked && (
-                    <div
-                      className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowPaywall(true);
-                      }}
-                    >
-                      <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
-                        <Lock size={16} color="#C8A762" weight="fill" />
-                        <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                          {isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
                   {layoutMode === "grid" ? (
-                    <div className={!isUnlocked ? "opacity-40 filter blur-[2px] h-full flex flex-col items-center text-center" : "h-full flex flex-col items-center text-center"}>
+                    <div className="h-full flex flex-col items-center text-center">
                       <div className="flex items-center justify-between w-full mb-3 text-xs">
                         <span className={`px-2 py-0.5 text-[10px] font-bold rounded-lg ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>
                           {isRTL ? "مُحدّث" : "Updated"}
                         </span>
                         {isRepealedLaw && repealedBadge}
-                        {isUnlocked && (
+                        {isUnlocked ? (
                           <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                             <Sparkle size={9} weight="fill" />
                             {librarySubscribed && !sys.free ? (isRTL ? "مكتبة" : "SUBSCRIBED") : (isRTL ? "متاح" : "FREE")}
                           </span>
-                        )}
+                        ) : freePreviewHint}
                       </div>
 
                       <h3 className={`text-base font-black mb-2 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
@@ -262,11 +285,8 @@ export function LawsTabContent({
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                if (!isUnlocked) {
-                                  setShowPaywall(true);
-                                } else {
-                                  router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
-                                }
+                                // The law page gates what is locked (decision ١٦٠).
+                                router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
                               }}
                               className="clickable-badge cursor-pointer hover:bg-blue-500/20 transition-colors text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
                             >
@@ -279,10 +299,11 @@ export function LawsTabContent({
                             {isRTL ? `حالة المادة: ${searchArticleStatusNotice}` : `Article status: ${searchArticleStatusNotice}`}
                           </span>
                         )}
+                        {keywordChips}
                       </div>
 
-                      {/* Expandable Abstract Description */}
-                      {(() => {
+                      {/* Expandable Abstract Description — unlocked laws only */}
+                      {isUnlocked && (() => {
                         const description = isRTL ? sys.desc : sys.descEn || sys.desc;
                         const isExpanded = !!expandedDesc[sys.id];
                         const isLong = description && description.length > 100;
@@ -341,19 +362,19 @@ export function LawsTabContent({
                       </div>
                     </div>
                   ) : (
-                    <div className={`${!isUnlocked ? "opacity-40 filter blur-[2px]" : ""} flex flex-col sm:flex-row sm:items-center gap-3`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                       {/* Left: Text info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>
                             {isRTL ? "مُحدَّث" : "Updated"}
                           </span>
-                          {isUnlocked && (
+                          {isUnlocked ? (
                             <span className="px-2 py-0.5 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-md flex items-center gap-1">
                               <Sparkle size={9} weight="fill" />
                               {librarySubscribed && !sys.free ? (isRTL ? "مكتبة" : "SUBSCRIBED") : (isRTL ? "متاح" : "FREE")}
                             </span>
-                          )}
+                          ) : freePreviewHint}
                           {isRepealedLaw && repealedBadge}
                         </div>
 
@@ -386,11 +407,8 @@ export function LawsTabContent({
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  if (!isUnlocked) {
-                                    setShowPaywall(true);
-                                  } else {
-                                    router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
-                                  }
+                                  // The law page gates what is locked (decision ١٦٠).
+                                  router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
                                 }}
                                 className="clickable-badge cursor-pointer hover:bg-blue-500/25 transition-colors text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
                               >
@@ -408,10 +426,11 @@ export function LawsTabContent({
                               {sys.issuing_instrument}
                             </span>
                           )}
+                          {keywordChips}
                         </div>
 
-                        {/* Short Description */}
-                        {(() => {
+                        {/* Short Description — unlocked laws only */}
+                        {isUnlocked && (() => {
                           const description = isRTL ? sys.desc : sys.descEn || sys.desc;
                           const isExpanded = !!expandedDesc[sys.id];
                           const isLong = description && description.length > 100;
@@ -1012,7 +1031,7 @@ export function LawsTabContent({
             .join("، ")}`}
         </p>
       )}
-      {!hasResults(activeType) && searchDegraded.length === 0 && (
+      {!hasResults(activeType) && searchDegraded.length === 0 && !searchFailed && (
         <EmptyState
           type={catHasContent(activeCat) ? "no-results" : "coming-soon"}
           catId={activeCat}

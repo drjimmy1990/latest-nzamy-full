@@ -104,6 +104,17 @@ export interface LawArticle {
 export interface LawChapter {
   title: string;
   articles: LawArticle[];
+  /**
+   * Two-level chapters (2026-10-04, migration 20261004_02). All optional: the
+   * detail API sends them once it carries library.chapters.id / level /
+   * parent_chapter_id; a chapter without them renders exactly as the flat list
+   * always did (see [slug]/_chapter-tree.ts).
+   */
+  id?: string;
+  /** 1 = top-level heading («الباب»), 2 = a chapter under the level-1 heading before it. */
+  level?: 1 | 2;
+  /** For level 2: the id of its level-1 chapter; null/absent = shown as a top-level chapter. */
+  parentChapterId?: string | null;
 }
 
 export interface LawAppendix {

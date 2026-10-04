@@ -5,6 +5,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-mo
 import { useUser } from "@/hooks/useUser";
 import { isSupabaseMode } from "@/lib/services/api";
 import { getPreferences, type RecentSession } from "@/lib/services/preferencesService";
+import { useNoSessionCookie } from "./useNoSessionCookie";
 import {
   ClockCounterClockwise, CaretDown, CaretUp, BookOpen,
   Trash, ArrowRight, Eye, Clock, CalendarBlank,
@@ -262,6 +263,9 @@ export default function RecentSessions({
   const [isExpandedView, setIsExpandedView] = useState(false);
 
   const { isLoggedIn, loading: authLoading } = useUser();
+  // No session cookie: a guest for certain, no need to wait on useUser (sessionCookie.ts).
+  const noSessionCookie = useNoSessionCookie();
+  const authPending = authLoading && !noSessionCookie;
 
   // Owner test 2026-09-28 (T28-02): this used to render generateDemoSessions()
   // — seven invented sessions with invented progress — to every visitor,
@@ -270,7 +274,7 @@ export default function RecentSessions({
   // users, the `nzamy_recent_sessions` browser key for guests. No progress
   // is tracked anywhere, so no progress ring is shown.
   useEffect(() => {
-    if (authLoading) return;
+    if (authPending) return;
     let cancelled = false;
     const apply = (list: RecentSession[] | null | undefined) => {
       if (!cancelled) setSessions(toSessionEntries(list ?? []));
@@ -287,7 +291,7 @@ export default function RecentSessions({
       }
     }
     return () => { cancelled = true; };
-  }, [authLoading, isLoggedIn]);
+  }, [authPending, isLoggedIn]);
 
   // Hides the row in this view only; the stored list is untouched.
   const handleRemove = useCallback((id: string) => {

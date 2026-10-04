@@ -9,6 +9,7 @@ import { type FeqhBookDemo } from "../demo-data-access";
 import { FEQH_TYPES, type FeqhType } from "@/constants/lawsLibraryData";
 import { toCatalogueCards } from "@/lib/library/bookVolumes";
 import { EmptyState } from "./ListItems";
+import { ResultsSkeleton } from "./ResultsSkeleton";
 
 interface FeqhTabContentProps {
   isDark: boolean;
@@ -24,6 +25,10 @@ interface FeqhTabContentProps {
   setShowPaywall: (show: boolean) => void;
   activeCat: string;
   q: string;
+  /** A search request is in flight: skeleton cards, not «لا توجد نتائج». */
+  resultsPending?: boolean;
+  /** The search failed (its error is shown above): no empty state. */
+  searchFailed?: boolean;
 }
 
 export function FeqhTabContent({
@@ -40,6 +45,8 @@ export function FeqhTabContent({
   setShowPaywall,
   activeCat,
   q,
+  resultsPending = false,
+  searchFailed = false,
 }: FeqhTabContentProps) {
   const [page, setPage] = useState(1);
   const { can } = useSubscription();
@@ -169,7 +176,9 @@ export function FeqhTabContent({
         )}
       </div>
 
-      {displayedCards.length > 0 ? (
+      {resultsPending ? (
+        <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} label="جارٍ البحث" />
+      ) : displayedCards.length > 0 ? (
         <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-4"}>
           {displayedCards.map(({ key: cardKey, book, title: cardTitle, volumesLabel }) => {
             const isBookFree = book.free || hasLibraryAccess;
@@ -343,7 +352,7 @@ export function FeqhTabContent({
             </motion.div>
           ); })}
         </div>
-      ) : (
+      ) : searchFailed ? null : (
         <EmptyState
           type="no-results"
           catId={activeCat}
@@ -354,7 +363,7 @@ export function FeqhTabContent({
       )}
 
       {/* Pagination controls */}
-      {maxPages > 1 && (
+      {!resultsPending && maxPages > 1 && (
         <div className={`flex items-center justify-center gap-2 mt-8 pt-6 border-t ${
           isDark ? "border-[#2d3748]/50" : "border-gray-100"
         }`} dir={isRTL ? "rtl" : "ltr"}>

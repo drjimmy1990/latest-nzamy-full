@@ -11,8 +11,27 @@ import {
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import { articleStatusNotice, isRepealedArticleStatus, type LawArticle, type JudicialPrinciple, type JudicialPrecedent } from "../data";
 import { buildCitation } from "./_citation";
+import { splitAmendedLabelLine, splitAmendedMarker } from "./_amended-marker";
+import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { useSubscription } from "@/hooks/useSubscription";
+
+/**
+ * «معدّلة» badge for a heading the source marked `[معدّلة]` (see
+ * _amended-marker.ts). A label only: the regulation text carries no amendment
+ * history, so there is nothing to open.
+ */
+function AmendedBadge({ isDark }: { isDark: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center align-middle ms-2 px-2 py-0.5 rounded-full border text-[10px] font-bold leading-none ${
+        isDark ? "bg-amber-500/15 text-amber-300 border-amber-400/30" : "bg-amber-50 text-amber-700 border-amber-300"
+      }`}
+    >
+      معدّلة
+    </span>
+  );
+}
 
 // ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx/_sidebar.tsx.
 function getMergedReg(a: LawArticle): { ref: string; text: string } | null {
@@ -221,7 +240,17 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
             4: "text-[12px] font-bold mt-2 mb-1",
           };
           const cls = headingStyles[block.level ?? 3] ?? "text-[13px] font-bold";
-          const html = markdownBoldToSafeHtml(block.text || "");
+          // «المادة (5/3): `[معدّلة]`» → the heading without the token + a badge.
+          const marker = splitAmendedMarker(block.text || "");
+          const html = markdownBoldToSafeHtml(marker.text);
+          if (marker.amended) {
+            return (
+              <p key={index} className={`${cls} ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>
+                <span dangerouslySetInnerHTML={{ __html: html }} />
+                <AmendedBadge isDark={isDark} />
+              </p>
+            );
+          }
           return (
             <p key={index} className={`${cls} ${isDark ? "text-zinc-100" : "text-zinc-800"}`}
                dangerouslySetInnerHTML={{ __html: html }} />
@@ -238,6 +267,16 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
         // ─── Blockquote (مواد اللائحة في وضع "عرض الكل")
         if (block.type === "blockquote") {
           if (!block.text) return <div key={index} className="h-1" />;
+          const labelMarker = splitAmendedLabelLine(block.text);
+          if (labelMarker.amended) {
+            return (
+              <p key={index}
+                 className={`${fontClass} leading-relaxed ${listIndent} border-r-2 pr-3 border-[#C8A762]/40 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                <span dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(labelMarker.text) }} />
+                <AmendedBadge isDark={isDark} />
+              </p>
+            );
+          }
           const html = markdownBoldToSafeHtml(block.text);
           return (
             <p key={index}
@@ -268,8 +307,18 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
         }
         
         const line = block.text || "";
+        // A bold label line «**المادة (1/7): [معدّلة]** …» gets the same badge.
+        const lineMarker = splitAmendedLabelLine(line);
+        if (lineMarker.amended) {
+          return (
+            <p key={index} className={`${fontClass} leading-relaxed ${muted}`}>
+              <span dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(lineMarker.text) }} />
+              <AmendedBadge isDark={isDark} />
+            </p>
+          );
+        }
         const html = markdownBoldToSafeHtml(line);
-        
+
         if (line.startsWith("أ-") || line.startsWith("ب-") || line.startsWith("ج-") ||
             line.startsWith("د-") || line.startsWith("هـ-")) {
           return <p key={index} className={`${fontClass} leading-relaxed ${listIndent} ${muted}`} dangerouslySetInnerHTML={{ __html: html }} />;
@@ -647,6 +696,8 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   return (
     <motion.div
       layout id={article.id}
+      // A contents-list jump lands the card's heading just below the fixed bar.
+      style={{ scrollMarginTop: READER_SCROLL_MARGIN_TOP }}
       onClick={() => onActive(article.id)}
       className={`nzamy-reader-block rounded-2xl border shadow-sm overflow-hidden cursor-pointer transition-colors
         ${isDark ? "bg-zinc-900" : "bg-white"}

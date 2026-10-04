@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { normalizeArabic } from "@/utils/normalizeArabic";
+import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
 import { courtBadge } from "./principleCardFields";
 import { realPrincipleNumber } from "./principleLink";
 import {
@@ -54,6 +55,7 @@ import { OrdersTabContent } from "./components/OrdersTabContent";
 import { LawsTabContent } from "./components/LawsTabContent";
 import { FeqhTabContent } from "./components/FeqhTabContent";
 import { ISSUER_MAP } from "./components/ListItems";
+import { ResultsSkeleton } from "./components/ResultsSkeleton";
 import {
   type LawFacets,
   SECTION_30,
@@ -249,7 +251,7 @@ export default function LegalLibraryPage() {
         if (requestId !== autocompleteRequestIdRef.current) return;
         setAutocompleteCounts(data?.counts ? readSearchCounts(data) : unavailable);
         const matches = (data.topMatches || []).map((m: { title: string; section: string; slug: string; snippet?: string }) => ({
-          label: m.title,
+          label: stripMarkdownMarks(m.title),
           type: m.section === "laws" ? "laws" : m.section === "orders" ? "orders" : m.section === "feqh" ? "feqh" : "precedents",
           typeLabel: m.section === "laws" ? (isRTL ? "نظام" : "Law") : m.section === "orders" ? (isRTL ? "مرسوم" : "Decree") : m.section === "feqh" ? (isRTL ? "كتاب" : "Book") : (isRTL ? "مبدأ" : "Principle"),
           id: m.slug,
@@ -796,18 +798,20 @@ export default function LegalLibraryPage() {
 
     DEMO_PRINCIPLES.forEach(p => {
       if ((normalizeArabic(p.text).includes(nq) || normalizeArabic(p.source).includes(nq)) && (activeType === "all" || activeType === "precedents"))
-        results.push({ label: p.text.substring(0, 60) + "...", type: "precedents", typeLabel: isRTL ? "مبدأ" : "Principle" });
+        results.push({ label: stripMarkdownMarks(p.text).substring(0, 60) + "...", type: "precedents", typeLabel: isRTL ? "مبدأ" : "Principle" });
     });
     return results.slice(0, 6);
   })() : [];
 
-  // Highlight utility
+  // Highlight utility. Its output goes to dangerouslySetInnerHTML, so the
+  // suggestion text (a library title) is HTML-escaped before <mark> is added.
   function highlightText(text: string, term: string): string {
-    if (!term || term.length < 2) return text;
+    const safe = text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+    if (!term || term.length < 2) return safe;
     // Highlight based on normalized representation
     const nTerm = normalizeArabic(term);
     const escaped = nTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return text.replace(new RegExp(`(${escaped})`, "gi"), "<mark class=\"bg-yellow-300/80 text-yellow-900 rounded px-0.5\">$1</mark>");
+    return safe.replace(new RegExp(`(${escaped})`, "gi"), "<mark class=\"bg-yellow-300/80 text-yellow-900 rounded px-0.5\">$1</mark>");
   }
 
   // Helper to map principle sourceId to judicial track
@@ -904,6 +908,10 @@ export default function LegalLibraryPage() {
         // The law's own status (T28-23): 617 of 5,899 are «repealed» and get
         // the red card. This mapping is a whitelist — it used to drop it.
         status: law.status || "",
+        // Decision ١٦٠: the open card shows a law's keywords. library.laws has
+        // no keyword column yet and /api/library/init sends none, so this is
+        // [] until the API carries `keywords` (text[]).
+        keywords: Array.isArray(law.keywords) ? law.keywords : [],
       }))
     : []) as any[]; // honest empty state — no fabricated laws in prod (mirrors the gated DEMO_* lists)
 
@@ -919,8 +927,8 @@ export default function LegalLibraryPage() {
         issuer: d.issuer || "—",
         ref: d.ref || "—",
         date: d.date || "—",
-        summary: d.summary_brief || d.title || "",
-        summary_brief: d.summary_brief || "",
+        summary: stripMarkdownMarks(d.summary_brief || d.title || ""),
+        summary_brief: stripMarkdownMarks(d.summary_brief),
         // decrees_circulars.category holds bare codes, padded or not ('02',
         // '8', '30'); comparing them raw against 'SA-NN' never matched (LIB-09).
         // No code → no category, not a guessed «التجاري».
@@ -941,7 +949,8 @@ export default function LegalLibraryPage() {
         // Badge and year from the row only (owner test 2026-09-28, T28-04):
         // the old fallbacks put «م ع» on every card and a made-up 1445هـ.
         srcAbbr: courtBadge(p.issuing_body || p.judicial_collections?.court),
-        text: p.text || "",
+        // Some rows carry raw Markdown marks (owner test 2026-10-01).
+        text: stripMarkdownMarks(p.text),
         ref: p.decision_number || "—",
         year: p.year_hijri ? String(p.year_hijri) : "",
         subject: "civil" as any,
@@ -1015,7 +1024,7 @@ export default function LegalLibraryPage() {
           type,
           category,
           categoryLabel,
-          desc: b.description || "",
+          desc: stripMarkdownMarks(b.description),
           free: b.free ?? true,
           // No per-book reading progress is tracked; the constant 100 rendered
           // «نسبة التحصيل 100%» on every card (owner test 2026-09-28, T28-05).
@@ -1069,7 +1078,7 @@ export default function LegalLibraryPage() {
         slug: r.meta?.lawSlug || r.id,
         title: r.title,
         titleEn: '',
-        desc: r.snippet || '',
+        desc: stripMarkdownMarks(r.snippet),
         descEn: '',
         // Preserve the server's per-result entitlement: a locked hit is not free.
         free: !r.locked,
@@ -1082,6 +1091,11 @@ export default function LegalLibraryPage() {
         subType: 'basic',
         // Search returns an article hit; this is deliberately not the parent law's status.
         articleStatus: r.meta?.status,
+        // The PARENT LAW's own status, for the repealed card (owner test
+        // 2026-10-01). Only `meta.lawStatus` — never the article's
+        // `meta.status` above. Until the search API sends it, this is '' and
+        // a repealed law found by search still shows as a normal card.
+        status: typeof r.meta?.lawStatus === 'string' ? r.meta.lawStatus : '',
         _isSearchResult: true,
       }))
     : lawsList.filter(s => {
@@ -1102,7 +1116,7 @@ export default function LegalLibraryPage() {
         principleNum: realPrincipleNumber(r.meta?.principleNumber) ?? undefined,
         source: r.meta?.court || '',
         srcAbbr: courtBadge(r.meta?.court),
-        text: r.snippet || r.title || '',
+        text: stripMarkdownMarks(r.snippet || r.title),
         ref: r.meta?.decisionNumber || '—',
         year: r.meta?.year ? String(r.meta.year) : "",
         subject: 'civil' as any,
@@ -1165,8 +1179,8 @@ export default function LegalLibraryPage() {
         issuer: r.meta?.issuer || '—',
         ref: r.meta?.ref || '—',
         date: r.meta?.date || '—',
-        summary: r.snippet || r.title || '',
-        summary_brief: r.snippet || '',
+        summary: stripMarkdownMarks(r.snippet || r.title),
+        summary_brief: stripMarkdownMarks(r.snippet),
         cat: toTaxonomyId(r.meta?.category) ?? '',
         hashtags: r.meta?.hashtags || [],
         _isSearchResult: true,
@@ -1185,14 +1199,16 @@ export default function LegalLibraryPage() {
         id: String(r.id),
         slug: r.meta?.bookSlug || r.id,
         title: r.title,
-        author: '—',
+        // A book-title hit (meta.kind 'book') carries its author and series size.
+        author: r.meta?.kind === 'book' ? (r.meta?.author || '—') : '—',
         type: 'sharia',
         category: 'sharuh',
         categoryLabel: '',
-        desc: r.snippet || '',
+        desc: stripMarkdownMarks(r.snippet),
         free: true,
         progress: 100,
-        volCount: 1,
+        volCount: r.meta?.volumeCount || 1,
+        searchVolumesLabel: r.meta?.volumesLabel ?? null,
         lastUpdated: '—',
         _isSearchResult: true,
       }))
@@ -1277,6 +1293,13 @@ export default function LegalLibraryPage() {
   };
   // Search sections the API could not read, as the "all" view's blocks.
   const searchDegraded: SearchSection[] = isSearchActive && !searchLoading && !searchError ? searchCounts.degraded : [];
+  // A search whose request has not settled: every tab shows skeleton cards,
+  // never «لا توجد نتائج» (owner test 2026-10-01). `!searchResults` also
+  // covers the render between the article-status select clearing the rows
+  // and the effect that starts the next request.
+  const searchPending = isSearchActive && !searchError && (searchLoading || !searchResults);
+  // A failed search shows its error box only: a failure is not zero results.
+  const searchFailed = isSearchActive && !!searchError;
   // The "all" view's section pills show the API's count per section (exact or
   // «أكثر من ١٬٠٠٠»), not the handful of preview rows the response carries.
   const searchCountLabels: Partial<Record<SearchSection, string>> = {};
@@ -1386,10 +1409,6 @@ export default function LegalLibraryPage() {
 
           {/* ── Library Mode — all existing content below ─────────────────── */}
           {libraryMode === "library" && (<>
-
-          <div className="mb-6">
-            <EnactmentCountdownWidget isDark={isDark} isRTL={isRTL} />
-          </div>
 
           {/* Search Bar */}
           <div className="mb-6 flex flex-col md:flex-row gap-3">
@@ -1774,8 +1793,8 @@ export default function LegalLibraryPage() {
                       </div>
                     )}
 
-                    {/* Search results banner */}
-                    {isSearchActive && !searchLoading && !searchError && (
+                    {/* Search results banner — only once results are in (no «٠ نتيجة» flash) */}
+                    {isSearchActive && !searchLoading && !searchError && searchResults && (
                       <div className={`flex items-center justify-between py-3 px-4 mb-4 rounded-xl border text-sm ${
                         isDark ? "bg-[#0B3D2E]/10 border-[#0B3D2E]/30 text-[#C8A762]" : "bg-[#0B3D2E]/5 border-[#0B3D2E]/20 text-[#0B3D2E]"
                       }`}>
@@ -1894,6 +1913,8 @@ export default function LegalLibraryPage() {
                           precSort={precSort}
                           setPrecSort={setPrecSort}
                           searchCountLabel={searchCountLabels.precedents}
+                          resultsPending={searchPending}
+                          searchFailed={searchFailed}
                         />
                         {/* Load More for Principles */}
                         {!isSearchActive && pagination.principles?.hasMore && (
@@ -1937,6 +1958,8 @@ export default function LegalLibraryPage() {
                           catHasContent={catHasContent}
                           q={q}
                           setSelectedHashtag={setSelectedHashtag}
+                          resultsPending={searchPending}
+                          searchFailed={searchFailed}
                         />
                         {/* Load More for Orders/Decrees */}
                         {!isSearchActive && pagination.decrees?.hasMore && (
@@ -1981,6 +2004,9 @@ export default function LegalLibraryPage() {
                         {isRTL ? "جاري تحميل الأنظمة..." : "Loading laws..."}
                       </div>
                     )}
+                    {activeType === "laws" && !isSearchActive && lawsLoading && (
+                      <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} label="جارٍ تحميل الأنظمة" />
+                    )}
 
                     {(activeType === "laws" || activeType === "all") && !(activeType === "laws" && lawsLoading && !isSearchActive) && (
                       <>
@@ -2011,6 +2037,8 @@ export default function LegalLibraryPage() {
                           docSubType={docSubType}
                           setDocSubType={setDocSubType}
                           officialMetaLocked={officialMetaLocked}
+                          resultsPending={searchPending}
+                          searchFailed={searchFailed}
                         />
                         {/* Load More for Laws */}
                         {!isSearchActive && !lawsLoading && pagination.laws?.hasMore && activeType === "laws" && (
@@ -2055,6 +2083,8 @@ export default function LegalLibraryPage() {
                           setShowPaywall={setShowPaywall}
                           activeCat={activeCat}
                           q={q}
+                          resultsPending={searchPending}
+                          searchFailed={searchFailed}
                         />
                         {/* Load More for Feqh Books */}
                         {!isSearchActive && pagination.books?.hasMore && (
@@ -2081,6 +2111,13 @@ export default function LegalLibraryPage() {
                           </div>
                         )}
                       </>
+                    )}
+
+                    {/* The laws tab lists every loaded row in one grid, so the next
+                        page's placeholders go at its end. The other tabs page
+                        their rows on the client; the button spinner covers them. */}
+                    {pagingView && searchPaging?.loadingMore && pagingSection === "laws" && (
+                      <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} count={3} label="جارٍ تحميل المزيد من النتائج" className="mt-2" />
                     )}
 
                     {/* Load More for a single-section search: the next API page
@@ -2131,6 +2168,12 @@ export default function LegalLibraryPage() {
             {showSidebars && (
               <aside className="lg:col-span-3 space-y-6 order-3 lg:order-3">
                 <GamificationCard isDark={isDark} isRTL={isRTL} />
+                {/* Owner test 2026-10-01: the in-force countdown lives here,
+                    under «نشاطك القانوني المعتمد», not full-width above the
+                    search bar. Mounted once: below lg this column stacks after
+                    the results with the other tools, and «إخفاء الأدوات»
+                    hides it with them. */}
+                <EnactmentCountdownWidget isDark={isDark} isRTL={isRTL} />
                 {/* «التحديثات التشريعية» (LegislativeUpdates) is not mounted: it
                     rendered a hardcoded list of amendments that were never issued
                     (owner test 2026-09-28, T28-01). It returns once an amendments

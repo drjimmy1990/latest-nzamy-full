@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
-  ListBullets, X, Lock, Prohibit
+  ListBullets, X, Lock, Prohibit, Info
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -16,7 +16,7 @@ import { isSupabaseMode } from "@/lib/services/api";
 import { getPreferences, patchPreferences, type RecentSession } from "@/lib/services/preferencesService";
 import { recordLawOpened, type ReadingActivity } from "@/lib/services/readingActivityStats";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
-import type { LawArticle, LawSystem } from "../data";
+import type { LawArticle, LawChapter, LawSystem } from "../data";
 import { isRepealedLawStatus, lawStatusForDetail } from "../law-status";
 import { EMPTY_OFFICIAL_META, parseOfficialMeta, type LawOfficialMeta } from "./_official-meta";
 import { getSelectedTextWithin } from "./_article-components";
@@ -38,6 +38,8 @@ import {
 } from "./_components";
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import SidebarPanel from "./_sidebar";
+import { buildChapterTree } from "./_chapter-tree";
+import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, regulationCardId } from "./_reader-anchors";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import { apiSlug } from '@/utils/apiSlug';
 
@@ -92,6 +94,10 @@ function LawSystemPageContent() {
   // T28-22: the API withholds the preamble (it opens with the decree card)
   // from a non-subscriber and says so here.
   const [preambleLocked, setPreambleLocked] = useState(false);
+  // A document whose official text is not published has no articles, only a
+  // notice (parser: text_availability official_text_unpublished → the law's
+  // description). The API sends it as `notice`; shown without an article number.
+  const [lawNotice, setLawNotice] = useState("");
   // "not-found" = the API answered 404; "failed" = any other failure (a 500
   // from a failed query, a network error). They get different copy: telling a
   // reader a law does not exist when we merely failed to load it is wrong.
@@ -168,6 +174,7 @@ function LawSystemPageContent() {
         setLawMeta(getLawMeta(slug));
         setOfficialMeta(EMPTY_OFFICIAL_META);
         setPreambleLocked(false);
+        setLawNotice("");
         const res = await fetch(`/api/library/laws/${apiSlug(slug)}`);
         if (cancelled) return;
         if (!res.ok) {
@@ -184,6 +191,7 @@ function LawSystemPageContent() {
         );
         setOfficialMeta(parseOfficialMeta(data));
         setPreambleLocked(data?.preambleLocked === true);
+        setLawNotice(typeof data?.notice === "string" ? data.notice.trim() : "");
         // Transform API response to match LawSystem interface
         setLaw({
           id: data.id || data.slug,
@@ -205,8 +213,13 @@ function LawSystemPageContent() {
             ? { slug: data.parentLawLink.slug, title: data.parentLawLink.title || data.parentLaw || '' }
             : null,
           preamble: data.preamble || '',
-          chapters: (data.chapters || []).map((ch: { title: string; articles: LawArticle[] }) => ({
+          chapters: (data.chapters || []).map((ch: { title: string; articles: LawArticle[]; id?: unknown; level?: unknown; parentChapterId?: unknown }) => ({
             title: ch.title,
+            // Two-level chapters (migration 20261004_02): carried only when the
+            // API sends them; without them the chapter renders as it always did.
+            ...(typeof ch.id === 'string' && ch.id ? { id: ch.id } : {}),
+            ...(ch.level === 1 || ch.level === 2 ? { level: ch.level } : {}),
+            ...(typeof ch.parentChapterId === 'string' && ch.parentChapterId ? { parentChapterId: ch.parentChapterId } : {}),
             articles: (ch.articles || []).map((a: LawArticle) => ({
               id: a.id,
               num: a.num,
@@ -480,7 +493,29 @@ function LawSystemPageContent() {
     return isRTL ? "التشريعات الفرعية" : "Sub-legislation";
   }, [availableRegNames, isRTL]);
 
+  // ── The flat «التشريعات الفرعية» view (law.regulationInstruments) renders
+  // regulation cards, not نظام articles. Its cards carry ids, and each نظام
+  // article maps to the first card of its own rows, so the contents list can
+  // jump there (owner report 2026-10-03; _reader-anchors.ts). The instrument
+  // filter is applied: a hidden card is not an anchor.
+  const flatRegulationView = !!law && viewMode === "regulation" &&
+    ((law.regulationInstruments?.length ?? 0) > 0 || (law.regulationInstrumentsLocked ?? 0) > 0);
+  const regulationAnchors = useMemo(
+    () => buildRegulationAnchors(
+      law?.regulationInstruments ?? [],
+      law ? law.chapters.flatMap(ch => ch.articles) : [],
+      selectedRegName,
+    ),
+    [law, selectedRegName],
+  );
+  const regulationAnchorFor = useCallback(
+    (articleId: string) => regulationAnchors.anchorByArticleId.get(articleId),
+    [regulationAnchors],
+  );
+
   // ــ Intersection Observer: تحديث activeId عند السكرول تلقائياً ــــــــــــــــــ
+  // Re-run on a view switch: the article cards are mounted per view, so the
+  // elements observed for the previous view are gone.
   useEffect(() => {
     if (!law) return;
     const ids = law.chapters.flatMap(ch => ch.articles.map(a => a.id));
@@ -499,7 +534,25 @@ function LawSystemPageContent() {
       return obs;
     });
     return () => observers.forEach(o => o?.disconnect());
-  }, [law]);
+  }, [law, viewMode]);
+
+  // Same for the flat regulation view: a visible card marks its نظام article active.
+  useEffect(() => {
+    if (!law || !flatRegulationView) return;
+    const observers = Array.from(regulationAnchors.articleIdByCardId.entries()).map(([cardId, articleId]) => {
+      const el = document.getElementById(cardId);
+      if (!el) return null;
+      const obs = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting && !isScrolling.current) setActiveId(articleId);
+        },
+        { rootMargin: "-20% 0px -60% 0px", threshold: 0 }
+      );
+      obs.observe(el);
+      return obs;
+    });
+    return () => observers.forEach(o => o?.disconnect());
+  }, [law, flatRegulationView, regulationAnchors]);
 
   const sectionColors = SECTION_COLORS[lawMeta.section_code ?? "00"];
 
@@ -871,6 +924,7 @@ function LawSystemPageContent() {
                 userType={userType}
                 mode="index"
                 viewMode={viewMode as any}
+                regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
               />
             </aside>
           )}
@@ -947,6 +1001,20 @@ function LawSystemPageContent() {
               viewMode={viewMode as any}
             />
 
+            {/* Official text not published: the document's own notice, with no
+                article number (it was a synthetic «الصفحة 1» before). */}
+            {lawNotice && allArticles.length === 0 && (
+              <div
+                role="note"
+                className={`rounded-2xl border p-4 flex items-start gap-2.5 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}
+              >
+                <Info size={18} weight="duotone" className="mt-0.5 flex-shrink-0 text-[#C8A762]" />
+                <div className="min-w-0 flex-1">
+                  <MD text={lawNotice} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                </div>
+              </div>
+            )}
+
             {viewMode === "appendix" ? (
               <div className="space-y-4">
                 {(law.appendices ?? []).map(app => (
@@ -1017,18 +1085,34 @@ function LawSystemPageContent() {
                           ))}
                         </div>
                       )}
-                      {visible.map((inst) => (
-                        <div key={inst.ref} className="space-y-3">
-                          {inst.articles.map((a, i) => (
-                            <div
-                              key={`${inst.ref}-${a.regNum ?? i}`}
-                              className={`rounded-xl border p-4 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}
-                            >
-                              <MD text={a.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
-                            </div>
-                          ))}
-                        </div>
-                      ))}
+                      {visible.map((inst) => {
+                        // Ids from the position in the FULL list, so the
+                        // instrument filter never renumbers them (_reader-anchors.ts).
+                        const instIndex = instruments.indexOf(inst);
+                        return (
+                          <div key={inst.ref} className="space-y-3">
+                            {inst.articles.map((a, i) => {
+                              const cardId = regulationCardId(instIndex, i);
+                              const isActiveCard = regulationAnchors.articleIdByCardId.get(cardId) === activeId;
+                              return (
+                                <div
+                                  key={`${inst.ref}-${a.regNum ?? i}`}
+                                  id={cardId}
+                                  // A contents-list jump lands the card just below the fixed bar.
+                                  style={{ scrollMarginTop: READER_SCROLL_MARGIN_TOP }}
+                                  className={`rounded-xl border p-4 ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"} ${
+                                    isActiveCard
+                                      ? isDark ? "border-[#C8A762]/50" : "border-amber-400"
+                                      : isDark ? "border-white/[0.07]" : "border-slate-200"
+                                  }`}
+                                >
+                                  <MD text={a.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
                       {lockedRegCount > 0 && (
                         <div className={`rounded-xl border p-5 text-center space-y-2.5 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
                           <p className={`text-[12px] font-bold leading-relaxed ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
@@ -1261,48 +1345,83 @@ function LawSystemPageContent() {
                 })()}
               </div>
             ) : (
-              law.chapters.map((ch, ci) => {
-                const visibleArts = filteredArticles
+              (() => {
+                const visibleArticlesOf = (ch: LawChapter) => filteredArticles
                   ? ch.articles.filter(a => filteredArticles.some(f => f.id === a.id))
                   : ch.articles;
-                
-                const displayedArts = visibleArts;
-
-                if (displayedArts.length === 0) return null;
-                return (
-                  <div key={ci} className="space-y-3">
-                    {!filteredArticles && (
-                      <div className="flex items-center gap-3 py-1">
-                        <div className={`h-px flex-1 ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
-                        <span className={`text-[11px] font-bold px-3 py-1 rounded-full border ${isDark ? "border-white/[0.07] text-zinc-400 bg-zinc-800/60" : "border-slate-200 text-slate-500 bg-slate-50"}`}>{ch.title}</span>
-                        <div className={`h-px flex-1 ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
-                      </div>
-                    )}
-                    {displayedArts.map(article => (
-                      <ArticleBlock
-                        key={article.id}
-                        article={article}
-                        lawName={lawTitle}
-                        lawType={law.documentType}
-                        isDark={isDark}
-                        entry={cartMap.get(article.id)}
-                        onAddArticle={addArticle}
-                        onRemoveArticle={removeArticle}
-                        onAddExecReg={addExecReg}
-                        onRemoveExecReg={removeExecReg}
-                        onActive={setActiveId}
-                        isActive={activeId === article.id}
-                        showPaywall={() => setShowPaywall(true)}
-                        onExplain={(a) => setExplainArticle(a)}
-                        isRTL={isRTL}
-                        fontClass={fontClass}
-                        isReadingMode={isReadingMode}
-                        viewMode={viewMode}
-                      />
-                    ))}
+                const renderArticle = (article: LawArticle) => (
+                  <ArticleBlock
+                    key={article.id}
+                    article={article}
+                    lawName={lawTitle}
+                    lawType={law.documentType}
+                    isDark={isDark}
+                    entry={cartMap.get(article.id)}
+                    onAddArticle={addArticle}
+                    onRemoveArticle={removeArticle}
+                    onAddExecReg={addExecReg}
+                    onRemoveExecReg={removeExecReg}
+                    onActive={setActiveId}
+                    isActive={activeId === article.id}
+                    showPaywall={() => setShowPaywall(true)}
+                    onExplain={(a) => setExplainArticle(a)}
+                    isRTL={isRTL}
+                    fontClass={fontClass}
+                    isReadingMode={isReadingMode}
+                    viewMode={viewMode}
+                  />
+                );
+                const chapterPill = (title: string) => (
+                  <div className="flex items-center gap-3 py-1">
+                    <div className={`h-px flex-1 ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
+                    <span className={`text-[11px] font-bold px-3 py-1 rounded-full border ${isDark ? "border-white/[0.07] text-zinc-400 bg-zinc-800/60" : "border-slate-200 text-slate-500 bg-slate-50"}`}>{title}</span>
+                    <div className={`h-px flex-1 ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
                   </div>
                 );
-              })
+
+                // Two-level chapters (2026-10-04): a level-1 heading shows ONCE,
+                // above its level-2 chapters. Without level data every node is a
+                // plain chapter and renders exactly as before (_chapter-tree.ts).
+                return buildChapterTree(law.chapters).map((node) => {
+                  if (node.children.length === 0) {
+                    const ch = node.chapter;
+                    const displayedArts = visibleArticlesOf(ch);
+                    if (displayedArts.length === 0) return null;
+                    return (
+                      <div key={node.index} className="space-y-3">
+                        {!filteredArticles && chapterPill(ch.title)}
+                        {displayedArts.map(renderArticle)}
+                      </div>
+                    );
+                  }
+
+                  // A group: hidden only when neither the heading nor any of its
+                  // chapters has an article to show — a level-1 heading with no
+                  // articles of its own still heads its children.
+                  const ownArts = visibleArticlesOf(node.chapter);
+                  const children = node.children.map((child) => ({ ...child, arts: visibleArticlesOf(child.chapter) }));
+                  if (ownArts.length === 0 && children.every((child) => child.arts.length === 0)) return null;
+                  return (
+                    <div key={node.index} className="space-y-3">
+                      {!filteredArticles && (
+                        <div className="flex items-center gap-3 pt-3 pb-1">
+                          <span className={`text-[12px] font-black px-3.5 py-1.5 rounded-xl border ${isDark ? "border-[#C8A762]/25 text-[#C8A762] bg-[#0B3D2E]/40" : "border-[#0B3D2E]/15 text-[#0B3D2E] bg-[#0B3D2E]/5"}`}>
+                            {node.chapter.title}
+                          </span>
+                          <div className={`h-px flex-1 ${isDark ? "bg-[#C8A762]/15" : "bg-[#0B3D2E]/15"}`} />
+                        </div>
+                      )}
+                      {ownArts.map(renderArticle)}
+                      {children.map((child) => child.arts.length === 0 ? null : (
+                        <div key={child.index} className="space-y-3">
+                          {!filteredArticles && chapterPill(child.chapter.title)}
+                          {child.arts.map(renderArticle)}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                });
+              })()
             )}
           </div>
 
@@ -1466,6 +1585,7 @@ function LawSystemPageContent() {
                   filteredArticles={filteredArticles} cartMap={cartMap} isScrolling={isScrolling}
                   setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
                   userType={userType} mode="index" viewMode={viewMode as any}
+                  regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
                 />
               </div>
             </motion.div>

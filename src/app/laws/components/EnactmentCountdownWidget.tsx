@@ -95,22 +95,26 @@ export default function EnactmentCountdownWidget({
     setIndex(0);
   };
 
+  // Owner test 2026-10-01: this sits in the /laws side column (≈240px at lg,
+  // full width on a phone), so the item is stacked — the day circle and the
+  // status beside it on one row, the title at full width under them — and
+  // the tabs split the width evenly instead of wrapping.
   return (
     <section className={`rounded-2xl border p-4 ${isDark ? "border-white/[0.07] bg-zinc-900" : "border-slate-200 bg-white shadow-sm"}`}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <ClockCountdown size={18} className={isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"} />
-          <div>
-            <h2 className={`text-sm font-black ${isDark ? "text-white" : "text-slate-900"}`}>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-start gap-2">
+          <ClockCountdown size={18} className={`mt-0.5 shrink-0 ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`} />
+          <div className="min-w-0">
+            <h2 className={`text-sm font-black leading-5 ${isDark ? "text-white" : "text-slate-900"}`}>
               {isRTL ? "مواعيد نفاذ الأنظمة" : "Law enactments"}
             </h2>
-            <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+            <p className={`text-[10px] leading-4 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
               {isRTL ? "من بيانات المكتبة القانونية الموثقة" : "From verified legal-library data"}
             </p>
           </div>
         </div>
         {items.length > 1 && (
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center">
             <button type="button" aria-label="السابق" onClick={() => setIndex((index - 1 + items.length) % items.length)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/[0.06]">
               <CaretRight size={14} />
             </button>
@@ -122,7 +126,7 @@ export default function EnactmentCountdownWidget({
       </div>
 
       {/* Tab row — only the lists that have something in them. */}
-      <div role="tablist" aria-label="مواعيد النفاذ" className="mb-3 flex flex-wrap gap-1.5">
+      <div role="tablist" aria-label="مواعيد النفاذ" className={`mb-3 grid gap-1.5 ${tabs.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
         {tabs.map((t) => {
           const selected = t.id === activeTab;
           return (
@@ -132,7 +136,7 @@ export default function EnactmentCountdownWidget({
               role="tab"
               aria-selected={selected}
               onClick={() => switchTab(t.id)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition ${
+              className={`inline-flex min-w-0 flex-wrap items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-center text-[11px] font-bold leading-4 transition ${
                 selected
                   ? isDark ? "border-[#C8A762]/40 bg-[#C8A762]/10 text-[#C8A762]" : "border-[#0B3D2E]/30 bg-[#0B3D2E]/5 text-[#0B3D2E]"
                   : isDark ? "border-white/[0.07] text-zinc-400 hover:text-zinc-300" : "border-slate-200 text-slate-500 hover:text-slate-700"
@@ -145,48 +149,50 @@ export default function EnactmentCountdownWidget({
         })}
       </div>
 
-      <Link href={`/laws/${item.slug}`} className={`flex items-center gap-4 rounded-xl border p-3 transition-colors ${isDark ? "border-white/[0.06] bg-white/[0.025] hover:border-[#C8A762]/40" : "border-slate-100 bg-slate-50 hover:border-[#C8A762]/50"}`}>
-        {isRecent ? (
-          <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
-            {daysSince === 0 ? (
-              <span className="text-sm font-black leading-none">اليوم</span>
-            ) : (
-              <>
-                <span className="text-xl font-black leading-none">{daysSince}</span>
-                <span className="mt-1 text-[9px] font-bold">{dayCountUnit(daysSince)}</span>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className={`flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-full border-2 ${urgent ? "border-amber-500 bg-amber-500/10 text-amber-600" : "border-[#C8A762] bg-[#0B3D2E]/5 text-[#0B3D2E] dark:text-[#C8A762]"}`}>
-            <span className="text-xl font-black leading-none">{item.daysRemaining}</span>
-            <span className="mt-1 text-[9px] font-bold">{isRTL ? dayCountUnit(item.daysRemaining) : "days"}</span>
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex items-center gap-1.5">
+      <Link href={`/laws/${item.slug}`} className={`block rounded-xl border p-3 transition-colors ${isDark ? "border-white/[0.06] bg-white/[0.025] hover:border-[#C8A762]/40" : "border-slate-100 bg-slate-50 hover:border-[#C8A762]/50"}`}>
+        <div className="mb-2 flex items-center gap-3">
+          {isRecent ? (
+            <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+              {daysSince === 0 ? (
+                <span className="text-sm font-black leading-none">اليوم</span>
+              ) : (
+                <>
+                  <span className="text-lg font-black leading-none">{daysSince}</span>
+                  <span className="mt-0.5 text-[9px] font-bold">{dayCountUnit(daysSince)}</span>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className={`flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-full border-2 ${urgent ? "border-amber-500 bg-amber-500/10 text-amber-600" : "border-[#C8A762] bg-[#0B3D2E]/5 text-[#0B3D2E] dark:text-[#C8A762]"}`}>
+              <span className="text-lg font-black leading-none">{item.daysRemaining}</span>
+              <span className="mt-0.5 text-[9px] font-bold">{isRTL ? dayCountUnit(item.daysRemaining) : "days"}</span>
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
             {isRecent ? (
-              <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${isDark ? "bg-emerald-500/15 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
+              <span className={`inline-block rounded-md px-1.5 py-0.5 text-[10px] font-bold leading-4 ${isDark ? "bg-emerald-500/15 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
                 {sinceEffectiveLabel(daysSince)}
               </span>
             ) : (
-              <>
-                {urgent && <WarningCircle size={13} className="text-amber-500" weight="fill" />}
-                <span className={`text-[10px] font-bold ${urgent ? "text-amber-500" : isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                  {urgent ? (isRTL ? "سريان وشيك" : "Enforcing soon") : (isRTL ? "قيد مهلة النفاذ" : "Under enactment period")}
-                </span>
-              </>
+              <span className={`inline-flex items-center gap-1 text-[10px] font-bold leading-4 ${urgent ? "text-amber-500" : isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                {urgent && <WarningCircle size={13} className="shrink-0 text-amber-500" weight="fill" />}
+                {urgent ? (isRTL ? "سريان وشيك" : "Enforcing soon") : (isRTL ? "قيد مهلة النفاذ" : "Under enactment period")}
+              </span>
             )}
+            <p className={`mt-1 text-[10px] leading-4 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+              {item.effectiveDateHijri || item.effectiveDateGregorian}
+            </p>
           </div>
-          <h3 className={`line-clamp-2 text-sm font-bold leading-6 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>
-            {isRTL ? item.title : item.titleEn || item.title}
-          </h3>
-          <p className={`mt-1 text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {item.effectiveDateHijri || item.effectiveDateGregorian}
-            {/* Only when the source names an issue (null for non-subscribers too). */}
-            {item.gazetteIssueNumber ? ` · أم القرى، العدد ${item.gazetteIssueNumber}` : ""}
-          </p>
         </div>
+        <h3 className={`line-clamp-3 text-[13px] font-bold leading-6 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>
+          {isRTL ? item.title : item.titleEn || item.title}
+        </h3>
+        {/* Only when the source names an issue (null for non-subscribers too). */}
+        {item.gazetteIssueNumber && (
+          <p className={`mt-1 text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+            أم القرى، العدد {item.gazetteIssueNumber}
+          </p>
+        )}
       </Link>
     </section>
   );

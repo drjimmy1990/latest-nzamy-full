@@ -253,4 +253,18 @@ test("html is the plain form in bold, and neither ends in whitespace", () => {
   }
 });
 
+// ── Ordinal-led headings (2026-10-04) ──────────────────────────────────────────
+
+test("a long heading that opens with an item ordinal is cited by the ordinal alone", () => {
+  // «ثالثًا- الأمانة العامة…» (tanween before the alef) used to fall back to «المادة 52»;
+  // it is now the article label, but the citation must not carry the whole heading.
+  const heading = "ثالثًا- الأمانة العامة للغرف التجارية الصناعية وتنظيم أعمالها وتحديد اختصاصاتها";
+  const c = buildCitation({ docTitle: "نظام الغرف التجارية", docType: "نظام", numberText: heading, displayNum: heading }, true);
+  assert.equal(c.kind, "article");
+  assert.equal(c.plain, "المادة (ثالثًا) من نظام (نظام الغرف التجارية) ونصه:");
+  // A short ordinal is cited exactly as before.
+  const short = buildCitation({ docTitle: "نظام الغرف التجارية", docType: "نظام", numberText: "ثالثاً" }, true);
+  assert.equal(short.plain, "المادة (ثالثاً) من نظام (نظام الغرف التجارية) ونصه:");
+});
+
 console.log(`✔ _citation: ${passed} tests passed`);

@@ -21,6 +21,7 @@ import {
   PrecedentRow,
   EmptyState,
 } from "./ListItems";
+import { ResultsSkeleton } from "./ResultsSkeleton";
 
 interface PrecedentsTabContentProps {
   isDark: boolean;
@@ -51,6 +52,10 @@ interface PrecedentsTabContentProps {
    * far, so their length is not the section count. undefined = browse mode.
    */
   searchCountLabel?: string;
+  /** A search request is in flight: skeleton cards, not «لا توجد نتائج». */
+  resultsPending?: boolean;
+  /** The search failed (its error is shown above): no empty state. */
+  searchFailed?: boolean;
 }
 
 export function PrecedentsTabContent({
@@ -77,6 +82,8 @@ export function PrecedentsTabContent({
   precSort,
   setPrecSort,
   searchCountLabel,
+  resultsPending = false,
+  searchFailed = false,
 }: PrecedentsTabContentProps) {
   const router = useRouter();
   const { can } = useSubscription();
@@ -337,6 +344,9 @@ export function PrecedentsTabContent({
         </div>
       </div>
 
+      {resultsPending ? (
+        <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} count={3} label="جارٍ البحث" />
+      ) : (<>
       {/* Judicial Collections Grid */}
       {precMode !== "precedents" && filteredCollections.length > 0 && (
         <div className="mb-8">
@@ -607,8 +617,8 @@ export function PrecedentsTabContent({
         </div>
       )}
 
-      {/* Empty state */}
-      {filteredPrinciples.length === 0 && filteredPrecedents.length === 0 && (
+      {/* Empty state — only for a settled read, never for a failed search */}
+      {filteredPrinciples.length === 0 && filteredPrecedents.length === 0 && !searchFailed && (
         <EmptyState
           type="no-results"
           catId={activeCat}
@@ -691,6 +701,7 @@ export function PrecedentsTabContent({
           </button>
         </div>
       )}
+      </>)}
     </motion.div>
   );
 }
